@@ -129,6 +129,27 @@ pub(super) fn no_ranked_index_key_length_check(
     Ok(())
 }
 
+/// RANKED: the cross-index structural check a generation runs over a
+/// document type's parsed indices, before the merged index tree is built.
+///
+/// Generation 3's implementation rejects the compound-ranked prefix-overlap
+/// shape the storage layer cannot lay out; earlier generations pass
+/// [`no_ranked_index_structure_check`] — their grammar rejects the
+/// `ranked*` keywords, so no index they parse can carry a ranking axis.
+/// Unlike [`RankedIndexKeyLengthCheck`] this runs on **every** parse path,
+/// not only under `full_validation`: a contract admitted through a
+/// non-validating parse would brick the first document insert.
+pub(super) type RankedIndexStructureCheck =
+    fn(&BTreeMap<String, Index>) -> Result<(), ProtocolError>;
+
+/// The [`RankedIndexStructureCheck`] for a generation that has no ranking
+/// axes to constrain.
+pub(super) fn no_ranked_index_structure_check(
+    _indices: &BTreeMap<String, Index>,
+) -> Result<(), ProtocolError> {
+    Ok(())
+}
+
 /// Everything the shared parsing steps need to know about *which* generation is
 /// running them.
 ///
@@ -169,6 +190,8 @@ pub(super) struct ParserGeneration {
     pub admit_ranked: bool,
     /// See [`RankedIndexKeyLengthCheck`].
     pub ranked_index_key_length_check: RankedIndexKeyLengthCheck,
+    /// See [`RankedIndexStructureCheck`].
+    pub ranked_index_structure_check: RankedIndexStructureCheck,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -947,6 +970,12 @@ fn parse_indices(
         })
         .transpose()?
         .unwrap_or_default();
+
+    // Cross-index structural check owned by the generation, exactly like
+    // the per-property key-length check above: generations whose index
+    // grammar rejects the `ranked*` keywords pass the no-op, so the shared
+    // core never branches on a version.
+    (ctx.generation.ranked_index_structure_check)(&indices)?;
 
     let index_structure =
         IndexLevel::try_from_indices(indices.values(), ctx.name, ctx.platform_version)?;

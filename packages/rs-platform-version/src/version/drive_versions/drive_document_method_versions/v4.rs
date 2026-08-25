@@ -7,9 +7,12 @@ use crate::version::drive_versions::drive_document_method_versions::{
 
 /// V4 is protocol version 14's document-method table. It hosts three
 /// independent changes that all gate at v14 (ranked aggregates, the
-/// shared-prefix aggregate index fix, and multi-`In` document queries
-/// via `query.non_primary_key_path_query: 1` — v13 and earlier keep
-/// the v0 lowering, which rejects more than one `In` clause).
+/// shared-prefix aggregate index fix, and the reworked non-primary-key
+/// query lowering via `query.non_primary_key_path_query: 1` — multiple
+/// `In` clauses, sibling-branch-correct cursor pagination over
+/// multi-branch levels, and order-by-aware left-over directions; v13
+/// and earlier keep the v0 lowering, which rejects more than one `In`
+/// clause and bakes the cursor's start keys into every sibling branch).
 ///
 /// ## 1. Contract-level ranked aggregates
 ///
@@ -74,7 +77,10 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             detect_count_mode: 0,
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
+            detect_having_mode: 0,
             non_primary_key_path_query: 1,
+            non_primary_key_single_in_path_query: 0,
+            non_primary_key_multiple_in_path_query: 0,
             where_clause_grouping: 1,
         },
         delete: DriveDocumentDeleteMethodVersions {

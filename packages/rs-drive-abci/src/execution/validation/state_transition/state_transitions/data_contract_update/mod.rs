@@ -2427,7 +2427,7 @@ mod tests {
             )
             .expect("load base contract");
 
-            let mut val = dpp::platform_value::to_value(&base).expect("to_value");
+            let mut val = base.to_value(platform_version).expect("to_value");
 
             val["keywords"] = Value::Array(
                 keywords
@@ -2517,7 +2517,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            let mut val = dpp::platform_value::to_value(&fetched.contract).unwrap();
+            let mut val = fetched.contract.to_value(platform_version).unwrap();
 
             val["keywords"] = Value::Array(
                 new_keywords
@@ -2819,7 +2819,7 @@ mod tests {
             )
             .expect("load base contract");
 
-            let mut val = dpp::platform_value::to_value(&base).expect("to_value");
+            let mut val = base.to_value(platform_version).expect("to_value");
 
             val["description"] = Value::Text(description.to_string());
 
@@ -2904,7 +2904,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
 
-            let mut val = dpp::platform_value::to_value(&fetched.contract).unwrap();
+            let mut val = fetched.contract.to_value(platform_version).unwrap();
 
             val["description"] = Value::Text(new_description.to_string());
 

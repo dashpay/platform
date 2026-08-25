@@ -18,7 +18,10 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             detect_count_mode: 0,
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
+            detect_having_mode: 0,
             non_primary_key_path_query: 0,
+            non_primary_key_single_in_path_query: 0,
+            non_primary_key_multiple_in_path_query: 0,
             where_clause_grouping: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {

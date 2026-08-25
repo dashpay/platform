@@ -52,6 +52,13 @@ impl PersistenceCapabilities {
     /// persisted. Restart hydration is the separate `WALLET_RESTORE` contract.
     pub const TRACKED_ASSET_LOCKS: Self = Self(1 << 9);
 
+    /// Tracked (wallet-independent) masternodes are persisted AND restored
+    /// across restarts
+    /// ([`persist_tracked_masternodes`](super::PlatformWalletPersistence::persist_tracked_masternodes)
+    /// / [`load_tracked_masternodes`](super::PlatformWalletPersistence::load_tracked_masternodes)).
+    /// Without this bit, tracking is session-scoped.
+    pub const TRACKED_MASTERNODES: Self = Self(1 << 10);
+
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
         Self::ATOMIC_CHANGESETS.0
@@ -131,6 +138,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::TRACKED_ASSET_LOCKS,
                 "tracked_asset_locks",
             ),
+            (
+                PersistenceCapabilities::TRACKED_MASTERNODES,
+                "tracked_masternodes",
+            ),
         ];
 
         KNOWN
@@ -160,6 +171,7 @@ mod tests {
         assert_eq!(PersistenceCapabilities::WALLET_RESTORE.bits(), 0x80);
         assert_eq!(PersistenceCapabilities::DPNS_NAME_STATES.bits(), 0x100);
         assert_eq!(PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits(), 0x200);
+        assert_eq!(PersistenceCapabilities::TRACKED_MASTERNODES.bits(), 0x400);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281

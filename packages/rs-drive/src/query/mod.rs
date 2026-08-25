@@ -17,6 +17,14 @@ pub use {
     drive_document_count_query::{
         CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
     },
+    // Having-range verifier-shareable types — same split as ranked:
+    // `DocumentHavingMode` + `AxisRangeBounds` to re-run the same
+    // versioned request validation (and bounds translation) the prover
+    // ran, `DriveDocumentHavingQuery` to rebuild the proved grove path
+    // and secondary query. Entries reuse the ranked `RankedEntry` shape.
+    drive_document_having_query::{
+        AxisRangeBounds, DocumentHavingMode, DriveDocumentHavingQuery, MAX_HAVING_LIMIT,
+    },
     // Ranked-query verifier-shareable types. The verifier needs the
     // whole set: `DocumentRankedMode` + `RankedPaginationInputs` to
     // re-run the same versioned request validation the prover ran,
@@ -71,6 +79,13 @@ pub use drive_document_average_query::{DocumentAverageRequest, DocumentAverageRe
 // as the count / sum / average request types above.
 #[cfg(feature = "server")]
 pub use drive_document_ranked_query::{DocumentRankedRequest, DocumentRankedResponse};
+
+// `DocumentHavingRequest` / `DocumentHavingResponse` are the
+// server-side dispatcher ABI for the having-range surface — the types
+// drive-abci's routing layer names. Server-only for the same reason as
+// the ranked request types above.
+#[cfg(feature = "server")]
+pub use drive_document_having_query::{DocumentHavingRequest, DocumentHavingResponse};
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
@@ -242,6 +257,14 @@ pub mod drive_document_sum_query;
 /// the worked example contract.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_average_query;
+
+/// A query to filter an index's groups by a per-group aggregate bound —
+/// "hashtags with more than 100 posts" — served as a value-bounded
+/// range read of the same per-axis secondary Merk the ranked surface
+/// walks (PR #657, PV14). Like ranked, it never opens the value trees,
+/// so a having-range read is `O(log n + k)` with a proof.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod drive_document_having_query;
 
 /// A query to rank an index's groups by a per-group aggregate — "top
 /// 5 restaurants by average grade" — reading grovedb's per-axis
@@ -1358,7 +1381,16 @@ impl<'a> DriveDocumentQuery<'a> {
             return Ok(main_path_query);
         }
 
-        if let Some(start_at_path_query) = start_at_path_query {
+        if let Some(mut start_at_path_query) = start_at_path_query {
+            // The cursor query selects exactly one key, so its walk
+            // direction carries no meaning — but grovedb's merge (V4+)
+            // requires every input to agree on direction and propagates
+            // the shared one to the merged root. Align it to the main
+            // query's `orderBy` direction so a descending page merges,
+            // and so the merged root keeps the direction the verifier
+            // will rebuild through this same path.
+            start_at_path_query.query.query.left_to_right =
+                main_path_query.query.query.left_to_right;
             let limit = main_path_query.query.limit.take();
             let mut merged = PathQuery::merge(
                 vec![&start_at_path_query, &main_path_query],

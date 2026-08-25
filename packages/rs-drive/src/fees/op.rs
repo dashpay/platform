@@ -224,18 +224,22 @@ pub enum LowLevelDriveOperation {
 /// secondary root keys derived from it — is committed. A wrapped indexed tree
 /// would have nowhere to hang its secondaries.
 ///
-/// Reachable shape: a ranked index whose terminal property-name tree sits
-/// inside a value tree that itself aggregates, i.e. a compound ranked index
-/// `[a, b]` on a doctype that ALSO declares an aggregating index terminating
-/// at `[a]`. Failing closed here is deliberate — the alternative is silently
-/// writing a non-indexed tree and having ranked queries return nothing.
+/// The shape that would reach this — a ranked index whose terminal
+/// property-name tree sits inside a value tree that itself aggregates, i.e. a
+/// compound ranked index `[a, b]` on a doctype that ALSO declares an
+/// aggregating index terminating at `[a]` — is rejected at contract-parse
+/// time (`validate_no_ranked_prefix_overlap` in rs-dpp), so this is the
+/// fail-closed backstop behind that check. Failing closed here is deliberate
+/// — the alternative is silently writing a non-indexed tree and having
+/// ranked queries return nothing.
 const INDEXED_INNER_UNWRAPPABLE: &str =
     "an indexed tree cannot be wrapped in NonCounted / NotSummed / NotCountedOrSummed: the \
      wrapper suppresses the subtree's contribution to its parent's aggregate, but an indexed \
      primary commits its aggregate (and the derived secondary root keys) through that very \
      parent element. A ranked index's terminal property-name tree therefore cannot live inside \
-     an aggregating value tree — i.e. a ranked compound index [a, b] is unsupported when the \
-     same doctype also declares a countable/summable index terminating at [a].";
+     an aggregating value tree — i.e. a ranked compound index [a, b] cannot coexist with a \
+     countable/summable index terminating at [a]; contracts declaring that pair are rejected \
+     at parse time.";
 
 impl LowLevelDriveOperation {
     /// Returns a list of the costs of the Drive operations.
@@ -1562,6 +1566,17 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
                      ProvableCountProvableSumIndexedTree — the ranked axis set is not carried \
                      by TreeType; use for_known_path_key_empty_indexed_tree (or \
                      batch_insert_empty_provable_count_provable_sum_indexed_tree) instead.",
+                )))
+            }
+            // A private document store's entry size lives only on the
+            // `Element` (it does not affect Merk node layout), so `TreeType`
+            // cannot describe the element to insert. Drive has no private
+            // document store surface yet; when it does, creation must go
+            // through a dedicated helper that takes the entry size.
+            TreeType::PrivateDocumentStore(_) => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "empty_tree_operation_for_known_path_key cannot create a \
+                     PrivateDocumentStore — the entry size is not carried by TreeType",
                 )))
             }
         };

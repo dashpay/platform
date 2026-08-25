@@ -14,6 +14,14 @@ pub use proof::document_count::{
     verify_distinct_count_proof, verify_point_lookup_count_proof,
     verify_primary_key_count_tree_proof, DocumentCount,
 };
+/// Verified having-range (`GROUP BY … HAVING <aggregate> <op> <value>
+/// LIMIT n`) result types. `DocumentHavingEntries` carries one entry
+/// per matching group **in axis order**;
+/// [`verify_having_range_proof`] is the tenderdash-composition wrapper
+/// that binds the proof's reconstructed root hash to the signed app
+/// hash and returns the verified entry list — including its
+/// completeness: an in-range group the node omitted fails verification.
+pub use proof::document_having::{verify_having_range_proof, DocumentHavingEntries};
 /// Verified ranked (`GROUP BY … ORDER BY <aggregate> LIMIT n
 /// [OFFSET m]`) result types. `DocumentRankedEntries` carries one entry
 /// per returned group **in ranking order**, plus the `starting_rank`

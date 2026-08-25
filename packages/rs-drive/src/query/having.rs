@@ -32,9 +32,21 @@
 //! and the SDK's request builder
 //! (`rs-sdk/src/platform/documents/document_query.rs`) so the
 //! drive-side struct is the single source of truth for the shape.
-//! **No part of this grammar executes today**: every non-empty
-//! `having` is rejected with `QuerySyntaxError::Unsupported`. The
-//! types exist so the wire surface is stable as evaluation lands.
+//!
+//! **What executes (protocol version 14+)**: a grouped aggregate
+//! carrying exactly one clause that bounds the aggregate the select
+//! projects, with a contiguous-range operator (`=`, `>`, `>=`, `<`,
+//! `<=`, the four `BETWEEN*` variants). It is served as a
+//! value-bounded range read of the covering ranked index's axis
+//! secondary — see `drive_document_having_query::mode_detection` for
+//! the versioned grammar. Everything else the types can express
+//! remains rejected with `QuerySyntaxError`: multiple clauses
+//! (implicit AND would need a per-candidate post-check no executor
+//! performs), a clause on a different aggregate than the select's,
+//! the non-contiguous operators (`!=`, `IN`), and `having` without
+//! `group_by`. Protocol version 13 and earlier reject every
+//! non-empty `having`, so mixed-version networks agree across the
+//! upgrade.
 
 use dpp::platform_value::Value;
 #[cfg(feature = "serde")]
