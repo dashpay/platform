@@ -1,4 +1,4 @@
-import { sanitizeDetail } from '../renewalFailure.js';
+import { MAX_DETAIL_CHARS, sanitizeDetail } from '../renewalFailure.js';
 
 /**
  * What the helper recorded about the last renewal for one config.
@@ -104,7 +104,12 @@ export default class RenewalRecord {
       // Sanitised on the way in as well as on the way out. The file is editable
       // by hand and a collected report can arrive from someone else, so what
       // was safe when written is not established at the point it is read.
-      detail: typeof raw.detail === 'string' ? sanitizeDetail(raw.detail) || null : null,
+      // Bounded before it is scanned, not after. An archived report is read
+      // straight into a sample without passing through this repository's own
+      // write path, so the value can be any length at all.
+      detail: typeof raw.detail === 'string'
+        ? sanitizeDetail(raw.detail.slice(0, MAX_DETAIL_CHARS)) || null
+        : null,
       attemptedAt,
       lastSuccessAt: RenewalRecord.#readDate(raw.lastSuccessAt),
       consecutiveFailures: Number.isInteger(raw.consecutiveFailures) && raw.consecutiveFailures >= 0
