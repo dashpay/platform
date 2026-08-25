@@ -107,7 +107,7 @@ pub(super) fn verify_having_query(
     // without this, the verifier would accept a query shape the server
     // refuses. The resolved-field list is discarded: nothing survives the
     // non-empty-where rejection to consume it.
-    super::document_query::resolve_time_range_clauses_with_metadata_time(
+    super::document_query::normalize_time_range_clauses_with_metadata_time(
         &mut request,
         mtd.time_ms,
     )?;

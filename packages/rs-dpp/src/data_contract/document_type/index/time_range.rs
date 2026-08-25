@@ -25,11 +25,17 @@ use serde::{Deserialize, Serialize};
 ///
 /// The canonical use case is "trending" leaderboards: index on
 /// `(timeRange($createdAt), hashtag)` with `countable`, then query a single
-/// bucket — e.g. per-hashtag counts within the bucket (`COUNT(*)` grouped by
-/// `hashtag`, with the client ordering the returned groups). Overlapping
-/// ranges guarantee that, at any instant, there is always an active range
-/// covering a near-full `range` window of history (see
-/// [`Self::oldest_active_start`]).
+/// bucket. Per-hashtag counts within the bucket are served by the grouped
+/// count surface, whose single `GROUP BY` field must itself carry an `In`
+/// or range clause: `IN_TIME_RANGE($createdAt, "newest") AND hashtag IN
+/// (candidates) GROUP BY hashtag` returns one count per candidate (the
+/// client orders the returned groups), and a range predicate on the grouped
+/// field with `rangeCountable: true` covers the open-ended form. A bare
+/// `GROUP BY hashtag` with no clause on `hashtag` is not routable —
+/// aggregate coverage requires every index property to carry an
+/// `Equal`/`In`/range clause. Overlapping ranges guarantee that, at any
+/// instant, there is always an active range covering a near-full `range`
+/// window of history (see [`Self::oldest_active_start`]).
 ///
 /// Note that the *server-ordered* form (`ORDER BY COUNT(*)` — the ranked
 /// query surface) cannot yet be combined with a time-range selection: ranked

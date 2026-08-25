@@ -524,9 +524,10 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         // A time-range (`IN_TIME_RANGE`) selection is resolved to a concrete
         // bucket using the **quorum-signed** response metadata time — the same
         // authoritative block time the server used to resolve it — so the
-        // reconstructed query matches the proof exactly. Resolve before the
-        // `DriveDocumentQuery` conversion so the engine sees ordinary equality
-        // clauses.
+        // reconstructed query matches the proof exactly. Resolve (and run the
+        // provenance-vs-shape guard, via the one shared normalization helper
+        // the aggregate verifiers also use) before the `DriveDocumentQuery`
+        // conversion so the engine sees ordinary equality clauses.
         let mut resolved_time_ranges = Vec::new();
         if !request.time_range_clauses.is_empty() {
             // The generated `VersionedGrpcResponse::metadata()` handles both
@@ -541,7 +542,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                         .to_string(),
                 })?;
             resolved_time_ranges =
-                resolve_time_range_clauses_with_metadata_time(&mut request, time_ms)?;
+                normalize_time_range_clauses_with_metadata_time(&mut request, time_ms)?;
         }
 
         let mut drive_query: DriveDocumentQuery =
@@ -587,6 +588,30 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
 /// the pushed clause is an ordinary equality and nothing downstream can
 /// otherwise tell that it must be matched against the resolved grid's
 /// bucket starts.
+/// [`resolve_time_range_clauses_with_metadata_time`] followed immediately by
+/// the provenance-vs-shape guard — the two-step normalization every
+/// proof-verification path must run, in this order, before mode detection,
+/// covering-index selection, or query reconstruction. One definition so a
+/// future verifier path cannot omit either step or run them out of order:
+/// the aggregate paths once omitted the resolution entirely (valid proofs
+/// were rejected), and a path that resolved without the guard would let a
+/// caller-provided `In`/range clause on the resolved field reach the index
+/// pickers as if its raw values were bucket starts.
+pub(super) fn normalize_time_range_clauses_with_metadata_time(
+    request: &mut DocumentQuery,
+    time_ms: u64,
+) -> Result<Vec<ResolvedTimeRange>, drive_proof_verifier::Error> {
+    let resolved_time_ranges = resolve_time_range_clauses_with_metadata_time(request, time_ms)?;
+    drive::query::validate_resolved_time_range_clause_shapes(
+        &request.where_clauses,
+        &resolved_time_ranges,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!("invalid time range query shape: {}", e),
+    })?;
+    Ok(resolved_time_ranges)
+}
+
 pub(super) fn resolve_time_range_clauses_with_metadata_time(
     request: &mut DocumentQuery,
     time_ms: u64,

@@ -155,23 +155,13 @@ pub(super) fn verify_count_query(
     // block time — BEFORE mode detection and covering-index selection
     // below, which read `request.where_clauses`; the prover routed on
     // the resolved shape.
+    // ...and enforce the same provenance-vs-shape contract the server
+    // dispatchers do, through the one shared normalization helper.
     let resolved_time_ranges =
-        super::document_query::resolve_time_range_clauses_with_metadata_time(
+        super::document_query::normalize_time_range_clauses_with_metadata_time(
             &mut request,
             mtd.time_ms,
         )?;
-
-    // Same provenance-vs-shape contract the server dispatchers enforce: a
-    // resolved field may only carry the single equality its resolution
-    // produced. A response accepting any other shape did not come from an
-    // honest prover, so reject before mode detection can route on it.
-    drive::query::validate_resolved_time_range_clause_shapes(
-        &request.where_clauses,
-        &resolved_time_ranges,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("invalid time range query shape: {}", e),
-    })?;
 
     let document_type = request
         .data_contract
