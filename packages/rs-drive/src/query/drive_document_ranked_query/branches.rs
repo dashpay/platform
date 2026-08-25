@@ -33,11 +33,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
 #[cfg(feature = "server")]
-use grovedb::{GroveDb, TransactionArg};
-#[cfg(feature = "server")]
-use grovedb_costs::CostContext;
-#[cfg(feature = "server")]
-use grovedb_version::version::GroveVersion;
+use grovedb::AxisKeys;
 use std::cmp::Ordering;
 
 /// The position (index into a branch's segment list) at which the
@@ -182,41 +178,43 @@ pub fn decompose_branch_paths(paths: &[Vec<Vec<u8>>]) -> Result<BranchPathDecomp
     Ok((prefix, keys, suffix))
 }
 
-/// Whether any level of one branch's path below the shared prefix is
-/// absent — the branch key itself, or any shared-suffix segment under it.
-///
-/// grovedb's branched reader and prover treat a missing segment at ANY
-/// depth as the authenticated absence of the whole branch, so the
-/// unproved executors must agree: an `IN` element whose value tree exists
-/// (because some other pin value was written under it) but whose deeper
-/// pinned path was not is an absent branch contributing an empty page —
-/// not an error that discards the other branches' results.
-///
-/// Levels are probed top-down, so each parent is known present before
-/// its child is read; the shared prefix itself (the contract and
-/// document-type levels) is the caller's responsibility and is not
-/// probed here.
+/// Translate one branch's keys-only [`AxisKeys`] page into drive entries
+/// on the requested axis — the unproved twin of [`axis_entries_to_ranked`],
+/// used by the single-snapshot branched reads.
 #[cfg(feature = "server")]
-pub(crate) fn branch_subpath_is_absent(
-    grove: &GroveDb,
-    full_path: &[Vec<u8>],
-    shared_prefix_len: usize,
-    transaction: TransactionArg,
-    grove_version: &GroveVersion,
-) -> Result<bool, Error> {
-    for depth in shared_prefix_len..full_path.len() {
-        let parent: Vec<&[u8]> = full_path[..depth].iter().map(|s| s.as_slice()).collect();
-        let CostContext { value, cost: _ } = grove.get_raw_optional(
-            parent.as_slice().into(),
-            &full_path[depth],
-            transaction,
-            grove_version,
-        );
-        if value.map_err(|e| Error::GroveDB(Box::new(e)))?.is_none() {
-            return Ok(true);
-        }
+pub(crate) fn axis_keys_to_ranked(
+    axis: RankedAxis,
+    keys: AxisKeys,
+) -> Result<Vec<RankedEntry>, Error> {
+    match (axis, keys) {
+        (RankedAxis::Count, AxisKeys::Count(pairs)) => Ok(pairs
+            .into_iter()
+            .map(|(count, key)| RankedEntry {
+                in_key: None,
+                key,
+                value: RankedEntryValue::Count(count),
+            })
+            .collect()),
+        (RankedAxis::Sum, AxisKeys::Sum(pairs)) => Ok(pairs
+            .into_iter()
+            .map(|(sum, key)| RankedEntry {
+                in_key: None,
+                key,
+                value: RankedEntryValue::Sum(sum),
+            })
+            .collect()),
+        (RankedAxis::Avg, AxisKeys::Avg(pairs)) => Ok(pairs
+            .into_iter()
+            .map(|(avg, key)| RankedEntry {
+                in_key: None,
+                key,
+                value: RankedEntryValue::AvgFixedPoint(avg),
+            })
+            .collect()),
+        (axis, _) => Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+            "a branch of a {axis:?} read returned keys of a different axis shape"
+        )))),
     }
-    Ok(false)
 }
 
 /// Translate one branch's verified [`AxisEntries`] into drive entries

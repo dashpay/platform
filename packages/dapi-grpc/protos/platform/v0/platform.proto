@@ -901,8 +901,8 @@ message GetDocumentsRequest {
   // - no offset or cursor pagination: a page cut at `limit` continues only by tightening the bound past the last *distinct* aggregate value seen; a cut inside a tie (several groups sharing the boundary aggregate) cannot be continued, so size `limit` above the widest expected tie.
   //
   // **Rejected shapes** (return `Unsupported`):
-  // - any non-empty `having` on protocol v13 and earlier; at v14+, any `having` shape outside having-range mode above (multiple clauses, an aggregate other than the select's, `NOT_EQUAL` / `IN`, a `where` shape other than the compound-index equality pins above, or a carried `offset` / cursor).
-  // - at v14+: a ranked-shaped request carrying a `where` shape other than the compound-index equality pins above (a non-`EQUAL` operator, a repeated or non-leading property, or a missing pin), a `start_at` / `start_after` cursor, more than one `order_by`, or an `order_by` naming anything but the selected aggregate.
+  // - any non-empty `having` on protocol v13 and earlier; at v14+, any `having` shape outside having-range mode above (multiple clauses, an aggregate other than the select's, `NOT_EQUAL` / `IN` as the having operator, a `where` shape other than the compound-index prefix pins above — equality pins plus at most one bounded `IN` — or a carried `offset` / cursor).
+  // - at v14+: a ranked-shaped request carrying a `where` shape other than the compound-index prefix pins above (an operator other than `EQUAL` or the one permitted `IN`, more than one `IN`, a `null` pin combined with an `IN`, a repeated or non-leading property, or a missing pin), a `start_at` / `start_after` cursor, more than one `order_by`, or an `order_by` naming anything but the selected aggregate.
   // - `select=DOCUMENTS` with non-empty `group_by`.
   // - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
   // - `select=COUNT` with `group_by.len() > 2`.

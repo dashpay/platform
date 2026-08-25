@@ -3178,6 +3178,105 @@ mod pinned_prefix {
         );
     }
 
+    /// The branched unproved read is ONE grovedb call executed under the
+    /// caller's transaction — every absence decision and branch page from
+    /// one snapshot. A branch written only inside the transaction is
+    /// visible through it and invisible without it.
+    #[test]
+    fn a_branched_unproved_read_honors_the_transaction() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        let pv = platform_version();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
+
+        let transaction = drive.grove.start_transaction();
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        let mut doc: Document = document_type
+            .random_document(Some(9000), pv)
+            .expect("random document");
+        let mut props = BTreeMap::new();
+        props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(IDENTITY_Y));
+        props.insert(
+            CLASS_PROPERTY.to_string(),
+            Value::Text("science".to_string()),
+        );
+        props.insert("grade".to_string(), Value::I64(95));
+        doc.set_properties(props);
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&doc, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&transaction),
+                pv,
+                None,
+            )
+            .expect("expected to insert Y's grade inside the transaction");
+
+        let pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let request = || DocumentRankedRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &[],
+            order_by: &order_by,
+            where_clauses: &pins,
+            limit: Some(4),
+            offset: None,
+            has_start_at: false,
+            prove: false,
+        };
+
+        let with_tx = match drive
+            .execute_document_ranked_request(request(), Some(&transaction), pv)
+            .expect("the transactional branched read serves")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(
+            with_tx
+                .entries
+                .iter()
+                .map(|e| e.in_key.clone())
+                .collect::<Vec<_>>(),
+            vec![Some(IDENTITY_Y.to_vec()), Some(IDENTITY_X.to_vec())],
+            "under the transaction both branches contribute (Y's 95 outranks X's 80)"
+        );
+
+        let without_tx = match drive
+            .execute_document_ranked_request(request(), None, pv)
+            .expect("the committed branched read serves")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(
+            without_tx
+                .entries
+                .iter()
+                .map(|e| e.in_key.clone())
+                .collect::<Vec<_>>(),
+            vec![Some(IDENTITY_X.to_vec())],
+            "without the transaction Y's uncommitted branch is authenticated absent"
+        );
+    }
+
     /// grovedb's unified `prove_query` proves committed state only, so an
     /// `IN`-pinned prove under a caller transaction fails closed instead of
     /// silently proving a different snapshot than the unproved read serves.

@@ -10,13 +10,14 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_top_k;` declaration.
 
-use super::branches::{decompose_branch_paths, merge_branch_pages};
+use super::branches::{axis_keys_to_ranked, decompose_branch_paths, merge_branch_pages};
 use super::{DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue, RankedPage};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::{IndexedTopKKeysPage, PathQuery, TransactionArg};
+use grovedb::query_result_type::QueryResultType;
+use grovedb::{IndexedTopKKeysPage, PathQuery, PathQueryRun, TransactionArg};
 use grovedb_costs::CostContext;
 use grovedb_query::AxisQuery;
 
@@ -77,29 +78,69 @@ impl DriveDocumentRankedQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<RankedPage, Error> {
         if self.prefix_branches.len() > 1 {
-            // One walk per branch, each fetching a full page (the merge
-            // lemma needs every branch's own top-k), merged with the
-            // shared comparator. `offset` is grammar-rejected with `IN`,
-            // so `skipped` is always 0 here. An `IN` element whose
-            // prefix was never written contributes the empty page —
-            // union semantics, decided at the branching Merk exactly
-            // like the proved path's authenticated absence (deeper
-            // breakage under a *present* key stays an error, and the
-            // single-`==`-pin contract is untouched: there, an unknown
-            // value is still an error, not an empty page).
-            let per_branch = (0..self.prefix_branches.len())
-                .map(|branch| {
-                    if self.branch_is_absent(branch, drive, transaction, platform_version)? {
-                        return Ok(Vec::new());
+            // The whole union is read through ONE grovedb call — a branched
+            // keys-only PathQuery — so every absence decision and every
+            // branch page comes from the same snapshot (and the same
+            // caller transaction): per-branch reads interleaved with a
+            // block commit could merge pages that never coexisted in one
+            // committed state. Absence at any depth of a branch's chain is
+            // the branched reader's empty branch, exactly as the proved
+            // path authenticates it. `offset` is grammar-rejected with
+            // `IN`, so `skipped` is always 0 here.
+            let grove_version = &platform_version.drive.grove_version;
+            let paths = (0..self.prefix_branches.len())
+                .map(|branch| self.indexed_property_name_tree_path(branch))
+                .collect::<Result<Vec<_>, Error>>()?;
+            let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
+            let path_query = PathQuery::new_branched_axis(
+                prefix,
+                keys.clone(),
+                suffix,
+                AxisQuery::top_k(
+                    self.axis.into(),
+                    self.k,
+                    self.offset as u64,
+                    self.descending,
+                )
+                .keys_only(),
+            );
+            let CostContext { value, cost: _ } = drive.grove.run_path_query(
+                &path_query,
+                true,
+                true,
+                true,
+                QueryResultType::QueryKeyElementPairResultType,
+                transaction,
+                grove_version,
+            );
+            let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+            let PathQueryRun::BranchedAxisKeys(branches) = run else {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched keys-only ranked read returned a non-branched shape".to_string(),
+                )));
+            };
+            if branches.len() != keys.len() || branches.iter().map(|(key, _)| key).ne(keys.iter()) {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched ranked read returned a different branch set than the request \
+                     resolved"
+                        .to_string(),
+                )));
+            }
+            let per_branch = branches
+                .into_iter()
+                .map(|(_key, page)| {
+                    let entries = match page {
+                        None => Vec::new(),
+                        Some(page) => axis_keys_to_ranked(self.axis, page)?,
+                    };
+                    if entries.len() > self.k as usize {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "a branch of a ranked read returned {} entries for k = {}",
+                            entries.len(),
+                            self.k
+                        ))));
                     }
-                    Ok(self
-                        .execute_top_k_no_proof_branch(
-                            branch,
-                            drive,
-                            transaction,
-                            platform_version,
-                        )?
-                        .entries)
+                    Ok(entries)
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
             let entries = merge_branch_pages(
@@ -114,31 +155,6 @@ impl DriveDocumentRankedQuery<'_> {
             });
         }
         self.execute_top_k_no_proof_branch(0, drive, transaction, platform_version)
-    }
-
-    /// Whether this branch's key is absent at the branching Merk — the
-    /// union's empty-set case. Mirrors the proved path, where grovedb
-    /// authenticates the same absence at the same level.
-    pub(crate) fn branch_is_absent(
-        &self,
-        branch: usize,
-        drive: &Drive,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<bool, Error> {
-        let grove_version = &platform_version.drive.grove_version;
-        let paths = (0..self.prefix_branches.len())
-            .map(|b| self.indexed_property_name_tree_path(b))
-            .collect::<Result<Vec<_>, Error>>()?;
-        let (prefix, _keys, _suffix) = super::branches::decompose_branch_paths(&paths)?;
-        let full_path = self.indexed_property_name_tree_path(branch)?;
-        super::branches::branch_subpath_is_absent(
-            &drive.grove,
-            &full_path,
-            prefix.len(),
-            transaction,
-            grove_version,
-        )
     }
 
     /// One branch's page — the entire pre-`IN` executor, parameterized

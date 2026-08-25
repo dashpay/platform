@@ -91,7 +91,7 @@ use dpp::platform_value::Value;
 pub use grovedb::element::indexed::AVG_FIXED_POINT_SCALE as RANKED_AVG_SCALE;
 
 #[cfg(any(feature = "server", feature = "verify"))]
-pub mod branches;
+pub(crate) mod branches;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_picker;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -144,8 +144,8 @@ pub const MAX_RANKED_LIMIT: u16 = 100;
 /// so worst-case proof size is `MAX_PREFIX_IN_BRANCHES ×
 /// MAX_RANKED_LIMIT` entries (≈100–150 KB at the ceiling). A hard
 /// rejection rather than a clamp, for the same reason as the limit: the
-/// branch set is echoed in the proof container and re-checked by the
-/// verifier.
+/// branch set is bound into the branched proof envelope and re-checked
+/// by the verifier.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub const MAX_PREFIX_IN_BRANCHES: usize = 10;
 

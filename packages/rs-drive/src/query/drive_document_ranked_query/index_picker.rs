@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 /// - every **leading** property is pinned: each appears (by name) among
 ///   `equality_pin_fields`. Lengths matching plus the pins being
 ///   distinct (enforced upstream by
-///   [`super::mode_detection::equality_pins_from_where_clauses`]) makes
+///   [`super::mode_detection::prefix_pins_from_where_clauses`]) makes
 ///   this set equality, so no pin is left over either;
 /// - it declares the ranking keyword for `axis`
 ///   ([`RankedAxis::required_index_keyword`]);
@@ -245,6 +245,21 @@ pub fn encode_prefix_branches(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<Vec<Vec<u8>>>, Error> {
     let leading = &index.properties[..index.properties.len().saturating_sub(1)];
+    // Enforced BEFORE any encoding: the ceiling bounds every downstream
+    // cost (encode, sort, clone, walk, proof size), so an oversized pin
+    // must not buy that work first. The post-product branch count check
+    // below stays as a backstop.
+    if prefix_pins
+        .iter()
+        .any(|pin| pin.values.len() > super::MAX_PREFIX_IN_BRANCHES)
+    {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "an `IN` prefix pin fans out into more branches than the ranked surface serves \
+             — narrow the element list or issue several requests",
+            ),
+        ));
+    }
     let per_property: Vec<Vec<Vec<u8>>> = leading
         .iter()
         .map(|property| {
