@@ -3186,12 +3186,15 @@ mod pinned_prefix {
         );
     }
 
-    /// The branched unproved read is ONE grovedb call executed under the
-    /// caller's transaction — every absence decision and branch page from
-    /// one snapshot. A branch written only inside the transaction is
-    /// visible through it and invisible without it.
+    /// A branched unproved read REJECTS a caller transaction, mirroring
+    /// the branched prover: an ordinary grovedb transaction reads the
+    /// latest committed state on every operation, so forwarding it could
+    /// tear the union across branches. Per-element reads keep the
+    /// transactional capability exactly — a single-pin read is one
+    /// grovedb operation and serves the transaction's own writes — and
+    /// the committed (`None`) branched read is unaffected.
     #[test]
-    fn a_branched_unproved_read_honors_the_transaction() {
+    fn a_branched_unproved_read_rejects_an_ordinary_transaction() {
         let (drive, contract) = setup_grades_compound_ranked();
         let pv = platform_version();
         insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
@@ -3250,9 +3253,38 @@ mod pinned_prefix {
             prove: false,
         };
 
-        let with_tx = match drive
+        let error = drive
             .execute_document_ranked_request(request(), Some(&transaction), pv)
-            .expect("the transactional branched read serves")
+            .expect_err("a transactional branched read must fail closed");
+        assert!(
+            matches!(
+                &error,
+                Error::Drive(crate::error::drive::DriveError::NotSupported(message))
+                    if message.contains("tear the union")
+            ),
+            "expected the caller-transaction rejection, got {error:?}"
+        );
+
+        // Per-element under the SAME transaction: the single-pin read is
+        // one grovedb operation and serves the branch written only
+        // inside it.
+        let y_pin = pin(IDENTITY_Y);
+        let y_request = DocumentRankedRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &[],
+            order_by: &order_by,
+            where_clauses: &y_pin,
+            limit: Some(4),
+            offset: None,
+            has_start_at: false,
+            prove: false,
+        };
+        let with_tx = match drive
+            .execute_document_ranked_request(y_request, Some(&transaction), pv)
+            .expect("the transactional single-pin read serves")
         {
             DocumentRankedResponse::Entries(page) => page,
             DocumentRankedResponse::Proof(_) => panic!("expected entries"),
@@ -3261,10 +3293,10 @@ mod pinned_prefix {
             with_tx
                 .entries
                 .iter()
-                .map(|e| e.in_key.clone())
+                .map(|e| (e.key.clone(), e.in_key.clone()))
                 .collect::<Vec<_>>(),
-            vec![Some(IDENTITY_Y.to_vec()), Some(IDENTITY_X.to_vec())],
-            "under the transaction both branches contribute (Y's 95 outranks X's 80)"
+            vec![(b"science".to_vec(), None)],
+            "the single-pin read serves the transaction's own branch"
         );
 
         let without_tx = match drive
@@ -3331,8 +3363,9 @@ mod pinned_prefix {
         );
 
         // The unproved read is unaffected by the failed prove; it serves
-        // committed state (the transactional case is pinned by
-        // `a_branched_unproved_read_honors_the_transaction`).
+        // committed state (a transactional branched read is likewise
+        // rejected — pinned by
+        // `a_branched_unproved_read_rejects_an_ordinary_transaction`).
         let page = match run(&drive, &contract, &pins, 2, false)
             .expect("the committed unproved read is unaffected")
         {
@@ -3374,95 +3407,110 @@ mod pinned_prefix {
         );
     }
 
-    /// The `IN` union is served from ONE committed state: a `None` read
-    /// runs under a grovedb snapshot read transaction internally, and
-    /// the same primitive is exercised here explicitly — a branched read
-    /// under a snapshot transaction taken before a commit returns the
-    /// pre-commit union (the new branch still absent, the changed page
-    /// unchanged), while a fresh committed read returns the post-commit
-    /// union.
+    /// The `IN` union is served from ONE committed state through the
+    /// production `None` path itself: the executor takes a snapshot
+    /// read transaction internally, and the test-only seam
+    /// (`branches::test_hooks::AFTER_BRANCHED_SNAPSHOT`) lands a commit
+    /// deterministically INSIDE the window — after that snapshot is
+    /// taken, before the branched call runs. The `None` read must
+    /// return the pre-commit union (the new branch still absent, the
+    /// changed page unchanged); a second `None` read after the window
+    /// returns the post-commit union. Removing the executor's internal
+    /// snapshot selection fails this test.
     #[test]
     fn a_branched_read_is_pinned_to_one_committed_state() {
+        use std::time::Duration;
+
         let (drive, contract) = setup_grades_compound_ranked();
         let pv = platform_version();
         insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
 
-        let snapshot_transaction = drive.grove.start_snapshot_read_transaction();
-
-        // A "block commit" lands after the snapshot: Y's branch springs
-        // into existence and X gains a class. Documents are built with
+        // The mid-window "block commit": Y's branch springs into
+        // existence and X gains a class. Documents are built with
         // distinct seeds so they cannot collide with `insert_grades`'.
-        let document_type = contract
-            .document_type_for_name(DOCUMENT_TYPE)
-            .expect("grade doctype exists");
-        for (seed, identity, class, grade) in [
-            (9100u64, IDENTITY_Y, "science", 95i64),
-            (9101u64, IDENTITY_X, "art", 90i64),
-        ] {
-            let mut doc: Document = document_type
-                .random_document(Some(seed), pv)
-                .expect("random document");
-            let mut props = BTreeMap::new();
-            props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(identity));
-            props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
-            props.insert("grade".to_string(), Value::I64(grade));
-            doc.set_properties(props);
-            drive
-                .add_document_for_contract(
-                    DocumentAndContractInfo {
-                        owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefInfo((&doc, None)),
-                            owner_id: None,
+        let commit_post_snapshot_rows = || {
+            let document_type = contract
+                .document_type_for_name(DOCUMENT_TYPE)
+                .expect("grade doctype exists");
+            for (seed, identity, class, grade) in [
+                (9100u64, IDENTITY_Y, "science", 95i64),
+                (9101u64, IDENTITY_X, "art", 90i64),
+            ] {
+                let mut doc: Document = document_type
+                    .random_document(Some(seed), pv)
+                    .expect("random document");
+                let mut props = BTreeMap::new();
+                props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(identity));
+                props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
+                props.insert("grade".to_string(), Value::I64(grade));
+                doc.set_properties(props);
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((&doc, None)),
+                                owner_id: None,
+                            },
+                            contract: &contract,
+                            document_type,
                         },
-                        contract: &contract,
-                        document_type,
-                    },
-                    false,
-                    BlockInfo::default(),
-                    true,
-                    None,
-                    pv,
-                    None,
-                )
-                .expect("expected to commit the post-snapshot grade");
-        }
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        pv,
+                        None,
+                    )
+                    .expect("expected to commit the mid-window grade");
+            }
+        };
+
+        // Rendezvous: when the executor's hook fires (snapshot taken,
+        // read not yet run), wake the writer, wait for its commit to
+        // land, then let the read proceed.
+        let (enter_window_tx, enter_window_rx) = std::sync::mpsc::channel::<()>();
+        let (commit_done_tx, commit_done_rx) = std::sync::mpsc::channel::<()>();
+        super::super::branches::test_hooks::AFTER_BRANCHED_SNAPSHOT.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                let _ = enter_window_tx.send(());
+                let _ = commit_done_rx.recv_timeout(Duration::from_secs(20));
+            }));
+        });
 
         let pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
-        let group_by = vec![CLASS_PROPERTY.to_string()];
-        let order_by = vec![OrderClause {
-            field: "grade".to_string(),
-            ascending: false,
-        }];
-        let request = || DocumentRankedRequest {
-            contract: &contract,
-            document_type,
-            group_by: &group_by,
-            select: SelectProjection::avg("grade"),
-            having: &[],
-            order_by: &order_by,
-            where_clauses: &pins,
-            limit: Some(4),
-            offset: None,
-            has_start_at: false,
-            prove: false,
-        };
+        let pinned = std::thread::scope(|scope| {
+            scope.spawn(move || {
+                if enter_window_rx
+                    .recv_timeout(Duration::from_secs(20))
+                    .is_ok()
+                {
+                    commit_post_snapshot_rows();
+                    let _ = commit_done_tx.send(());
+                }
+            });
+            match run(&drive, &contract, &pins, 4, false)
+                .expect("the branched read serves across the mid-window commit")
+            {
+                DocumentRankedResponse::Entries(page) => page,
+                DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+            }
+        });
+        super::super::branches::test_hooks::AFTER_BRANCHED_SNAPSHOT.with(|hook| {
+            *hook.borrow_mut() = None;
+        });
 
-        // Under the pre-commit snapshot the union is the pre-commit
-        // state: Y's branch is still absent (empty, not an error) and X
-        // has only math.
-        let pinned = match drive
-            .execute_document_ranked_request(request(), Some(&snapshot_transaction), pv)
-            .expect("the snapshot branched read serves")
-        {
-            DocumentRankedResponse::Entries(page) => page,
-            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
-        };
+        // The `None` read observed the pre-commit state even though the
+        // commit landed inside its window: Y's branch still absent
+        // (empty, not an error), X still math-only.
         assert_eq!(
-            pinned.entries.len(),
-            1,
-            "the snapshot union is the pre-commit state"
+            pinned
+                .entries
+                .iter()
+                .map(|e| e.key.clone())
+                .collect::<Vec<_>>(),
+            vec![b"math".to_vec()],
+            "the automatic snapshot pins the union to the pre-commit state"
         );
-        assert_eq!(pinned.entries[0].key, b"math".to_vec());
 
         // A fresh committed read sees the post-commit union.
         let fresh = match run(&drive, &contract, &pins, 4, false)

@@ -436,7 +436,7 @@ pub struct RankedPaginationInputs {
 /// one executor pair (no-proof / proof) and all of its variation is in
 /// these values.
 ///
-/// Not `Eq`: the equality pins carry [`Value`]s, whose float variant
+/// Not `Eq`: the prefix pins carry [`Value`]s, whose float variant
 /// keeps the type at `PartialEq`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -456,13 +456,15 @@ pub struct DocumentRankedMode {
     /// [`RankedAxis::Count`] (`COUNT(*)`); the index's `summable`
     /// property for [`RankedAxis::Sum`] / [`RankedAxis::Avg`].
     pub aggregate_field: String,
-    /// The `where` pins — exactly one per leading property of the
-    /// covering compound index, in whatever order the request supplied
-    /// them (the resolver re-orders them into index-property order when
-    /// it encodes the path). Empty for the single-property form.
-    /// Shape-validated only: the index-aware checks (does a compound
-    /// index exist whose leading properties these pin?) live in
-    /// [`index_picker`].
+    /// The `where` prefix pins — one [`PrefixPin`] per clause, exactly
+    /// one per leading property of the covering compound index, in
+    /// whatever order the request supplied them (the resolver re-orders
+    /// them into index-property order when it encodes the path). A pin
+    /// normally carries one value (an `==` clause); at most one carries
+    /// several (the single permitted branching `IN`). Empty for the
+    /// single-property form. Shape-validated only: the index-aware
+    /// checks (does a compound index exist whose leading properties
+    /// these pin?) live in [`index_picker`].
     pub prefix_pins: Vec<PrefixPin>,
 }
 

@@ -118,8 +118,9 @@ pub fn find_ranked_index_for_mode<'b>(
 
 /// Resolve a validated [`DocumentRankedMode`] against a document type's
 /// indexes into the executable [`DriveDocumentRankedQuery`]: pick the
-/// covering index, encode the equality pins into prefix-value path
-/// segments, and assemble the query.
+/// covering index, encode the prefix pins into prefix **branches** (one
+/// branch for all-`==` pins, one branch per element of the single
+/// permitted `IN`), and assemble the query.
 ///
 /// This is the **one** resolution path — the server's executors and the
 /// SDK's proof helpers both call it, which is what guarantees a proof

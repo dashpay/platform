@@ -235,7 +235,7 @@ impl AxisRangeBounds {
 /// Produced by [`mode_detection::detect_having_mode`]. Parallels
 /// [`super::drive_document_ranked_query::DocumentRankedMode`].
 ///
-/// Not `Eq`: the equality pins carry [`Value`]s, whose float variant
+/// Not `Eq`: the prefix pins carry [`Value`]s, whose float variant
 /// keeps the type at `PartialEq`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -255,12 +255,13 @@ pub struct DocumentHavingMode {
     /// The field the aggregate applies to. Empty for `COUNT(*)`; the
     /// index's `summable` property for `SUM` / `AVG`.
     pub aggregate_field: String,
-    /// The equality `where` pins, `(property, value)` per clause —
-    /// exactly one per leading property of the covering compound index,
-    /// in request order (the resolver re-orders them into index order
-    /// when it encodes the path). Empty for the single-property form.
-    /// At most one pin carries several values (the `IN` pin); see
-    /// [`PrefixPin`].
+    /// The `where` prefix pins — one [`PrefixPin`] per clause, exactly
+    /// one per leading property of the covering compound index, in
+    /// request order (the resolver re-orders them into index order when
+    /// it encodes the path). A pin normally carries one value (an `==`
+    /// clause); at most one pin carries several (the single permitted
+    /// branching `IN`, whose elements fan the bound out across one
+    /// prefix branch each). Empty for the single-property form.
     pub prefix_pins: Vec<PrefixPin>,
 }
 
@@ -336,8 +337,9 @@ impl DriveDocumentHavingQuery<'_> {
 /// Resolve a validated [`DocumentHavingMode`] against a document type's
 /// indexes into the executable [`DriveDocumentHavingQuery`]: pick the
 /// covering index (shared with the ranked surface — both read the same
-/// indexed tree), encode the equality pins into prefix-value path
-/// segments, and assemble the query.
+/// indexed tree), encode the prefix pins into prefix **branches** (one
+/// branch for all-`==` pins, one branch per element of the single
+/// permitted `IN`), and assemble the query.
 ///
 /// The **one** resolution path for the having surface, mirroring
 /// [`super::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode`]:

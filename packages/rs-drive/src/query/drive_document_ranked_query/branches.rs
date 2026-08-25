@@ -136,6 +136,20 @@ pub fn merge_branch_pages(
     Ok(merged)
 }
 
+/// Test-only seam for [`read_branched_union`]: invoked after the
+/// internal snapshot transaction is taken and before the branched call
+/// runs, so a test can land a commit deterministically inside the
+/// window and prove the production `None` path's automatic snapshot
+/// selection end-to-end.
+#[cfg(test)]
+pub(crate) mod test_hooks {
+    use std::cell::RefCell;
+    thread_local! {
+        pub(crate) static AFTER_BRANCHED_SNAPSHOT: RefCell<Option<Box<dyn FnMut()>>> =
+            const { RefCell::new(None) };
+    }
+}
+
 /// The `(shared prefix, branch keys, shared suffix)` decomposition of a
 /// branch path set — the triple `PathQuery::new_branched_axis` takes.
 pub type BranchPathDecomposition = (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>);
@@ -232,13 +246,20 @@ pub(crate) fn axis_keys_to_ranked(
 /// identity, translate and cap each branch's page, and merge with the
 /// shared comparator.
 ///
-/// The union is served from **one committed state**: with no caller
-/// transaction the call runs under a grovedb snapshot read transaction,
-/// so every per-branch absence probe and axis walk inside grovedb's
-/// branched arm reads the same RocksDB snapshot and a block commit
-/// landing mid-read cannot mix committed states into the merged page. A
-/// caller transaction is used as-is — a transactional reader asks for
-/// its own writes over its base.
+/// The union is served from **one committed state**: the call always
+/// runs under a grovedb snapshot read transaction taken here, so every
+/// per-branch absence probe and axis walk inside grovedb's branched arm
+/// reads the same RocksDB snapshot and a block commit landing mid-read
+/// cannot mix committed states into the merged page.
+///
+/// A caller-supplied transaction is **rejected**, mirroring the
+/// branched provers: an ordinary grovedb transaction reads the latest
+/// committed state on every operation, so forwarding it would reopen
+/// the exact tear the snapshot closes — and there is no way to tell an
+/// ordinary transaction from a snapshot-pinned one at this boundary.
+/// Transactional callers read per prefix element (each single-branch
+/// read is one grovedb operation and honors the transaction exactly),
+/// or commit first.
 ///
 /// `page_cap` is the surface's page bound (`k` for ranked, `limit` for
 /// having-range): each branch may return at most that many entries and
@@ -258,22 +279,35 @@ pub(crate) fn read_branched_union(
     transaction: TransactionArg,
     grove_version: &GroveVersion,
 ) -> Result<Vec<RankedEntry>, Error> {
+    if transaction.is_some() {
+        return Err(Error::Drive(DriveError::NotSupported(
+            "an IN-pinned (branched) unproved read under a caller transaction is not \
+             supported: an ordinary grovedb transaction reads the latest committed state on \
+             every operation, so a concurrent commit could tear the union across branches — \
+             read per prefix element under the transaction, or pass no transaction (the read \
+             then runs under an internal snapshot)",
+        )));
+    }
     let (prefix, keys, suffix) = decompose_branch_paths(paths)?;
     let path_query =
         PathQuery::new_branched_axis(prefix, keys.clone(), suffix, axis_query.keys_only());
-    let snapshot_transaction = if transaction.is_none() {
-        Some(grove.start_snapshot_read_transaction())
-    } else {
-        None
-    };
-    let read_transaction = snapshot_transaction.as_ref().or(transaction);
+    let snapshot_transaction = grove.start_snapshot_read_transaction();
+    // Test-only seam: lets a regression test land a commit deterministically
+    // INSIDE the window — after the snapshot is taken, before the read runs —
+    // proving the automatic snapshot selection on the production `None` path.
+    #[cfg(test)]
+    test_hooks::AFTER_BRANCHED_SNAPSHOT.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().as_mut() {
+            hook();
+        }
+    });
     let CostContext { value, cost: _ } = grove.run_path_query(
         &path_query,
         true,
         true,
         true,
         QueryResultType::QueryKeyElementPairResultType,
-        read_transaction,
+        Some(&snapshot_transaction),
         grove_version,
     );
     let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;

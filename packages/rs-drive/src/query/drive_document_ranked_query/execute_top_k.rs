@@ -32,10 +32,12 @@ impl DriveDocumentRankedQuery<'_> {
     /// the branch key itself, or any deeper pinned segment under a
     /// *present* key — contributes an **empty branch** (union
     /// semantics), exactly as the proved envelope authenticates it, and
-    /// the union is served from **one committed state**: a `None` read
-    /// runs under a grovedb snapshot read transaction, so every
-    /// per-branch probe and walk reads the same RocksDB snapshot. A
-    /// missing path under a single `==` pin *is* an error rather than
+    /// the union is served from **one committed state**: the branched
+    /// read always runs under a grovedb snapshot read transaction, so
+    /// every per-branch probe and walk reads the same RocksDB snapshot
+    /// (a caller transaction is rejected on this shape, mirroring the
+    /// branched prover — read per prefix element under a transaction).
+    /// A missing path under a single `==` pin *is* an error rather than
     /// an empty result: the indexed property-name tree is created when
     /// the contract is registered, so its absence means the
     /// contract-level state is not what the request claims, not that
@@ -265,10 +267,12 @@ impl DriveDocumentRankedQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         if self.prefix_branches.len() > 1 {
             // grovedb's unified `prove_query` proves COMMITTED state only —
-            // it opens its own transaction internally and cannot see the
-            // caller's. Serving a proof for a different snapshot than the
+            // it takes one internal snapshot of committed state and threads
+            // it through every proof layer, and cannot see the caller's
+            // transaction. Serving a proof for a different snapshot than the
             // unproved read would silently desynchronize the two paths, so a
-            // transactional branched prove fails closed instead.
+            // transactional branched prove fails closed instead — exactly
+            // like the branched unproved read.
             if transaction.is_some() {
                 return Err(Error::Drive(DriveError::NotSupported(
                     "an IN-pinned (branched) ranked proof is generated from committed state \
