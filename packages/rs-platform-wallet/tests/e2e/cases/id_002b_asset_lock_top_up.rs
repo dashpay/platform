@@ -251,13 +251,15 @@ async fn id_002b_asset_lock_funded_top_up() {
          on-chain top-up always pays a chain-time fee"
     );
 
-    // Step 7: the unified top-up flow is remove-on-success —
-    // `top_up_identity_with_funding` calls `consume_asset_lock` once
-    // Platform accepts the top-up, which drops the entry from the
-    // tracked-locks registry. So after a successful top-up no live
-    // IdentityTopUp lock remains; any that somehow linger must be in a
-    // finalised proof state. Mirrors CR-003's Step 6 loose contract
-    // (which passes vacuously when the lock is consumed).
+    // Step 7: the unified top-up flow is mark-on-success, NOT
+    // remove-on-success — `top_up_identity_with_funding` calls
+    // `consume_asset_lock` once Platform accepts the top-up, which sets
+    // the entry to `Consumed`, clears its one-shot `proof`, and RETAINS it
+    // in the tracked-locks registry. So a successful top-up leaves a
+    // `Consumed` IdentityTopUp entry behind — this loop runs over it
+    // rather than passing vacuously. Each entry must be in a finalised
+    // state: IS/CL (proof materialised) or `Consumed` (Platform accepted a
+    // valid proof — strictly stronger). Mirrors CR-003's Step 6.
     let tracked = s
         .test_wallet
         .platform_wallet()
@@ -277,10 +279,12 @@ async fn id_002b_asset_lock_funded_top_up() {
         assert!(
             matches!(
                 lock.status,
-                AssetLockStatus::InstantSendLocked | AssetLockStatus::ChainLocked
+                AssetLockStatus::InstantSendLocked
+                    | AssetLockStatus::ChainLocked
+                    | AssetLockStatus::Consumed
             ),
             "POST-pin violated: tracked top-up asset lock {:?} is in \
-             non-final status {:?} after top_up_identity_with_funding \
+             non-finalised status {:?} after top_up_identity_with_funding \
              completed",
             lock.out_point,
             lock.status

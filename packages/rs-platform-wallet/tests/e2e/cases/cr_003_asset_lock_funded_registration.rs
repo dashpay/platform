@@ -254,11 +254,20 @@ async fn cr_003_asset_lock_funded_registration() {
         fetched_master.security_level()
     );
 
-    // Step 6: assert every consumed asset lock reached a finalised
-    // proof state. We pin the looser contract: each tracked lock must
-    // be in `InstantSendLocked` / `ChainLocked` final state, never
-    // stuck at `Built` or `Broadcast`. If the flow tightens to
-    // remove-on-success, flip this to `assert!(tracked.is_empty())`.
+    // Step 6: assert every tracked asset lock reached a finalised state.
+    //
+    // Accepted: `InstantSendLocked` / `ChainLocked` (proof materialised) and
+    // `Consumed`. `Consumed` is strictly stronger evidence, not a weaker
+    // fallback — Platform only consumes a lock after accepting a valid
+    // IS/CL proof, and `consume_asset_lock` then clears `proof` as one-shot
+    // and RETAINS the entry for historical lookup. The registry is therefore
+    // NOT empty after a successful run; an `assert!(tracked.is_empty())`
+    // would be wrong here.
+    //
+    // Still failures: `Built` / `Broadcast` (never finalised) and
+    // `RecoveredFromChain` (Core finality authenticated but Platform-side
+    // consumption unknown — a lock the live flow did not drive to
+    // completion, which is exactly what this POST-pin exists to catch).
     let tracked = s
         .test_wallet
         .platform_wallet()
@@ -270,12 +279,14 @@ async fn cr_003_asset_lock_funded_registration() {
         assert!(
             matches!(
                 lock.status,
-                AssetLockStatus::InstantSendLocked | AssetLockStatus::ChainLocked
+                AssetLockStatus::InstantSendLocked
+                    | AssetLockStatus::ChainLocked
+                    | AssetLockStatus::Consumed
             ),
-            "POST-pin violated: tracked asset lock {:?} is in non-final \
-             status {:?} after register_identity_with_funding \
-             completed. The unified flow must drive every consumed lock to \
-             a finalised proof state.",
+            "POST-pin violated: tracked asset lock {:?} is in \
+             non-finalised status {:?} after register_identity_with_funding \
+             completed. The unified flow must drive every lock to a \
+             finalised proof state or to Consumed.",
             lock.out_point,
             lock.status
         );

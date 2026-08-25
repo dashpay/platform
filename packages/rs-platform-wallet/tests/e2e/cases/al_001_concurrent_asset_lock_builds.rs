@@ -33,10 +33,11 @@
 //! Assertions:
 //! - All N tasks return `Ok(_)` (Step 4) — reachability under concurrency.
 //! - All N identity balances increased post-top-up (Step 6).
-//! - No lingering `tracked_asset_locks` entry is in a non-final status
-//!   (Step 5). The flow is remove-on-success (`consume_asset_lock`
-//!   drains each entry on Platform accept), so a full-success run leaves
-//!   an empty registry; this pins that no half-finalised lock survives.
+//! - No lingering `tracked_asset_locks` entry is in a non-finalised status
+//!   (Step 5). `consume_asset_lock` marks each entry `Consumed` on Platform
+//!   accept and RETAINS it for historical lookup, so a full-success run
+//!   leaves a registry of `Consumed` entries rather than an empty one; this
+//!   pins that no half-finalised lock survives.
 //! - Pairwise-distinct asset-lock txids and pairwise-disjoint funding
 //!   inputs (no manager collision, no UTXO double-spend) are enforced
 //!   by key-wallet's funding-account reservation set; a violation fails
@@ -439,14 +440,15 @@ async fn al_001_concurrent_asset_lock_builds() {
         panic!("POST-pin violated: concurrent top-up task {i} failed: {res:?}");
     }
 
-    // Step 5: the unified top-up flow is remove-on-success —
-    // `top_up_identity_with_funding` calls `consume_asset_lock` once
-    // Platform accepts each top-up, draining that entry from the
-    // tracked-locks registry (`asset_lock/sync/tracking.rs`). After N
-    // successful concurrent top-ups the registry holds no live
-    // IdentityTopUp lock; any that lingers (only reachable if a task
-    // errored, which Step 4 already turns into a hard failure) must be
-    // in a finalised proof state.
+    // Step 5: the unified top-up flow is mark-on-success, NOT
+    // remove-on-success — `top_up_identity_with_funding` calls
+    // `consume_asset_lock` once Platform accepts each top-up, which sets
+    // that entry to `Consumed`, clears its one-shot `proof`, and RETAINS
+    // it for historical lookup (`asset_lock/sync/tracking.rs`). After N
+    // successful concurrent top-ups the registry therefore holds N
+    // `Consumed` IdentityTopUp entries, not zero. Each must be in a
+    // finalised state: IS/CL (proof materialised) or `Consumed`
+    // (Platform accepted a valid proof — strictly stronger).
     //
     // The concurrency invariants AL-001 guards — pairwise-distinct
     // asset-lock txids and pairwise-disjoint funding inputs (no manager
@@ -454,8 +456,9 @@ async fn al_001_concurrent_asset_lock_builds() {
     // key-wallet's funding-account reservation set: a violation makes a
     // build fail at coin-selection/broadcast, surfacing as a task `Err`
     // that Step 4 fails on. `top_up_identity_with_funding` returns only the new
-    // balance (no txid) and the consumed entries are gone, so those
-    // properties can't be re-derived from the registry post-success;
+    // balance (no txid), and a consumed entry has its `proof` cleared as
+    // one-shot, so those properties can't be re-derived from the registry
+    // post-success;
     // they are proven transitively by every task returning `Ok`
     // (Step 4) and every identity balance increasing (Step 6).
     let tracked = s
@@ -473,10 +476,12 @@ async fn al_001_concurrent_asset_lock_builds() {
         assert!(
             matches!(
                 lock.status,
-                AssetLockStatus::InstantSendLocked | AssetLockStatus::ChainLocked
+                AssetLockStatus::InstantSendLocked
+                    | AssetLockStatus::ChainLocked
+                    | AssetLockStatus::Consumed
             ),
             "POST-pin violated: tracked top-up asset lock {:?} in \
-             non-final status {:?}",
+             non-finalised status {:?}",
             lock.out_point,
             lock.status
         );
