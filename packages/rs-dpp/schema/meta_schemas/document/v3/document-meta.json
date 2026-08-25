@@ -616,7 +616,7 @@
               "phase": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Grid alignment phase, in seconds. Range starts are `phase + k * step`; must be strictly less than `step` (a larger value would be a redundant spelling of `phase % step`). A pure alignment offset — it moves where window boundaries fall (e.g. daily windows cut at 06:00 UTC instead of midnight) and never excludes any timestamp. Defaults to 0."
+                "description": "Grid alignment phase, in seconds. Range starts are `phase + k * step`; must be strictly less than `step` (a larger value would be a redundant spelling of `phase % step`) and strictly less than one year (31536000 — a phase further out could sit past current block time on a huge step, leaving valid timestamps before the grid's first bucket). A pure alignment offset — it moves where window boundaries fall (e.g. daily windows cut at 06:00 UTC instead of midnight) and never excludes any real timestamp. Defaults to 0."
               }
             },
             "required": ["on", "range", "step"],

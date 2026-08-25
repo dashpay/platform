@@ -79,10 +79,12 @@ pub struct TimeRangeTransform {
     pub step_seconds: u64,
     /// Grid alignment phase, in seconds. Range starts are the millisecond
     /// timestamps `phase_ms() + k * step_ms()` for `k = 0, 1, 2, …`. A pure
-    /// phase offset: contract validation requires `phase < step`, so shifting
-    /// the grid never excludes any real timestamp — it only moves where the
-    /// window boundaries fall (e.g. daily windows cut at 06:00 UTC instead of
-    /// midnight). Defaults to `0`.
+    /// phase offset: contract validation requires `phase < step` AND
+    /// `phase < MAX_TIME_RANGE_PHASE_SECONDS` (one year), so shifting the
+    /// grid never excludes any real timestamp — the region before the first
+    /// bucket stays inside 1970–1971, unreachable for consensus-validated
+    /// timestamps — it only moves where the window boundaries fall (e.g.
+    /// daily windows cut at 06:00 UTC instead of midnight). Defaults to `0`.
     #[cfg_attr(feature = "serde-conversion", serde(rename = "phase", default))]
     pub phase_seconds: u64,
 }

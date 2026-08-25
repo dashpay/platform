@@ -3596,4 +3596,32 @@ mod time_range_picker_tests {
             .is_none()
         );
     }
+
+    /// Provenance is a `(field, transform)` pair and admissibility must bind
+    /// them together: a fabricated entry carrying the real transform under a
+    /// *different* field would let the shape guard validate the wrong clause
+    /// while a caller-supplied raw equality on the transform's source rode
+    /// into the bucketed index as if it were a resolved bucket start. The
+    /// resolver always produces `field == transform.source`; anything else
+    /// must be inadmissible.
+    #[test]
+    fn provenance_with_a_field_not_matching_its_transform_source_admits_nothing() {
+        let indexes = indexes();
+        let where_clauses = vec![
+            equal(SOURCE, Value::U64(6 * HOUR_MS)),
+            equal("hashtag", Value::Text("ibiza".to_string())),
+        ];
+        let mut mismatched = source_resolution();
+        mismatched[0].field = "hashtag".to_string();
+        assert!(
+            DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+                &mismatched,
+            )
+            .is_none(),
+            "a transform attached to a field other than its source must not \
+             admit the bucketed index (nor, being a resolution, the plain one)"
+        );
+    }
 }

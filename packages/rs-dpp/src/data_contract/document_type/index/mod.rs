@@ -56,6 +56,19 @@ pub const RANKED_AVERAGEABLE: &str = "rankedAverageable";
 /// every range containing its timestamp. See [`TimeRangeTransform`].
 /// Meta-schema v3+ (protocol version 14).
 pub const TIME_RANGE: &str = "timeRange";
+/// Upper bound (exclusive) on `timeRange.phase`, in seconds: one 365-day
+/// year. The phase aligns window boundaries within one step, and combined
+/// with `phase < step` this cap is what makes the uncovered region before
+/// the grid's first bucket (`[0, phase)` on the millisecond timeline)
+/// unreachable: it stays strictly inside 1970–1971, decades before any
+/// Platform block time, so a required system timestamp — which consensus
+/// validates against block time — can never fall outside every window.
+/// Without the cap, a sub-step phase on a huge step could sit years in the
+/// future, silently unindexing valid documents and bypassing unique
+/// time-range constraints until it passed. A structural rule (like
+/// `range % step == 0`), not a versioned limit: it is part of what makes a
+/// transform well-formed at all.
+pub const MAX_TIME_RANGE_PHASE_SECONDS: u64 = 31_536_000;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -1496,6 +1509,28 @@ impl Index {
                     transform.phase_seconds, transform.step_seconds
                 )));
             }
+            // `phase < step` alone is not enough: the region `[0, phase)` is
+            // outside every window (bucket starts are `phase + k*step`,
+            // k >= 0), and with a huge step the phase — while still a valid
+            // sub-step alignment — could land years in the future (e.g.
+            // `step = 2_000_000_000s`, `phase = 1_900_000_000s` ≈ 2030),
+            // leaving every present-day timestamp without index entries and
+            // silently bypassing unique constraints until the phase passes.
+            // Capping the phase at one year keeps the uncovered region
+            // strictly inside 1970–1971 — decades before any Platform block
+            // time, and `$createdAt` & co are consensus-validated against
+            // block time — so no valid document timestamp can ever precede
+            // the first bucket. One year covers every alignment use case
+            // (time-of-day, weekday, month and year boundaries, timezones).
+            if transform.phase_seconds >= MAX_TIME_RANGE_PHASE_SECONDS {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "timeRange.phase ({} seconds) must be less than one year ({} seconds): \
+                     the phase aligns window boundaries, and a larger value would leave \
+                     valid document timestamps before the grid's first bucket, outside \
+                     every window",
+                    transform.phase_seconds, MAX_TIME_RANGE_PHASE_SECONDS
+                )));
+            }
             if transform.range_seconds == 0 {
                 return Err(DataContractError::InvalidContractStructure(
                     "timeRange.range must be greater than zero".to_string(),
@@ -1736,6 +1771,56 @@ mod tests {
         ));
 
         let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "phase", 10_000);
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            DataContractError::InvalidContractStructure(_)
+        ));
+    }
+
+    /// `phase < step` alone is not enough: on a huge step a sub-step phase
+    /// can sit years in the *future*, leaving every present-day timestamp
+    /// before the grid's first bucket — unindexed, and free to bypass a
+    /// unique constraint. The one-year cap closes that: the uncovered
+    /// region stays inside 1970–1971, unreachable for consensus-validated
+    /// timestamps.
+    #[test]
+    fn time_range_phase_is_capped_at_one_year_even_when_the_step_allows_more() {
+        // The reported exploit shape: overlap factor 1, everything scalable,
+        // phase < step — but the phase anchor lands around 2030, so a unique
+        // index would silently skip every document until then.
+        let map = index_value_map_with_extra_time_range_key(
+            2_000_000_000,
+            2_000_000_000,
+            "phase",
+            1_900_000_000,
+        );
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            DataContractError::InvalidContractStructure(_)
+        ));
+
+        // Just under the cap on the same huge step parses fine.
+        let map = index_value_map_with_extra_time_range_key(
+            2_000_000_000,
+            2_000_000_000,
+            "phase",
+            MAX_TIME_RANGE_PHASE_SECONDS - 1,
+        );
+        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        assert_eq!(
+            index.time_range.expect("transform set").phase_seconds,
+            MAX_TIME_RANGE_PHASE_SECONDS - 1
+        );
+
+        // Exactly the cap is rejected (exclusive bound).
+        let map = index_value_map_with_extra_time_range_key(
+            2_000_000_000,
+            2_000_000_000,
+            "phase",
+            MAX_TIME_RANGE_PHASE_SECONDS,
+        );
         let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
         assert!(matches!(
             err,

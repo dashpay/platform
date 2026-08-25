@@ -790,10 +790,19 @@ pub fn index_admissible_for_resolved_time_range(
 ) -> bool {
     match resolved_time_ranges {
         [] => index.time_range.is_none(),
-        [resolved] => index
-            .time_range
-            .as_ref()
-            .is_some_and(|transform| *transform == resolved.transform),
+        // Both halves of the provenance must agree with the candidate: the
+        // transform (which grid the bucket start was computed from) AND the
+        // field (which clause the shape guard validated). The two are
+        // independently settable by a direct Rust caller, and a mismatched
+        // pair — a real transform attached to some other field — would let
+        // the shape guard validate the wrong clause while a caller-supplied
+        // raw equality on the transform's source rode into the bucketed
+        // index as if it were a resolved bucket start. The resolver always
+        // produces `field == transform.source`; this makes fabricated
+        // provenance that doesn't inadmissible everywhere.
+        [resolved] => index.time_range.as_ref().is_some_and(|transform| {
+            transform.source == resolved.field && *transform == resolved.transform
+        }),
         _ => false,
     }
 }

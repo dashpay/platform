@@ -136,7 +136,7 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
 ///
 /// Shared by the insert and delete v2 walkers (same must-not-drift contract
 /// as the tree-type derivation above); the entry-key rule itself — null keeps
-/// its single null entry, pre-origin timestamps produce no entries,
+/// its single null entry, epoch-sliver timestamps produce no entries,
 /// undecodable values keep their raw key — lives in
 /// [`TimeRangeTransform::entry_keys_for_raw`], which the update walker also
 /// calls.
@@ -458,5 +458,67 @@ mod tests {
             None,
         )
         .expect("the continuation must be insertable under the demoted value tree");
+    }
+    /// The estimated-cost (`KeySize`) branch of [`time_range_index_keys`] is
+    /// consensus-sensitive fee math: it must emit exactly the bounded
+    /// overlap count, keep every synthetic key's `max_size` untouched, and
+    /// make each `unique_id` distinct — grovedb's batch structure collapses
+    /// identical `(path, key)` operations, so `overlap` copies of one key
+    /// would silently estimate a single bucket's cost.
+    #[test]
+    fn estimated_time_range_fan_out_emits_distinct_worst_case_keys() {
+        use super::time_range_index_keys;
+        use crate::util::object_size_info::DriveKeyInfo;
+        use dpp::data_contract::document_type::TimeRangeTransform;
+        use grovedb::batch::key_info::KeyInfo;
+
+        // 6h window sliding every 2h — overlap factor 3.
+        let transform = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 21_600,
+            step_seconds: 7_200,
+            phase_seconds: 0,
+        };
+        let key = DriveKeyInfo::KeySize(KeyInfo::MaxKeySize {
+            unique_id: vec![7u8; 4],
+            max_size: 8,
+        });
+
+        let keys = time_range_index_keys(Some(&transform), key.clone(), 24);
+        assert_eq!(keys.len(), 3, "one worst-case key per overlapping bucket");
+        let mut unique_ids = Vec::new();
+        for entry in &keys {
+            let DriveKeyInfo::KeySize(KeyInfo::MaxKeySize {
+                unique_id,
+                max_size,
+            }) = entry
+            else {
+                panic!("the KeySize branch must stay on the estimation path");
+            };
+            assert_eq!(
+                *max_size, 8,
+                "the ordinal suffix disambiguates unique_id only; the estimated \
+                 key size must be the timestamp key's"
+            );
+            unique_ids.push(unique_id.clone());
+        }
+        let distinct: std::collections::BTreeSet<_> = unique_ids.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            3,
+            "identical unique_ids would collapse in the batch and under-estimate"
+        );
+
+        // An unvalidated transform above the version's cap is clamped: the
+        // estimation work stays bounded by what the protocol version allows.
+        let oversized = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 100 * 3_600,
+            step_seconds: 3_600,
+            phase_seconds: 0,
+        };
+        assert_eq!(oversized.overlap_factor(), 100);
+        let keys = time_range_index_keys(Some(&oversized), key, 24);
+        assert_eq!(keys.len(), 24, "fan-out must clamp to the versioned cap");
     }
 }
