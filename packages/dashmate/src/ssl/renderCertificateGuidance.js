@@ -182,9 +182,11 @@ function renderNoExternalIpGuidance(cfg) {
  *
  * A refusal repeats, and an issuance that was spent but never landed is spent
  * whether or not it arrived - so both endings have to withhold the command
- * rather than merely explain around it.
+ * rather than merely explain around it. So does a cause that established
+ * nothing: there is no repair to prescribe, and the request is a guess with a
+ * price.
  */
-const WITHHOLDS_OBTAIN = [REMEDY_CLASS.DO_NOT_RETRY];
+const WITHHOLDS_OBTAIN = [REMEDY_CLASS.DO_NOT_RETRY, REMEDY_CLASS.SUPPORT];
 
 /**
  * What to say when the recorded cause forbids the usual repair.
@@ -193,10 +195,26 @@ const WITHHOLDS_OBTAIN = [REMEDY_CLASS.DO_NOT_RETRY];
  * @param {Object} renewal
  * @return {string}
  */
+function renderUnreadableRecord(cfg) {
+  return `  dashmate could not read what it recorded about the last renewal, so it cannot
+  tell whether a certificate is already outstanding. Obtaining one now could
+  spend a second certificate against this node's weekly limit.
+
+      dashmate doctor report ${cfg}
+`;
+}
+
+/**
+ * @param {string} cfg
+ * @param {Object} renewal
+ * @return {string}
+ */
 function renderWithheldObtain(cfg, renewal) {
   // Whatever the current cause is. The issuance outlives the failure that
   // spent it, and it is spent whether or not this failure is repairable.
-  if (renewal.isIssuanceSpent || renewal.code === RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED) {
+  if (renewal.isIssuanceOutstanding
+    || renewal.isIssuanceSpent
+    || renewal.code === RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED) {
     return `  A certificate was issued and could not be saved, so it is already spent
   against this node's limit and asking again spends another. Check free space
   and permissions where dashmate saves certificates first:
@@ -258,6 +276,8 @@ function renderFix(cfg, isAlreadyLetsEncrypt, verdict) {
  * @param {{ok: boolean, failed: number, total: number}|null} options.pull
  * @param {Object|null} [options.renewal] - the recorded renewal failure, when
  *   one applies to the certificate this node is using
+ * @param {boolean} [options.isRenewalUnreadable] - a record exists and could
+ *   not be read, so nothing about issuance can be established either way
  * @return {string}
  */
 export default function renderCertificateGuidance({
@@ -267,6 +287,7 @@ export default function renderCertificateGuidance({
   pull,
   obtainAttemptFailed = false,
   renewal = null,
+  isRenewalUnreadable = false,
 }) {
   const cfg = renderConfigFlag(config.getName());
   const provider = config.get('platform.gateway.ssl.provider');
@@ -322,8 +343,11 @@ ${obtainAttemptFailed
 
     if (hasReason(verdict, CERTIFICATE_REASONS.NO_EXTERNAL_IP)) {
       blocks.push(renderNoExternalIpGuidance(cfg));
+    } else if (isRenewalUnreadable) {
+      blocks.push(renderUnreadableRecord(cfg));
     } else if (renewal
-      && (renewal.isIssuanceSpent
+      && (renewal.isIssuanceOutstanding
+        || renewal.isIssuanceSpent
         || WITHHOLDS_OBTAIN.includes(describeRenewalFailure(renewal.code).remedy))) {
       // The recorded cause says asking again cannot work, so this surface must
       // not prescribe it either. The doctor withholds the same command for the

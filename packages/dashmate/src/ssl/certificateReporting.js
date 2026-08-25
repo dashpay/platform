@@ -77,18 +77,30 @@ export async function reportUnresolved({
   // rendered here: nothing on this path masks the operator's identity the way
   // a collected report does.
   const { state, record } = renewalRecordRepository.read(config.getName());
+  const isManaged = config.get('platform.gateway.ssl.enabled') === true;
+
+  // A record that exists and cannot be read is not the same as no record. It
+  // may be the one that says an issuance is already outstanding, so restoring
+  // the ordinary obtain advice here would spend a certificate on the strength
+  // of evidence nobody could inspect.
+  const isRenewalUnreadable = isManaged && state === RENEWAL_RECORD_STATES.UNREADABLE;
+
   const renewal = state === RENEWAL_RECORD_STATES.PRESENT
-    && config.get('platform.gateway.ssl.enabled') === true
+    && isManaged
     && record.isFailed()
     && record.appliesTo({
       provider: config.get('platform.gateway.ssl.provider'),
       certificateValidFrom: verdict.installed ? verdict.installed.validFrom : null,
     })
-    // The spent issuance travels with the cause. Without it this surface
+    // Both issuance markers travel with the cause. Without them this surface
     // prints the obtain command for a repairable cause while the doctor
-    // withholds it for the same node - and that certificate is spent whether
-    // or not the current failure is repairable.
-    ? { code: record.getCode(), isIssuanceSpent: record.isIssuanceSpent() }
+    // withholds it for the same node - and that certificate is spent, or may
+    // be, whether or not the current failure is repairable.
+    ? {
+      code: record.getCode(),
+      isIssuanceSpent: record.isIssuanceSpent(),
+      isIssuanceOutstanding: record.isIssuanceOutstanding(),
+    }
     : null;
 
   process.stderr.write(renderCertificateGuidance({
@@ -98,5 +110,6 @@ export async function reportUnresolved({
     pull,
     obtainAttemptFailed,
     renewal,
+    isRenewalUnreadable,
   }));
 }

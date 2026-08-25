@@ -277,7 +277,7 @@ and on your router if this node is behind one.${isShortLived
  * @return {string|null} null when there is nothing for the operator to do
  */
 function renderRemedy({
-  code, remedy, cfg, force, isIssuanceSpent, isCertificateUsable,
+  code, remedy, cfg, force, isIssuanceSpent, isIssuanceUncertain, isCertificateUsable,
 }) {
   const obtain = chalk`{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}`;
 
@@ -295,6 +295,14 @@ ${obtain}`;
     // A different cause now, but that earlier certificate is still spent, so
     // the repair for this cause must not end in another request.
     return null;
+  }
+
+  // The helper's result was never read, so a certificate may already have been
+  // issued. Asking again while that is unknown can spend a second one.
+  if (isIssuanceUncertain) {
+    return chalk`Do not obtain one yet - an earlier attempt may already have been issued a
+certificate without dashmate seeing it. Check whether one arrived:
+{bold.cyanBright dashmate doctor ${cfg}}`;
   }
 
   if (remedy === REMEDY_CLASS.DO_NOT_RETRY) {
@@ -317,8 +325,10 @@ ${obtain}`;
   }
 
   // Nothing actionable was established, so asking the authority again is a
-  // guess with a cost. Send the evidence somewhere it can be read instead.
-  if (remedy === REMEDY_CLASS.SUPPORT && isCertificateUsable) {
+  // guess with a cost - and that is as true of a node whose certificate is
+  // already broken as of one still serving. Send the evidence somewhere it can
+  // be read instead.
+  if (remedy === REMEDY_CLASS.SUPPORT) {
     return chalk`Send a report to Dash support:
 {bold.cyanBright dashmate doctor report ${cfg}}`;
   }
@@ -427,6 +437,7 @@ export default function analyseGatewayCertificateFactory() {
       // issuance. Carried forward from an earlier attempt it still forbids
       // asking again, but it does not get to describe a different failure.
       const isIssuanceSpent = failedRenewal.isIssuanceSpent();
+      const isIssuanceUncertain = failedRenewal.isIssuanceUncertain();
       // Led with the cause only where the description above is about the
       // certificate rather than the renewal. An operator reads until they find
       // something to run and stops, so a repair printed above the reason it is
@@ -444,6 +455,7 @@ export default function analyseGatewayCertificateFactory() {
         cfg,
         force: installedForce,
         isIssuanceSpent,
+        isIssuanceUncertain,
         isCertificateUsable,
       });
 
@@ -490,10 +502,20 @@ Set this node's public address, then obtain a certificate:
 Obtain a new certificate. No restart needed:
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`;
 
+        // Nothing can be issued for an address dashmate does not have, and the
+        // obtain command refuses to start without one - so this prerequisite
+        // survives whatever the renewal record says. Replacing the whole remedy
+        // with the renewal cause dropped it, leaving guidance that cannot run.
+        const prerequisite = code === CERTIFICATE_REASONS.NO_EXTERNAL_IP
+          ? chalk`Set this node's public address first - nothing can be issued without one:
+{bold.cyanBright dashmate config set ${cfg} externalIp <your-public-ip>}`
+          : null;
+
         problems.push(new Problem(
           message,
           failedRenewal
-            ? `${UPDATE_CONSEQUENCE}\n\n${renderRenewalCause(false)}`
+            ? [UPDATE_CONSEQUENCE, prerequisite, renderRenewalCause(false)]
+              .filter(Boolean).join('\n\n')
             : remedy,
           SEVERITY.HIGH,
         ));

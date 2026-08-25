@@ -20,6 +20,12 @@ export default class RenewalRecord {
    */
   static FORMAT_VERSION = 1;
 
+  /**
+   * Leaves room for anything a reader derives from a stored instant while
+   * staying well inside what a Date can represent and format.
+   */
+  static #MAX_SAFE_INSTANT_MS = 8.64e15 - 86400000;
+
   static OUTCOMES = {
     SUCCEEDED: 'succeeded',
     FAILED: 'failed',
@@ -41,6 +47,8 @@ export default class RenewalRecord {
 
   #issuanceSpentAt;
 
+  #issuanceUncertainAt;
+
   #gatewayReloadFailedAt;
 
   /**
@@ -55,6 +63,7 @@ export default class RenewalRecord {
     this.#lastSuccessAt = properties.lastSuccessAt;
     this.#consecutiveFailures = properties.consecutiveFailures;
     this.#issuanceSpentAt = properties.issuanceSpentAt;
+    this.#issuanceUncertainAt = properties.issuanceUncertainAt;
     this.#gatewayReloadFailedAt = properties.gatewayReloadFailedAt;
   }
 
@@ -69,7 +78,16 @@ export default class RenewalRecord {
 
     const parsed = new Date(value);
 
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+
+    // A date near the edge of the representable range is valid on its own and
+    // still unusable: readers derive instants from it - the next attempt is
+    // this plus an hour - and formatting the result throws, which would take
+    // the whole diagnosis down rather than one field. An archive can carry
+    // such a value, so it is rejected where it enters.
+    return Math.abs(parsed.getTime()) > RenewalRecord.#MAX_SAFE_INSTANT_MS ? null : parsed;
   }
 
   /**
@@ -116,6 +134,7 @@ export default class RenewalRecord {
         ? raw.consecutiveFailures
         : 0,
       issuanceSpentAt: RenewalRecord.#readDate(raw.issuanceSpentAt),
+      issuanceUncertainAt: RenewalRecord.#readDate(raw.issuanceUncertainAt),
       gatewayReloadFailedAt: RenewalRecord.#readDate(raw.gatewayReloadFailedAt),
     });
   }
@@ -134,6 +153,9 @@ export default class RenewalRecord {
       lastSuccessAt: this.#lastSuccessAt ? this.#lastSuccessAt.toISOString() : null,
       consecutiveFailures: this.#consecutiveFailures,
       issuanceSpentAt: this.#issuanceSpentAt ? this.#issuanceSpentAt.toISOString() : null,
+      issuanceUncertainAt: this.#issuanceUncertainAt
+        ? this.#issuanceUncertainAt.toISOString()
+        : null,
       gatewayReloadFailedAt: this.#gatewayReloadFailedAt
         ? this.#gatewayReloadFailedAt.toISOString()
         : null,
@@ -200,6 +222,31 @@ export default class RenewalRecord {
    */
   isIssuanceSpent() {
     return this.#issuanceSpentAt !== null;
+  }
+
+  /**
+   * Whether a certificate may have been issued without dashmate seeing it.
+   *
+   * The certificate helper ran and its result was never read, so a request may
+   * have reached the authority and counted against this node's allowance. Like
+   * a confirmed spend this outlives the failure that produced it, because the
+   * next attempt an hour later records an ordinary cause whose advice is to
+   * ask again - and asking again is the one thing that must not happen while
+   * it is unknown whether the last request succeeded.
+   *
+   * @return {boolean}
+   */
+  isIssuanceUncertain() {
+    return this.#issuanceUncertainAt !== null;
+  }
+
+  /**
+   * Whether asking the authority again may cost something already spent.
+   *
+   * @return {boolean}
+   */
+  isIssuanceOutstanding() {
+    return this.isIssuanceSpent() || this.isIssuanceUncertain();
   }
 
   /**

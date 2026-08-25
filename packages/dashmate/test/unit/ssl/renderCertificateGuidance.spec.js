@@ -587,6 +587,32 @@ describe('renderCertificateGuidance', () => {
       expect(output).to.contain('already spent');
     });
 
+    it('should withhold the obtain command when the record could not be read at all', () => {
+      // It may be the record that says an issuance is already outstanding.
+      // Restoring the ordinary advice spends a certificate on the strength of
+      // evidence nobody could inspect.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        isRenewalUnreadable: true,
+      });
+
+      expect(output).to.not.contain('ssl obtain');
+      expect(output).to.contain('could not read');
+    });
+
+    it('should withhold the obtain command for a cause that established nothing', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: { code: 'UNKNOWN' },
+      });
+
+      expect(output).to.not.contain('ssl obtain');
+    });
+
     it('should keep the existing text when nothing was recorded', () => {
       config.set('platform.gateway.ssl.provider', 'letsencrypt');
 

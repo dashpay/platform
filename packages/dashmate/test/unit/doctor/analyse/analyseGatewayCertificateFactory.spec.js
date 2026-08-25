@@ -755,6 +755,7 @@ describe('analyseGatewayCertificateFactory', () => {
         lastSuccessAt: new Date(Date.now() - 5 * DAY_MS).toISOString(),
         consecutiveFailures: 37,
         issuanceSpentAt: null,
+        issuanceUncertainAt: null,
         gatewayReloadFailedAt: null,
         ...overrides,
       });
@@ -1170,6 +1171,53 @@ describe('analyseGatewayCertificateFactory', () => {
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
 
       expect(renewal.getSolution()).to.contain('https://docs.dash.org/evonode-cert-port80');
+    });
+
+    it('should keep the address prerequisite when a renewal failure is also recorded', () => {
+      // The obtain command refuses to start without an address, so guidance
+      // that drops this cannot run at all - and the renewal cause was
+      // replacing the whole remedy, prerequisite included.
+      installedValid({
+        status: 'INVALID',
+        reasons: [{
+          code: 'NO_EXTERNAL_IP',
+          message: "This node's public address is not set",
+        }],
+      });
+      renewalFailed();
+
+      const [problem] = analyseGatewayCertificate(samples)
+        .filter((p) => p.getDescription().includes('public address'));
+
+      expect(problem.getSolution()).to.contain('externalIp');
+    });
+
+    it('should not ask the authority again for a cause that established nothing, even when the certificate is broken', () => {
+      installedValid({
+        status: 'INVALID',
+        validTo: validTo(-1),
+        reasons: [{ code: 'EXPIRED', message: 'The installed certificate expired on 2026-08-20' }],
+      });
+      renewalFailed({ code: 'PROVIDER_REJECTED', detail: 'acme: error 500' });
+
+      const [expired] = analyseGatewayCertificate(samples)
+        .filter((p) => p.getDescription().includes('expired'));
+
+      expect(expired.getSolution()).to.not.contain('ssl obtain');
+      expect(expired.getSolution()).to.contain('doctor report');
+    });
+
+    it('should withhold another certificate while an earlier result was never read', () => {
+      installedValid();
+      renewalFailed({
+        code: 'PORT_80_UNREACHABLE',
+        issuanceUncertainAt: new Date(Date.now() - DAY_MS).toISOString(),
+      });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('may already have been issued');
+      expect(renewal.getSolution()).to.not.contain('ssl obtain');
     });
 
     it('should say nothing about renewal for a provider dashmate does not renew', () => {

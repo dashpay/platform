@@ -13,6 +13,7 @@ import RenewalRecordRepository, {
 } from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 import { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewal-failure.js';
 import LegoArtifactsMissingError from '../../../src/ssl/errors/LegoArtifactsMissingError.js';
+import LegoResultNotObservedError from '../../../src/ssl/errors/LegoResultNotObservedError.js';
 
 const CONFIG_NAME = 'mainnet';
 const PROVIDER = 'letsencrypt';
@@ -117,6 +118,48 @@ describe('recordRenewalOutcome', () => {
     expect(record.isIssuanceSpent()).to.equal(false);
     expect(record.getConsecutiveFailures()).to.equal(1);
     expect(record.getLastSuccessAt()).to.equal(null);
+  });
+
+  it('should keep the no-retry guard when an unread result is replaced by a later failure', () => {
+    // The helper ran and nobody read how it finished, so a certificate may
+    // already have been issued. An hour later an ordinary cause replaces it,
+    // and its ordinary advice is to ask for another one.
+    fail(new Error('guidance', { cause: new LegoResultNotObservedError(new Error('gone')) }));
+
+    expect(read().record.isIssuanceUncertain()).to.equal(true);
+
+    fail(new Error('urn:ietf:params:acme:error:connection :: timeout'));
+
+    const { record } = read();
+
+    expect(record.getCode()).to.equal(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
+    expect(record.isIssuanceUncertain()).to.equal(true);
+    expect(record.isIssuanceOutstanding()).to.equal(true);
+  });
+
+  it('should clear an uncertain issuance once a certificate actually arrives', () => {
+    fail(new Error('guidance', { cause: new LegoResultNotObservedError(new Error('gone')) }));
+
+    recordRenewalSuccess({ renewalRecordRepository, configName: CONFIG_NAME, provider: PROVIDER });
+
+    expect(read().record.isIssuanceUncertain()).to.equal(false);
+  });
+
+  it('should refuse a date whose derived retry instant cannot be represented', () => {
+    // Valid on its own and unusable: readers derive the next attempt from it,
+    // and formatting that result throws - which would take the whole diagnosis
+    // down rather than one field. An archive can carry such a value.
+    const recordPath = renewalRecordRepository.getPath(CONFIG_NAME);
+    fs.mkdirSync(path.dirname(recordPath), { recursive: true });
+    fs.writeFileSync(recordPath, JSON.stringify({
+      provider: PROVIDER,
+      outcome: 'failed',
+      code: 'UNKNOWN',
+      attemptedAt: '+275760-09-13T00:00:00.000Z',
+      consecutiveFailures: 1,
+    }));
+
+    expect(read().state).to.not.equal(RENEWAL_RECORD_STATES.PRESENT);
   });
 
   it('should clear a spent issuance once a certificate actually arrives', () => {

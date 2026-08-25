@@ -62,6 +62,7 @@ export function recordRenewalSuccess({ renewalRecordRepository, configName, prov
       // A certificate arrived, so whatever was owed from an earlier attempt is
       // settled and the warning against asking for another one is lifted.
       issuanceSpentAt: null,
+      issuanceUncertainAt: null,
       gatewayReloadFailedAt: null,
     }));
   }, configName);
@@ -95,16 +96,23 @@ export function recordRenewalFailure({
       ? { code, detail: null }
       : classifyRenewalFailure(error, { homeDirPath: homeDir.getPath(), apiKey });
 
-    const spentBefore = previous?.isIssuanceSpent() ? previous.toObject().issuanceSpentAt : null;
+    const asObject = previous?.toObject();
 
+    // Both markers are carried until a certificate actually arrives. Either one
+    // stays true through every later failure, because the next attempt an hour
+    // from now records an ordinary cause whose advice is to ask for another
+    // certificate - and that is the one thing that must not happen while an
+    // issuance is spent, or may have been.
     const issuanceSpentAt = classified.code === RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED
       ? new Date().toISOString()
-      // Carried until a certificate actually arrives. An issuance that was
-      // spent and never landed stays true through every later failure, and the
-      // next attempt an hour from now records a different cause whose ordinary
-      // advice is to ask for another certificate - which is the one thing that
-      // must not happen while this is set.
-      : spentBefore;
+      : asObject?.issuanceSpentAt ?? null;
+
+    // The helper ran and nobody read how it finished, so a request may have
+    // reached the authority. Unlike the case above this is not a certainty,
+    // and it withholds the same advice for a different reason.
+    const issuanceUncertainAt = classified.code === RENEWAL_FAILURE_CODES.RESULT_UNKNOWN
+      ? new Date().toISOString()
+      : asObject?.issuanceUncertainAt ?? null;
 
     renewalRecordRepository.write(configName, RenewalRecord.fromObject({
       provider,
@@ -115,6 +123,7 @@ export function recordRenewalFailure({
       lastSuccessAt: previous?.getLastSuccessAt()?.toISOString() ?? null,
       consecutiveFailures: (previous?.getConsecutiveFailures() ?? 0) + 1,
       issuanceSpentAt,
+      issuanceUncertainAt,
       gatewayReloadFailedAt: null,
     }));
   }, configName);

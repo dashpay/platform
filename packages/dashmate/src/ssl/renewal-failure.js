@@ -15,6 +15,7 @@ export const RENEWAL_FAILURE_CODES = {
   PORT_80_UNREACHABLE: 'PORT_80_UNREACHABLE',
   PORT_80_WRONG_RESPONDER: 'PORT_80_WRONG_RESPONDER',
   PORT_80_IN_USE: 'PORT_80_IN_USE',
+  PORT_80_CHECK_FAILED: 'PORT_80_CHECK_FAILED',
   RATE_LIMITED: 'RATE_LIMITED',
   PROVIDER_REJECTED: 'PROVIDER_REJECTED',
   HELPER_DID_NOT_START: 'HELPER_DID_NOT_START',
@@ -72,6 +73,10 @@ const DESCRIPTIONS = {
   [RENEWAL_FAILURE_CODES.PORT_80_IN_USE]: {
     sentence: 'something on this machine is already using port 80, so the certificate check could'
       + ' not start',
+    remedy: REMEDY_CLASS.FIX_LOCALLY,
+  },
+  [RENEWAL_FAILURE_CODES.PORT_80_CHECK_FAILED]: {
+    sentence: "dashmate's own check could not confirm this node answers on port 80",
     remedy: REMEDY_CLASS.FIX_LOCALLY,
   },
   [RENEWAL_FAILURE_CODES.RATE_LIMITED]: {
@@ -202,9 +207,13 @@ const LOCK_PATTERN = /Lost the configuration lock|Timed out waiting for configur
  * `dashmate doctor --samples` renders an archive that arrived from someone
  * else - so escape sequences in it would be interpreted by the terminal of
  * whoever is helping, and could rewrite what they see.
+ *
+ * C1 as well as C0: a terminal in 8-bit mode reads U+009B as a control
+ * sequence introducer on its own, without the escape that precedes it in the
+ * 7-bit form.
  */
 // eslint-disable-next-line no-control-regex -- matching them is the point
-const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/g;
+const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/g;
 
 /**
  * @param {*} value
@@ -357,13 +366,14 @@ function classifyCode(error, message) {
   }
 
   // The verification server had already bound port 80 on this machine by the
-  // time this was raised - the check that failed fetches the node's PUBLIC
-  // validation URL. So nothing answered from outside, which is a firewall, a
-  // forward or an upstream responder, and never a local process holding the
-  // port. Sending an operator to `ss` here looks for a listener that is not
-  // there and leaves the real cause unexamined.
+  // time this was raised, and the check that failed fetches the node's PUBLIC
+  // validation URL - so a local process holding the port is ruled out. What is
+  // not ruled out is which of the two remaining readings applies: the check
+  // gives the same answer when nothing replied and when something replied with
+  // the wrong status, so a proxy or a router page looks exactly like a closed
+  // port. Claiming either one would assert more than was observed.
   if (message.includes('Verification server is not responding')) {
-    return RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE;
+    return RENEWAL_FAILURE_CODES.PORT_80_CHECK_FAILED;
   }
 
   if (message.includes('Invalid ZeroSSL API response')

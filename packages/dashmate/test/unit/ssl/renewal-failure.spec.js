@@ -136,15 +136,16 @@ describe('renewalFailure', () => {
           .to.equal(RENEWAL_FAILURE_CODES.PROVIDER_AUTH);
       });
 
-      it('should treat a verification server that never answered as unreachable, not occupied', () => {
-        // The server had already bound port 80 successfully by then - the check
-        // that failed fetches the node's public validation URL. Nothing local
-        // holds the port, so sending an operator to `ss` looks for a listener
-        // that is not there and leaves the firewall unexamined.
+      it('should not claim which reading applies when its own check cannot tell', () => {
+        // The server had already bound port 80 by then, so a local process
+        // holding it is ruled out - but the check answers the same way when
+        // nothing replied and when something replied with the wrong status, so
+        // a proxy looks exactly like a closed port. Asserting either would
+        // claim more than was observed.
         const error = new Error('Verification server is not responding.\nPlease ensure that port 80');
 
         expect(classifyRenewalFailure(error).code)
-          .to.equal(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
+          .to.equal(RENEWAL_FAILURE_CODES.PORT_80_CHECK_FAILED);
       });
     });
 
@@ -267,6 +268,16 @@ describe('renewalFailure', () => {
     });
 
     describe('sanitizeDetail', () => {
+      it('should remove 8-bit control codes, which a terminal reads without an escape', () => {
+        // U+009B is a control sequence introducer in its own right on a
+        // terminal in 8-bit mode, so stripping only the 7-bit forms leaves the
+        // channel open.
+        const sanitized = sanitizeDetail(`before\u009B2Jafter\u0085`);
+
+        expect(sanitized).to.not.contain('\u009B');
+        expect(sanitized).to.not.contain('\u0085');
+      });
+
       it('should remove terminal control sequences, which a report can carry from a stranger', () => {
         // `doctor --samples` renders an archive that arrived from someone else
         // into the terminal of whoever is helping. An escape left intact there
