@@ -1490,7 +1490,7 @@ mod tests {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
         use crate::wallet::persister::NoPlatformPersistence;
         use crate::PlatformWalletError;
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::signer::{Signer, SignerMethod};
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::Network;
@@ -1562,7 +1562,7 @@ mod tests {
                 handler,
             ));
             let mnemonic =
-                Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+                Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
             let seed = mnemonic.to_seed("");
             let wallet = manager
                 .create_wallet_from_seed_bytes(

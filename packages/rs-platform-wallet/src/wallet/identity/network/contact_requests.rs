@@ -4603,7 +4603,7 @@ mod contact_info_provider_tests {
     use crate::wallet::identity::crypto::contact_info::derive_contact_info_keys;
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use key_wallet::bip32::KeyDerivationType;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::Network;
 
     // Canonical BIP-39 test mnemonic.
@@ -4619,7 +4619,7 @@ mod contact_info_provider_tests {
     /// open round-trips.
     #[tokio::test]
     async fn contact_info_seal_open_matches_resident_derivation_at_real_auth_path() {
-        let seed = Mnemonic::from_phrase(PHRASE, Language::English)
+        let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
             .to_seed("");
         let network = Network::Testnet;
@@ -4702,7 +4702,7 @@ mod contact_info_provider_tests {
     async fn ecdh_shared_secret_returns_zeroizing_matching_resident_derivation() {
         use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 
-        let seed = Mnemonic::from_phrase(PHRASE, Language::English)
+        let seed = Mnemonic::from_phrase(PHRASE)
             .expect("valid mnemonic")
             .to_seed("");
         let network = Network::Testnet;
@@ -4804,7 +4804,7 @@ mod stamp_race_tests {
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::Identity;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
     use std::collections::BTreeMap;
@@ -4841,7 +4841,7 @@ mod stamp_race_tests {
             handler,
         ));
         let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+            Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet = manager
             .create_wallet_from_seed_bytes(

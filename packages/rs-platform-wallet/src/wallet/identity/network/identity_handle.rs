@@ -479,7 +479,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 mod tests {
     use super::*;
     use dpp::util::hash::ripemd160_sha256;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
@@ -497,7 +497,7 @@ mod tests {
     /// touches — the identity-auth derivation walks the master xpriv,
     /// not the per-account collection, so no accounts are needed.
     fn mnemonic_wallet(network: Network) -> Wallet {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid English test mnemonic");
         Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::None)
             .expect("from_mnemonic should build a Mnemonic wallet")
@@ -508,7 +508,7 @@ mod tests {
     /// (`RootExtendedPrivKey::new_master(seed).to_extended_priv_key(network)`
     /// is byte-for-byte `ExtendedPrivKey::new_master(network, seed)`).
     fn master_for(network: Network) -> ExtendedPrivKey {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid English test mnemonic");
         let seed = mnemonic.to_seed("");
         ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")

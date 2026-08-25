@@ -625,7 +625,7 @@ mod tests {
     use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::Identifier;
     use key_wallet::bip32::ExtendedPrivKey;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::Network;
     use std::collections::BTreeMap;
 
@@ -633,7 +633,7 @@ mod tests {
          abandon abandon abandon abandon abandon about";
 
     fn test_master() -> ExtendedPrivKey {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("mnemonic");
         let seed = mnemonic.to_seed("");
         ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xpriv")
     }

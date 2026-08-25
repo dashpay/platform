@@ -1210,7 +1210,7 @@ fn tx_record_snapshot(rec: &TransactionRecord) -> AccountTransactionSnapshot {
 mod spv_rescan_tests {
     use std::sync::Arc;
 
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
@@ -1258,7 +1258,7 @@ mod spv_rescan_tests {
             event_handler,
         ));
         let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+            Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 Network::Testnet,
