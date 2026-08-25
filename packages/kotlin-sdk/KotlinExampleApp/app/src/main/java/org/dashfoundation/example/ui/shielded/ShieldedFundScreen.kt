@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import org.dashfoundation.dashsdk.funding.ShieldedProver
@@ -87,7 +89,23 @@ fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
         // computed at the seed version (← iOS SendTransactionView
         // re-resolves on `platformState.platformProtocolVersion`).
         val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
-        val feeEstimate by produceState<Long?>(initialValue = null, manager, protocolVersion) {
+        // ...and re-read on every resume, because the flow alone can go
+        // stale: that refresh republishes the unchanged seed when its
+        // proven fetch fails, and the SDK independently ratchets its
+        // version from ANY proof-verified query's response metadata
+        // without publishing at all. The estimate is a pure handle
+        // lookup, so re-reading is free.
+        var feeReadEpoch by remember { mutableIntStateOf(0) }
+        LifecycleResumeEffect(Unit) {
+            feeReadEpoch++
+            onPauseOrDispose {}
+        }
+        val feeEstimate by produceState<Long?>(
+            initialValue = null,
+            manager,
+            protocolVersion,
+            feeReadEpoch,
+        ) {
             value = manager?.let { m ->
                 runCatching {
                     m.estimateShieldedFee(ShieldedProver.FeeKind.TransferOrShield, 2)

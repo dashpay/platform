@@ -246,6 +246,15 @@ struct SendTransactionView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Send") {
+                        // The estimator reads the SDK's live platform
+                        // version on every call, and the SDK can ratchet
+                        // that version from ANY proof-verified query's
+                        // response metadata without `AppState` publishing
+                        // again — so a read taken here, immediately
+                        // before `executeSend`, is the only one
+                        // guaranteed to agree with the version the
+                        // shielded builders carve their fee at.
+                        resolveShieldedFees()
                         Task {
                             guard let sdk = platformState.sdk else { return }
                             // Look up the managed wallet by the
@@ -537,11 +546,14 @@ struct SendTransactionView: View {
     /// simply absent — `estimateFee(for:)` falls back to the static
     /// placeholder.
     ///
-    /// Runs on appear AND whenever `platformState.platformProtocolVersion`
-    /// publishes: the version refresh is async, so estimates resolved
-    /// before the ratchet completed were computed at the seed version and
-    /// must be replaced (the recompute is a pure handle lookup — no
-    /// caching guard needed).
+    /// Runs on appear, whenever `platformState.platformProtocolVersion`
+    /// publishes, and once more from the Send action: the startup refresh
+    /// is async AND can fail (it then republishes the unchanged seed),
+    /// while the SDK independently ratchets its version from any
+    /// proof-verified query's response metadata without publishing at
+    /// all. Only a read taken at submit time is guaranteed to match the
+    /// version the builders carve with (the recompute is a pure handle
+    /// lookup — no caching guard needed).
     private func resolveShieldedFees() {
         var fees: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
         for kind: PlatformWalletManager.ShieldedFeeKind in [.transfer, .unshield, .withdrawal] {

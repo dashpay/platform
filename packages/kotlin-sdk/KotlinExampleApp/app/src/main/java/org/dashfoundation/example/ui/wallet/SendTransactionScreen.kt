@@ -30,6 +30,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
@@ -295,7 +297,23 @@ fun SendTransactionScreen(
     // the seed version (← iOS SendTransactionView re-resolves on
     // `platformState.platformProtocolVersion` the same way).
     val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
-    val shieldedFeeEstimate by produceState<Long?>(initialValue = null, flow, manager, protocolVersion) {
+    // ...and re-read on every resume, because the flow alone can go stale:
+    // that refresh republishes the unchanged seed when its proven fetch
+    // fails, and the SDK independently ratchets its version from ANY
+    // proof-verified query's response metadata without publishing at all.
+    // The estimate is a pure handle lookup, so re-reading is free.
+    var feeReadEpoch by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(Unit) {
+        feeReadEpoch++
+        onPauseOrDispose {}
+    }
+    val shieldedFeeEstimate by produceState<Long?>(
+        initialValue = null,
+        flow,
+        manager,
+        protocolVersion,
+        feeReadEpoch,
+    ) {
         val activeManager = manager
         val kind = when (flow) {
             // Type 15 Shield reserves the same compute_minimum_shielded_fee(2)
