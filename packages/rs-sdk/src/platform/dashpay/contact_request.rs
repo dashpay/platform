@@ -69,21 +69,14 @@ pub fn validate_auto_accept_proof(proof: &[u8]) -> Result<(), Error> {
 }
 
 /// Build a DIP-15 `contactRequest` document from already-derived crypto
-/// material, exactly as platform consensus expects it.
+/// material.
 ///
 /// This is the pure document-assembly half of [`Sdk::create_contact_request`]:
 /// the document id derives from `params.entropy`, the owner is
-/// `params.sender_id`, and the property map carries exactly the fields the
-/// DashPay contract defines (`toUserId`, `encryptedPublicKey`,
-/// `senderKeyIndex`, `recipientKeyIndex`, `accountReference`, plus the
-/// optional `encryptedAccountLabel` and `autoAcceptProof`).
-///
-/// Consensus recomputes the document id from
-/// `(contract, owner_id, "contactRequest", entropy)` and rejects the create
-/// transition on any mismatch, so the id/owner/entropy relation is fixed
-/// here rather than left to callers to assemble consistently. Broadcast the
-/// returned document with the same `params.entropy` attached to the create
-/// transition.
+/// `params.sender_id`, and the properties are exactly the fields the DashPay
+/// contract defines. Broadcast the returned document with the same
+/// `params.entropy` attached to the create transition, or platform consensus
+/// rejects it with `InvalidDocumentTransitionIdError`.
 ///
 /// Returns the assembled `contactRequest` [`Document`].
 pub fn build_contact_request_document(

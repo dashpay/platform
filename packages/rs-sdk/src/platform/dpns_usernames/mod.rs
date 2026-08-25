@@ -55,46 +55,21 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
 }
 
 /// Build the DPNS `preorder` and `domain` documents that register
-/// `label`.dash for `identity_id`, exactly as platform consensus expects
-/// them.
+/// `label`.dash for `identity_id`.
 ///
 /// This is the pure document-assembly half of [`Sdk::register_dpns_name`]:
-/// no networking, and no randomness — the caller supplies the `entropy`
-/// that derives both document ids (the same entropy must later be attached
-/// to both create transitions) and the preorder `salt`, whose double-SHA256
+/// no networking, and no randomness. The caller supplies the `entropy` that
+/// derives both document ids (the same entropy must later be attached to
+/// both create transitions) and the preorder `salt`, whose double-SHA256
 /// over `salt ‖ "<normalized label>.dash"` becomes the preorder's
-/// `saltedDomainHash`.
+/// `saltedDomainHash`. The raw label is stored in the domain document's
+/// `label` property; its [homograph-safe](convert_to_homograph_safe_chars)
+/// form in `normalizedLabel`.
 ///
-/// The raw label is stored
-/// in the domain document's `label` property while its
-/// [homograph-safe](convert_to_homograph_safe_chars) form is stored in
-/// `normalizedLabel`.
-///
-/// # Salt secrecy and reveal order
-///
-/// The preorder/domain split is DPNS's front-running protection: the
-/// preorder commits to `saltedDomainHash` without revealing which name
-/// is being registered, and only the later domain document discloses
-/// the `label` and the `preorderSalt` that tie it to the commitment.
-/// That protection holds only if the caller upholds what
-/// [`Sdk::register_dpns_name`] does automatically:
-///
-/// - generate a **fresh 32-byte salt from a CSPRNG** for every
-///   registration attempt (the SDK draws it from
-///   `StdRng::from_entropy()`). A reused or predictable salt lets an
-///   observer precompute `sha256d(salt ‖ "<candidate>.dash")` for
-///   candidate labels and identify — then front-run — the name from
-///   the preorder alone;
-/// - keep the salt, the label, and the assembled domain document
-///   **private until the preorder create transition is confirmed**
-///   (the SDK submits the preorder and waits for its response before
-///   broadcasting the domain document). Revealing them earlier
-///   discloses the name while it is still unclaimed, defeating the
-///   commitment.
-///
-/// Callers driving their own flow inherit both obligations — this
-/// builder takes `salt` as an argument precisely because it has no
-/// randomness of its own and cannot enforce either one.
+/// Callers driving their own flow (rather than [`Sdk::register_dpns_name`])
+/// must draw `salt` fresh from a CSPRNG and keep it, the label, and the
+/// domain document private until the preorder is confirmed — otherwise the
+/// preorder's front-running protection is lost.
 ///
 /// Returns `(preorder_document, domain_document)`.
 pub fn build_dpns_preorder_and_domain_documents(
