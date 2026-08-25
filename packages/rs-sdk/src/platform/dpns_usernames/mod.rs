@@ -11,6 +11,7 @@ use crate::platform::transition::put_document::PutDocument;
 use crate::platform::{Document, Fetch, FetchMany};
 use crate::{Error, Sdk};
 use dash_context_provider::ContextProvider;
+use dash_platform_queries::dpns_usernames::is_consensus_valid_label;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -62,7 +63,8 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
 /// derives both document ids (the same entropy must later be attached to
 /// both create transitions) and the preorder `salt`, whose double-SHA256
 /// over `salt ‖ "<normalized label>.dash"` becomes the preorder's
-/// `saltedDomainHash`. The raw label is stored in the domain document's
+/// `saltedDomainHash`. The `label` must satisfy
+/// [`is_consensus_valid_label`]. The raw label is stored in the domain document's
 /// `label` property; its [homograph-safe](convert_to_homograph_safe_chars)
 /// form in `normalizedLabel`.
 ///
@@ -79,6 +81,13 @@ pub fn build_dpns_preorder_and_domain_documents(
     entropy: [u8; 32],
     salt: [u8; 32],
 ) -> Result<(Document, Document), Error> {
+    if !is_consensus_valid_label(label) {
+        return Err(Error::Generic(format!(
+            "Invalid DPNS label \"{label}\": must be 3-63 characters, alphanumeric and hyphens \
+             only, starting and ending with an alphanumeric character"
+        )));
+    }
+
     let preorder_document_type = contract
         .document_type_for_name("preorder")
         .map_err(|_| Error::Generic("DPNS preorder document type not found".to_string()))?;
