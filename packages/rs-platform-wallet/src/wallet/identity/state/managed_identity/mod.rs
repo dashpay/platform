@@ -123,6 +123,17 @@ impl ManagedIdentity {
         &mut self.dashpay.payments
     }
 
+    /// Mutable access to the per-contact sent-payment sweep table digests.
+    ///
+    /// In-memory only — never persisted; see the field docs on
+    /// [`DashPayState::sent_payment_reconcile_swept_table`] for why the guard
+    /// is a digest of the scanned table rather than a flag or a height.
+    pub fn dashpay_sent_payment_reconcile_swept_table_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<dpp::prelude::Identifier, [u8; 32]> {
+        &mut self.dashpay.sent_payment_reconcile_swept_table
+    }
+
     /// Mutable access to the cached contact profiles.
     ///
     /// Replay/restore surface: bypasses persistence on purpose (the

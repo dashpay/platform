@@ -1,18 +1,21 @@
-//! `HAVING` clause types for the v1 `getDocuments` count surface.
+//! `HAVING` clause types for the v1 `getDocuments` aggregate surface.
 //!
-//! HAVING differs from WHERE in two structural ways the type
-//! system needs to reflect:
-//! - The **left** operand is a per-group aggregate (`COUNT(*)`,
-//!   `SUM(field)`, `AVG(field)`) rather than a raw row field.
-//! - The **right** operand is either a concrete value (`> 5`,
-//!   `BETWEEN 5 AND 10`, `IN (5, 10, 15)`) **or** a cross-group
-//!   ranking (`EQ MAX`, `IN TOP(5)`, `> MIN`). The ranking
-//!   right-operands (`MIN` / `MAX` / `TOP(N)` / `BOTTOM(N)`) are
-//!   meta-aggregates computed over the set of group results, so
-//!   `HAVING COUNT(*) IN TOP(5)` reads as "this group's count is
-//!   among the five largest group counts" — a concise way to
-//!   express top-N/bottom-N selection without window functions or
-//!   `ORDER BY` + `LIMIT`.
+//! `HAVING` is a **boolean predicate evaluated per group**, exactly as
+//! in SQL. It differs from `WHERE` in one structural way the type
+//! system needs to reflect: the left operand is a per-group aggregate
+//! (`COUNT(*)`, `SUM(field)`, `AVG(field)`) rather than a raw row
+//! field. The right operand is always a concrete value (`> 5`,
+//! `BETWEEN 5 AND 10`, `IN (5, 10, 15)`).
+//!
+//! **Ranking does not live here.** "Which groups score highest on the
+//! selected aggregate" is spelled with SQL's own ordering surface —
+//! `ORDER BY <selected aggregate> [ASC|DESC] LIMIT n OFFSET m` — and is
+//! resolved by
+//! [`crate::query::drive_document_ranked_query::mode_detection`]. An
+//! earlier iteration of this module carried `TOP(n)` / `BOTTOM(n)` /
+//! `MIN` / `MAX` right-operands; they were removed because they
+//! duplicated `ORDER BY … LIMIT` with a second, non-SQL grammar that
+//! could not express an offset.
 //!
 //! The operator set matches [`crate::query::WhereOperator`] minus
 //! `STARTS_WITH` (prefix matching has no meaning on a scalar
@@ -29,10 +32,21 @@
 //! and the SDK's request builder
 //! (`rs-sdk/src/platform/documents/document_query.rs`) so the
 //! drive-side struct is the single source of truth for the shape.
-//! The server currently rejects any non-empty `having` with
-//! `QuerySyntaxError::Unsupported("HAVING clause is not yet
-//! implemented")` — the types exist so the wire surface is stable
-//! when execution lands.
+//!
+//! **What executes (protocol version 14+)**: a grouped aggregate
+//! carrying exactly one clause that bounds the aggregate the select
+//! projects, with a contiguous-range operator (`=`, `>`, `>=`, `<`,
+//! `<=`, the four `BETWEEN*` variants). It is served as a
+//! value-bounded range read of the covering ranked index's axis
+//! secondary — see `drive_document_having_query::mode_detection` for
+//! the versioned grammar. Everything else the types can express
+//! remains rejected with `QuerySyntaxError`: multiple clauses
+//! (implicit AND would need a per-candidate post-check no executor
+//! performs), a clause on a different aggregate than the select's,
+//! the non-contiguous operators (`!=`, `IN`), and `having` without
+//! `group_by`. Protocol version 13 and earlier reject every
+//! non-empty `having`, so mixed-version networks agree across the
+//! upgrade.
 
 use dpp::platform_value::Value;
 #[cfg(feature = "serde")]
@@ -42,11 +56,6 @@ use serde::{Deserialize, Serialize};
 /// [`HavingClause`]. These are the per-group aggregates whose
 /// result is the scalar / numeric value the right-side operand
 /// compares against.
-///
-/// `MIN` / `MAX` / `TOP` / `BOTTOM` deliberately don't appear
-/// here — they're cross-group ranking primitives that live on
-/// the right side via [`HavingRanking`] (e.g.
-/// `HAVING COUNT(*) EQ MAX`).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum HavingAggregateFunction {
@@ -72,55 +81,15 @@ pub struct HavingAggregate {
     pub field: String,
 }
 
-/// Cross-group ranking primitive on the right side of a
-/// [`HavingClause`]. The ranking is computed over the **set of
-/// group results** (one per row produced by `GROUP BY`), not over
-/// the raw rows — so `HAVING COUNT(*) EQ MAX` selects groups
-/// whose count equals the maximum count across all groups.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum HavingRankingKind {
-    /// Smallest group-aggregate value across the result set
-    /// (single scalar).
-    Min,
-    /// Largest group-aggregate value across the result set
-    /// (single scalar).
-    Max,
-    /// Set of the `N` largest group-aggregate values. Pair with
-    /// `IN` for membership (`COUNT(*) IN TOP(5)`); single-value
-    /// operators (`EQ`, `>`, `<`, …) treat `TOP(1)` as the
-    /// maximum.
-    Top,
-    /// Set of the `N` smallest group-aggregate values. Symmetric
-    /// counterpart to [`Self::Top`].
-    Bottom,
-}
-
-/// Cross-group ranking operand: `kind` plus an optional `n` (only
-/// meaningful for [`HavingRankingKind::Top`] /
-/// [`HavingRankingKind::Bottom`]).
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct HavingRanking {
-    /// Which ranking primitive.
-    pub kind: HavingRankingKind,
-    /// Required for `Top` / `Bottom` (1-indexed: `n=1` is the
-    /// single largest / smallest); must be `None` for `Min` /
-    /// `Max`. The wire allows it on `Min` / `Max` for forward
-    /// compatibility, but evaluation rejects it as a malformed
-    /// ranking.
-    pub n: Option<u64>,
-}
-
-/// Right-side operand of a [`HavingClause`]. Either a concrete
-/// value (literal scalar or list-shaped operand for
-/// `BETWEEN*`/`IN`) or a cross-group ranking reference
-/// ([`HavingRanking`]).
+/// Right-side operand of a [`HavingClause`]: a concrete value
+/// (literal scalar, or list-shaped operand for `BETWEEN*` / `IN`).
 ///
-/// The split lives at the type level so the wire decoder rejects
-/// half-built clauses ("operator says `IN`, right side is `MIN`
-/// ranking with `n` set") at conversion time rather than letting
-/// them reach the evaluator as ambiguous state.
+/// Kept as a single-variant enum rather than collapsed into a bare
+/// `Value` field on [`HavingClause`] because the wire models the
+/// right operand as a `oneof`: an enum is what a `oneof` decodes
+/// into, and a future right-operand kind (a correlated subquery, a
+/// reference to another aggregate) lands as a variant here instead
+/// of reshaping every consumer's field access.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum HavingRightOperand {
@@ -128,11 +97,6 @@ pub enum HavingRightOperand {
     /// `>=`; 2-element list `[lower, upper]` for `Between*`;
     /// list of candidates for `In`.
     Value(Value),
-    /// Cross-group ranking reference. Operator compatibility:
-    /// scalar comparison operators work with `Min` / `Max` /
-    /// `Top(1)` / `Bottom(1)`; `In` works with `Top(N)` /
-    /// `Bottom(N)` (membership in the top-N / bottom-N set).
-    Ranking(HavingRanking),
 }
 
 /// Comparison operator for a [`HavingClause`]. Mirrors
@@ -140,8 +104,7 @@ pub enum HavingRightOperand {
 /// matching has no natural meaning against a scalar aggregate
 /// result, even a string-typed one). `BETWEEN*` operand semantics
 /// match `WhereOperator`: a 2-element list `[lower, upper]`; `IN`
-/// expects a list of candidate values (or a cross-group ranking
-/// set via [`HavingRightOperand::Ranking`]).
+/// expects a list of candidate values.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum HavingOperator {
@@ -192,8 +155,7 @@ pub struct HavingClause {
     pub aggregate: HavingAggregate,
     /// Comparison operator.
     pub operator: HavingOperator,
-    /// Right-side operand — either a concrete value or a
-    /// cross-group ranking. See [`HavingRightOperand`] for the
+    /// Right-side operand. See [`HavingRightOperand`] for the
     /// shape contract.
     pub right: HavingRightOperand,
 }

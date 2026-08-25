@@ -1075,7 +1075,7 @@ pub(crate) async fn core_send_from_account<S: Signer>(
         let mut builder = TransactionBuilder::new()
             .set_current_height(current_height)
             .set_selection_strategy(SelectionStrategy::LargestFirst)
-            .set_funding(managed_account, account);
+            .add_funding(managed_account, account);
         for (address, amount) in &outputs {
             builder = builder.add_output(address, *amount);
         }

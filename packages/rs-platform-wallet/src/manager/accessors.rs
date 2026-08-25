@@ -5,13 +5,16 @@ use std::sync::Arc;
 use dashcore::{OutPoint, Txid};
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
-use key_wallet::managed_account::address_pool::{AddressInfo, AddressPool, AddressPoolType};
+use key_wallet::managed_account::address_pool::{
+    AddressInfo, AddressPool, AddressPoolType, AddressState,
+};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::utxo::Utxo;
 use key_wallet::WalletCoreBalance;
 
 use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::manager::dashpay_sync::DashPaySyncManager;
+use crate::manager::dpns_sync::DpnsSyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
@@ -298,6 +301,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Clone the `Arc<SpvRuntime>` so callers (e.g. FFI) can invoke
     /// [`SpvRuntime::spawn_run_loop`] which takes `&Arc<Self>`.
+    /// Shared handle to the Platform SDK, for work that outlives a borrow
+    /// of the manager (e.g. a locate run on a worker thread).
+    pub fn sdk_arc(&self) -> Arc<dash_sdk::Sdk> {
+        Arc::clone(&self.sdk)
+    }
+
     pub fn spv_arc(&self) -> Arc<SpvRuntime> {
         Arc::clone(&self.spv_manager)
     }
@@ -338,6 +347,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Arc::clone(&self.dashpay_sync_manager)
     }
 
+    /// Access the recurring DPNS username-marketplace sync coordinator.
+    pub fn dpns_sync(&self) -> &DpnsSyncManager {
+        &self.dpns_sync_manager
+    }
+
+    /// Clone the `Arc<DpnsSyncManager>` so callers (e.g. FFI) can invoke
+    /// [`DpnsSyncManager::start`] which takes `&Arc<Self>`.
+    pub fn dpns_sync_arc(&self) -> Arc<DpnsSyncManager> {
+        Arc::clone(&self.dpns_sync_manager)
+    }
+
     /// Access the shielded sync coordinator.
     #[cfg(feature = "shielded")]
     pub fn shielded_sync(&self) -> &ShieldedSyncManager {
@@ -356,6 +376,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
         let wallets = self.wallets.read().await;
         wallets.get(wallet_id).cloned()
+    }
+
+    /// Blocking twin of [`Self::get_wallet`] for synchronous FFI entry
+    /// points that need to clone the `Arc<PlatformWallet>` out before doing
+    /// network work outside the handle-storage guard.
+    pub fn get_wallet_blocking(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
+        self.wallets.blocking_read().get(wallet_id).cloned()
     }
 
     /// List all wallet IDs.
@@ -400,10 +427,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .address_pools()
                     .iter()
                     .fold((0u32, 0u32), |(used, total), pool| {
+                        // "used" counts only funded addresses; a `Reserved`
+                        // address is handed out but not yet used.
                         let pool_used = pool
                             .addresses
                             .values()
-                            .filter(|info| info.is_used())
+                            .filter(|info| matches!(info.state, AddressState::Used))
                             .count() as u32;
                         let pool_total = pool.addresses.len() as u32;
                         (used + pool_used, total + pool_total)
@@ -427,6 +456,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub fn list_wallet_ids_blocking(&self) -> Vec<WalletId> {
         let wallets = self.wallets.blocking_read();
         wallets.keys().copied().collect()
+    }
+
+    /// Network a registered wallet belongs to, or `None` when the id is
+    /// unknown.
+    ///
+    /// Exists for FFI callers that hold a manager handle and a wallet id but
+    /// no wallet handle, and need the network before they can build the
+    /// per-call key material a wallet operation requires (resolving a master
+    /// xpriv, constructing a contact-crypto provider). Blocking and cheap: one
+    /// `RwLock` read, no I/O.
+    pub fn wallet_network_blocking(&self, wallet_id: &WalletId) -> Option<key_wallet::Network> {
+        let wm = self.wallet_manager.blocking_read();
+        Some(wm.get_wallet_info(wallet_id)?.core_wallet.network())
     }
 
     /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-
@@ -1073,6 +1115,7 @@ fn snapshot_tracked_asset_locks(
                 AssetLockStatus::InstantSendLocked => 2,
                 AssetLockStatus::ChainLocked => 3,
                 AssetLockStatus::Consumed => 4,
+                AssetLockStatus::RecoveredFromChain => 5,
             };
             let (instant_lock_present, chain_lock_height) = match &lock.proof {
                 Some(dpp::prelude::AssetLockProof::Instant(_)) => (true, 0u32),
@@ -1134,7 +1177,7 @@ fn addr_info_snapshot(info: &AddressInfo) -> AccountAddressInfoSnapshot {
     AccountAddressInfoSnapshot {
         pubkey_hash,
         address_index: info.index,
-        is_used: info.is_used(),
+        is_used: matches!(info.state, AddressState::Used),
         address,
         public_key_bytes,
     }

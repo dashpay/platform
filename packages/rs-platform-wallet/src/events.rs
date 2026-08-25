@@ -14,6 +14,7 @@ use std::sync::Arc;
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
+use crate::manager::dpns_sync::DpnsSyncPassSummary;
 use crate::manager::platform_address_sync::PlatformAddressSyncSummary;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncPassSummary;
@@ -30,6 +31,17 @@ pub trait PlatformEventHandler: EventHandler {
     ///
     /// [`PlatformAddressSyncManager`]: crate::manager::platform_address_sync::PlatformAddressSyncManager
     fn on_platform_address_sync_completed(&self, _summary: &PlatformAddressSyncSummary) {}
+
+    /// Fired after each [`DpnsSyncManager`] marketplace pass completes,
+    /// including passes that produced no delta. Hosts refresh
+    /// marketplace UI from the mirrored rows and — when the summary
+    /// reports a name departing an identity — re-run their
+    /// main-username selection / profile display for that identity.
+    ///
+    /// Default impl is a no-op so existing handlers don't have to care.
+    ///
+    /// [`DpnsSyncManager`]: crate::manager::dpns_sync::DpnsSyncManager
+    fn on_dpns_marketplace_sync_completed(&self, _summary: &DpnsSyncPassSummary) {}
 
     /// Fired after each [`ShieldedSyncManager`] pass completes,
     /// including passes that produced no updates or skipped every
@@ -114,6 +126,16 @@ impl PlatformEventManager {
     pub fn on_platform_address_sync_completed(&self, summary: &PlatformAddressSyncSummary) {
         for h in self.handlers.iter() {
             h.on_platform_address_sync_completed(summary);
+        }
+    }
+
+    /// Dispatch a DPNS marketplace sync completion to every handler.
+    ///
+    /// Not on the SPV hot path — called once per DPNS sync pass
+    /// (~60s by default).
+    pub fn on_dpns_marketplace_sync_completed(&self, summary: &DpnsSyncPassSummary) {
+        for h in self.handlers.iter() {
+            h.on_dpns_marketplace_sync_completed(summary);
         }
     }
 

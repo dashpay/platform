@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import Combine
 import DashSDKFFI
+import os.log
 
 /// Lock-guarded monotonic generation counter, safe to read and bump from
 /// any thread. Used to drop sync completion events that belong to a
@@ -57,6 +58,17 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     public static let unsignedTokenStorage: UInt64 = 1 << 5
     public static let pendingContactCrypto: UInt64 = 1 << 6
     public static let walletRestore: UInt64 = 1 << 7
+    /// DPNS username-marketplace name-state rows (price / sale status /
+    /// counterparty) are mirrored durably. Mirrors
+    /// `PersistenceCapabilities::DPNS_NAME_STATES`.
+    public static let dpnsNameStates: UInt64 = 1 << 8
+    /// Tracked asset-lock rows, including status and proof updates, can be
+    /// persisted. Restart hydration is separately attested by `walletRestore`.
+    public static let trackedAssetLocks: UInt64 = 1 << 9
+    /// Tracked (wallet-independent) masternodes are persisted and restored
+    /// across restarts. Mirrors
+    /// `PersistenceCapabilities::TRACKED_MASTERNODES`.
+    public static let trackedMasternodes: UInt64 = 1 << 10
 
     public let version: UInt32
     public let bits: UInt64
@@ -85,6 +97,11 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
 /// class in the middle.
 @MainActor
 public class PlatformWalletManager: ObservableObject {
+    fileprivate nonisolated static let log = Logger(
+        subsystem: "dashpay.SwiftDashSDK",
+        category: "PlatformWallet"
+    )
+
     // MARK: - Published observables
 
     /// Whether [`configure`] has been called successfully.
@@ -136,6 +153,10 @@ public class PlatformWalletManager: ObservableObject {
 
     /// Last completed shielded sync event emitted by Rust.
     @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
+
+    /// Last completed cross-wallet DPNS marketplace sync event emitted by
+    /// Rust. Every native pointer has been copied before publication.
+    @Published public internal(set) var lastDpnsSyncEvent: DpnsSyncEvent?
 
     /// Cumulative number of encrypted notes scanned in the **current**
     /// in-flight shielded sync pass, published once per chunk (~every
@@ -226,19 +247,25 @@ public class PlatformWalletManager: ObservableObject {
     /// FFI handle; `NULL_HANDLE` until [`configure`] is called.
     internal private(set) var handle: Handle = NULL_HANDLE
 
-    /// Retained for the lifetime of the FFI handle so the callback
-    /// context pointer remains valid.
+    /// Convenience access for Swift-side callers (e.g. `persistence`).
+    /// Lifetime for the FFI callback context is NOT this reference's job:
+    /// Rust holds its own retained reference (transferred at `configure`)
+    /// and releases it when its last worker drops.
     private var persistenceHandler: PlatformWalletPersistenceHandler?
 
     /// SwiftData container + network captured at `configure`, used to build a
     /// `KeychainSigner` (the identity document signer) for the unlock-time
     /// auto-accept drain. Nil when configured without persistence (no Keychain
     /// signing possible → the drain runs provider-only).
-    private var modelContainer: ModelContainer?
-    private var signerNetwork: Network?
+    /// `internal`, not `private`: the ordered bring-up in
+    /// `PlatformWalletManagerStartup` builds the same signer for the same
+    /// drain, and reusing these beats duplicating the construction there.
+    var modelContainer: ModelContainer?
+    var signerNetwork: Network?
 
-    /// Retained for the lifetime of the FFI handle so the event-handler
-    /// context pointer remains valid.
+    /// Convenience reference; the FFI callback context's lifetime is
+    /// owned by Rust (retained reference transferred at `configure`,
+    /// released when its last worker drops), not by this property.
     private var eventHandler: PlatformWalletEventHandler?
 
     /// Background task that polls SPV progress.
@@ -259,15 +286,26 @@ public class PlatformWalletManager: ObservableObject {
     deinit {
         progressPollTask?.cancel()
         if handle != NULL_HANDLE {
-            // Stop the network event source before releasing the manager's
-            // unretained callback contexts. Rust's destroy path provides the
-            // authoritative join barrier; this explicit stop is defense in
-            // depth for the Swift wrapper's teardown order.
+            // Stop the network event source first as defense in depth for
+            // the teardown order; Rust's destroy path provides the
+            // authoritative join barrier.
             platform_wallet_manager_spv_stop(handle).discard()
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
             platform_wallet_manager_shielded_sync_stop(handle).discard()
             platform_wallet_manager_dashpay_sync_stop(handle).discard()
-            platform_wallet_manager_destroy(handle).discard()
+            platform_wallet_manager_dpns_sync_stop(handle).discard()
+            // Rust OWNS the persistence/event callback handlers (they were
+            // handed over retained at `configure`, with a `release_fn`):
+            // any worker that outlives destroy keeps its handler alive
+            // through that retain and Rust releases it when the worker
+            // exits. Nothing to leak, retain, or gate on here — ARC
+            // releasing this class's own references below is always safe.
+            let destroyResult = PlatformWalletResult(platform_wallet_manager_destroy(handle))
+            if !destroyResult.isSuccess {
+                Self.log.error(
+                    "Platform wallet manager teardown failed with \(String(describing: destroyResult.code), privacy: .public): \(destroyResult.message ?? "<no detail from Rust>", privacy: .public)"
+                )
+            }
         }
     }
 
@@ -311,6 +349,7 @@ public class PlatformWalletManager: ObservableObject {
         let handler: PlatformWalletPersistenceHandler?
         var persistence: PersistenceCallbacks
         var declaredCapabilities: PersistenceCapabilitiesFFI
+        var persistenceExtension: PersistenceCallbacksExtension
         if let container = modelContainer {
             let h = PlatformWalletPersistenceHandler(
                 modelContainer: container,
@@ -318,6 +357,7 @@ public class PlatformWalletManager: ObservableObject {
             )
             persistence = h.makeCallbacks()
             declaredCapabilities = h.makePersistenceCapabilities()
+            persistenceExtension = h.makePersistenceCallbacksExtension()
             handler = h
         } else {
             persistence = PersistenceCallbacks()
@@ -326,19 +366,39 @@ public class PlatformWalletManager: ObservableObject {
                 reserved: 0,
                 bits: 0
             )
+            persistenceExtension = PersistenceCallbacksExtension()
+            persistenceExtension.struct_size = UInt(MemoryLayout<PersistenceCallbacksExtension>.size)
+            persistenceExtension.version = UInt32(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION)
+            persistenceExtension.reserved = 0
             handler = nil
         }
 
         let eventHandler = PlatformWalletEventHandler(manager: self)
         var eventHandlerCallbacks = eventHandler.makeCallbacks()
+        var eventHandlerExtension = eventHandler.makeCallbacksExtension()
 
-        try platform_wallet_manager_create_with_persistence_capabilities(
-            sdkPointer,
-            &persistence,
-            &eventHandlerCallbacks,
-            &declaredCapabilities,
-            &handle
-        ).check()
+        do {
+            try platform_wallet_manager_create_with_extensions(
+                sdkPointer,
+                &persistence,
+                &eventHandlerCallbacks,
+                &declaredCapabilities,
+                &persistenceExtension,
+                &eventHandlerExtension,
+                &handle
+            ).check()
+        } catch {
+            // A failed create never took ownership of the retained callback
+            // contexts (`makeCallbacks` pre-retains for the transfer), so
+            // balance the retains here or the handlers leak.
+            if let context = persistence.context {
+                Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).release()
+            }
+            if let context = eventHandlerCallbacks.context {
+                Unmanaged<PlatformWalletEventHandler>.fromOpaque(context).release()
+            }
+            throw error
+        }
 
         var effectiveCapabilities = PersistenceCapabilitiesFFI(
             version: 0,
@@ -615,17 +675,10 @@ public class PlatformWalletManager: ObservableObject {
     /// through the Keychain-backed resolver per-operation. This unlock does
     /// two things, both through a resolver (the seed never becomes resident):
     ///
-    /// 1. **Verify** the resolved seed binds to this wallet —
-    ///    `platform_wallet_verify_seed_binds_to_wallet_cached` derives the
-    ///    BIP44 account-0 xpub through the resolver and compares it to the
-    ///    persisted one. A mis-mapped Keychain slot derives a different xpub
-    ///    and the call throws, so a wrong seed never signs for this wallet.
-    ///    The outcome is launch-invariant while the mnemonic Keychain item
-    ///    is untouched, so the first success persists a marker (the xpub
-    ///    bound to the item's identity stamp) on the wallet row and later
-    ///    launches skip the resolver. Rust re-runs the full check when the
-    ///    marker no longer matches — wallet re-import, or any rewrite of
-    ///    the mnemonic Keychain item (which changes the stamp).
+    /// 1. **Verify** the resolved seed binds to this wallet — delegated in
+    ///    full to [`verifySeedBinding`](Self/verifySeedBinding(_:)), which is
+    ///    also the entry point for callers that need the gate WITHOUT the
+    ///    drain below.
     /// 2. **Drain** (in the background) any contact-crypto deferred while
     ///    the wallet was seedless — `platform_wallet_drain_pending_contact_crypto`.
     ///    The drain re-fetches + decrypts over the network, so it runs in a
@@ -645,8 +698,62 @@ public class PlatformWalletManager: ObservableObject {
     ///   throwing.
     /// - Throws: `PlatformWalletError` if the verify FFI fails (e.g. the
     ///   resolved seed does not bind — a mis-mapped Keychain slot).
+    /// Whether a wallet has a Keychain seed at all, once the binding holds.
+    public enum SeedBindingCheck: Sendable, Equatable {
+        /// A mnemonic is stored for this wallet and it derives the wallet's
+        /// persisted BIP44 account-0 xpub. Signing for this wallet is sound.
+        case verified
+        /// No mnemonic is stored — a genuine watch-only wallet, imported by
+        /// xpub. Nothing to contradict and nothing that can sign.
+        case watchOnly
+    }
+
+    /// Verify that the Keychain seed for `wallet` actually owns it — and do
+    /// nothing else.
+    ///
+    /// This is step 1 of [`unlockWalletFromKeychain`](Self/unlockWalletFromKeychain(_:))
+    /// on its own. It exists because that method is not a verification
+    /// primitive: it also schedules a background drain of the deferred
+    /// contact crypto. A caller that needs the gate and not the drain — one
+    /// about to run its own mnemonic-derived work, such as
+    /// [`startWalletSubsystems`](Self/startWalletSubsystems(wallet:budget:gapLimit:storage:))
+    /// — would otherwise have to launch a competing drain to ask the
+    /// question. Two drains over two snapshots duplicate the network and
+    /// ECDH work and race each other's channel-broken and auto-accept
+    /// writes, which is why the unlock path already refuses to stack them.
+    ///
+    /// Marker-cached exactly as the unlock is: the outcome is a pure function
+    /// of (mnemonic, network) against a fixed persisted xpub, so a match
+    /// costs a string comparison and never touches the Keychain. A rewritten
+    /// mnemonic item changes its stamp and forces the full check again.
+    ///
+    /// Publishes `dashPayUnlockStatus[walletId].seedMismatch` from the
+    /// result, so a caller may read it afterwards — but callers that must not
+    /// race the publisher should use the return value, which is ordered with
+    /// respect to the work it guards.
+    ///
+    /// - Returns: `.verified` when the stored seed binds, `.watchOnly` when
+    ///   there is no stored mnemonic to bind.
+    /// - Throws: `PlatformWalletError` when the seed does not bind (a
+    ///   mis-mapped Keychain slot) or the verify FFI otherwise fails.
     @discardableResult
-    public func unlockWalletFromKeychain(_ wallet: ManagedPlatformWallet) throws -> Bool {
+    public func verifySeedBinding(_ wallet: ManagedPlatformWallet) throws -> SeedBindingCheck {
+        try verifySeedBinding(wallet, storage: WalletStorage())
+    }
+
+    /// [`verifySeedBinding`](Self/verifySeedBinding(_:)) against a specific
+    /// `WalletStorage`.
+    ///
+    /// A caller that resolves the mnemonic from one store must be verified
+    /// against that same store, or the check answers a question about a
+    /// different Keychain than the one the work will read — approving one
+    /// mnemonic while the derivation uses another. `startWalletSubsystems`
+    /// takes a `storage` parameter for exactly this reason and passes it here.
+    @discardableResult
+    func verifySeedBinding(
+        _ wallet: ManagedPlatformWallet,
+        storage walletStorage: WalletStorage
+    ) throws -> SeedBindingCheck {
         try ensureConfigured()
         let walletId = wallet.walletId
         guard walletId.count == 32 else {
@@ -658,15 +765,19 @@ public class PlatformWalletManager: ObservableObject {
         // A genuine watch-only wallet (imported by xpub, never holding a
         // seed) has no Keychain mnemonic — stays watch-only. Existence-only
         // check; the plaintext is never materialized in Swift.
-        let walletStorage = WalletStorage()
         guard walletStorage.hasMnemonic(for: walletId) else {
-            return false
+            // No mnemonic is no longer a mismatch: a wallet whose seed failed
+            // to bind and whose Keychain item was then removed must not keep
+            // publishing the banner for a seed that is no longer there.
+            setDashPaySeedMismatch(walletId, false)
+            return .watchOnly
         }
 
         let walletHandle = wallet.handle
-        // Resolver-backed signer: the mnemonic is fetched from the Keychain
-        // inside the resolver vtable Rust-side; no resident seed.
-        let coreSigner = MnemonicResolver()
+        // Resolver-backed signer, over the SAME store the check above read and
+        // the caller's work will read: the mnemonic is fetched from the
+        // Keychain inside the resolver vtable Rust-side; no resident seed.
+        let coreSigner = MnemonicResolver(storage: walletStorage)
 
         // Wrong-seed / wrong-wallet gate, marker-cached: the check is a pure
         // function of (mnemonic, network) against the wallet's persisted
@@ -751,6 +862,21 @@ public class PlatformWalletManager: ObservableObject {
             }
             throw error
         }
+
+        return .verified
+    }
+
+    @discardableResult
+    public func unlockWalletFromKeychain(_ wallet: ManagedPlatformWallet) throws -> Bool {
+        // Step 1 in full, side-effect-free. A watch-only wallet has nothing
+        // to unlock and nothing to drain for.
+        guard try verifySeedBinding(wallet) == .verified else { return false }
+
+        let walletId = wallet.walletId
+        let walletHandle = wallet.handle
+        // Resolver-backed signer for the drain: the mnemonic is fetched from
+        // the Keychain inside the resolver vtable Rust-side; no resident seed.
+        let coreSigner = MnemonicResolver()
 
         // Heal pre-breadcrumb identity keys so they sign via the resolver
         // (derive-sign-destroy) rather than the stored scalar. Idempotent and
@@ -1292,7 +1418,9 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: - Internals
 
-    private func ensureConfigured() throws {
+    /// `internal` so the extensions in sibling files gate on the same check
+    /// rather than re-implementing it.
+    func ensureConfigured() throws {
         if !isConfigured || handle == NULL_HANDLE {
             throw PlatformWalletError.invalidHandle(
                 "PlatformWalletManager not configured"

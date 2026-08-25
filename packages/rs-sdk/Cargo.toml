@@ -18,13 +18,14 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", features = [
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "753a11f14c9a4bc72bf2d5302751dd43d174621e", features = [
   "client",
   "sqlite",
 ], optional = true }
 dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
+dash-platform-queries = { path = "../dash-platform-queries" }
 platform-encryption = { path = "../rs-platform-encryption" }
 http = { version = "1.1" }
 ciborium = { version = "0.2.2" }
@@ -90,6 +91,7 @@ spv-client = [
 mocks = [
   "dep:serde",
   "dep:serde_json",
+  "dash-platform-queries/mocks",
   "rs-dapi-client/mocks",
   "rs-dapi-client/dump",
   "dpp/document-cbor-conversion",

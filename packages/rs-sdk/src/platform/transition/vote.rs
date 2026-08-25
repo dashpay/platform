@@ -19,8 +19,27 @@ use super::waitable::Waitable;
 
 #[async_trait::async_trait]
 /// A trait for putting a vote on platform
+///
+/// # `voter_pro_tx_hash` byte order
+///
+/// Both methods take the masternode's pro_tx_hash in the orientation
+/// [`ProTxHash`](dpp::dashcore::ProTxHash) stores — the same bytes Core's RPC
+/// hex shows. This is **NOT** interchangeable with [`Txid`](dpp::dashcore::Txid)
+/// bytes for the same transaction: `ProTxHash` is declared
+/// `#[hash_newtype(forward)]` and `Txid` is not, so the two are exact reverses,
+/// and `rpc-json`'s `MasternodeListItem` carries both conventions side by side
+/// (`pro_tx_hash: ProTxHash`, `collateral_hash: Txid`).
+///
+/// The order matters because the voter identity is derived from these bytes
+/// (see [`get_voting_identity_id`]) exactly as drive-abci derives it from
+/// `masternode.pro_tx_hash.to_byte_array()`. A caller holding wire/`Txid` order
+/// — which is what `reg.txid()` yields and what a wallet stores internally —
+/// must reverse before calling, or the vote addresses an identity that has
+/// never existed and Platform rejects it as having no voter identity.
 pub trait PutVote<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a vote on platform
+    ///
+    /// `voter_pro_tx_hash` must be in `ProTxHash` order — see the trait docs.
     async fn put_to_platform(
         &self,
         voter_pro_tx_hash: Identifier,
@@ -30,6 +49,8 @@ pub trait PutVote<S: Signer<IdentityPublicKey>>: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<(), Error>;
     /// Puts a vote on platform and waits for the confirmation proof
+    ///
+    /// `voter_pro_tx_hash` must be in `ProTxHash` order — see the trait docs.
     async fn put_to_platform_and_wait_for_response(
         &self,
         voter_pro_tx_hash: Identifier,
@@ -135,6 +156,12 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
     }
 }
 
+/// The voter identity id for `(voter_pro_tx_hash, voting key)`.
+///
+/// `voter_pro_tx_hash` is used verbatim, so it must already be in `ProTxHash`
+/// order (see [`PutVote`]) — this is the same derivation drive-abci performs in
+/// `create_voter_identity_v0`, and passing the reversed `Txid` bytes silently
+/// yields an identity that does not exist rather than an error.
 fn get_voting_identity_id(
     voter_pro_tx_hash: Identifier,
     voting_public_key: &IdentityPublicKey,

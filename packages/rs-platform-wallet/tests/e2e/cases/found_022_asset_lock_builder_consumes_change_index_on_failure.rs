@@ -87,6 +87,7 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
     AssetLockFundingType, CreditOutputFunding,
 };
+use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::{Network, Wallet};
 
@@ -161,9 +162,14 @@ async fn found_022_asset_lock_builder_consumes_change_index_on_failure() {
     let result = info
         .build_asset_lock(
             &wallet,
+            // Single explicit source: BIP-44 account 0, the funds account this
+            // case snapshots. `drain = false` keeps the caller-supplied credit
+            // output value, matching the pre-#944 single-account behaviour.
+            &[AccountTypePreference::BIP44],
             0, // BIP44 account 0
             one_credit_output(100_000),
             1_000, // fee_per_kb (duffs)
+            false, // drain
         )
         .await;
 

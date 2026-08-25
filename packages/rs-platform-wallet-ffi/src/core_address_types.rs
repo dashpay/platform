@@ -76,7 +76,15 @@ pub struct CoreAddressEntryFFI {
     pub pool_type_tag: u8,
     /// Derivation index within this pool.
     pub address_index: u32,
-    /// Whether `AddressInfo.state` was `Used` at emit time.
+    /// Whether funds had been seen at this address at emit time, i.e.
+    /// `AddressInfo.state == AddressState::Used`.
+    ///
+    /// This schema has no slot for a reservation, so an
+    /// `AddressState::Reserved` entry necessarily flattens to `false`
+    /// and reloads as `Available`. Nothing in platform reserves
+    /// addresses today, so that lossy case is unreachable; adding a
+    /// reserving caller requires a schema decision here first (see
+    /// `persistence::build_core_address_entry_ffi`).
     pub is_used: bool,
     /// Cached balance in duffs from `AddressInfo.balance`.
     pub balance: u64,

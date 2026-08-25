@@ -64,6 +64,7 @@ pub mod test_utils {
             completion_ctx,
             signature.as_ptr(),
             signature.len(),
+            0,
             std::ptr::null(),
         );
     }

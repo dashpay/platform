@@ -20,7 +20,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [dash-sdk, rs-dapi-client, rs-dapi, dapi-grpc, dpp, drive-abci]
+        package:
+          [
+            dash-sdk,
+            rs-dapi-client,
+            rs-dapi,
+            dapi-grpc,
+            dpp,
+            drive-abci,
+            drive-proof-verifier,
+            dash-platform-queries,
+          ]
     steps:
       - name: Check out repo
         uses: actions/checkout@v4

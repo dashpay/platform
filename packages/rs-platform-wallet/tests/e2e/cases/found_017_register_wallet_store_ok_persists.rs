@@ -67,7 +67,10 @@ const TEST_SEED: [u8; 64] = [7u8; 64];
 /// must return `Ok` and the wallet must be present in `wallet_ids()`. This
 /// fails if the Found-017 fail-closed fix regresses into rolling back (or
 /// erroring) the success path.
-#[tokio_shared_rt::test(shared)]
+// Multi-thread required: `PlatformWalletManager::shutdown` joins its
+// coordinator OS threads through `ThreadRegistry::shutdown`, which drives
+// each worker via `Handle::block_on` and panics on a current-thread runtime.
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 4)]
 async fn found_017_register_wallet_store_ok_persists() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -96,7 +99,11 @@ async fn found_017_register_wallet_store_ok_persists() {
     let registered_ids = manager.wallet_ids().await;
     let wallet_present = !registered_ids.is_empty();
 
-    manager.shutdown().await;
+    let shutdown = manager.shutdown().await;
+    assert!(
+        shutdown.all_clean(),
+        "manager teardown must leave no live worker or orphan: {shutdown:?}"
+    );
 
     assert!(
         result.is_ok() && wallet_present,

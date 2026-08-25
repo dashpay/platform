@@ -95,6 +95,18 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
 /// Malformed upstream entries are silently skipped rather than panicking;
 /// the DAPI client handles retry/rotation across the remaining addresses.
 ///
+/// Seeds whose recorded Platform TLS probe shows a certificate that this
+/// client's rustls stack would deterministically reject (`Expired`,
+/// `SelfSigned`, `Untrusted`) are skipped: every connect to them fails the
+/// handshake, so keeping them in rotation only costs retry/ban churn.
+/// `NoHandshake` is skipped only when the probe's TCP connect succeeded
+/// (`reachable == Ok`) — the prober also stamps `NoHandshake` on TCP
+/// timeouts and probe-budget expiry, which are transient conditions best
+/// left to runtime banning. `Valid` and `Unknown` (not probed) are kept. If the
+/// filter would empty the list (e.g. a seed file with all-stale probes),
+/// it falls back to the unfiltered set so the client can still bootstrap
+/// and let runtime banning sort it out.
+///
 /// ## Panics
 ///
 /// Panics on networks other than `Mainnet` and `Testnet` — no upstream
@@ -103,11 +115,51 @@ fn default_address_list_for_network(network: Network) -> AddressList {
     if !matches!(network, Network::Mainnet | Network::Testnet) {
         panic!("default address list is only available for mainnet and testnet");
     }
+
+    let seeds = dash_network_seeds::evo_seeds(network);
+    let filtered = address_list_from_seeds(&seeds, true);
+    if filtered.is_empty() {
+        tracing::warn!(
+            ?network,
+            "all seed entries have failing TLS probes; falling back to unfiltered seed list"
+        );
+        return address_list_from_seeds(&seeds, false);
+    }
+    filtered
+}
+
+/// Whether a seed's recorded Platform TLS probe is a failure this client
+/// would deterministically reproduce on every connect. `NoHandshake` is
+/// also stamped by the prober on TCP timeout / probe-budget expiry, which
+/// are transient — it only counts when the probe's TCP connect itself
+/// succeeded. An unprobed seed (`None` / `Unknown`) is never rejected.
+fn seed_tls_deterministically_bad(platform: Option<&dash_network_seeds::PlatformStatus>) -> bool {
+    use dash_network_seeds::{Reachability, SslStatus};
+    let Some(platform) = platform else {
+        return false;
+    };
+    match platform.ssl {
+        SslStatus::Expired | SslStatus::SelfSigned | SslStatus::Untrusted => true,
+        SslStatus::NoHandshake => platform.reachable == Reachability::Ok,
+        SslStatus::Valid | SslStatus::Unknown => false,
+    }
+}
+
+/// Build an [`AddressList`] of `https://<ip>:<platform_http_port>` entries
+/// from `seeds`, optionally skipping seeds whose TLS probe is a
+/// deterministic failure (see [`seed_tls_deterministically_bad`]).
+fn address_list_from_seeds(
+    seeds: &[dash_network_seeds::MasternodeSeed],
+    skip_bad_tls: bool,
+) -> AddressList {
     let mut list = AddressList::new();
-    for seed in dash_network_seeds::evo_seeds(network) {
+    for seed in seeds {
         let Some(port) = seed.platform_http_port else {
             continue;
         };
+        if skip_bad_tls && seed_tls_deterministically_bad(seed.platform.as_ref()) {
+            continue;
+        }
         let url = format!("https://{}:{}", seed.address.ip(), port);
         if let Ok(uri) = url.parse::<Uri>() {
             if let Ok(address) = Address::try_from(uri) {
@@ -366,18 +418,25 @@ impl Sdk {
 
     /// Eagerly teach this SDK the network's current protocol version and ratchet up to it.
     ///
-    /// Issues one ordinary **proven** `getEpochsInfo` query
+    /// Issues ordinary **proven** `getEpochsInfo` queries
     /// ([`ExtendedEpochInfo::fetch_current`]) and discards the epoch payload. The
-    /// protocol version that query carries in its verified response metadata is
+    /// protocol version those queries carry in their verified response metadata is
     /// ratcheted in by the *same* [`Self::maybe_update_protocol_version`] path
     /// every other query uses — only after proof + quorum-signature verification
     /// succeeds. Refresh therefore inherits the exact cryptographic trust of
     /// ordinary traffic; it adds no second, weaker source of truth.
     ///
     /// On a pinned SDK ([`SdkBuilder::with_version`], `version_pinned`
-    /// on) this issues no request and returns the pinned version. If the proven
-    /// query fails the failure is **non-fatal**: the stored version is left
-    /// untouched — we never fall back to an unverified one.
+    /// on) this issues no request and returns the pinned version.
+    ///
+    /// If the fetch fails the failure is **non-fatal**: whatever version was
+    /// already learned is kept — we never fall back to an unverified one. Note
+    /// that [`ExtendedEpochInfo::fetch_current`] makes more than one round trip,
+    /// and each verified response ratchets the version on its own. A refresh that
+    /// ends in an error may therefore still have raised the stored version, and
+    /// the value returned here reflects that. This is by construction: every
+    /// ratchet step is proof-verified and upward-only, so a partial refresh can
+    /// only ever leave the SDK closer to the network's real version.
     ///
     /// On a proofs-disabled SDK ([`SdkBuilder::with_proofs`]`(false)`) this is a
     /// no-op that returns the current version: refresh relies on a proven query,
@@ -395,8 +454,10 @@ impl Sdk {
                 tracing::warn!(
                     target: "dash_sdk::protocol_version",
                     %error,
-                    "proven protocol-version refresh failed; keeping current version \
-                     (never falling back to an unverified one)"
+                    version = self.protocol_version_number(),
+                    "proven protocol-version refresh failed; keeping the highest \
+                     proof-verified version learned so far (never falling back to \
+                     an unverified one)"
                 );
             }
         }
@@ -572,8 +633,8 @@ impl Sdk {
         self.proofs
     }
 
-    /// Build a [`QuerySettings`] borrowing this SDK's protocol version,
-    /// request settings, and `prove` flag.
+    /// Build a [`QuerySettings`] borrowing this SDK's protocol version
+    /// and `prove` flag.
     ///
     /// Hand the resulting context to [`crate::platform::Query::query`] when
     /// you need to encode a user-facing query into a wire `TransportRequest`
@@ -1328,6 +1389,115 @@ mod test {
                 Some(MAINNET_PLATFORM_HTTP_PORT),
                 "mainnet bootstrap address must use the platform HTTP port",
             );
+        }
+    }
+
+    mod seed_tls_filter {
+        use super::super::{address_list_from_seeds, seed_tls_deterministically_bad};
+        use dash_network_seeds::{
+            CoreStatus, MasternodeSeed, MasternodeType, PlatformStatus, Reachability, SslStatus,
+        };
+
+        /// `host` disambiguates seeds — [`AddressList`] dedupes by URI, so
+        /// every test seed needs a distinct IP.
+        fn seed(host: u8, platform: Option<PlatformStatus>) -> MasternodeSeed {
+            MasternodeSeed {
+                address: format!("203.0.113.{host}:9999").parse().unwrap(),
+                mn_type: MasternodeType::Evo,
+                platform_http_port: Some(443),
+                core: CoreStatus::default(),
+                platform,
+            }
+        }
+
+        fn status(ssl: SslStatus, reachable: Reachability) -> PlatformStatus {
+            PlatformStatus {
+                reachable,
+                ssl,
+                ..PlatformStatus::default()
+            }
+        }
+
+        /// Every `SslStatus` × probe-reachability combination, against the
+        /// contract: cert-level verdicts (`Expired`/`SelfSigned`/`Untrusted`)
+        /// are deterministic regardless of reachability; `NoHandshake` is
+        /// deterministic only when the probe's TCP connect succeeded;
+        /// `Valid`/`Unknown`/unprobed are never rejected.
+        #[test]
+        fn classification_covers_every_status_combination() {
+            let reachabilities = [
+                Reachability::Unknown,
+                Reachability::Ok,
+                Reachability::Timeout,
+                Reachability::Refused,
+                Reachability::Error,
+            ];
+            for reachable in reachabilities {
+                for ssl in [
+                    SslStatus::Expired,
+                    SslStatus::SelfSigned,
+                    SslStatus::Untrusted,
+                ] {
+                    assert!(
+                        seed_tls_deterministically_bad(Some(&status(ssl, reachable))),
+                        "{ssl:?} must be rejected regardless of {reachable:?}"
+                    );
+                }
+                for ssl in [SslStatus::Valid, SslStatus::Unknown] {
+                    assert!(
+                        !seed_tls_deterministically_bad(Some(&status(ssl, reachable))),
+                        "{ssl:?} must never be rejected ({reachable:?})"
+                    );
+                }
+                assert_eq!(
+                    seed_tls_deterministically_bad(Some(&status(
+                        SslStatus::NoHandshake,
+                        reachable
+                    ))),
+                    reachable == Reachability::Ok,
+                    "NoHandshake must be rejected only when TCP connect succeeded ({reachable:?})"
+                );
+            }
+            assert!(
+                !seed_tls_deterministically_bad(None),
+                "an unprobed seed must never be rejected"
+            );
+        }
+
+        #[test]
+        fn filter_drops_only_deterministic_failures() {
+            let seeds = vec![
+                seed(1, Some(status(SslStatus::Valid, Reachability::Ok))),
+                seed(2, Some(status(SslStatus::Expired, Reachability::Ok))),
+                seed(
+                    3,
+                    Some(status(SslStatus::NoHandshake, Reachability::Timeout)),
+                ),
+                seed(4, Some(status(SslStatus::NoHandshake, Reachability::Ok))),
+                seed(5, None),
+            ];
+            assert_eq!(address_list_from_seeds(&seeds, true).len(), 3);
+            assert_eq!(address_list_from_seeds(&seeds, false).len(), 5);
+        }
+
+        /// The all-rejected input exercises the empty-filter result the
+        /// caller falls back from; the fallback itself must retain the
+        /// full set.
+        #[test]
+        fn all_rejected_input_yields_empty_filtered_and_full_unfiltered() {
+            let seeds = vec![
+                seed(1, Some(status(SslStatus::Expired, Reachability::Ok))),
+                seed(2, Some(status(SslStatus::Untrusted, Reachability::Timeout))),
+            ];
+            assert!(address_list_from_seeds(&seeds, true).is_empty());
+            assert_eq!(address_list_from_seeds(&seeds, false).len(), 2);
+        }
+
+        #[test]
+        fn seed_without_platform_port_is_always_skipped() {
+            let mut no_port = seed(1, Some(status(SslStatus::Valid, Reachability::Ok)));
+            no_port.platform_http_port = None;
+            assert!(address_list_from_seeds(&[no_port], false).is_empty());
         }
     }
 
@@ -2103,14 +2273,21 @@ mod test {
         use crate::platform::types::epoch::EpochQuery;
         use crate::platform::LimitQuery;
         use dpp::block::extended_epoch_info::{v0::ExtendedEpochInfoV0, ExtendedEpochInfo};
+        use drive_proof_verifier::types::ExtendedEpochInfos;
 
-        // Must match the query `ExtendedEpochInfo::fetch_current` issues.
-        let query = LimitQuery {
-            query: EpochQuery {
-                start: None,
-                ascending: false,
-            },
+        // Must match the two queries `ExtendedEpochInfo::fetch_current` issues: a
+        // genesis probe, then a two-epoch ascending confirmation from the hinted
+        // current epoch (mock expectation metadata reports epoch 0, so the hint is
+        // 0). The confirmation answers with epoch 0 alone, which is how a real
+        // proof says "no epoch above 0 has started".
+        let probe_query = LimitQuery {
+            query: EpochQuery::genesis(),
             limit: Some(1),
+            start_info: None,
+        };
+        let confirmation_query = LimitQuery {
+            query: EpochQuery::ascending_from(0),
+            limit: Some(2),
             start_info: None,
         };
 
@@ -2124,7 +2301,14 @@ mod test {
         });
 
         sdk.mock()
-            .expect_fetch::<ExtendedEpochInfo, _>(query, Some(epoch))
+            .expect_fetch::<ExtendedEpochInfo, _>(probe_query, Some(epoch.clone()))
+            .await
+            .expect("register epoch probe expectation");
+        sdk.mock()
+            .expect_fetch_many::<_, ExtendedEpochInfo, _, ExtendedEpochInfos>(
+                confirmation_query,
+                Some(ExtendedEpochInfos::from_iter([(0, Some(epoch))])),
+            )
             .await
             .expect("register epoch refresh expectation");
     }

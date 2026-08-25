@@ -7,15 +7,21 @@ use std::sync::Arc;
 use dashcore::OutPoint;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
+#[cfg(feature = "shielded")]
+use key_wallet::PlatformP2PKHAddress;
 use key_wallet_manager::WalletManager;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
-use super::core::{CoreWallet, WalletBalance};
+use super::core::{CoreWallet, WalletBalance, WalletGeneration};
 use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
+#[cfg(feature = "shielded")]
+use super::platform_addresses::merge_platform_payment_candidate_addresses;
 use super::platform_addresses::PlatformAddressWallet;
+#[cfg(feature = "shielded")]
+use super::shielded::operations::shield_fee_reserve_credits;
 // Phase 4d.3 deleted the `ShieldedWallet` wrapper; per-account
 // keysets now live in `self.shielded_keys` directly. Spend
 // operations source the shared commitment-tree store from
@@ -35,21 +41,228 @@ use dpp::prelude::Identifier;
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
 
+/// Cached capacity snapshot for shielding a Platform Payment account.
+///
+/// The figures are computed from the same lexicographic address ordering and
+/// fee-reserve rules used by [`PlatformWallet::shielded_shield_from_account`].
+/// No DAPI request, signing, proof construction, or broadcast is performed.
+#[cfg(feature = "shielded")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShieldedShieldPreflight {
+    /// Whether the account can shield at least one credit.
+    pub can_shield: bool,
+    /// Sum of all funded candidate addresses in the payment account.
+    pub account_balance_credits: Credits,
+    /// Sum of the lexicographically earliest representable candidate set. It
+    /// begins at the first address whose balance is strictly greater than
+    /// the fee reserve ([`Self::fee_reserve_credits`]), omits later addresses
+    /// below the versioned minimum input amount, and contains at most the
+    /// versioned maximum address-input count.
+    pub usable_balance_credits: Credits,
+    /// Balance retained on input 0 for the transition fee — the versioned
+    /// [`shield_fee_reserve_credits`] value the plan was computed with.
+    pub fee_reserve_credits: Credits,
+    /// Maximum claim accepted by the wallet's deterministic selector:
+    /// `usable_balance_credits - fee_reserve_credits`, floored at zero.
+    /// This is not a balance-optimized subset of every funded address; it
+    /// preserves the established lexicographic selection policy within the
+    /// protocol's input-count limit.
+    pub max_shieldable_credits: Credits,
+    /// Human-readable explanation when [`can_shield`](Self::can_shield) is
+    /// false. Capacity exhaustion is a normal result, not a structural error.
+    pub reason: Option<String>,
+}
+
+#[cfg(feature = "shielded")]
+#[derive(Debug, Clone)]
+struct ShieldedShieldInputPlan {
+    preflight: ShieldedShieldPreflight,
+    usable_candidates: Vec<(PlatformAddress, Credits)>,
+    min_input_amount: Credits,
+}
+
+#[cfg(feature = "shielded")]
+impl ShieldedShieldInputPlan {
+    fn select_inputs(
+        &self,
+        amount: Credits,
+    ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+        if amount == 0 {
+            return Err(PlatformWalletError::ShieldedBuildError(
+                "amount must be > 0".to_string(),
+            ));
+        }
+
+        if amount > self.preflight.max_shieldable_credits {
+            let available = if self.usable_candidates.is_empty() {
+                self.preflight.account_balance_credits
+            } else {
+                self.preflight.usable_balance_credits
+            };
+            return Err(PlatformWalletError::PlatformShieldCapacityExceeded {
+                available,
+                required: amount.saturating_add(self.preflight.fee_reserve_credits),
+            });
+        }
+
+        let mut chosen = BTreeMap::new();
+        let mut accumulated_claim = 0u64;
+        for (index, (address, balance)) in self.usable_candidates.iter().enumerate() {
+            if accumulated_claim >= amount {
+                break;
+            }
+            let max_claim = if index == 0 {
+                balance.saturating_sub(self.preflight.fee_reserve_credits)
+            } else {
+                *balance
+            };
+            let remaining = amount - accumulated_claim;
+            let mut claim = max_claim.min(remaining);
+            // Input 0 receives the shield fee later, so even a tiny base claim
+            // clears the protocol minimum after `reserve_shield_fee_on_input_0`.
+            // Every later input has no such fee addition. If its final greedy
+            // residue is below the versioned minimum, request the minimum
+            // instead. Shield inputs are maximum contributions: their sum may
+            // exceed `amount`, and drive's reallocation leaves the excess on
+            // the source address rather than increasing the shielded output.
+            if index > 0 && claim > 0 && claim < self.min_input_amount {
+                claim = self.min_input_amount;
+            }
+            if claim > 0 {
+                chosen.insert(*address, claim);
+                accumulated_claim = accumulated_claim
+                    .checked_add(claim)
+                    .ok_or(PlatformWalletError::InputSumOverflow)?;
+            }
+        }
+
+        // `max_shieldable_credits` is derived from these exact candidates, so
+        // this is an invariant guard rather than a second capacity rule.
+        if accumulated_claim < amount {
+            return Err(PlatformWalletError::PlatformShieldCapacityExceeded {
+                available: accumulated_claim,
+                required: amount,
+            });
+        }
+
+        Ok(chosen)
+    }
+}
+
+#[cfg(feature = "shielded")]
+fn checked_credit_sum<'a>(
+    mut balances: impl Iterator<Item = &'a Credits>,
+) -> Result<Credits, PlatformWalletError> {
+    balances.try_fold(0u64, |sum, balance| {
+        sum.checked_add(*balance)
+            .ok_or(PlatformWalletError::InputSumOverflow)
+    })
+}
+
+/// Analyze funded Platform addresses once for both preflight and execution.
+///
+/// The representable set is the lexicographically earliest usable prefix,
+/// capped at `max_address_inputs`. Deliberately retaining the wallet's existing
+/// ordering policy avoids silently replacing earlier addresses with later,
+/// larger balances; consequently preflight Max means the maximum accepted by
+/// this deterministic policy, not a globally balance-optimized subset.
+///
+/// `fee_reserve` is the versioned [`shield_fee_reserve_credits`] value; it is
+/// the balance input 0 must retain unclaimed so execution can deduct the
+/// actual metered fee from that input's residue (`DeductFromInput(0)`).
+#[cfg(feature = "shielded")]
+fn plan_shield_inputs(
+    mut candidates: Vec<(PlatformAddress, Credits)>,
+    fee_reserve: Credits,
+    min_input_amount: Credits,
+    max_address_inputs: usize,
+) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+    candidates.sort_by_key(|(address, _)| *address);
+
+    let account_balance_credits =
+        checked_credit_sum(candidates.iter().map(|(_, balance)| balance))?;
+    let viable_input_0 = candidates
+        .iter()
+        .position(|(_, balance)| *balance > fee_reserve);
+    let usable_candidates: Vec<(PlatformAddress, Credits)> = viable_input_0
+        .map(|index| {
+            // Keep the fee-bearing input 0 regardless of its post-reserve base
+            // capacity: the shield fee is added to its requested claim before
+            // structure validation. Later addresses get no fee addition, so a
+            // full balance below `min_input_amount` can never form a valid
+            // input and must not inflate preflight capacity. Finally, truncate
+            // the deterministic sequence before deriving capacity so Max can
+            // always be represented by a protocol-valid input count.
+            std::iter::once(candidates[index])
+                .chain(
+                    candidates[index + 1..]
+                        .iter()
+                        .copied()
+                        .filter(|(_, balance)| *balance >= min_input_amount),
+                )
+                .take(max_address_inputs)
+                .collect()
+        })
+        .unwrap_or_default();
+    let usable_balance_credits =
+        checked_credit_sum(usable_candidates.iter().map(|(_, balance)| balance))?;
+    let max_shieldable_credits = usable_balance_credits.saturating_sub(fee_reserve);
+    let can_shield = max_shieldable_credits > 0;
+    let reason = (!can_shield).then(|| {
+        format!(
+            "Platform payment account has {account_balance_credits} credits, but no address can retain the {fee_reserve}-credit shield fee reserve"
+        )
+    });
+
+    Ok(ShieldedShieldInputPlan {
+        preflight: ShieldedShieldPreflight {
+            can_shield,
+            account_balance_credits,
+            usable_balance_credits,
+            fee_reserve_credits: fee_reserve,
+            max_shieldable_credits,
+            reason,
+        },
+        usable_candidates,
+        min_input_amount,
+    })
+}
+
 /// Consolidated mutable state for a platform wallet.
 ///
 /// Lives inside `WalletManager<PlatformWalletInfo>.wallet_infos`. The `Wallet`
 /// key material is in `WalletManager.wallets` — NOT inside this struct.
 ///
-/// `WalletBalance` is stored as `Arc<WalletBalance>` for lock-free UI reads.
+/// The per-generation state (lock-free balance + lifecycle gate) is stored as
+/// `Arc<WalletGeneration>`; `Arc::ptr_eq` on it is this wallet's generation identity.
 pub struct PlatformWalletInfo {
     /// Core wallet metadata, accounts, UTXOs, balances.
     /// Delegates `WalletInfoInterface` methods.
     pub core_wallet: ManagedWalletInfo,
-    /// Lock-free balance for UI reads. Updated from `ManagedWalletInfo` after
-    /// each SPV block/mempool processing and RPC refresh.
-    pub balance: Arc<WalletBalance>,
+    /// This wallet generation's shared state: the lock-free balance for UI reads
+    /// (updated from `ManagedWalletInfo` after each SPV block/mempool processing
+    /// and RPC refresh) and the generation's lifecycle gate.
+    ///
+    /// Deliberately `pub(crate)`, not `pub`: this `Arc` *is* the generation
+    /// identity that `Arc::ptr_eq` compares, and `PlatformWalletInfo` is
+    /// reachable mutably from outside the crate through
+    /// [`PlatformWallet::state_mut`] / [`PlatformWallet::state_mut_blocking`].
+    /// A public field would let safe downstream code drop a fresh `Arc` in here
+    /// while `PlatformWallet` and `CoreWallet` keep the original, splitting the
+    /// identity: `is_current_generation()` would then reject the still-live
+    /// wallet, generation-bound reservation cleanup would become a no-op, and
+    /// teardown would exclude through a different lifecycle gate than the
+    /// payment operations it has to fence. Read it through
+    /// [`PlatformWallet::generation`]; it is assigned only at construction.
+    pub(crate) generation: Arc<WalletGeneration>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
+    /// DPNS name states with sale price (username marketplace), keyed by
+    /// domain document id. Session-lifetime working set for the
+    /// marketplace sync/orchestration ops; the durable copy is the
+    /// host-side persister mirror fed by
+    /// [`DpnsNameStateChangeSet`](crate::changeset::DpnsNameStateChangeSet).
+    pub dpns_name_states: BTreeMap<Identifier, crate::changeset::DpnsNameStateEntry>,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.
@@ -79,8 +292,8 @@ pub struct PlatformWallet {
     pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle.
     persister: WalletPersister,
-    /// Lock-free balance for UI reads, cloned from `PlatformWalletInfo.balance`.
-    pub(crate) balance: Arc<WalletBalance>,
+    /// This generation's shared state, cloned from `PlatformWalletInfo.generation`.
+    pub(crate) generation: Arc<WalletGeneration>,
     /// Per-account Orchard keysets, populated by [`bind_shielded`].
     /// `None` until bind has run; remains `None` for `WatchOnly`
     /// / `ExternalSignable` wallets that have never had a
@@ -114,6 +327,18 @@ pub struct PlatformWallet {
     /// cloned wallet handles share the one lock.
     #[cfg(feature = "shielded")]
     pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
+    /// Set once this wallet has been removed from the manager, to stop
+    /// a handle that outlives the removal from binding shielded state
+    /// back onto the coordinator. Callers resolve an
+    /// `Arc<PlatformWallet>` and then hold it across a bind that can
+    /// take arbitrarily long (it may resolve a mnemonic through the
+    /// host), so a removal can complete in the middle; without this
+    /// flag the bind would re-register the wallet the removal just
+    /// detached, and the next sync pass would re-fetch and re-persist
+    /// shielded history the host believes it deleted. `Arc` so cloned
+    /// wallet handles observe the one flag.
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded_detached: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl PlatformWallet {
@@ -173,8 +398,14 @@ impl PlatformWallet {
     }
 
     /// Get the lock-free balance for UI reads.
-    pub fn balance(&self) -> &Arc<WalletBalance> {
-        &self.balance
+    pub fn balance(&self) -> &WalletBalance {
+        self.generation.balance()
+    }
+
+    /// This wallet's [`WalletGeneration`] `Arc` — its generation identity and
+    /// lifecycle gate. See [`CoreWallet::is_same_generation`].
+    pub fn generation(&self) -> &Arc<WalletGeneration> {
+        &self.generation
     }
 
     /// Get a reference to the per-wallet persistence handle.
@@ -399,7 +630,7 @@ impl PlatformWallet {
         sdk: Arc<dash_sdk::Sdk>,
         wallet_id: WalletId,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-        balance: Arc<WalletBalance>,
+        generation: Arc<WalletGeneration>,
         lock_notify: Arc<tokio::sync::Notify>,
         persister: Arc<dyn PlatformWalletPersistence>,
         broadcaster: Arc<SpvBroadcaster>,
@@ -414,7 +645,7 @@ impl PlatformWallet {
             Arc::clone(&wallet_manager),
             wallet_id,
             Arc::clone(&broadcaster),
-            Arc::clone(&balance),
+            Arc::clone(&generation),
         );
 
         // Asset-lock broadcaster is pinned to `SpvBroadcaster`; the
@@ -444,6 +675,8 @@ impl PlatformWallet {
             sdk_writer: Arc::new(
                 crate::wallet::identity::network::sdk_writer::SdkWriter::new(Arc::clone(&sdk)),
             ),
+            dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
+            dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
         };
 
         let platform = PlatformAddressWallet::new(
@@ -463,11 +696,13 @@ impl PlatformWallet {
             platform,
             asset_locks,
             persister: wallet_persister,
-            balance,
+            generation,
             #[cfg(feature = "shielded")]
             shielded_keys: Arc::new(RwLock::new(None)),
             #[cfg(feature = "shielded")]
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
+            shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -521,6 +756,13 @@ impl PlatformWallet {
                 "shielded wallet requires at least one account".to_string(),
             ));
         }
+        // Before anything is read or written: a wallet the manager has
+        // dropped must not persist viewing keys the host can no longer
+        // delete (see `ensure_shielded_attached`).
+        self.ensure_shielded_attached()?;
+        // Sampled before the load below so the install can tell that the
+        // snapshot predates a Clear.
+        let snapshot_generation = coordinator.clear_generation();
         let network = self.sdk.network;
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
@@ -531,6 +773,36 @@ impl PlatformWallet {
             // this iteration — only the viewing half survives.
             let ks = OrchardKeySet::from_seed(seed, network, account)?;
             account_views.insert(account, ks.viewing_keys());
+        }
+
+        // Refuse to overwrite a persisted viewing key with a different
+        // one. The durable notes, activity and sync watermark this
+        // wallet already has are keyed by `(wallet_id, account_index)`
+        // alone — nothing records which key produced them — so a row
+        // written under the old key is indistinguishable from one
+        // written under the new. Upserting the new key would leave the
+        // old key's notes attributed to it (unspendable, yet counted)
+        // and its watermark in force (hiding the new key's own
+        // history). No legitimate flow re-keys an account in place, so
+        // treat it like the malformed-row case below: surface it rather
+        // than silently mixing two keys' state. The recovery is a
+        // shielded Clear, which drops both sides at once.
+        let start = self.persister.load().map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "persister load failed while binding shielded viewing keys: {e}"
+            ))
+        })?;
+        for (account, views) in &account_views {
+            let id = SubwalletId::new(self.wallet_id, *account);
+            if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
+                if persisted.as_slice() != views.to_fvk_bytes().as_slice() {
+                    return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
+                        "persisted shielded viewing key for account {account} differs from the \
+                         one derived from this seed; clear shielded state before binding a \
+                         re-keyed account"
+                    )));
+                }
+            }
         }
 
         // Persist the viewing keys while the seed is legitimately present, so
@@ -555,7 +827,12 @@ impl PlatformWallet {
                 ))
             })?;
 
-        self.install_shielded_views(account_views, coordinator, None)
+        // Hand the snapshot loaded above to the install step. It predates
+        // the viewing-key upsert just made, which is safe precisely
+        // because the loop above proved the derived keys equal the
+        // persisted ones: the rows the restore filters on are unchanged
+        // by that write.
+        self.install_shielded_views(account_views, coordinator, start, snapshot_generation)
             .await
     }
 
@@ -595,6 +872,10 @@ impl PlatformWallet {
                 "shielded wallet requires at least one account".to_string(),
             ));
         }
+        self.ensure_shielded_attached()?;
+        // Sampled before the load so the install can tell that the
+        // snapshot predates a Clear.
+        let snapshot_generation = coordinator.clear_generation();
         let start = self.persister.load().map_err(|e| {
             PlatformWalletError::ShieldedBuildError(format!(
                 "persister load failed while rebinding shielded viewing keys: {e}"
@@ -617,69 +898,145 @@ impl PlatformWallet {
         }
         // Hand the already-loaded snapshot to the install step so the
         // restore doesn't pay a second full persister load.
-        self.install_shielded_views(account_views, coordinator, Some(start))
+        self.install_shielded_views(account_views, coordinator, start, snapshot_generation)
             .await?;
         Ok(true)
     }
 
     /// Shared tail of the two bind paths: store the viewing-grade
     /// map on this handle, replace this wallet's registration on
-    /// the coordinator, and rehydrate persisted notes / watermarks.
-    /// `preloaded` reuses a start-state snapshot the caller already
-    /// fetched (the persisted-keys path); `None` loads one here.
+    /// the coordinator, and rehydrate persisted notes / watermarks
+    /// from `start` — the snapshot both callers have already loaded
+    /// (one to reconstruct the viewing keys, the other to check them
+    /// against the seed), so the restore never pays a second load.
+    ///
+    /// Runs as one coordinator install transaction, so a concurrent
+    /// bind, wallet removal or Clear either happens entirely before or
+    /// entirely after it — never between the key-slot write and the
+    /// registration (which would leave sync decrypting under one key
+    /// while addresses and spends use another), nor between the
+    /// restore's registration check and its store write.
     #[cfg(feature = "shielded")]
     async fn install_shielded_views(
         &self,
         account_views: std::collections::BTreeMap<u32, super::shielded::AccountViewingKeys>,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
-        preloaded: Option<crate::changeset::ClientStartState>,
+        start: crate::changeset::ClientStartState,
+        snapshot_generation: u64,
     ) -> Result<(), PlatformWalletError> {
+        let install = coordinator.begin_install(self.wallet_id).await;
+
+        // A wallet the manager has already removed must not be able to
+        // re-register itself. Callers reach a bind through an
+        // `Arc<PlatformWallet>` they resolved earlier and keep across
+        // the (possibly seed-resolving, so arbitrarily long) bind, so
+        // the removal can land in between; re-registering here would
+        // resurrect the wallet on the coordinator, and the next sync
+        // pass would re-fetch and re-persist shielded history the host
+        // believes it deleted. Checked inside the transaction, which
+        // `remove_wallet`'s unregister also has to take, so the two
+        // cannot interleave.
+        self.ensure_shielded_attached()?;
+
+        // Refuse to re-key a bound account. Durable per-subwallet state
+        // (notes, activity, watermark) is keyed by
+        // `(wallet_id, account_index)` alone, so it cannot be attributed
+        // to the key that produced it: installing a different key for an
+        // account that already has state would leave notes the new
+        // spend key cannot spend, and a watermark that makes the scan
+        // skip the range where the new key's own notes live. There is no
+        // legitimate flow that changes an account's key in place — see
+        // `ShieldedChangeSet::viewing_keys` — so this is corruption or a
+        // derivation change, and the host has to Clear (which wipes both
+        // sides) before binding the new key.
+        if let Some(account) = install.conflicting_account(&account_views).await {
+            return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
+                "account {account} is already bound to a different shielded viewing key; \
+                 clear shielded state before binding a re-keyed account"
+            )));
+        }
+
         let mut slot = self.shielded_keys.write().await;
         *slot = Some(account_views.clone());
         drop(slot);
 
-        // Rebind is replace-not-merge (the doc contract above).
-        // `register_wallet` replaces the coordinator's `accounts`
-        // entries for this wallet, but it does NOT touch the
-        // store's per-`SubwalletId` state — so a same-process
-        // rebind would otherwise leave stale watermarks, orphaned
-        // accounts dropped from the new bind set, and abandoned
-        // `pending_nullifiers` reservations behind (the latter can
-        // make note selection skip spendable notes). Unregister
-        // first to purge that state; it's a no-op on first bind.
-        coordinator.unregister_wallet(self.wallet_id).await;
+        // Compute idempotence BEFORE registering — after
+        // register_wallet the registration always matches.
+        let identical = install.registration_matches(&account_views).await;
 
-        // Register on the coordinator BEFORE restoring so the
-        // restore path's "is this account registered?" gate
-        // sees this wallet's subwallets.
-        coordinator
-            .register_wallet(self.wallet_id, account_views, self.persister.clone())
+        // (Re-)register on the coordinator. This is non-destructive
+        // by construction: the persister handle is replaced, never
+        // removed (a sync pass finishing mid-bind always finds one),
+        // and per-subwallet store state is purged only for accounts
+        // this registration DROPS or re-keys — accounts that remain
+        // bound with the same viewing key keep their in-memory notes
+        // and watermark. A re-bind racing an in-flight sync pass can
+        // therefore no longer wipe the pass's results (the former
+        // unregister-then-register cycle here purged the whole
+        // wallet behind the pass's store lock and then restored a
+        // pre-pass snapshot — the "note discovered by sync is
+        // unspendable until app restart" / "every pass rescans from
+        // 0" failure). Registration also runs BEFORE the restore so
+        // the restore path's "is this account registered?" gate sees
+        // this wallet's subwallets.
+        install
+            .register(account_views, self.persister.clone())
             .await;
+
+        // Idempotent re-bind fast path: hosts re-run bind liberally
+        // (launch fires it twice — a direct call plus the wallet-set
+        // observer — and again on Sync Now / wallet navigation). When
+        // the registration is unchanged AND a prior hydration
+        // succeeded, the coordinator's in-memory state is strictly
+        // fresher than any persister snapshot (the snapshot's rows
+        // were produced FROM it), so re-running the restore could
+        // only re-apply older data — skip it. The hydration flag is
+        // load-bearing: a matching registration alone doesn't prove
+        // the store was ever hydrated (the first bind's load/restore
+        // may have failed transiently and is only logged), and
+        // skipping on registration match alone would leave notes and
+        // the watermark absent until a full rescan or restart.
+        if identical && install.is_hydrated().await {
+            return Ok(());
+        }
 
         // Rehydrate per-subwallet notes / sync watermarks from
         // the persister's start state if any are present for
-        // this wallet. The lookup is cheap: load() is the
-        // boot-time snapshot, indexed by SubwalletId. Errors are
-        // logged but not fatal — first-launch wallets simply
-        // see no persisted state.
-        match preloaded.map(Ok).unwrap_or_else(|| self.persister.load()) {
-            Ok(start) => {
-                if let Err(e) = coordinator
-                    .restore_for_wallet(self.wallet_id, &start.shielded)
-                    .await
-                {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(self.wallet_id),
-                        error = %e,
-                        "Failed to restore shielded snapshot at bind time"
-                    );
-                }
-            }
+        // this wallet. The restore is additive and monotonic
+        // (`restore_for_wallet` never rewinds a watermark or
+        // overwrites a known note), so applying a snapshot on top
+        // of retained live state is safe. Errors are logged but
+        // not fatal — first-launch wallets simply see no persisted
+        // state; the hydration flag stays unset on failure so the
+        // next re-bind retries the restore instead of fast-pathing
+        // over an unhydrated store. (A snapshot that cannot be READ
+        // is fatal, but earlier: both bind paths need it before they
+        // can decide what to install.)
+        // A Clear that completed after `start` was read wiped both the
+        // store and (once it returned) the host's own rows, so this
+        // snapshot describes state the user asked to be deleted.
+        // Restoring it would put the notes back and re-arm the pre-Clear
+        // watermark, which reports caught-up and suppresses the cold
+        // rebuild Clear promises. Register (done above) but restore
+        // nothing, and leave hydration unset so the next bind hydrates
+        // from the host's post-Clear rows.
+        if install.snapshot_predates_clear(snapshot_generation) {
+            install.mark_hydrated(false).await;
+            tracing::info!(
+                wallet_id = %hex::encode(self.wallet_id),
+                "Skipped shielded snapshot restore: shielded state was cleared while binding"
+            );
+            return Ok(());
+        }
+
+        match install.restore(&start.shielded).await {
+            Ok(()) => install.mark_hydrated(true).await,
             Err(e) => {
+                install.mark_hydrated(false).await;
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
                     error = %e,
-                    "persister.load() failed at shielded bind time"
+                    "Failed to restore shielded snapshot at bind time"
                 );
             }
         }
@@ -714,12 +1071,46 @@ impl PlatformWallet {
                 missing.bits(),
             )));
         }
-        let mut slot = self.shielded_keys.write().await;
-        let keys = slot.as_mut().ok_or(PlatformWalletError::ShieldedNotBound)?;
-        if keys.contains_key(&account) {
-            return Ok(());
+        self.ensure_shielded_attached()?;
+        // Everything that calls into the host — the snapshot read below
+        // and the viewing-key write further down — stays OUTSIDE the key
+        // slot's lock. A host callback invoked while this write guard is
+        // held would deadlock against a concurrent bind, which takes the
+        // coordinator's lifecycle mutex and then this same slot: the
+        // callback re-enters the FFI, waits on the lifecycle mutex, and
+        // the bind holding it waits on the slot the callback's caller
+        // never released. It also keeps the slot free for the address /
+        // balance reads that run constantly while this does host I/O.
+        {
+            let slot = self.shielded_keys.read().await;
+            let keys = slot.as_ref().ok_or(PlatformWalletError::ShieldedNotBound)?;
+            if keys.contains_key(&account) {
+                return Ok(());
+            }
         }
         let views = OrchardKeySet::from_seed(seed, self.sdk.network, account)?.viewing_keys();
+        // This is the other writer of a subwallet's viewing-key row, so
+        // it owes the same refusal `bind_shielded` makes: an account
+        // absent from the in-memory map can still have durable rows from
+        // an earlier session, and overwriting its key would leave those
+        // notes and their watermark attributed to a key that did not
+        // produce them, undetectably (a later seedless bind derives its
+        // keys FROM this row, so nothing downstream can see the swap).
+        let start = self.persister.load().map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "persister load failed while adding shielded account {account}: {e}"
+            ))
+        })?;
+        let id = SubwalletId::new(self.wallet_id, account);
+        if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
+            if persisted.as_slice() != views.to_fvk_bytes().as_slice() {
+                return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
+                    "persisted shielded viewing key for account {account} differs from the one \
+                     derived from this seed; clear shielded state before binding a re-keyed \
+                     account"
+                )));
+            }
+        }
         // Persist the new account's viewing key alongside the
         // in-memory insert, mirroring `bind_shielded`, so the
         // seedless rebind path covers it on the next launch.
@@ -738,6 +1129,15 @@ impl PlatformWallet {
                     "failed to persist shielded viewing key for account {account}: {e}"
                 ))
             })?;
+        // Re-check detachment before mutating the handle: the host I/O
+        // above can take arbitrarily long, and a removal completing in
+        // that window means this account must not be installed.
+        self.ensure_shielded_attached()?;
+        let mut slot = self.shielded_keys.write().await;
+        let keys = slot.as_mut().ok_or(PlatformWalletError::ShieldedNotBound)?;
+        // Idempotent against a bind that added this account while the
+        // host I/O above was in flight: same seed and index derive the
+        // same key, so re-inserting is a no-op either way.
         keys.insert(account, views);
         // NOTE: this only updates the per-wallet keys slot — the
         // coordinator's `accounts` registry isn't refreshed here.
@@ -752,6 +1152,46 @@ impl PlatformWallet {
     #[cfg(feature = "shielded")]
     pub async fn is_shielded_bound(&self) -> bool {
         self.shielded_keys.read().await.is_some()
+    }
+
+    /// `Err` once this wallet has been removed from the manager.
+    ///
+    /// The install transaction performs the authoritative check, but the
+    /// bind paths also write to the HOST persister (viewing-key rows)
+    /// before they get there, and hosts delete their own wallet data
+    /// after `remove_wallet` returns — so a bind that only failed at the
+    /// end would still leave a full viewing key on disk for a wallet the
+    /// user deleted, with the mnemonic already gone. An FVK discloses
+    /// every incoming and outgoing note of its account, so the bind
+    /// paths check here first, before writing anything.
+    #[cfg(feature = "shielded")]
+    fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
+        if self
+            .shielded_detached
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(PlatformWalletError::WalletNotFound(format!(
+                "{} was removed from the manager; shielded bind refused",
+                hex::encode(self.wallet_id)
+            )));
+        }
+        Ok(())
+    }
+
+    /// Mark this wallet as removed from the manager, so any handle that
+    /// outlives the removal can no longer bind shielded state onto the
+    /// coordinator.
+    ///
+    /// Must be called **before** the coordinator's
+    /// `unregister_wallet`: that call takes the same install
+    /// transaction a bind holds, so setting the flag first makes every
+    /// bind either commit fully before the unregister purges it, or see
+    /// the flag and refuse. Setting it afterwards would leave the
+    /// window this closes.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn mark_shielded_detached(&self) {
+        self.shielded_detached
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Bound ZIP-32 account indices on the shielded sub-wallet,
@@ -1101,6 +1541,84 @@ impl PlatformWallet {
         Ok(identity_id)
     }
 
+    #[cfg(feature = "shielded")]
+    async fn shielded_shield_plan_for_account(
+        &self,
+        payment_account: u32,
+    ) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+        let wallet_manager = self.wallet_manager.read().await;
+        let wallet_info = wallet_manager
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let account = wallet_info
+            .core_wallet
+            .platform_payment_managed_account_at_index(payment_account)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressOperation(format!(
+                    "no platform payment account at index {payment_account}"
+                ))
+            })?;
+
+        // Candidate discovery must include both the transient derived pool and
+        // persisted balances hydrated during wallet load. The latter can be
+        // populated before the derived pool after an app relaunch. Sorting
+        // happens in `plan_shield_inputs`, after conversion, because the
+        // resulting PlatformAddress order is what the BTreeMap and network use
+        // to identify input 0.
+        let candidate_addresses = merge_platform_payment_candidate_addresses(
+            account
+                .addresses
+                .addresses
+                .values()
+                .filter_map(|address_info| {
+                    PlatformP2PKHAddress::from_address(&address_info.address).ok()
+                }),
+            account.address_balances.keys().copied(),
+        );
+        let candidates = candidate_addresses
+            .into_iter()
+            .filter_map(|p2pkh| {
+                let balance = account.address_credit_balance(&p2pkh);
+                (balance > 0).then_some((PlatformAddress::P2pkh(p2pkh.to_bytes()), balance))
+            })
+            .collect();
+
+        let platform_version = self.sdk.version();
+        let state_transition_version = &platform_version.dpp.state_transitions;
+        plan_shield_inputs(
+            candidates,
+            shield_fee_reserve_credits(platform_version)?,
+            state_transition_version.address_funds.min_input_amount,
+            usize::from(state_transition_version.max_address_inputs),
+        )
+    }
+
+    /// Return a cached capacity snapshot for shielding from one Platform
+    /// Payment account.
+    ///
+    /// This uses the exact planner later executed by
+    /// [`shielded_shield_from_account`](Self::shielded_shield_from_account):
+    /// Platform addresses are sorted lexicographically, the leading prefix
+    /// through the first address able to retain the shared fee reserve is
+    /// analyzed once, later addresses below the versioned minimum input amount
+    /// are omitted, and the lexicographically earliest usable addresses are
+    /// capped at the versioned maximum input count. The reported maximum is
+    /// therefore executable under the wallet's deterministic ordering policy;
+    /// it is not a balance-optimized subset. It performs no DAPI request,
+    /// signing, proof construction, or broadcast. A normal no-capacity state is returned with
+    /// `can_shield == false`; only missing wallet/account state or arithmetic
+    /// overflow is an error.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_shield_preflight(
+        &self,
+        payment_account: u32,
+    ) -> Result<ShieldedShieldPreflight, PlatformWalletError> {
+        Ok(self
+            .shielded_shield_plan_for_account(payment_account)
+            .await?
+            .preflight)
+    }
+
     /// Shield credits from a Platform Payment account into the
     /// wallet's shielded pool, with the resulting note assigned
     /// to `shielded_account`'s default Orchard address.
@@ -1109,11 +1627,12 @@ impl PlatformWallet {
     /// account (different concept from `shielded_account` — this
     /// is the BIP-44-style funding account on the transparent
     /// side, not the ZIP-32 Orchard account). Auto-selects input
-    /// addresses from that account in ascending derivation-index
-    /// order until the cumulative balance covers `amount` plus a
-    /// conservative fee buffer (the on-chain fee comes off input
-    /// 0 via `DeductFromInput(0)`; the buffer absorbs the
-    /// discrepancy without a more sophisticated estimator).
+    /// addresses from that account in lexicographic Platform-address
+    /// order until the cumulative balance covers `amount` plus the
+    /// versioned fee reserve ([`shield_fee_reserve_credits`]; the
+    /// on-chain fee comes off input 0 via `DeductFromInput(0)`, so
+    /// that much balance stays unclaimed on input 0 for the
+    /// metered fee).
     ///
     /// The host supplies a `Signer<PlatformAddress>` — typically
     /// `&VTableSigner` from `KeychainSigner.handle` — which signs
@@ -1122,8 +1641,8 @@ impl PlatformWallet {
     /// Returns `ShieldedNotBound` if no shielded sub-wallet is
     /// bound, `AddressOperation` if the platform-payment account
     /// at `payment_account` doesn't exist, or
-    /// `ShieldedInsufficientBalance` if the account's total
-    /// credits can't cover `amount + fee_buffer`.
+    /// `PlatformShieldCapacityExceeded` if the selected Platform-address set
+    /// can't cover `amount` plus the fee reserve.
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_account<S, P>(
         &self,
@@ -1138,12 +1657,99 @@ impl PlatformWallet {
         S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
         P: dpp::shielded::builder::OrchardProver,
     {
-        // Reject zero amount at the boundary. With `amount == 0`
-        // the selection loop exits immediately (claim 0 >= 0) and
-        // the post-loop insufficient-balance check (`0 < 0`)
-        // doesn't fire, so an empty inputs map would otherwise
-        // flow into the ~30 s Halo 2 proof build and fail deep and
-        // opaquely. Non-Swift FFI hosts don't have the UI guard.
+        self.shielded_shield_from_account_impl(
+            coordinator,
+            shielded_account,
+            payment_account,
+            None,
+            amount,
+            [0u8; 36], // empty memo
+            signer,
+            prover,
+        )
+        .await
+    }
+
+    /// Shield credits from a Platform Payment account into a THIRD-PARTY
+    /// shielded pool: the resulting note is assigned to
+    /// `recipient_raw_43` (a raw 43-byte Orchard payment address — the
+    /// same shape [`shielded_transfer_to`](Self::shielded_transfer_to)
+    /// takes) instead of the wallet's own default address. Input
+    /// selection, fees, and error shapes are identical to
+    /// [`shielded_shield_from_account`](Self::shielded_shield_from_account);
+    /// the wallet still needs a bound shielded sub-wallet at
+    /// `shielded_account` because the send is OVK-encrypted to (and its
+    /// activity recorded under) that account — which is how the scan
+    /// later recovers it as outgoing history.
+    ///
+    /// The recipient must actually be a third party: an address this
+    /// account's own IVK recognizes (default or any diversified index)
+    /// is rejected, because its note would be spendable here and the
+    /// live `Sent`/`Out` row would diverge from the self-pay row a
+    /// restore's scan derives. Self-shields go through
+    /// [`shielded_shield_from_account`](Self::shielded_shield_from_account).
+    ///
+    /// `memo` is the 36-byte on-chain `DashMemo` encoding attached to
+    /// the recipient's note (all-zero = no memo).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_shield_from_account_to_recipient<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        payment_account: u32,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        signer: &S,
+        prover: P,
+    ) -> Result<(), PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
+            grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
+        )
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "invalid Orchard payment address bytes".to_string(),
+            )
+        })?;
+        self.shielded_shield_from_account_impl(
+            coordinator,
+            shielded_account,
+            payment_account,
+            Some(recipient),
+            amount,
+            memo,
+            signer,
+            prover,
+        )
+        .await
+    }
+
+    /// Shared body of the two shield entry points above; `recipient`
+    /// `None` = the wallet's own default Orchard address.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    async fn shielded_shield_from_account_impl<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        payment_account: u32,
+        recipient: Option<grovedb_commitment_tree::PaymentAddress>,
+        amount: u64,
+        memo: [u8; 36],
+        signer: &S,
+        prover: P,
+    ) -> Result<(), PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        // Preserve the boundary behavior for non-Swift hosts and avoid taking
+        // the single-flight/account locks for a request that can never build.
         if amount == 0 {
             return Err(PlatformWalletError::ShieldedBuildError(
                 "amount must be > 0".to_string(),
@@ -1156,96 +1762,47 @@ impl PlatformWallet {
         // a ~30 s proof). Held across selection → build → broadcast.
         let _shield_guard = self.shield_guard.lock().await;
 
-        // The shield transition uses `DeductFromInput(0)` as its fee
-        // strategy. drive-abci interprets that as "after each input
-        // address has had its `claim` deducted, take the fee out of
-        // input 0's *remaining* balance" (see
-        // `deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0`
-        // in rs-dpp). "Input 0" is the smallest-key entry of the
-        // BTreeMap we hand to the builder. Therefore:
-        //
-        //   * we must NOT claim each input's full balance — claiming
-        //     `balance` leaves `remaining = 0`, and the fee
-        //     deduction has nothing to bite into.
-        //   * we must reserve at least `FEE_RESERVE_CREDITS` of
-        //     unclaimed balance specifically on input 0 (the
-        //     BTreeMap-smallest address).
-        //
-        // The flat shielded fee `F = compute_minimum_shielded_fee(2)`
-        // on a Type 15 transition lands at 162,851,200 credits (~1.63e8,
-        // ~0.0016 DASH) at protocol V8; `operations::shield` loads exactly
-        // `F` onto input 0's claim from this reserved headroom. Reserve 1e9
-        // credits (0.01 DASH) — ~6× headroom over `F`, still trivial
-        // relative to typical balances.
-        const FEE_RESERVE_CREDITS: u64 = 1_000_000_000;
+        // Planning and amount selection are shared with the cached preflight.
+        // The helper drops the wallet-manager read lock before the expensive
+        // proof path, while the single-flight guard keeps two shields from
+        // planning and broadcasting against the same address nonce.
+        let inputs = self
+            .shielded_shield_plan_for_account(payment_account)
+            .await?
+            .select_inputs(amount)?;
 
-        // Build the inputs map under the wallet-manager read lock,
-        // then drop the lock before re-entering shielded so the
-        // guards don't nest unnecessarily.
-        let inputs: std::collections::BTreeMap<
-            dpp::address_funds::PlatformAddress,
-            dpp::fee::Credits,
-        > = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            let account = info
-                .core_wallet
-                .platform_payment_managed_account_at_index(payment_account)
+        // Clone the account's viewing keys and release the slot before
+        // the proof: `shield` runs a Halo 2 proof plus a broadcast, and
+        // holding the read guard across it would block the bind path's
+        // slot write for that whole window — which, because a bind holds
+        // the coordinator's lifecycle mutex while waiting for it, would
+        // stall wallet removal and Clear for every wallet on the network
+        // (tokio's RwLock is write-preferring, so queued readers pile up
+        // behind that write too).
+        let keyset = {
+            let guard = self.shielded_keys.read().await;
+            let keys = guard
+                .as_ref()
+                .ok_or(PlatformWalletError::ShieldedNotBound)?;
+            keys.get(&shielded_account)
                 .ok_or_else(|| {
-                    PlatformWalletError::AddressOperation(format!(
-                        "no platform payment account at index {payment_account}"
+                    PlatformWalletError::ShieldedKeyDerivation(format!(
+                        "shielded account {shielded_account} not bound"
                     ))
-                })?;
-
-            // Collect (address, balance) for every funded address,
-            // sorted by address bytes — that determines BTreeMap
-            // key order downstream and therefore which input ends
-            // up at index 0.
-            let candidates: Vec<(dpp::address_funds::PlatformAddress, u64)> = account
-                .addresses
-                .addresses
-                .values()
-                .filter_map(|addr_info| {
-                    let p2pkh =
-                        key_wallet::PlatformP2PKHAddress::from_address(&addr_info.address).ok()?;
-                    let balance = account.address_credit_balance(&p2pkh);
-                    if balance == 0 {
-                        None
-                    } else {
-                        Some((
-                            dpp::address_funds::PlatformAddress::P2pkh(p2pkh.to_bytes()),
-                            balance,
-                        ))
-                    }
-                })
-                .collect();
-            // Selection rules live in `select_shield_inputs` (pure +
-            // unit-tested): sort by address, skip leading dust below the
-            // reserve, reserve fee headroom only on input 0, then claim
-            // in BTreeMap order up to `amount`.
-            select_shield_inputs(candidates, amount, FEE_RESERVE_CREDITS)?
+                })?
+                .clone()
         };
-
-        let guard = self.shielded_keys.read().await;
-        let keys = guard
-            .as_ref()
-            .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        let keyset = keys.get(&shielded_account).ok_or_else(|| {
-            PlatformWalletError::ShieldedKeyDerivation(format!(
-                "shielded account {shielded_account} not bound"
-            ))
-        })?;
-        super::shielded::operations::shield(
+        super::shielded::operations::shield_to(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
             self.wallet_id,
-            keyset,
+            &keyset,
             shielded_account,
+            recipient.as_ref(),
             inputs,
             amount,
+            memo,
             signer,
             &prover,
         )
@@ -1431,11 +1988,13 @@ impl Clone for PlatformWallet {
             platform: self.platform.clone(),
             asset_locks: self.asset_locks.clone(),
             persister: self.persister.clone(),
-            balance: self.balance.clone(),
+            generation: self.generation.clone(),
             #[cfg(feature = "shielded")]
             shielded_keys: self.shielded_keys.clone(),
             #[cfg(feature = "shielded")]
             shield_guard: self.shield_guard.clone(),
+            #[cfg(feature = "shielded")]
+            shielded_detached: self.shielded_detached.clone(),
         }
     }
 }
@@ -1508,87 +2067,6 @@ impl DerefMut for WalletStateWriteGuard<'_> {
             .get_wallet_info_mut(&self.wallet_id)
             .expect("wallet exists in guard")
     }
-}
-
-/// Select shield (Type 15) inputs from funded `(address, balance)`
-/// candidates.
-///
-/// Pure and deterministic so the selection rules are unit-testable
-/// independent of the wallet manager — a future refactor can't silently
-/// reintroduce the old `viable_input_0` dust/fee-reserve bug without
-/// tripping a test. The rules:
-///   * sort by address bytes — this fixes which input lands at index 0,
-///     and the network deducts the transition fee from input 0
-///     (`DeductFromInput(0)`);
-///   * skip any leading address with balance `<= fee_reserve` — input 0
-///     must keep at least `fee_reserve` unclaimed for the fee step;
-///   * claim in BTreeMap order only up to `amount`, taking the reserve
-///     headroom off input 0 alone.
-///
-/// Errors with [`PlatformWalletError::ShieldedInsufficientBalance`] when
-/// no viable input 0 exists, when usable balance can't cover
-/// `amount + fee_reserve`, or when the walk can't accumulate `amount`.
-#[cfg(feature = "shielded")]
-fn select_shield_inputs(
-    mut candidates: Vec<(dpp::address_funds::PlatformAddress, u64)>,
-    amount: u64,
-    fee_reserve: u64,
-) -> Result<
-    std::collections::BTreeMap<dpp::address_funds::PlatformAddress, dpp::fee::Credits>,
-    PlatformWalletError,
-> {
-    candidates.sort_by_key(|(addr, _)| *addr);
-
-    let Some(viable_input_0) = candidates
-        .iter()
-        .position(|(_, balance)| *balance > fee_reserve)
-    else {
-        let total: u64 = candidates.iter().map(|(_, b)| b).sum();
-        return Err(PlatformWalletError::ShieldedInsufficientBalance {
-            available: total,
-            required: amount.saturating_add(fee_reserve),
-        });
-    };
-    let usable = &candidates[viable_input_0..];
-
-    let total_usable: u64 = usable.iter().map(|(_, b)| b).sum();
-    let needed = amount.saturating_add(fee_reserve);
-    if total_usable < needed {
-        return Err(PlatformWalletError::ShieldedInsufficientBalance {
-            available: total_usable,
-            required: needed,
-        });
-    }
-
-    let mut chosen: std::collections::BTreeMap<
-        dpp::address_funds::PlatformAddress,
-        dpp::fee::Credits,
-    > = std::collections::BTreeMap::new();
-    let mut accumulated_claim: u64 = 0;
-    for (i, (addr, balance)) in usable.iter().enumerate() {
-        if accumulated_claim >= amount {
-            break;
-        }
-        let max_claim = if i == 0 {
-            balance.saturating_sub(fee_reserve)
-        } else {
-            *balance
-        };
-        let still_need = amount - accumulated_claim;
-        let claim = max_claim.min(still_need);
-        if claim > 0 {
-            chosen.insert(*addr, claim);
-            accumulated_claim = accumulated_claim.saturating_add(claim);
-        }
-    }
-
-    if accumulated_claim < amount {
-        return Err(PlatformWalletError::ShieldedInsufficientBalance {
-            available: accumulated_claim,
-            required: amount,
-        });
-    }
-    Ok(chosen)
 }
 
 /// Verify a bech32m recipient's network class matches `network` before decoding.
@@ -1726,36 +2204,89 @@ mod check_recipient_hrp_tests {
 mod shield_input_selection_tests {
     use super::*;
     use dpp::address_funds::PlatformAddress;
+    use dpp::version::LATEST_PLATFORM_VERSION;
 
-    const RESERVE: u64 = 1_000_000_000;
+    fn reserve() -> Credits {
+        shield_fee_reserve_credits(LATEST_PLATFORM_VERSION)
+            .expect("latest shield fee reserve must be computable")
+    }
 
     fn addr(b: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([b; 20])
+    }
+
+    fn indexed_addr(index: usize) -> PlatformAddress {
+        let encoded = index.to_be_bytes();
+        let mut hash = [0u8; 20];
+        hash[20 - encoded.len()..].copy_from_slice(&encoded);
+        PlatformAddress::P2pkh(hash)
+    }
+
+    fn min_input_amount() -> Credits {
+        LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount
+    }
+
+    fn max_address_inputs() -> usize {
+        usize::from(
+            LATEST_PLATFORM_VERSION
+                .dpp
+                .state_transitions
+                .max_address_inputs,
+        )
+    }
+
+    fn plan(
+        candidates: Vec<(PlatformAddress, Credits)>,
+    ) -> Result<ShieldedShieldInputPlan, PlatformWalletError> {
+        plan_shield_inputs(
+            candidates,
+            reserve(),
+            min_input_amount(),
+            max_address_inputs(),
+        )
     }
 
     #[test]
     fn skips_leading_dust_address_below_reserve() {
         // addr(1) sorts first but is dust (== reserve, not > reserve);
         // addr(2) must become input 0.
-        let candidates = vec![(addr(1), RESERVE), (addr(2), 5 * RESERVE)];
-        let chosen = select_shield_inputs(candidates, 2 * RESERVE, RESERVE).unwrap();
+        let candidates = vec![(addr(1), reserve()), (addr(2), 5 * reserve())];
+        let plan = plan(candidates).unwrap();
+        let chosen = plan.select_inputs(2 * reserve()).unwrap();
         assert!(
             !chosen.contains_key(&addr(1)),
             "dust leading address must be skipped"
         );
-        assert_eq!(chosen.get(&addr(2)), Some(&(2 * RESERVE)));
+        assert_eq!(chosen.get(&addr(2)), Some(&(2 * reserve())));
     }
 
     #[test]
     fn balance_exactly_at_reserve_is_not_viable_input_0() {
         // Strict `> reserve`: a sole address holding exactly the reserve
         // cannot be input 0.
-        let candidates = vec![(addr(1), RESERVE)];
-        let err = select_shield_inputs(candidates, 1, RESERVE).unwrap_err();
+        let candidates = vec![(addr(1), reserve())];
+        let plan = plan(candidates).unwrap();
+        assert_eq!(
+            plan.preflight,
+            ShieldedShieldPreflight {
+                can_shield: false,
+                account_balance_credits: reserve(),
+                usable_balance_credits: 0,
+                fee_reserve_credits: reserve(),
+                max_shieldable_credits: 0,
+                reason: plan.preflight.reason.clone(),
+            }
+        );
+        assert!(plan.preflight.reason.is_some());
+        let err = plan.select_inputs(1).unwrap_err();
         assert!(matches!(
             err,
-            PlatformWalletError::ShieldedInsufficientBalance { available, required }
-                if available == RESERVE && required == 1 + RESERVE
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
+                if available == reserve() && required == 1 + reserve()
         ));
     }
 
@@ -1763,33 +2294,200 @@ mod shield_input_selection_tests {
     fn amount_equal_to_total_minus_reserve_claims_exactly_amount() {
         // Single address holding exactly amount + reserve: claim ==
         // amount, leaving the full reserve for DeductFromInput(0).
-        let amount = 3 * RESERVE;
-        let candidates = vec![(addr(1), amount + RESERVE)];
-        let chosen = select_shield_inputs(candidates, amount, RESERVE).unwrap();
+        let amount = 3 * reserve();
+        let candidates = vec![(addr(1), amount + reserve())];
+        let plan = plan(candidates).unwrap();
+        assert_eq!(plan.preflight.max_shieldable_credits, amount);
+        let chosen = plan.select_inputs(amount).unwrap();
         assert_eq!(chosen.len(), 1);
         assert_eq!(chosen.get(&addr(1)), Some(&amount));
     }
 
     #[test]
     fn accumulates_across_inputs_reserving_only_on_input_0() {
-        let amount = 5 * RESERVE;
+        let amount = 5 * reserve();
         // input 0 (addr 1) holds 2*reserve → contributes reserve after
         // its headroom; addr 2 covers the rest.
-        let candidates = vec![(addr(1), 2 * RESERVE), (addr(2), 5 * RESERVE)];
-        let chosen = select_shield_inputs(candidates, amount, RESERVE).unwrap();
-        assert_eq!(chosen.get(&addr(1)), Some(&RESERVE));
-        assert_eq!(chosen.get(&addr(2)), Some(&(4 * RESERVE)));
+        let candidates = vec![(addr(1), 2 * reserve()), (addr(2), 5 * reserve())];
+        let plan = plan(candidates).unwrap();
+        let chosen = plan.select_inputs(amount).unwrap();
+        assert_eq!(chosen.get(&addr(1)), Some(&reserve()));
+        assert_eq!(chosen.get(&addr(2)), Some(&(4 * reserve())));
         assert_eq!(chosen.values().sum::<u64>(), amount);
     }
 
     #[test]
     fn insufficient_usable_balance_errors() {
         // Needs amount + reserve = 5*reserve, only 2*reserve available.
-        let candidates = vec![(addr(1), 2 * RESERVE)];
-        let err = select_shield_inputs(candidates, 4 * RESERVE, RESERVE).unwrap_err();
+        let candidates = vec![(addr(1), 2 * reserve())];
+        let plan = plan(candidates).unwrap();
+        let err = plan.select_inputs(4 * reserve()).unwrap_err();
         assert!(matches!(
             err,
-            PlatformWalletError::ShieldedInsufficientBalance { .. }
+            PlatformWalletError::PlatformShieldCapacityExceeded { .. }
         ));
+    }
+
+    #[test]
+    fn regression_reports_max_from_usable_suffix_not_total_account_balance() {
+        // Real account snapshot: the leading address is below the reserve, so
+        // capacity must come from the usable suffix, not the account total.
+        assert!(
+            297_264_780 <= reserve(),
+            "regression shape requires the leading address to stay below the reserve; \
+             re-seed the balances if the versioned reserve drops under 297_264_780"
+        );
+        let candidates = vec![
+            (addr(1), 297_264_780),
+            (addr(2), 2_000_000_000),
+            (addr(3), 1_623_849_220),
+        ];
+        let plan = plan(candidates).unwrap();
+        let expected_max = 3_623_849_220 - reserve();
+
+        assert_eq!(plan.preflight.account_balance_credits, 3_921_114_000);
+        assert_eq!(plan.preflight.usable_balance_credits, 3_623_849_220);
+        assert_eq!(plan.preflight.fee_reserve_credits, reserve());
+        assert_eq!(plan.preflight.max_shieldable_credits, expected_max);
+        assert!(plan.preflight.can_shield);
+        assert_eq!(plan.preflight.reason, None);
+
+        let chosen = plan.select_inputs(expected_max).unwrap();
+        assert!(!chosen.contains_key(&addr(1)));
+        assert_eq!(chosen.values().sum::<u64>(), expected_max);
+
+        let err = plan.select_inputs(expected_max + 1).unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
+                if available == 3_623_849_220 && required == 3_623_849_221
+        ));
+    }
+
+    #[test]
+    fn no_viable_address_is_a_normal_zero_capacity_preflight() {
+        // Both addresses are funded but neither strictly exceeds the reserve,
+        // so no address can serve as the fee-paying input 0.
+        let below_reserve = reserve() / 2;
+        let plan = plan(vec![(addr(2), below_reserve), (addr(1), reserve())]).unwrap();
+
+        assert!(!plan.preflight.can_shield);
+        assert_eq!(
+            plan.preflight.account_balance_credits,
+            reserve() + below_reserve
+        );
+        assert_eq!(plan.preflight.usable_balance_credits, 0);
+        assert_eq!(plan.preflight.max_shieldable_credits, 0);
+        assert!(plan
+            .preflight
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("Platform payment account")));
+    }
+
+    #[test]
+    fn planner_sorts_lexicographically_and_reserves_only_on_input_zero() {
+        let below_reserve = reserve() / 2;
+        let plan = plan(vec![
+            (addr(3), 2 * reserve()),
+            (addr(1), below_reserve),
+            (addr(2), 2 * reserve()),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            plan.preflight.account_balance_credits,
+            4 * reserve() + below_reserve
+        );
+        assert_eq!(plan.preflight.usable_balance_credits, 4 * reserve());
+        assert_eq!(plan.preflight.max_shieldable_credits, 3 * reserve());
+        let chosen = plan.select_inputs(2 * reserve()).unwrap();
+        assert_eq!(chosen.get(&addr(2)), Some(&reserve()));
+        assert_eq!(chosen.get(&addr(3)), Some(&reserve()));
+        assert!(!chosen.contains_key(&addr(1)));
+    }
+
+    #[test]
+    fn planner_rejects_credit_sum_overflow() {
+        let err = plan(vec![(addr(1), u64::MAX), (addr(2), 1)]).unwrap_err();
+        assert!(matches!(err, PlatformWalletError::InputSumOverflow));
+    }
+
+    #[test]
+    fn versioned_input_cap_excludes_max_plus_one_candidate_from_capacity_and_selection() {
+        let max_inputs = max_address_inputs();
+        assert!(max_inputs > 0, "latest protocol must permit shield inputs");
+
+        let candidates = (1..=max_inputs + 1)
+            .map(|index| (indexed_addr(index), 2 * reserve()))
+            .collect();
+        let plan = plan(candidates).unwrap();
+        let expected_account_balance = (max_inputs as u64 + 1) * 2 * reserve();
+        let expected_usable_balance = max_inputs as u64 * 2 * reserve();
+        let expected_max = expected_usable_balance - reserve();
+
+        assert_eq!(
+            plan.preflight.account_balance_credits,
+            expected_account_balance
+        );
+        assert_eq!(
+            plan.preflight.usable_balance_credits,
+            expected_usable_balance
+        );
+        assert_eq!(plan.preflight.max_shieldable_credits, expected_max);
+        assert_eq!(plan.usable_candidates.len(), max_inputs);
+
+        let selected = plan.select_inputs(expected_max).unwrap();
+        assert_eq!(selected.len(), max_inputs);
+        assert!(!selected.contains_key(&indexed_addr(max_inputs + 1)));
+
+        let err = plan.select_inputs(expected_max + 1).unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
+                if available == expected_usable_balance
+                    && required == expected_usable_balance + 1
+        ));
+    }
+
+    #[test]
+    fn excludes_later_address_below_versioned_minimum_from_max() {
+        let dust = min_input_amount() - 1;
+        let plan = plan(vec![(addr(1), 2 * reserve()), (addr(2), dust)]).unwrap();
+
+        assert_eq!(plan.preflight.account_balance_credits, 2 * reserve() + dust);
+        assert_eq!(plan.preflight.usable_balance_credits, 2 * reserve());
+        assert_eq!(plan.preflight.max_shieldable_credits, reserve());
+        let chosen = plan.select_inputs(reserve()).unwrap();
+        assert_eq!(chosen.len(), 1);
+        assert_eq!(chosen.get(&addr(1)), Some(&reserve()));
+        assert!(!chosen.contains_key(&addr(2)));
+
+        let err = plan.select_inputs(reserve() + 1).unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
+                if available == 2 * reserve() && required == 2 * reserve() + 1
+        ));
+    }
+
+    #[test]
+    fn lifts_non_first_greedy_tail_to_versioned_minimum() {
+        let minimum = min_input_amount();
+        let plan = plan(vec![
+            (addr(1), 2 * reserve()),
+            (addr(2), minimum.saturating_mul(2)),
+        ])
+        .unwrap();
+
+        let amount = reserve() + 1;
+        let chosen = plan.select_inputs(amount).unwrap();
+        assert_eq!(chosen.get(&addr(1)), Some(&reserve()));
+        assert_eq!(chosen.get(&addr(2)), Some(&minimum));
+        assert_eq!(chosen.values().sum::<u64>(), amount + minimum - 1);
+        assert!(chosen
+            .iter()
+            .skip(1)
+            .all(|(_, requested)| *requested >= minimum));
     }
 }

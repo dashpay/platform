@@ -82,7 +82,7 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "753a11f14c9a4bc72bf2d5302751dd43d174621e" }
 nonempty = "0.11"
 # Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
 # bindings, and blake3 for the snapshot-file checksum.
@@ -107,7 +107,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", features = ["client"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "753a11f14c9a4bc72bf2d5302751dd43d174621e", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks", "shielded_test_data"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
@@ -121,8 +121,8 @@ integer-encoding = { version = "4.0.0" }
 
 # For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
 # subtree-prefix algorithm grovedb uses internally.
-grovedb-path = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1" }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "753a11f14c9a4bc72bf2d5302751dd43d174621e" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "753a11f14c9a4bc72bf2d5302751dd43d174621e" }
 
 [features]
 default = ["bls-signatures"]

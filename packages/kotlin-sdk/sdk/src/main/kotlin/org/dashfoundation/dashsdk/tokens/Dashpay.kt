@@ -5,7 +5,9 @@ import org.dashfoundation.dashsdk.wallet.op
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
@@ -215,7 +217,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
      */
     suspend fun contacts(identityId: ByteArray): Contacts = withContext(Dispatchers.IO) {
         mapNativeErrors {
-            val identityHandle = TokensNative.getManagedIdentity(walletHandle, identityId)
+            val identityHandle = managedIdentityHandleOrZero(identityId)
             if (identityHandle == 0L) {
                 return@mapNativeErrors Contacts(emptyList(), emptyList(), emptyList())
             }
@@ -253,7 +255,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
         coreSignerHandle: Long,
     ): Boolean = gate.op {
         mapNativeErrors {
-            val identityHandle = TokensNative.getManagedIdentity(walletHandle, ourIdentityId)
+            val identityHandle = managedIdentityHandleOrZero(ourIdentityId)
             if (identityHandle == 0L) return@mapNativeErrors false
             try {
                 val requestHandle =
@@ -384,6 +386,77 @@ class Dashpay internal constructor(private val walletHandle: Long,
         ContactRequestRef(handle)
     }
 
+    // ── DIP-13 invitations ────────────────────────────────────────────
+    //
+    // The invitation link (parse input / create output) IS a bearer
+    // credential — the one-time voucher private key rides inside as a
+    // WIF. Never log or persist it; the claim/reclaim flows re-derive
+    // everything they need from Rust-side state.
+
+    /**
+     * Decode a `dashpay://invite` link into a read-only [InvitationPreview]
+     * — no network, no side effects. A malformed link yields
+     * `structurallyValid == false`, never an exception, so the claim UI can
+     * render a clean "invalid invitation" state.
+     * ← Swift `ManagedPlatformWallet.parseInvitation`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
+     */
+    suspend fun parseInvitation(uri: String): InvitationPreview = gate.op {
+        val json = mapNativeErrors { DashpayNative.parseInvitation(uri) }
+        InvitationPreview.fromJson(json)
+    }
+
+    /**
+     * Create a DashPay invitation voucher and return the shareable
+     * `dashpay://invite` link. Blocking (builds + broadcasts an L1 asset
+     * lock at the DIP-13 invitation path and waits for its InstantSend
+     * proof); runs on IO. The sent-invitation row lands in Room via the
+     * persistence callback before this returns, so the "Sent invitations"
+     * `Flow` updates without any extra call.
+     * ← Swift `ManagedPlatformWallet.createInvitation`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
+     *
+     * Amount bounds ([minInvitationDuffs], [maxInvitationDuffs]) are
+     * enforced in Rust — a voucher below the floor could fund neither a
+     * claim nor a reclaim.
+     *
+     * Pass a non-null [inviterIdentityId] (32 bytes) + [inviterUsername]
+     * to opt into the contact-bootstrap (the link then carries the
+     * username so the invitee can send a contact request back); null for a
+     * pure funding voucher.
+     *
+     * **The returned link embeds the plaintext one-time voucher key.**
+     */
+    suspend fun createInvitation(
+        amountDuffs: Long,
+        fundingAccountIndex: Int,
+        inviterIdentityId: ByteArray?,
+        inviterUsername: String?,
+        coreSignerHandle: Long,
+        // Unix seconds as Long: the shared C API takes a u32, so an Int
+        // default would go negative in 2038 and be rejected by the JNI
+        // guard even though the API itself remains valid.
+        nowUnix: Long = System.currentTimeMillis() / 1000L,
+    ): String = gate.op {
+        require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
+        require(fundingAccountIndex >= 0) {
+            "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
+        }
+        require(inviterIdentityId == null || inviterIdentityId.size == 32) {
+            "inviterIdentityId must be 32 bytes when set"
+        }
+        require(inviterIdentityId == null || !inviterUsername.isNullOrEmpty()) {
+            "inviterUsername is required when inviterIdentityId is set"
+        }
+        val uri = mapNativeErrors {
+            DashpayNative.createInvitation(
+                walletHandle, amountDuffs, fundingAccountIndex,
+                inviterIdentityId, inviterUsername, nowUnix, coreSignerHandle,
+            )
+        }
+        checkNotNull(uri) { "native createInvitation returned no link" }
+    }
+
     // ── Profile / contactInfo writes (upstream #3841 parity) ──────────
 
     /**
@@ -441,6 +514,21 @@ class Dashpay internal constructor(private val walletHandle: Long,
     }
 
     /**
+     * Snapshot the managed identity for [identityId], or 0 when the wallet
+     * does not manage it. The native side reports an unmanaged identity as
+     * a platform-wallet NotFound error rather than a zero handle, so the
+     * "not managed" outcome is translated here — every local-read caller
+     * treats it as an absence (null / empty / false), never an exception.
+     * An invalid/stale wallet handle is a distinct native error
+     * (ErrorInvalidHandle) that is NOT translated, so it propagates instead
+     * of masquerading as an unmanaged identity (dashpay/platform#4060).
+     */
+    private fun managedIdentityHandleOrZero(identityId: ByteArray): Long =
+        translateManagedIdentityNotFoundToZero {
+            TokensNative.getManagedIdentity(walletHandle, identityId)
+        }
+
+    /**
      * Open the managed-identity handle for [identityId], run [block],
      * and destroy the handle before returning (the [contacts] /
      * [acceptIncomingRequest] discipline). Returns null when the
@@ -450,7 +538,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
         identityId: ByteArray,
         block: (Long) -> T,
     ): T? {
-        val handle = TokensNative.getManagedIdentity(walletHandle, identityId)
+        val handle = managedIdentityHandleOrZero(identityId)
         if (handle == 0L) return null
         return try {
             block(handle)
@@ -471,6 +559,25 @@ class Dashpay internal constructor(private val walletHandle: Long,
             out.add(id)
         }
         return out
+    }
+
+    companion object {
+        /**
+         * Upper bound, in duffs, on the amount an invitation voucher may
+         * lock — the Rust-enforced cap [createInvitation] rejects above.
+         * Read it rather than restating it: Rust owns the value, and a
+         * client-side copy diverges the moment the constant moves.
+         * ← Swift `ManagedPlatformWallet.maxInvitationDuffs`.
+         */
+        val maxInvitationDuffs: Long get() = DashpayNative.invitationMaxDuffs()
+
+        /**
+         * Lower bound, in duffs, on the amount an invitation voucher may
+         * lock — the Rust-enforced floor [createInvitation] rejects below
+         * (a smaller voucher can fund neither a claim nor a reclaim).
+         * ← Swift `ManagedPlatformWallet.minInvitationDuffs`.
+         */
+        val minInvitationDuffs: Long get() = DashpayNative.invitationMinDuffs()
     }
 }
 
@@ -544,6 +651,91 @@ class EstablishedContactRef internal constructor(handle: Long) : AutoCloseable {
         override fun run() {
             val h = handleRef.getAndSet(0)
             if (h != 0L) TokensNative.establishedContactDestroy(h)
+        }
+    }
+}
+
+// ── Free functions (unit-testable, no `this`) ─────────────────────────
+
+/**
+ * Run [getHandle] (a `TokensNative.getManagedIdentity` call), translating
+ * the platform-wallet NotFound error the native layer raises for an
+ * identity the wallet does not manage into a zero handle — the same "not
+ * managed" signal the callers already handle by returning null / empty.
+ *
+ * The FFI's blanket `Option → result` conversion reports the miss as
+ * `PlatformWalletFFIResultCode::NotFound` (98, offset into the
+ * `DashSDKException` code by [DashSdkError.PLATFORM_WALLET_CODE_OFFSET]),
+ * so without this every local read over an unmanaged identity — e.g.
+ * [Dashpay.syncState] on a contact's identity — would throw
+ * a typed `DashSdkError.PlatformWallet.NotFound("…ManagedIdentity not
+ * found")` instead of returning null. Any other error is rethrown
+ * untouched.
+ */
+internal inline fun translateManagedIdentityNotFoundToZero(getHandle: () -> Long): Long =
+    try {
+        getHandle()
+    } catch (e: DashSDKException) {
+        val notFound = DashSdkError.PLATFORM_WALLET_CODE_OFFSET +
+            DashSdkError.PLATFORM_WALLET_NOT_FOUND_CODE
+        if (e.code == notFound) 0L else throw e
+    }
+
+/**
+ * Read-only preview of a `dashpay://invite` link, decoded off-chain by
+ * [Dashpay.parseInvitation] — mirror of Swift
+ * `ManagedPlatformWallet.InvitationPreview`.
+ *
+ * The legacy link carries neither the amount nor an expiry, so
+ * [amountDuffs] and [expiryUnix] are always 0 (the claim UI shows "—"; the
+ * amount resolves when the claim refetches the funding tx). Gate contact
+ * features on a non-null [inviterUsername], not on [hasInviter]: a
+ * metadata-only link (display-name/avatar without a `du` username) sets
+ * the flag while the username stays null.
+ */
+data class InvitationPreview(
+    /** The link decoded structurally; when false every other field is unset. */
+    val structurallyValid: Boolean,
+    /** The link carried an `islock` (InstantSend); false ⇒ ChainLock invite. */
+    val isInstant: Boolean,
+    /** The link carried inviter metadata (username, display name, or avatar). */
+    val hasInviter: Boolean,
+    /** Inviter DPNS username, or null (metadata-only or pure funding link). */
+    val inviterUsername: String?,
+    /** Always 0 — not on the wire; resolved at claim time. */
+    val amountDuffs: Long = 0,
+    /** Always 0 — the legacy link carries no expiry field. */
+    val expiryUnix: Int = 0,
+) {
+    companion object {
+        /** An all-unset preview — the malformed-link shape. */
+        val INVALID = InvitationPreview(
+            structurallyValid = false,
+            isInstant = false,
+            hasInviter = false,
+            inviterUsername = null,
+        )
+
+        /** Parse the compact JSON emitted by `DashpayNative.parseInvitation`. */
+        internal fun fromJson(json: String?): InvitationPreview {
+            if (json.isNullOrEmpty()) return INVALID
+            return try {
+                val obj = org.json.JSONObject(json)
+                InvitationPreview(
+                    structurallyValid = obj.optBoolean("structurallyValid", false),
+                    isInstant = obj.optBoolean("isInstant", false),
+                    hasInviter = obj.optBoolean("hasInviter", false),
+                    inviterUsername = if (obj.isNull("inviterUsername")) {
+                        null
+                    } else {
+                        obj.optString("inviterUsername").takeIf { it.isNotEmpty() }
+                    },
+                    amountDuffs = obj.optLong("amountDuffs", 0),
+                    expiryUnix = obj.optInt("expiryUnix", 0),
+                )
+            } catch (_: org.json.JSONException) {
+                INVALID
+            }
         }
     }
 }

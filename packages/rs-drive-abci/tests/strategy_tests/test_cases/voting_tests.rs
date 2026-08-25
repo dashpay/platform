@@ -100,7 +100,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -393,7 +394,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -669,7 +671,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -1027,7 +1030,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -1396,7 +1400,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -1798,7 +1803,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 
@@ -2209,7 +2215,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_dpns()
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract")
             .as_ref()
             .clone();
 

@@ -157,9 +157,23 @@ impl ManagedIdentity {
         // A failed overwrite restores the previous entry rather than deleting
         // it. Either way the persist result is returned, not swallowed: the
         // user-initiated send path (`send_payment`) surfaces it in the UI.
-        let previous = self.dashpay.payments.insert(tx_id.clone(), entry);
-        let cs = self.snapshot_changeset();
-        if let Err(e) = persister.store(cs.into()) {
+        let previous = self.dashpay.payments.insert(tx_id.clone(), entry.clone());
+        let mut cs: crate::changeset::PlatformWalletChangeSet = self.snapshot_changeset().into();
+        // Ride the changed row on `dashpay_payments_overlay` as well: the
+        // identity snapshot above carries the FULL payments map (blob-style
+        // persisters overwrite the whole entry), so a delta-style persister
+        // projecting the snapshot would replay the identity's complete
+        // history on every recorded payment — unbounded per-call work as
+        // history grows, against the `PlatformWalletPersistence` bounded-
+        // work guidance. The single-row overlay is the bounded carrier
+        // those persisters (the FFI vtable) project instead; every payment
+        // mutation funnels through this method, so the overlay sees every
+        // write.
+        cs.dashpay_payments_overlay = Some(BTreeMap::from([(
+            self.id(),
+            BTreeMap::from([(tx_id.clone(), entry)]),
+        )]));
+        if let Err(e) = persister.store(cs) {
             match previous {
                 Some(prev) => {
                     self.dashpay.payments.insert(tx_id, prev);
@@ -220,6 +234,37 @@ impl ManagedIdentity {
     /// Persists the resulting changeset via `persister` and returns `()`.
     pub fn add_dpns_name(&mut self, name: DpnsNameInfo, persister: &WalletPersister) {
         self.dpns_names.push(name);
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
+    /// Replace the DPNS-name list wholesale.
+    ///
+    /// Use this when a sync round (or a confirmed sale/transfer) has the
+    /// canonical set of names owned by this identity. `IdentityChangeSet::merge`
+    /// and replay both treat this field as a complete last-write-wins
+    /// snapshot, so names that left the identity (sold / transferred
+    /// away) are removed, including by an empty snapshot — the same
+    /// policy as [`Self::set_contested_dpns_names`].
+    pub fn set_dpns_names(&mut self, names: Vec<DpnsNameInfo>, persister: &WalletPersister) {
+        self.dpns_names = names;
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
+    /// Remove one DPNS name by label (the sold / transferred-away case).
+    ///
+    /// No-op (no changeset emitted) when the label isn't present.
+    pub fn remove_dpns_name(&mut self, label: &str, persister: &WalletPersister) {
+        let before = self.dpns_names.len();
+        self.dpns_names.retain(|n| n.label != label);
+        if self.dpns_names.len() == before {
+            return;
+        }
         let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);
@@ -638,6 +683,94 @@ mod tests {
             result.is_err(),
             "a failed key-persist must surface, not be swallowed"
         );
+    }
+
+    /// Recording a payment emits BOTH carriers with the right granularity:
+    /// the identity snapshot keeps the full payments map (blob-style
+    /// persisters overwrite the whole entry) while
+    /// `dashpay_payments_overlay` carries EXACTLY the one changed
+    /// `(owner, txid)` row — never the accumulated history. Delta-style
+    /// persisters (the FFI vtable) project only the overlay, so this
+    /// single-row shape is what keeps per-store work bounded as history
+    /// grows: N recorded payments must emit N overlay rows total, not
+    /// 1 + 2 + … + N.
+    #[test]
+    fn record_dashpay_payment_emits_single_row_overlay() {
+        let owner_id = Identifier::from([1u8; 32]);
+        let identity = Identity::V0(IdentityV0 {
+            id: owner_id,
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let capturing = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], capturing.clone() as _);
+        let alice = Identifier::from([0xAA; 32]);
+
+        managed
+            .record_dashpay_payment(
+                "tx1".into(),
+                PaymentEntry::new_sent(alice, 100, Some("rent".into())),
+                &p,
+            )
+            .expect("record tx1");
+        managed
+            .record_dashpay_payment(
+                "tx2".into(),
+                PaymentEntry::new_received(alice, 250, None),
+                &p,
+            )
+            .expect("record tx2");
+
+        let stores = capturing.stores.lock().unwrap();
+        assert_eq!(stores.len(), 2);
+
+        // Second store: the snapshot map has both rows, the overlay only
+        // the newly recorded one.
+        let cs = &stores[1];
+        let snapshot = cs
+            .identities
+            .as_ref()
+            .expect("identity snapshot rides along")
+            .identities
+            .get(&owner_id)
+            .expect("owner entry");
+        assert_eq!(
+            snapshot.dashpay_payments.len(),
+            2,
+            "full map on the blob carrier"
+        );
+        let overlay = cs
+            .dashpay_payments_overlay
+            .as_ref()
+            .expect("overlay must carry the delta")
+            .get(&owner_id)
+            .expect("owner overlay");
+        assert_eq!(
+            overlay.len(),
+            1,
+            "the overlay must carry only the changed row, not the history"
+        );
+        let row = overlay.get("tx2").expect("the just-recorded txid");
+        assert_eq!(row.amount_duffs, 250);
+
+        // A status flip re-emits the same single (owner, txid) row.
+        let mut confirmed = PaymentEntry::new_sent(alice, 100, Some("rent".into()));
+        confirmed.status = crate::wallet::identity::PaymentStatus::Confirmed;
+        drop(stores);
+        managed
+            .record_dashpay_payment("tx1".into(), confirmed.clone(), &p)
+            .expect("flip tx1");
+        let stores = capturing.stores.lock().unwrap();
+        let overlay = stores[2]
+            .dashpay_payments_overlay
+            .as_ref()
+            .expect("overlay on the flip")
+            .get(&owner_id)
+            .expect("owner overlay");
+        assert_eq!(overlay.len(), 1);
+        assert_eq!(overlay.get("tx1"), Some(&confirmed));
     }
 
     /// A failed payment persist must NOT strand the entry in memory — else a

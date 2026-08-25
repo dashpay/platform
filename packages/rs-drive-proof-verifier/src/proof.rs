@@ -4,6 +4,16 @@
 /// `AggregateCountAndSumOnRange` primitive.
 pub mod document_average;
 pub mod document_count;
+/// Verified having-range (`GROUP BY … HAVING <aggregate> <op> <value>
+/// LIMIT n`) result. One entry per matching group, in axis order, read
+/// as a value-bounded range of an indexed tree's per-axis secondary
+/// (grovedb PR 657); see the file's docs.
+pub mod document_having;
+/// Verified ranked (`GROUP BY … ORDER BY <aggregate> LIMIT n
+/// [OFFSET m]`) result. One entry per returned group, in ranking order,
+/// plus the attested rank the page starts at, read from an indexed
+/// tree's per-axis secondary (grovedb PR 657); see the file's docs.
+pub mod document_ranked;
 /// Per-entry verified average result. One `(in_key, key, count, sum)`
 /// tuple per matched group; client divides per-entry to obtain
 /// per-group averages.
@@ -3918,7 +3928,7 @@ mod tests {
             })),
         };
         let provider = unreachable_provider();
-        let err = <StateTransitionProofResult as FromProof<
+        let err = <StateTransitionProofOutcome as FromProof<
             platform::BroadcastStateTransitionRequest,
         >>::maybe_from_proof(
             request,
@@ -5122,6 +5132,53 @@ mod tests {
     }
 
     #[test]
+    fn epochs_info_descending_with_explicit_max_start_passes_guard() {
+        // The SDK's `fetch_current` sends a descending query with an explicit
+        // start (the hinted current epoch index). Any explicit start — up to
+        // MAX_EPOCH, the highest index that fits Drive's epoch key encoding —
+        // makes the request fully self-describing, so it must get past the
+        // explicit-start guard and proceed to proof verification (which here
+        // fails on the garbage proof, not on the request shape).
+        use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
+        use dpp::block::epoch::MAX_EPOCH;
+        use platform::get_epochs_info_response::{
+            get_epochs_info_response_v0::Result as V0Result, GetEpochsInfoResponseV0, Version,
+        };
+        let response = platform::GetEpochsInfoResponse {
+            version: Some(Version::V0(GetEpochsInfoResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(10)),
+            })),
+        };
+        let request = platform::GetEpochsInfoRequest {
+            version: Some(platform::get_epochs_info_request::Version::V0(
+                GetEpochsInfoRequestV0 {
+                    start_epoch: Some(MAX_EPOCH as u32),
+                    count: 1,
+                    ascending: false,
+                    prove: true,
+                },
+            )),
+        };
+        let provider = unreachable_provider();
+
+        let err =
+            <ExtendedEpochInfos as FromProof<platform::GetEpochsInfoRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+
+        assert!(
+            !matches!(err, Error::RequestError { .. }),
+            "explicit-start descending query must pass the guard, got: {err:?}"
+        );
+    }
+
+    #[test]
     fn extended_epoch_info_single_bubbles_empty_version() {
         // Ensures the wrapper passes through error from inner impl.
         use platform::get_epochs_info_response::{
@@ -6023,7 +6080,7 @@ mod tests {
         };
         let response = platform::WaitForStateTransitionResultResponse::default();
         let provider = unreachable_provider();
-        let err = <StateTransitionProofResult as FromProof<
+        let err = <StateTransitionProofOutcome as FromProof<
             platform::BroadcastStateTransitionRequest,
         >>::maybe_from_proof(
             request,
@@ -6039,7 +6096,7 @@ mod tests {
     #[test]
     fn broadcast_state_transition_protocol_error_fires_before_metadata_check() {
         // This test pins the ORDERING of validation in
-        // `StateTransitionProofResult::maybe_from_proof` for broadcast
+        // `StateTransitionProofOutcome::maybe_from_proof` for broadcast
         // state transitions: proof extraction -> state_transition decode ->
         // metadata check. An invalid state_transition payload triggers
         // `ProtocolError` on decode BEFORE the missing-metadata branch is
@@ -6064,7 +6121,7 @@ mod tests {
             })),
         };
         let provider = unreachable_provider();
-        let err = <StateTransitionProofResult as FromProof<
+        let err = <StateTransitionProofOutcome as FromProof<
             platform::BroadcastStateTransitionRequest,
         >>::maybe_from_proof(
             request,

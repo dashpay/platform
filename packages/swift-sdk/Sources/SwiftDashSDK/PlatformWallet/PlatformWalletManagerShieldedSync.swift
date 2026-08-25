@@ -465,18 +465,32 @@ extension PlatformWalletManager {
     }
 
     /// Consensus-pinned flat shielded fee (in credits) for a pool-paid
-    /// shielded transition with `numActions` Orchard actions. Pure
-    /// computation on the Rust side (no handle, no network) against
-    /// `PlatformVersion::latest()` — the same version the builders pin —
-    /// so the estimate can't drift from the carved fee. A single-note
-    /// spend with change is `numActions: 2`.
-    public static func estimateShieldedFee(
+    /// shielded transition with `numActions` Orchard actions, computed at
+    /// this manager's network-tracked platform version (`sdk.version()`) —
+    /// the same version the shielded builders carve fees with — so the
+    /// estimate can't drift from the carved fee even when the connected
+    /// network hasn't activated the client's latest protocol version yet.
+    /// No network round-trip; just the handle → version lookup and a pure
+    /// computation. A single-note spend with change is `numActions: 2`.
+    public func estimateShieldedFee(
         kind: ShieldedFeeKind,
         numActions: Int = 2
     ) throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        // `num_actions` is `usize` on the Rust side → imported as `UInt`,
+        // whose checked initializer traps on a negative Int.
+        guard numActions >= 0 else {
+            throw PlatformWalletError.invalidParameter(
+                "numActions must be non-negative, got \(numActions)"
+            )
+        }
         var fee: UInt64 = 0
-        // `num_actions` is `usize` on the Rust side → imported as `UInt`.
         try platform_wallet_shielded_estimate_fee(
+            handle,
             kind.rawValue,
             UInt(numActions),
             &fee
@@ -579,10 +593,90 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Cached Platform-to-shielded capacity for one payment account.
+    ///
+    /// All values come from the same Rust planner used by `shieldedShield`.
+    /// `reason` is non-nil only for a normal zero-capacity result; bad handles,
+    /// wallet IDs, and missing payment accounts throw instead.
+    public struct ShieldedShieldPreflight: Sendable {
+        public let canShield: Bool
+        public let accountBalanceCredits: UInt64
+        public let usableBalanceCredits: UInt64
+        public let feeReserveCredits: UInt64
+        public let maxShieldableCredits: UInt64
+        public let reason: String?
+    }
+
+    /// Return the cached amount a Platform Payment account can currently
+    /// shield without signing, proving, broadcasting, or querying DAPI.
+    ///
+    /// Rust sorts funded addresses lexicographically, excludes the leading
+    /// prefix before the first address that can retain the fee reserve, omits
+    /// later addresses below the protocol version's minimum input amount, and
+    /// truncates the lexicographically earliest usable set to the versioned
+    /// maximum input count. The result is executable under that deterministic
+    /// wallet policy rather than globally optimized over later balances. A
+    /// fragmented/no-capacity account returns `canShield == false` with
+    /// meaningful numeric fields and a reason; it is not thrown as an error.
+    public func shieldedShieldPreflight(
+        walletId: Data,
+        paymentAccount: UInt32 = 0
+    ) async throws -> ShieldedShieldPreflight {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            () -> ShieldedShieldPreflight in
+            var out = ShieldedShieldPreflightFFI(
+                can_shield: false,
+                account_balance_credits: 0,
+                usable_balance_credits: 0,
+                fee_reserve_credits: 0,
+                max_shieldable_credits: 0
+            )
+            let result = try walletId.withUnsafeBytes { walletIdRaw in
+                guard let walletIdPointer = walletIdRaw.baseAddress?
+                    .assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter(
+                        "walletId baseAddress is nil"
+                    )
+                }
+                return PlatformWalletResult(
+                    platform_wallet_manager_shielded_shield_preflight(
+                        handle,
+                        walletIdPointer,
+                        paymentAccount,
+                        &out
+                    )
+                )
+            }
+            try result.throwIfError()
+            let reason = out.can_shield ? nil : result.message
+            return ShieldedShieldPreflight(
+                canShield: out.can_shield,
+                accountBalanceCredits: out.account_balance_credits,
+                usableBalanceCredits: out.usable_balance_credits,
+                feeReserveCredits: out.fee_reserve_credits,
+                maxShieldableCredits: out.max_shieldable_credits,
+                reason: reason
+            )
+        }.value
+    }
+
     /// Platform → Shielded. Spends credits from a Platform Payment
     /// account on `walletId` into the bound shielded sub-wallet's
     /// pool. Inputs are auto-selected from the account's addresses
-    /// in ascending derivation order until they cover `amount` plus
+    /// in lexicographic Platform-address order until they cover `amount` plus
     /// a conservative on-chain fee buffer; the actual fee is
     /// deducted from input 0 by the network via the shield
     /// transition's fee strategy.
@@ -623,20 +717,113 @@ extension PlatformWalletManager {
         let signerHandle = addressSigner.handle
 
         try await Task.detached(priority: .userInitiated) {
-            // Keepalive — same rationale as `topUpFromAddresses`.
-            // The trampoline ctx pointer inside the signer
-            // dangles unless the Swift owner outlives this
-            // detached work.
-            _ = addressSigner
-
-            try walletId.withUnsafeBytes { widRaw in
-                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                else {
-                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+            // KeychainSigner is passed to Rust via `passUnretained`, so
+            // the Rust ctx pointer dangles unless the Swift owner stays
+            // alive across the whole FFI call — Rust re-materializes it
+            // inside the proof worker and signs through it. A bare
+            // `_ = addressSigner` is folklore the optimizer may elide in
+            // -O builds; `withExtendedLifetime` is the guaranteed
+            // keepalive (same as `shieldedTransfer`).
+            try withExtendedLifetime(addressSigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try platform_wallet_manager_shielded_shield(
+                        handle, widPtr, shieldedAccount, paymentAccount, amount, signerHandle
+                    ).check()
                 }
-                try platform_wallet_manager_shielded_shield(
-                    handle, widPtr, shieldedAccount, paymentAccount, amount, signerHandle
-                ).check()
+            }
+        }.value
+    }
+
+    /// Platform → EXTERNAL Shielded. The Type 15 shield with the note
+    /// assigned to `recipientRaw43` (a third-party raw 43-byte Orchard
+    /// payment address — same shape [`shieldedTransfer`] takes) instead
+    /// of the wallet's own default address. Input selection, fees, and
+    /// error shapes are identical to [`shieldedShield`]; the wallet
+    /// still needs a bound shielded sub-wallet at `shieldedAccount`
+    /// because the send is OVK-encrypted to (and its activity recorded
+    /// under) that account — that is how the wallet's own scan later
+    /// shows it as sent history.
+    ///
+    /// The recipient must actually be a third party: an address the
+    /// account's own keys recognize (default or diversified) is
+    /// rejected by Rust — self-shields go through [`shieldedShield`].
+    ///
+    /// `memo` follows [`shieldedTransfer`]'s rules: `nil` / empty means
+    /// no memo; a non-empty memo's UTF-8 byte length must be at most 32
+    /// or Rust rejects it. The 36-byte on-chain encoding is done on the
+    /// Rust side.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the shield may already be on chain, so the caller
+    /// must NOT retry (a retry would rebuild the bundle and could
+    /// double-pay; the next sync reconciles the outcome). A shield
+    /// spends no notes, so nothing is reserved wallet-side.
+    public func shieldedShieldToRecipient(
+        walletId: Data,
+        shieldedAccount: UInt32 = 0,
+        paymentAccount: UInt32 = 0,
+        recipientRaw43: Data,
+        amount: UInt64,
+        memo: String? = nil,
+        addressSigner: KeychainSigner
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard recipientRaw43.count == 43 else {
+            throw PlatformWalletError.invalidParameter(
+                "recipient must be exactly 43 raw Orchard bytes"
+            )
+        }
+
+        let handle = self.handle
+        let signerHandle = addressSigner.handle
+
+        try await Task.detached(priority: .userInitiated) {
+            // Guaranteed signer keepalive across the whole FFI call —
+            // same rationale as `shieldedShield`.
+            try withExtendedLifetime(addressSigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try recipientRaw43.withUnsafeBytes { recipientRaw in
+                        guard let recipientPtr = recipientRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "recipient baseAddress is nil"
+                            )
+                        }
+                        // `nil` / empty → null pointer (no memo); otherwise
+                        // pass the text as a C string — Rust validates the
+                        // 32-byte limit and does the 36-byte encoding.
+                        let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                            try platform_wallet_manager_shielded_shield_to_recipient(
+                                handle, widPtr, shieldedAccount, paymentAccount,
+                                recipientPtr, amount, memoCStr, signerHandle
+                            ).check()
+                        }
+                        if let memo, !memo.isEmpty {
+                            try memo.withCString { try send($0) }
+                        } else {
+                            try send(nil)
+                        }
+                    }
+                }
             }
         }.value
     }

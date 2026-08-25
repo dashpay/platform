@@ -34,18 +34,21 @@ impl<C> Platform<C> {
         let system_data_contracts = &self.drive.cache.system_data_contracts;
 
         let system_data_contract_types = BTreeMap::from_iter([
-            (SystemDataContract::DPNS, system_data_contracts.load_dpns()),
+            (
+                SystemDataContract::DPNS,
+                system_data_contracts.load_dpns(platform_version)?,
+            ),
             (
                 SystemDataContract::Withdrawals,
-                system_data_contracts.load_withdrawals(),
+                system_data_contracts.load_withdrawals(platform_version)?,
             ),
             (
                 SystemDataContract::Dashpay,
-                system_data_contracts.load_dashpay(),
+                system_data_contracts.load_dashpay(platform_version)?,
             ),
             (
                 SystemDataContract::MasternodeRewards,
-                system_data_contracts.load_masternode_reward_shares(),
+                system_data_contracts.load_masternode_reward_shares(platform_version)?,
             ),
         ]);
 
@@ -57,7 +60,7 @@ impl<C> Platform<C> {
             )?;
         }
 
-        let dpns_contract = system_data_contracts.load_dpns();
+        let dpns_contract = system_data_contracts.load_dpns(platform_version)?;
 
         self.register_dpns_top_level_domain_operations(
             &dpns_contract,

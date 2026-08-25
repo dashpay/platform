@@ -68,7 +68,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V9: DriveAbciMethodVersions = DriveAbciMeth
     protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
         check_for_desired_protocol_upgrade: 1,
         upgrade_protocol_version_on_epoch_change: 0,
-        perform_events_on_first_block_of_protocol_change: Some(0),
+        perform_events_on_first_block_of_protocol_change: Some(1),
         protocol_version_upgrade_percentage_needed: 67,
     },
     block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
@@ -108,6 +108,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V9: DriveAbciMethodVersions = DriveAbciMeth
         rebroadcast_expired_withdrawal_documents: 1,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
         cleanup_expired_locks_of_withdrawal_amounts: 0,
+        record_total_credits_history_for_withdrawals: None,
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,

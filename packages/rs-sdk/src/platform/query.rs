@@ -99,8 +99,8 @@ pub trait Query<T: Mockable>: Send + Debug + Clone {
     ///
     /// * `settings` - A [`QuerySettings`](crate::platform::QuerySettings) borrowing the encoder
     ///   inputs from the SDK: protocol version (used by encoders that pick wire shapes
-    ///   per version — today only [`DocumentQuery`]'s V0/V1 split), `prove` flag,
-    ///   and request settings. Construct from an SDK via
+    ///   per version — today only [`DocumentQuery`]'s V0/V1 split) and the `prove` flag.
+    ///   Construct from an SDK via
     ///   [`Sdk::query_settings`](crate::Sdk::query_settings), or directly in unit tests
     ///   that want to exercise the encoder without spinning up an `Sdk`.
     ///
@@ -110,9 +110,107 @@ pub trait Query<T: Mockable>: Send + Debug + Clone {
     fn query(&self, settings: &crate::platform::QuerySettings<'_>) -> Result<T, Error>;
 }
 
+/// Marker for wire proto request types that serve as their own [`Query`]
+/// through the blanket identity impl below.
+///
+/// This local marker exists for trait coherence: [`DocumentQuery`] moved to
+/// the transport-free `dash-platform-queries` crate, so it is now foreign to
+/// this crate. A blanket bounded only by the (equally foreign)
+/// [`TransportRequest`] trait would conflict with the explicit
+/// `impl Query<DocumentQuery> for DocumentQuery` — rustc must assume some
+/// future upstream crate could implement `TransportRequest` for
+/// `DocumentQuery`. Because `WireQuery` is local and only ever implemented
+/// explicitly (never via a blanket), the compiler can prove the two impl
+/// sets disjoint.
+///
+/// When adding a new endpoint whose request proto is used directly as its
+/// own query (`Fetch::Query = Fetch::Request`), add the proto to the
+/// `impl_wire_query!` list below; a missing entry fails to compile at the
+/// fetch call site with a `WireQuery is not satisfied` error.
+///
+/// # Breaking change for downstream crates
+///
+/// Before this bound existed, *every* [`TransportRequest`] got `Query<T> for
+/// T` automatically. A downstream crate with its own `TransportRequest` type
+/// must now opt in explicitly — one line, no members:
+///
+/// ```rust,ignore
+/// impl dash_sdk::platform::WireQuery for MyCustomRequest {}
+/// ```
+pub trait WireQuery {}
+
+macro_rules! impl_wire_query {
+    ($($request:ty),+ $(,)?) => {
+        $(impl WireQuery for $request {})+
+    };
+}
+
+impl_wire_query!(
+    proto::BroadcastStateTransitionRequest,
+    proto::GetAddressInfoRequest,
+    proto::GetAddressesBranchStateRequest,
+    proto::GetAddressesInfosRequest,
+    proto::GetAddressesTrunkStateRequest,
+    proto::GetConsensusParamsRequest,
+    proto::GetContestedResourceIdentityVotesRequest,
+    proto::GetContestedResourceVoteStateRequest,
+    proto::GetContestedResourceVotersForIdentityRequest,
+    proto::GetContestedResourcesRequest,
+    proto::GetCurrentQuorumsInfoRequest,
+    proto::GetDataContractHistoryRequest,
+    proto::GetDataContractRequest,
+    proto::GetDataContractsRequest,
+    proto::GetDocumentHistoryRequest,
+    proto::GetDocumentsRequest,
+    proto::GetEpochsInfoRequest,
+    proto::GetEvonodesProposedEpochBlocksByIdsRequest,
+    proto::GetEvonodesProposedEpochBlocksByRangeRequest,
+    proto::GetFinalizedEpochInfosRequest,
+    proto::GetGroupActionSignersRequest,
+    proto::GetGroupActionsRequest,
+    proto::GetGroupInfoRequest,
+    proto::GetGroupInfosRequest,
+    proto::GetIdentitiesBalancesRequest,
+    proto::GetIdentitiesContractKeysRequest,
+    proto::GetIdentitiesTokenBalancesRequest,
+    proto::GetIdentitiesTokenInfosRequest,
+    proto::GetIdentityBalanceAndRevisionRequest,
+    proto::GetIdentityBalanceRequest,
+    proto::GetIdentityByNonUniquePublicKeyHashRequest,
+    proto::GetIdentityByPublicKeyHashRequest,
+    proto::GetIdentityContractNonceRequest,
+    proto::GetIdentityKeysRequest,
+    proto::GetIdentityNonceRequest,
+    proto::GetIdentityRequest,
+    proto::GetIdentityTokenBalancesRequest,
+    proto::GetIdentityTokenInfosRequest,
+    proto::GetMostRecentShieldedAnchorRequest,
+    proto::GetPathElementsRequest,
+    proto::GetPrefundedSpecializedBalanceRequest,
+    proto::GetProtocolVersionUpgradeStateRequest,
+    proto::GetProtocolVersionUpgradeVoteStatusRequest,
+    proto::GetRecentAddressBalanceChangesRequest,
+    proto::GetRecentCompactedAddressBalanceChangesRequest,
+    proto::GetShieldedAnchorsRequest,
+    proto::GetShieldedEncryptedNotesRequest,
+    proto::GetShieldedNotesCountRequest,
+    proto::GetShieldedNullifiersRequest,
+    proto::GetShieldedPoolStateRequest,
+    proto::GetStatusRequest,
+    proto::GetTokenContractInfoRequest,
+    proto::GetTokenDirectPurchasePricesRequest,
+    proto::GetTokenPerpetualDistributionLastClaimRequest,
+    proto::GetTokenPreProgrammedDistributionsRequest,
+    proto::GetTokenStatusesRequest,
+    proto::GetTokenTotalSupplyRequest,
+    proto::GetTotalCreditsInPlatformRequest,
+    proto::GetVotePollsByEndDateRequest,
+    proto::WaitForStateTransitionResultRequest,
+);
+
 impl<T> Query<T> for T
 where
-    T: TransportRequest + Sized + Send + Sync + Clone + Debug,
+    T: TransportRequest + WireQuery + Sized + Send + Sync + Clone + Debug,
     T::Response: Send + Sync + Debug,
 {
     fn query(&self, settings: &crate::platform::QuerySettings<'_>) -> Result<T, Error> {

@@ -442,7 +442,7 @@ mod dpns_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: Some(WhereClause {
                     field: "records.identity".to_string(),
                     operator: WhereOperator::LessThanOrEquals,
@@ -486,7 +486,7 @@ mod dpns_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([(
                     "records.identity".to_string(),
@@ -897,7 +897,7 @@ mod dpns_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: Some(WhereClause {
                     field: "records.identity".to_string(),
                     operator: WhereOperator::LessThanOrEquals,
@@ -928,7 +928,7 @@ mod dpns_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([(
                     "records.identity".to_string(),
@@ -962,6 +962,7 @@ mod dpns_username_transfer_tests {
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::data_contract::DataContract;
+    use dpp::data_contracts::SystemDataContract;
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::util::hash::hash_double;
@@ -1002,7 +1003,12 @@ mod dpns_username_transfer_tests {
 
         let platform_state = platform.state.load();
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder = dpns_contract
@@ -1155,7 +1161,7 @@ mod dpns_username_transfer_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([(
                     "records.identity".to_string(),
@@ -1250,7 +1256,8 @@ mod dpns_username_transfer_tests {
                 .drive
                 .cache
                 .system_data_contracts
-                .load_document_history(),
+                .load_document_history(platform_version)
+                .expect("expected the document_history system contract"),
         );
 
         let document_type = history_contract
@@ -1291,7 +1298,8 @@ mod dpns_username_transfer_tests {
                 .drive
                 .cache
                 .system_data_contracts
-                .load_document_history(),
+                .load_document_history(platform_version)
+                .expect("expected the document_history system contract"),
         );
 
         let document_type = history_contract
@@ -1333,7 +1341,8 @@ mod dpns_username_transfer_tests {
                 .drive
                 .cache
                 .system_data_contracts
-                .load_document_history(),
+                .load_document_history(platform_version)
+                .expect("expected the document_history system contract"),
         );
 
         let document_type = history_contract
@@ -1369,13 +1378,15 @@ mod dpns_username_transfer_tests {
         history_document_type_name: &str,
         source_data_contract_id: Identifier,
         source_document_id: Identifier,
+        platform_version: &PlatformVersion,
     ) -> Vec<Document> {
         let history_contract = Arc::clone(
             &platform
                 .drive
                 .cache
                 .system_data_contracts
-                .load_document_history(),
+                .load_document_history(platform_version)
+                .expect("expected the document_history system contract"),
         );
 
         let history_document_type = history_contract
@@ -1388,7 +1399,7 @@ mod dpns_username_transfer_tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (
@@ -1439,6 +1450,713 @@ mod dpns_username_transfer_tests {
     #[tokio::test]
     async fn test_dpns_username_transfer_protocol_version_12_rejected() {
         run_dpns_username_transfer_at_protocol_version(12, false).await;
+    }
+
+    #[tokio::test]
+    async fn test_v12_username_survives_retried_v13_transition_and_records_transfer() {
+        let platform_version_12 = PlatformVersion::get(12).expect("expected platform version 12");
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(438);
+
+        let alice = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+        let (bob, _, _) = setup_identity(&mut platform, 450, dash_to_credits!(0.5));
+        let (document, _) = register_dpns_username(
+            &mut platform,
+            &alice,
+            &mut rng,
+            "upgrade7",
+            platform_version_12,
+        )
+        .await;
+
+        let committed_root_before = platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected a committed root hash");
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: dpp::block::epoch::Epoch::new(2).expect("expected epoch"),
+        };
+
+        let platform_state = platform.state.load();
+        let rejected_transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &block_info,
+                &rejected_transaction,
+                12,
+                platform_version_13,
+            )
+            .expect("expected the speculative transition to succeed");
+        drop(rejected_transaction);
+        drop(platform_state);
+
+        let committed_root_after_rejection = platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected a committed root hash");
+        assert_eq!(
+            committed_root_before, committed_root_after_rejection,
+            "dropping a rejected transition transaction must preserve committed state"
+        );
+        let cached_dpns_v12 = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_12)
+            .expect("expected the DPNS lookup to succeed")
+            .expect("explicit v12 lookup must survive a speculative v13 cache reload");
+        let cached_v12_domain = cached_dpns_v12
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(!cached_v12_domain.documents_keep_transfer_history());
+        assert!(!cached_v12_domain.documents_keep_purchase_history());
+        assert!(!cached_v12_domain.documents_keep_pricing_history());
+        assert_eq!(
+            query_domain_documents_by_record_identity(&platform, &cached_dpns_v12, alice.0.id())
+                .len(),
+            1,
+            "the v12 username must remain after a rejected transition"
+        );
+
+        let platform_state = platform.state.load();
+        let retry_transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &block_info,
+                &retry_transaction,
+                12,
+                platform_version_13,
+            )
+            .expect("expected the retried transition to succeed");
+        platform
+            .drive
+            .grove
+            .commit_transaction(retry_transaction)
+            .unwrap()
+            .expect("expected to commit the retried transition");
+        drop(platform_state);
+
+        let committed_root_after_transition = platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected a committed root hash");
+        assert_ne!(
+            committed_root_before, committed_root_after_transition,
+            "the committed transition must install the v13 contracts"
+        );
+
+        let mut clean_control = TestPlatformBuilder::new()
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut clean_control_rng = StdRng::seed_from_u64(438);
+        let clean_control_alice = setup_identity(&mut clean_control, 958, dash_to_credits!(0.5));
+        setup_identity(&mut clean_control, 450, dash_to_credits!(0.5));
+        register_dpns_username(
+            &mut clean_control,
+            &clean_control_alice,
+            &mut clean_control_rng,
+            "upgrade7",
+            platform_version_12,
+        )
+        .await;
+        let clean_control_root_before = clean_control
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected a clean-control committed root hash");
+        assert_eq!(
+            committed_root_before, clean_control_root_before,
+            "the clean control must begin from the same populated v12 state"
+        );
+        let clean_control_state = clean_control.state.load();
+        let clean_control_transaction = clean_control.drive.grove.start_transaction();
+        clean_control
+            .perform_events_on_first_block_of_protocol_change(
+                &clean_control_state,
+                &block_info,
+                &clean_control_transaction,
+                12,
+                platform_version_13,
+            )
+            .expect("expected the clean-control transition to succeed");
+        clean_control
+            .drive
+            .grove
+            .commit_transaction(clean_control_transaction)
+            .unwrap()
+            .expect("expected to commit the clean-control transition");
+        drop(clean_control_state);
+        let clean_control_root_after_transition = clean_control
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected the clean-control transition root hash");
+        assert_eq!(
+            committed_root_after_transition, clean_control_root_after_transition,
+            "retry after a rejected candidate must match a clean transition from the same v12 state"
+        );
+
+        let dpns_contract_v13 = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version_13)
+            .expect("expected the DPNS system contract");
+        let mut alice_documents =
+            query_domain_documents_by_record_identity(&platform, &dpns_contract_v13, alice.0.id());
+        assert_eq!(
+            alice_documents.len(),
+            1,
+            "the v12 username must survive the committed transition"
+        );
+        let mut document_after_upgrade = alice_documents
+            .pop()
+            .expect("expected the pre-upgrade username");
+        assert_eq!(document_after_upgrade.id(), document.id());
+
+        let mut upgraded_state = platform.state.load().as_ref().clone();
+        upgraded_state.set_current_protocol_version_in_consensus(13);
+        upgraded_state.set_next_epoch_protocol_version(13);
+        platform.state.store(Arc::new(upgraded_state));
+
+        let domain = dpns_contract_v13
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+        document_after_upgrade.set_revision(Some(2));
+        let (alice_identity, signer, key) = &alice;
+        let transfer = BatchTransition::new_document_transfer_transition_from_document(
+            document_after_upgrade,
+            domain,
+            bob.id(),
+            key,
+            4,
+            0,
+            None,
+            signer,
+            platform_version_13,
+            None,
+        )
+        .await
+        .expect("expected to create the post-upgrade transfer");
+        let serialized_transfer = transfer
+            .serialize_to_bytes()
+            .expect("expected to serialize the post-upgrade transfer");
+
+        let platform_state = platform.state.load();
+        let transfer_transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .process_raw_state_transitions(
+                &[serialized_transfer],
+                &platform_state,
+                &BlockInfo {
+                    time_ms: block_info.time_ms + 3_000,
+                    height: block_info.height + 1,
+                    core_height: block_info.core_height,
+                    epoch: block_info.epoch,
+                },
+                &transfer_transaction,
+                platform_version_13,
+                false,
+                None,
+            )
+            .expect("expected to process the post-upgrade transfer");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transfer_transaction)
+            .unwrap()
+            .expect("expected to commit the post-upgrade transfer");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        let bob_documents =
+            query_domain_documents_by_record_identity(&platform, &dpns_contract_v13, bob.id());
+        assert_eq!(bob_documents.len(), 1);
+        let transferred_document = bob_documents
+            .first()
+            .expect("expected transferred username");
+        assert_eq!(transferred_document.id(), document.id());
+        assert_eq!(transferred_document.owner_id(), bob.id());
+        assert_identity_record(transferred_document, bob.id());
+
+        let transfer_history = query_history_documents(
+            &platform,
+            "transfer",
+            dpns_contract_v13.id(),
+            transferred_document.id(),
+            platform_version_13,
+        );
+        assert_eq!(transfer_history.len(), 1);
+        assert_eq!(transfer_history[0].owner_id(), alice_identity.id());
+        assert_eq!(
+            transfer_history[0]
+                .properties()
+                .get_identifier("toIdentityId")
+                .expect("expected transfer recipient"),
+            bob.id()
+        );
+    }
+
+    /// The block info the protocol version 13 activation is run at in the cache-coherence
+    /// tests below.
+    fn v13_activation_block_info() -> BlockInfo {
+        BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: dpp::block::epoch::Epoch::new(2).expect("expected epoch"),
+        }
+    }
+
+    /// Registers one DPNS username at protocol version 12, reproducibly, so that two
+    /// instances reach the same committed state.
+    async fn populated_v12_platform(
+        platform_version_12: &PlatformVersion,
+    ) -> (
+        TempPlatform<MockCoreRPCLike>,
+        (Identity, SimpleSigner, IdentityPublicKey),
+        Identity,
+        Document,
+    ) {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(781);
+
+        let alice = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+        let (bob, _, _) = setup_identity(&mut platform, 450, dash_to_credits!(0.5));
+        let (document, _) = register_dpns_username(
+            &mut platform,
+            &alice,
+            &mut rng,
+            "stalecache7",
+            platform_version_12,
+        )
+        .await;
+
+        (platform, alice, bob, document)
+    }
+
+    /// The transfer/purchase/pricing history flags the DPNS `domain` document type gains
+    /// at protocol version 13.
+    fn domain_history_flags(dpns: &DataContract) -> (bool, bool, bool) {
+        let domain = dpns
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+
+        (
+            domain.documents_keep_transfer_history(),
+            domain.documents_keep_purchase_history(),
+            domain.documents_keep_pricing_history(),
+        )
+    }
+
+    fn committed_root(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> [u8; 32] {
+        platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected a committed root hash")
+    }
+
+    /// Puts the pre-activation DPNS definition in the global contract cache, which is what a
+    /// validator that has served any DPNS read before the upgrade is carrying.
+    fn warm_the_dpns_contract_cache(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) {
+        platform
+            .drive
+            .get_contract_with_fetch_info(
+                SystemDataContract::DPNS.id().to_buffer(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to warm the DPNS contract cache")
+            .expect("DPNS must be present in the state");
+    }
+
+    /// Resolves DPNS exactly as the batch document transformer does: through the ordinary
+    /// data contract cache, falling back to the state.
+    fn dpns_as_the_document_transformer_sees_it(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> Arc<DataContract> {
+        let (_fee, fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                SystemDataContract::DPNS.id().to_buffer(),
+                None,
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to resolve the DPNS contract");
+
+        Arc::new(
+            fetch_info
+                .expect("DPNS must be present in the state")
+                .contract
+                .clone(),
+        )
+    }
+
+    /// Runs the protocol version 13 activation and either commits it or drops the transaction,
+    /// standing in for a candidate block that is accepted or rejected.
+    fn run_v13_activation(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        block_info: &BlockInfo,
+        platform_version_13: &PlatformVersion,
+        commit: bool,
+    ) {
+        let platform_state = platform.state.load();
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                block_info,
+                &transaction,
+                12,
+                platform_version_13,
+            )
+            .expect("expected the transition to protocol version 13 to succeed");
+
+        if !commit {
+            drop(transaction);
+            drop(platform_state);
+            return;
+        }
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the transition to protocol version 13");
+        drop(platform_state);
+
+        let mut upgraded_state = platform.state.load().as_ref().clone();
+        upgraded_state.set_current_protocol_version_in_consensus(13);
+        upgraded_state.set_next_epoch_protocol_version(13);
+        platform.state.store(Arc::new(upgraded_state));
+    }
+
+    fn activate_protocol_version_13(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        block_info: &BlockInfo,
+        platform_version_13: &PlatformVersion,
+    ) {
+        run_v13_activation(platform, block_info, platform_version_13, true);
+    }
+
+    /// A read-only query served from committed state while the activation block is still
+    /// executing must not divert that block onto the pre-activation DPNS.
+    ///
+    /// The ordinary contract cache is keyed by contract id alone, and a transactional lookup
+    /// falls back to the global cache when the block cache misses. Query threads read committed
+    /// state with no transaction and populate that global cache. So merely evicting the stale
+    /// entry leaves a window in which a query puts it straight back and the rest of the block
+    /// serializes documents against it — a divergence decided by query timing rather than by
+    /// state. The activation seeds the block cache precisely so transactional reads have an
+    /// authority they reach first.
+    #[tokio::test]
+    async fn concurrent_committed_query_must_not_divert_the_activation_block_from_migrated_dpns() {
+        let platform_version_12 = PlatformVersion::get(12).expect("expected platform version 12");
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let dpns_id = SystemDataContract::DPNS.id().to_buffer();
+
+        let (platform, _alice, _bob, _document) = populated_v12_platform(platform_version_12).await;
+
+        // A long-lived node: DPNS has been read at least once, so the pre-activation
+        // definition sits in the global cache.
+        warm_the_dpns_contract_cache(&platform, platform_version_12);
+
+        let platform_state = platform.state.load();
+        let transaction = platform.drive.grove.start_transaction();
+
+        // The order the real block flow uses: the block cache is cleared for the proposal,
+        // then the protocol change events run and seed it.
+        platform
+            .clear_drive_block_cache(platform_version_13)
+            .expect("expected to clear the block cache");
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &v13_activation_block_info(),
+                &transaction,
+                12,
+                platform_version_13,
+            )
+            .expect("expected the activation to succeed");
+
+        // The interleaving: a DAPI query resolves DPNS from committed state and publishes the
+        // pre-activation definition into the global cache.
+        platform
+            .drive
+            .get_contract_with_fetch_info(dpns_id, true, None, platform_version_12)
+            .expect("expected the query to resolve DPNS")
+            .expect("DPNS must be present in committed state");
+
+        // The batch document transformer's read, with the block transaction.
+        let (_fee, fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                dpns_id,
+                None,
+                false,
+                Some(&transaction),
+                platform_version_13,
+            )
+            .expect("expected the transformer read to succeed");
+        let resolved = fetch_info.expect("DPNS must be present");
+
+        assert_eq!(
+            (
+                resolved.contract.version(),
+                domain_history_flags(&resolved.contract)
+            ),
+            (2, (true, true, true)),
+            "the activation block must serialize against the definition it installed, whatever \
+             a concurrent query cached"
+        );
+    }
+
+    /// A candidate activation that is never committed must leave a warm node resolving the
+    /// still-committed protocol version 12 definition, and the retry that does commit must
+    /// still retire it. Pins that the fix drops the stale entry rather than publishing the
+    /// candidate definition into the cache, which a rejected block would then be unable to
+    /// take back.
+    #[tokio::test]
+    async fn warm_dpns_contract_cache_survives_a_rejected_v13_activation_and_its_retry() {
+        let platform_version_12 = PlatformVersion::get(12).expect("expected platform version 12");
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let activation_block_info = v13_activation_block_info();
+
+        let (platform, _alice, _bob, _document) = populated_v12_platform(platform_version_12).await;
+        let (control, _control_alice, _control_bob, _control_document) =
+            populated_v12_platform(platform_version_12).await;
+
+        warm_the_dpns_contract_cache(&platform, platform_version_12);
+        let root_before = committed_root(&platform, platform_version_13);
+
+        // Rejected candidate: the activation runs, then its transaction is dropped.
+        run_v13_activation(
+            &platform,
+            &activation_block_info,
+            platform_version_13,
+            false,
+        );
+
+        assert_eq!(
+            committed_root(&platform, platform_version_13),
+            root_before,
+            "a rejected candidate must not change committed state"
+        );
+        assert_eq!(
+            domain_history_flags(&dpns_as_the_document_transformer_sees_it(
+                &platform,
+                platform_version_12,
+            )),
+            (false, false, false),
+            "a rejected candidate must leave the node resolving the committed v12 definition"
+        );
+
+        // Retry, this time committed, and compare against a node that never saw the rejection.
+        activate_protocol_version_13(&platform, &activation_block_info, platform_version_13);
+        activate_protocol_version_13(&control, &activation_block_info, platform_version_13);
+
+        let retried = dpns_as_the_document_transformer_sees_it(&platform, platform_version_13);
+        let clean = dpns_as_the_document_transformer_sees_it(&control, platform_version_13);
+        assert_eq!(
+            (retried.version(), domain_history_flags(&retried)),
+            (2, (true, true, true)),
+            "the committed retry must retire the pre-upgrade DPNS definition"
+        );
+        assert_eq!(
+            (retried.version(), domain_history_flags(&retried)),
+            (clean.version(), domain_history_flags(&clean)),
+            "a retried activation must resolve what a clean one resolves"
+        );
+        assert_eq!(
+            committed_root(&platform, platform_version_13),
+            committed_root(&control, platform_version_13),
+            "a retried activation must commit the same state as a clean one"
+        );
+    }
+
+    /// The v13 activation replaces the persisted DPNS definition with schema v2. The batch
+    /// document transformer resolves DPNS through the ordinary data contract cache, which the
+    /// direct `apply_contract` used by the migration does not invalidate — so a validator that
+    /// had warmed that cache before the activation would keep serializing domain documents
+    /// against the pre-upgrade definition while a validator that restarted reads the new one
+    /// from the state. The two would write different bytes for the same transition and diverge
+    /// on the app hash.
+    ///
+    /// Two platforms are driven into byte-identical populated v12 state, the activation is
+    /// committed on both, and the only difference between them is that one had DPNS warmed into
+    /// its contract cache beforehand.
+    #[tokio::test]
+    async fn warm_dpns_contract_cache_must_not_survive_the_committed_v13_activation() {
+        let platform_version_12 = PlatformVersion::get(12).expect("expected platform version 12");
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let activation_block_info = v13_activation_block_info();
+
+        let (warm_platform, warm_alice, warm_bob, warm_document) =
+            populated_v12_platform(platform_version_12).await;
+        let (cold_platform, cold_alice, cold_bob, cold_document) =
+            populated_v12_platform(platform_version_12).await;
+        assert_eq!(
+            committed_root(&warm_platform, platform_version_13),
+            committed_root(&cold_platform, platform_version_13),
+            "both platforms must start from the same populated v12 state"
+        );
+
+        // The only difference between the two nodes: this one served a DPNS read before the
+        // activation, which is what puts the pre-upgrade definition in the global cache.
+        warm_the_dpns_contract_cache(&warm_platform, platform_version_12);
+        assert_eq!(
+            domain_history_flags(&dpns_as_the_document_transformer_sees_it(
+                &warm_platform,
+                platform_version_12,
+            )),
+            (false, false, false),
+            "the warmed cache must hold the pre-activation DPNS definition"
+        );
+
+        activate_protocol_version_13(&warm_platform, &activation_block_info, platform_version_13);
+        activate_protocol_version_13(&cold_platform, &activation_block_info, platform_version_13);
+        assert_eq!(
+            committed_root(&warm_platform, platform_version_13),
+            committed_root(&cold_platform, platform_version_13),
+            "the activation must commit the same state on both platforms"
+        );
+
+        let warm_dpns =
+            dpns_as_the_document_transformer_sees_it(&warm_platform, platform_version_13);
+        let cold_dpns =
+            dpns_as_the_document_transformer_sees_it(&cold_platform, platform_version_13);
+        assert_eq!(
+            (warm_dpns.version(), domain_history_flags(&warm_dpns)),
+            (cold_dpns.version(), domain_history_flags(&cold_dpns)),
+            "a warm and a cold node must resolve the same DPNS definition after the activation"
+        );
+        assert_eq!(
+            (warm_dpns.version(), domain_history_flags(&warm_dpns)),
+            (2, (true, true, true)),
+            "the committed activation must retire the pre-upgrade DPNS definition"
+        );
+        assert_eq!(
+            warm_dpns, cold_dpns,
+            "the resolved definitions must be identical in every field"
+        );
+
+        // Same transition on both nodes: it may only be accepted, and its committed effect must
+        // be identical, because the document is serialized against the contract resolved above.
+        for (platform, alice, bob, document, dpns) in [
+            (
+                &warm_platform,
+                &warm_alice,
+                &warm_bob,
+                warm_document,
+                &warm_dpns,
+            ),
+            (
+                &cold_platform,
+                &cold_alice,
+                &cold_bob,
+                cold_document,
+                &cold_dpns,
+            ),
+        ] {
+            let domain = dpns
+                .document_type_for_name("domain")
+                .expect("DPNS must contain its domain document type");
+            let (_alice_identity, signer, key) = alice;
+            let mut document = document;
+            document.set_revision(Some(2));
+
+            let transfer = BatchTransition::new_document_transfer_transition_from_document(
+                document,
+                domain,
+                bob.id(),
+                key,
+                4,
+                0,
+                None,
+                signer,
+                platform_version_13,
+                None,
+            )
+            .await
+            .expect("expected to create the post-upgrade transfer");
+            let serialized_transfer = transfer
+                .serialize_to_bytes()
+                .expect("expected to serialize the post-upgrade transfer");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .process_raw_state_transitions(
+                    &[serialized_transfer],
+                    &platform_state,
+                    &BlockInfo {
+                        time_ms: activation_block_info.time_ms + 3_000,
+                        height: activation_block_info.height + 1,
+                        core_height: activation_block_info.core_height,
+                        epoch: activation_block_info.epoch,
+                    },
+                    &transaction,
+                    platform_version_13,
+                    false,
+                    None,
+                )
+                .expect("expected to process the post-upgrade transfer");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit the post-upgrade transfer");
+            drop(platform_state);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        assert_eq!(
+            committed_root(&warm_platform, platform_version_13),
+            committed_root(&cold_platform, platform_version_13),
+            "a warm and a cold node must commit the same root for the same post-upgrade transition"
+        );
     }
 
     async fn run_dpns_username_transfer_at_protocol_version(
@@ -1557,6 +2275,7 @@ mod dpns_username_transfer_tests {
                 "transfer",
                 dpns_contract.id(),
                 transferred_document.id(),
+                platform_version,
             );
 
             assert_eq!(history_documents.len(), 1);
@@ -1808,8 +2527,13 @@ mod dpns_username_transfer_tests {
         assert_eq!(price, dash_to_credits!(0.1));
 
         // The listing must be recorded in the document history contract
-        let pricing_history =
-            query_history_documents(&platform, "priceUpdate", dpns_contract.id(), document.id());
+        let pricing_history = query_history_documents(
+            &platform,
+            "priceUpdate",
+            dpns_contract.id(),
+            document.id(),
+            platform_version,
+        );
 
         assert_eq!(pricing_history.len(), 1);
 
@@ -1945,6 +2669,7 @@ mod dpns_username_transfer_tests {
             "purchase",
             dpns_contract.id(),
             purchased_document.id(),
+            platform_version,
         );
 
         assert_eq!(purchase_history.len(), 1);
@@ -1979,6 +2704,7 @@ mod dpns_username_transfer_tests {
             "transfer",
             dpns_contract.id(),
             purchased_document.id(),
+            platform_version,
         );
 
         assert_eq!(transfer_history.len(), 0);
@@ -2356,8 +3082,13 @@ mod dpns_username_transfer_tests {
 
         // The card document type did not subscribe to history, so nothing may
         // have been recorded
-        let history_documents =
-            query_history_documents(&platform, "transfer", contract.id(), document.id());
+        let history_documents = query_history_documents(
+            &platform,
+            "transfer",
+            contract.id(),
+            document.id(),
+            platform_version,
+        );
 
         assert_eq!(history_documents.len(), 0);
     }
@@ -2385,7 +3116,8 @@ mod dpns_username_transfer_tests {
                 .drive
                 .cache
                 .system_data_contracts
-                .load_document_history(),
+                .load_document_history(platform_version)
+                .expect("expected the document_history system contract"),
         );
 
         let transfer_document_type = history_contract

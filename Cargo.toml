@@ -27,6 +27,7 @@ members = [
     "packages/wasm-dpp2",
     "packages/rs-dapi-client",
     "packages/rs-dash-async",
+    "packages/dash-platform-queries",
     "packages/rs-sdk",
     "packages/strategy-tests",
     "packages/simple-signer",
@@ -52,18 +53,14 @@ members = [
 ]
 
 [workspace.dependencies]
-# TODO(pin): tracks dashpay/rust-dashcore `dash-evo-tool` branch (tip, not a
-# pinned rev) — combines PR #909 (out-of-order UTXO spend fix, #649) and
-# PR #818 (address reservation on hand-out); neither PR alone is a superset
-# of the other. Re-pin to `dev` directly once both land there.
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "a97b32c617c8b1fef5185bb806500b66faf8e8c4" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "a97b32c617c8b1fef5185bb806500b66faf8e8c4" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "a97b32c617c8b1fef5185bb806500b66faf8e8c4" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "a97b32c617c8b1fef5185bb806500b66faf8e8c4" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "a97b32c617c8b1fef5185bb806500b66faf8e8c4" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "a97b32c617c8b1fef5185bb806500b66faf8e8c4" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "a97b32c617c8b1fef5185bb806500b66faf8e8c4" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "a97b32c617c8b1fef5185bb806500b66faf8e8c4" }
 
 tokio-metrics = "0.5"
 
@@ -132,5 +129,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "4.1.0-rc.1"
+version = "4.2.0-dev.1"
 rust-version = "1.92"

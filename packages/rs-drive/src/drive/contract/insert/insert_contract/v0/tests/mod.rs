@@ -18,8 +18,16 @@
 //! - [`shared_prefix_aggregation_e2e_tests`] — cross-index shared
 //!   prefix layouts where a shorter aggregate index and a deeper
 //!   range index must compose safely during document insertion.
+//! - [`ranked_index_e2e_tests`] — per-index `rankedCountable` /
+//!   `rankedSummable` / `rankedAverageable` (meta schema v3 / PV14):
+//!   the indexed-tree variants and their ordered secondaries, end to
+//!   end through insert / update / delete. Its child module
+//!   `batched_group_drain` lives in `batched_group_drain.rs` beside
+//!   this file and is declared with `#[path]` so it can reuse that
+//!   suite's fixture and assertion helpers.
 
 mod countable_e2e_tests;
 mod range_countable_index_e2e_tests;
 mod range_summable_index_e2e_tests;
+mod ranked_index_e2e_tests;
 mod shared_prefix_aggregation_e2e_tests;

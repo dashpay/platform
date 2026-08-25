@@ -162,7 +162,10 @@ const TEST_SEED: [u8; 64] = [7u8; 64];
 ///
 /// Deterministic — no live network, no concurrency (`Sdk::new_mock`,
 /// `StoreFailsPersister`). See TEST_SPEC.md Found-017.
-#[tokio_shared_rt::test(shared)]
+// Multi-thread required: `PlatformWalletManager::shutdown` joins its
+// coordinator OS threads through `ThreadRegistry::shutdown`, which drives
+// each worker via `Handle::block_on` and panics on a current-thread runtime.
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 4)]
 async fn found_017_register_wallet_store_error_lost() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -208,7 +211,11 @@ async fn found_017_register_wallet_store_error_lost() {
 
     // Best-effort shutdown of the spawned event-adapter task. Not part of
     // the assertion; keeps the shared runtime clean for sibling tests.
-    manager.shutdown().await;
+    let shutdown = manager.shutdown().await;
+    assert!(
+        shutdown.all_clean(),
+        "manager teardown must leave no live worker or orphan: {shutdown:?}"
+    );
 
     assert!(
         result.is_err() && !wallet_present,

@@ -107,10 +107,16 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to transfer credits: {}",
-                    e
-                ))
+                // Preserve a structured key-unavailable signer failure so the
+                // FFI boundary can still restore code 31; only genuine
+                // operation failures get stringified into `InvalidIdentityData`
+                // (dashpay/platform#4183 review).
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to transfer credits: {}",
+                        e
+                    ))
+                })
             })?;
 
         // Update the sender's balance and queue the snapshot so the

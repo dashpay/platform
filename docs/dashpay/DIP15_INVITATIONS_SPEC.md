@@ -37,7 +37,7 @@ Tracked as the "NEXT" item in the DashPay backlog (dashpay/platform#4020); calle
    rejected as a *link* but the funded lock is recorded first and stays reclaimable.
 3. **Amounts (amends §5/§8/§9):** `MIN_INVITATION_DUFFS = 300_000` (0.003 DASH — a smaller
    voucher can fund neither a claim nor a register-reclaim, discovered by funded e2e),
-   `MAX_INVITATION_DUFFS = 5_000_000` (0.05 DASH), Swift default **0.03 DASH**.
+   `MAX_INVITATION_DUFFS = 26_000_000` (0.26 DASH), Swift default **0.03 DASH**.
 4. **Persistence as-built (amends §4.2):** the `InvitationChangeSet` flows through
    `PlatformWalletPersistence::store()` to each backend — the SQLite backend's
    `V003__invitations` table, and on iOS the FFI `on_persist_invitations_fn` bridge into the
@@ -129,9 +129,10 @@ local guards are fast-fail UX + correct index selection, not theft prevention.
 
 `MIN_INVITATION_DUFFS = 300_000` (0.003 DASH, == Android `DASH_PAY_INVITE_MIN`; a smaller
 voucher can fund neither a claim nor a register-reclaim — found by funded e2e).
-`MAX_INVITATION_DUFFS = 5_000_000` (0.05 DASH). Swift create default **0.03 DASH** = identity
-+ a normal DPNS name (Android `DASH_PAY_FEE`). The contested-name tier (0.25) is **deferred**
-until contested registration is wired into the claim flow.
+`MAX_INVITATION_DUFFS = 26_000_000` (0.26 DASH). Swift create default **0.03 DASH** = identity
++ a normal DPNS name (Android `DASH_PAY_FEE`). The cap covers the contested/premium tier as
+well (0.25, Android `DASH_PAY_FEE_CONTESTED`), with the remaining margin for the create/claim
+fees; the claim path is amount-agnostic, so nothing further gates a contested-tier invite.
 
 ### 0A.5 Transport
 
@@ -605,7 +606,7 @@ The `data=` payload is a **bearer credential**: whoever reads the plaintext link
 voucher and can claim (front-run) it. Because the app registers the `dashpay://` **custom URL
 scheme**, any other app that also registers `dashpay` can intercept an invite link on the same
 device and steal the claim. The load-bearing mitigation is therefore **economic, not transport**:
-`MAX_INVITATION_DUFFS` caps the loss at 0.01 DASH, and the inviter can reclaim an unclaimed voucher
+`MAX_INVITATION_DUFFS` caps the loss at 0.26 DASH, and the inviter can reclaim an unclaimed voucher
 (best-effort race). The advisory expiry does **not** bound a leak (a leaked-link holder ignores it).
 
 A hardened production transport would use **Universal Links** (HTTPS + a hosted

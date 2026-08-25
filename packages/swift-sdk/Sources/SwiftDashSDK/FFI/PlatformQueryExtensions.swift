@@ -1094,6 +1094,16 @@ extension SDK {
                             contenderDict["identifier"] = String(cString: idPtr)
                         }
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
+                        // The spelling this contender actually requested
+                        // ("pizza"), where the contest key is the normalized
+                        // form ("p1zza"). Absent when the FFI could not decode
+                        // their document. Prefer the typed
+                        // `dpnsActiveContests` / `dpnsContestsForIdentity`,
+                        // which also give the tally as an integer.
+                        if let labelPtr = contender.label {
+                            let label = String(cString: labelPtr)
+                            if !label.isEmpty { contenderDict["label"] = label }
+                        }
 
                         contenders.append(contenderDict)
                     }
@@ -1225,6 +1235,16 @@ extension SDK {
                             contenderDict["identifier"] = String(cString: idPtr)
                         }
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
+                        // The spelling this contender actually requested
+                        // ("pizza"), where the contest key is the normalized
+                        // form ("p1zza"). Absent when the FFI could not decode
+                        // their document. Prefer the typed
+                        // `dpnsActiveContests` / `dpnsContestsForIdentity`,
+                        // which also give the tally as an integer.
+                        if let labelPtr = contender.label {
+                            let label = String(cString: labelPtr)
+                            if !label.isEmpty { contenderDict["label"] = label }
+                        }
 
                         contenders.append(contenderDict)
                     }
@@ -1433,7 +1453,17 @@ extension SDK {
     ///   - indexValues: Index values identifying the contested resource
     ///     (e.g. `["dash", "alice"]`).
     ///   - choice: TowardsIdentity / Abstain / Lock.
-    ///   - proTxHash: The masternode's 32-byte pro_tx_hash.
+    ///   - proTxHash: The masternode's 32-byte pro_tx_hash in **WIRE order** — the
+    ///     orientation `Txid` stores, which is what a parsed ProRegTx yields
+    ///     (`reg.txid()`) and what a wallet holds internally. NOT the byte
+    ///     order of the hex Core displays, which is its reverse.
+    ///
+    ///     This matters and is not interchangeable: Platform identifies
+    ///     masternodes by the opposite orientation (`ProTxHash` is declared
+    ///     `#[hash_newtype(forward)]`, `Txid` is not), so the Rust side
+    ///     reverses these bytes before deriving the voter identity. Passing
+    ///     display order here asks Platform for an identity that has never
+    ///     existed, and the vote is rejected as having no voter identity.
     ///   - votingPrivateKey: The masternode's 32-byte voting private key. The
     ///     matching `ECDSA_HASH160` voting public key and the signer are
     ///     derived from this on the Rust side; the key bytes are not retained.
@@ -1577,21 +1607,19 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
-    /// Get current epoch
+    /// Get the current (newest started) epoch — same keys as one
+    /// `getEpochsInfo` entry (`index`, `first_block_time`, …).
+    ///
+    /// Goes through `dash_sdk_system_get_current_epoch`
+    /// (`ExtendedEpochInfo::fetch_current`): the epochs-info query cannot
+    /// express "the latest epoch" — `start = nil, ascending` is epoch 0, and an
+    /// unbounded descending proved query is rejected by the proof verifier.
     public func getCurrentEpoch() async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-
-        // Get current epoch info by passing nil as start_epoch to get the latest
-        let result = dash_sdk_system_get_epochs_info(handle, nil, 1, true)
-        let epochs = try processJSONArrayResult(result)
-
-        guard let currentEpoch = epochs.first else {
-            throw SDKError.notFound("Current epoch not found")
-        }
-
-        return currentEpoch
+        let result = dash_sdk_system_get_current_epoch(handle)
+        return try processJSONResult(result)
     }
 
     /// Get finalized epoch infos

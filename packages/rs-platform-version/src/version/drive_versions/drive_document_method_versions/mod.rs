@@ -3,6 +3,7 @@ use versioned_feature_core::FeatureVersion;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -33,6 +34,50 @@ pub struct DriveDocumentQueryMethodVersions {
     /// Mode-detection routing table for `SELECT SUM` queries. Same
     /// versioning rationale as `detect_count_mode`.
     pub detect_sum_mode: FeatureVersion,
+    /// Mode-detection routing table for ranked (`HAVING ... TOP/BOTTOM/
+    /// MIN/MAX`) aggregate queries served from an indexed index tree.
+    /// Same versioning rationale as `detect_count_mode`. Present in
+    /// every version table so the slot exists for older protocol
+    /// versions; the routing itself is unreachable before the ranked
+    /// contract grammar activates.
+    pub detect_ranked_mode: FeatureVersion,
+    /// Mode-detection routing table for boolean `HAVING` range queries
+    /// (`GROUP BY p HAVING <agg> <op> <value> LIMIT n`) served from an
+    /// indexed tree's axis secondary. Same versioning rationale and
+    /// same dormancy pattern as `detect_ranked_mode`: the slot exists
+    /// in every table, and the routing is unreachable before both the
+    /// ranked contract grammar and the v2 aggregate-routing helper
+    /// activate (protocol v14).
+    pub detect_having_mode: FeatureVersion,
+    /// Lowering of a `DriveDocumentQuery` over a secondary index into a
+    /// grovedb `PathQuery`. Versioned because the set of accepted query
+    /// shapes is part of the consensus query contract: v0 rejects more
+    /// than one non-primary-key `In` clause per query; v1 (protocol
+    /// version 14) accepts multiple `In` clauses on consecutive index
+    /// properties, lowering them to multi-level key-set path queries.
+    pub non_primary_key_path_query: FeatureVersion,
+    /// Lowering for query shapes with at most one non-primary-key `In`
+    /// clause. Same consensus rationale as
+    /// `non_primary_key_path_query`, which routes those shapes here
+    /// from its v1 on. Present in every version table so the slot
+    /// exists for older protocol versions; unreachable while
+    /// `non_primary_key_path_query` is 0, whose v0 lowering carries its
+    /// own frozen single-`In` construction.
+    pub non_primary_key_single_in_path_query: FeatureVersion,
+    /// Lowering for query shapes with multiple non-primary-key `In`
+    /// clauses on consecutive index properties, producing multi-level
+    /// key-set path queries. Same consensus rationale and reachability
+    /// as `non_primary_key_single_in_path_query`.
+    pub non_primary_key_multiple_in_path_query: FeatureVersion,
+    /// Grouping of a query's raw where clauses into equality / range /
+    /// in buckets (`WhereClause::group_clauses`). Versioned because the
+    /// error surface for rejected shapes is part of the query contract:
+    /// v0 rejects any query with more than one non-primary-key `In`
+    /// clause with `MultipleInClauses` before any other same-field
+    /// checks; v1 (protocol version 14) groups multiple `In` clauses
+    /// structurally and reports duplicate-field and overlap errors
+    /// instead. Flips together with `non_primary_key_path_query`.
+    pub where_clause_grouping: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

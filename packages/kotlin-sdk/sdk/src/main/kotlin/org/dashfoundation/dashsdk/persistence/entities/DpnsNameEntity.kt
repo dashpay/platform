@@ -19,7 +19,7 @@ import java.util.Date
 @Entity(
     tableName = "dpns_names",
     primaryKeys = ["networkRaw", "normalizedParentDomainName", "normalizedLabel"],
-    indices = [Index(value = ["identityId"])],
+    indices = [Index(value = ["identityId"]), Index(value = ["documentId"])],
     foreignKeys = [
         ForeignKey(
             entity = IdentityEntity::class,
@@ -43,6 +43,21 @@ data class DpnsNameEntity(
     val acquiredAt: Long = 0,
     /** Owning identity (32 bytes) — non-optional in Swift. */
     val identityId: ByteArray,
+    /** Stable DPNS domain-document id; null for legacy label-only rows. */
+    val documentId: ByteArray? = null,
+    /** Ownership relative to [identityId]. False retains sale/transfer history. */
+    val isOwned: Boolean = true,
+    /** Listed price in Platform credits, or null when not for sale. */
+    val priceCredits: Long? = null,
+    /** 0 owned, 1 sold, 2 transferred. */
+    val saleStatusRaw: Int = 0,
+    /** Buyer/recipient for departed names. */
+    val counterpartyIdentityId: ByteArray? = null,
+    val documentCreatedAtMs: Long = 0,
+    val documentUpdatedAtMs: Long = 0,
+    val documentTransferredAtMs: Long = 0,
+    /** Wall-clock time of the marketplace reconciliation that wrote this row. */
+    val marketplaceUpdatedAt: Long = 0,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
 )

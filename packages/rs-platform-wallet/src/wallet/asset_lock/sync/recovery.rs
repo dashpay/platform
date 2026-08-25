@@ -4,7 +4,7 @@
 //! resolving status from wallet info, resuming interrupted locks,
 //! and re-deriving private keys.
 
-use crate::broadcaster::TransactionBroadcaster;
+use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
@@ -59,13 +59,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // it (no proof was provided). Otherwise the proof we
             // already have determines the status without a lookup.
             if proof.is_none() {
-                // TODO(dashpay/platform#3642): iterate `all_funding_accounts()` instead of
-                // hard-coding BIP-44 — recovery misses CoinJoin / BIP-32 funded asset locks.
-                info.core_wallet
-                    .accounts
-                    .standard_bip44_accounts
-                    .get(&account_index)
-                    .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                super::proof::funding_tx_record(
+                    &info.core_wallet.accounts,
+                    account_index,
+                    &out_point.txid,
+                )
             } else {
                 None
             }
@@ -254,7 +252,31 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let proof = match status {
             AssetLockStatus::Built => {
                 // Re-broadcast and wait for proof.
-                self.broadcaster.broadcast(&tx).await?;
+                //
+                // Only a DEFINITE rejection stops the resume. `MaybeSent`
+                // means the outcome is unknown — and for a lock stuck at
+                // `Built` that is the expected answer when the app died
+                // between a successful broadcast and this status advance:
+                // the tx is in a mempool (or mined) and every re-broadcast
+                // reports the same ambiguity. Failing on it left the lock at
+                // `Built` forever, so each recovery pass repeated the same
+                // broadcast and the same abort, and the top-up never
+                // completed. Advancing to `Broadcast` and waiting matches
+                // what the `Broadcast` arm below already does with the
+                // identical signal.
+                match self.broadcaster.broadcast(&tx).await {
+                    Ok(_) => {}
+                    Err(BroadcastError::MaybeSent { reason }) => {
+                        tracing::warn!(
+                            outpoint = %out_point,
+                            reason = %reason,
+                            "resume_asset_lock: re-broadcast of a Built lock returned an \
+                             unknown outcome (the network may already hold this tx); \
+                             advancing to Broadcast and waiting for proof"
+                        );
+                    }
+                    Err(rejected) => return Err(rejected.into()),
+                }
                 let cs = self
                     .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
                     .await?;
@@ -309,6 +331,36 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
+            AssetLockStatus::RecoveredFromChain => {
+                // Reconstructed from a chain-locked record after a
+                // restore — Platform-side consumption is unknown. An
+                // explicit resume is allowed to try consuming it:
+                // Platform rejects an already-spent outpoint with a
+                // typed error, and a genuinely unspent lock is real
+                // recoverable value. The reconstruction path only
+                // assigns this status alongside a chain proof — at
+                // creation for records already finalized, or via
+                // `enrich_from_record` when finality arrives later
+                // (non-final detections enter as
+                // `Broadcast`/`InstantSendLocked` and take those arms,
+                // re-broadcast included, until then) — so the proof is
+                // present by construction; the `None` arm is a
+                // defensive fallback for a row whose persisted proof
+                // was lost, and its wait resolves from the already
+                // chain-locked record rather than blocking on new
+                // network events.
+                match existing_proof {
+                    Some(proof) => {
+                        self.validate_or_upgrade_proof(proof, account_index, out_point)
+                            .await?
+                    }
+                    None => {
+                        let proof = self.wait_for_proof(out_point, timeout).await?;
+                        self.validate_or_upgrade_proof(proof, account_index, out_point)
+                            .await?
+                    }
+                }
+            }
             AssetLockStatus::Consumed => {
                 // Terminal tombstone — the asset lock was already
                 // burned by a successful identity registration / top-up.
@@ -318,10 +370,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         };
 
-        // 3. Advance status and attach proof.
-        let new_status = match &proof {
-            dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
-            dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+        // 3. Advance status and attach proof. A `RecoveredFromChain`
+        // entry keeps its status: the resume proved (or refreshed)
+        // Core-side finality, which that status already asserts — it
+        // proved nothing new about Platform-side consumption, so
+        // advancing into `InstantSendLocked`/`ChainLocked` (which
+        // consumers read as "in flight") would silently re-enter the
+        // pending window and resurrect the false-"Pending" rendering
+        // on every restored lock whose resume didn't end in a spend.
+        // Consumption is recorded separately (`consume_asset_lock`)
+        // when the credit output actually lands on Platform.
+        let new_status = if status == AssetLockStatus::RecoveredFromChain {
+            AssetLockStatus::RecoveredFromChain
+        } else {
+            match &proof {
+                dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
+                dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+            }
         };
         let cs = self
             .advance_asset_lock_status(out_point, new_status, Some(proof.clone()))
@@ -466,10 +531,12 @@ mod tests {
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::error::PlatformWalletError;
-    use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
+    use crate::test_support::{
+        funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysRejectedBroadcaster,
+    };
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
-    use crate::wallet::core::WalletBalance;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -584,13 +651,14 @@ mod tests {
             timed_out,
             PlatformWalletError::FinalityTimeout(actual) if actual == out_point
         ));
-        let broadcast = broadcaster
-            .transactions
-            .lock()
-            .expect("recording broadcaster mutex");
-        assert_eq!(broadcast.as_slice(), std::slice::from_ref(&transaction));
-        assert_eq!(broadcast[0].txid(), out_point.txid);
-        drop(broadcast);
+        {
+            let broadcast = broadcaster
+                .transactions
+                .lock()
+                .expect("recording broadcaster mutex");
+            assert_eq!(broadcast.as_slice(), std::slice::from_ref(&transaction));
+            assert_eq!(broadcast[0].txid(), out_point.txid);
+        }
 
         // The real consume path leaves a terminal tombstone. That gives a
         // same-process retry a truthful typed error, while a foreign outpoint
@@ -645,6 +713,116 @@ mod tests {
                 .len(),
             1,
             "terminal/foreign failures must not trigger another broadcast"
+        );
+    }
+
+    /// Builds a tracked `Built`-status lock on a funded wallet and resumes it
+    /// through `broadcaster`, returning the resume error and the lock's status
+    /// afterwards. Shared by the two ambiguity/rejection cases below.
+    async fn resume_built_lock_with(
+        broadcaster: Arc<dyn TransactionBroadcaster>,
+    ) -> (PlatformWalletError, AssetLockStatus) {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster,
+            WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityTopUp,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        {
+            let mut wm = wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered")
+                .tracked_asset_locks
+                .insert(
+                    out_point,
+                    TrackedAssetLock {
+                        out_point,
+                        transaction,
+                        account_index: 0,
+                        funding_type: AssetLockFundingType::IdentityTopUp,
+                        identity_index: 4,
+                        amount: 1_000_000,
+                        status: AssetLockStatus::Built,
+                        proof: None,
+                    },
+                );
+        }
+
+        let error = manager
+            .resume_asset_lock(&out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("no proof event should arrive in either case");
+        let status = wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&out_point)
+            .expect("lock stays tracked")
+            .status
+            .clone();
+        (error, status)
+    }
+
+    /// An AMBIGUOUS re-broadcast must not end the resume. A lock sitting at
+    /// `Built` whose transaction was in fact already broadcast (app killed
+    /// between the send and the status advance) draws `MaybeSent` on every
+    /// retry, so failing on it pinned the lock at `Built` forever and the
+    /// top-up could never complete. It must advance to `Broadcast` and go on
+    /// to wait for the proof — here, until the 10ms test timeout.
+    #[tokio::test]
+    async fn built_resume_survives_an_ambiguous_rebroadcast_and_advances() {
+        let (error, status) = resume_built_lock_with(Arc::new(AlwaysMaybeSentBroadcaster)).await;
+
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "resume must reach the proof wait, not fail on the broadcast: {error:?}"
+        );
+        assert_eq!(
+            status,
+            AssetLockStatus::Broadcast,
+            "an ambiguous re-broadcast must still advance the lock, or every \
+             later pass repeats the same broadcast and the same failure"
+        );
+    }
+
+    /// A DEFINITE rejection is the opposite case and must keep failing the
+    /// resume: nothing is on the network, so no proof can ever arrive, and
+    /// the lock stays at `Built` for a later retry to re-send.
+    #[tokio::test]
+    async fn built_resume_still_fails_on_a_definite_rejection() {
+        let (error, status) = resume_built_lock_with(Arc::new(AlwaysRejectedBroadcaster)).await;
+
+        assert!(
+            matches!(error, PlatformWalletError::TransactionBroadcast(_)),
+            "a definite rejection must surface as a broadcast failure: {error:?}"
+        );
+        assert_eq!(
+            status,
+            AssetLockStatus::Built,
+            "a tx that never entered the network must stay resumable at Built"
         );
     }
 
@@ -742,9 +920,10 @@ mod tests {
         let restored_wallet = Wallet::new_external_signable(Network::Testnet, wallet_id, accounts);
         let mut restored_info = PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(&restored_wallet, 0),
-            balance: Arc::new(WalletBalance::new()),
+            generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {
