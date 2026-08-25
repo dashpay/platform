@@ -8,8 +8,8 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, PersistDpnsNameStatesFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    FFIPersister, PersistenceCallbacks, PersistenceCallbacksExtension, PersistenceCapabilitiesFFI,
+    PersistenceExtensionCallbacks, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         persistence,
         event_handler,
         PersistenceCapabilities::NONE,
-        None,
+        PersistenceExtensionCallbacks::default(),
         None,
         out_handle,
     )
@@ -100,7 +100,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         persistence,
         event_handler,
         declaration,
-        None,
+        PersistenceExtensionCallbacks::default(),
         None,
         out_handle,
     )
@@ -127,13 +127,13 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
     check_ptr!(persistence_capabilities);
     check_ptr!(persistence_extension);
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
-    let dpns_callback = persistence_extension_dpns_callback(persistence_extension);
+    let extensions = persistence_extension_callbacks(persistence_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         persistence,
         event_handler,
         declaration,
-        dpns_callback,
+        extensions,
         None,
         out_handle,
     )
@@ -157,40 +157,53 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     check_ptr!(persistence_extension);
     check_ptr!(event_extension);
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
-    let dpns_persistence_callback = persistence_extension_dpns_callback(persistence_extension);
+    let persistence_extensions = persistence_extension_callbacks(persistence_extension);
     let dpns_event_callback = event_extension_dpns_callback(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         persistence,
         event_handler,
         declaration,
-        dpns_persistence_callback,
+        persistence_extensions,
         dpns_event_callback,
         out_handle,
     )
 }
 
-unsafe fn persistence_extension_dpns_callback(
+unsafe fn persistence_extension_callbacks(
     extension: *const PersistenceCallbacksExtension,
-) -> Option<PersistDpnsNameStatesFn> {
+) -> PersistenceExtensionCallbacks {
     let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
     let version_end =
         std::mem::offset_of!(PersistenceCallbacksExtension, version) + std::mem::size_of::<u32>();
     if supplied_size < version_end {
-        return None;
+        return PersistenceExtensionCallbacks::default();
     }
     let version = std::ptr::addr_of!((*extension).version).read();
     if version != PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION {
-        return None;
+        return PersistenceExtensionCallbacks::default();
     }
-    let callback_end = std::mem::offset_of!(
-        PersistenceCallbacksExtension,
-        on_persist_dpns_name_states_fn
-    ) + std::mem::size_of::<Option<PersistDpnsNameStatesFn>>();
-    if supplied_size < callback_end {
-        return None;
+
+    /// Read one size-gated `Option<fn>` field: present only when the
+    /// caller's `struct_size` proves the complete field exists.
+    macro_rules! gated {
+        ($field:ident) => {{
+            let end = std::mem::offset_of!(PersistenceCallbacksExtension, $field)
+                + std::mem::size_of_val(&(*extension).$field);
+            if supplied_size < end {
+                None
+            } else {
+                std::ptr::addr_of!((*extension).$field).read()
+            }
+        }};
     }
-    std::ptr::addr_of!((*extension).on_persist_dpns_name_states_fn).read()
+
+    PersistenceExtensionCallbacks {
+        dpns_name_states: gated!(on_persist_dpns_name_states_fn),
+        persist_tracked_masternodes: gated!(on_persist_tracked_masternodes_fn),
+        load_tracked_masternodes: gated!(on_load_tracked_masternodes_fn),
+        load_tracked_masternodes_free: gated!(on_load_tracked_masternodes_free_fn),
+    }
 }
 
 unsafe fn event_extension_dpns_callback(
@@ -221,7 +234,7 @@ unsafe fn platform_wallet_manager_create_impl(
     persistence: *const PersistenceCallbacks,
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
-    dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+    persistence_extensions: PersistenceExtensionCallbacks,
     dpns_event_callback: Option<DpnsMarketplaceSyncCompletedFn>,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -259,10 +272,10 @@ unsafe fn platform_wallet_manager_create_impl(
 
     let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
     let persister = Arc::new(
-        FFIPersister::new_with_persistence_capabilities_and_dpns_callback(
+        FFIPersister::new_with_persistence_capabilities_and_extensions(
             std::ptr::read(persistence),
             declared_capabilities,
-            dpns_name_states_callback,
+            persistence_extensions,
         ),
     );
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> = Arc::new(FFIEventHandler::new(
@@ -1169,8 +1182,33 @@ mod tests {
             on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
             ..Default::default()
         };
-        assert!(unsafe { persistence_extension_dpns_callback(&short) }.is_none());
-        assert!(unsafe { persistence_extension_dpns_callback(&unknown) }.is_none());
+        let read_short = unsafe { persistence_extension_callbacks(&short) };
+        assert!(read_short.dpns_name_states.is_none());
+        assert!(read_short.persist_tracked_masternodes.is_none());
+        let read_unknown = unsafe { persistence_extension_callbacks(&unknown) };
+        assert!(read_unknown.dpns_name_states.is_none());
+        assert!(read_unknown.load_tracked_masternodes.is_none());
+    }
+
+    /// A caller whose `struct_size` covers only the dpns field (an
+    /// older host recompiled before the tracked-masternode trio existed)
+    /// yields the dpns callback and nothing else — additive size gating.
+    #[test]
+    fn dpns_only_sized_extension_reads_only_the_dpns_field() {
+        let dpns_only_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_tracked_masternodes_fn
+        );
+        let ext = PersistenceCallbacksExtension {
+            struct_size: dpns_only_size,
+            on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
+            ..Default::default()
+        };
+        let read = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(read.dpns_name_states.is_some());
+        assert!(read.persist_tracked_masternodes.is_none());
+        assert!(read.load_tracked_masternodes.is_none());
+        assert!(read.load_tracked_masternodes_free.is_none());
     }
 }
 

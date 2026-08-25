@@ -456,6 +456,17 @@ pub enum PlatformWalletFFIResultCode {
     /// codes and stay retryable. Siblings: [`Self::ErrorShieldedSpendUnconfirmed`],
     /// [`Self::ErrorTransactionBroadcastUnconfirmed`].
     ErrorMasternodeWithdrawalUnconfirmed = 42,
+    /// The deterministic masternode list isn't available yet (SPV not
+    /// running or masternode sync incomplete), so a list-backed query —
+    /// `platform_wallet_manager_locate_masternode` — has nothing to search.
+    /// Transient: retry once `platform_wallet_manager_sync_progress` reports
+    /// the masternode list synced.
+    ///
+    /// Allocated 46 — 43/44/45 are held by the shielded-invite trio on the
+    /// in-flight #4313 (`ErrorShieldedInviteAlreadyClaimed` /
+    /// `ErrorShieldedScanBudgetExhausted` / `ErrorShieldedLifecycleBusy`),
+    /// per the error-code registry (#4318).
+    ErrorMasternodeListUnavailable = 46,
 
     /// The named thing does not exist.
     ///

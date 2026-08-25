@@ -15,7 +15,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::TransactionArg;
+use grovedb::{IndexedTopKKeysPage, TransactionArg};
 use grovedb_costs::CostContext;
 
 impl DriveDocumentRankedQuery<'_> {
@@ -38,12 +38,33 @@ impl DriveDocumentRankedQuery<'_> {
     /// no-proof and prove paths read the same code path in grovedb and
     /// cannot drift on the walk's semantics for offset-free queries.
     ///
-    /// [`RankedPage::skipped`] on this path is the *requested* offset:
-    /// grovedb's read API returns an empty vector when the walk runs out
-    /// during the skip and does not report how far it got, so an
-    /// unproven read cannot distinguish "skipped exactly `offset`" from
-    /// "the secondary holds fewer than `offset` groups". Only the proved
-    /// path attests the true value — see [`RankedPage::skipped`].
+    /// # The offset is counted, not walked
+    ///
+    /// grovedb descends the secondary reading each subtree's aggregate
+    /// count off its link, and collapses any subtree that fits entirely
+    /// inside the remaining offset instead of stepping through it. The
+    /// skip therefore costs `O(log n)` at any offset rather than one
+    /// iterator step and one decode per skipped entry, and an offset at
+    /// or past the population is answered from the root's own count with
+    /// no descent at all — the cheapest request on this surface rather
+    /// than the most expensive. `offset = 0` keeps the plain iterator
+    /// path and never touches the tree, so the common unpaginated
+    /// request costs exactly what it always did.
+    ///
+    /// That is what makes an uncapped `OFFSET` safe rather than merely
+    /// tolerated. Ranked queries carry no fee, cannot be cancelled once
+    /// dispatched, and share their rate budget with state transitions
+    /// rather than having one of their own, so a skip whose cost grew
+    /// with the offset would be an unmetered lever for any
+    /// unauthenticated caller. It does not grow.
+    ///
+    /// [`RankedPage::skipped`] comes back from grovedb rather than being
+    /// echoed from the request: it is the requested offset when the skip
+    /// succeeded, and the secondary's whole population when the walk ran
+    /// out of groups first. That is the same quantity the proved path
+    /// attests, so the two no longer disagree — though on this path it is
+    /// the node's unverified claim rather than an attested value, exactly
+    /// like the entries beside it. See [`RankedPage::skipped`].
     pub fn execute_top_k_no_proof(
         &self,
         drive: &Drive,
@@ -55,33 +76,40 @@ impl DriveDocumentRankedQuery<'_> {
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
         let offset = self.offset as u64;
 
-        // Costs are destructured away rather than `.unwrap()`-ed:
+        // The cost is dropped rather than `.unwrap()`-ed:
         // `CostContext::unwrap` is infallible (it drops the cost field)
-        // but reads like a panicking unwrap at the call site. The
-        // dispatcher wraps these executors with its own fee accounting,
-        // exactly as the count surface's `execute_range_count_no_proof`
-        // does.
-        let entries = match self.axis {
+        // but reads like a panicking unwrap at the call site. Dropping it
+        // is all there is to do with it — nothing meters a query on this
+        // surface: neither this executor's caller nor the dispatcher
+        // above it accumulates or charges the cost, and no credit is
+        // debited for a read. grovedb computes the `OperationCost`
+        // because its API always does, and it ends here.
+        let (entries, skipped) = match self.axis {
             RankedAxis::Count => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_count_top_k_paginated(
-                    path_refs.as_slice(),
-                    self.k,
-                    offset,
-                    self.descending,
-                    transaction,
-                    grove_version,
-                );
-                value
-                    .map_err(|e| Error::GroveDB(Box::new(e)))?
-                    .into_iter()
-                    .map(|(count, key)| RankedEntry {
-                        key,
-                        value: RankedEntryValue::Count(count),
-                    })
-                    .collect::<Vec<_>>()
+                let CostContext { value, cost: _ } =
+                    drive.grove.indexed_count_top_k_paginated_keys(
+                        path_refs.as_slice(),
+                        self.k,
+                        offset,
+                        self.descending,
+                        transaction,
+                        grove_version,
+                    );
+                let IndexedTopKKeysPage { entries, skipped } =
+                    value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+                (
+                    entries
+                        .into_iter()
+                        .map(|(count, key)| RankedEntry {
+                            key,
+                            value: RankedEntryValue::Count(count),
+                        })
+                        .collect::<Vec<_>>(),
+                    skipped,
+                )
             }
             RankedAxis::Sum => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_sum_top_k_paginated(
+                let CostContext { value, cost: _ } = drive.grove.indexed_sum_top_k_paginated_keys(
                     path_refs.as_slice(),
                     self.k,
                     offset,
@@ -89,17 +117,21 @@ impl DriveDocumentRankedQuery<'_> {
                     transaction,
                     grove_version,
                 );
-                value
-                    .map_err(|e| Error::GroveDB(Box::new(e)))?
-                    .into_iter()
-                    .map(|(sum, key)| RankedEntry {
-                        key,
-                        value: RankedEntryValue::Sum(sum),
-                    })
-                    .collect::<Vec<_>>()
+                let IndexedTopKKeysPage { entries, skipped } =
+                    value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+                (
+                    entries
+                        .into_iter()
+                        .map(|(sum, key)| RankedEntry {
+                            key,
+                            value: RankedEntryValue::Sum(sum),
+                        })
+                        .collect::<Vec<_>>(),
+                    skipped,
+                )
             }
             RankedAxis::Avg => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_avg_top_k_paginated(
+                let CostContext { value, cost: _ } = drive.grove.indexed_avg_top_k_paginated_keys(
                     path_refs.as_slice(),
                     self.k,
                     offset,
@@ -107,14 +139,18 @@ impl DriveDocumentRankedQuery<'_> {
                     transaction,
                     grove_version,
                 );
-                value
-                    .map_err(|e| Error::GroveDB(Box::new(e)))?
-                    .into_iter()
-                    .map(|(avg, key)| RankedEntry {
-                        key,
-                        value: RankedEntryValue::AvgFixedPoint(avg),
-                    })
-                    .collect::<Vec<_>>()
+                let IndexedTopKKeysPage { entries, skipped } =
+                    value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+                (
+                    entries
+                        .into_iter()
+                        .map(|(avg, key)| RankedEntry {
+                            key,
+                            value: RankedEntryValue::AvgFixedPoint(avg),
+                        })
+                        .collect::<Vec<_>>(),
+                    skipped,
+                )
             }
         };
 
@@ -131,10 +167,7 @@ impl DriveDocumentRankedQuery<'_> {
                 self.k
             ))));
         }
-        Ok(RankedPage {
-            skipped: offset,
-            entries,
-        })
+        Ok(RankedPage { skipped, entries })
     }
 
     /// Generate the grovedb indexed-axis paginated top-k proof for this

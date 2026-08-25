@@ -205,8 +205,10 @@ pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
 ///
 /// The record source (rust-dashcore #876 provider-payload retention) is
 /// populated in every feature configuration; see
-/// `PlatformWalletManager::provider_masternode_txs_blocking`. `out_*` are
-/// set to null / 0 when the wallet has no masternodes or isn't found.
+/// `PlatformWalletManager::wallet_masternodes_blocking`, which also resolves
+/// status and operator / platform key ownership — this function only
+/// marshals. `out_*` are set to null / 0 when the wallet has no masternodes
+/// or isn't found.
 ///
 /// Reads the wallet manager lock via `blocking_read` — must not be called
 /// from within a tokio async context.
@@ -229,43 +231,16 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
     let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        manager.provider_masternode_txs_blocking(&wid)
+        manager.wallet_masternodes_blocking(&wid)
     });
     // Outer Option: handle resolved. Inner Option: wallet found.
     let inner = unwrap_option_or_return!(option);
-    let (network, txs, dml, operator_index, platform_index) = unwrap_option_or_return!(inner);
+    let masternodes = unwrap_option_or_return!(inner);
 
-    // Derive DML membership from the owned snapshot (`None` ⇒ list not
-    // available ⇒ Unknown status ⇒ persist layer keeps the prior value).
-    use crate::core_wallet_types::ListMembership;
-    let membership = |pro_tx_hash: &[u8; 32]| -> ListMembership {
-        match &dml {
-            None => ListMembership::ListUnavailable,
-            Some(map) => match map.get(pro_tx_hash) {
-                Some(true) => ListMembership::ValidEntry,
-                Some(false) => ListMembership::InvalidEntry,
-                None => ListMembership::Absent,
-            },
-        }
-    };
-
-    let aggregates = crate::core_wallet_types::aggregate_masternodes(
-        txs.iter().map(|(h, p, tx)| (*h, *p, tx)),
-        membership,
-    );
-
-    let entries: Vec<crate::core_wallet_types::MasternodeEntryFFI> = aggregates
+    let entries: Vec<crate::core_wallet_types::MasternodeEntryFFI> = masternodes
+        .records
         .iter()
-        .enumerate()
-        .map(|(idx, mn)| {
-            crate::core_wallet_types::masternode_entry_ffi(
-                mn,
-                idx as u32,
-                network,
-                &operator_index,
-                &platform_index,
-            )
-        })
+        .map(|mn| crate::core_wallet_types::masternode_entry_ffi(mn, masternodes.network))
         .collect();
     let count = entries.len();
 
@@ -300,6 +275,7 @@ pub unsafe extern "C" fn platform_wallet_manager_free_masternodes(
             entry.payout_address,
             entry.operator_pseudo_address,
             entry.platform_node_address,
+            entry.label,
         ] {
             if !ptr.is_null() {
                 let _ = std::ffi::CString::from_raw(ptr);

@@ -5,7 +5,7 @@ use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_document_versions::v3::DOCUMENT_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_method_versions::v2::DPP_METHOD_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
@@ -15,11 +15,11 @@ use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VE
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
-use crate::version::drive_abci_versions::drive_abci_method_versions::v9::DRIVE_ABCI_METHOD_VERSIONS_V9;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
-use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
+use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::fee::v2::FEE_VERSION2;
@@ -66,19 +66,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    the contest was created on — which halts the chain when that poll
 ///    ends — or open a contest for a document that is not a contested
 ///    resource at all.
-/// 4. **Daily withdrawal limit 2000 → 4000 Dash**: `SYSTEM_LIMITS_V4` raises
-///    `daily_withdrawal_limit`, doubling the amount of credits Platform pools
-///    into asset unlock transactions per 24 hours (the `daily_withdrawal_limit`
-///    method stays at v1, which reads that system limit). This
-///    mirrors Core's doubled credit-pool unlock limit (`LimitAmountV24`,
-///    DIP-0165, dashpay/dash#6662), which Core gates on its own
-///    `DEPLOYMENT_V24` hard fork. v14 does not have to wait for that fork:
-///    pre-V24 Core caps unlocks at `LimitAmountV22` (2000 Dash) per *block*
-///    (no sliding window — the window only arrives with V24), and its mempool
-///    does not check the amount at all, so a day's 4000 Dash is still fully
-///    minable; unlocks above 2000 in one Core block simply wait for the next
-///    one. After V24, Core enforces 4000 Dash per 576-block window, which
-///    matches this limit.
+/// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
+///    applied from v8 becomes 15% of the total credits Platform held a day ago
+///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
+///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
+///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
+///    withdrawal eventually fits and cannot block the pooling queue, and never
+///    above `max_daily_withdrawal_amount` (4000 Dash, Core's unlock capacity per
+///    day under V24) since pooling more than Core mines only cycles through
+///    expiry and re-signing. The base is
+///    the total credits recorded at the latest block at least 24 hours before
+///    the current one: `DRIVE_ABCI_METHOD_VERSIONS_V10` turns on
+///    `record_total_credits_history_for_withdrawals`, which checks the total
+///    credits every block once fees and epoch rewards are in, writes it under
+///    the withdrawals tree keyed by block time whenever it changed (an entry
+///    describes the total until the next one) and prunes entries older than the
+///    one the limit reads, and `DRIVE_VERSION_V9`'s identity withdrawal table
+///    bumps `calculate_current_withdrawal_limit` to 1 to read that lagged
+///    value. Until an entry is a day old — the first day after activation — the
+///    flat 2000 Dash keeps applying, so the lag cannot be skipped by inflating
+///    the total before or at activation. The lag is the guardrail: a sudden
+///    jump in the total credits does not raise the limit for a day. Amounts
+///    already pooled in the last 24 hours keep counting against the maximum
+///    exactly as before. Core's own unlock limit is unaffected: pre-V24 Core
+///    caps unlocks at `LimitAmountV22` (2000 Dash) per *block*, with the amount
+///    checked only at block level, so any daily total is still minable across
+///    blocks; after V24 it enforces 4000 Dash per 576-block window, which the
+///    cap above never exceeds.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
@@ -89,7 +103,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///
 /// Until a contract uses the ranked grammar, the only v14 behavior changes
 /// are the shared-prefix fix, the contested-index cross-check, the
-/// index-reorder schema-compatibility fix and the doubled daily withdrawal
+/// index-reorder schema-compatibility fix and the relative daily withdrawal
 /// limit; everything else matches v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
@@ -140,9 +154,9 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V9,
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
-        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
+        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
@@ -159,12 +173,12 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V2,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        methods: DPP_METHOD_VERSIONS_V2,
+        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily_withdrawal_limit 2000 → 4000 Dash, matching Core's LimitAmountV24
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

@@ -150,7 +150,9 @@ final class EvonodeStatusTests: XCTestCase {
             platformInWallet: false,
             platformAccountType: 0,
             platformKeyIndex: 0,
-            platformOwnershipChecked: false)
+            platformOwnershipChecked: false,
+            source: .wallet,
+            label: nil)
     }
 
     func testPlatformDAPIAddressDropsTheCorePort() {

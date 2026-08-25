@@ -4,6 +4,7 @@ use crate::query::{
     DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue, RankedPage,
 };
 use crate::verify::RootHash;
+use dpp::version::PlatformVersion;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
 use grovedb::GroveDb;
 
@@ -44,14 +45,11 @@ impl DriveDocumentRankedQuery<'_> {
     /// is a useful answer, and the only place that knows whether it is
     /// acceptable is the caller.
     ///
-    /// No `platform_version` argument: the parent dispatcher already
-    /// consumed it to select this version, and nothing in the body needs
-    /// a grove version (verification derives everything from the proof
-    /// bytes plus the path).
     #[inline(always)]
     pub(super) fn verify_ranked_top_k_proof_v0(
         &self,
         proof: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, RankedPage), Error> {
         let path = self.indexed_property_name_tree_path()?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
@@ -63,12 +61,14 @@ impl DriveDocumentRankedQuery<'_> {
             self.k,
             self.offset as u64,
             self.descending,
+            &platform_version.drive.grove_version,
         )
         .map_err(|e| Error::GroveDB(Box::new(e)))?;
 
         let entries = match (self.axis, result.entries) {
             (RankedAxis::Count, AxisEntries::Count(entries)) => entries
                 .into_iter()
+                .map(|entry| entry.key_pair())
                 .map(|(count, key)| RankedEntry {
                     key,
                     value: RankedEntryValue::Count(count),
@@ -76,6 +76,7 @@ impl DriveDocumentRankedQuery<'_> {
                 .collect::<Vec<_>>(),
             (RankedAxis::Sum, AxisEntries::Sum(entries)) => entries
                 .into_iter()
+                .map(|entry| entry.key_pair())
                 .map(|(sum, key)| RankedEntry {
                     key,
                     value: RankedEntryValue::Sum(sum),
@@ -83,6 +84,7 @@ impl DriveDocumentRankedQuery<'_> {
                 .collect::<Vec<_>>(),
             (RankedAxis::Avg, AxisEntries::Avg(entries)) => entries
                 .into_iter()
+                .map(|entry| entry.key_pair())
                 .map(|(avg, key)| RankedEntry {
                     key,
                     value: RankedEntryValue::AvgFixedPoint(avg),

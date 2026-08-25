@@ -344,9 +344,15 @@ impl DocumentQuery {
     /// Only the ranked surface honours it (see
     /// [`Self::order_by_selected_aggregate`]); on every other path the
     /// server rejects a set offset with `Unsupported`. There is no
-    /// ceiling: grovedb attests the skipped region from counted
-    /// subtree commitments instead of walking it, so a deep offset
-    /// costs exactly what a shallow one does.
+    /// ceiling: grovedb counts the skipped region from the subtree
+    /// aggregates instead of walking it, on both `prove` settings, so
+    /// the cost of a deep offset does not scale with the offset. It is
+    /// not identical to a shallow one — `offset = 0` keeps a sequential
+    /// fast path, a positive offset descends the tree in `O(log n)`,
+    /// and an offset at or past the population is answered from the
+    /// root without descending at all — but nothing here grows with how
+    /// far you page, which is why there is no ceiling. Only a proved
+    /// response additionally attests the count.
     ///
     /// An offset past the end of the ranking is a legitimate answer
     /// rather than an error — the page comes back empty, and on a
