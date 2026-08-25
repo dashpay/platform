@@ -672,7 +672,7 @@ Recorded in `sdk-parity-manifest.json`; rationale here:
   signer completion carries a typed `error_code` (rs-sdk-ffi
   `DashSDKSignerErrorCode`), restored as platform-wallet code 31 on both
   hosts. The Rust-internal segment rides the machine prefix
-  `signer_error:key_unavailable: ` through `ProtocolError::Generic` (a typed
+  `signer_error:key_unavailable:` through `ProtocolError::Generic` (a typed
   rs-dpp variant was rejected for serialization blast radius — accepted
   residual). The Kotlin `MESSAGE_MARKER` text sniff survives ONLY as a
   deprecated fallback for the #4191 merge-order transition (marker-based

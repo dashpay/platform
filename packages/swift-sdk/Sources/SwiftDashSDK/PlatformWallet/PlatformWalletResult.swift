@@ -154,6 +154,53 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// amount plus input 0's retained fee reserve. Refresh the shield
     /// preflight and ask the user to confirm the new capacity.
     case errorShieldedInsufficientBalance = 41
+    /// A one-time-key (shielded invitation) claim found the invitation note's
+    /// nullifier already spent on chain, with no positive evidence that this
+    /// claim created an identity. TERMINAL and NOT retryable — the note is
+    /// consumed, so no retry can spend it again, and no identity id is
+    /// produced. Surface the invitation as spent.
+    ///
+    /// Raw value 43 — the allocation frontier after the v4.2-dev merge:
+    /// 37-40 are the DPNS username-marketplace block, 41 the shield-capacity
+    /// shortfall, 42 reserved. 43 matches `ErrorShieldedInviteAlreadyClaimed`
+    /// in packages/rs-platform-wallet-ffi/src/error.rs and the
+    /// integration-branch allocation already shipped in QA AARs, so it is
+    /// frozen. (It briefly held 32 — errorTransactionBuild, #4247/#4256 —
+    /// then 37, both now claimed.)
+    case errorShieldedInviteAlreadyClaimed = 43
+    /// A one-time-key (shielded invitation) claim's transient note scan hit
+    /// its per-attempt work budget before finding the invitation's funding
+    /// note. Progress is checkpointed, so a retry RESUMES rather than
+    /// restarts.
+    ///
+    /// RETRYABLE and cheap to retry — the opposite pole from
+    /// `errorShieldedInviteAlreadyClaimed` (43). Nothing was spent, built or
+    /// broadcast; the scan simply has not looked far enough yet. Render it as
+    /// "still searching — try again", NEVER as an invalid, unfunded or
+    /// already-claimed invitation: treating it as terminal strands a genuinely
+    /// funded claim whose note sits deep in the tree.
+    ///
+    /// Raw value 44 — the frontier past the frozen 43. MUST match
+    /// `ErrorShieldedScanBudgetExhausted` in
+    /// packages/rs-platform-wallet-ffi/src/error.rs.
+    case errorShieldedScanBudgetExhausted = 44
+    /// A shielded lifecycle operation was refused admission at the store
+    /// rather than allowed to run concurrently with whatever holds it. Two
+    /// directions reach this one code: a one-time-key claim refused because a
+    /// clear / wallet-removal holds destructive admission over its wallet (or
+    /// another claimant already holds this invitation's claim-record key), and
+    /// a destructive operation refused because in-flight claims did not drain
+    /// within its wait.
+    ///
+    /// RETRYABLE in both directions, and nothing was consumed: the claim
+    /// direction scanned, built and broadcast nothing; the destructive
+    /// direction purged nothing. Render it as "busy — try again", never as an
+    /// invalid or already-claimed invitation and never as a failed wipe.
+    ///
+    /// Raw value 45 — the next free integer past 44 (28, 30, 32 and 33 are
+    /// RESERVED, not reissuable). MUST match `ErrorShieldedLifecycleBusy` in
+    /// packages/rs-platform-wallet-ffi/src/error.rs.
+    case errorShieldedLifecycleBusy = 45
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -255,6 +302,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorContestedNameNotTradable
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INSUFFICIENT_BALANCE:
             self = .errorShieldedInsufficientBalance
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INVITE_ALREADY_CLAIMED:
+            self = .errorShieldedInviteAlreadyClaimed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SCAN_BUDGET_EXHAUSTED:
+            self = .errorShieldedScanBudgetExhausted
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_LIFECYCLE_BUSY:
+            self = .errorShieldedLifecycleBusy
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -444,6 +497,26 @@ public enum PlatformWalletError: LocalizedError {
     /// `endsAtMs == 0` means the vote's end time was unavailable — show it
     /// as unknown rather than as "ends at the epoch".
     case contestedNameNotTradable(label: String, endsAtMs: UInt64)
+    /// A one-time-key (shielded invitation) claim found the invitation
+    /// note's nullifier already spent on chain, with no positive evidence
+    /// that this claim created an identity. TERMINAL and NOT retryable —
+    /// the note is consumed, so no retry can spend it again, and no
+    /// identity id is produced. Surface the invitation as spent. Kotlin
+    /// parity: `DashSdkError.PlatformWallet.ShieldedInviteAlreadyClaimed`.
+    case shieldedInviteAlreadyClaimed(String)
+    /// A one-time-key (shielded invitation) claim's transient note scan
+    /// consumed its per-attempt work budget before finding the funding note.
+    /// Progress is checkpointed, so a retry RESUMES the scan rather than
+    /// restarting it. RETRYABLE and cheap to retry — nothing was spent, built
+    /// or broadcast. Surface it as "still searching", never as an invalid or
+    /// already-claimed invitation.
+    case shieldedScanBudgetExhausted(String)
+    /// A shielded lifecycle operation was refused admission at the store: a
+    /// claim contending with a clear / wallet-removal (or with another
+    /// claimant of the same invitation), or a destructive operation whose
+    /// in-flight claims did not drain in time. RETRYABLE — nothing was
+    /// consumed, purged or broadcast. Surface it as "busy — try again".
+    case shieldedLifecycleBusy(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -480,6 +553,8 @@ public enum PlatformWalletError: LocalizedError {
              .staleReservationToken(let m), .reservationTokenConsumed(let m),
              .reservationWalletMismatch(let m),
              .notForSale(let m),
+             .shieldedInviteAlreadyClaimed(let m),
+             .shieldedScanBudgetExhausted(let m), .shieldedLifecycleBusy(let m),
              .notFound(let m), .unknown(let m):
             return m
         // The three value-carrying marketplace rejections compose their
@@ -593,6 +668,12 @@ public enum PlatformWalletError: LocalizedError {
             } else {
                 self = .unknown(detail)
             }
+        case .errorShieldedInviteAlreadyClaimed:
+            self = .shieldedInviteAlreadyClaimed(detail)
+        case .errorShieldedScanBudgetExhausted:
+            self = .shieldedScanBudgetExhausted(detail)
+        case .errorShieldedLifecycleBusy:
+            self = .shieldedLifecycleBusy(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

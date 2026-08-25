@@ -60,6 +60,7 @@ use dpp::shielded::builder::{
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::identity_id_from_nullifiers;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
@@ -1978,6 +1979,1436 @@ where
     }
 }
 
+// -------------------------------------------------------------------------
+// IdentityCreateFromShieldedPool from a ONE-TIME Orchard key (Type 20, L2
+// invitations — the claim side)
+// -------------------------------------------------------------------------
+
+/// Create a brand-new Platform identity funded from a ONE-TIME Orchard spending
+/// key (the L2-invitation *claim* side).
+///
+/// Unlike [`identity_create_from_shielded_pool`], the spend authority is NOT the
+/// wallet's own [`OrchardKeySet`]; it is a foreign `one_time_sk` — the single-use
+/// Orchard spending key an invitation was funded to. The op:
+/// 1. derives the full-viewing / incoming-viewing / spend-authorizing keys from
+///    `one_time_sk`,
+/// 2. transiently scans the network for the note(s) that key owns (they are not
+///    tracked in any subwallet store — see [`super::sync::scan_notes_for_foreign_key`]),
+/// 3. selects notes covering exactly `denomination` (the exact-equality model —
+///    the fee is metered FROM the denomination) and gates on
+///    `denomination > predicted_fee`,
+/// 4. witnesses the selected notes against a Platform-recorded anchor from the
+///    shared (fully-marked) commitment tree — the SAME anchor probe the
+///    pool-funded op uses (so a wallet that hasn't synced past the funding
+///    position gets the retryable [`PlatformWalletError::ShieldedMerkleWitnessUnavailable`]),
+/// 5. feeds the key-agnostic Type-20 builder with the one-time key's fvk/ask, and
+/// 6. broadcasts + waits with the same fetch-by-derived-id fallback.
+///
+/// The whole denomination leaves the pool; any spent value above it re-enters as
+/// a single change note to `change_address` (the claimer's OWN default Orchard
+/// address — over-funding is expected to be zero for a one-time invitation key,
+/// but is handled). There is NO wallet-side note reservation to take or release:
+/// the spent notes belong to the foreign key, not to any subwallet, so an
+/// unconfirmed broadcast simply leaves the on-chain nullifiers as the
+/// authoritative no-reuse guarantee.
+///
+/// `funding_birth_height` is an advisory hint only (see
+/// [`super::sync::scan_notes_for_foreign_key`] — the tree has no height→position
+/// oracle, so it cannot seed the scan start today; repeated attempts are
+/// bounded by the scan's coordinator-owned resume checkpoint instead).
+///
+/// Returns the new identity's id and the proof-verified [`Identity`]; the caller
+/// registers that identity in its local `IdentityManager`.
+#[allow(clippy::too_many_arguments)]
+pub async fn identity_create_from_one_time_key<S, P, IS>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    // Coordinator-owned per-FVK single-flight guards — see
+    // [`ForeignClaimGuards`]. Acquired for the WHOLE body, so concurrent
+    // same-key claims serialize instead of racing the durable record.
+    claim_guards: &ForeignClaimGuards,
+    // Coordinator-owned transient-scan resume checkpoints — see
+    // [`super::sync::ForeignScanCheckpointCache`] for the chain-isolation
+    // contract.
+    scan_checkpoints: &super::sync::ForeignScanCheckpointCache,
+    // Claimer's wallet id — keys the durable pending-claim record (under the
+    // reserved `ONE_TIME_CLAIM_RECORDS_ACCOUNT` subwallet of this wallet).
+    wallet_id: WalletId,
+    // Bearer spend authority: carried in a `Zeroizing` buffer so every wallet-layer
+    // copy of the one-time spending key is scrubbed on drop (#4204 key-hygiene).
+    one_time_sk: zeroize::Zeroizing<[u8; 32]>,
+    funding_birth_height: Option<u32>,
+    change_address: &OrchardAddress,
+    identity_index: u32,
+    public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
+    denomination: u64,
+    send_to_address_on_creation_failure: PlatformAddress,
+    identity_signer: &IS,
+    prover: &P,
+) -> Result<(Identifier, Identity), PlatformWalletError>
+where
+    S: ShieldedStore,
+    P: OrchardProver,
+    IS: Signer<IdentityPublicKey>,
+{
+    use grovedb_commitment_tree::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey};
+
+    if public_keys.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "identity-create-from-one-time-key requires at least one public key".to_string(),
+        ));
+    }
+
+    // Derive the Orchard key material from the one-time spending key. `from_bytes`
+    // returns a `CtOption`; an invalid scalar means the caller handed us a
+    // non-key, which is a hard input error.
+    //
+    // KEY HYGIENE (#4204 finding 1ee08ba70627): orchard 0.14's `SpendingKey`
+    // and `SpendAuthorizingKey` are `Copy` types with no `Zeroize` support, so
+    // holding them as plain locals would leave complete spend-authority
+    // representations in this LONG-LIVED async frame across every network
+    // await below. Both are contained in [`super::keys::ScrubOnDrop`] guards
+    // (volatile-scrubbed on every exit path) and explicitly dropped at their
+    // final use: `sk` right after the derivations here, `ask` right after the
+    // bundle build. The `*one_time_sk` deref feeding `from_bytes` is the one
+    // unavoidable transient copy (orchard's API takes the array by value); the
+    // `Zeroizing` parameter itself scrubs the wallet-layer buffer on drop.
+    let sk = super::keys::ScrubOnDrop(
+        Option::<SpendingKey>::from(SpendingKey::from_bytes(*one_time_sk)).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(
+                "one-time spending key is not a valid Orchard SpendingKey".to_string(),
+            )
+        })?,
+    );
+    let fvk = FullViewingKey::from(&*sk);
+    let ask = super::keys::ScrubOnDrop(SpendAuthorizingKey::from(&*sk));
+    let ivk = fvk.to_ivk(Scope::External);
+    // The spending key's final use is behind us — scrub it before any network
+    // work; only the spend-auth key must survive to the bundle build.
+    drop(sk);
+
+    let num_keys = public_keys.len();
+
+    // The invitee's re-derivable MASTER auth key hash: the unique, Platform-indexed
+    // handle we recover the created identity by if a claim turns out to have
+    // already executed (idempotent-retry recovery — see the spent-nullifier
+    // preflight and the broadcast handling below). Captured before `public_keys` is
+    // moved into the builder. `None` only if the caller submitted no master auth
+    // key (identity creation requires one, so this is defensive).
+    let master_key_hash = master_auth_public_key_hash(&public_keys);
+
+    // Snapshot the submitted keys for the defensive empty-`public_keys` fill (the
+    // binding signature committed exactly these; same pattern as the pool op).
+    let submitted_public_keys: BTreeMap<u32, IdentityPublicKey> = public_keys
+        .iter()
+        .map(|(key, _)| (key.id(), key.clone()))
+        .collect();
+
+    // ---- Per-FVK single-flight (#4313 review finding 979bbc2fcb3c) ----
+    //
+    // Serialize the COMPLETE claim lifecycle for this invitation key —
+    // pending-record lookup, transient scan, transition construction, atomic
+    // arming, broadcast, and finalization — before touching any shared state.
+    // Without it, two concurrent claims for the same key both see no pending
+    // record, build transitions with DIFFERENT padded identity ids, and the
+    // second `arm_one_time_claim_record` (INSERT-OR-REPLACE) overwrites the
+    // first's byte-exact recovery row while its broadcast may already be on
+    // the wire — stranding that identity forever. A parked second caller
+    // instead resumes the settled record when the guard lifts. The guard is
+    // an async mutex (held across every await below; released on drop, so a
+    // cancelled claim cannot wedge the key) owned by the SAME coordinator
+    // that owns the record store it protects.
+    let claim_record_key = one_time_claim_record_key(&fvk);
+    let lifecycle_entry = claim_guards.entry_for(claim_record_key);
+    let _lifecycle_guard = lifecycle_entry.lock().await;
+
+    // ---- Store-level lifecycle admission (#4313 review finding cr-7e6c98b9) ----
+    //
+    // The guard above is per-COORDINATOR: it serializes same-key claims that
+    // share this `NetworkShieldedCoordinator`, and nothing else. It cannot
+    // order this claim against `clear` / `unregister_wallet` / `remove_wallet`,
+    // which take the coordinator's `lifecycle` mutex (a claim takes neither),
+    // and it cannot reach a SECOND coordinator or process at all — those get
+    // their own `FileBackedShieldedStore` with its own SQLite connections to
+    // the same file. Without admission, such a purge deletes this claim's
+    // pending record while its transition is broadcasting, and the identity it
+    // creates is unrecoverable.
+    //
+    // So admission is taken where the contention actually is — the store. A
+    // destructive operation that already holds admission refuses this claim
+    // outright (nothing scanned, built or broadcast); one that starts later
+    // sees this lease and waits for it. Both directions are decided by a
+    // single atomic store step on each side, so there is no interleaving in
+    // which both proceed — see `store::LifecycleAdmission`.
+    //
+    // Released deterministically after the claim body below. A claim CANCELLED
+    // mid-flight (a dropped JNI call) cannot run an async release from `Drop`,
+    // so its lease is reclaimed by expiry instead — which errs toward "the
+    // purge waits", never toward "the record is deleted".
+    let admission = super::store::AdmissionToken::generate()?;
+    let admitted = store
+        .write()
+        .await
+        .begin_claim_admission(
+            wallet_id,
+            admission,
+            super::store::admission_now_ms(),
+            super::store::CLAIM_LEASE_MS,
+        )
+        .map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "one-time claim: could not take store lifecycle admission: {e}"
+            ))
+        })?;
+    if !admitted {
+        return Err(PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "this wallet's shielded state is being cleared or removed; the invitation \
+                     claim was not started"
+                .to_string(),
+        });
+    }
+
+    // ---- Durable per-INVITATION reservation (#4313 review finding cr-9d0e1a44) ----
+    //
+    // The lease above is per-WALLET: it orders this claim against a purge and
+    // nothing else, so it admits BOTH claims of the same invitation. The
+    // per-FVK mutex above serializes same-key claims that share THIS
+    // coordinator; a second coordinator, or a second process, opens its own
+    // SQLite connections to the same file and shares no lock at all. Both then
+    // found no pending record, built transitions with DIFFERENT padded identity
+    // ids, and the loser's `arm_redrive_under_claim` — an INSERT OR REPLACE —
+    // silently overwrote the winner's byte-exact recovery row while the
+    // winner's transition was already on the wire.
+    //
+    // So the invitation's record key is reserved durably, by an insert that
+    // cannot overwrite a live row, and the DURABLE row is read back to decide
+    // who owns it. The in-process guard stays as the fast path — it parks a
+    // same-coordinator second caller before it ever reaches the store — and
+    // this is the backstop for the two cases that guard cannot see.
+    //
+    // The SAME atomic step also returns the durable pending-claim record, if
+    // one already exists (#4313 review finding r3767229122). It has to. The
+    // record lookup used to run separately, through `pending_redrives`, which
+    // in the file-backed store reads an in-memory mirror hydrated once at
+    // store OPEN — so a record a PEER store armed after that open was
+    // invisible. This claim would then see "no record", build a SECOND
+    // transition with a different padded identity id, and replace the peer's
+    // only recovery row while the peer's transition was already on the wire,
+    // stranding the identity that transition creates. Reading the row inside
+    // the reservation's transaction closes the gap by construction: whoever
+    // settles the reservation settles what already exists under it, together.
+    let claim_records_id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+    let reservation = store
+        .write()
+        .await
+        .reserve_one_time_claim_key(
+            claim_records_id,
+            claim_record_key,
+            admission,
+            super::store::admission_now_ms(),
+            super::store::CLAIM_LEASE_MS,
+        )
+        .map_err(|e| {
+            // Fail closed. Proceeding without knowing who owns the key is
+            // exactly the clobber this reservation exists to prevent.
+            PlatformWalletError::Persistence(format!(
+                "one-time claim: could not reserve the invitation's claim-record key: {e}"
+            ))
+        });
+    let reservation = match reservation {
+        Ok(r) => r,
+        Err(e) => {
+            release_claim_admission(store, admission).await;
+            return Err(e);
+        }
+    };
+    if let super::store::ClaimKeyReservation::Held { holder, expires_at } = reservation.reservation
+    {
+        debug!(
+            holder = %hex::encode(holder.0),
+            expires_at,
+            resumable_record = reservation.pending.is_some(),
+            "one-time claim: another claimant holds this invitation's claim-record key"
+        );
+    }
+
+    // The heartbeat wraps the COMPLETE admitted claim body — pending-record
+    // lookup, resume, transient scan, build, arm, broadcast and confirmation
+    // wait alike (#4313 review finding 8de8d05a). See
+    // `under_renewed_claim_lease` for why it cannot sit any deeper.
+    let claim_result = under_renewed_claim_lease(
+        store,
+        admission,
+        one_time_claim_admitted(
+            sdk,
+            store,
+            scan_checkpoints,
+            claim_records_id,
+            claim_record_key,
+            admission,
+            reservation.is_acquired(),
+            reservation.pending,
+            fvk,
+            ivk,
+            ask,
+            funding_birth_height,
+            change_address,
+            identity_index,
+            public_keys,
+            num_keys,
+            master_key_hash,
+            submitted_public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            identity_signer,
+            prover,
+        ),
+    )
+    .await;
+
+    release_claim_admission(store, admission).await;
+    claim_result
+}
+
+/// Drive `body` to completion while re-stamping the claim lease `admission` on
+/// a [`CLAIM_LEASE_RENEW_INTERVAL`](super::store::CLAIM_LEASE_RENEW_INTERVAL)
+/// timer, so the protected window is tied to how long the claim actually runs
+/// rather than to a fixed guess from whenever the lease was last stamped.
+///
+/// # Why it wraps the whole admitted body
+///
+/// The heartbeat originally wrapped only the fresh-build path's broadcast. That
+/// left the RESUME path — pending-record lookup, nullifier queries, repeated
+/// identity recovery, re-broadcast of the stored transition and an unbounded
+/// confirmation wait — running under the INITIAL lease alone, because it
+/// returns before the fresh-build path is ever reached (#4313 review finding
+/// 8de8d05a). Resume is if anything the slower of the two: it is the path a
+/// claim takes precisely because the previous attempt could not resolve
+/// quickly.
+///
+/// A lease that lapses mid-claim is reaped, at which point a concurrent purge
+/// counts zero live claims and deletes the very record the in-flight claim
+/// needs to recover — so the window has to cover every phase between taking the
+/// lease and releasing it. Hoisting it to the single call site around
+/// [`one_time_claim_admitted`] covers both paths by construction, and there is
+/// no deeper place that could: the two paths only converge here.
+///
+/// The claim-key reservation taken under the same token rides along, because
+/// [`ShieldedStore::renew_claim_admission`] re-stamps it in the same step.
+///
+/// Cancellation-safe: dropping the returned future drops `body` with it, and
+/// the lease is then reclaimed by expiry.
+async fn under_renewed_claim_lease<S, F, T>(
+    store: &Arc<RwLock<S>>,
+    admission: super::store::AdmissionToken,
+    body: F,
+) -> T
+where
+    S: ShieldedStore,
+    F: std::future::Future<Output = T>,
+{
+    tokio::pin!(body);
+    loop {
+        tokio::select! {
+            // Bias the body so a renewal tick can never starve the outcome we
+            // are actually waiting for.
+            biased;
+            outcome = &mut body => break outcome,
+            _ = tokio::time::sleep(super::store::CLAIM_LEASE_RENEW_INTERVAL) => {
+                let renewed = store
+                    .write()
+                    .await
+                    .renew_claim_admission(
+                        admission,
+                        super::store::admission_now_ms(),
+                        super::store::CLAIM_LEASE_MS,
+                    );
+                match renewed {
+                    Ok(true) => {}
+                    // A transition may already be on the wire; aborting cannot
+                    // un-send it and would only lose the outcome
+                    // classification. Carry on, loudly.
+                    Ok(false) => warn!(
+                        "one-time claim lease lapsed or was displaced mid-claim; a \
+                         concurrent wallet removal may purge this claim's recovery record"
+                    ),
+                    Err(e) => warn!(
+                        error = %e,
+                        "could not renew the one-time claim lease mid-claim"
+                    ),
+                }
+            }
+        }
+    }
+}
+
+/// Release a claim's store admission — its lifecycle lease AND the claim-key
+/// reservation taken under the same token. Best-effort: both carry an expiry,
+/// so a failure here only delays the next claimant of this invitation.
+async fn release_claim_admission<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    admission: super::store::AdmissionToken,
+) {
+    if let Err(e) = store.write().await.end_claim_admission(admission) {
+        warn!(
+            error = %e,
+            "one-time claim: failed to release the store lifecycle admission; it expires on its own"
+        );
+    }
+}
+
+/// The one-time-key claim body, running under a held store admission lease.
+///
+/// Split out of [`identity_create_from_one_time_key`] purely so the lease is
+/// released on EVERY exit — including the many `?` paths — without threading a
+/// release through each of them (#4313). The caller owns acquire/release; this
+/// function owns the claim.
+///
+/// `owns_claim_key` is whether this caller won the durable per-invitation
+/// reservation. A caller that did NOT is forbidden to build, broadcast or arm
+/// anything: it may only RESUME the record the owner left, or refuse. See the
+/// branch below.
+///
+/// `pending_record` is that record, read from DURABLE state in the same atomic
+/// step that settled the reservation. It is passed in rather than looked up
+/// here on purpose: the file-backed store's `pending_redrives` reads a mirror
+/// hydrated at store open, which cannot see a row a peer store armed later, and
+/// a claim that trusted it would build a second transition over a live one
+/// (#4313 review finding r3767229122).
+#[allow(clippy::too_many_arguments)]
+async fn one_time_claim_admitted<S, P, IS>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    scan_checkpoints: &super::sync::ForeignScanCheckpointCache,
+    claim_records_id: SubwalletId,
+    claim_record_key: [u8; 32],
+    admission: super::store::AdmissionToken,
+    owns_claim_key: bool,
+    pending_record: Option<PendingRedrive>,
+    fvk: grovedb_commitment_tree::FullViewingKey,
+    ivk: grovedb_commitment_tree::IncomingViewingKey,
+    ask: super::keys::ScrubOnDrop<grovedb_commitment_tree::SpendAuthorizingKey>,
+    funding_birth_height: Option<u32>,
+    change_address: &OrchardAddress,
+    identity_index: u32,
+    public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
+    num_keys: usize,
+    master_key_hash: Option<[u8; 20]>,
+    submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
+    denomination: u64,
+    send_to_address_on_creation_failure: PlatformAddress,
+    identity_signer: &IS,
+    prover: &P,
+) -> Result<(Identifier, Identity), PlatformWalletError>
+where
+    S: ShieldedStore,
+    P: OrchardProver,
+    IS: Signer<IdentityPublicKey>,
+{
+    // Advisory only: the shielded tree has no height→note-index oracle (a chunk's
+    // block_height is the proof-tip height, not per-note inclusion height), so the
+    // transient scan cannot seed its start from a height; it bounds itself by
+    // value coverage plus a coordinator-owned resume checkpoint (one
+    // full-history scan per key per coordinator — see
+    // `scan_notes_for_foreign_key`). Logged so
+    // the hint is observable and not silently dropped.
+    if let Some(h) = funding_birth_height {
+        debug!(
+            funding_birth_height = h,
+            "identity_create_from_one_time_key: birth-height hint (advisory; scan is value-bounded)"
+        );
+    }
+
+    // ---- Durable pending-claim resume (#4204 review finding c0781f9d387f) ----
+    //
+    // A claim that broadcast but never confirmed (process death, JNI
+    // cancellation, lost result wait) left a persisted record carrying the
+    // byte-exact transition and its declared identity id. Consult it BEFORE
+    // the transient scan: the record's id survives even for a padded
+    // single-note bundle (whose id embeds a random dummy nullifier and is
+    // otherwise unrecoverable), so a retry can reconcile or re-drive the
+    // byte-identical transition instead of rebuilding one whose preflight
+    // would misread the spent notes as a foreign claim
+    // (`ShieldedInviteAlreadyClaimed`).
+    //
+    // The record arrives from the caller, read out of DURABLE state in the same
+    // transaction that settled the claim-key reservation — never from the
+    // store's startup-hydrated mirror (#4313 review finding r3767229122).
+    if let Some(record) = pending_record {
+        match resume_one_time_claim(
+            sdk,
+            store,
+            claim_records_id,
+            &record,
+            master_key_hash,
+            submitted_public_keys.clone(),
+            denomination,
+            identity_index,
+        )
+        .await
+        {
+            OneTimeClaimResume::Resolved(result) => {
+                finalize_one_time_claim_record(store, claim_records_id, claim_record_key, &result)
+                    .await;
+                return result;
+            }
+            // The stored transition is unusable (corrupt, or definitively
+            // rejected while its notes are provably unspent) — the record has
+            // been cleared; build a fresh claim below.
+            OneTimeClaimResume::RecordUnusable => {}
+        }
+    }
+
+    // ---- Losing claimant: RESUME above, or REFUSE here ----
+    //
+    // Everything past this point builds a fresh transition and arms a fresh
+    // record under `claim_record_key`. Only the holder of the durable
+    // per-invitation reservation may do that (#4313 review finding
+    // cr-9d0e1a44). A claimant that lost the reservation reaches here in
+    // exactly two states, and neither may proceed:
+    //
+    // * the owner has already armed its record — then the resume above ran and
+    //   returned, so we are not here at all (or the record was unusable and the
+    //   owner will re-arm it, which is still not ours to do);
+    // * the owner is admitted but has not armed yet — building here is
+    //   precisely the race: two transitions with different padded identity ids,
+    //   and whichever arms second overwrites the other's only recovery handle.
+    //
+    // So refuse, retryably. Nothing was scanned, built or broadcast; the note
+    // is untouched; a retry a moment later either finds the owner's record and
+    // resumes it, or finds the key free and proceeds as the owner. The storage
+    // layer refuses the same case independently — `arm_redrive_under_claim`
+    // will not write under a foreign reservation — so this branch is the clean
+    // error, not the safety property.
+    if !owns_claim_key {
+        return Err(PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "another claimant currently holds this invitation's claim record; nothing \
+                     was scanned, built or broadcast — retry shortly, and the retry will either \
+                     resume that claim's outcome or take the invitation over if it lapsed"
+                .to_string(),
+        });
+    }
+
+    // Transient scan: re-derive the one-time key's note(s) from the network.
+    let discovered =
+        super::sync::scan_notes_for_foreign_key(sdk, scan_checkpoints, &fvk, &ivk, denomination)
+            .await?;
+    if discovered.is_empty() {
+        // No note decrypts under this key — nothing was funded to it (or the
+        // wallet hasn't synced far enough to see it yet).
+        return Err(PlatformWalletError::ShieldedNoUnspentNotes);
+    }
+
+    // Exact-equality selection over the transiently-scanned set: cover exactly
+    // `denomination`, gate on `denomination > predicted_fee`. Surfaces
+    // `ShieldedInsufficientBalance { available, required }` when the key's notes
+    // don't cover the denomination, mirroring the pool-funded neighbor.
+    let (selected_refs, total_input, predicted_fee) =
+        select_notes_for_denomination(&discovered, denomination, 2, num_keys, sdk.version())?;
+    let selected_notes: Vec<ShieldedNote> = selected_refs.into_iter().cloned().collect();
+
+    info!(
+        denomination,
+        predicted_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        keys = num_keys,
+        "IdentityCreateFromOneTimeKey"
+    );
+
+    // Idempotent-retry preflight (no persisted record for this key). If this one-time key's
+    // selected note(s) are ALREADY spent on chain, a byte-identical claim already
+    // executed — so we must NOT rebuild+rebroadcast (that would only earn a
+    // `NullifierAlreadySpent` rejection). Everything checked here is re-derived
+    // from the invite the invitee holds: the one-time key → its note(s) via the
+    // transient scan above, and each note's real nullifier (`ShieldedNote.nullifier`,
+    // stamped `note.nullifier(fvk)` during the scan). If spent, recover the
+    // previously-created identity by the invitee's own re-derivable MASTER auth key
+    // hash (`discover_inner`'s unique-hash probe) and return it as success.
+    let selected_nullifiers: Vec<[u8; 32]> = selected_notes.iter().map(|n| n.nullifier).collect();
+
+    // The id that an identity created by THIS claim must carry — the single
+    // handle that ties a recovered identity back to this claim's spend, and the
+    // reason a MASTER-key-hash hit alone is not evidence of a successful claim
+    // (see `recovered_identity_matches_claim`).
+    //
+    // Consensus derives the new identity id as `double_sha256` over the SORTED
+    // set of PUBLISHED action nullifiers (`derive_identity_id_from_actions`) and
+    // rejects a transition whose declared id differs, so this is a binding, not a
+    // guess.
+    //
+    // `None` for a single-spend claim: the builder pads to Orchard's 2-action
+    // minimum (`num_actions = spends.len().max(2)`) and the padding action's
+    // dummy nullifier is randomly generated per build, so it participates in the
+    // derivation but cannot be reproduced on a retry. With two or more real
+    // spends no padding is added and the published set is exactly
+    // `selected_nullifiers`.
+    let expected_identity_id =
+        (selected_notes.len() >= 2).then(|| identity_id_from_nullifiers(&selected_nullifiers));
+
+    // Idempotent-retry preflight. If this one-time key's selected note(s) are
+    // ALREADY spent on chain, this claim can never execute — rebuilding and
+    // rebroadcasting would only earn a `NullifierAlreadySpent` rejection and burn
+    // a Halo 2 proof. Hand off to the reconciler, which decides between "this
+    // claim created that identity" (both bindings verified), "the invitation is
+    // gone" (terminal), and "executed but not yet indexed" (retryable).
+    // `Unknown` proceeds here — that is safe pre-broadcast: the idempotent
+    // broadcast path reconciles via the `NullifierAlreadySpent` verdict, so a
+    // transient query failure only costs a harmless rebuild.
+    if nullifier_spent_status(sdk, &selected_nullifiers).await == NullifierSpentStatus::Spent {
+        return recover_executed_one_time_claim(
+            sdk,
+            master_key_hash,
+            expected_identity_id,
+            false,
+            "the selected note's nullifier is already spent on chain (pre-broadcast preflight)",
+        )
+        .await;
+    }
+
+    // Witness the selected notes against a Platform-recorded anchor from the
+    // shared, fully-marked commitment tree (identical probe to the pool op).
+    let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+    let anchor_bytes = anchor.to_bytes();
+
+    let build = build_identity_create_from_shielded_pool_transition(
+        public_keys,
+        denomination,
+        send_to_address_on_creation_failure,
+        spends,
+        change_address,
+        &fvk,
+        &ask,
+        anchor,
+        prover,
+        identity_signer,
+        [0u8; 36],
+        sdk.version(),
+    )
+    .await
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    // The spend-auth key's final use (the bundle build + spend-auth
+    // signatures above) is behind us — scrub it before the broadcast and
+    // result wait keep this frame alive across the network.
+    drop(ask);
+
+    let identity_id = build.identity_id;
+
+    // Re-assemble the transition from the PoP-signed keys + bundle params
+    // (preserving the per-key signatures) and broadcast. The broadcast/wait
+    // classification mirrors `identity_create_from_shielded_pool` verbatim, minus
+    // the note-reservation bookkeeping (there is no subwallet reservation to
+    // release — the spent notes belong to the foreign one-time key).
+    let st = sdk
+        .identity_create_from_shielded_pool_transition(
+            build.public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            build.bundle,
+        )
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+    // Persist the pending-claim record BEFORE the broadcast (#4204 review
+    // finding c0781f9d387f): once the transition leaves this process, the
+    // declared id — the only handle that recovers a padded single-note claim —
+    // must already be durable. Fail-closed: nothing has been consumed yet, so
+    // refusing to broadcast on a persistence failure is a clean, retryable
+    // stop; broadcasting without the record risks an unrecoverable
+    // `ShieldedInviteAlreadyClaimed` on the next attempt.
+    arm_one_time_claim_record(
+        store,
+        claim_records_id,
+        claim_record_key,
+        anchor_bytes,
+        &selected_nullifiers,
+        &st,
+        admission,
+        identity_index,
+    )
+    .await?;
+
+    // The renewal heartbeat that holds the lease open across this broadcast and
+    // its confirmation wait runs in the CALLER, around the whole admitted claim
+    // body — see `under_renewed_claim_lease`. It used to wrap only this
+    // broadcast, which left the resume path (returning above) covered by the
+    // initial lease alone (#4313 review finding 8de8d05a).
+    let result = broadcast_and_confirm_one_time_claim(
+        sdk,
+        st,
+        identity_id,
+        expected_identity_id,
+        master_key_hash,
+        &selected_nullifiers,
+        submitted_public_keys,
+        denomination,
+    )
+    .await;
+    finalize_one_time_claim_record(store, claim_records_id, claim_record_key, &result).await;
+    result
+}
+
+/// Broadcast an assembled one-time-key claim transition and drive it to a
+/// classified outcome: proven success, idempotent recovery of an
+/// already-executed claim, terminal `ShieldedInviteAlreadyClaimed`, definitive
+/// `ShieldedBroadcastFailed`, or retryable `ShieldedBroadcastUnconfirmed`.
+///
+/// Shared by the fresh-build path and the pending-claim resume path
+/// (`resume_one_time_claim`), which re-broadcasts the persisted byte-identical
+/// transition. `identity_id` is the id the transition DECLARES;
+/// `expected_identity_id` is the pre-build re-derivable id (`None` for a
+/// padded single-note bundle on the fresh path; always `Some` on the resume
+/// path, where the declared id was recovered from the record).
+#[allow(clippy::too_many_arguments)]
+async fn broadcast_and_confirm_one_time_claim(
+    sdk: &Arc<dash_sdk::Sdk>,
+    st: StateTransition,
+    identity_id: Identifier,
+    expected_identity_id: Option<Identifier>,
+    master_key_hash: Option<[u8; 20]>,
+    claim_nullifiers: &[[u8; 32]],
+    submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
+    denomination: u64,
+) -> Result<(Identifier, Identity), PlatformWalletError> {
+    match st.broadcast(sdk, None).await {
+        Ok(()) => {}
+        // A `NullifierAlreadySpent` verdict is NOT a failure on this path: it is
+        // positive proof a byte-identical claim already executed (the note is
+        // consumed on chain). Recover the created identity instead of stranding
+        // the retry. Checked before the generic `broadcast_definitely_failed` arm,
+        // which would otherwise classify this consensus rejection as a hard failure.
+        //
+        // POST-BUILD, the reconciler gets `Some(identity_id)` — the id THIS
+        // transition committed — never the pre-build `expected_identity_id`
+        // (which is deliberately `None` for a padded single-note bundle). The
+        // SDK's broadcast internally retries requests, so an accepted first
+        // request whose acknowledgement was lost legitimately produces
+        // `NullifierAlreadySpent` on the retry; with `None` the reconciler
+        // would declare our own successfully created identity permanently
+        // lost (`ShieldedInviteAlreadyClaimed`) instead of recovering it by
+        // its exact id (#4204 review finding a00cee018e73).
+        Err(e) if is_nullifier_already_spent(&e) => {
+            return recover_executed_one_time_claim(
+                sdk,
+                master_key_hash,
+                Some(identity_id),
+                false,
+                &format!("broadcast returned NullifierAlreadySpent: {e}"),
+            )
+            .await;
+        }
+        Err(e) if broadcast_definitely_failed(&e) => {
+            return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+        }
+        Err(e) => {
+            warn!(
+                derived_id = %identity_id,
+                error = %e,
+                "IdentityCreateFromOneTimeKey: broadcast returned no verdict; the transition may \
+                 have been admitted — falling through to the result wait"
+            );
+        }
+    }
+
+    // Wait for proven execution, mirroring the pool-funded sibling verbatim. A
+    // Type-20 IdentityCreateFromShieldedPool proof authenticates the spent
+    // nullifiers and resulting identity as an affected-state snapshot; it cannot
+    // bind the complete Orchard request, so the current proof contract marks it as
+    // affected-state. Use `wait_for_affected_state` — the strict `wait_for_response`
+    // would classify every valid claim proof as `ExecutionNotProved`, drop into the
+    // ambiguous fallback, and risk reporting a successful claim as unconfirmed.
+    let proof_result = match st
+        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+        .await
+    {
+        Ok(result) => result,
+        // Same idempotent recovery as the broadcast arm: a `NullifierAlreadySpent`
+        // verdict surfacing at wait time proves the claim executed, so recover the
+        // identity rather than reporting a broadcast failure. Ordered before the
+        // generic consensus-rejection arm below (which would classify it as a
+        // failure). Same post-build rule as the broadcast arm: pass the id THIS
+        // transition committed, never the padding-lossy pre-build one (#4204
+        // review finding a00cee018e73).
+        Err(wait_err) if is_nullifier_already_spent(&wait_err) => {
+            return recover_executed_one_time_claim(
+                sdk,
+                master_key_hash,
+                Some(identity_id),
+                false,
+                &format!("result wait returned NullifierAlreadySpent: {wait_err}"),
+            )
+            .await;
+        }
+        Err(dash_sdk::Error::StateTransitionBroadcastError(e)) if e.cause.is_some() => {
+            // A populated cause is a consensus verdict — but for Type 20 a
+            // verdict is NOT proof of non-execution: a duplicate unique-key
+            // hash makes Drive APPLY the chargeable `UnshieldAction` fallback
+            // (the invitation nullifiers are consumed, the fallback address is
+            // credited minus the penalty) and record a `PaidConsensusError`,
+            // which reaches this arm exactly like a plain rejection. Declaring
+            // `ShieldedBroadcastFailed` then would hand the host code 16 —
+            // documented as definitive non-execution and safe to retry — for
+            // an invitation that is already consumed, and every retry would
+            // burn a ~30s proof to earn `NullifierAlreadySpent`. Check the
+            // selected nullifiers first: consumed notes prove the transition
+            // (or its fallback) APPLIED, so hand off to the reconciler for
+            // the terminal claimed/fallback verdict — it distinguishes "this
+            // claim created the identity" (recovered as success) from the
+            // chargeable fallback / competing claim (terminal
+            // `ShieldedInviteAlreadyClaimed`) (#4204 review finding
+            // 8d020115b274).
+            //
+            // The three spent-status outcomes diverge here and only `Unspent`
+            // may produce `ShieldedBroadcastFailed`: the host documents that
+            // code as definitive non-execution and safe to retry, so it
+            // requires PROOF the notes are unconsumed. `Unknown` (query
+            // failure / partial response) yields `ShieldedBroadcastUnconfirmed`
+            // instead — the armed pending-claim record lets a later retry
+            // reconcile with the exact id once the status is queryable.
+            match nullifier_spent_status(sdk, claim_nullifiers).await {
+                NullifierSpentStatus::Spent => {
+                    // `spend_finalized = true`: this claim's own wait returned a
+                    // definitive verdict AND the notes are proven consumed, so
+                    // "no identity carries our bindings" is the terminal
+                    // chargeable-fallback / competing-claim outcome — even when
+                    // the colliding unique key was not MASTER and no identity is
+                    // findable under either probe.
+                    return recover_executed_one_time_claim(
+                        sdk,
+                        master_key_hash,
+                        Some(identity_id),
+                        true,
+                        &format!(
+                            "result wait returned an executed consensus verdict (the invitation \
+                             notes are spent — applied claim or chargeable fallback): {e}"
+                        ),
+                    )
+                    .await;
+                }
+                NullifierSpentStatus::Unspent => {
+                    return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+                }
+                NullifierSpentStatus::Unknown => {
+                    return Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                        identity_id,
+                        reason: format!(
+                            "consensus verdict received but the invitation notes' spent status \
+                             could not be established; not classifying as a definitive failure \
+                             (an applied chargeable fallback would be indistinguishable): {e}"
+                        ),
+                    });
+                }
+            }
+        }
+        Err(wait_err) => {
+            warn!(
+                derived_id = %identity_id,
+                error = %wait_err,
+                "IdentityCreateFromOneTimeKey: broadcast accepted but result confirmation failed; \
+                 falling back to fetching the identity by its derived id"
+            );
+            match fetch_identity_with_retries(sdk, identity_id).await {
+                Some(mut identity) => {
+                    // `identity_id` is the id THIS build derived. Whether finding
+                    // an identity under it proves this transition created it
+                    // depends on whether the bundle was padded:
+                    //
+                    // - **Padded (single spend)** — the id embeds a locally
+                    //   generated random dummy nullifier that no other party can
+                    //   reproduce, so an identity at this id can only have come
+                    //   from this transition. The id alone is proof.
+                    // - **Not padded (>= 2 spends)** — the id is derived from the
+                    //   invitation's real nullifiers alone, so any other holder of
+                    //   the same bearer one-time key derives the SAME id under
+                    //   their own keys. The on-chain MASTER auth key must be
+                    //   checked before this can be called ours.
+                    if expected_identity_id.is_some()
+                        && !recovered_identity_matches_claim(
+                            &identity,
+                            expected_identity_id,
+                            master_key_hash,
+                        )
+                    {
+                        warn!(
+                            derived_id = %identity_id,
+                            "IdentityCreateFromOneTimeKey: an identity exists at this claim's \
+                             derived id but does not carry the submitted master auth key; another \
+                             holder of the same one-time key claimed the invitation first"
+                        );
+                        return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+                            reason: format!(
+                                "identity {identity_id} was created from this invitation's notes \
+                                 but does not carry the submitted master authentication key, so it \
+                                 belongs to another holder of the one-time key: {wait_err}"
+                            ),
+                        });
+                    }
+                    info!(
+                        derived_id = %identity_id,
+                        "IdentityCreateFromOneTimeKey: result confirmation failed but the identity \
+                         was found on chain by its derived id; treating as success"
+                    );
+                    // Only reached once the identity is proven to be this claim's,
+                    // so back-filling the keys this transition itself submitted is
+                    // a local-row convenience, not an unproven ownership claim.
+                    if identity.public_keys().is_empty() {
+                        identity.set_public_keys(submitted_public_keys.clone());
+                    }
+                    return Ok((identity.id(), identity));
+                }
+                None => {
+                    return Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                        identity_id,
+                        reason: wait_err.to_string(),
+                    });
+                }
+            }
+        }
+    };
+
+    let identity = match proof_result {
+        StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(mut identity, _n) => {
+            if identity.id() != identity_id {
+                warn!(
+                    derived_id = %identity_id,
+                    verified_id = %identity.id(),
+                    "IdentityCreateFromOneTimeKey: derived id differs from proof-verified id; using \
+                     the proof-verified id"
+                );
+            }
+            if identity.public_keys().is_empty() {
+                identity.set_public_keys(submitted_public_keys);
+            }
+            identity
+        }
+        other => {
+            warn!(
+                derived_id = %identity_id,
+                result = %other,
+                "IdentityCreateFromOneTimeKey: unexpected proof-result variant; synthesizing the \
+                 identity from the derived id + submitted keys so the local row still lands"
+            );
+            Identity::new_with_id_and_keys(identity_id, submitted_public_keys, sdk.version())
+                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?
+        }
+    };
+
+    info!(
+        denomination,
+        identity_id = %identity.id(),
+        "IdentityCreateFromOneTimeKey broadcast succeeded"
+    );
+    Ok((identity.id(), identity))
+}
+
+/// The synthetic ZIP-32 account index that keys durable one-time-claim records
+/// in the [`ShieldedStore`].
+///
+/// Claim records reuse the store's persisted [`PendingRedrive`] rows (byte-exact
+/// transition + nullifiers + anchor), but live under this reserved subwallet so
+/// the spend-redrive sync pass — which iterates REAL Orchard accounts — never
+/// re-broadcasts or prunes them; their lifecycle is owned entirely by
+/// [`identity_create_from_one_time_key`]. ZIP-32 account indices are hardened
+/// (`< 2^31`), so `u32::MAX` cannot collide with a real subwallet.
+pub(super) const ONE_TIME_CLAIM_RECORDS_ACCOUNT: u32 = u32::MAX;
+
+/// Deterministic record key for a one-time claim: every retry of the same
+/// invitation re-derives the same key from the one-time FVK, which is exactly
+/// what lets a retry find the record a crashed attempt left behind. Domain-
+/// separated so it can never collide with an activity-entry id (sha256 of
+/// visible output cmxs) sharing the `PendingRedrive.activity_id` keyspace.
+fn one_time_claim_record_key(fvk: &grovedb_commitment_tree::FullViewingKey) -> [u8; 32] {
+    use dashcore::hashes::{sha256, Hash};
+
+    let mut preimage = Vec::with_capacity(96 + 33);
+    preimage.extend_from_slice(b"platform-wallet:one-time-claim:v1");
+    preimage.extend_from_slice(&fvk.to_bytes());
+    sha256::Hash::hash(&preimage).to_byte_array()
+}
+
+/// The shared per-FVK lifecycle mutex handed to every same-key claimer.
+type ClaimGuard = Arc<tokio::sync::Mutex<()>>;
+
+/// One registry row: the guard key (see `one_time_claim_record_key`) paired
+/// with a non-owning handle to its guard, so abandoned keys are pruned on the
+/// next acquisition rather than pinning the mutex alive.
+type ClaimGuardEntry = ([u8; 32], std::sync::Weak<tokio::sync::Mutex<()>>);
+
+/// Per-FVK single-flight guards for the one-time-key claim lifecycle.
+///
+/// Owned by `NetworkShieldedCoordinator` (the same owner as the durable
+/// pending-claim record store the guard protects). Two concurrent
+/// [`identity_create_from_one_time_key`] calls for the SAME foreign key would
+/// otherwise both observe no pending record, build two transitions whose
+/// padded single-note identity ids differ (random padding nullifier), and
+/// race `arm_one_time_claim_record` — whose store implementation is an
+/// INSERT-OR-REPLACE — so the loser's byte-exact recovery row is silently
+/// overwritten and its identity becomes unrecoverable; either caller could
+/// also finalize (clear) the shared row while the other is mid-broadcast
+/// (#4313 review finding 979bbc2fcb3c / cr-4808dde4). The guard therefore
+/// spans the COMPLETE lifecycle — pending-record lookup, transient scan,
+/// transition construction, atomic arming, broadcast, and finalization — not
+/// just the scan-checkpoint window: the second caller parks until the first
+/// settles, then resumes that outcome through the persisted record instead of
+/// double-spending the invitation.
+///
+/// Mechanics: `entry_for` hands every same-key caller the SAME
+/// `Arc<tokio::sync::Mutex<()>>` (a live entry is always upgraded, never
+/// replaced), whose async lock is cancellation-safe — dropping a parked or
+/// mid-claim future releases it. The map holds only `Weak` handles, pruned on
+/// every acquisition, so abandoned keys cost nothing and hostile key churn
+/// cannot grow the map beyond the keys currently in flight.
+#[derive(Default)]
+pub struct ForeignClaimGuards {
+    entries: std::sync::Mutex<Vec<ClaimGuardEntry>>,
+}
+
+impl ForeignClaimGuards {
+    /// The shared lifecycle mutex for `key`. Callers `.lock().await` the
+    /// returned handle and hold the guard across the whole claim; the
+    /// internal registry lock is sync-only and released before any await.
+    fn entry_for(&self, key: [u8; 32]) -> ClaimGuard {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        entries.retain(|(_, weak)| weak.strong_count() > 0);
+        if let Some((_, weak)) = entries.iter().find(|(k, _)| *k == key) {
+            if let Some(existing) = weak.upgrade() {
+                return existing;
+            }
+        }
+        let fresh = Arc::new(tokio::sync::Mutex::new(()));
+        entries.retain(|(k, _)| *k != key);
+        entries.push((key, Arc::downgrade(&fresh)));
+        fresh
+    }
+}
+
+/// Look up the pending-claim record for `key` through
+/// [`ShieldedStore::pending_redrives`].
+///
+/// **Test-only.** The production claim path no longer reads the record this
+/// way: `pending_redrives` is served from the file-backed store's
+/// startup-hydrated mirror, which cannot see a row a peer store armed after
+/// our open, and a claim that trusted it would build a second transition over
+/// a live one (#4313 review finding r3767229122). The real lookup now comes
+/// back from [`ShieldedStore::reserve_one_time_claim_key`], read out of
+/// durable state in the same transaction that settles the reservation.
+///
+/// It survives here because the arm/clear/finalize round-trip tests drive the
+/// [`InMemoryShieldedStore`], whose map IS its durable state — so for THEM the
+/// two reads are the same read.
+///
+/// [`InMemoryShieldedStore`]: super::store::InMemoryShieldedStore
+#[cfg(test)]
+async fn find_one_time_claim_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    key: [u8; 32],
+) -> Result<Option<PendingRedrive>, PlatformWalletError> {
+    store
+        .read()
+        .await
+        .pending_redrives(id)
+        .map(|records| records.into_iter().find(|r| r.activity_id == key))
+        .map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "pending one-time-claim record lookup failed; refusing to build a fresh claim \
+                 while an earlier attempt's record may exist: {e}"
+            ))
+        })
+}
+
+/// Persist the pending-claim record UNDER this claim's store-level admission
+/// lease. Called BEFORE the broadcast; a failure aborts the claim (fail-closed
+/// — see the call site).
+///
+/// The lease re-check and the record write are one atomic store step
+/// ([`ShieldedStore::arm_redrive_under_claim`]), which is what leaves no gap
+/// between "still admitted" and "record written" for a concurrent
+/// `clear`/`unregister_wallet` to slot into (#4313). The same step re-stamps
+/// the lease (and the claim-key reservation riding the same token), so the
+/// record is written into a freshly extended window rather than into whatever
+/// remained of one a long scan had already spent. Keeping that window open past
+/// this point is the heartbeat's job — see [`under_renewed_claim_lease`].
+///
+/// A lost lease is a hard stop, not a warning: nothing has been broadcast yet,
+/// so refusing is clean and retryable, whereas broadcasting without the record
+/// is how a padded single-note claim's identity becomes unrecoverable.
+///
+/// `identity_index` is persisted with the record because it is the ONE part of
+/// the claim's binding the transition cannot witness — a purely local DIP-9
+/// slot that appears nowhere in `st_bytes` (#4313 review finding 5d4d6efa).
+/// Everything else a resume checks is re-derived from the stored bytes; see
+/// [`resume_one_time_claim`].
+#[allow(clippy::too_many_arguments)]
+async fn arm_one_time_claim_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    key: [u8; 32],
+    anchor: [u8; 32],
+    nullifiers: &[[u8; 32]],
+    st: &StateTransition,
+    admission: super::store::AdmissionToken,
+    identity_index: u32,
+) -> Result<(), PlatformWalletError> {
+    use dpp::serialization::PlatformSerializable;
+
+    let st_bytes = st
+        .serialize_to_bytes()
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    let admitted = store
+        .write()
+        .await
+        .arm_redrive_under_claim(
+            id,
+            PendingRedrive {
+                activity_id: key,
+                anchor,
+                nullifiers: nullifiers.to_vec(),
+                st_bytes,
+                attempts: 0,
+                identity_index: Some(identity_index),
+            },
+            admission,
+            super::store::admission_now_ms(),
+            super::store::CLAIM_LEASE_MS,
+        )
+        .map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "failed to persist the pending one-time-claim record before broadcast: {e}"
+            ))
+        })?;
+    if !admitted {
+        return Err(PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "this claim's store admission lapsed before its recovery record could be \
+                     written (the wallet was cleared or removed, or the claim outran its lease); \
+                     nothing was broadcast — retry the claim"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// Drop the pending-claim record. Best-effort: a failure only means the next
+/// attempt resumes a settled record, which re-resolves to the same outcome.
+async fn clear_one_time_claim_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    key: [u8; 32],
+) {
+    if let Err(e) = store.write().await.clear_redrive(id, &key) {
+        warn!(
+            error = %e,
+            "one-time claim: failed to clear the pending-claim record"
+        );
+    }
+}
+
+/// Clear the pending-claim record when `result` settles the claim: a recovered
+/// or confirmed identity (`Ok`) and the terminal `ShieldedInviteAlreadyClaimed`
+/// both mean no future retry needs the record. Every other error keeps it —
+/// `ShieldedBroadcastUnconfirmed` (and unproven failures) are exactly the
+/// outcomes whose retry must find the declared id again.
+async fn finalize_one_time_claim_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    key: [u8; 32],
+    result: &Result<(Identifier, Identity), PlatformWalletError>,
+) {
+    if matches!(
+        result,
+        Ok(_) | Err(PlatformWalletError::ShieldedInviteAlreadyClaimed { .. })
+    ) {
+        clear_one_time_claim_record(store, id, key).await;
+    }
+}
+
+/// Describe the first way a resume attempt's arguments disagree with the
+/// transition the earlier attempt submitted, or `None` when they agree.
+///
+/// Every field compared here is one the resume would otherwise act on with the
+/// caller's value while broadcasting the *stored* bytes — the exact mis-binding
+/// #4313 review finding 195efdd4ae21 describes. The comparison is on the
+/// derived-from-transition side, so it is a statement about what is on the wire,
+/// not about what some parallel record claims.
+///
+/// Key comparison is exact and whole-set: `IdentityPublicKey` compares by id,
+/// purpose, security level, key type, read-only flag, contract bounds and key
+/// data, so a retry that keeps the ids but swaps the key material — the case
+/// that would register a foreign identity at this wallet's slot — is caught.
+/// A retry that merely *reorders* the same keys is not a mismatch: both sides
+/// are `BTreeMap`s keyed by key id.
+#[allow(clippy::too_many_arguments)]
+fn one_time_claim_binding_mismatch(
+    stored_public_keys: &BTreeMap<u32, IdentityPublicKey>,
+    stored_master_key_hash: Option<[u8; 20]>,
+    stored_denomination: u64,
+    stored_identity_index: Option<u32>,
+    submitted_public_keys: &BTreeMap<u32, IdentityPublicKey>,
+    submitted_master_key_hash: Option<[u8; 20]>,
+    submitted_denomination: u64,
+    submitted_identity_index: u32,
+) -> Option<String> {
+    // The one field compared against the RECORD rather than against the
+    // transition, because the transition cannot witness it: the DIP-9 slot is a
+    // purely local placement (#4313 review finding 5d4d6efa). Checked first —
+    // it is the cheapest comparison, and a slot mismatch is the case whose
+    // consequence is least visible: `IdentityManager::add_identity` rejects a
+    // duplicate identity id but inserts into an OCCUPIED slot without
+    // complaint, so a retry that presents the original keys at a different
+    // index would silently displace whatever the wallet tracked there.
+    //
+    // `None` means the record predates the column; there is nothing to compare,
+    // and that record keeps exactly the transitive binding it was written
+    // under.
+    if let Some(stored) = stored_identity_index {
+        if stored != submitted_identity_index {
+            return Some(format!(
+                "identity index: the earlier attempt was registering at local slot {stored}, \
+                 retry asked for slot {submitted_identity_index}"
+            ));
+        }
+    }
+    if stored_denomination != submitted_denomination {
+        return Some(format!(
+            "denomination: stored transition spends {stored_denomination}, retry asked for \
+             {submitted_denomination}"
+        ));
+    }
+    if stored_master_key_hash != submitted_master_key_hash {
+        // The MASTER auth key hash is the handle `recover_executed_one_time_claim`
+        // probes Platform with. Recovering under a hash that is not in the stored
+        // transition can only find someone else's identity.
+        return Some(format!(
+            "master authentication key hash: stored transition carries {}, retry presented {}",
+            stored_master_key_hash.map_or_else(|| "none".to_string(), hex::encode),
+            submitted_master_key_hash.map_or_else(|| "none".to_string(), hex::encode),
+        ));
+    }
+    if stored_public_keys != submitted_public_keys {
+        return Some(format!(
+            "public key set: stored transition carries {} key(s) (ids {:?}), retry presented {} \
+             key(s) (ids {:?})",
+            stored_public_keys.len(),
+            stored_public_keys.keys().collect::<Vec<_>>(),
+            submitted_public_keys.len(),
+            submitted_public_keys.keys().collect::<Vec<_>>(),
+        ));
+    }
+    None
+}
+
+/// Outcome of attempting to resume a persisted pending claim.
+enum OneTimeClaimResume {
+    /// The record drove the claim to an outcome — return it to the caller.
+    Resolved(Result<(Identifier, Identity), PlatformWalletError>),
+    /// The record cannot drive an outcome (corrupt, wrong transition type, or
+    /// definitively rejected with its notes proven unspent). It has been
+    /// cleared; the caller builds a fresh claim.
+    RecordUnusable,
+}
+
+/// Resume a claim from its persisted record (#4204 review finding
+/// c0781f9d387f): recover by the DECLARED id when the notes are already
+/// consumed, otherwise re-broadcast the byte-identical stored transition —
+/// never rebuild while the record is live, because a rebuilt padded bundle
+/// derives a fresh random id and orphans the recorded one.
+///
+/// # The resumed claim is bound to the STORED transition, not to this call
+///
+/// (#4313 review finding 195efdd4ae21.) The record is found by wallet id and
+/// one-time FVK alone, so nothing about the lookup says *which* identity the
+/// original attempt was creating. This call's `master_key_hash`,
+/// `submitted_public_keys` and `denomination` are therefore treated as
+/// **assertions to check**, never as inputs to act on: every one of them is
+/// re-derived from `record.st_bytes` — the byte-exact transition the earlier
+/// attempt actually put (or is about to put) on the wire — and the derived
+/// values are what drive recovery, the empty-proof-result backfill and the
+/// re-broadcast.
+///
+/// Deriving rather than persisting the binding is deliberate wherever the
+/// transition can witness it (`public_keys` are exactly what the binding
+/// signature committed to; `denomination` is the value that leaves the pool):
+/// a derived binding cannot drift from what was submitted the way a separately
+/// persisted copy could.
+///
+/// If the caller's arguments disagree with the transition, this is **not** a
+/// resume of the same claim — it is a request to create a different identity
+/// from an invitation already committed elsewhere — and it fails closed with
+/// [`PlatformWalletError::ShieldedClaimBindingMismatch`]: nothing is
+/// re-broadcast (so no chargeable resubmission and no burned proof), and the
+/// record is left intact for a retry that presents the original arguments.
+///
+/// ## What this binds
+///
+/// Derived from `record.st_bytes`: the submitted key set (by id and content),
+/// the MASTER authentication key hash used for idempotent recovery, and the
+/// denomination.
+///
+/// Read from the record itself: `identity_index`, the local DIP-9 slot the
+/// returned identity is registered at (#4313 review finding 5d4d6efa). It is
+/// the one part of the binding the transition CANNOT witness — a purely local
+/// placement that appears nowhere in `st_bytes` — so it is persisted with the
+/// claim precisely because there is nothing to derive it from.
+///
+/// It used to be left to a *transitive* argument: the identity's keys are
+/// derived from the wallet seed at that slot, so a retry naming a different
+/// slot ought to present different keys and be refused by the key check. That
+/// argument leaves the caller free to pair slot `i` with keys derived at slot
+/// `j`, and the consequence is not symmetric with a first attempt's: a retry
+/// that presents the ORIGINAL keys with a different index reaches
+/// `IdentityManager::add_identity`, which rejects a duplicate identity id but
+/// inserts into an occupied slot without complaint — silently displacing
+/// whatever identity the wallet already tracked there. Persisting the slot and
+/// comparing it closes that directly.
+///
+/// A record written before the column existed carries `None`; there is nothing
+/// to compare it against, so the check is skipped and that record keeps exactly
+/// the transitive binding it was written under.
+#[allow(clippy::too_many_arguments)]
+async fn resume_one_time_claim<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    claim_records_id: SubwalletId,
+    record: &PendingRedrive,
+    master_key_hash: Option<[u8; 20]>,
+    submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
+    denomination: u64,
+    identity_index: u32,
+) -> OneTimeClaimResume {
+    use dpp::serialization::PlatformDeserializable;
+    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+
+    let st = match StateTransition::deserialize_from_bytes(&record.st_bytes) {
+        Ok(st) => st,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "one-time claim resume: stored transition failed to deserialize; dropping the \
+                 record and rebuilding"
+            );
+            clear_one_time_claim_record(store, claim_records_id, record.activity_id).await;
+            return OneTimeClaimResume::RecordUnusable;
+        }
+    };
+    // Everything the resume acts on comes from HERE — the stored transition —
+    // not from this call's arguments. See the fn docs.
+    let (declared_id, stored_public_keys, stored_denomination) = match &st {
+        StateTransition::IdentityCreateFromShieldedPool(t) => {
+            let keys: BTreeMap<u32, IdentityPublicKey> = t
+                .public_keys()
+                .iter()
+                .map(|key_in_creation| {
+                    let key: IdentityPublicKey = key_in_creation.into();
+                    (key.id(), key)
+                })
+                .collect();
+            (t.identity_id(), keys, t.denomination())
+        }
+        other => {
+            warn!(
+                transition = %other.name(),
+                "one-time claim resume: stored record does not carry a shielded identity-create \
+                 transition; dropping the record and rebuilding"
+            );
+            clear_one_time_claim_record(store, claim_records_id, record.activity_id).await;
+            return OneTimeClaimResume::RecordUnusable;
+        }
+    };
+    let stored_master_key_hash = master_auth_public_key_hash_of(stored_public_keys.values());
+
+    // Fail closed on any disagreement between what the caller asked for and
+    // what the earlier attempt committed. Checked BEFORE the spent-nullifier
+    // probe and the re-broadcast, so a mismatched retry costs nothing and
+    // changes nothing — in particular the record survives for a correct retry.
+    if let Some(mismatch) = one_time_claim_binding_mismatch(
+        &stored_public_keys,
+        stored_master_key_hash,
+        stored_denomination,
+        record.identity_index,
+        &submitted_public_keys,
+        master_key_hash,
+        denomination,
+        identity_index,
+    ) {
+        warn!(
+            declared_id = %declared_id,
+            mismatch,
+            "one-time claim resume: retry arguments do not match the stored transition; refusing \
+             to resume rather than mis-binding the original identity"
+        );
+        return OneTimeClaimResume::Resolved(Err(
+            PlatformWalletError::ShieldedClaimBindingMismatch { mismatch },
+        ));
+    }
+
+    // Past the gate the two agree, so the derived values are used from here on
+    // — the transition is the source of truth by construction, and reading them
+    // from it keeps that true even if the check above is ever relaxed.
+    let master_key_hash = stored_master_key_hash;
+    let submitted_public_keys = stored_public_keys;
+    let denomination = stored_denomination;
+
+    info!(
+        declared_id = %declared_id,
+        nullifiers = record.nullifiers.len(),
+        "one-time claim: resuming from the persisted pending-claim record"
+    );
+
+    let status = nullifier_spent_status(sdk, &record.nullifiers).await;
+    if status == NullifierSpentStatus::Spent {
+        // The recorded claim (or a competitor) already consumed the notes.
+        // The DECLARED id — unrecoverable without the record for a padded
+        // bundle — lets the reconciler bind a created identity to this claim.
+        return OneTimeClaimResume::Resolved(
+            recover_executed_one_time_claim(
+                sdk,
+                master_key_hash,
+                Some(declared_id),
+                false,
+                "resume: the recorded pending claim's notes are already spent on chain",
+            )
+            .await,
+        );
+    }
+
+    // Unspent or Unknown: re-drive the byte-identical transition through the
+    // same broadcast/confirm classification as a fresh claim. Byte-identical
+    // re-broadcast is fund-safe (identical nullifiers cannot double-spend) and
+    // preserves the recorded id.
+    let result = broadcast_and_confirm_one_time_claim(
+        sdk,
+        st,
+        declared_id,
+        Some(declared_id),
+        master_key_hash,
+        &record.nullifiers,
+        submitted_public_keys,
+        denomination,
+    )
+    .await;
+
+    if status == NullifierSpentStatus::Unspent {
+        if let Err(PlatformWalletError::ShieldedBroadcastFailed(reason)) = &result {
+            // Definitive rejection of the STORED transition while its notes
+            // are proven unconsumed (e.g. its anchor aged out of Platform's
+            // recorded set): this record can never land. Clear it and build a
+            // fresh claim in this same call.
+            warn!(
+                declared_id = %declared_id,
+                reason,
+                "one-time claim resume: stored transition is definitively rejected and its notes \
+                 are unspent; dropping the record and rebuilding"
+            );
+            clear_one_time_claim_record(store, claim_records_id, record.activity_id).await;
+            return OneTimeClaimResume::RecordUnusable;
+        }
+    }
+
+    OneTimeClaimResume::Resolved(result)
+}
+
 /// Whether a failed identity-create should release the notes reserved for it.
 ///
 /// `false` ONLY for [`PlatformWalletError::ShieldedBroadcastUnconfirmed`]: the broadcast was
@@ -2584,6 +4015,7 @@ async fn arm_redrive_record<S: ShieldedStore>(
         nullifiers: notes.iter().map(|n| n.nullifier).collect(),
         st_bytes,
         attempts: 0,
+        identity_index: None,
     };
     if let Err(e) = store.write().await.arm_redrive(id, redrive) {
         warn!(
@@ -2852,6 +4284,395 @@ async fn broadcast_shielded_spend(
         .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
 }
 
+/// On-chain spent status of a claim's nullifier set, as far as a single
+/// query can establish it.
+///
+/// The three states matter because callers draw OPPOSITE conclusions from
+/// them: `Spent` proves the invitation notes are consumed (something
+/// executed), `Unspent` proves nothing has consumed them yet, and
+/// `Unknown` proves NOTHING — a transport failure or an absent response
+/// must never be read as either of the other two (#4204 review finding
+/// 8d020115b274).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NullifierSpentStatus {
+    /// At least one queried nullifier is proof-verified spent.
+    Spent,
+    /// The query succeeded and covered every queried nullifier; none is spent.
+    Unspent,
+    /// The query failed, returned no response, or covered only part of the
+    /// queried set — no conclusion can be drawn.
+    Unknown,
+}
+
+/// Classify a successful nullifier-status response against the queried set.
+///
+/// A response that omits some queried nullifiers proves nothing about the
+/// omitted ones, so it downgrades an all-unspent answer to `Unknown`.
+fn classify_nullifier_statuses(
+    statuses: &[dash_sdk::query_types::ShieldedNullifierStatus],
+    queried: &[[u8; 32]],
+) -> NullifierSpentStatus {
+    if statuses.iter().any(|s| s.is_spent) {
+        return NullifierSpentStatus::Spent;
+    }
+    let covered = queried
+        .iter()
+        .all(|q| statuses.iter().any(|s| &s.nullifier == q));
+    if covered {
+        NullifierSpentStatus::Unspent
+    } else {
+        NullifierSpentStatus::Unknown
+    }
+}
+
+/// On-chain check: are `nullifiers` already recorded spent in Platform's
+/// shielded nullifier set? Reuses the proof-verified
+/// [`ShieldedNullifierStatuses`](dash_sdk::query_types::ShieldedNullifierStatuses)
+/// fetch (query type [`ShieldedNullifiersQuery`](dash_sdk::query_types::ShieldedNullifiersQuery)).
+///
+/// A query error or an absent response is [`NullifierSpentStatus::Unknown`],
+/// never `Unspent`: the pre-broadcast preflight may treat unknown as
+/// "proceed" (the idempotent broadcast path reconciles via the
+/// `NullifierAlreadySpent` verdict, so that only costs a harmless rebuild),
+/// but the post-verdict classification must NOT — declaring a definitive
+/// non-execution on an unknown status would report an applied chargeable
+/// fallback as retryable.
+async fn nullifier_spent_status(
+    sdk: &Arc<dash_sdk::Sdk>,
+    nullifiers: &[[u8; 32]],
+) -> NullifierSpentStatus {
+    use dash_sdk::platform::Fetch;
+    use dash_sdk::query_types::{ShieldedNullifierStatuses, ShieldedNullifiersQuery};
+
+    if nullifiers.is_empty() {
+        return NullifierSpentStatus::Unspent;
+    }
+    match ShieldedNullifierStatuses::fetch(sdk, ShieldedNullifiersQuery(nullifiers.to_vec())).await
+    {
+        Ok(Some(statuses)) => classify_nullifier_statuses(&statuses.0, nullifiers),
+        Ok(None) => NullifierSpentStatus::Unknown,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "IdentityCreateFromOneTimeKey: nullifier spent-status query failed; status unknown"
+            );
+            NullifierSpentStatus::Unknown
+        }
+    }
+}
+
+/// The 20-byte hash of the MASTER authentication key among `public_keys`
+/// (`purpose = AUTHENTICATION`, `security_level = MASTER`). This is the unique,
+/// Platform-indexed key hash an identity can be looked up by — the exact probe
+/// [`IdentityWallet::discover_inner`] scans with
+/// (`Identity::fetch(sdk, PublicKeyHash(..))`). The invitee re-derives these
+/// same creation keys from its own seed on a retry, so this hash re-derives
+/// deterministically and needs no persisted record.
+fn master_auth_public_key_hash(
+    public_keys: &[(IdentityPublicKey, IdentityPublicKeyInCreation)],
+) -> Option<[u8; 20]> {
+    master_auth_public_key_hash_of(public_keys.iter().map(|(key, _)| key))
+}
+
+/// [`master_auth_public_key_hash`] over any borrowed key sequence — used by the
+/// resume path, whose keys come out of the stored transition rather than out of
+/// the caller's `(IdentityPublicKey, IdentityPublicKeyInCreation)` pairs.
+fn master_auth_public_key_hash_of<'a>(
+    public_keys: impl IntoIterator<Item = &'a IdentityPublicKey>,
+) -> Option<[u8; 20]> {
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+    use dpp::identity::{Purpose, SecurityLevel};
+
+    public_keys
+        .into_iter()
+        .find(|key| {
+            key.purpose() == Purpose::AUTHENTICATION
+                && key.security_level() == SecurityLevel::MASTER
+        })
+        .and_then(|key| key.public_key_hash().ok())
+}
+
+/// Positive evidence that `identity` was created by **this** claim's Type-20
+/// transition.
+///
+/// Two independent bindings must BOTH hold. Each one alone is satisfied by a
+/// real on-chain outcome in which this claim did *not* create the identity, so
+/// neither is sufficient on its own:
+///
+/// 1. **Id binding** — `identity.id()` equals `expected_identity_id`, the id
+///    derived from this claim's published spend nullifiers
+///    (`identity_id_from_nullifiers`). Consensus re-derives the id the same way
+///    and rejects any transition whose declared id differs (see
+///    `derive_identity_id_from_actions` in the Type-20 state validation), so an
+///    identity carrying this id can only have been created by a transition that
+///    published exactly this claim's nullifier set.
+///
+///    Without it, the MASTER-key-hash lookup accepts the **pre-existing**
+///    identity that a chargeable `UnshieldAction` fallback collided with: when a
+///    submitted unique key hash is already registered, Type-20 finalizes the
+///    spend as an `UnshieldTransitionAction` (`chargeable_failure: true`) and
+///    creates no identity, yet the nullifier is consumed and the colliding
+///    identity *is* findable under our own key hash.
+///
+/// 2. **Key binding** — the identity's **on-chain** key set contains this
+///    claim's submitted MASTER authentication key hash.
+///
+///    Without it, the derived-id lookup accepts an identity created by a
+///    *different* holder of the same bearer one-time key: the id is derived from
+///    nullifiers only, never from identity keys, so two holders racing the same
+///    invitation derive the same id under different keys.
+///
+/// The key binding is checked against the keys the fetch actually returned — an
+/// identity that comes back without public keys fails closed rather than being
+/// topped up with locally-submitted keys that were never proven to exist on
+/// chain.
+///
+/// `expected_identity_id == None` means the id is not re-derivable for this
+/// claim, so binding 1 cannot be established and this returns `false`. That is
+/// the single-spend case: `BundleType::DEFAULT` pads a one-action bundle to
+/// Orchard's 2-action minimum and the padding action's **randomly generated**
+/// dummy nullifier participates in the id derivation, so a retry cannot
+/// reproduce the original id.
+fn recovered_identity_matches_claim(
+    identity: &Identity,
+    expected_identity_id: Option<Identifier>,
+    master_key_hash: Option<[u8; 20]>,
+) -> bool {
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+    use dpp::identity::{Purpose, SecurityLevel};
+
+    // Both handles must be available; a missing one is not evidence.
+    let (Some(expected_id), Some(expected_hash)) = (expected_identity_id, master_key_hash) else {
+        return false;
+    };
+
+    // Binding 1: the id must be the one derived from this claim's nullifiers.
+    if identity.id() != expected_id {
+        return false;
+    }
+
+    // Binding 2: the on-chain key set must carry this claim's MASTER auth key.
+    identity.public_keys().values().any(|key| {
+        key.purpose() == Purpose::AUTHENTICATION
+            && key.security_level() == SecurityLevel::MASTER
+            && key
+                .public_key_hash()
+                .is_ok_and(|hash| hash == expected_hash)
+    })
+}
+
+/// Recover the identity a claim created by looking it up under its MASTER auth
+/// key hash, with the same bounded retry cadence as
+/// [`fetch_identity_with_retries`] to ride out DAPI indexing lag. Reuses
+/// `discover_inner`'s unique-hash primitive (`Identity::fetch(sdk,
+/// PublicKeyHash(..))`).
+async fn fetch_identity_by_key_hash_with_retries(
+    sdk: &Arc<dash_sdk::Sdk>,
+    key_hash: [u8; 20],
+) -> Option<Identity> {
+    use dash_sdk::platform::types::identity::PublicKeyHash;
+    use dash_sdk::platform::Fetch;
+
+    for attempt in 0..IDENTITY_CREATE_FETCH_RETRIES {
+        match Identity::fetch(sdk, PublicKeyHash(key_hash)).await {
+            Ok(Some(identity)) => return Some(identity),
+            Ok(None) => {
+                trace!(
+                    key_hash = %hex::encode(key_hash),
+                    attempt,
+                    "IdentityCreateFromOneTimeKey recovery: identity not found by key hash yet"
+                );
+            }
+            Err(e) => {
+                trace!(
+                    key_hash = %hex::encode(key_hash),
+                    attempt,
+                    error = %e,
+                    "IdentityCreateFromOneTimeKey recovery: key-hash lookup errored; will retry"
+                );
+            }
+        }
+        if attempt + 1 < IDENTITY_CREATE_FETCH_RETRIES {
+            tokio::time::sleep(IDENTITY_CREATE_FETCH_RETRY_DELAY).await;
+        }
+    }
+    None
+}
+
+/// This one-time-key claim's note is already spent on chain (the spent-nullifier
+/// preflight saw it, or the broadcast/wait returned `NullifierAlreadySpent`).
+/// Decide what that actually means and return the matching outcome.
+///
+/// A spent nullifier proves only that *something* consumed the invitation note —
+/// **not** that this claim created an identity. Type-20 also consumes the note on
+/// its chargeable `UnshieldAction` fallback, which creates no identity at all.
+/// So every candidate identity found here must clear both ownership bindings in
+/// [`recovered_identity_matches_claim`] before it can be reported as this
+/// claim's result.
+///
+/// Two lookup handles are tried, each with bounded retries for DAPI indexing lag:
+/// 1. the invitee's MASTER auth key hash (`discover_inner`'s unique-hash probe),
+/// 2. the id derived from this claim's published nullifiers.
+///
+/// Outcomes:
+/// - **`Ok`** — a fetched identity cleared both bindings: this claim created it.
+/// - **[`PlatformWalletError::ShieldedInviteAlreadyClaimed`]** — an identity was
+///   fetched but failed a binding (chargeable fallback, a competing holder of
+///   the same bearer key, or — when `master_key_hash` is `None` — a key binding
+///   that can never be established for this claim), *or* the id is not
+///   re-derivable so no binding can ever be established. Terminal: the note is
+///   spent, so retrying cannot help.
+/// - **[`PlatformWalletError::ShieldedBroadcastUnconfirmed`]** — nothing resolved
+///   yet, but the id *is* re-derivable, so a later retry can still reconcile once
+///   indexing catches up. Only reachable when `expected_identity_id` is `Some`,
+///   so the carried id is always the one this claim's nullifiers derive.
+///
+/// `spend_finalized` — the caller holds POSITIVE evidence that this claim's own
+/// broadcast reached a definitive consensus verdict AND the notes are proven
+/// consumed. Under that evidence, "no identity carries this claim's bindings"
+/// is not indexing lag: an applied Type-20 that returned an error verdict
+/// created no identity (the chargeable `UnshieldAction` fallback), and the
+/// colliding unique key need not be MASTER — a collision on any other submitted
+/// unique key leaves NOTHING findable under the MASTER-hash probe or the
+/// derived id. The nothing-found outcome is then the terminal
+/// `ShieldedInviteAlreadyClaimed`, not `ShieldedBroadcastUnconfirmed`
+/// (#4204 review finding 8d020115b274).
+async fn recover_executed_one_time_claim(
+    sdk: &Arc<dash_sdk::Sdk>,
+    master_key_hash: Option<[u8; 20]>,
+    expected_identity_id: Option<Identifier>,
+    spend_finalized: bool,
+    evidence: &str,
+) -> Result<(Identifier, Identity), PlatformWalletError> {
+    warn!(
+        ?expected_identity_id,
+        evidence,
+        "IdentityCreateFromOneTimeKey: invitation note already spent on chain; checking whether \
+         this claim actually created an identity"
+    );
+
+    // The id is not re-derivable (single-spend bundle padded with a random dummy
+    // nullifier), so no candidate identity can ever be bound to this claim.
+    // Report the invitation as claimed rather than inventing a success.
+    let Some(expected_id) = expected_identity_id else {
+        return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+            reason: format!(
+                "the note was spent by an earlier transition whose identity id cannot be \
+                 re-derived (single-spend bundles are padded with a randomly generated dummy \
+                 nullifier that participates in the id derivation): {evidence}"
+            ),
+        });
+    };
+
+    // Handle 1: the invitee's own MASTER auth key hash.
+    if let Some(key_hash) = master_key_hash {
+        if let Some(identity) = fetch_identity_by_key_hash_with_retries(sdk, key_hash).await {
+            if recovered_identity_matches_claim(&identity, expected_identity_id, master_key_hash) {
+                info!(
+                    identity_id = %identity.id(),
+                    "IdentityCreateFromOneTimeKey: recovered this claim's identity by its master \
+                     auth key hash (id and key bindings both verified)"
+                );
+                return Ok((identity.id(), identity));
+            }
+            // Found under our key hash but NOT created by this claim — the
+            // chargeable-`UnshieldAction` outcome: the spend was finalized, the
+            // value went to the fallback address, and this pre-existing identity
+            // merely owns the colliding key hash.
+            warn!(
+                found_id = %identity.id(),
+                expected_id = %expected_id,
+                "IdentityCreateFromOneTimeKey: an identity owns this claim's master auth key hash \
+                 but its id is not the one this claim's nullifiers derive; the spend was finalized \
+                 as a chargeable failure and created no identity"
+            );
+            return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+                reason: format!(
+                    "identity {} owns the submitted master auth key hash but was not created by \
+                     this claim (expected id {}); the shielded spend was finalized as a chargeable \
+                     failure and its value went to the creation-failure address: {evidence}",
+                    identity.id(),
+                    expected_id
+                ),
+            });
+        }
+    }
+
+    // Handle 2: the id derived from this claim's published nullifiers.
+    if let Some(identity) = fetch_identity_with_retries(sdk, expected_id).await {
+        if recovered_identity_matches_claim(&identity, expected_identity_id, master_key_hash) {
+            info!(
+                derived_id = %expected_id,
+                "IdentityCreateFromOneTimeKey: recovered this claim's identity by its derived id \
+                 (id and key bindings both verified)"
+            );
+            return Ok((identity.id(), identity));
+        }
+        // `recovered_identity_matches_claim` also fails closed when NO master
+        // auth key hash was resolvable from the submitted keys (`master_key_hash
+        // == None` — nothing was submitted, or `public_key_hash()` errored for
+        // an unusual key type). The key binding can then never be established
+        // for this claim, which is NOT evidence of a competing holder — report
+        // the real cause. Terminal either way: the note is spent, and a retry
+        // resubmits the same key set, so the hash stays unresolvable.
+        if master_key_hash.is_none() {
+            warn!(
+                derived_id = %expected_id,
+                "IdentityCreateFromOneTimeKey: an identity exists at this claim's derived id but \
+                 this claim carries no resolvable master auth key hash, so ownership can be \
+                 neither proven nor disproven"
+            );
+            return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+                reason: format!(
+                    "identity {expected_id} was created from this invitation's notes, but this \
+                     claim submitted no resolvable master authentication key hash, so its \
+                     ownership cannot be verified: {evidence}"
+                ),
+            });
+        }
+        // The id matches (same nullifier set) but the on-chain keys are not ours:
+        // another holder of the same bearer one-time key won the race.
+        warn!(
+            derived_id = %expected_id,
+            "IdentityCreateFromOneTimeKey: an identity exists at this claim's derived id but does \
+             not carry the submitted master auth key; another holder of the same one-time key \
+             claimed the invitation first"
+        );
+        return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+            reason: format!(
+                "identity {expected_id} was created from this invitation's notes but does not \
+                 carry the submitted master authentication key, so it belongs to another holder \
+                 of the one-time key: {evidence}"
+            ),
+        });
+    }
+
+    if spend_finalized {
+        // Both probes came up empty under a definitive verdict + proven-spent
+        // notes: the spend finalized without creating an identity that carries
+        // this claim's bindings. That is the chargeable-`UnshieldAction`
+        // fallback (the collision may have been on any submitted unique key,
+        // not just MASTER) or a competing claim — terminal either way; the
+        // value, if any, went to the creation-failure address.
+        return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+            reason: format!(
+                "the claim's consensus verdict is definitive and the invitation notes are spent, \
+                 but no identity carries this claim's bindings; the spend was finalized as a \
+                 chargeable failure (or a competing claim) and created no identity for this \
+                 wallet: {evidence}"
+            ),
+        });
+    }
+
+    Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+        identity_id: expected_id,
+        reason: format!(
+            "one-time-key claim executed (nullifier already spent) but the identity is not yet \
+             resolvable by key hash or derived id: {evidence}"
+        ),
+    })
+}
+
 /// Classify a `wait_for_response` failure for an already-broadcast
 /// shielded spend (see [`broadcast_shielded_spend`]).
 ///
@@ -2939,6 +4760,92 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
     let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
 
     Note::from_parts(recipient, value, rho, rseed).into_option()
+}
+
+#[cfg(test)]
+mod foreign_claim_guard_tests {
+    use super::ForeignClaimGuards;
+    use std::sync::Arc;
+
+    /// Two callers with the same key must share ONE lifecycle mutex — that
+    /// identity is what makes the claim single-flight (#4313 review finding
+    /// 979bbc2fcb3c); different keys must not contend.
+    #[test]
+    fn same_key_shares_one_mutex_and_keys_are_independent() {
+        let guards = ForeignClaimGuards::default();
+        let a1 = guards.entry_for([1u8; 32]);
+        let a2 = guards.entry_for([1u8; 32]);
+        let b = guards.entry_for([2u8; 32]);
+        assert!(
+            Arc::ptr_eq(&a1, &a2),
+            "same-key callers must receive the SAME lifecycle mutex"
+        );
+        assert!(
+            !Arc::ptr_eq(&a1, &b),
+            "distinct keys must receive distinct mutexes"
+        );
+    }
+
+    /// The complete-lifecycle serialization: while one claim holds the
+    /// guard (parked at an await, as across scan/proof/broadcast), a
+    /// second same-key claim cannot enter; it proceeds only after the
+    /// first releases — including release by CANCELLATION (future drop),
+    /// so an abandoned claim can never wedge its invitation key.
+    #[tokio::test]
+    async fn same_key_claims_serialize_and_cancellation_releases() {
+        let guards = Arc::new(ForeignClaimGuards::default());
+        let key = [7u8; 32];
+
+        let entry = guards.entry_for(key);
+        let held = entry.lock().await;
+        // Second same-key claim: must NOT be able to enter while held.
+        let second = guards.entry_for(key);
+        assert!(
+            second.try_lock().is_err(),
+            "a concurrent same-key claim must park while the lifecycle guard is held"
+        );
+        drop(held);
+        assert!(
+            second.try_lock().is_ok(),
+            "the parked claim must proceed once the holder settles"
+        );
+
+        // Cancellation-safety: drop a future that acquired the guard at an
+        // await point; the key must be immediately claimable again.
+        let entry2 = guards.entry_for(key);
+        let task = tokio::spawn(async move {
+            let _g = entry2.lock().await;
+            std::future::pending::<()>().await; // parked "mid-claim" forever
+        });
+        tokio::task::yield_now().await;
+        task.abort();
+        let _ = task.await;
+        assert!(
+            guards.entry_for(key).try_lock().is_ok(),
+            "an aborted (cancelled) claim must release the key on drop"
+        );
+    }
+
+    /// Abandoned keys cost nothing: once no claim holds a key's mutex, its
+    /// registry row is pruned on the next acquisition, so hostile key churn
+    /// cannot grow the map beyond the keys currently in flight.
+    #[test]
+    fn dead_entries_are_pruned() {
+        let guards = ForeignClaimGuards::default();
+        for i in 0..64u8 {
+            let _ = guards.entry_for([i; 32]); // dropped immediately
+        }
+        let _live = guards.entry_for([0xFF; 32]);
+        let len = guards
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len();
+        assert_eq!(
+            len, 1,
+            "only keys with a live claimant may occupy the registry"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -3140,6 +5047,7 @@ mod redrive_tests {
             nullifiers: vec![[activity ^ 0xFF; 32]],
             st_bytes: vec![0xDE, 0xAD], // never deserializes
             attempts,
+            identity_index: None,
         };
         {
             let mut guard = store.write().await;
@@ -3171,6 +5079,174 @@ mod redrive_tests {
             Some(MAX_REDRIVE_ATTEMPTS),
             "no attempt counters were bumped — nothing touched the network"
         );
+    }
+}
+
+#[cfg(test)]
+mod nullifier_status_and_claim_record_tests {
+    use super::*;
+    use crate::wallet::shielded::store::InMemoryShieldedStore;
+    use dash_sdk::query_types::ShieldedNullifierStatus;
+
+    fn status(nullifier: [u8; 32], is_spent: bool) -> ShieldedNullifierStatus {
+        ShieldedNullifierStatus {
+            nullifier,
+            is_spent,
+        }
+    }
+
+    /// Any spent entry wins regardless of coverage: `Spent` is positive proof.
+    #[test]
+    fn classify_any_spent_is_spent() {
+        let queried = [[1u8; 32], [2u8; 32]];
+        let statuses = vec![status([1u8; 32], false), status([2u8; 32], true)];
+        assert_eq!(
+            classify_nullifier_statuses(&statuses, &queried),
+            NullifierSpentStatus::Spent
+        );
+    }
+
+    /// All queried nullifiers covered and none spent — proven unspent.
+    #[test]
+    fn classify_full_coverage_unspent_is_unspent() {
+        let queried = [[1u8; 32], [2u8; 32]];
+        let statuses = vec![status([1u8; 32], false), status([2u8; 32], false)];
+        assert_eq!(
+            classify_nullifier_statuses(&statuses, &queried),
+            NullifierSpentStatus::Unspent
+        );
+    }
+
+    /// A response that omits a queried nullifier proves nothing about it:
+    /// partial coverage must NOT read as `Unspent` — that is the path that
+    /// would misreport an applied chargeable fallback as a retryable
+    /// non-execution (#4204 review finding 8d020115b274).
+    #[test]
+    fn classify_partial_coverage_is_unknown() {
+        let queried = [[1u8; 32], [2u8; 32]];
+        let statuses = vec![status([1u8; 32], false)];
+        assert_eq!(
+            classify_nullifier_statuses(&statuses, &queried),
+            NullifierSpentStatus::Unknown
+        );
+        assert_eq!(
+            classify_nullifier_statuses(&[], &queried),
+            NullifierSpentStatus::Unknown
+        );
+    }
+
+    /// The record key is deterministic per one-time key (a retry must find the
+    /// record a crashed attempt armed) and distinct across keys.
+    #[test]
+    fn claim_record_key_is_deterministic_and_distinct() {
+        use grovedb_commitment_tree::{FullViewingKey, SpendingKey};
+
+        let fvk = |b: u8| {
+            let sk = Option::<SpendingKey>::from(SpendingKey::from_bytes([b; 32]))
+                .expect("test byte pattern must be a valid spending key");
+            FullViewingKey::from(&sk)
+        };
+        let a = fvk(1);
+        let b = fvk(2);
+        assert_eq!(one_time_claim_record_key(&a), one_time_claim_record_key(&a));
+        assert_ne!(one_time_claim_record_key(&a), one_time_claim_record_key(&b));
+    }
+
+    /// Arm → find → clear round-trip through the reserved claim-records
+    /// subwallet, and `finalize_one_time_claim_record`'s settlement rule:
+    /// terminal `ShieldedInviteAlreadyClaimed` clears the record, while
+    /// `ShieldedBroadcastUnconfirmed` — the outcome whose retry NEEDS the
+    /// record — keeps it (#4204 review finding c0781f9d387f).
+    #[tokio::test]
+    async fn claim_record_round_trip_and_finalize_rules() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id = [7u8; 32];
+        let id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        let key = [0xA5u8; 32];
+
+        assert!(find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .is_none());
+
+        {
+            let mut guard = store.write().await;
+            guard
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: key,
+                        anchor: [9u8; 32],
+                        nullifiers: vec![[3u8; 32]],
+                        st_bytes: vec![1, 2, 3],
+                        attempts: 0,
+                        identity_index: None,
+                    },
+                )
+                .expect("arm must succeed");
+        }
+        let found = find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .expect("armed record must be found");
+        assert_eq!(found.nullifiers, vec![[3u8; 32]]);
+
+        // Unconfirmed keeps the record — its retry needs the declared id.
+        let unconfirmed: Result<(Identifier, Identity), PlatformWalletError> =
+            Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                identity_id: Identifier::new([1u8; 32]),
+                reason: "test".to_string(),
+            });
+        finalize_one_time_claim_record(&store, id, key, &unconfirmed).await;
+        assert!(find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .is_some());
+
+        // Terminal AlreadyClaimed settles it.
+        let terminal: Result<(Identifier, Identity), PlatformWalletError> =
+            Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+                reason: "test".to_string(),
+            });
+        finalize_one_time_claim_record(&store, id, key, &terminal).await;
+        assert!(find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .is_none());
+    }
+
+    /// A corrupt stored transition must not wedge the claim: the resume path
+    /// drops the record (so the fresh build proceeds) without touching the
+    /// network (the mock SDK has no expectations — any fetch would error).
+    #[tokio::test]
+    async fn resume_drops_corrupt_record_and_rebuilds() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id = [8u8; 32];
+        let id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        let key = [0x5Au8; 32];
+        let record = PendingRedrive {
+            activity_id: key,
+            anchor: [0u8; 32],
+            nullifiers: vec![[4u8; 32]],
+            st_bytes: vec![0xDE, 0xAD], // never deserializes
+            attempts: 0,
+            identity_index: None,
+        };
+        store
+            .write()
+            .await
+            .arm_redrive(id, record.clone())
+            .expect("arm must succeed");
+
+        let outcome =
+            resume_one_time_claim(&sdk, &store, id, &record, None, BTreeMap::new(), 100_000, 0)
+                .await;
+        assert!(matches!(outcome, OneTimeClaimResume::RecordUnusable));
+        assert!(find_one_time_claim_record(&store, id, key)
+            .await
+            .expect("lookup must succeed")
+            .is_none());
     }
 }
 
@@ -4375,5 +6451,1105 @@ mod select_recorded_spends_tests {
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
+    }
+}
+
+/// Unit tests for the ONE-TIME-key claim path
+/// ([`identity_create_from_one_time_key`] / [`super::sync::scan_notes_for_foreign_key`]).
+///
+/// The full op needs a live SDK note stream, so these cover the network-free
+/// pieces the crate ADDS: deriving a note owned by a foreign one-time spending
+/// key (the scan's per-note conversion — value / cmx / nullifier / serialization),
+/// the exact-equality selection over the transiently-scanned set (exact / over /
+/// under / no-note), and witnessing that foreign note against a Platform-recorded
+/// anchor in the shared marked tree. The key-agnostic Type-20 BUILD with a
+/// foreign key is proven by rs-dpp's own green builder tests
+/// (`SpendingKey::from_bytes([..]) → fvk/ask → build … succeeds`).
+#[cfg(test)]
+mod one_time_key_tests {
+    use super::*;
+    use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+    use dpp::version::PlatformVersion;
+    use grovedb_commitment_tree::{
+        ExtractedNoteCommitment, FullViewingKey, Note, NoteValue, RandomSeed, Rho, Scope,
+        SpendingKey,
+    };
+
+    /// Smallest member of the versioned exit-denomination set (0.1 DASH).
+    const DENOMINATION: u64 = 10_000_000_000;
+
+    /// A fixed, valid one-time Orchard spending key for the tests.
+    const ONE_TIME_SK: [u8; 32] = [0x24; 32];
+
+    fn temp_tree_path(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("one_time_key_{tag}_{nanos}.sqlite"))
+    }
+
+    fn filler_cmx(b: u8) -> [u8; 32] {
+        let mut c = [0u8; 32];
+        c[0] = b;
+        c
+    }
+
+    /// The full-viewing key of the one-time spending key.
+    fn one_time_fvk() -> FullViewingKey {
+        let sk: SpendingKey = Option::from(SpendingKey::from_bytes(ONE_TIME_SK))
+            .expect("fixed one-time SK is a valid Orchard SpendingKey");
+        FullViewingKey::from(&sk)
+    }
+
+    /// Build one real Orchard note OWNED BY the one-time key, shaped exactly as
+    /// [`super::sync::scan_notes_for_foreign_key`] would produce it: `cmx` is the
+    /// note's real commitment, `nullifier` is derived under the one-time key's
+    /// fvk, and `note_data` is the canonical 115-byte serialization.
+    fn one_time_note(value: u64, position: u64) -> ShieldedNote {
+        let fvk = one_time_fvk();
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // rho / rseed must be canonical Pallas base-field elements — scan
+        // deterministically (mirrors the existing note builders in this file).
+        let rho = (1u16..=u16::MAX)
+            .find_map(|n| {
+                let mut b = [0u8; 32];
+                b[0..2].copy_from_slice(&n.to_le_bytes());
+                Rho::from_bytes(&b).into_option()
+            })
+            .expect("a canonical rho exists");
+        let rseed = (1u16..=u16::MAX)
+            .find_map(|m| {
+                let mut b = [0u8; 32];
+                b[2..4].copy_from_slice(&m.to_le_bytes());
+                RandomSeed::from_bytes(b, &rho).into_option()
+            })
+            .expect("a canonical rseed exists");
+
+        let note = Note::from_parts(recipient, NoteValue::from_raw(value), rho, rseed)
+            .into_option()
+            .expect("valid note parts");
+        let cmx = ExtractedNoteCommitment::from(note.commitment()).to_bytes();
+        let nullifier = note.nullifier(&fvk).to_bytes();
+
+        let mut note_data = Vec::with_capacity(115);
+        note_data.extend_from_slice(&note.recipient().to_raw_address_bytes());
+        note_data.extend_from_slice(&note.value().inner().to_le_bytes());
+        note_data.extend_from_slice(&note.rho().to_bytes());
+        note_data.extend_from_slice(note.rseed().as_bytes());
+
+        ShieldedNote {
+            position,
+            cmx,
+            nullifier,
+            block_height: 1,
+            is_spent: false,
+            value,
+            note_data,
+        }
+    }
+
+    /// The scan's per-note conversion is correct: a note owned by the one-time
+    /// key round-trips through the wallet's 115-byte serialization, and its
+    /// nullifier matches the one derived under that key's fvk (what the scan
+    /// stamps). This is the piece [`super::sync::scan_notes_for_foreign_key`]
+    /// runs on every discovered note.
+    #[test]
+    fn foreign_key_note_roundtrips_and_nullifier_matches() {
+        let note = one_time_note(DENOMINATION, 0);
+
+        // `note_data` deserializes back to an equal note.
+        let decoded = deserialize_note(&note.note_data).expect("serialized note is valid");
+        assert_eq!(
+            decoded.value().inner(),
+            DENOMINATION,
+            "value survives round-trip"
+        );
+
+        // The stamped nullifier is exactly the one the one-time key's fvk derives.
+        let fvk = one_time_fvk();
+        assert_eq!(
+            note.nullifier,
+            decoded.nullifier(&fvk).to_bytes(),
+            "stamped nullifier must match the fvk-derived nullifier"
+        );
+
+        // The stored cmx is the note's real extracted commitment.
+        assert_eq!(
+            note.cmx,
+            ExtractedNoteCommitment::from(decoded.commitment()).to_bytes(),
+            "stored cmx must be the note's real commitment"
+        );
+    }
+
+    /// Exact-equality selection over the transiently-scanned set: exact funding
+    /// (zero change), over-funding (change = excess routed to change_address),
+    /// under-funding (typed `ShieldedInsufficientBalance`), and no-note (empty →
+    /// `ShieldedNoUnspentNotes`, the op's fail-fast on an unfunded key).
+    #[test]
+    fn select_for_claim_exact_over_under_and_no_note() {
+        let version = PlatformVersion::latest();
+
+        // Exact: one note equal to the denomination → zero change.
+        let exact = vec![one_time_note(DENOMINATION, 0)];
+        let (sel, total, fee) =
+            select_notes_for_denomination(&exact, DENOMINATION, 2, 1, version).expect("exact");
+        assert_eq!(sel.len(), 1);
+        assert_eq!(total, DENOMINATION);
+        assert_eq!(total - DENOMINATION, 0, "exact funding leaves zero change");
+        assert!(fee < DENOMINATION, "fee must leave a positive balance");
+
+        // Over-funded: the excess above the denomination becomes the change note.
+        let excess = 7_000_000_000u64;
+        let over = vec![one_time_note(DENOMINATION + excess, 0)];
+        let (sel, total, _) =
+            select_notes_for_denomination(&over, DENOMINATION, 2, 1, version).expect("over");
+        assert_eq!(sel.len(), 1);
+        assert_eq!(
+            total - DENOMINATION,
+            excess,
+            "over-funding routes the excess to change_address"
+        );
+
+        // Under-funded: a single note below the denomination.
+        let under = vec![one_time_note(DENOMINATION - 1, 0)];
+        match select_notes_for_denomination(&under, DENOMINATION, 2, 1, version) {
+            Err(PlatformWalletError::ShieldedInsufficientBalance {
+                available,
+                required,
+            }) => {
+                assert_eq!(available, DENOMINATION - 1);
+                assert_eq!(required, DENOMINATION);
+            }
+            other => panic!("expected ShieldedInsufficientBalance, got {other:?}"),
+        }
+
+        // No note found for the key: empty set → ShieldedNoUnspentNotes (the same
+        // error the op raises on `discovered.is_empty()`).
+        match select_notes_for_denomination(&[], DENOMINATION, 2, 1, version) {
+            Err(PlatformWalletError::ShieldedNoUnspentNotes) => {}
+            other => panic!("expected ShieldedNoUnspentNotes, got {other:?}"),
+        }
+    }
+
+    /// The witness half: a note owned by the one-time key, appended to the shared
+    /// fully-marked tree, is witnessable and produces a `SpendableNote` against a
+    /// Platform-recorded anchor — the same probe the op runs before the build.
+    #[test]
+    fn foreign_key_note_witnesses_against_recorded_anchor() {
+        let path = temp_tree_path("witness");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let note = one_time_note(DENOMINATION, 0);
+
+        // One block, checkpointed on its boundary: depth-0 root is recorded.
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA2), true).unwrap();
+        store.checkpoint_tree(3).unwrap();
+        let root_depth0 = store.tree_anchor().unwrap();
+
+        let recorded: HashSet<[u8; 32]> = [root_depth0].into_iter().collect();
+
+        let (spends, anchor) =
+            select_recorded_spends(&store, std::slice::from_ref(&note), &recorded)
+                .expect("the one-time key's note witnesses against the recorded anchor");
+
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(
+            spends.len(),
+            1,
+            "the one-time key's single note is spendable"
+        );
+        assert_eq!(
+            spends[0].note.value().inner(),
+            DENOMINATION,
+            "the witnessed SpendableNote carries the funded value"
+        );
+        assert_eq!(
+            anchor.to_bytes(),
+            root_depth0,
+            "the spend is built against the Platform-recorded anchor"
+        );
+    }
+}
+
+/// Regression tests for one-time-key (shielded invitation) claim RECOVERY
+/// ownership evidence.
+///
+/// A spent invitation nullifier proves only that *something* consumed the note.
+/// It does **not** prove that this claim's Type-20 transition created an
+/// identity, and these tests pin the two on-chain outcomes where the pre-fix
+/// rule — "the nullifier is spent and an identity is findable under the
+/// submitted MASTER auth key hash" — reported a successful claim that never
+/// happened.
+#[cfg(test)]
+mod one_time_claim_evidence_tests {
+    use super::*;
+    use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::version::PlatformVersion;
+
+    /// This claim's submitted MASTER auth key hash.
+    const OUR_MASTER_HASH: [u8; 20] = [0xA1; 20];
+    /// Some other key's hash — used for the competing-claimant identity.
+    const OTHER_MASTER_HASH: [u8; 20] = [0xB2; 20];
+    /// Smallest member of the versioned exit-denomination set (0.1 DASH).
+    const DENOMINATION: u64 = 10_000_000_000;
+    /// The local DIP-9 slot the original attempt registered at.
+    const IDENTITY_INDEX: u32 = 3;
+
+    fn temp_store_path(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock is after the epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("one_time_claim_{tag}_{nanos}.sqlite"))
+    }
+
+    /// The two real note nullifiers this claim spends.
+    fn our_nullifiers() -> Vec<[u8; 32]> {
+        vec![[0x11; 32], [0x22; 32]]
+    }
+
+    /// An `ECDSA_HASH160` key whose `public_key_hash()` is exactly `hash` —
+    /// `KeyType::ECDSA_HASH160` returns its 20-byte `data` verbatim, so the test
+    /// controls the hash precisely without generating real key material.
+    fn key_with_hash(
+        id: u32,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+        hash: [u8; 20],
+    ) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(hash.to_vec()),
+            disabled_at: None,
+        })
+    }
+
+    fn identity_with_keys(id: Identifier, keys: Vec<IdentityPublicKey>) -> Identity {
+        let map: BTreeMap<u32, IdentityPublicKey> = keys.into_iter().map(|k| (k.id(), k)).collect();
+        Identity::new_with_id_and_keys(id, map, PlatformVersion::latest())
+            .expect("test identity builds")
+    }
+
+    /// The MASTER auth key this claim submits.
+    fn our_master_key() -> IdentityPublicKey {
+        key_with_hash(
+            0,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+            OUR_MASTER_HASH,
+        )
+    }
+
+    /// The **pre-fix** acceptance rule, encoded here as the behavior these tests
+    /// exist to reject.
+    ///
+    /// Before the fix, both recovery handles returned `Ok((identity.id(),
+    /// identity))` for *whatever* identity the lookup produced — the fetched
+    /// identity was never inspected. So the old rule accepted unconditionally
+    /// once a lookup succeeded, and every case below that asserts
+    /// `recovered_identity_matches_claim(..) == false` is a case the old code
+    /// returned as a successful claim.
+    fn pre_fix_rule_accepts(_identity: &Identity) -> bool {
+        true
+    }
+
+    /// BLOCKER 1 — chargeable `UnshieldAction` fallback must not read as success.
+    ///
+    /// When a submitted unique public-key hash is already registered, Type-20
+    /// finalizes the shielded spend as an `UnshieldTransitionAction` with
+    /// `chargeable_failure: true`: the nullifier IS consumed, the invitation
+    /// value goes to the creation-failure address, and **no identity is
+    /// created**. A retry then finds the *pre-existing* identity that owns the
+    /// colliding key hash. Its id is not the one this claim's nullifiers derive,
+    /// so the id binding must reject it.
+    #[test]
+    fn chargeable_unshield_fallback_identity_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+
+        // The pre-existing identity: it genuinely owns our MASTER key hash (that
+        // is exactly why the unique-key-hash collision fired), but it was created
+        // by some unrelated earlier transition, so it carries an unrelated id.
+        let pre_existing = identity_with_keys(Identifier::from([0xEE; 32]), vec![our_master_key()]);
+
+        assert!(
+            pre_existing.id() != expected_id,
+            "precondition: the colliding identity is not the one this claim derives"
+        );
+        assert!(
+            pre_fix_rule_accepts(&pre_existing),
+            "the pre-fix rule accepted this identity as a successful claim"
+        );
+        assert!(
+            !recovered_identity_matches_claim(
+                &pre_existing,
+                Some(expected_id),
+                Some(OUR_MASTER_HASH)
+            ),
+            "an identity that merely owns the submitted master auth key hash must NOT be \
+             reported as this claim's result: the spend was finalized as a chargeable failure \
+             and created no identity"
+        );
+    }
+
+    /// BLOCKER 2 — a competing holder of the same bearer key must not read as
+    /// success.
+    ///
+    /// The identity id is derived from published nullifiers only, never from
+    /// identity keys. With two or more real spends no randomized padding action
+    /// is added, so another holder of the same one-time key spending the same
+    /// notes derives the SAME id under THEIR keys. The key binding must reject
+    /// it — otherwise the foreign identity is registered at this wallet's
+    /// caller-supplied identity index.
+    #[test]
+    fn competing_bearer_key_holder_identity_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+
+        // Same notes => same nullifiers => same derived id, but the winner
+        // registered their own master key.
+        let foreign = identity_with_keys(
+            expected_id,
+            vec![key_with_hash(
+                0,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::MASTER,
+                OTHER_MASTER_HASH,
+            )],
+        );
+
+        assert_eq!(
+            foreign.id(),
+            expected_id,
+            "precondition: the race winner's identity shares this claim's derived id"
+        );
+        assert!(
+            pre_fix_rule_accepts(&foreign),
+            "the pre-fix rule accepted this identity as a successful claim"
+        );
+        assert!(
+            !recovered_identity_matches_claim(&foreign, Some(expected_id), Some(OUR_MASTER_HASH)),
+            "an identity at this claim's derived id that does not carry the submitted master \
+             auth key belongs to another holder of the one-time key and must NOT be returned"
+        );
+    }
+
+    /// A keyless fetch must fail closed rather than be topped up with the
+    /// locally-submitted keys — those were never proven to exist on chain.
+    #[test]
+    fn identity_fetched_without_public_keys_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+        let keyless = identity_with_keys(expected_id, vec![]);
+
+        assert!(
+            pre_fix_rule_accepts(&keyless),
+            "the pre-fix rule accepted this identity and then inserted the submitted keys locally"
+        );
+        assert!(
+            !recovered_identity_matches_claim(&keyless, Some(expected_id), Some(OUR_MASTER_HASH)),
+            "an identity fetched without public keys cannot prove the key binding"
+        );
+    }
+
+    /// A single-spend claim's id is not re-derivable (the bundle is padded to
+    /// Orchard's 2-action minimum with a randomly generated dummy nullifier that
+    /// participates in the derivation), so no candidate can ever be bound to it.
+    #[test]
+    fn unre_derivable_id_is_rejected() {
+        let identity = identity_with_keys(Identifier::from([0xEE; 32]), vec![our_master_key()]);
+
+        assert!(
+            !recovered_identity_matches_claim(&identity, None, Some(OUR_MASTER_HASH)),
+            "without a re-derivable id there is no evidence this claim created the identity"
+        );
+    }
+
+    /// A missing MASTER auth key hash is not evidence either.
+    #[test]
+    fn absent_master_key_hash_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+        let identity = identity_with_keys(expected_id, vec![our_master_key()]);
+
+        assert!(
+            !recovered_identity_matches_claim(&identity, Some(expected_id), None),
+            "without a submitted master auth key hash the key binding cannot be established"
+        );
+    }
+
+    /// A key with the right hash but the wrong purpose/security level does not
+    /// satisfy the key binding — the binding is specifically on the MASTER
+    /// AUTHENTICATION key, which is the uniquely Platform-indexed handle.
+    #[test]
+    fn non_master_key_with_matching_hash_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+        let identity = identity_with_keys(
+            expected_id,
+            vec![
+                key_with_hash(
+                    0,
+                    Purpose::AUTHENTICATION,
+                    SecurityLevel::HIGH,
+                    OUR_MASTER_HASH,
+                ),
+                key_with_hash(
+                    1,
+                    Purpose::TRANSFER,
+                    SecurityLevel::CRITICAL,
+                    OUR_MASTER_HASH,
+                ),
+            ],
+        );
+
+        assert!(
+            !recovered_identity_matches_claim(&identity, Some(expected_id), Some(OUR_MASTER_HASH)),
+            "only a MASTER AUTHENTICATION key satisfies the key binding"
+        );
+    }
+
+    /// The positive case: both bindings hold, so this claim provably created the
+    /// identity and recovery returns it.
+    #[test]
+    fn identity_with_matching_id_and_master_key_is_accepted() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+        let ours = identity_with_keys(
+            expected_id,
+            vec![
+                our_master_key(),
+                key_with_hash(1, Purpose::TRANSFER, SecurityLevel::CRITICAL, [0xC3; 20]),
+            ],
+        );
+
+        assert!(
+            recovered_identity_matches_claim(&ours, Some(expected_id), Some(OUR_MASTER_HASH)),
+            "an identity carrying this claim's derived id AND its submitted master auth key was \
+             created by this claim"
+        );
+    }
+
+    /// The id binding is only meaningful because the derivation is over the
+    /// claim's own nullifier set: a different note selection derives a different
+    /// id, so it cannot be passed off as this claim's result.
+    #[test]
+    fn a_different_nullifier_set_derives_a_different_id() {
+        let ours = identity_id_from_nullifiers(&our_nullifiers());
+        let theirs = identity_id_from_nullifiers(&[[0x11; 32], [0x33; 32]]);
+
+        assert_ne!(
+            ours, theirs,
+            "the derived id is a function of the published nullifier set"
+        );
+
+        let identity = identity_with_keys(theirs, vec![our_master_key()]);
+        assert!(
+            !recovered_identity_matches_claim(&identity, Some(ours), Some(OUR_MASTER_HASH)),
+            "an identity created from a different nullifier set is not this claim's identity"
+        );
+    }
+
+    // ── Resumed-claim binding (#4313 review finding 195efdd4ae21) ──────────
+    //
+    // The pending-claim record is found by wallet id and one-time FVK alone, so
+    // the resume must take its binding from the STORED TRANSITION and refuse a
+    // retry whose arguments disagree — never act on the caller's values while
+    // re-broadcasting someone else's bytes.
+
+    /// Serialize a shielded identity-create transition carrying exactly `keys`
+    /// and `denomination`, shaped as `arm_one_time_claim_record` stores it.
+    fn stored_claim_transition(
+        keys: &[IdentityPublicKey],
+        denomination: u64,
+    ) -> (StateTransition, Vec<u8>) {
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+        use dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+
+        let transition: IdentityCreateFromShieldedPoolTransition =
+            IdentityCreateFromShieldedPoolTransitionV0 {
+                public_keys: keys
+                    .iter()
+                    .map(|key| IdentityPublicKeyInCreation::from(key.clone()))
+                    .collect(),
+                denomination,
+                actions: Vec::new(),
+                anchor: [0x07; 32],
+                proof: vec![0x08; 8],
+                binding_signature: [0x09; 64],
+                send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress::P2pkh(
+                    [0u8; 20],
+                ),
+                identity_id: identity_id_from_nullifiers(&our_nullifiers()),
+            }
+            .into();
+        let st = StateTransition::IdentityCreateFromShieldedPool(transition);
+        let bytes = st.serialize_to_bytes().expect("transition serializes");
+        (st, bytes)
+    }
+
+    /// A pending-claim record over `st_bytes`, keyed like a real one.
+    fn stored_claim_record(st_bytes: Vec<u8>) -> PendingRedrive {
+        PendingRedrive {
+            activity_id: [0x5A; 32],
+            anchor: [0x07; 32],
+            nullifiers: our_nullifiers(),
+            st_bytes,
+            attempts: 0,
+            identity_index: Some(IDENTITY_INDEX),
+        }
+    }
+
+    fn keys_map(keys: &[IdentityPublicKey]) -> BTreeMap<u32, IdentityPublicKey> {
+        keys.iter().map(|key| (key.id(), key.clone())).collect()
+    }
+
+    /// A second key set that differs from `our_master_key()` only in the key
+    /// MATERIAL — same id, purpose and security level. This is the dangerous
+    /// shape: ids alone still line up, so anything comparing only ids would
+    /// wave it through and register a foreign identity at this wallet's slot.
+    fn other_master_key() -> IdentityPublicKey {
+        key_with_hash(
+            0,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+            OTHER_MASTER_HASH,
+        )
+    }
+
+    /// THE DERIVE PATH: everything the resume needs is recoverable from the
+    /// serialized transition, which is why no record-schema change is required.
+    /// A round-trip through `StateTransition` must reproduce the exact key set
+    /// (by id AND content), the denomination, and the MASTER auth key hash that
+    /// idempotent recovery probes Platform with.
+    #[test]
+    fn claim_binding_is_recoverable_from_the_stored_transition() {
+        use dpp::serialization::PlatformDeserializable;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+
+        let submitted = vec![
+            our_master_key(),
+            key_with_hash(1, Purpose::TRANSFER, SecurityLevel::CRITICAL, [0xC3; 20]),
+        ];
+        let (_, st_bytes) = stored_claim_transition(&submitted, DENOMINATION);
+
+        let restored =
+            StateTransition::deserialize_from_bytes(&st_bytes).expect("stored bytes deserialize");
+        let StateTransition::IdentityCreateFromShieldedPool(transition) = &restored else {
+            panic!("stored record must carry a shielded identity-create transition");
+        };
+
+        let derived: BTreeMap<u32, IdentityPublicKey> = transition
+            .public_keys()
+            .iter()
+            .map(|key_in_creation| {
+                let key: IdentityPublicKey = key_in_creation.into();
+                (key.id(), key)
+            })
+            .collect();
+
+        assert_eq!(
+            derived,
+            keys_map(&submitted),
+            "the submitted key set must be recoverable from the transition itself"
+        );
+        assert_eq!(transition.denomination(), DENOMINATION);
+        assert_eq!(
+            master_auth_public_key_hash_of(derived.values()),
+            Some(OUR_MASTER_HASH),
+            "the recovery handle must be derivable from the transition, not supplied by the retry"
+        );
+    }
+
+    /// MATCHING ARGS: a retry presenting exactly what the earlier attempt
+    /// submitted is a genuine resume and must pass the binding gate.
+    #[test]
+    fn matching_retry_arguments_resume() {
+        let submitted = vec![our_master_key()];
+        let keys = keys_map(&submitted);
+
+        assert_eq!(
+            one_time_claim_binding_mismatch(
+                &keys,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                Some(IDENTITY_INDEX),
+                &keys,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                IDENTITY_INDEX,
+            ),
+            None,
+            "identical arguments must not be treated as a mis-binding"
+        );
+    }
+
+    /// Key ORDER is not a mismatch: both sides are keyed by key id, so a caller
+    /// that assembles the same keys in a different order still resumes.
+    #[test]
+    fn key_order_is_not_a_binding_mismatch() {
+        let forward = keys_map(&[
+            our_master_key(),
+            key_with_hash(1, Purpose::TRANSFER, SecurityLevel::CRITICAL, [0xC3; 20]),
+        ]);
+        let reversed = keys_map(&[
+            key_with_hash(1, Purpose::TRANSFER, SecurityLevel::CRITICAL, [0xC3; 20]),
+            our_master_key(),
+        ]);
+
+        assert_eq!(
+            one_time_claim_binding_mismatch(
+                &forward,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                Some(IDENTITY_INDEX),
+                &reversed,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                IDENTITY_INDEX,
+            ),
+            None
+        );
+    }
+
+    /// MISMATCHED ARGS, per field. Each of these is a way the pre-fix resume
+    /// would have acted on the caller's value while broadcasting the stored
+    /// bytes: a swapped key set registers a foreign identity at this wallet's
+    /// slot and backfills an empty proof result with keys that were never in the
+    /// transition; a swapped master hash makes idempotent recovery probe
+    /// Platform for someone else's identity; a swapped denomination misreports
+    /// the value that left the pool.
+    #[test]
+    fn mismatched_retry_arguments_are_refused_per_field() {
+        let stored = keys_map(&[our_master_key()]);
+        let swapped = keys_map(&[other_master_key()]);
+
+        // Same key ids, different key material — ids alone would not catch it.
+        assert_eq!(
+            stored.keys().collect::<Vec<_>>(),
+            swapped.keys().collect::<Vec<_>>(),
+            "precondition: the swap keeps the key ids identical"
+        );
+
+        let key_mismatch = one_time_claim_binding_mismatch(
+            &stored,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            Some(IDENTITY_INDEX),
+            &swapped,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            IDENTITY_INDEX,
+        );
+        assert!(
+            key_mismatch.is_some_and(|m| m.contains("public key set")),
+            "a swapped key set must be refused"
+        );
+
+        let hash_mismatch = one_time_claim_binding_mismatch(
+            &stored,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            Some(IDENTITY_INDEX),
+            &stored,
+            Some(OTHER_MASTER_HASH),
+            DENOMINATION,
+            IDENTITY_INDEX,
+        );
+        assert!(
+            hash_mismatch.is_some_and(|m| m.contains("master authentication key hash")),
+            "a recovery handle that is not in the stored transition must be refused"
+        );
+
+        let denomination_mismatch = one_time_claim_binding_mismatch(
+            &stored,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            Some(IDENTITY_INDEX),
+            &stored,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION * 3,
+            IDENTITY_INDEX,
+        );
+        assert!(
+            denomination_mismatch.is_some_and(|m| m.contains("denomination")),
+            "a different denomination must be refused"
+        );
+    }
+
+    /// END TO END, and the property that matters most: a mismatched retry must
+    /// fail CLOSED — refused with `ShieldedClaimBindingMismatch` **before** any
+    /// network work, with the pending record left intact so the correct retry
+    /// can still resume. The SDK here is a bare mock with no expectations
+    /// registered: reaching the spent-nullifier probe or the re-broadcast would
+    /// surface as something other than this error.
+    #[tokio::test]
+    async fn mismatched_retry_refuses_without_broadcasting_or_clearing_the_record() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let path = temp_store_path("resume_binding");
+        let store = Arc::new(RwLock::new(
+            FileBackedShieldedStore::open_path(&path, 100).expect("store opens"),
+        ));
+        let claim_records_id = SubwalletId::new([0x77; 32], ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+
+        let (_, st_bytes) = stored_claim_transition(&[our_master_key()], DENOMINATION);
+        let record = stored_claim_record(st_bytes);
+        store
+            .write()
+            .await
+            .arm_redrive(claim_records_id, record.clone())
+            .expect("record arms");
+
+        // The retry presents a DIFFERENT identity's keys — the mis-slot case.
+        let outcome = resume_one_time_claim(
+            &sdk,
+            &store,
+            claim_records_id,
+            &record,
+            Some(OTHER_MASTER_HASH),
+            keys_map(&[other_master_key()]),
+            DENOMINATION,
+            IDENTITY_INDEX,
+        )
+        .await;
+
+        match outcome {
+            OneTimeClaimResume::Resolved(Err(
+                PlatformWalletError::ShieldedClaimBindingMismatch { mismatch },
+            )) => assert!(
+                mismatch.contains("master authentication key hash")
+                    || mismatch.contains("public key set"),
+                "the refusal must name the binding that failed, got: {mismatch}"
+            ),
+            other => panic!(
+                "a retry with a different identity's keys must be refused, got {}",
+                match other {
+                    OneTimeClaimResume::RecordUnusable => "RecordUnusable".to_string(),
+                    OneTimeClaimResume::Resolved(r) => format!("Resolved({r:?})"),
+                }
+            ),
+        }
+
+        // Fail-closed: the record survives, so the ORIGINAL claim is still
+        // resumable. Clearing it here would strand a padded single-note claim
+        // forever — its declared id exists nowhere else.
+        let surviving = store
+            .read()
+            .await
+            .pending_redrives(claim_records_id)
+            .expect("records readable");
+        assert_eq!(
+            surviving.len(),
+            1,
+            "a refused retry must not clear the pending-claim record"
+        );
+        assert_eq!(
+            surviving[0].st_bytes, record.st_bytes,
+            "the stored transition must be untouched"
+        );
+
+        drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// THE BUG (#4313 review finding 5d4d6efa): `identity_index` was bound only
+    /// TRANSITIVELY — "a different slot means different keys, so the key check
+    /// catches it". A retry that presents the ORIGINAL keys with a different
+    /// slot breaks that chain, and its consequence is not symmetric with a
+    /// first attempt's: `IdentityManager::add_identity` rejects a duplicate
+    /// identity id but inserts into an OCCUPIED slot without complaint, so the
+    /// retry silently displaces whatever identity the wallet tracked there.
+    ///
+    /// The record now carries the slot, so the mismatch is caught with
+    /// everything else byte-identical — exactly the case the transitive
+    /// argument could not cover.
+    #[test]
+    fn a_resume_at_a_different_identity_index_is_refused() {
+        let keys = keys_map(&[our_master_key()]);
+
+        let mismatch = one_time_claim_binding_mismatch(
+            &keys,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            Some(IDENTITY_INDEX),
+            // Everything else is identical — only the slot moved.
+            &keys,
+            Some(OUR_MASTER_HASH),
+            DENOMINATION,
+            IDENTITY_INDEX + 1,
+        );
+        let mismatch = mismatch.expect("a slot mismatch must be refused");
+        assert!(
+            mismatch.contains("identity index"),
+            "the refusal must name the slot, got: {mismatch}"
+        );
+        assert!(
+            mismatch.contains(&IDENTITY_INDEX.to_string())
+                && mismatch.contains(&(IDENTITY_INDEX + 1).to_string()),
+            "the refusal must carry both slots, got: {mismatch}"
+        );
+    }
+
+    /// A record written before the column existed carries `None`. There is
+    /// nothing to compare it against, so it keeps exactly the transitive
+    /// binding it was written under rather than being refused outright — an
+    /// upgrade must not strand a claim that is mid-flight across it.
+    #[test]
+    fn a_pre_migration_record_still_resumes_at_any_index() {
+        let keys = keys_map(&[our_master_key()]);
+
+        assert_eq!(
+            one_time_claim_binding_mismatch(
+                &keys,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                None,
+                &keys,
+                Some(OUR_MASTER_HASH),
+                DENOMINATION,
+                IDENTITY_INDEX + 7,
+            ),
+            None,
+            "a record with no persisted slot must not be refused on the slot"
+        );
+    }
+
+    /// END TO END on the real file store: arm a claim at slot N, attempt to
+    /// resume it at N+1, and get the typed refusal BEFORE any network work —
+    /// with the record left intact for a correct retry. The SDK is a bare mock
+    /// with no expectations registered, so reaching the spent-nullifier probe
+    /// or the re-broadcast would surface as something other than this error.
+    #[tokio::test]
+    async fn resuming_at_a_mismatched_identity_index_fails_closed() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let path = temp_store_path("resume_slot_binding");
+        let store = Arc::new(RwLock::new(
+            FileBackedShieldedStore::open_path(&path, 100).expect("store opens"),
+        ));
+        let claim_records_id = SubwalletId::new([0x78; 32], ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+
+        let (_, st_bytes) = stored_claim_transition(&[our_master_key()], DENOMINATION);
+        let record = stored_claim_record(st_bytes);
+        assert_eq!(
+            record.identity_index,
+            Some(IDENTITY_INDEX),
+            "precondition: the armed record carries the slot"
+        );
+        store
+            .write()
+            .await
+            .arm_redrive(claim_records_id, record.clone())
+            .expect("record arms");
+
+        // The retry presents the ORIGINAL keys, hash and denomination — only
+        // the slot differs. Nothing but the persisted index can catch this.
+        let outcome = resume_one_time_claim(
+            &sdk,
+            &store,
+            claim_records_id,
+            &record,
+            Some(OUR_MASTER_HASH),
+            keys_map(&[our_master_key()]),
+            DENOMINATION,
+            IDENTITY_INDEX + 1,
+        )
+        .await;
+
+        match outcome {
+            OneTimeClaimResume::Resolved(Err(
+                PlatformWalletError::ShieldedClaimBindingMismatch { mismatch },
+            )) => assert!(
+                mismatch.contains("identity index"),
+                "the refusal must name the slot, got: {mismatch}"
+            ),
+            other => panic!(
+                "a retry at a different slot must be refused, got {}",
+                match other {
+                    OneTimeClaimResume::RecordUnusable => "RecordUnusable".to_string(),
+                    OneTimeClaimResume::Resolved(r) => format!("Resolved({r:?})"),
+                }
+            ),
+        }
+
+        // Fail-closed: the record survives for a retry that names slot N.
+        let surviving = store
+            .read()
+            .await
+            .pending_redrives(claim_records_id)
+            .expect("records readable");
+        assert_eq!(surviving.len(), 1);
+        assert_eq!(surviving[0].identity_index, Some(IDENTITY_INDEX));
+
+        // …and the slot is DURABLE, not just in-memory: a cold reopen still
+        // carries it, which is the whole point of the schema change.
+        drop(store);
+        let reopened = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+        let rehydrated = reopened
+            .pending_redrives(claim_records_id)
+            .expect("records readable");
+        assert_eq!(rehydrated.len(), 1);
+        assert_eq!(
+            rehydrated[0].identity_index,
+            Some(IDENTITY_INDEX),
+            "the persisted slot must survive a process restart"
+        );
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+mod claim_lease_heartbeat_tests {
+    use super::*;
+    use crate::wallet::shielded::store::{
+        admission_now_ms, AdmissionToken, InMemoryShieldedStore, CLAIM_LEASE_MS,
+        CLAIM_LEASE_RENEW_INTERVAL,
+    };
+
+    /// How long the initial lease is stamped for in these tests: long enough
+    /// that the first heartbeat tick still finds it live (wall-clock time
+    /// barely advances under a paused runtime), short enough that the probe
+    /// below can tell "renewed" from "not renewed".
+    const SHORT_LEASE_MS: u64 = 5_000;
+
+    /// A body shaped like the RESUME path: it does real awaiting and then
+    /// returns its own outcome, without ever reaching the fresh-build
+    /// broadcast the heartbeat used to wrap.
+    async fn resume_shaped_body() -> &'static str {
+        for _ in 0..3 {
+            tokio::time::sleep(CLAIM_LEASE_RENEW_INTERVAL).await;
+        }
+        "resumed"
+    }
+
+    /// THE BUG (#4313 review finding 8de8d05a): the heartbeat wrapped only the
+    /// fresh-build broadcast, so a claim that took the RESUME path — nullifier
+    /// queries, repeated identity recovery, re-broadcast, an unbounded
+    /// confirmation wait — ran under the initial lease alone. Outrun it and the
+    /// lease is reaped, at which point a concurrent purge counts zero live
+    /// claims and deletes the record the claim needs.
+    ///
+    /// Control half: run the same body bare and watch the lease lapse.
+    #[tokio::test(start_paused = true)]
+    async fn a_resume_shaped_body_run_bare_lets_its_lease_lapse() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x41; 32];
+        let token = AdmissionToken([0x41; 16]);
+        let t0 = admission_now_ms();
+        assert!(store
+            .write()
+            .await
+            .begin_claim_admission(wallet_id, token, t0, SHORT_LEASE_MS)
+            .expect("lease"));
+
+        assert_eq!(resume_shaped_body().await, "resumed");
+
+        // Probe: is the lease still live at a point past its ORIGINAL expiry?
+        // Nothing re-stamped it, so no.
+        assert!(
+            !store
+                .write()
+                .await
+                .renew_claim_admission(token, t0 + SHORT_LEASE_MS + 1, CLAIM_LEASE_MS)
+                .expect("probe"),
+            "without a heartbeat the resume path's lease lapses — this is the bug"
+        );
+    }
+
+    /// The fix: the heartbeat wraps the COMPLETE admitted claim body, so the
+    /// resume path is covered by exactly the same renewal the fresh-build path
+    /// gets. Same body, same clock, opposite outcome.
+    #[tokio::test(start_paused = true)]
+    async fn the_heartbeat_keeps_a_resume_shaped_body_s_lease_live() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x42; 32];
+        let token = AdmissionToken([0x42; 16]);
+        let t0 = admission_now_ms();
+        assert!(store
+            .write()
+            .await
+            .begin_claim_admission(wallet_id, token, t0, SHORT_LEASE_MS)
+            .expect("lease"));
+
+        let outcome = under_renewed_claim_lease(&store, token, resume_shaped_body()).await;
+        assert_eq!(
+            outcome, "resumed",
+            "the helper must return the body's value"
+        );
+
+        assert!(
+            store
+                .write()
+                .await
+                .renew_claim_admission(token, t0 + SHORT_LEASE_MS + 1, CLAIM_LEASE_MS)
+                .expect("probe"),
+            "the heartbeat must have re-stamped the lease past its original expiry"
+        );
+    }
+
+    /// The claim-key reservation rides the same token, so the heartbeat holds
+    /// the invitation too — a long resume must not lose its claim key to expiry
+    /// while its lease is being kept alive.
+    #[tokio::test(start_paused = true)]
+    async fn the_heartbeat_also_holds_the_claim_key_reservation() {
+        use crate::wallet::shielded::store::ClaimKeyReservation;
+
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x43; 32];
+        let claim_key = [0xC5; 32];
+        let claim_records_id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        let holder = AdmissionToken([0x43; 16]);
+        let rival = AdmissionToken([0x44; 16]);
+        let t0 = admission_now_ms();
+        {
+            let mut guard = store.write().await;
+            assert!(guard
+                .begin_claim_admission(wallet_id, holder, t0, SHORT_LEASE_MS)
+                .expect("lease"));
+            assert_eq!(
+                guard
+                    .reserve_one_time_claim_key(
+                        claim_records_id,
+                        claim_key,
+                        holder,
+                        t0,
+                        SHORT_LEASE_MS
+                    )
+                    .expect("reserve")
+                    .reservation,
+                ClaimKeyReservation::Acquired
+            );
+        }
+
+        under_renewed_claim_lease(&store, holder, resume_shaped_body()).await;
+
+        // Past the ORIGINAL reservation expiry, a rival must still be refused.
+        let contended = {
+            let mut guard = store.write().await;
+            assert!(guard
+                .begin_claim_admission(wallet_id, rival, t0 + SHORT_LEASE_MS + 1, CLAIM_LEASE_MS)
+                .expect("rival lease"));
+            guard
+                .reserve_one_time_claim_key(
+                    claim_records_id,
+                    claim_key,
+                    rival,
+                    t0 + SHORT_LEASE_MS + 1,
+                    CLAIM_LEASE_MS,
+                )
+                .expect("rival reserve")
+        };
+        assert!(
+            !contended.is_acquired(),
+            "the heartbeat must carry the claim-key reservation past its original expiry"
+        );
     }
 }

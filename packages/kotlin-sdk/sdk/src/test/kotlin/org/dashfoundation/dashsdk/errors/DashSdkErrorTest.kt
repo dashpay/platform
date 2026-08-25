@@ -90,6 +90,49 @@ class DashSdkErrorTest {
         // The message must warn against retrying, like the broadcast sibling.
         assertTrue(spendUnconfirmed.message!!.contains("do NOT retry"))
 
+        // Code 43, NOT 37 (v4.2-dev's ErrorDocumentNotForSale) and NOT 32
+        // (ErrorTransactionBuild — dashpay/platform#4247/#4256). This
+        // assertion is the mirror's guard against the collision — if the Rust
+        // discriminant is ever moved back onto a claimed number, the host
+        // silently reclassifies an already-claimed invite as some other
+        // branch's error. 43 matches the integration-branch allocation
+        // already shipped in QA AARs, so it is frozen.
+        val inviteClaimed =
+            DashSdkError.fromNative(DashSDKException(offset + 43, "nullifier already spent"))
+        assertTrue(inviteClaimed is DashSdkError.PlatformWallet.ShieldedInviteAlreadyClaimed)
+        assertFalse(
+            "ShieldedInviteAlreadyClaimed is TERMINAL — the note is consumed",
+            inviteClaimed.isRetryable,
+        )
+
+        // Code 44 (ErrorShieldedScanBudgetExhausted, dashpay/platform#4306):
+        // the claim scan paused at its per-attempt budget. The retryability
+        // polarity is the entire contract — a host that saw this as terminal
+        // would strand a funded claim whose note sits deep in the tree.
+        val scanBudget =
+            DashSdkError.fromNative(DashSDKException(offset + 44, "scan paused at 262144"))
+        assertTrue(scanBudget is DashSdkError.PlatformWallet.ShieldedScanBudgetExhausted)
+        assertTrue(
+            "ShieldedScanBudgetExhausted is RETRYABLE — progress is checkpointed",
+            scanBudget.isRetryable,
+        )
+
+        // Code 45 (ErrorShieldedLifecycleBusy, dashpay/platform#4313): the
+        // claim was refused admission at the store — a concurrent Clear /
+        // wallet removal holds it, or another claimant already holds this
+        // invitation's claim-record key. Nothing was scanned, built or
+        // broadcast, so the polarity matches 44's: a host that read this as
+        // terminal would fail an invitation that is merely contended.
+        val lifecycleBusy =
+            DashSdkError.fromNative(
+                DashSDKException(offset + 45, "shielded state is being cleared or removed"),
+            )
+        assertTrue(lifecycleBusy is DashSdkError.PlatformWallet.ShieldedLifecycleBusy)
+        assertTrue(
+            "ShieldedLifecycleBusy is RETRYABLE — nothing was consumed",
+            lifecycleBusy.isRetryable,
+        )
+
         val broadcastUnconfirmed =
             DashSdkError.fromNative(DashSDKException(offset + 20, "ambiguous broadcast"))
         assertTrue(

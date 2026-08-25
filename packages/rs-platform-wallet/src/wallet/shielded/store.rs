@@ -159,6 +159,18 @@ pub struct PendingRedrive {
     pub st_bytes: Vec<u8>,
     /// Re-broadcast attempts made so far.
     pub attempts: u32,
+    /// For a one-time-key CLAIM record: the local DIP-9 identity slot the
+    /// original attempt was creating the identity at. `None` for every
+    /// ordinary spend redrive (which registers no identity), and for claim
+    /// records written before this field existed.
+    ///
+    /// Persisted rather than derived because it appears NOWHERE in
+    /// `st_bytes` — it is a purely local placement, so the transition cannot
+    /// witness it and a resume has nothing else to check a retry's slot
+    /// against. Without it a retry could present the original keys with a
+    /// different index and `IdentityManager::add_identity` would insert into
+    /// an occupied slot without complaint (#4313 review finding 5d4d6efa).
+    pub identity_index: Option<u32>,
 }
 
 /// The result of [`SubwalletState::mark_spent`].
@@ -473,6 +485,479 @@ pub trait ShieldedStore: Send + Sync {
     /// tree_size`) and the "Checked" progress bar stays pinned at
     /// the stale leaf count while "Downloaded" climbs from 0.
     fn reset_commitment_tree(&mut self) -> Result<(), Self::Error>;
+
+    // ── Lifecycle admission (store-level, cross-instance) ──────────────
+    //
+    // See the [`LifecycleAdmission`] module docs for the protocol and its
+    // correctness argument. These five methods exist on the STORE, not on the
+    // coordinator, because the store is the only object two coordinators —
+    // or two processes — sharing the same backing state actually have in
+    // common (`dashpay/platform#4313`).
+
+    /// Admit a one-time-key claim for `wallet_id`, or refuse it because a
+    /// destructive lifecycle operation holds admission over that scope.
+    ///
+    /// On `Ok(true)` a claim lease keyed by `token` is durable and live until
+    /// `now_ms + lease_ms`; the caller owns it until it calls
+    /// [`Self::end_claim_admission`]. On `Ok(false)` nothing was written and
+    /// the caller must not touch the claim record.
+    ///
+    /// Implementations MUST make the barrier check and the lease insert one
+    /// atomic step against every other admission operation on the same
+    /// underlying state.
+    fn begin_claim_admission(
+        &mut self,
+        wallet_id: WalletId,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error>;
+
+    /// Arm `redrive` **only if** the claim lease `token` is still live,
+    /// re-stamping that lease to `now_ms + lease_ms` in the same atomic step.
+    ///
+    /// Returns `Ok(false)` — with nothing written — when the lease has expired
+    /// or was already released. Callers fail the claim closed on `false`: the
+    /// record is the only handle that recovers a padded single-note claim, so
+    /// broadcasting without it is unrecoverable.
+    ///
+    /// Arming under the lease rather than next to it is what closes the gap
+    /// between "the claim checked that it was admitted" and "the claim wrote
+    /// the record": the two are one transaction, so a destructive operation
+    /// cannot slot in between them.
+    ///
+    /// # The claim-key gate
+    ///
+    /// The same step ALSO refuses — `Ok(false)`, nothing written — when a live
+    /// [claim-key reservation](Self::reserve_one_time_claim_key) covers
+    /// `(id.wallet_id, redrive.activity_id)` under a *different* token. That is
+    /// what makes the `INSERT OR REPLACE` below structurally unable to clobber
+    /// another claimant's record rather than merely unlikely to
+    /// (#4313 review finding cr-9d0e1a44): a second claimant that somehow
+    /// reached this call without owning the key is stopped at the storage
+    /// layer, in the same transaction that would have overwritten the row.
+    ///
+    /// Ordinary spend redrives are unaffected — they never take a claim-key
+    /// reservation, so no live row covers their activity id and the gate is a
+    /// no-op for them.
+    fn arm_redrive_under_claim(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error>;
+
+    /// Reserve this invitation's claim-record key for the holder of claim lease
+    /// `token`, atomically, and report who owns it afterwards.
+    ///
+    /// # Why this exists
+    ///
+    /// The claim lease taken by [`Self::begin_claim_admission`] is per-WALLET:
+    /// it orders a claim against a destructive purge, and nothing else. Two
+    /// claims of the SAME invitation are both admitted by it. In-process they
+    /// are serialized by the coordinator's per-FVK single-flight mutex — but
+    /// that mutex is per-coordinator, and two coordinators (or two processes)
+    /// open independent SQLite connections to one file and share no lock at
+    /// all. Both then found no pending record, built transitions with
+    /// DIFFERENT padded identity ids, and the second `arm_redrive_under_claim`
+    /// — an `INSERT OR REPLACE` — silently overwrote the first's byte-exact
+    /// recovery row while its transition was already on the wire, stranding
+    /// that identity forever (#4313 review finding cr-9d0e1a44).
+    ///
+    /// So the key itself is reserved where the contention actually is: one
+    /// durable row per `(wallet_id, claim_record_key)`, claimed by an
+    /// insert that cannot overwrite an existing row.
+    ///
+    /// # Contract
+    ///
+    /// Implementations MUST make the insert-if-absent, the read-back of the
+    /// durable reservation row, AND the read of the durable pending-claim
+    /// record ONE atomic step against every other admission operation on the
+    /// same underlying state, and MUST NOT overwrite a live row. The returned
+    /// [`ClaimKeyReservationOutcome::reservation`] is derived from the durable
+    /// row as it stands after the attempt, so exactly one concurrent caller
+    /// can see [`ClaimKeyReservation::Acquired`]:
+    ///
+    /// * [`ClaimKeyReservation::Acquired`] — this `token` owns the key. Also
+    ///   returned when `token` already owned it (re-entry is idempotent and
+    ///   re-stamps the row).
+    /// * [`ClaimKeyReservation::Held`] — a different, live claimant owns it.
+    ///   The caller MUST NOT build, broadcast or arm anything: it either
+    ///   RESUMES the durable pending-claim record that claimant left, or
+    ///   refuses with [`PlatformWalletError::ShieldedLifecycleBusy`].
+    ///
+    /// [`ClaimKeyReservationOutcome::pending`] carries the pending-claim record
+    /// armed under `claim_record_key` in `claim_records_id`, read from DURABLE
+    /// state in that same step — never from a mirror populated at store open.
+    /// A caller that receives `Some` resumes it; arming a fresh record over it
+    /// is what strands an already-broadcast identity
+    /// (#4313 review finding r3767229122, and see the type's docs).
+    ///
+    /// `claim_records_id` is the reserved subwallet the claim records live
+    /// under, so implementations can address the row exactly; the reservation
+    /// itself is keyed by `(claim_records_id.wallet_id, claim_record_key)` —
+    /// an invitation is contended per WALLET, not per account.
+    ///
+    /// The reservation is bound to `token` for its whole life: it is re-stamped
+    /// by [`Self::renew_claim_admission`] and by [`Self::arm_redrive_under_claim`]
+    /// alongside the lease, released by [`Self::end_claim_admission`], and
+    /// otherwise reaped by expiry — so a claimant that died without releasing
+    /// cannot hold an invitation hostage beyond [`CLAIM_LEASE_MS`].
+    ///
+    /// [`PlatformWalletError::ShieldedLifecycleBusy`]: crate::error::PlatformWalletError::ShieldedLifecycleBusy
+    fn reserve_one_time_claim_key(
+        &mut self,
+        claim_records_id: SubwalletId,
+        claim_record_key: [u8; 32],
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<ClaimKeyReservationOutcome, Self::Error>;
+
+    /// Re-stamp a live claim lease to `now_ms + lease_ms`, WITHOUT touching the
+    /// pending record.
+    ///
+    /// [`Self::arm_redrive_under_claim`] stamps the lease once, so the window
+    /// protecting a claim ran for a fixed [`CLAIM_LEASE_MS`] from the arm — not
+    /// for as long as the claim actually took. A broadcast plus confirmation
+    /// that outran it (a slow or retrying DAPI node is enough) let the row be
+    /// reaped, at which point a purge counted zero live claims and destroyed
+    /// state the in-flight claim still needed (#4313 review finding 161a517fce36).
+    ///
+    /// Returns `false` when the lease is gone — already lapsed and reaped, or
+    /// displaced by a destructive barrier. The caller cannot un-send a
+    /// transition, so a `false` is a loud diagnostic, not an abort.
+    ///
+    /// Any [claim-key reservation](Self::reserve_one_time_claim_key) held under
+    /// the same `token` is re-stamped with it, so the key stays reserved for
+    /// exactly as long as the lease that took it.
+    fn renew_claim_admission(
+        &mut self,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error>;
+
+    /// Release the claim lease `token`, together with any
+    /// [claim-key reservation](Self::reserve_one_time_claim_key) it holds.
+    /// Idempotent; unknown tokens are a no-op (a lease that already expired was
+    /// reaped).
+    fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error>;
+
+    /// Take (or refresh) destructive admission over `scope` and report how
+    /// many claim leases are still live inside it.
+    ///
+    /// `scope` is `None` for a whole-store operation (`purge_all_subwallets`)
+    /// and `Some(wallet_id)` for a single wallet (`purge_wallet`). The barrier
+    /// is installed **and** the live-lease count taken in one atomic step, so
+    /// a claim is either counted here or refused by
+    /// [`Self::begin_claim_admission`] — never both, never neither.
+    ///
+    /// A non-zero count means the caller must wait and call again; it must not
+    /// purge. The barrier carries its own expiry so a crashed holder cannot
+    /// block claims forever, and refreshing it is exactly re-calling this.
+    fn begin_destructive_admission(
+        &mut self,
+        scope: Option<WalletId>,
+        token: AdmissionToken,
+        now_ms: u64,
+        barrier_ms: u64,
+    ) -> Result<usize, Self::Error>;
+
+    /// Drop the destructive barrier `token`, whether the operation went ahead
+    /// or gave up. Idempotent.
+    fn end_destructive_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error>;
+}
+
+/// How long a one-time-claim lease stays live without being re-stamped.
+///
+/// It has to comfortably exceed the longest single phase a claim spends between
+/// two store touches — the transient full-history scan of a cold wallet, or a
+/// Halo 2 proof on a slow phone — because a lease that lapses mid-claim makes
+/// the record arming fail closed (safe, but a wasted attempt). It also bounds
+/// how long a claim that was CANCELLED without releasing (a dropped JNI call)
+/// can block wallet removal, so it must not be unbounded either. Five minutes
+/// sits well above both phases and well below a user's patience for "try
+/// removing the wallet again".
+///
+/// The lease is re-stamped when the record is armed
+/// ([`ShieldedStore::arm_redrive_under_claim`]) and, independently of that, on
+/// a [`CLAIM_LEASE_RENEW_INTERVAL`] heartbeat that the wallet layer runs around
+/// the COMPLETE admitted claim — fresh build and pending-record resume alike.
+/// So this constant bounds the gap between two renewals, not the length of a
+/// claim: the protected window follows the work.
+pub(crate) const CLAIM_LEASE_MS: u64 = 5 * 60 * 1_000;
+
+/// How often an in-flight claim re-stamps its lease
+/// ([`ShieldedStore::renew_claim_admission`]).
+///
+/// A third of [`CLAIM_LEASE_MS`]: two consecutive renewals may be missed — a
+/// stalled executor, a long blocking store write — before the lease can lapse,
+/// while the tick stays far cheaper than the network phases it runs alongside.
+/// Renewing is a single indexed UPDATE, so the cost is noise next to a
+/// broadcast.
+pub(crate) const CLAIM_LEASE_RENEW_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(CLAIM_LEASE_MS / 3);
+
+/// How long a destructive barrier survives without being refreshed.
+///
+/// Only has to outlive one drain wait (it is refreshed on every poll), plus
+/// margin. Kept short so a purge whose process died cannot keep refusing
+/// claims for long.
+pub(crate) const DESTRUCTIVE_BARRIER_MS: u64 = 60 * 1_000;
+
+/// How long a destructive lifecycle operation waits for in-flight claims to
+/// drain before giving up.
+///
+/// Giving up means REFUSING to purge, not purging anyway: deleting a record
+/// under a live claim is the unrecoverable outcome this whole mechanism
+/// exists to prevent, while a refused purge is a retry.
+pub(crate) const DESTRUCTIVE_DRAIN_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(30);
+
+/// Poll interval while waiting for claim leases to drain. Each poll also
+/// refreshes the barrier, so no new claim slips in during the wait.
+pub(crate) const DESTRUCTIVE_DRAIN_POLL: std::time::Duration =
+    std::time::Duration::from_millis(250);
+
+/// Opaque owner token for one lifecycle admission — a claim lease or a
+/// destructive barrier.
+///
+/// 16 random bytes from the OS CSPRNG rather than a counter: admissions are
+/// compared across independent store instances and, for the file-backed store,
+/// across PROCESSES sharing one SQLite file, so a per-process counter could
+/// collide and let one holder release another's admission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AdmissionToken(pub [u8; 16]);
+
+impl AdmissionToken {
+    /// A fresh token from the OS CSPRNG.
+    ///
+    /// Uses [`RngCore::try_fill_bytes`](rand::RngCore::try_fill_bytes) rather
+    /// than `fill_bytes`: the latter *panics* when the OS entropy source
+    /// fails. Both production callers are reached from `#[no_mangle] extern
+    /// "C"` exports (the claim path through
+    /// `platform_wallet_manager_shielded_identity_create_from_one_time_key`,
+    /// the barrier path through the destructive lifecycle exports), and a
+    /// panic inside those futures is re-raised by `block_on_worker`'s
+    /// `expect("tokio worker panicked")` where it cannot unwind across the C
+    /// ABI — aborting the host process before the JNI panic guard can run.
+    /// Same reasoning, and same remedy, as
+    /// [`generate_one_time_orchard_key`](super::keys::generate_one_time_orchard_key).
+    ///
+    /// Reported as [`PlatformWalletError::Persistence`] because an admission
+    /// token is only ever minted to enter the store's admission protocol: the
+    /// caller is already mapping that step's failures to `Persistence`, so the
+    /// host sees one error class for "the admission could not be taken"
+    /// regardless of which half failed. There is deliberately no infallible
+    /// `Default`/`new` on this type outside tests — an infallible path would
+    /// reintroduce exactly the panic this returns instead.
+    pub fn generate() -> Result<Self, crate::error::PlatformWalletError> {
+        use rand::{rngs::OsRng, RngCore};
+
+        let mut bytes = [0u8; 16];
+        OsRng.try_fill_bytes(&mut bytes).map_err(|e| {
+            crate::error::PlatformWalletError::Persistence(format!(
+                "OS RNG entropy source failed while minting a lifecycle admission token: {e}"
+            ))
+        })?;
+        Ok(Self(bytes))
+    }
+
+    /// Infallible token for tests only — panics on entropy failure, which is
+    /// why it is not available to production code (see [`generate`](Self::generate)).
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
+        Self::generate().expect("OS RNG entropy source failed in a test")
+    }
+}
+
+/// Wall-clock milliseconds since the Unix epoch — the one clock every
+/// admission lease and barrier is stamped and judged against.
+///
+/// Wall clock rather than a monotonic instant because the leases are compared
+/// across processes, which share no monotonic origin. Both holders read the
+/// same system clock on the same machine, which is what the comparison needs.
+pub fn admission_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// One row of the lifecycle-admission table.
+///
+/// # The protocol, and why it is at the store
+///
+/// A one-time-key claim and a destructive lifecycle operation (`clear`,
+/// `unregister_wallet`, and `remove_wallet` through it) both act on the same
+/// durable pending-claim record. `clear` and `unregister_wallet` serialize
+/// against each other on the coordinator's `lifecycle` mutex, but a claim never
+/// takes it, and the per-FVK single-flight guards are owned by ONE
+/// `NetworkShieldedCoordinator` — so a purge could delete an armed record while
+/// its transition was still broadcasting. A coordinator-local `tokio` mutex
+/// cannot fix that: `FileBackedShieldedStore::open_path` opens independent
+/// SQLite connections to the same file, so two coordinators (or two processes)
+/// share the state but not the mutex (`dashpay/platform#4313`).
+///
+/// Admission therefore lives at the only thing they do share — the store:
+///
+/// 1. A claim takes a **lease** ([`ShieldedStore::begin_claim_admission`]),
+///    refused if a barrier already covers its wallet.
+/// 2. A destructive operation installs a **barrier**
+///    ([`ShieldedStore::begin_destructive_admission`]), which blocks new leases
+///    and reports the leases already live in scope. It waits for that count to
+///    reach zero and refuses to purge if it does not.
+/// 3. The claim arms its record *under* its lease
+///    ([`ShieldedStore::arm_redrive_under_claim`]), which re-checks and
+///    re-stamps the lease in the same atomic step.
+///
+/// # Why there is no residual race
+///
+/// Step 1 and step 2 are each ONE atomic step against the shared state. They
+/// therefore have a total order, and both orders are safe:
+///
+/// * lease commits first → the barrier's count sees it → the purge waits.
+/// * barrier commits first → the lease's check sees it → the claim is refused.
+///
+/// For [`FileBackedShieldedStore`](super::file_store::FileBackedShieldedStore)
+/// that atomicity is a `BEGIN IMMEDIATE` SQLite transaction: SQLite admits one
+/// writer at a time across every connection **and every process** on the file,
+/// so the total order holds exactly where a process-local mutex does not. For
+/// [`InMemoryShieldedStore`] the shared object *is* the store, reached through
+/// the same `RwLock`, so the write guard supplies the same total order.
+///
+/// No admission call holds a write transaction across scanning, proof
+/// construction, broadcast, or a confirmation wait: each is a handful of
+/// statements, and the long phases run between them holding only the lease row.
+///
+/// # Expiry
+///
+/// Both kinds carry `expires_at`, because a holder can die (process kill,
+/// cancelled coroutine) with no chance to release. Expiry is a liveness
+/// backstop only — it never lets a purge delete a record under a *live* claim,
+/// it only bounds how long a dead one can block wallet removal, and how long a
+/// dead purge can block claims.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LifecycleAdmission {
+    /// Owner token.
+    pub token: AdmissionToken,
+    /// `true` for a destructive barrier, `false` for a claim lease.
+    pub destructive: bool,
+    /// Scope: `None` is store-wide, `Some(id)` is one wallet.
+    pub wallet_id: Option<WalletId>,
+    /// Unix millis after which this admission is dead and reapable.
+    pub expires_at: u64,
+}
+
+impl LifecycleAdmission {
+    /// Whether this admission's scope covers `wallet_id`. A store-wide entry
+    /// covers every wallet; a wallet-scoped one covers only its own.
+    pub fn covers(&self, wallet_id: WalletId) -> bool {
+        self.wallet_id.is_none_or(|scoped| scoped == wallet_id)
+    }
+
+    /// Whether this admission's scope overlaps `scope` (the same containment
+    /// relation as [`Self::covers`], in whichever direction applies).
+    pub fn overlaps(&self, scope: Option<WalletId>) -> bool {
+        match (self.wallet_id, scope) {
+            (None, _) | (_, None) => true,
+            (Some(mine), Some(theirs)) => mine == theirs,
+        }
+    }
+}
+
+/// One durable claim-key reservation: the row
+/// [`ShieldedStore::reserve_one_time_claim_key`] competes for.
+///
+/// Separate from [`LifecycleAdmission`] because it answers a different
+/// question. A lifecycle admission asks "may a claim run against this wallet at
+/// all?" and is contended between claims and purges; this asks "which claimant
+/// owns THIS invitation?" and is contended between claims of the same
+/// invitation. A claim needs both, and they expire together — the reservation
+/// carries its owner's `token` precisely so the lease's renew/release path can
+/// keep it in lockstep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaimKeyLease {
+    /// The wallet the claim runs under.
+    pub wallet_id: WalletId,
+    /// The invitation's deterministic claim-record key (derived from its
+    /// one-time full viewing key).
+    pub claim_record_key: [u8; 32],
+    /// The claim lease that owns this reservation.
+    pub token: AdmissionToken,
+    /// Unix millis after which this reservation is dead and reapable.
+    pub expires_at: u64,
+}
+
+/// The outcome of [`ShieldedStore::reserve_one_time_claim_key`], read back from
+/// the durable row after the insert-if-absent attempt.
+///
+/// Exactly one of any set of concurrent callers can observe
+/// [`Self::Acquired`]; every other one observes [`Self::Held`] naming the
+/// winner. That asymmetry is the whole point — a losing claimant must RESUME
+/// the winner's durable pending-claim record or refuse, never replace it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimKeyReservation {
+    /// The requesting token owns the key. Also returned on idempotent
+    /// re-entry by the token that already owned it.
+    Acquired,
+    /// A different, still-live claimant owns the key.
+    Held {
+        /// The claim lease named on the durable row.
+        holder: AdmissionToken,
+        /// When that claimant's hold lapses, if it never releases.
+        expires_at: u64,
+    },
+}
+
+impl ClaimKeyReservation {
+    /// Whether the requesting token came away owning the key.
+    pub fn is_acquired(&self) -> bool {
+        matches!(self, Self::Acquired)
+    }
+}
+
+/// Everything [`ShieldedStore::reserve_one_time_claim_key`] settles in its one
+/// atomic step: who owns the invitation's record key, AND the durable
+/// pending-claim row that already exists under it (if any).
+///
+/// # Why the row rides along
+///
+/// The claim path used to read the pending record separately, through
+/// [`ShieldedStore::pending_redrives`]. In the file-backed store that reads an
+/// in-memory mirror hydrated once at store OPEN, so a second store instance —
+/// a second coordinator, or a second process — could not see a row a peer had
+/// armed after that open. The consequence was not a stale read but a lost
+/// identity: store A arms a claim, returns `ShieldedBroadcastUnconfirmed` and
+/// releases its reservation; store B then acquires the freed reservation,
+/// sees an empty mirror, builds a DIFFERENT padded transition and REPLACES
+/// A's row via [`ShieldedStore::arm_redrive_under_claim`]. If A's transition
+/// executes, its randomized identity id is gone for good
+/// (#4313 review finding r3767229122).
+///
+/// So the row is read from the durable state in the SAME transaction that
+/// settles the reservation, and handed back here. A caller that receives
+/// `Some` RESUMES that record; it must never arm a fresh one over it.
+/// Implementations MUST source `pending` from durable state, never from a
+/// startup-hydrated mirror.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimKeyReservationOutcome {
+    /// Who owns the invitation's claim-record key after this attempt.
+    pub reservation: ClaimKeyReservation,
+    /// The durable pending-claim record already armed under
+    /// `claim_record_key`, read in the same atomic step. `None` when no
+    /// earlier attempt left one.
+    pub pending: Option<PendingRedrive>,
+}
+
+impl ClaimKeyReservationOutcome {
+    /// Whether the requesting token came away owning the key.
+    pub fn is_acquired(&self) -> bool {
+        self.reservation.is_acquired()
+    }
 }
 
 // ── Per-subwallet bookkeeping ──────────────────────────────────────────
@@ -782,12 +1267,36 @@ pub struct InMemoryShieldedStore {
     checkpoints: Vec<u32>,
     /// Placeholder anchor; production stores compute the real Sinsemilla root.
     anchor: [u8; 32],
+    /// Live lifecycle admissions — see [`LifecycleAdmission`].
+    ///
+    /// For this store the shared object two coordinators would contend over is
+    /// the store itself, reached through one `RwLock<S>`, so holding the table
+    /// here gives the same total order between a claim lease and a destructive
+    /// barrier that the file store gets from SQLite's single-writer rule.
+    admissions: Vec<LifecycleAdmission>,
+    /// Live one-time claim-key reservations — see [`ClaimKeyReservation`].
+    /// The same total-order argument as `admissions` applies: the `&mut self`
+    /// step under the shared `RwLock` is the atomicity the protocol needs.
+    claim_key_reservations: Vec<ClaimKeyLease>,
 }
 
 impl InMemoryShieldedStore {
     /// Create a new empty in-memory store.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Push every claim-key reservation owned by `token` out to `expires_at`.
+    /// Free function over the field so it can run while a `&mut` borrow of
+    /// `admissions` is live.
+    fn restamp_claim_key_reservations(
+        reservations: &mut [ClaimKeyLease],
+        token: AdmissionToken,
+        expires_at: u64,
+    ) {
+        for reservation in reservations.iter_mut().filter(|r| r.token == token) {
+            reservation.expires_at = expires_at;
+        }
     }
 }
 
@@ -1039,6 +1548,195 @@ impl ShieldedStore for InMemoryShieldedStore {
         self.anchor = [0u8; 32];
         Ok(())
     }
+
+    // ── Lifecycle admission ────────────────────────────────────────────
+    //
+    // Each of these is one uninterruptible `&mut self` step, and every caller
+    // reaches this store through the same `RwLock<S>`, so the write guard
+    // supplies exactly the total order the protocol needs — see
+    // [`LifecycleAdmission`].
+
+    fn begin_claim_admission(
+        &mut self,
+        wallet_id: WalletId,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error> {
+        self.admissions.retain(|a| a.expires_at > now_ms);
+        if self
+            .admissions
+            .iter()
+            .any(|a| a.destructive && a.covers(wallet_id))
+        {
+            return Ok(false);
+        }
+        self.admissions.retain(|a| a.token != token);
+        self.admissions.push(LifecycleAdmission {
+            token,
+            destructive: false,
+            wallet_id: Some(wallet_id),
+            expires_at: now_ms.saturating_add(lease_ms),
+        });
+        Ok(true)
+    }
+
+    fn arm_redrive_under_claim(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error> {
+        // The claim-key gate, checked BEFORE the lease so a claimant that lost
+        // the key can never reach the `arm_redrive` overwrite below — see the
+        // trait docs. A live row under a different token means someone else
+        // owns this invitation.
+        if self.claim_key_reservations.iter().any(|r| {
+            r.wallet_id == id.wallet_id
+                && r.claim_record_key == redrive.activity_id
+                && r.expires_at > now_ms
+                && r.token != token
+        }) {
+            return Ok(false);
+        }
+        let Some(lease) = self
+            .admissions
+            .iter_mut()
+            .find(|a| a.token == token && !a.destructive && a.expires_at > now_ms)
+        else {
+            return Ok(false);
+        };
+        lease.expires_at = now_ms.saturating_add(lease_ms);
+        Self::restamp_claim_key_reservations(
+            &mut self.claim_key_reservations,
+            token,
+            now_ms.saturating_add(lease_ms),
+        );
+        self.subwallets.entry(id).or_default().arm_redrive(redrive);
+        Ok(true)
+    }
+
+    fn reserve_one_time_claim_key(
+        &mut self,
+        claim_records_id: SubwalletId,
+        claim_record_key: [u8; 32],
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<ClaimKeyReservationOutcome, Self::Error> {
+        let wallet_id = claim_records_id.wallet_id;
+        // Reap first, so a dead claimant's row cannot hold an invitation
+        // hostage past its lease. One `&mut self` step covers reap, insert and
+        // read-back, which is the atomicity the trait requires.
+        self.claim_key_reservations
+            .retain(|r| r.expires_at > now_ms);
+        let expires_at = now_ms.saturating_add(lease_ms);
+        let reservation = match self
+            .claim_key_reservations
+            .iter_mut()
+            .find(|r| r.wallet_id == wallet_id && r.claim_record_key == claim_record_key)
+        {
+            // Someone else's live row: read it back and report the holder. The
+            // row is NOT touched — that is the whole guarantee.
+            Some(existing) if existing.token != token => ClaimKeyReservation::Held {
+                holder: existing.token,
+                expires_at: existing.expires_at,
+            },
+            // Our own row: idempotent re-entry, re-stamped.
+            Some(existing) => {
+                existing.expires_at = expires_at;
+                ClaimKeyReservation::Acquired
+            }
+            None => {
+                self.claim_key_reservations.push(ClaimKeyLease {
+                    wallet_id,
+                    claim_record_key,
+                    token,
+                    expires_at,
+                });
+                ClaimKeyReservation::Acquired
+            }
+        };
+        // Read the pending-claim record in the SAME `&mut self` step. This
+        // store keeps no separate durable tier — the map IS the durable state —
+        // so reading it here is the atomicity the trait asks for, and the
+        // file-backed store's SQLite read is the equivalent
+        // (#4313 review finding r3767229122).
+        let pending = self
+            .subwallets
+            .get(&claim_records_id)
+            .and_then(|sw| sw.redrives.get(&claim_record_key).cloned());
+        Ok(ClaimKeyReservationOutcome {
+            reservation,
+            pending,
+        })
+    }
+
+    fn renew_claim_admission(
+        &mut self,
+        token: AdmissionToken,
+        now_ms: u64,
+        lease_ms: u64,
+    ) -> Result<bool, Self::Error> {
+        // Same predicate arm_redrive_under_claim uses: a live, non-destructive
+        // lease under this exact token. Deliberately does NOT resurrect an
+        // expired one — a lapsed lease may already have been counted as absent
+        // by a purge, and silently reviving it would hide that.
+        let Some(lease) = self
+            .admissions
+            .iter_mut()
+            .find(|a| a.token == token && !a.destructive && a.expires_at > now_ms)
+        else {
+            return Ok(false);
+        };
+        lease.expires_at = now_ms.saturating_add(lease_ms);
+        // Keep the claim-key reservation in lockstep with the lease that owns
+        // it, so a long claim does not lose its invitation to expiry while its
+        // lease is being kept alive.
+        Self::restamp_claim_key_reservations(
+            &mut self.claim_key_reservations,
+            token,
+            now_ms.saturating_add(lease_ms),
+        );
+        Ok(true)
+    }
+
+    fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
+        self.admissions
+            .retain(|a| a.destructive || a.token != token);
+        self.claim_key_reservations.retain(|r| r.token != token);
+        Ok(())
+    }
+
+    fn begin_destructive_admission(
+        &mut self,
+        scope: Option<WalletId>,
+        token: AdmissionToken,
+        now_ms: u64,
+        barrier_ms: u64,
+    ) -> Result<usize, Self::Error> {
+        self.admissions.retain(|a| a.expires_at > now_ms);
+        self.admissions.retain(|a| a.token != token);
+        self.admissions.push(LifecycleAdmission {
+            token,
+            destructive: true,
+            wallet_id: scope,
+            expires_at: now_ms.saturating_add(barrier_ms),
+        });
+        Ok(self
+            .admissions
+            .iter()
+            .filter(|a| !a.destructive && a.overlaps(scope))
+            .count())
+    }
+
+    fn end_destructive_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
+        self.admissions
+            .retain(|a| !a.destructive || a.token != token);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1124,6 +1822,7 @@ mod tests {
             nullifiers: vec![n1, n2],
             st_bytes: vec![1, 2, 3],
             attempts: 0,
+            identity_index: None,
         };
 
         // Landing path: mark_spent on one nullifier drops the record.
@@ -1413,6 +2112,188 @@ mod tests {
         assert!(
             store.stale_pending_spends(id).unwrap().is_empty(),
             "a reservation with no recorded anchor must not surface as stale"
+        );
+    }
+
+    // ---- claim-lease renewal (#4313 review finding 161a517fce36) ----
+
+    fn claim_token(b: u8) -> AdmissionToken {
+        AdmissionToken([b; 16])
+    }
+
+    /// THE BUG: without renewal a claim that outruns CLAIM_LEASE_MS is reaped,
+    /// so a purge sees zero live claims and proceeds to destroy state the
+    /// in-flight claim still needs. This is the negative control — it pins the
+    /// behaviour the renewal exists to prevent.
+    #[test]
+    fn an_unrenewed_lease_lapses_and_stops_holding_off_a_purge() {
+        let mut store = InMemoryShieldedStore::new();
+        let wallet = [0xAA; 32];
+        let token = claim_token(0x01);
+        let t0 = 1_000_000u64;
+
+        assert!(store
+            .begin_claim_admission(wallet, token, t0, CLAIM_LEASE_MS)
+            .unwrap());
+        // Still inside the lease: a purge must WAIT.
+        let live = store
+            .begin_destructive_admission(None, claim_token(0x99), t0 + 1, DESTRUCTIVE_BARRIER_MS)
+            .unwrap();
+        assert_eq!(live, 1, "a live claim must hold off a purge");
+        store.end_destructive_admission(claim_token(0x99)).unwrap();
+
+        // One millisecond past the lease, with no renewal, the claim is invisible.
+        let live_after = store
+            .begin_destructive_admission(
+                None,
+                claim_token(0x98),
+                t0 + CLAIM_LEASE_MS + 1,
+                DESTRUCTIVE_BARRIER_MS,
+            )
+            .unwrap();
+        assert_eq!(
+            live_after, 0,
+            "an unrenewed lease lapses — this is exactly what the heartbeat prevents"
+        );
+    }
+
+    /// THE FIX: renewing keeps the claim counted well past the original lease.
+    #[test]
+    fn a_renewed_lease_keeps_holding_off_a_purge_past_the_original_window() {
+        let mut store = InMemoryShieldedStore::new();
+        let wallet = [0xAA; 32];
+        let token = claim_token(0x02);
+        let t0 = 1_000_000u64;
+
+        assert!(store
+            .begin_claim_admission(wallet, token, t0, CLAIM_LEASE_MS)
+            .unwrap());
+
+        // Three ticks at the heartbeat interval, as the claim path does.
+        let tick = CLAIM_LEASE_MS / 3;
+        let mut now = t0;
+        for _ in 0..3 {
+            now += tick;
+            assert!(
+                store
+                    .renew_claim_admission(token, now, CLAIM_LEASE_MS)
+                    .unwrap(),
+                "renewal must succeed while the lease is live"
+            );
+        }
+
+        // Past the ORIGINAL expiry, the claim is still counted.
+        assert!(now > t0 + CLAIM_LEASE_MS - tick);
+        let live = store
+            .begin_destructive_admission(None, claim_token(0x97), now + 1, DESTRUCTIVE_BARRIER_MS)
+            .unwrap();
+        assert_eq!(live, 1, "a renewed claim must still hold off a purge");
+    }
+
+    /// Renewal must not RESURRECT a lease that already lapsed — a purge may
+    /// already have counted it absent and acted on that.
+    #[test]
+    fn renewal_refuses_to_resurrect_a_lapsed_lease() {
+        let mut store = InMemoryShieldedStore::new();
+        let token = claim_token(0x03);
+        let t0 = 1_000_000u64;
+        assert!(store
+            .begin_claim_admission([0xAA; 32], token, t0, CLAIM_LEASE_MS)
+            .unwrap());
+        assert!(
+            !store
+                .renew_claim_admission(token, t0 + CLAIM_LEASE_MS + 1, CLAIM_LEASE_MS)
+                .unwrap(),
+            "a lapsed lease must not come back"
+        );
+    }
+
+    /// An unknown token renews nothing, rather than minting a lease.
+    #[test]
+    fn renewing_an_unknown_token_is_false_not_a_new_lease() {
+        let mut store = InMemoryShieldedStore::new();
+        assert!(!store
+            .renew_claim_admission(claim_token(0x04), 1_000_000, CLAIM_LEASE_MS)
+            .unwrap());
+    }
+
+    /// The in-memory store must give the SAME answer the file store's
+    /// `INSERT ... ON CONFLICT DO NOTHING` gives — the wallet layer branches on
+    /// this outcome and cannot tell the two backends apart (#4313
+    /// cr-9d0e1a44).
+    #[test]
+    fn only_one_claimant_acquires_an_invitations_claim_key() {
+        let mut store = InMemoryShieldedStore::new();
+        let wallet: WalletId = [0xAA; 32];
+        let key = [0xC1; 32];
+        let id = SubwalletId::new(wallet, u32::MAX);
+        let winner = claim_token(0x11);
+        let loser = claim_token(0x12);
+        let t0 = 1_000_000u64;
+
+        // Both hold a per-wallet lease — that is not, and never was, mutual
+        // exclusion between two claimants of one invitation.
+        assert!(store
+            .begin_claim_admission(wallet, winner, t0, CLAIM_LEASE_MS)
+            .unwrap());
+        assert!(store
+            .begin_claim_admission(wallet, loser, t0, CLAIM_LEASE_MS)
+            .unwrap());
+
+        assert_eq!(
+            store
+                .reserve_one_time_claim_key(id, key, winner, t0, CLAIM_LEASE_MS)
+                .unwrap()
+                .reservation,
+            ClaimKeyReservation::Acquired
+        );
+        assert_eq!(
+            store
+                .reserve_one_time_claim_key(id, key, loser, t0, CLAIM_LEASE_MS)
+                .unwrap()
+                .reservation,
+            ClaimKeyReservation::Held {
+                holder: winner,
+                expires_at: t0 + CLAIM_LEASE_MS,
+            }
+        );
+
+        // The gate refuses the loser's record write, so the winner's row cannot
+        // be replaced.
+        let record = |b: u8| PendingRedrive {
+            activity_id: key,
+            anchor: [b; 32],
+            nullifiers: vec![[b; 32]],
+            st_bytes: vec![b; 8],
+            attempts: 0,
+            identity_index: None,
+        };
+        assert!(store
+            .arm_redrive_under_claim(id, record(0xAA), winner, t0, CLAIM_LEASE_MS)
+            .unwrap());
+        assert!(
+            !store
+                .arm_redrive_under_claim(id, record(0xBB), loser, t0, CLAIM_LEASE_MS)
+                .unwrap(),
+            "a claimant without the key must not be able to write this record"
+        );
+        let records = store.pending_redrives(id).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].st_bytes, vec![0xAA; 8]);
+
+        // Release hands the invitation straight over; no lease-length wait —
+        // and the winner's durable record comes back WITH the reservation, so
+        // the new owner resumes it instead of arming a second transition over
+        // it (#4313 review finding r3767229122).
+        store.end_claim_admission(winner).unwrap();
+        let handover = store
+            .reserve_one_time_claim_key(id, key, loser, t0, CLAIM_LEASE_MS)
+            .unwrap();
+        assert_eq!(handover.reservation, ClaimKeyReservation::Acquired);
+        assert_eq!(
+            handover.pending.as_ref().map(|r| r.st_bytes.clone()),
+            Some(vec![0xAA; 8]),
+            "acquiring a released key must hand back the record already armed under it"
         );
     }
 }

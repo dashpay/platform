@@ -1614,6 +1614,65 @@ class PlatformWalletManager(
     }
 
     /**
+     * Create an identity funded from a ONE-TIME Orchard key (Type 20) — the
+     * L2-invitation *claim* side. Like [shieldedIdentityCreateFromPool], but the
+     * Orchard spend authority is the invitation's single-use 32-byte spending
+     * key [oneTimeSk] rather than the wallet's own bound pool: the wallet
+     * derives that key's viewing keys, transiently scans the network for the
+     * note(s) funded to it, and spends a note of the fixed exit [denomination]
+     * to fund a new identity at [identityIndex]. [changeAddressRaw43] is the
+     * claimer's OWN 43-byte default Orchard address that receives any
+     * over-funding change note (zero for a well-formed invitation).
+     * [fundingBirthHeight] is an advisory scan hint; pass `null` when unknown.
+     * [keys] are the rich registration rows (built via
+     * `RegistrationKeys.buildRegistrationRows`), encoded to the same blob every
+     * registration path uses; each row's private half must already be
+     * persisted. [fallbackAddress] is the REQUIRED 21-byte PlatformAddress that
+     * receives the value (minus a penalty) if creation fails a stateful check.
+     * Signed by the Keystore identity signer ([signerHandle]). Blocks for the
+     * ~30s Halo 2 proof.
+     *
+     * @return the new 32-byte identity id.
+     */
+    suspend fun shieldedIdentityCreateFromOneTimeKey(
+        walletId: ByteArray,
+        oneTimeSk: ByteArray,
+        changeAddressRaw43: ByteArray,
+        identityIndex: Int,
+        keys: List<org.dashfoundation.dashsdk.identity.IdentityPubkey>,
+        denomination: Long,
+        fallbackAddress: ByteArray,
+        fundingBirthHeight: Int? = null,
+    ): ByteArray = teardownGate.op {
+        require(oneTimeSk.size == 32) { "oneTimeSk must be 32 bytes, got ${oneTimeSk.size}" }
+        require(changeAddressRaw43.size == 43) {
+            "changeAddressRaw43 must be 43 bytes, got ${changeAddressRaw43.size}"
+        }
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(denomination > 0) { "denomination must be positive, got $denomination" }
+        require(fallbackAddress.size == 21) {
+            "fallbackAddress must be 21 bytes, got ${fallbackAddress.size}"
+        }
+        require(keys.isNotEmpty()) { "keys must not be empty" }
+        val packed = mapNativeErrors {
+            FundingNative.shieldedIdentityCreateFromOneTimeKey(
+                managerHandle,
+                walletId,
+                oneTimeSk,
+                // A negative birth-height signals "no hint" across JNI.
+                fundingBirthHeight ?: -1,
+                changeAddressRaw43,
+                identityIndex,
+                org.dashfoundation.dashsdk.identity.IdentityPubkeyCodec.encode(keys),
+                denomination,
+                fallbackAddress,
+                signerHandle,
+            )
+        }
+        decodeShieldedCreatePayload(packed)
+    }
+
+    /**
      * Resume a stuck shielded fund-from-asset-lock from an already-tracked
      * lock — port of Swift's `shieldedResumeFundFromAssetLock`.
      *
@@ -2459,6 +2518,68 @@ class PlatformWalletManager(
         /** De-offset `PlatformWalletFFIResultCode::ErrorInvalidParameter`. */
         const val PWFFI_INVALID_PARAMETER = 2
     }
+}
+
+/**
+ * A freshly generated one-time Orchard key for an L2 shielded invitation —
+ * the *inviter* side. Returned by [generateOneTimeOrchardKey].
+ *
+ * The inviter funds an Orchard note to [address]; a claimer handed
+ * [spendingKey] re-derives its viewing keys and spends that note via
+ * [PlatformWalletManager.shieldedIdentityCreateFromOneTimeKey]. All Orchard
+ * key material is generated in Rust — the app only ever sees these bytes.
+ */
+data class OneTimeOrchardKey(
+    /** The 32-byte one-time Orchard spending key (the claimer's spend authority). */
+    val spendingKey: ByteArray,
+    /** The 43-byte raw default Orchard payment address the inviter funds. */
+    val address: ByteArray,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is OneTimeOrchardKey) return false
+        return spendingKey.contentEquals(other.spendingKey) &&
+            address.contentEquals(other.address)
+    }
+
+    override fun hashCode(): Int = 31 * spendingKey.contentHashCode() + address.contentHashCode()
+}
+
+/**
+ * Generate a fresh one-time Orchard spending key together with the default
+ * Orchard address it funds — the *inviter* side of an L2 shielded invitation.
+ *
+ * Handle-less (process-local Orchard crypto). The inviter funds a note to the
+ * returned [OneTimeOrchardKey.address]; the claimer, handed
+ * [OneTimeOrchardKey.spendingKey], spends it. The spending key is exactly the
+ * 32-byte value [PlatformWalletManager.shieldedIdentityCreateFromOneTimeKey]
+ * accepts.
+ */
+fun generateOneTimeOrchardKey(): OneTimeOrchardKey {
+    val blob = mapNativeErrors { FundingNative.generateOneTimeOrchardKey() }
+    // The blob's first 32 bytes are bearer spend authority; wipe the transient
+    // JVM copy once the two owned arrays have been sliced out (#4204 key-hygiene).
+    try {
+        require(blob.size == 75) { "expected a 75-byte sk||address blob, got ${blob.size}" }
+        return OneTimeOrchardKey(
+            spendingKey = blob.copyOfRange(0, 32),
+            address = blob.copyOfRange(32, 75),
+        )
+    } finally {
+        blob.fill(0)
+    }
+}
+
+/**
+ * Derive the default 43-byte raw Orchard payment address from a 32-byte
+ * one-time Orchard [spendingKey] — the RNG-free counterpart of
+ * [generateOneTimeOrchardKey], for round-trip validation and recomputing the
+ * recipient an inviter must fund for a given key. Handle-less; throws if
+ * [spendingKey] is not a valid Orchard spending key.
+ */
+fun orchardAddressFromSpendingKey(spendingKey: ByteArray): ByteArray {
+    require(spendingKey.size == 32) { "spendingKey must be 32 bytes, got ${spendingKey.size}" }
+    return mapNativeErrors { FundingNative.orchardAddressFromSpendingKey(spendingKey) }
 }
 
 /**

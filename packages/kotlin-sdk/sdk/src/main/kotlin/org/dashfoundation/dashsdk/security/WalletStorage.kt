@@ -710,7 +710,7 @@ class WalletStorage(
                 // suppresses the biometric retry and the next write/repair
                 // regenerates the alias.
                 throw e
-            } catch (e: GeneralSecurityException) {
+            } catch (_: GeneralSecurityException) {
                 // Rotation race / provider quirk: fall through to the
                 // recovery ladder rather than failing the read outright.
                 recoverEmptyIvRsaBlob(pubkeyHex, blob, encoded)
@@ -761,7 +761,7 @@ class WalletStorage(
             throw e
         } catch (e: KeyPermanentlyInvalidatedException) {
             throw e
-        } catch (e: GeneralSecurityException) {
+        } catch (_: GeneralSecurityException) {
             null
         }
 
@@ -1017,9 +1017,9 @@ class WalletStorage(
             } else {
                 false
             }
-        } catch (e: UserNotAuthenticatedException) {
+        } catch (_: UserNotAuthenticatedException) {
             unaeProvesRecoverable
-        } catch (e: GeneralSecurityException) {
+        } catch (_: GeneralSecurityException) {
             false
         }
 

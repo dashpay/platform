@@ -624,6 +624,23 @@ pub enum PlatformWalletError {
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
 
+    /// The foreign-key (one-time-invitation) note scan consumed its
+    /// per-attempt work budget before covering the requested value
+    /// (dashpay/platform#4306). RETRYABLE, and the retry is CHEAP: progress
+    /// was checkpointed at tree position `scanned_through`, so the next
+    /// attempt resumes there instead of restarting — attempts compound until
+    /// the note is found or the tree is genuinely exhausted.
+    ///
+    /// Hosts MUST render this as "still searching — retry", never as an
+    /// invalid, already-claimed, or unfunded invitation: the scan has simply
+    /// not looked far enough yet, and treating it as terminal would strand a
+    /// genuinely funded claim whose note sits deep in the tree.
+    #[error(
+        "shielded foreign-key scan paused at tree position {scanned_through} after \
+         exhausting its per-attempt budget; progress is checkpointed — retry to continue"
+    )]
+    ShieldedForeignScanBudgetExhausted { scanned_through: u64 },
+
     /// A background sync pass did not drain within its quiesce budget, so
     /// the operation that required a "no more persister stores" barrier
     /// (manager shutdown, `clear_shielded`, a sync-state reset) aborted
@@ -655,6 +672,86 @@ pub enum PlatformWalletError {
     /// `0` carries a human-readable reason.
     #[error("Shielded spend cannot use a Platform-recorded anchor: {0}")]
     ShieldedNoRecordedAnchor(String),
+
+    /// A one-time-key (shielded invitation) claim could not be completed: the invitation note's
+    /// nullifier is already spent on chain, and the wallet could **not** produce positive evidence
+    /// that *this* claim's Type-20 transition created an identity.
+    ///
+    /// This is a **terminal** outcome for the invitation — the note is consumed, so no retry can
+    /// spend it again — and it is deliberately distinct from
+    /// [`Self::ShieldedBroadcastUnconfirmed`] (retryable: executed, not yet resolvable) and from
+    /// success. It is returned instead of a success whenever the recovered identity fails either
+    /// ownership binding checked by `recovered_identity_matches_claim`, which covers two real
+    /// on-chain outcomes that a naive "nullifier spent + a key matches" test reports as success:
+    ///
+    /// 1. **Chargeable `UnshieldAction` fallback.** When a submitted unique public-key hash is
+    ///    already registered, Type-20 finalizes the shielded spend as an `UnshieldTransitionAction`
+    ///    with `chargeable_failure: true` and creates **no** identity, crediting the invitation
+    ///    value to `send_to_address_on_creation_failure` minus a penalty. The nullifier is spent and
+    ///    the *pre-existing* colliding identity is findable under the submitted MASTER auth key
+    ///    hash, so key-hash existence alone would report a successful claim that never happened.
+    /// 2. **A competing holder of the same bearer key.** The identity id is derived from published
+    ///    nullifiers only, never from identity keys, so when two or more real notes are spent (no
+    ///    randomized padding action) another holder of the same one-time key produces the *same*
+    ///    derived id under *their* keys. Returning that identity would register a foreign identity
+    ///    at this wallet's identity index.
+    ///
+    /// `reason` carries which binding failed, for diagnostics.
+    #[error(
+        "Shielded invitation already claimed: its note is spent on chain but this wallet cannot \
+         prove that this claim created an identity ({reason}); the invitation cannot be claimed \
+         again"
+    )]
+    ShieldedInviteAlreadyClaimed { reason: String },
+
+    /// A one-time-key (shielded invitation) claim was retried with arguments that do **not** match
+    /// the transition the earlier attempt actually submitted, so the retry was refused before
+    /// touching the network.
+    ///
+    /// The durable pending-claim record is keyed by wallet id and the invitation's full viewing
+    /// key alone — nothing in that key distinguishes *which* identity the original attempt was
+    /// creating. The record does, however, carry the byte-exact serialized transition, and that
+    /// transition is the authoritative statement of what was submitted: its `public_keys` are the
+    /// keys the binding signature committed to, and its `denomination` is the value that left the
+    /// pool. Resuming means re-broadcasting those exact bytes, so the identity that results belongs
+    /// to *those* keys — never to whatever keys the retry happened to pass in.
+    ///
+    /// A retry whose keys or denomination differ is therefore not a resume of the same claim; it is
+    /// a request to create a different identity from an invitation that is already committed
+    /// elsewhere. Honouring it would let the caller
+    ///
+    /// * classify the original identity as belonging to another holder and clear the record (making
+    ///   a padded single-note claim permanently unrecoverable — its declared id embeds a random
+    ///   dummy nullifier and exists nowhere else),
+    /// * backfill an empty proof result with keys that were never in the stored transition, or
+    /// * register the original identity at the retry's local HD slot.
+    ///
+    /// So the claim fails closed here instead: nothing is re-broadcast, no proof is burned, and the
+    /// record is left intact for a retry that presents the original arguments.
+    #[error(
+        "Shielded invitation claim retry does not match the transition the earlier attempt \
+         submitted ({mismatch}); refusing to resume — retry with the original arguments, which \
+         the pending claim record has preserved"
+    )]
+    ShieldedClaimBindingMismatch { mismatch: String },
+
+    /// A shielded lifecycle operation could not obtain admission at the store, so it was refused
+    /// rather than allowed to run concurrently with the operation that holds it.
+    ///
+    /// Two directions, both retryable:
+    ///
+    /// * A **one-time-key claim** refused because `clear` / `unregister_wallet` / `remove_wallet`
+    ///   holds destructive admission over its wallet. Nothing was scanned, built or broadcast.
+    /// * A **destructive operation** refused because in-flight claims still hold admission and did
+    ///   not drain within the wait. Nothing was purged — deleting a pending-claim record while its
+    ///   transition is on the wire strands the created identity, so the purge fails closed and the
+    ///   caller retries.
+    ///
+    /// Admission is taken at the store rather than on the coordinator because that is the only
+    /// state two coordinators — or two processes on the same SQLite file — actually share
+    /// (`dashpay/platform#4313`).
+    #[error("Shielded lifecycle operation refused: {reason}")]
+    ShieldedLifecycleBusy { reason: String },
 
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
