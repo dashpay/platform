@@ -1295,7 +1295,6 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getSeverity()).to.equal(SEVERITY.HIGH);
     });
 
-
     it('should withhold a certificate request from every branch, not only the renewal one', () => {
       // A branch that never heard of the renewal record was still printing an
       // obtain command while an issuance was already outstanding. The
