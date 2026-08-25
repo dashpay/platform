@@ -613,6 +613,80 @@ fn map_spend_result(
     }
 }
 
+/// Render a caught panic payload as a human-readable string.
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "<non-string panic payload>".to_string()
+    }
+}
+
+/// Run an FFI export body under [`std::panic::catch_unwind`], converting a panic into the
+/// operation's contract-appropriate result `code` (with `guidance` appended to the message)
+/// instead of letting it reach the `extern "C"` frame.
+///
+/// A Rust panic cannot unwind through a C ABI boundary: it aborts the process. The JNI layer
+/// wraps its calls in `support::guard` (which catches panics and raises a Java exception), but
+/// that guard sits on the FAR side of this `extern "C"` export, so it never sees the unwind — the
+/// process is already gone. `block_on_worker` makes this reachable rather than theoretical: it
+/// `.expect`s on the tokio `JoinError`, so any panic inside the proving future (Halo 2 synthesis,
+/// note bookkeeping, the SDK) re-panics right here inside the export.
+///
+/// The `code` must be chosen per operation to preserve that operation's result contract — a
+/// panic can strike after side effects (note reservation, a broadcast) have happened, so the
+/// outcome is genuinely ambiguous and the code must never promise a definitive failure. See
+/// [`catch_spend_panic`] and the per-export call sites.
+///
+/// NOTE: this guard is only effective where panics unwind. The Android (`*-android`) and
+/// host/test profiles build with `panic = "unwind"`, so it works there; the iOS profiles
+/// (`dev-ios` / `release-ios`) build with `panic = "abort"` as part of their staticlib size
+/// tuning (see the workspace `Cargo.toml` profile comments), so on iOS a panic still aborts the
+/// process before this guard can see it.
+fn catch_panic_to_code(
+    operation: &str,
+    code: PlatformWalletFFIResultCode,
+    guidance: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(result) => result,
+        Err(payload) => PlatformWalletFFIResult::err(
+            code,
+            format!(
+                "{operation} panicked: {}. {guidance}",
+                panic_payload_message(payload.as_ref())
+            ),
+        ),
+    }
+}
+
+/// Post-panic guidance for the note-spending exports. Paired with
+/// `ErrorShieldedSpendUnconfirmed` in [`catch_spend_panic`].
+const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast — do NOT \
+     retry; the next shielded sync reconciles the outcome.";
+
+/// [`catch_panic_to_code`] specialized for the note-spending exports.
+///
+/// The panic is mapped to [`PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed`], NOT to
+/// a definitive failure code: a panic can strike after the notes were reserved and even after the
+/// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
+/// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
+/// in place, and the next nullifier sync (or an app restart) reconciles whether the spend landed.
+fn catch_spend_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+        SPEND_PANIC_GUIDANCE,
+        body,
+    )
+}
+
 /// Preserve the typed "already consumed" funding report across the FFI
 /// boundary while keeping every other funding failure on the existing generic
 /// error path. The wallet retains nonterminal consumption-unknown state; the
@@ -1011,6 +1085,43 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 ///   doesn't satisfy `Signer<PlatformAddress>`).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_to_recipient(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    shielded_account: u32,
+    payment_account: u32,
+    recipient_raw_43: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+    signer_address_handle: *const SignerHandle,
+) -> PlatformWalletFFIResult {
+    // The whole body runs under `catch_unwind`: a panic (most concretely `block_on_worker`'s
+    // `.expect` on a panicking proving task) must NOT reach this `extern "C"` frame, where it
+    // would abort the process instead of surfacing to the host as a typed error. A shield
+    // reserves no notes, but the transition may already have been broadcast when the panic
+    // struck, so the same ambiguous spend-unconfirmed contract applies (matching
+    // `map_spend_result`'s mapping for this operation); a later manual retry self-heals through
+    // the address-nonce check.
+    catch_spend_panic("shielded shield to recipient", || {
+        shielded_shield_to_recipient_inner(
+            handle,
+            wallet_id_bytes,
+            shielded_account,
+            payment_account,
+            recipient_raw_43,
+            amount,
+            memo_text,
+            signer_address_handle,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_shield_to_recipient`], as an ordinary Rust
+/// function so a panic unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_shield_to_recipient_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
     shielded_account: u32,
@@ -1826,6 +1937,56 @@ mod tests {
         unsafe { CStr::from_ptr(result.message) }
             .to_string_lossy()
             .into_owned()
+    }
+
+    /// A non-panicking body passes its result straight through — the guard must be invisible on
+    /// the happy path.
+    #[test]
+    fn catch_spend_panic_passes_results_through() {
+        let ok = catch_spend_panic("test", PlatformWalletFFIResult::ok);
+        assert_eq!(ok.code, PlatformWalletFFIResultCode::Success);
+
+        let err = catch_spend_panic("test", || {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "bad input",
+            )
+        });
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert_eq!(message_of(&err), "bad input");
+    }
+
+    /// A panic inside a shielded-spend export must NOT unwind into the `extern "C"` frame (that
+    /// aborts the process). It becomes `ErrorShieldedSpendUnconfirmed` — the conservative
+    /// "may have been broadcast, do NOT retry" contract, because a panic can strike after the
+    /// transition is submitted.
+    ///
+    /// The panic hook is deliberately left alone: it is process-global, `cargo test` runs tests
+    /// concurrently, and `take_hook` + restore from two tests can interleave so that one restores
+    /// the other's temporary hook last — suppressing panic diagnostics for the rest of the
+    /// process, including unrelated concurrent panics. The libtest harness already captures this
+    /// test's output, so the deliberate panic's backtrace does not reach the console anyway.
+    #[test]
+    fn catch_spend_panic_maps_a_panic_to_the_unconfirmed_contract() {
+        let result = catch_spend_panic("shielded shield to recipient", || {
+            panic!("tokio worker panicked");
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+            "a panic must map to the ambiguous, do-not-retry code"
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("shielded shield to recipient panicked")
+                && message.contains("tokio worker panicked"),
+            "the panic payload must survive into the FFI message: {message}"
+        );
+        assert!(
+            message.contains("do NOT retry"),
+            "the message must carry the do-not-retry guidance: {message}"
+        );
     }
 
     /// `map_spend_result` pins the retry-relevant code split the three spend
