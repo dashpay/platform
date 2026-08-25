@@ -4,7 +4,7 @@ import path from 'path';
 import ConfigIsNotPresentError from '../config/errors/ConfigIsNotPresentError.js';
 import LegoCertificate from '../ssl/letsencrypt/LegoCertificate.js';
 import isCertificatePairInstalled from '../ssl/letsencrypt/isCertificatePairInstalled.js';
-import { recordRenewalFailure } from './recordRenewalOutcome.js';
+import { recordRenewalFailure } from './record-renewal-outcome.js';
 import scheduleRenewalJob from './scheduleRenewalJob.js';
 
 /**

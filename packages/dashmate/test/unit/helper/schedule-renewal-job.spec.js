@@ -5,7 +5,7 @@ import ServiceIsNotRunningError from '../../../src/docker/errors/ServiceIsNotRun
 import RenewalRecordRepository, {
   RENEWAL_RECORD_STATES,
 } from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
-import { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewalFailure.js';
+import { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewal-failure.js';
 
 const CONFIG_NAME = 'base';
 const PROVIDER = 'letsencrypt';
@@ -197,7 +197,7 @@ describe('scheduleRenewalJob', () => {
 
     // Seeded, so that finding nothing during the handover is a fact about the
     // clear rather than a fact about an empty directory.
-    const { recordRenewalFailure } = await import('../../../src/helper/recordRenewalOutcome.js');
+    const { recordRenewalFailure } = await import('../../../src/helper/record-renewal-outcome.js');
     recordRenewalFailure({
       renewalRecordRepository, homeDir, configName: CONFIG_NAME, provider: PROVIDER, error: new Error('stale'),
     });

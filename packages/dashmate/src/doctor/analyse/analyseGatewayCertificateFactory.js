@@ -15,7 +15,7 @@ import {
   REMEDY_CLASS,
   RENEWAL_FAILURE_CODES,
   sanitizeDetail,
-} from '../../ssl/renewalFailure.js';
+} from '../../ssl/renewal-failure.js';
 import { RETRY_INTERVAL_MS } from '../../helper/scheduleRenewalJob.js';
 import { SSL_PROVIDERS } from '../../constants.js';
 

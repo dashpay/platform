@@ -1,6 +1,6 @@
 import ConfigIsNotPresentError from '../config/errors/ConfigIsNotPresentError.js';
 import Certificate from '../ssl/zerossl/Certificate.js';
-import { recordRenewalFailure } from './recordRenewalOutcome.js';
+import { recordRenewalFailure } from './record-renewal-outcome.js';
 import scheduleRenewalJob from './scheduleRenewalJob.js';
 
 /**

@@ -7,11 +7,11 @@ import {
   recordGatewayReloadFailure,
   recordRenewalFailure,
   recordRenewalSuccess,
-} from '../../../src/helper/recordRenewalOutcome.js';
+} from '../../../src/helper/record-renewal-outcome.js';
 import RenewalRecordRepository, {
   RENEWAL_RECORD_STATES,
 } from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
-import { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewalFailure.js';
+import { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewal-failure.js';
 import LegoArtifactsMissingError from '../../../src/ssl/errors/LegoArtifactsMissingError.js';
 
 const CONFIG_NAME = 'mainnet';

@@ -1,4 +1,4 @@
-import classifyRenewalFailure, { RENEWAL_FAILURE_CODES } from '../ssl/renewalFailure.js';
+import classifyRenewalFailure, { RENEWAL_FAILURE_CODES } from '../ssl/renewal-failure.js';
 import RenewalRecord from '../ssl/renewalRecord/RenewalRecord.js';
 import { RENEWAL_RECORD_STATES } from '../ssl/renewalRecord/RenewalRecordRepository.js';
 

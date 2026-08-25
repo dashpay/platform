@@ -5,7 +5,7 @@ import {
   recordGatewayReloadFailure,
   recordRenewalFailure,
   recordRenewalSuccess,
-} from './recordRenewalOutcome.js';
+} from './record-renewal-outcome.js';
 import renewCertificate from './renewCertificate.js';
 import watchCertificateConfig from './watchCertificateConfig.js';
 

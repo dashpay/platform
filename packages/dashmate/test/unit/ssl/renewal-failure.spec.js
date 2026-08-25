@@ -4,7 +4,7 @@ import classifyRenewalFailure, {
   RENEWAL_FAILURE_CODES,
   REMEDY_CLASS,
   sanitizeDetail,
-} from '../../../src/ssl/renewalFailure.js';
+} from '../../../src/ssl/renewal-failure.js';
 import LegoArtifactsMissingError from '../../../src/ssl/errors/LegoArtifactsMissingError.js';
 import LegoDidNotStartError from '../../../src/ssl/errors/LegoDidNotStartError.js';
 import LegoResultNotObservedError from '../../../src/ssl/errors/LegoResultNotObservedError.js';

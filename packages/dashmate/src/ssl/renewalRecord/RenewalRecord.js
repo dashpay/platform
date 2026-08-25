@@ -1,4 +1,4 @@
-import { MAX_DETAIL_CHARS, sanitizeDetail } from '../renewalFailure.js';
+import { MAX_DETAIL_CHARS, sanitizeDetail } from '../renewal-failure.js';
 
 /**
  * What the helper recorded about the last renewal for one config.

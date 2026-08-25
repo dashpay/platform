@@ -1,7 +1,7 @@
 import { SSL_PROVIDERS } from '../constants.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
-import { describeRenewalFailure, REMEDY_CLASS, RENEWAL_FAILURE_CODES } from './renewalFailure.js';
+import { describeRenewalFailure, REMEDY_CLASS, RENEWAL_FAILURE_CODES } from './renewal-failure.js';
 
 /**
  * @param {Object} verdict
