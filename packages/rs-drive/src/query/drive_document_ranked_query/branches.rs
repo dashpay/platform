@@ -32,6 +32,12 @@ use super::{RankedAxis, RankedEntry, RankedEntryValue};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
+#[cfg(feature = "server")]
+use grovedb::{GroveDb, TransactionArg};
+#[cfg(feature = "server")]
+use grovedb_costs::CostContext;
+#[cfg(feature = "server")]
+use grovedb_version::version::GroveVersion;
 use std::cmp::Ordering;
 
 /// The position (index into a branch's segment list) at which the
@@ -174,6 +180,43 @@ pub fn decompose_branch_paths(paths: &[Vec<Vec<u8>>]) -> Result<BranchPathDecomp
         .collect::<Vec<_>>();
     let suffix = first[position + 1..].to_vec();
     Ok((prefix, keys, suffix))
+}
+
+/// Whether any level of one branch's path below the shared prefix is
+/// absent — the branch key itself, or any shared-suffix segment under it.
+///
+/// grovedb's branched reader and prover treat a missing segment at ANY
+/// depth as the authenticated absence of the whole branch, so the
+/// unproved executors must agree: an `IN` element whose value tree exists
+/// (because some other pin value was written under it) but whose deeper
+/// pinned path was not is an absent branch contributing an empty page —
+/// not an error that discards the other branches' results.
+///
+/// Levels are probed top-down, so each parent is known present before
+/// its child is read; the shared prefix itself (the contract and
+/// document-type levels) is the caller's responsibility and is not
+/// probed here.
+#[cfg(feature = "server")]
+pub(crate) fn branch_subpath_is_absent(
+    grove: &GroveDb,
+    full_path: &[Vec<u8>],
+    shared_prefix_len: usize,
+    transaction: TransactionArg,
+    grove_version: &GroveVersion,
+) -> Result<bool, Error> {
+    for depth in shared_prefix_len..full_path.len() {
+        let parent: Vec<&[u8]> = full_path[..depth].iter().map(|s| s.as_slice()).collect();
+        let CostContext { value, cost: _ } = grove.get_raw_optional(
+            parent.as_slice().into(),
+            &full_path[depth],
+            transaction,
+            grove_version,
+        );
+        if value.map_err(|e| Error::GroveDB(Box::new(e)))?.is_none() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Translate one branch's verified [`AxisEntries`] into drive entries

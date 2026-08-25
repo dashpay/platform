@@ -329,6 +329,31 @@ pub fn encode_prefix_branches(
         ));
     }
 
+    // A single `null` pin encodes as the empty path segment; the branched
+    // proof grammar (`PathQuery::new_branched_axis`) cannot address an
+    // empty segment in the shared prefix or suffix, so a null `==` pin
+    // combined with an `IN` would serve the unproved read and fail the
+    // prove — the exact proved/unproved divergence this surface forbids.
+    // Rejected for any non-branching pin position, conservatively: issue
+    // one request per `IN` element to combine null pins with multiple
+    // prefixes. `null` as an ELEMENT of the `IN` itself stays legal — it
+    // is a branch key, which the envelope addresses and authenticates
+    // like any other.
+    let has_branching_pin = per_property.iter().any(|candidates| candidates.len() > 1);
+    if has_branching_pin
+        && per_property
+            .iter()
+            .any(|candidates| candidates.len() == 1 && candidates[0].is_empty())
+    {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "an `IN` prefix pin cannot be combined with a `null` pin: null addresses the \
+             absent-value prefix through an empty path segment, which the branched proof \
+             cannot express — issue one request per `IN` element instead",
+            ),
+        ));
+    }
+
     // The grammar admits at most one multi-value pin, so this product
     // is |IN| branches (or exactly one), already in canonical order
     // because the only varying position was sorted above.
@@ -344,6 +369,18 @@ pub fn encode_prefix_branches(
                 })
             })
             .collect();
+    }
+    // The documented hard ceiling on branch fan-out, enforced at the
+    // shared choke point too: this function is `pub`, and everything
+    // downstream (encoding, sorting, per-branch walks, proof size) is
+    // linear in the branch count.
+    if branches.len() > super::MAX_PREFIX_IN_BRANCHES {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "an `IN` prefix pin fans out into more branches than the ranked surface serves \
+             — narrow the element list or issue several requests",
+            ),
+        ));
     }
     Ok(branches)
 }

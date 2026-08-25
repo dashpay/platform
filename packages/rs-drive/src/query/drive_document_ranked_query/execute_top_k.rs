@@ -130,15 +130,15 @@ impl DriveDocumentRankedQuery<'_> {
         let paths = (0..self.prefix_branches.len())
             .map(|b| self.indexed_property_name_tree_path(b))
             .collect::<Result<Vec<_>, Error>>()?;
-        let (prefix, keys, _suffix) = super::branches::decompose_branch_paths(&paths)?;
-        let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
-        let CostContext { value, cost: _ } = drive.grove.get_raw_optional(
-            prefix_refs.as_slice().into(),
-            &keys[branch],
+        let (prefix, _keys, _suffix) = super::branches::decompose_branch_paths(&paths)?;
+        let full_path = self.indexed_property_name_tree_path(branch)?;
+        super::branches::branch_subpath_is_absent(
+            &drive.grove,
+            &full_path,
+            prefix.len(),
             transaction,
             grove_version,
-        );
-        Ok(value.map_err(|e| Error::GroveDB(Box::new(e)))?.is_none())
+        )
     }
 
     /// One branch's page — the entire pre-`IN` executor, parameterized
@@ -290,6 +290,18 @@ impl DriveDocumentRankedQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         if self.prefix_branches.len() > 1 {
+            // grovedb's unified `prove_query` proves COMMITTED state only —
+            // it opens its own transaction internally and cannot see the
+            // caller's. Serving a proof for a different snapshot than the
+            // unproved read would silently desynchronize the two paths, so a
+            // transactional branched prove fails closed instead.
+            if transaction.is_some() {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "an IN-pinned (branched) ranked proof is generated from committed state \
+                     only: grovedb's unified prove_query cannot see the caller's transaction \
+                     — prove per prefix element, or commit first",
+                )));
+            }
             // One grovedb **branched** envelope: shared ancestor layers
             // once, one multi-key proof at the branching level, one
             // secondary proof per branch — a single proof with a single

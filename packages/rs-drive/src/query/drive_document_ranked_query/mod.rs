@@ -50,8 +50,14 @@
 //!    on the grouped (terminal) property itself would ask for a
 //!    *filtered* ranking, which no secondary can express — it is sorted
 //!    by aggregate, not by group key — and is rejected rather than
-//!    silently ignored, as is any non-equality prefix clause (`IN`
-//!    included: one walk per element is a future multi-`IN` capability).
+//!    silently ignored, as is any non-equality prefix clause except one
+//!    `IN`: exactly one leading pin may carry 2..=[`MAX_PREFIX_IN_BRANCHES`]
+//!    distinct elements, read as one walk per element and merged by
+//!    `(aggregate, encoded pin, group key)`, proved in a single branched
+//!    `PathQuery` envelope with per-element authenticated absence. A
+//!    `null` pin cannot combine with an `IN` (null addresses its prefix
+//!    through an empty path segment the branched proof cannot express),
+//!    and `OFFSET` is rejected together with `IN`.
 //! 2. **`limit` is mandatory, `offset` is depth-bounded, `start_at` is
 //!    refused.**
 //!    `limit` is the `k` of the walk and the ranked surface has no

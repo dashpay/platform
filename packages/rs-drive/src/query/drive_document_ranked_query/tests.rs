@@ -2129,8 +2129,9 @@ mod pinned_prefix {
     //! and its paginated proof.
 
     use super::super::drive_dispatcher::{DocumentRankedRequest, DocumentRankedResponse};
-    use super::super::index_picker::resolve_ranked_query_for_mode;
+    use super::super::index_picker::{encode_prefix_branches, resolve_ranked_query_for_mode};
     use super::super::mode_detection::{detect_ranked_mode, detect_ranked_mode_v0};
+    use super::super::PrefixPin;
     use super::super::{DriveDocumentRankedQuery, RankedEntry, RankedEntryValue};
     use crate::drive::Drive;
     use crate::error::query::QuerySyntaxError;
@@ -2152,6 +2153,7 @@ mod pinned_prefix {
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
     use grovedb::element::indexed::compute_avg_fixed_point;
+    use grovedb::TransactionArg;
     use std::collections::BTreeMap;
 
     const PREFIX_PROPERTY: &str = "identityId";
@@ -2971,6 +2973,295 @@ mod pinned_prefix {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
             ),
             "expected a no-covering-index rejection, got {error:?}"
+        );
+    }
+
+    const DUAL_DOCTYPE: &str = "dualGrade";
+
+    fn insert_dual_grades(
+        drive: &Drive,
+        contract: &DataContract,
+        rows: &[([u8; 32], &str, &str, i64)],
+    ) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(DUAL_DOCTYPE)
+            .expect("dualGrade doctype exists");
+        for (i, (identity, tag, class, grade)) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(8000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(*identity));
+            props.insert("tag".to_string(), Value::Text(tag.to_string()));
+            props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a dualGrade document");
+        }
+    }
+
+    fn run_dual(
+        drive: &Drive,
+        contract: &DataContract,
+        where_clauses: &[WhereClause],
+        limit: u32,
+        prove: bool,
+        transaction: TransactionArg,
+    ) -> Result<DocumentRankedResponse, Error> {
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        drive.execute_document_ranked_request(
+            DocumentRankedRequest {
+                contract,
+                document_type: contract
+                    .document_type_for_name(DUAL_DOCTYPE)
+                    .expect("dualGrade doctype exists"),
+                group_by: &group_by,
+                select: SelectProjection::avg("grade"),
+                having: &[],
+                order_by: &order_by,
+                where_clauses,
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+                prove,
+            },
+            transaction,
+            platform_version(),
+        )
+    }
+
+    /// An `IN` element whose branch-key tree EXISTS (another pin value was
+    /// written under it) but whose deeper pinned path was never written is
+    /// an ABSENT branch — empty page, union semantics — not an error that
+    /// discards the other branches' results. grovedb's branched reader and
+    /// prover authenticate absence at any depth of the branch chain, so the
+    /// unproved executor must walk the whole chain too.
+    #[test]
+    fn an_in_element_with_an_absent_deeper_pin_contributes_an_empty_branch() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        // Y's tree exists (via tag "t2"), but Y/t1 was never written.
+        insert_dual_grades(
+            &drive,
+            &contract,
+            &[
+                (IDENTITY_X, "t1", "math", 90),
+                (IDENTITY_Y, "t2", "math", 80),
+            ],
+        );
+
+        let mut pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        pins.push(WhereClause {
+            field: "tag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("t1".to_string()),
+        });
+
+        let page = match run_dual(&drive, &contract, &pins, 2, false, None)
+            .expect("a present branch key with an absent deeper pin must not error")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            page.entries,
+            vec![RankedEntry {
+                in_key: Some(IDENTITY_X.to_vec()),
+                key: b"math".to_vec(),
+                value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+            }],
+            "X/t1 contributes; Y (present key, absent t1 suffix) is an empty branch"
+        );
+
+        // The proved path must agree byte-for-byte with the unproved one.
+        let proof = match run_dual(&drive, &contract, &pins, 2, true, None)
+            .expect("the branched envelope authenticates the absent suffix")
+        {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let pv = platform_version();
+        let mode = detect_ranked_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &[],
+            &order_by,
+            &pins,
+            RankedPaginationInputs {
+                limit: Some(2),
+                offset: None,
+                has_start_at: false,
+            },
+            pv,
+        )
+        .expect("well-formed");
+        let query = resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name(DUAL_DOCTYPE)
+                .expect("dualGrade doctype exists"),
+            DUAL_DOCTYPE.to_string(),
+            contract
+                .document_types()
+                .get(DUAL_DOCTYPE)
+                .expect("dualGrade doctype exists")
+                .indexes(),
+            &mode,
+            pv,
+        )
+        .expect("covered");
+        let (root_hash, verified) = query
+            .verify_ranked_top_k_proof(&proof, pv)
+            .expect("the proof verifies");
+        assert_eq!(verified.entries, page.entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
+    /// A `null` pin addresses its prefix through an EMPTY path segment,
+    /// which the branched proof grammar cannot express — so combining it
+    /// with an `IN` is rejected at the grammar instead of serving the
+    /// unproved read and failing the prove.
+    #[test]
+    fn a_null_pin_cannot_combine_with_an_in() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_dual_grades(&drive, &contract, &[(IDENTITY_X, "t1", "math", 90)]);
+
+        let mut pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        pins.push(WhereClause {
+            field: "tag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Null,
+        });
+
+        let error = run_dual(&drive, &contract, &pins, 2, false, None)
+            .expect_err("null x IN must be rejected");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(message))
+                    if message.contains("`null` pin")
+            ),
+            "the rejection must name the null x IN exclusion, got {error:?}"
+        );
+    }
+
+    /// grovedb's unified `prove_query` proves committed state only, so an
+    /// `IN`-pinned prove under a caller transaction fails closed instead of
+    /// silently proving a different snapshot than the unproved read serves.
+    #[test]
+    fn a_branched_prove_rejects_a_transaction() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
+
+        let transaction = drive.grove.start_transaction();
+        let pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let error = drive
+            .execute_document_ranked_request(
+                DocumentRankedRequest {
+                    contract: &contract,
+                    document_type: contract
+                        .document_type_for_name(DOCUMENT_TYPE)
+                        .expect("grade doctype exists"),
+                    group_by: &group_by,
+                    select: SelectProjection::avg("grade"),
+                    having: &[],
+                    order_by: &order_by,
+                    where_clauses: &pins,
+                    limit: Some(2),
+                    offset: None,
+                    has_start_at: false,
+                    prove: true,
+                },
+                Some(&transaction),
+                platform_version(),
+            )
+            .expect_err("a transactional branched prove must fail closed");
+        assert!(
+            matches!(
+                &error,
+                Error::Drive(crate::error::drive::DriveError::NotSupported(message))
+                    if message.contains("committed state")
+            ),
+            "expected the committed-state-only rejection, got {error:?}"
+        );
+
+        // The unproved read under the same transaction still serves.
+        let page = match run(&drive, &contract, &pins, 2, false)
+            .expect("the unproved read is unaffected")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(page.entries.len(), 1);
+    }
+
+    /// The public encoder enforces the documented branch ceiling itself:
+    /// its callers' grammar checks are not the only line of defense.
+    #[test]
+    fn the_prefix_encoder_enforces_the_branch_ceiling() {
+        let (_drive, contract) = setup_grades_compound_ranked();
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        let index = contract
+            .document_types()
+            .get(DOCUMENT_TYPE)
+            .expect("grade doctype exists")
+            .indexes()
+            .values()
+            .next()
+            .expect("the compound ranked index exists");
+        let pins = vec![PrefixPin {
+            field: PREFIX_PROPERTY.to_string(),
+            values: (0u8..=10).map(|i| Value::Identifier([i; 32])).collect(),
+        }];
+        let error = encode_prefix_branches(document_type, index, &pins, platform_version())
+            .expect_err("11 branches must exceed the ceiling");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(message))
+                    if message.contains("more branches")
+            ),
+            "expected the fan-out ceiling rejection, got {error:?}"
         );
     }
 }

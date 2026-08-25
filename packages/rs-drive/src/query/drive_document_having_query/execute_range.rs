@@ -82,16 +82,16 @@ impl DriveDocumentHavingQuery<'_> {
         let paths = (0..self.prefix_branches.len())
             .map(|b| self.indexed_property_name_tree_path(b))
             .collect::<Result<Vec<_>, Error>>()?;
-        let (prefix, keys, _suffix) =
+        let (prefix, _keys, _suffix) =
             super::super::drive_document_ranked_query::branches::decompose_branch_paths(&paths)?;
-        let prefix_refs: Vec<&[u8]> = prefix.iter().map(|s| s.as_slice()).collect();
-        let CostContext { value, cost: _ } = drive.grove.get_raw_optional(
-            prefix_refs.as_slice().into(),
-            &keys[branch],
+        let full_path = self.indexed_property_name_tree_path(branch)?;
+        super::super::drive_document_ranked_query::branches::branch_subpath_is_absent(
+            &drive.grove,
+            &full_path,
+            prefix.len(),
             transaction,
             grove_version,
-        );
-        Ok(value.map_err(|e| Error::GroveDB(Box::new(e)))?.is_none())
+        )
     }
 
     /// One branch's in-bound page — the entire pre-`IN` executor,
@@ -210,6 +210,16 @@ impl DriveDocumentHavingQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         if self.prefix_branches.len() > 1 {
+            // Same fail-closed rule as the ranked prover: grovedb's unified
+            // `prove_query` proves committed state only and cannot see the
+            // caller's transaction.
+            if transaction.is_some() {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "an IN-pinned (branched) having-range proof is generated from committed \
+                     state only: grovedb's unified prove_query cannot see the caller's \
+                     transaction — prove per prefix element, or commit first",
+                )));
+            }
             // One grovedb **branched** envelope — see the ranked
             // executor's multi-branch arm for the shape.
             let grove_version = &platform_version.drive.grove_version;
