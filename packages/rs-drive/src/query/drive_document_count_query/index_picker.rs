@@ -7,6 +7,7 @@
 use super::super::conditions::WhereClause;
 use super::DriveDocumentCountQuery;
 use crate::query::index_admissible_for_resolved_time_range;
+use crate::query::ResolvedTimeRange;
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,7 +36,7 @@ impl DriveDocumentCountQuery<'_> {
     /// CountTree directly — that path doesn't use this picker because no
     /// index is involved.
     ///
-    /// `resolved_time_range_fields` names the fields whose equality clause was
+    /// `resolved_time_ranges` names the fields whose equality clause was
     /// produced by `IN_TIME_RANGE` resolution (see
     /// [`crate::query::resolve_time_range_bucket_clause`]); it gates which
     /// indexes are candidates at all — see
@@ -43,7 +44,7 @@ impl DriveDocumentCountQuery<'_> {
     pub fn find_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
-        resolved_time_range_fields: &[String],
+        resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
         if Self::has_unsupported_operator(where_clauses) {
             return None;
@@ -69,7 +70,7 @@ impl DriveDocumentCountQuery<'_> {
             // every document unless the query pins a single bucket, and only
             // a resolution-produced equality does that. Conversely a raw
             // clause must never bind to bucket keys.
-            if !index_admissible_for_resolved_time_range(index, resolved_time_range_fields) {
+            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
                 continue;
             }
             if !index.countable.is_countable() {
@@ -110,7 +111,7 @@ impl DriveDocumentCountQuery<'_> {
     /// (no range operator) should fall back to
     /// [`Self::find_countable_index_for_where_clauses`].
     ///
-    /// `resolved_time_range_fields` gates the candidate set exactly as in
+    /// `resolved_time_ranges` gates the candidate set exactly as in
     /// [`Self::find_countable_index_for_where_clauses`]. A resolved field
     /// never arrives as a range clause — resolution always produces an
     /// equality — so with a non-empty list the only bucketed index this can
@@ -120,7 +121,7 @@ impl DriveDocumentCountQuery<'_> {
     pub fn find_range_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
-        resolved_time_range_fields: &[String],
+        resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
         let range_clauses: Vec<&WhereClause> = where_clauses
             .iter()
@@ -176,7 +177,7 @@ impl DriveDocumentCountQuery<'_> {
             // indexes store one entry per containing bucket, so only a query
             // pinned to a single bucket by a resolution-produced equality may
             // walk them, and raw clauses may never bind to bucket keys.
-            if !index_admissible_for_resolved_time_range(index, resolved_time_range_fields) {
+            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
                 continue;
             }
             if !index.range_countable || !index.countable.is_countable() {

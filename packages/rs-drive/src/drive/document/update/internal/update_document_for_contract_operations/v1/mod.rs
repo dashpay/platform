@@ -311,7 +311,16 @@ impl Drive {
             let top_index_property = index.properties.first().ok_or(Error::Drive(
                 DriveError::CorruptedContractIndexes("invalid contract indices".to_string()),
             ))?;
-            index_path.push(Vec::from(top_index_property.name.as_bytes()));
+            // A time-range index's top level is keyed by the property name
+            // qualified with the grid (`TimeRangeTransform::storage_key`),
+            // so different grids over one timestamp live in sibling
+            // subtrees; a plain index keeps the bare name. The same key is
+            // both the path segment and the `IndexLevel` lookup below.
+            let top_level_key = match index.time_range.as_ref() {
+                Some(transform) => transform.storage_key(&top_index_property.name),
+                None => top_index_property.name.clone(),
+            };
+            index_path.push(Vec::from(top_level_key.as_bytes()));
 
             // Mirror the insert path's IndexLevel descent. We
             // start at the top-level property's `IndexLevel` node —
@@ -328,15 +337,16 @@ impl Drive {
             // there). Using `has_index_with_type()` on the descended
             // node ensures we pick that upgrade rather than the
             // currently-iterated index's own per-level flags.
-            let mut current_index_level = index_structure
-                .sub_levels()
-                .get(&top_index_property.name)
-                .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(format!(
-                    "index structure missing top property '{}' for index '{}' — \
+            let mut current_index_level =
+                index_structure
+                    .sub_levels()
+                    .get(&top_level_key)
+                    .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(format!(
+                        "index structure missing top level '{}' for index '{}' — \
                          doctype's IndexLevel tree must contain every property of every \
                          registered index",
-                    top_index_property.name, index.name
-                ))))?;
+                        top_level_key, index.name
+                    ))))?;
 
             // Per-index reference variant. Mirror of the insert path's
             // dispatch in
@@ -364,14 +374,14 @@ impl Drive {
             // Time-range indexes store one entry per overlapping range bucket,
             // so they need a set-diff update rather than the single old→new
             // value transition below. `current_index_level` is still the
-            // top-level (source) node and `index_path` is the base
-            // (…/<document_type>/<source>) at this point. The transform is
-            // read off the merged `IndexLevel` node — the same source the
-            // insert and delete walkers branch on — so all three walkers
+            // top-level node and `index_path` is the base
+            // (…/<document_type>/<grid-qualified source>) at this point. The
+            // transform is read off the `IndexLevel` node — the same source
+            // the insert and delete walkers branch on — so all three walkers
             // agree even on a document type constructed outside full
-            // validation. (`IndexLevel::try_from_indices` rejects indices
-            // that share a first property but disagree on the transform, so
-            // the node's transform is every sharing index's transform.)
+            // validation. (A level's key embeds its grid, so the node's
+            // transform is exactly the grid every index sharing this level
+            // declared.)
             if let Some(transform) = current_index_level.time_range() {
                 self.update_time_range_index_for_contract_operations_v1(
                     index,

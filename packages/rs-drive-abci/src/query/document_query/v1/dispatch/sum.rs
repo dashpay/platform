@@ -20,6 +20,7 @@ use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
+use drive::query::ResolvedTimeRange;
 use drive::query::{
     CountMode, DocumentSumRequest, DocumentSumResponse, OrderClause, SumEntry as DriveSumEntry,
     SumMode, WhereClause,
@@ -44,7 +45,7 @@ impl<C> Platform<C> {
         data_contract_id: Vec<u8>,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
-        resolved_time_range_fields: Vec<String>,
+        resolved_time_ranges: Vec<ResolvedTimeRange>,
         order_clauses: Vec<OrderClause>,
         limit: Option<u32>,
         start: Option<RequestV1Start>,
@@ -103,7 +104,7 @@ impl<C> Platform<C> {
             document_type,
             sum_property,
             where_clauses,
-            resolved_time_range_fields,
+            resolved_time_ranges,
             order_clauses,
             mode: sum_mode,
             limit,

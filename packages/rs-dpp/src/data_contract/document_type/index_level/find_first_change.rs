@@ -173,8 +173,8 @@ impl IndexLevel {
         if self.time_range() != new.time_range() {
             let fmt = |t: Option<&super::TimeRangeTransform>| match t {
                 Some(t) => format!(
-                    "Some(on: {:?}, range: {}s, step: {}s, origin: {}s)",
-                    t.source, t.range_seconds, t.step_seconds, t.origin_seconds
+                    "Some(on: {:?}, range: {}s, step: {}s, phase: {}s)",
+                    t.source, t.range_seconds, t.step_seconds, t.phase_seconds
                 ),
                 None => "None".to_string(),
             };

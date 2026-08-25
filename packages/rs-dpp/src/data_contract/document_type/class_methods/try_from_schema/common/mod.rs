@@ -22,8 +22,6 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
 use crate::data_contract::document_type::index::Index;
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::index::TimeRangeTransform;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
@@ -1078,39 +1076,13 @@ fn parse_indices(
     // core never branches on a version.
     (ctx.generation.ranked_index_structure_check)(&indices)?;
 
-    // TIME RANGE: all indices that share a first property must agree on its
-    // time-range transform: either every such index buckets it with the
-    // identical transform, or none do. Otherwise the merged index trie node
-    // for that first property would be ambiguous (bucketed for one index,
-    // plain for another), so we reject the contract up front. No-op for
-    // generations whose grammar has no `timeRange`.
-    #[cfg(feature = "validation")]
-    if ctx.full_validation {
-        let mut first_property_time_range: BTreeMap<&str, Option<&TimeRangeTransform>> =
-            BTreeMap::new();
-        for index in indices.values() {
-            let Some(first) = index.properties.first() else {
-                continue;
-            };
-            let transform = index.time_range.as_ref();
-            match first_property_time_range.get(first.name.as_str()) {
-                Some(existing) if *existing != transform => {
-                    return Err(consensus_or_protocol_data_contract_error(
-                        DataContractError::InvalidContractStructure(format!(
-                            "indices that share the first property \"{}\" must agree on its \
-                             timeRange transform: either all bucket it identically or none \
-                             do",
-                            first.name
-                        )),
-                    ));
-                }
-                Some(_) => {}
-                None => {
-                    first_property_time_range.insert(first.name.as_str(), transform);
-                }
-            }
-        }
-    }
+    // TIME RANGE: indices that share a first property may bucket it with
+    // different grids (or not at all) — each grid forks into its own index
+    // level, keyed by the property name qualified with the grid parameters
+    // (`TimeRangeTransform::storage_key`), so a bucketed level never shares
+    // a keyspace with a plain level or with another grid's level. No
+    // cross-index agreement rule is needed; identical grids simply share
+    // one level.
 
     let index_structure =
         IndexLevel::try_from_indices(indices.values(), ctx.name, ctx.platform_version)?;

@@ -107,7 +107,7 @@ pub fn verify_start_at_document_in_proof(
         start_at: start_at_bytes,
         start_at_included,
         block_time_ms,
-        resolved_time_range_fields: vec![],
+        resolved_time_ranges: vec![],
     };
 
     let (root_hash, document_option) = query

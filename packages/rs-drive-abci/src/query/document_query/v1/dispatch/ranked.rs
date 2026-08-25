@@ -20,6 +20,7 @@ use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
+use drive::query::ResolvedTimeRange;
 use drive::query::{
     DocumentRankedRequest, DocumentRankedResponse, HavingClause, OrderClause, SelectProjection,
     WhereClause,
@@ -60,7 +61,7 @@ impl<C> Platform<C> {
         group_by: Vec<String>,
         having: Vec<HavingClause>,
         where_clauses: Vec<WhereClause>,
-        resolved_time_range_fields: Vec<String>,
+        resolved_time_ranges: Vec<ResolvedTimeRange>,
         order_clauses: Vec<OrderClause>,
         limit: Option<u32>,
         offset: Option<u32>,
@@ -104,7 +105,7 @@ impl<C> Platform<C> {
             having: &having,
             order_by: &order_clauses,
             where_clauses: &where_clauses,
-            resolved_time_range_fields: &resolved_time_range_fields,
+            resolved_time_ranges: &resolved_time_ranges,
             limit,
             offset,
             has_start_at: start.is_some(),

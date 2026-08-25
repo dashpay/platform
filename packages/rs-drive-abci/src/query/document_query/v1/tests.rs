@@ -4584,27 +4584,28 @@ mod time_range_proof_verification {
             operator: WhereOperator::Equal,
             value: Value::Text(hashtag.to_string()),
         }];
-        let resolved = drive::query::resolve_time_range_bucket_clause(
+        let (clause, resolution) = drive::query::resolve_time_range_bucket_clause(
             CREATED_AT,
             TimeRangeSelector::Newest,
+            None,
             *document_type,
             time_ms,
         )
         .expect("the metadata time falls inside an active range");
-        let bucket_start = resolved
+        let bucket_start = clause
             .value
             .to_integer::<u64>()
             .expect("a resolved bucket start is a millisecond timestamp");
-        where_clauses.push(resolved);
-        let resolved_fields = vec![CREATED_AT.to_string()];
+        where_clauses.push(clause);
+        let resolutions = vec![resolution];
 
-        drive::query::validate_resolved_time_range_clause_shapes(&where_clauses, &resolved_fields)
+        drive::query::validate_resolved_time_range_clause_shapes(&where_clauses, &resolutions)
             .expect("resolution produces exactly the one equality the guard admits");
 
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
-            &resolved_fields,
+            &resolutions,
         )
         .expect("the bucketed index covers the resolved clause set");
         assert_eq!(
@@ -4763,15 +4764,15 @@ mod time_range_proof_verification {
             operator: WhereOperator::Equal,
             value: Value::Text("ibiza".to_string()),
         }];
-        where_clauses.push(
-            drive::query::resolve_time_range_bucket_clause(
-                CREATED_AT,
-                TimeRangeSelector::Newest,
-                document_type,
-                mtd.time_ms,
-            )
-            .expect("the metadata time falls inside an active range"),
-        );
+        let (resolved_clause, resolution) = drive::query::resolve_time_range_bucket_clause(
+            CREATED_AT,
+            TimeRangeSelector::Newest,
+            None,
+            document_type,
+            mtd.time_ms,
+        )
+        .expect("the metadata time falls inside an active range");
+        where_clauses.push(resolved_clause);
         let mut drive_query = DriveDocumentQuery::from_typed_clauses(
             where_clauses,
             Vec::new(),
@@ -4785,7 +4786,7 @@ mod time_range_proof_verification {
             version,
         )
         .expect("the resolved clause set builds a drive query");
-        drive_query.resolved_time_range_fields = vec![CREATED_AT.to_string()];
+        drive_query.resolved_time_ranges = vec![resolution];
 
         let response = GetDocumentsResponse {
             version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
@@ -5161,5 +5162,215 @@ mod time_range_proof_verification {
             )
             .expect_err("an altered signed time must not yield a verified average");
         assert_proof_or_signature_rejection(error);
+    }
+    // ----- multiple grids over one timestamp ------------------------------
+
+    use drive::query::TimeRangeGridSpec;
+
+    const DAILY_INDEX: &str = "daily";
+    const DAY_SECONDS: u64 = 24 * 3_600;
+
+    /// The trending contract plus a second, daily (24h/24h) grid over the
+    /// same `$createdAt`. Grid-qualified level keys give each grid its own
+    /// subtree; the tests below pin that the wire can address each grid and
+    /// that the two prove independently.
+    fn register_two_grid_contract(
+        platform: &Platform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a factory");
+        let schemas = platform_value!({
+            DOCUMENT_TYPE: {
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+                },
+                "indices": [
+                    {
+                        "name": BUCKETED_INDEX,
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "timeRange": { "on": "$createdAt", "range": 21_600u64, "step": 7_200u64 },
+                    },
+                    {
+                        "name": DAILY_INDEX,
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "timeRange": { "on": "$createdAt", "range": DAY_SECONDS, "step": DAY_SECONDS },
+                    },
+                ],
+                "required": ["$createdAt", "hashtag"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = factory
+            .create_with_value_config(Identifier::new([9u8; 32]), 0, schemas, None, None)
+            .expect("a contract may bucket one timestamp with several grids")
+            .data_contract_owned();
+        store_data_contract(platform, &contract, platform_version);
+        contract
+    }
+
+    fn setup_two_grids(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        base_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, PlatformState) {
+        let contract = register_two_grid_contract(platform, platform_version);
+        insert_posts(platform, &contract, platform_version);
+        let state = state_with_committed_block_time(base_state, &platform.drive, platform_version);
+        (contract, state)
+    }
+
+    /// The wire's structured `IN_TIME_RANGE` operand:
+    /// `[selector, range, step]` (seconds, as the contract declares them).
+    fn structured_where_clauses(hashtag: &str, grid: TimeRangeGridSpec) -> Vec<ProtoWhereClause> {
+        let uint = |n: u64| ProtoDocumentFieldValue {
+            variant: Some(document_field_value::Variant::Uint64Value(n)),
+        };
+        let mut values = vec![
+            ProtoDocumentFieldValue {
+                variant: Some(document_field_value::Variant::Text(
+                    TimeRangeSelector::Newest.as_str().to_string(),
+                )),
+            },
+            uint(grid.range_seconds),
+            uint(grid.step_seconds),
+        ];
+        if grid.phase_seconds != 0 {
+            values.push(uint(grid.phase_seconds));
+        }
+        vec![
+            wc(
+                "hashtag",
+                ProtoWhereOperator::Equal,
+                Value::Text(hashtag.to_string()),
+            ),
+            ProtoWhereClause {
+                field: CREATED_AT.to_string(),
+                operator: ProtoWhereOperator::InTimeRange as i32,
+                value: Some(ProtoDocumentFieldValue {
+                    variant: Some(document_field_value::Variant::List(
+                        document_field_value::ValueList { values },
+                    )),
+                }),
+            },
+        ]
+    }
+
+    const TRENDING_GRID: TimeRangeGridSpec = TimeRangeGridSpec {
+        range_seconds: 21_600,
+        step_seconds: 7_200,
+        phase_seconds: 0,
+    };
+    const DAILY_GRID: TimeRangeGridSpec = TimeRangeGridSpec {
+        range_seconds: DAY_SECONDS,
+        step_seconds: DAY_SECONDS,
+        phase_seconds: 0,
+    };
+
+    /// With two grids on `$createdAt`, the bare text selector no longer
+    /// names a grid, so the handler refuses it as ambiguous rather than
+    /// picking one — a silent pick would prove an answer to a question the
+    /// client didn't ask.
+    #[test]
+    fn a_bare_selector_on_a_multi_grid_field_is_refused_as_ambiguous() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_two_grids(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("transport-level success");
+        assert!(
+            !result.errors.is_empty(),
+            "a bare selector over two grids must be refused"
+        );
+        assert!(
+            format!("{:?}", result.errors).contains("grids"),
+            "the refusal must say the field is multi-grid: {:?}",
+            result.errors
+        );
+    }
+
+    /// A four-element operand spelling a zero phase is refused: like the
+    /// contract grammar and the storage key, zero is spelled by omission so
+    /// every grid has exactly one wire spelling.
+    #[test]
+    fn an_explicit_zero_phase_operand_is_refused_as_non_canonical() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_two_grids(&platform, &base_state, version);
+
+        let mut clauses = structured_where_clauses("ibiza", TRENDING_GRID);
+        // append an explicit zero phase to the list operand
+        if let Some(ProtoDocumentFieldValue {
+            variant: Some(document_field_value::Variant::List(list)),
+        }) = clauses[1].value.as_mut()
+        {
+            list.values.push(ProtoDocumentFieldValue {
+                variant: Some(document_field_value::Variant::Uint64Value(0)),
+            });
+        } else {
+            panic!("the helper builds a list operand");
+        }
+        let request = GetDocumentsRequestV1 {
+            where_clauses: clauses,
+            ..trending_request(contract.id().to_vec(), "ibiza", select_count_star())
+        };
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("transport-level success");
+        assert!(
+            format!("{:?}", result.errors).contains("omission"),
+            "expected the one-spelling-per-grid refusal, got {:?}",
+            result.errors
+        );
+    }
+
+    /// Each grid proves and verifies independently through the SDK
+    /// `FromProof` entry point, with the structured operand naming the grid
+    /// on the wire and `with_time_range_grid` naming it in the client query.
+    /// The counts differ by design: the newest trending window holds two
+    /// `#ibiza` posts, while the newest daily window also contains the
+    /// one-hour-older post — three. A collapsed keyspace could not produce
+    /// both answers.
+    #[test]
+    fn each_grid_proves_and_verifies_independently_through_the_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_two_grids(&platform, &base_state, version);
+
+        for (grid, expected_count) in [(TRENDING_GRID, 2u64), (DAILY_GRID, 3u64)] {
+            let request = GetDocumentsRequestV1 {
+                where_clauses: structured_where_clauses("ibiza", grid),
+                ..trending_request(contract.id().to_vec(), "ibiza", select_count_star())
+            };
+            let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+            let query = SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
+                .expect("the fixture has this document type")
+                .with_select(SelectProjection::count_star())
+                .with_where(WhereClause {
+                    field: "hashtag".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("ibiza".to_string()),
+                })
+                .with_time_range_grid(CREATED_AT, TimeRangeSelector::Newest, grid);
+            let (count, _mtd, _proof) =
+                <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                    query,
+                    signed_response(proof, &mtd),
+                    Network::Testnet,
+                    version,
+                    &provider,
+                )
+                .expect("a correctly signed per-grid count must verify");
+            assert_eq!(
+                count.expect("the bucket is not empty"),
+                DocumentCount(expected_count),
+                "grid {:?} must count its own bucket's members",
+                grid
+            );
+        }
     }
 }

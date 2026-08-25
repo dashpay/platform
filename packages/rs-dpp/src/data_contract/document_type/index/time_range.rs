@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// fixed-length, regularly-spaced time ranges.
 ///
 /// The window is **declared in seconds** and **identified in milliseconds**.
-/// A contract author writes `range` / `step` / `origin` as second counts
+/// A contract author writes `range` / `step` / `phase` as second counts
 /// because the finest clock a bucket selection ever sees is block time, whose
 /// target interval is five seconds — a window declared to the millisecond
 /// would be precision the protocol cannot deliver. A time range is still
@@ -15,10 +15,13 @@ use serde::{Deserialize, Serialize};
 /// comparable to them. [`Self::range_ms`] and its siblings are the one place
 /// the two units meet.
 ///
-/// Each range covers `[start, start + range)`. New ranges start every `step`.
-/// When `range > step` the ranges overlap, so a single timestamp falls into
-/// `range / step` ranges (the "overlap factor") and a document is indexed
-/// under that many bucket-start values.
+/// Each range covers `[start, start + range)`. New ranges start every `step`,
+/// on the grid `phase + k * step` — `phase` is a pure alignment offset,
+/// validated to be strictly less than `step`, so the grid covers all of time
+/// (bar the sub-`step` sliver at the epoch that no real timestamp can ever
+/// fall into). When `range > step` the ranges overlap, so a single timestamp
+/// falls into `range / step` ranges (the "overlap factor") and a document is
+/// indexed under that many bucket-start values.
 ///
 /// The canonical use case is "trending" leaderboards: index on
 /// `(timeRange($createdAt), hashtag)` with `countable`, then query a single
@@ -35,13 +38,15 @@ use serde::{Deserialize, Serialize};
 /// within the bucket" is served as the grouped count above with client-side
 /// ordering until ranked prefix routing lands at a future protocol version.
 ///
-/// This transform lives on the index definition only. At the GroveDB storage
-/// layer a bucket start is an ordinary `u64` key segment (encoded exactly
-/// like a `$createdAt` value), so existing index queries, count trees and
-/// proofs apply unchanged — the only novelty is that one document produces
-/// several index entries.
+/// At the GroveDB storage layer, a transformed first property gets its own
+/// index level keyed by [`Self::storage_key`] — the property name qualified
+/// with the grid — so several grids over the same timestamp coexist as
+/// sibling subtrees. Within a grid's subtree a bucket start is an ordinary
+/// `u64` key segment (encoded exactly like a `$createdAt` value), so existing
+/// index queries, count trees and proofs apply unchanged — the only novelty
+/// is that one document produces several index entries.
 // The serde keys deliberately match the contract grammar (`on` / `range` /
-// `step` / `origin`, see the `timeRange` entry in the v3 document
+// `step` / `phase`, see the `timeRange` entry in the v3 document
 // meta-schema), so a serialized `Index` round-trips into the same key set a
 // contract author writes rather than a second, camelCased spelling.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -66,11 +71,14 @@ pub struct TimeRangeTransform {
     /// millisecond timeline.
     #[cfg_attr(feature = "serde-conversion", serde(rename = "step"))]
     pub step_seconds: u64,
-    /// Reference origin for range alignment, in seconds. Range starts are the
-    /// millisecond timestamps `origin_ms() + k * step_ms()` for
-    /// `k = 0, 1, 2, …`. Defaults to `0`.
-    #[cfg_attr(feature = "serde-conversion", serde(rename = "origin", default))]
-    pub origin_seconds: u64,
+    /// Grid alignment phase, in seconds. Range starts are the millisecond
+    /// timestamps `phase_ms() + k * step_ms()` for `k = 0, 1, 2, …`. A pure
+    /// phase offset: contract validation requires `phase < step`, so shifting
+    /// the grid never excludes any real timestamp — it only moves where the
+    /// window boundaries fall (e.g. daily windows cut at 06:00 UTC instead of
+    /// midnight). Defaults to `0`.
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "phase", default))]
+    pub phase_seconds: u64,
 }
 
 impl TimeRangeTransform {
@@ -102,11 +110,11 @@ impl TimeRangeTransform {
         self.step_seconds.saturating_mul(1_000)
     }
 
-    /// The alignment origin on the millisecond timeline — the first range's
-    /// start. See [`Self::range_ms`] for why the accessor exists and why it
-    /// saturates.
-    pub fn origin_ms(&self) -> u64 {
-        self.origin_seconds.saturating_mul(1_000)
+    /// The grid alignment phase on the millisecond timeline — the first
+    /// range's start. See [`Self::range_ms`] for why the accessor exists and
+    /// why it saturates.
+    pub fn phase_ms(&self) -> u64 {
+        self.phase_seconds.saturating_mul(1_000)
     }
 
     /// The number of overlapping ranges that contain any given instant, i.e.
@@ -125,21 +133,57 @@ impl TimeRangeTransform {
         self.range_seconds / self.step_seconds
     }
 
+    /// The GroveDB index-level key for this grid over `property_name`: the
+    /// property name qualified with the grid parameters, so different grids
+    /// over the same timestamp fork into sibling subtrees instead of
+    /// colliding in one keyspace (every 6-hour bucket start is also a
+    /// 3-hour bucket start — unqualified, the two grids' entries would be
+    /// indistinguishable).
+    ///
+    /// **This is the single source of the key encoding.** Contract setup,
+    /// the insert/delete/update walkers, query path derivation, the
+    /// uniqueness probe and proof verification must all derive the level key
+    /// through this function; a second implementation that disagreed on any
+    /// detail would split one logical index into two trees.
+    ///
+    /// Format: `{property}#{range}#{step}` with `#{phase}` appended **iff**
+    /// the phase is non-zero — omitted-means-zero is canonical (nothing ever
+    /// writes `#0`), mirroring the contract grammar where `phase` is an
+    /// omittable key. The numbers are the contract-declared **seconds**
+    /// verbatim, which are already canonical. `#` can never appear in a
+    /// schema property name (`^[a-zA-Z0-9-_]{1,64}$`, dot-joined for nested
+    /// paths), so a qualified key can never collide with a plain property
+    /// level.
+    pub fn storage_key(&self, property_name: &str) -> String {
+        if self.phase_seconds == 0 {
+            format!(
+                "{}#{}#{}",
+                property_name, self.range_seconds, self.step_seconds
+            )
+        } else {
+            format!(
+                "{}#{}#{}#{}",
+                property_name, self.range_seconds, self.step_seconds, self.phase_seconds
+            )
+        }
+    }
+
     /// The start of the most recent range that has begun at or before the
-    /// millisecond timestamp `t`, i.e. the largest `origin + k * step` that is
+    /// millisecond timestamp `t`, i.e. the largest `phase + k * step` that is
     /// `<= t`.
     ///
-    /// Returns `None` for `t` before the origin: no range has started yet, and
-    /// the first range's window `[origin, origin + range)` does not contain
-    /// such a `t`, so there is no honest answer. (Also `None` for a malformed
-    /// zero-step transform, which a validated contract can never carry.)
+    /// Returns `None` for `t` before the phase anchor — with a validated
+    /// transform (`phase < step`) that is only the sub-`step` sliver at the
+    /// epoch, which no real timestamp reaches; the arm is defensive. (Also
+    /// `None` for a malformed zero-step transform, which a validated contract
+    /// can never carry.)
     pub fn most_recent_start(&self, t: u64) -> Option<u64> {
-        let (step_ms, origin_ms) = (self.step_ms(), self.origin_ms());
-        if step_ms == 0 || t < origin_ms {
+        let (step_ms, phase_ms) = (self.step_ms(), self.phase_ms());
+        if step_ms == 0 || t < phase_ms {
             return None;
         }
-        let elapsed = t - origin_ms;
-        Some(origin_ms + (elapsed / step_ms) * step_ms)
+        let elapsed = t - phase_ms;
+        Some(phase_ms + (elapsed / step_ms) * step_ms)
     }
 
     /// All bucket-start values whose range `[start, start + range)` contains
@@ -147,11 +191,11 @@ impl TimeRangeTransform {
     /// document with timestamp `t` must be written under.
     ///
     /// The result is sorted in descending order (newest range first) and has
-    /// exactly [`Self::overlap_factor`] elements, except near the origin where
-    /// fewer ranges have started. For `t` before the origin the result is
-    /// empty: the timestamp predates every range, so the document is not
-    /// indexed under any bucket (insert, delete and update all share this
-    /// rule, keeping the index consistent).
+    /// exactly [`Self::overlap_factor`] elements, except within the first
+    /// `range` after the epoch where fewer ranges have started. For `t`
+    /// before the phase anchor (the sub-`step` epoch sliver no real timestamp
+    /// reaches) the result is empty — insert, delete and update all share
+    /// this rule, keeping the index consistent.
     pub fn containing_buckets(&self, t: u64) -> Vec<u64> {
         let overlap = self.overlap_factor();
         if overlap == 0 {
@@ -160,13 +204,13 @@ impl TimeRangeTransform {
         let Some(newest) = self.most_recent_start(t) else {
             return Vec::new();
         };
-        let (step_ms, origin_ms) = (self.step_ms(), self.origin_ms());
+        let (step_ms, phase_ms) = (self.step_ms(), self.phase_ms());
         (0..overlap)
             .filter_map(|j| {
                 let offset = j.checked_mul(step_ms)?;
                 newest.checked_sub(offset)
             })
-            .filter(|start| *start >= origin_ms)
+            .filter(|start| *start >= phase_ms)
             .collect()
     }
 
@@ -175,8 +219,8 @@ impl TimeRangeTransform {
     /// returns documents from the latest partial slice — between `0` and one
     /// `step` of history.
     ///
-    /// Returns `None` when `now` predates the origin: no range has started
-    /// yet, so there is no active bucket to query.
+    /// Returns `None` only when `now` predates the phase anchor (the epoch
+    /// sliver; unreachable for real block times).
     pub fn newest_active_start(&self, now: u64) -> Option<u64> {
         self.most_recent_start(now)
     }
@@ -187,8 +231,8 @@ impl TimeRangeTransform {
     /// history (between `range - step` and `range`). This is the bucket to
     /// query for "trending over the last range window".
     ///
-    /// Returns `None` when `now` predates the origin (no range has started
-    /// yet).
+    /// Returns `None` only when `now` predates the phase anchor (the epoch
+    /// sliver; unreachable for real block times).
     pub fn oldest_active_start(&self, now: u64) -> Option<u64> {
         let overlap = self.overlap_factor();
         if overlap == 0 {
@@ -196,7 +240,7 @@ impl TimeRangeTransform {
         }
         let newest = self.most_recent_start(now)?;
         let back = (overlap - 1).saturating_mul(self.step_ms());
-        Some(newest.saturating_sub(back).max(self.origin_ms()))
+        Some(newest.saturating_sub(back).max(self.phase_ms()))
     }
 
     /// The set of index-entry keys a document with the given raw encoded
@@ -212,9 +256,8 @@ impl TimeRangeTransform {
     ///   ordinary null entry every index gives null values.
     /// - A decodable millisecond timestamp yields one key per containing
     ///   bucket — the bucket *start*, encoded exactly like the timestamp
-    ///   itself — and **no keys at all** when the timestamp predates the
-    ///   origin (it belongs to no range; such a document is not present in
-    ///   this index).
+    ///   itself. (A timestamp inside the sub-`step` epoch sliver before the
+    ///   phase anchor yields no keys; no real timestamp reaches it.)
     /// - A non-empty value that fails to decode keeps its raw key, exactly as
     ///   a non-time-range index would store it.
     pub fn entry_keys_for_raw(&self, raw: &[u8]) -> Vec<Vec<u8>> {
@@ -243,12 +286,12 @@ mod tests {
     const HOUR_MS: u64 = 3_600_000;
 
     fn transform() -> TimeRangeTransform {
-        // range = 6h, step = 2h, origin = 0 → overlap factor 3.
+        // range = 6h, step = 2h, phase = 0 → overlap factor 3.
         TimeRangeTransform {
             source: "$createdAt".to_string(),
             range_seconds: 6 * HOUR_SECONDS,
             step_seconds: 2 * HOUR_SECONDS,
-            origin_seconds: 0,
+            phase_seconds: 0,
         }
     }
 
@@ -266,7 +309,7 @@ mod tests {
             source: "$createdAt".to_string(),
             range_seconds: u64::MAX,
             step_seconds: u64::MAX,
-            origin_seconds: 0,
+            phase_seconds: 0,
         };
         assert_eq!(t.range_ms(), u64::MAX);
         assert_eq!(t.overlap_factor(), 1);
@@ -281,31 +324,31 @@ mod tests {
         assert_eq!(t.most_recent_start(7 * h), Some(6 * h));
         // exactly on a boundary stays put
         assert_eq!(t.most_recent_start(6 * h), Some(6 * h));
-        // exactly at the origin is the first range
+        // exactly at the epoch is the first range
         assert_eq!(t.most_recent_start(0), Some(0));
     }
 
     #[test]
-    fn pre_origin_timestamps_have_no_buckets() {
-        // A one-minute window stepping every twenty seconds, its grid anchored
-        // at the 1_000-second mark — 1_000_000 ms into the epoch.
+    fn the_epoch_sliver_before_the_phase_has_no_buckets() {
+        // A one-minute window stepping every twenty seconds, its grid phased
+        // five seconds into each step. The only timestamps outside every
+        // range are the first five seconds of 1970 — a sliver no real
+        // timestamp reaches; the math must still answer it honestly.
         let t = TimeRangeTransform {
             source: "$createdAt".to_string(),
             range_seconds: 60,
             step_seconds: 20,
-            origin_seconds: 1_000,
+            phase_seconds: 5,
         };
-        // a timestamp before the origin belongs to no range: it must not be
-        // indexed under any bucket, and no range is active yet
-        assert_eq!(t.most_recent_start(999_999), None);
-        assert_eq!(t.containing_buckets(999_999), Vec::<u64>::new());
-        assert_eq!(t.newest_active_start(999_999), None);
-        assert_eq!(t.oldest_active_start(999_999), None);
-        // at the origin the first range starts
-        assert_eq!(t.most_recent_start(1_000_000), Some(1_000_000));
-        assert_eq!(t.containing_buckets(1_000_000), vec![1_000_000]);
+        assert_eq!(t.most_recent_start(4_999), None);
+        assert_eq!(t.containing_buckets(4_999), Vec::<u64>::new());
+        assert_eq!(t.newest_active_start(4_999), None);
+        assert_eq!(t.oldest_active_start(4_999), None);
+        // at the phase anchor the first range starts
+        assert_eq!(t.most_recent_start(5_000), Some(5_000));
+        assert_eq!(t.containing_buckets(5_000), vec![5_000]);
         // every returned bucket actually contains the timestamp
-        for now in [1_000_000u64, 1_010_000, 1_059_000, 1_100_000] {
+        for now in [5_000u64, 15_000, 64_999, 105_000] {
             for start in t.containing_buckets(now) {
                 assert!(start <= now && now < start + t.range_ms());
             }
@@ -325,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn containing_buckets_truncate_near_origin() {
+    fn containing_buckets_truncate_near_the_epoch() {
         let t = transform();
         let h = HOUR_MS;
         // doc at 3h: ranges starting at 2h and 0h (4h start would be in future)
@@ -365,28 +408,64 @@ mod tests {
         );
         // an undecodable non-empty value keeps its raw key
         assert_eq!(t.entry_keys_for_raw(&[1, 2, 3]), vec![vec![1, 2, 3]]);
-        // a pre-origin timestamp belongs to no range: no keys
-        let t_offset = TimeRangeTransform {
+        // a timestamp inside the epoch sliver belongs to no range: no keys
+        let t_phased = TimeRangeTransform {
             source: "$createdAt".to_string(),
             range_seconds: 60,
             step_seconds: 20,
-            origin_seconds: 1_000,
+            phase_seconds: 5,
         };
-        let raw = DocumentPropertyType::encode_date_timestamp(999_999);
-        assert_eq!(t_offset.entry_keys_for_raw(&raw), Vec::<Vec<u8>>::new());
+        let raw = DocumentPropertyType::encode_date_timestamp(4_999);
+        assert_eq!(t_phased.entry_keys_for_raw(&raw), Vec::<Vec<u8>>::new());
     }
 
     #[test]
-    fn origin_offset_shifts_alignment() {
+    fn phase_shifts_alignment() {
         let t = TimeRangeTransform {
             source: "$createdAt".to_string(),
             range_seconds: 60,
             step_seconds: 20,
-            origin_seconds: 5,
+            phase_seconds: 5,
         };
         // starts are the 5th, 25th, 45th, ... second; now = the 50th second →
         // most recent start is the 45th
         assert_eq!(t.most_recent_start(50_000), Some(45_000));
         assert_eq!(t.containing_buckets(50_000), vec![45_000, 25_000, 5_000]);
+    }
+
+    #[test]
+    fn storage_keys_qualify_the_property_with_the_grid() {
+        // phase 0 is spelled by omission — the canonical three-part form
+        assert_eq!(
+            transform().storage_key("$createdAt"),
+            "$createdAt#21600#7200"
+        );
+        // a non-zero phase appends the fourth part
+        let t = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 60,
+            step_seconds: 20,
+            phase_seconds: 5,
+        };
+        assert_eq!(t.storage_key("$createdAt"), "$createdAt#60#20#5");
+        // two grids over the same property produce distinct sibling keys —
+        // the collision the qualification exists to prevent (every 6h start
+        // is also a 3h start, so unqualified keys would interleave)
+        let six_hourly = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 6 * HOUR_SECONDS,
+            step_seconds: 6 * HOUR_SECONDS,
+            phase_seconds: 0,
+        };
+        let three_hourly = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 3 * HOUR_SECONDS,
+            step_seconds: 3 * HOUR_SECONDS,
+            phase_seconds: 0,
+        };
+        assert_ne!(
+            six_hourly.storage_key("$createdAt"),
+            three_hourly.storage_key("$createdAt")
+        );
     }
 }

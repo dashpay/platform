@@ -15,6 +15,7 @@
 //! prover and verifier reject the same set of inputs (same as count).
 
 use crate::query::drive_document_sum_query::{is_indexable_for_sum, is_range_operator};
+use crate::query::ResolvedTimeRange;
 use crate::query::{index_admissible_for_resolved_time_range, WhereClause, WhereOperator};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
@@ -27,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// additional `summable == Some(sum_property)` predicate on top of the
 /// strict-coverage match.
 ///
-/// `resolved_time_range_fields` names the fields whose equality clause was
+/// `resolved_time_ranges` names the fields whose equality clause was
 /// produced by `IN_TIME_RANGE` resolution (see
 /// [`crate::query::resolve_time_range_bucket_clause`]) and gates which indexes
 /// are candidates — see [`index_admissible_for_resolved_time_range`].
@@ -35,7 +36,7 @@ pub fn find_summable_index_for_where_clauses<'b>(
     indexes: &'b BTreeMap<String, Index>,
     where_clauses: &[WhereClause],
     sum_property: &str,
-    resolved_time_range_fields: &[String],
+    resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
     // Defense-in-depth: any non-indexable operator immediately disqualifies
     // — the sum point-lookup path can only serve Equal/In.
@@ -62,7 +63,7 @@ pub fn find_summable_index_for_where_clauses<'b>(
         // every document unless the query pins a single bucket, and only a
         // resolution-produced equality does that. Conversely a raw clause
         // must never bind to bucket keys.
-        if !index_admissible_for_resolved_time_range(index, resolved_time_range_fields) {
+        if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
             continue;
         }
         // Skip if not summable OR if summable property doesn't match.
@@ -92,7 +93,7 @@ pub fn find_summable_index_for_where_clauses<'b>(
 ///
 /// Mirror of count's `find_range_countable_index_for_where_clauses`.
 ///
-/// `resolved_time_range_fields` gates the candidate set exactly as in
+/// `resolved_time_ranges` gates the candidate set exactly as in
 /// [`find_summable_index_for_where_clauses`]. A resolved field never arrives
 /// as a range clause — resolution always produces an equality — so with a
 /// non-empty list the only bucketed index this can return is one whose
@@ -103,7 +104,7 @@ pub fn find_range_summable_index_for_where_clauses<'b>(
     indexes: &'b BTreeMap<String, Index>,
     where_clauses: &[WhereClause],
     sum_property: &str,
-    resolved_time_range_fields: &[String],
+    resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
     let range_clauses: Vec<&WhereClause> = where_clauses
         .iter()
@@ -148,7 +149,7 @@ pub fn find_range_summable_index_for_where_clauses<'b>(
         // indexes store one entry per containing bucket, so only a query
         // pinned to a single bucket by a resolution-produced equality may
         // walk them, and raw clauses may never bind to bucket keys.
-        if !index_admissible_for_resolved_time_range(index, resolved_time_range_fields) {
+        if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
             continue;
         }
         if !index.range_summable {

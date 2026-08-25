@@ -613,15 +613,15 @@
                 "minimum": 1,
                 "description": "Interval between successive range starts, in seconds. When `range` > `step` the ranges overlap and a document is indexed under `range / step` bucket-start values, bounded by a protocol-versioned cap (24 at protocol version 14)."
               },
-              "origin": {
+              "phase": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Reference origin for range alignment, in seconds. Range starts are `origin + k * step`. Defaults to 0."
+                "description": "Grid alignment phase, in seconds. Range starts are `phase + k * step`; must be strictly less than `step` (a larger value would be a redundant spelling of `phase % step`). A pure alignment offset — it moves where window boundaries fall (e.g. daily windows cut at 06:00 UTC instead of midnight) and never excludes any timestamp. Defaults to 0."
               }
             },
             "required": ["on", "range", "step"],
             "additionalProperties": false,
-            "description": "Buckets the first index property's timestamp into fixed-length, regularly-spaced (possibly overlapping) time ranges. The window parameters (`range`, `step`, `origin`) are declared in seconds, since a bucket is selected from block time and the target block interval is five seconds; the stored key is the range start as a u64 millisecond timestamp, so it stays directly comparable to the source timestamp it buckets. Enables trending/leaderboard queries within the newest/oldest active range. A system-timestamp source must be listed in the document type's required fields, and documents whose timestamp predates `origin` belong to no range (they are absent from this index). Available from protocol version 14."
+            "description": "Buckets the first index property's timestamp into fixed-length, regularly-spaced (possibly overlapping) time ranges. The window parameters (`range`, `step`, `phase`) are declared in seconds, since a bucket is selected from block time and the target block interval is five seconds; the stored key is the range start as a u64 millisecond timestamp, so it stays directly comparable to the source timestamp it buckets. Enables trending/leaderboard queries within the newest/oldest active range. A system-timestamp source must be listed in the document type's required fields. Several indexes may bucket the same timestamp with different grids — each grid gets its own index subtree, keyed by the property name qualified with the grid parameters. Available from protocol version 14."
           }
         },
         "required": [

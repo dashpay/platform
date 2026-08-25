@@ -108,7 +108,7 @@ pub(super) fn verify_sum_query(
     // block time — BEFORE mode detection and covering-index selection
     // below, which read `request.where_clauses`; the prover routed on
     // the resolved shape.
-    let resolved_time_range_fields =
+    let resolved_time_ranges =
         super::document_query::resolve_time_range_clauses_with_metadata_time(
             &mut request,
             mtd.time_ms,
@@ -120,7 +120,7 @@ pub(super) fn verify_sum_query(
     // honest prover, so reject before mode detection can route on it.
     drive::query::validate_resolved_time_range_clause_shapes(
         &request.where_clauses,
-        &resolved_time_range_fields,
+        &resolved_time_ranges,
     )
     .map_err(|e| drive_proof_verifier::Error::RequestError {
         error: format!("invalid time range query shape: {}", e),
@@ -195,7 +195,7 @@ pub(super) fn verify_sum_query(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
-            &resolved_time_range_fields,
+            &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove range SUM requires a `rangeSummable: true` index whose last \
@@ -208,7 +208,7 @@ pub(super) fn verify_sum_query(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
-            &resolved_time_range_fields,
+            &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove SUM requires a `summable: \"<prop>\"` index whose properties \

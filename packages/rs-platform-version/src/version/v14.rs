@@ -96,15 +96,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// 5. **Time-range indexes**: an index can declare a `timeRange` transform
 ///    that buckets a required system timestamp (`$createdAt` /
 ///    `$updatedAt` / `$transferredAt`) into fixed-length, regularly-spaced,
-///    optionally overlapping windows declared in seconds. A document is
-///    stored once per containing bucket (the v2 insert/delete and v1
-///    update walkers carry the fan-out; the per-document write
-///    amplification is capped by `SystemLimits::
-///    max_time_range_overlap_factor`), and the v1 `getDocuments` handler
-///    resolves the new `IN_TIME_RANGE` operator into a bucket-start
-///    equality from committed block time, making "newest window"
-///    trending/leaderboard document and count/sum/avg queries provable.
-///    `unique: true` is admitted only for non-overlapping windows
+///    optionally overlapping windows declared in seconds (`range` / `step`,
+///    plus an optional `phase < step` alignment offset). Each grid gets its
+///    own index subtree — the level is keyed by the property name qualified
+///    with the grid — so several grids may bucket one timestamp side by
+///    side. A document is stored once per containing bucket per grid (the
+///    v2 insert/delete and v1 update walkers carry the fan-out; the
+///    per-document write amplification is capped per index by
+///    `SystemLimits::max_time_range_overlap_factor`), and the v1
+///    `getDocuments` handler resolves the new `IN_TIME_RANGE` operator —
+///    bare `"newest"`/`"oldest"` on a single-grid field, or a structured
+///    `[selector, range, step(, phase)]` operand naming one grid — into a
+///    bucket-start equality from committed block time, making "newest
+///    window" trending/leaderboard document and count/sum/avg queries
+///    provable. `unique: true` is admitted only for non-overlapping windows
 ///    (`range == step`) sourced from the immutable `$createdAt`.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the

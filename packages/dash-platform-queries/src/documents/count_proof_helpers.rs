@@ -155,7 +155,7 @@ pub(super) fn verify_count_query(
     // block time — BEFORE mode detection and covering-index selection
     // below, which read `request.where_clauses`; the prover routed on
     // the resolved shape.
-    let resolved_time_range_fields =
+    let resolved_time_ranges =
         super::document_query::resolve_time_range_clauses_with_metadata_time(
             &mut request,
             mtd.time_ms,
@@ -167,7 +167,7 @@ pub(super) fn verify_count_query(
     // honest prover, so reject before mode detection can route on it.
     drive::query::validate_resolved_time_range_clause_shapes(
         &request.where_clauses,
-        &resolved_time_range_fields,
+        &resolved_time_ranges,
     )
     .map_err(|e| drive_proof_verifier::Error::RequestError {
         error: format!("invalid time range query shape: {}", e),
@@ -248,7 +248,7 @@ pub(super) fn verify_count_query(
         DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
             document_type.indexes(),
             &request.where_clauses,
-            &resolved_time_range_fields,
+            &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "range count requires a `range_countable: true` index whose last \
@@ -259,7 +259,7 @@ pub(super) fn verify_count_query(
         DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             &request.where_clauses,
-            &resolved_time_range_fields,
+            &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove count requires a `countable: true` index whose properties \
@@ -475,9 +475,13 @@ mod tests {
     const RANGE_SECONDS: u64 = 6 * 3_600;
     const STEP_SECONDS: u64 = 2 * 3_600;
     const STEP_MS: u64 = STEP_SECONDS * 1_000;
-    /// An exact multiple of the two-hour step, so on the `origin: 0` grid it
+    /// An exact multiple of the two-hour step, so on the `phase: 0` grid it
     /// is itself a bucket start.
     const BUCKET_START_MS: u64 = 1_755_000_000_000;
+    /// A one-hour phase — strictly less than the step, as validation
+    /// requires — for the epoch-sliver refusal test.
+    const PHASE_SECONDS: u64 = 3_600;
+    const PHASE_MS: u64 = PHASE_SECONDS * 1_000;
 
     fn platform_version() -> &'static PlatformVersion {
         PlatformVersion::latest()
@@ -519,10 +523,10 @@ mod tests {
     }
 
     /// A contract whose `post` doctype carries a `countable` bucketed index
-    /// over `(timeRange($createdAt), hashtag)`. `origin_seconds` is a
-    /// parameter because the pre-origin refusal is one of the behaviours
+    /// over `(timeRange($createdAt), hashtag)`. `phase_seconds` is a
+    /// parameter because the epoch-sliver refusal is one of the behaviours
     /// under test.
-    fn trending_contract(origin_seconds: u64) -> Arc<DataContract> {
+    fn trending_contract(phase_seconds: u64) -> Arc<DataContract> {
         let schemas = platform_value!({
             "post": {
                 "type": "object",
@@ -538,7 +542,7 @@ mod tests {
                             "on": "$createdAt",
                             "range": RANGE_SECONDS,
                             "step": STEP_SECONDS,
-                            "origin": origin_seconds,
+                            "phase": phase_seconds,
                         },
                     },
                 ],
@@ -603,11 +607,17 @@ mod tests {
         let mut request = newest_bucket_query(Arc::clone(&contract));
         let metadata_time_ms = BUCKET_START_MS + 3_600_000;
 
-        let resolved_fields =
+        let resolutions =
             resolve_time_range_clauses_with_metadata_time(&mut request, metadata_time_ms)
                 .expect("a metadata time inside an active range resolves");
 
-        assert_eq!(resolved_fields, vec![CREATED_AT.to_string()]);
+        assert_eq!(resolutions.len(), 1);
+        assert_eq!(resolutions[0].field, CREATED_AT);
+        assert_eq!(
+            resolutions[0].transform.range_seconds, RANGE_SECONDS,
+            "the provenance must carry the exact grid the resolution used"
+        );
+        assert_eq!(resolutions[0].transform.step_seconds, STEP_SECONDS);
         assert!(
             request.time_range_clauses.is_empty(),
             "the pending selector must be drained, not left to be encoded twice"
@@ -657,24 +667,23 @@ mod tests {
         );
     }
 
-    /// A metadata time before the index's origin belongs to no range at
-    /// all. The client refuses rather than inventing a bucket, mirroring the
+    /// A metadata time inside the epoch sliver before the grid's phase
+    /// anchor belongs to no range at all. No real block time reaches it, but
+    /// the client must refuse rather than invent a bucket, mirroring the
     /// server, which refuses the same request at resolution time — so the
     /// two sides cannot disagree about whether the query was answerable.
     #[test]
-    fn a_metadata_time_before_the_index_origin_refuses_to_resolve() {
-        let origin_seconds = BUCKET_START_MS / 1_000;
-        let contract = trending_contract(origin_seconds);
+    fn a_metadata_time_in_the_epoch_sliver_refuses_to_resolve() {
+        let contract = trending_contract(PHASE_SECONDS);
         let mut request = newest_bucket_query(contract);
 
-        let error =
-            resolve_time_range_clauses_with_metadata_time(&mut request, BUCKET_START_MS - 1)
-                .expect_err("a time predating every range has no honest bucket");
+        let error = resolve_time_range_clauses_with_metadata_time(&mut request, PHASE_MS - 1)
+            .expect_err("a time predating every range has no honest bucket");
 
         match error {
             drive_proof_verifier::Error::RequestError { error } => assert!(
-                error.contains("origin"),
-                "expected the pre-origin refusal, got: {error}"
+                error.contains("phase"),
+                "expected the epoch-sliver refusal, got: {error}"
             ),
             other => panic!("expected a request error, got: {other:?}"),
         }

@@ -34,12 +34,30 @@ use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
     DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
-    HavingRightOperand, InternalClauses, OrderClause, SelectFunction, SelectProjection,
-    TimeRangeSelector, WhereClause, WhereOperator,
+    HavingRightOperand, InternalClauses, OrderClause, ResolvedTimeRange, SelectFunction,
+    SelectProjection, TimeRangeGridSpec, TimeRangeSelector, WhereClause, WhereOperator,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 
 // TODO: remove DocumentQuery once ContextProvider that provides data contracts is merged.
+
+/// One pending `IN_TIME_RANGE` selection: the timestamp field, the
+/// `"newest"` / `"oldest"` selector, and — when the contract buckets the
+/// field with more than one `timeRange` grid — the grid it targets (`None`
+/// means the field's sole grid, and the server rejects the bare form on a
+/// multi-grid field as ambiguous).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct TimeRangeClause {
+    /// The bucketed timestamp field the selection is on.
+    pub field: String,
+    /// Which active window to resolve to.
+    pub selector: TimeRangeSelector,
+    /// The grid targeted, in the contract's declared seconds; `None` when
+    /// the field carries a single grid.
+    #[cfg_attr(feature = "mocks", serde(default))]
+    pub grid: Option<TimeRangeGridSpec>,
+}
 
 /// Request that is used to query documents from the Dash Platform.
 ///
@@ -74,14 +92,15 @@ pub struct DocumentQuery {
     pub document_type_name: String,
     /// `where` clauses for the query
     pub where_clauses: Vec<WhereClause>,
-    /// Time-range (`IN_TIME_RANGE`) selections — `(field, selector)` pairs on
-    /// a timestamp field covered by a `timeRange` index. These are emitted as
-    /// `IN_TIME_RANGE` clauses on the v1 wire and resolved server-side from
-    /// the current block time; the verifier re-derives the same bucket from
-    /// the quorum-signed response metadata time. v1-only (the v0 wire has no
-    /// `IN_TIME_RANGE` operator). See [`Self::with_time_range`].
+    /// Time-range (`IN_TIME_RANGE`) selections on a timestamp field covered
+    /// by a `timeRange` index. These are emitted as `IN_TIME_RANGE` clauses
+    /// on the v1 wire and resolved server-side from the current block time;
+    /// the verifier re-derives the same bucket from the quorum-signed
+    /// response metadata time. v1-only (the v0 wire has no `IN_TIME_RANGE`
+    /// operator). See [`Self::with_time_range`] and
+    /// [`Self::with_time_range_grid`].
     #[cfg_attr(feature = "mocks", serde(default))]
-    pub time_range_clauses: Vec<(String, TimeRangeSelector)>,
+    pub time_range_clauses: Vec<TimeRangeClause>,
     /// SQL `GROUP BY` field names, in left-to-right order. Empty =
     /// no explicit grouping (aggregate count for `select=Count`).
     /// Only meaningful when `select=Count`; non-empty with
@@ -226,13 +245,41 @@ impl DocumentQuery {
     /// re-derives the identical bucket from the quorum-signed response
     /// metadata time. Requires Platform v3.1+ (v1 wire).
     ///
+    /// The bare selector is unambiguous only while exactly one grid buckets
+    /// `field`; when the contract declares several grids over it, use
+    /// [`Self::with_time_range_grid`] to name one.
+    ///
     /// Existing time-range selections are preserved.
     pub fn with_time_range(
         mut self,
         field: impl Into<String>,
         selector: TimeRangeSelector,
     ) -> Self {
-        self.time_range_clauses.push((field.into(), selector));
+        self.time_range_clauses.push(TimeRangeClause {
+            field: field.into(),
+            selector,
+            grid: None,
+        });
+        self
+    }
+
+    /// [`Self::with_time_range`] naming a specific grid — required when the
+    /// contract buckets `field` with more than one `timeRange` grid. The
+    /// spec's `range` / `step` / `phase` are the contract's own declared
+    /// seconds, verbatim.
+    ///
+    /// Existing time-range selections are preserved.
+    pub fn with_time_range_grid(
+        mut self,
+        field: impl Into<String>,
+        selector: TimeRangeSelector,
+        grid: TimeRangeGridSpec,
+    ) -> Self {
+        self.time_range_clauses.push(TimeRangeClause {
+            field: field.into(),
+            selector,
+            grid: Some(grid),
+        });
         self
     }
 
@@ -480,7 +527,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         // reconstructed query matches the proof exactly. Resolve before the
         // `DriveDocumentQuery` conversion so the engine sees ordinary equality
         // clauses.
-        let mut resolved_time_range_fields = Vec::new();
+        let mut resolved_time_ranges = Vec::new();
         if !request.time_range_clauses.is_empty() {
             // The generated `VersionedGrpcResponse::metadata()` handles both
             // response envelopes (and any future one), so no hand-written
@@ -493,7 +540,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                     error: "time range query proof response is missing block-time metadata"
                         .to_string(),
                 })?;
-            resolved_time_range_fields =
+            resolved_time_ranges =
                 resolve_time_range_clauses_with_metadata_time(&mut request, time_ms)?;
         }
 
@@ -506,7 +553,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         // The conversion cannot recover which equalities came from resolution,
         // so the provenance is carried across here; index selection reads it
         // to pin the query to the index that buckets the field.
-        drive_query.resolved_time_range_fields = resolved_time_range_fields;
+        drive_query.resolved_time_ranges = resolved_time_ranges;
 
         <drive_proof_verifier::types::Documents as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
             drive_query,
@@ -532,16 +579,18 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
 /// this before resolving their mode. Skipping it would rebuild the query from
 /// a different shape than the prover used.
 ///
-/// Returns the resolved fields — the names whose pushed clause is a bucket
-/// equality rather than a raw-timestamp one. Callers must carry them into
-/// index selection (`DriveDocumentQuery::resolved_time_range_fields`, or the
-/// `resolved_time_range_fields` argument of the aggregate index pickers):
+/// Returns the resolution provenance — one [`ResolvedTimeRange`] (field +
+/// exact grid) per selection, whose pushed clause is a bucket equality
+/// rather than a raw-timestamp one. Callers must carry them into index
+/// selection (`DriveDocumentQuery::resolved_time_ranges`, or the
+/// `resolved_time_ranges` argument of the aggregate index pickers):
 /// the pushed clause is an ordinary equality and nothing downstream can
-/// otherwise tell that it must be matched against bucket starts.
+/// otherwise tell that it must be matched against the resolved grid's
+/// bucket starts.
 pub(super) fn resolve_time_range_clauses_with_metadata_time(
     request: &mut DocumentQuery,
     time_ms: u64,
-) -> Result<Vec<String>, drive_proof_verifier::Error> {
+) -> Result<Vec<ResolvedTimeRange>, drive_proof_verifier::Error> {
     if request.time_range_clauses.is_empty() {
         return Ok(Vec::new());
     }
@@ -552,21 +601,27 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
             error: format!("document type not found for time range query: {}", e),
         })?;
     let time_range_clauses = std::mem::take(&mut request.time_range_clauses);
-    let mut resolved_fields = Vec::with_capacity(time_range_clauses.len());
-    for (field, selector) in time_range_clauses {
-        let resolved = drive::query::resolve_time_range_bucket_clause(
+    let mut resolved_time_ranges = Vec::with_capacity(time_range_clauses.len());
+    for TimeRangeClause {
+        field,
+        selector,
+        grid,
+    } in time_range_clauses
+    {
+        let (clause, resolved) = drive::query::resolve_time_range_bucket_clause(
             &field,
             selector,
+            grid,
             document_type,
             time_ms,
         )
         .map_err(|e| drive_proof_verifier::Error::RequestError {
             error: format!("failed to resolve time range clause: {}", e),
         })?;
-        request.where_clauses.push(resolved);
-        resolved_fields.push(field);
+        request.where_clauses.push(clause);
+        resolved_time_ranges.push(resolved);
     }
-    Ok(resolved_fields)
+    Ok(resolved_time_ranges)
 }
 
 /// Version-aware encoder. The dispatch is driven by the
@@ -661,7 +716,7 @@ fn encode_v1(
     data_contract_id: Vec<u8>,
     document_type: String,
     where_clauses: Vec<WhereClause>,
-    time_range_clauses: Vec<(String, TimeRangeSelector)>,
+    time_range_clauses: Vec<TimeRangeClause>,
     order_by_clauses: Vec<OrderClause>,
     limit: u32,
     offset: Option<u32>,
@@ -674,19 +729,51 @@ fn encode_v1(
         .into_iter()
         .map(where_clause_to_proto)
         .collect::<Result<Vec<_>, _>>()?;
-    // Append time-range selections as `IN_TIME_RANGE` clauses: field +
-    // `"newest"`/`"oldest"` text operand. The server resolves them to a
-    // concrete bucket from current block time; the verifier re-derives the
-    // same bucket from the signed response metadata time.
-    for (field, selector) in time_range_clauses {
+    // Append time-range selections as `IN_TIME_RANGE` clauses. A grid-less
+    // selection rides as the bare `"newest"`/`"oldest"` text operand; a
+    // grid-targeted one as the list operand `[selector, range, step]` /
+    // `[selector, range, step, phase]` in the contract's declared seconds
+    // (zero phase spelled by omission — one wire spelling per grid, the
+    // same rule the contract grammar and the storage key follow). The
+    // server resolves them to a concrete bucket from current block time;
+    // the verifier re-derives the same bucket from the signed response
+    // metadata time.
+    for TimeRangeClause {
+        field,
+        selector,
+        grid,
+    } in time_range_clauses
+    {
+        let selector_value = ProtoDocumentFieldValue {
+            variant: Some(document_field_value::Variant::Text(
+                selector.as_str().to_string(),
+            )),
+        };
+        let operand = match grid {
+            None => selector_value,
+            Some(spec) => {
+                let uint = |n: u64| ProtoDocumentFieldValue {
+                    variant: Some(document_field_value::Variant::Uint64Value(n)),
+                };
+                let mut values = vec![
+                    selector_value,
+                    uint(spec.range_seconds),
+                    uint(spec.step_seconds),
+                ];
+                if spec.phase_seconds != 0 {
+                    values.push(uint(spec.phase_seconds));
+                }
+                ProtoDocumentFieldValue {
+                    variant: Some(document_field_value::Variant::List(
+                        document_field_value::ValueList { values },
+                    )),
+                }
+            }
+        };
         where_clauses.push(ProtoWhereClause {
             field,
             operator: ProtoWhereOperator::InTimeRange as i32,
-            value: Some(ProtoDocumentFieldValue {
-                variant: Some(document_field_value::Variant::Text(
-                    selector.as_str().to_string(),
-                )),
-            }),
+            value: Some(operand),
         });
     }
     let order_by = order_by_clauses
@@ -1029,7 +1116,7 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
             // its equalities came from resolution. Callers that resolved
             // selections assign the fields they resolved onto the returned
             // query; everything else is a raw query.
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         Ok(query)

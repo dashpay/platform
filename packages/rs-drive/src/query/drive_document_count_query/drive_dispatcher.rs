@@ -22,6 +22,7 @@ use super::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -65,9 +66,9 @@ pub struct DocumentCountRequest<'a> {
     /// The fields among `where_clauses` whose equality clause was produced by
     /// `IN_TIME_RANGE` resolution rather than written by the caller. Same
     /// contract and same purpose as
-    /// [`crate::query::DriveDocumentQuery::resolved_time_range_fields`]:
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]:
     /// it is what gates which indexes the count pickers may select.
-    pub resolved_time_range_fields: Vec<String>,
+    pub resolved_time_ranges: Vec<ResolvedTimeRange>,
     /// Structured `order_by` clauses. The first clause's direction
     /// governs split-mode entry ordering (per-`In`-value /
     /// per-distinct-value-in-range) and, on the
@@ -451,10 +452,10 @@ impl Drive {
         // for the catalog of rejections / canonicalization rules.
         let where_clauses =
             validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
-        let resolved_time_range_fields = request.resolved_time_range_fields;
+        let resolved_time_ranges = request.resolved_time_ranges;
         crate::query::validate_resolved_time_range_clause_shapes(
             &where_clauses,
-            &resolved_time_range_fields,
+            &resolved_time_ranges,
         )?;
         let order_clauses = request.order_clauses;
 
@@ -487,7 +488,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
-                    &resolved_time_range_fields,
+                    &resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?;
@@ -509,7 +510,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
-                        &resolved_time_range_fields,
+                        &resolved_time_ranges,
                         options,
                         transaction,
                         platform_version,
@@ -550,7 +551,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
-                    &resolved_time_range_fields,
+                    &resolved_time_ranges,
                     options,
                     transaction,
                     platform_version,
@@ -572,7 +573,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
-                    &resolved_time_range_fields,
+                    &resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,
@@ -632,7 +633,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
-                        &resolved_time_range_fields,
+                        &resolved_time_ranges,
                         limit_u16,
                         left_to_right,
                         transaction,
@@ -646,7 +647,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
-                    &resolved_time_range_fields,
+                    &resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,
@@ -734,7 +735,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
-                        &resolved_time_range_fields,
+                        &resolved_time_ranges,
                         effective_limit,
                         left_to_right,
                         transaction,

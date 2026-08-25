@@ -377,7 +377,7 @@ impl Drive {
                         // the tuple never moves and `allow_original` keeps its
                         // meaning — the tuple changed exactly when one of the
                         // index's other properties changed.
-                        let mut resolved_time_range_fields = Vec::new();
+                        let mut resolved_time_ranges = Vec::new();
                         if let Some(transform) = &index.time_range {
                             let Some(clause) = where_queries.get_mut(transform.source.as_str())
                             else {
@@ -406,16 +406,20 @@ impl Drive {
                             };
                             let timestamp = timestamp?;
                             // A validated unique time-range index has overlap
-                            // factor 1 (range == step), so a timestamp at or
-                            // after the transform's origin yields exactly one
-                            // containing bucket. An empty result means the
-                            // timestamp predates the origin: such documents
-                            // produce no index entries at all, so they cannot
-                            // collide with anything under this index and the
-                            // whole check is skipped for it.
+                            // factor 1 (range == step), so any real timestamp
+                            // yields exactly one containing bucket. An empty
+                            // result means the timestamp falls in the
+                            // sub-`step` epoch sliver before the grid's phase
+                            // anchor: such documents produce no index entries
+                            // at all, so they cannot collide with anything
+                            // under this index and the whole check is skipped
+                            // for it.
                             let bucket_start = *transform.containing_buckets(timestamp).first()?;
                             clause.value = platform_value!(bucket_start);
-                            resolved_time_range_fields.push(transform.source.clone());
+                            resolved_time_ranges.push(crate::query::ResolvedTimeRange {
+                                field: transform.source.clone(),
+                                transform: transform.clone(),
+                            });
                         }
 
                         let query = DriveDocumentQuery {
@@ -434,7 +438,7 @@ impl Drive {
                             start_at: None,
                             start_at_included: false,
                             block_time_ms: None,
-                            resolved_time_range_fields,
+                            resolved_time_ranges,
                         };
 
                         // todo: deal with cost of this operation

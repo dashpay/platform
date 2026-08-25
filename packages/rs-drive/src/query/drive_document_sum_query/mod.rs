@@ -54,6 +54,7 @@ pub mod executors;
 mod tests;
 
 #[cfg(any(feature = "server", feature = "verify"))]
+use crate::query::ResolvedTimeRange;
 use crate::query::{WhereClause, WhereOperator};
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -183,9 +184,9 @@ pub struct DocumentSumRequest<'a> {
     /// The fields among `where_clauses` whose equality clause was produced by
     /// `IN_TIME_RANGE` resolution rather than written by the caller. Same
     /// contract and same purpose as
-    /// [`crate::query::DriveDocumentQuery::resolved_time_range_fields`]:
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]:
     /// it is what gates which indexes the sum pickers may select.
-    pub resolved_time_range_fields: Vec<String>,
+    pub resolved_time_ranges: Vec<ResolvedTimeRange>,
     /// Structured order-clauses (parsed via
     /// [`drive_dispatcher::order_clauses_from_value`]).
     pub order_clauses: Vec<OrderClause>,

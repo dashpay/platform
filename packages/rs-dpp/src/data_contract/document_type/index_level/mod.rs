@@ -12,7 +12,6 @@ use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
 use crate::data_contract::document_type::Index;
-use crate::data_contract::errors::DataContractError;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
@@ -257,27 +256,26 @@ impl IndexLevel {
 
         let mut counter: u64 = 0;
 
-        // First-property nodes that have already been visited, with the
-        // transform (or absence of one) their first visitor recorded. All
-        // indices sharing a first property must agree on its time-range
-        // transform — the walkers read the transform off the *merged* node,
-        // so a disagreement would bucket one index's entries and not
-        // another's. `try_from_schema` also rejects this under full
-        // validation; enforcing it here as well covers every construction
-        // path (check_tx, deserialized state, hand-built document types)
-        // instead of silently letting the last writer win.
-        let mut first_property_transforms: BTreeMap<String, Option<TimeRangeTransform>> =
-            BTreeMap::new();
-
         for index_to_borrow in indices {
             let index = index_to_borrow.borrow();
             let mut current_level = &mut index_level;
             let mut properties_iter = index.properties.iter().enumerate().peekable();
 
             while let Some((position, index_part)) = properties_iter.next() {
+                // A time-range transform always targets the index's first
+                // property, and its level is keyed by the property name
+                // *qualified with the grid* (`Index::level_key`, backed by
+                // `TimeRangeTransform::storage_key`) rather than the bare
+                // name. That fork is what lets several grids over one
+                // timestamp — and a plain index over the same timestamp —
+                // coexist: each grid's bucket starts live in their own
+                // subtree instead of interleaving in one keyspace. Identical
+                // grids map to the identical key, so indices sharing a grid
+                // still share the level.
+                let level_key = index.level_key(position, &index_part.name);
                 current_level = current_level
                     .sub_index_levels
-                    .entry(index_part.name.clone())
+                    .entry(level_key)
                     .or_insert_with(|| {
                         counter += 1;
                         IndexLevel {
@@ -288,28 +286,7 @@ impl IndexLevel {
                         }
                     });
 
-                // A time-range transform always targets the index's first
-                // property, so record it on that first-property node —
-                // rejecting any disagreement between indices that share it
-                // (see `first_property_transforms` above).
                 if position == 0 {
-                    match first_property_transforms.get(&index_part.name) {
-                        Some(existing) if *existing != index.time_range => {
-                            return Err(ProtocolError::DataContractError(
-                                DataContractError::InvalidContractStructure(format!(
-                                    "indices that share the first property \"{}\" must agree on \
-                                     its timeRange transform: either all bucket it identically \
-                                     or none do",
-                                    index_part.name
-                                )),
-                            ));
-                        }
-                        Some(_) => {}
-                        None => {
-                            first_property_transforms
-                                .insert(index_part.name.clone(), index.time_range.clone());
-                        }
-                    }
                     if let Some(transform) = &index.time_range {
                         current_level.time_range = Some(transform.clone());
                     }

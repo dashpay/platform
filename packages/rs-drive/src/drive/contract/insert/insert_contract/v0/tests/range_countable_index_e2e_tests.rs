@@ -2950,7 +2950,7 @@ fn distinct_count_proof_rejects_limit_above_max_query_limit() {
         limit: Some(too_large),
         prove: true,
         drive_config: &drive_config,
-        resolved_time_range_fields: vec![],
+        resolved_time_ranges: vec![],
     };
     let result = drive.execute_document_count_request(request, None, pv);
 

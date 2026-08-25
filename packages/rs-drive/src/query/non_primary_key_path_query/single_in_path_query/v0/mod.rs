@@ -602,14 +602,22 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let mut path = document_type_path;
 
+        // Path segments are level keys: grid-qualified for a time-range
+        // index's first property (`Index::level_key_for_property`), the bare
+        // property name everywhere else. The values pushed between them are
+        // untouched — a bucket start is encoded exactly like a timestamp.
         for (intermediate_index, intermediate_value) in
             intermediate_indexes.iter().zip(intermediate_values.iter())
         {
-            path.push(intermediate_index.name.as_bytes().to_vec());
+            path.push(
+                index
+                    .level_key_for_property(&intermediate_index.name)
+                    .into_bytes(),
+            );
             path.push(intermediate_value.as_slice().to_vec());
         }
 
-        path.push(last_index.name.as_bytes().to_vec());
+        path.push(index.level_key_for_property(&last_index.name).into_bytes());
 
         Ok(PathQuery::new(
             path,

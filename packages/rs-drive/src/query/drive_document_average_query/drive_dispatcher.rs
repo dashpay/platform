@@ -86,7 +86,7 @@ impl Drive {
         // canonicalization is equivalent to running it after.
         crate::query::validate_resolved_time_range_clause_shapes(
             &request.where_clauses,
-            &request.resolved_time_range_fields,
+            &request.resolved_time_ranges,
         )?;
         if request.prove {
             return self.execute_document_average_prove(request, transaction, platform_version);
@@ -188,7 +188,7 @@ impl Drive {
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
-                &request.resolved_time_range_fields,
+                &request.resolved_time_ranges,
             )
             .filter(|idx| idx.range_countable)
             .ok_or_else(|| {
@@ -275,7 +275,7 @@ impl Drive {
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
-                &request.resolved_time_range_fields,
+                &request.resolved_time_ranges,
             )
             .filter(|idx| idx.range_countable)
             .ok_or_else(|| {
@@ -364,7 +364,7 @@ impl Drive {
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
-                &request.resolved_time_range_fields,
+                &request.resolved_time_ranges,
             )
             .filter(|idx| idx.countable.is_countable())
             .ok_or_else(|| {
@@ -614,7 +614,7 @@ mod tests {
             limit: None,
             prove: true,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -710,7 +710,7 @@ mod tests {
             limit: Some(over_max),
             prove: true,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let err = drive
@@ -825,7 +825,7 @@ mod tests {
             limit: None,
             prove: true,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -903,7 +903,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
         let sum_request = DocumentSumRequest {
             contract,
@@ -915,7 +915,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
         let count_resp = drive
             .execute_document_count_request(count_request, None, platform_version)
@@ -1030,7 +1030,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1142,7 +1142,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1163,7 +1163,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
         let sum_request = DocumentSumRequest {
             contract: &data_contract,
@@ -1175,7 +1175,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
         let count_resp = drive
             .execute_document_count_request(count_request, None, platform_version)
@@ -1279,7 +1279,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1300,7 +1300,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
         let sum_request = DocumentSumRequest {
             contract: &data_contract,
@@ -1312,7 +1312,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
         let count_resp = drive
             .execute_document_count_request(count_request, None, platform_version)
@@ -1405,7 +1405,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1538,7 +1538,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let joint_response = drive
@@ -1559,7 +1559,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
         let sum_request = DocumentSumRequest {
             contract: &data_contract,
@@ -1571,7 +1571,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
         let count_resp = drive
             .execute_document_count_request(count_request, None, platform_version)
@@ -1674,7 +1674,7 @@ mod tests {
             limit: Some(2),
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -1753,7 +1753,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -1832,7 +1832,7 @@ mod tests {
             limit: Some(4),
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -1888,7 +1888,7 @@ mod tests {
             limit: None,
             prove: true,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let err = drive
@@ -1951,7 +1951,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let err = drive
@@ -2012,7 +2012,15 @@ mod tests {
             limit: None,
             prove: true,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec!["$createdAt".to_string()],
+            resolved_time_ranges: vec![crate::query::ResolvedTimeRange {
+                field: "$createdAt".to_string(),
+                transform: dpp::data_contract::document_type::TimeRangeTransform {
+                    source: "$createdAt".to_string(),
+                    range_seconds: 21_600,
+                    step_seconds: 7_200,
+                    phase_seconds: 0,
+                },
+            }],
         };
 
         let err = drive
@@ -2108,7 +2116,7 @@ mod tests {
             limit: Some(2),
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -2238,7 +2246,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -2345,7 +2353,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let response = drive

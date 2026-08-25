@@ -1917,7 +1917,7 @@ fn sum_request<'a>(
         limit,
         prove,
         drive_config: &fixture.drive_config,
-        resolved_time_range_fields: vec![],
+        resolved_time_ranges: vec![],
     }
 }
 

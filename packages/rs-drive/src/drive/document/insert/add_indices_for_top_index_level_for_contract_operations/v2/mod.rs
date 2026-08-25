@@ -119,13 +119,23 @@ impl Drive {
             let mut index_path: Vec<Vec<u8>> = contract_document_type_path.clone();
             index_path.push(Vec::from(name.as_bytes()));
 
+            // The level key is the path segment; the document value is read
+            // from the *source property*. They coincide except on a
+            // time-range level, whose key is the property name qualified
+            // with the grid (`TimeRangeTransform::storage_key`) while the
+            // timestamp still lives under the bare property name.
+            let property_name = sub_level
+                .time_range()
+                .map(|transform| transform.source.as_str())
+                .unwrap_or(name.as_str());
+
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
             let document_top_field = document_and_contract_info
                 .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
-                    name,
+                    property_name,
                     document_type,
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
@@ -155,7 +165,11 @@ impl Drive {
                 let document_top_field_estimated_size = document_and_contract_info
                     .owned_document_info
                     .document_info
-                    .get_estimated_size_for_document_type(name, document_type, platform_version)?;
+                    .get_estimated_size_for_document_type(
+                        property_name,
+                        document_type,
+                        platform_version,
+                    )?;
 
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(

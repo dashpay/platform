@@ -745,11 +745,15 @@ mod unique_time_range_index_tests {
     /// bucket start is a millisecond timestamp.
     const DAY_SECONDS: u64 = 24 * 3_600;
     const DAY_MS: u64 = 24 * 3_600_000;
-    /// Start of the window every "same window" timestamp below lands in, in
-    /// both units. It is a whole number of days, so it is a bucket start both
-    /// under the default origin (0) and under an origin of that same window.
-    const WINDOW_SECONDS: u64 = 100 * DAY_SECONDS;
+    /// Start of the window every "same window" timestamp below lands in —
+    /// a whole number of days, so it is a bucket start on the default
+    /// (phase 0) daily grid.
     const WINDOW_MS: u64 = 100 * DAY_MS;
+    /// A half-day phase for the phased-grid test: bucket starts move to
+    /// `k * day + 12h`, and the only timestamps outside every window are the
+    /// first twelve hours of 1970 — the epoch sliver the probe must skip.
+    const PHASE_SECONDS: u64 = 12 * 3_600;
+    const PHASE_MS: u64 = 12 * 3_600_000;
 
     /// A `report` document type with a UNIQUE
     /// `(timeRange($createdAt, range = step = 1 day), author)` index: one
@@ -757,9 +761,9 @@ mod unique_time_range_index_tests {
     /// so neither can be null and the terminator always takes the unique
     /// layout.
     ///
-    /// `origin_seconds` shifts the window grid; `None` leaves it at the
-    /// default (0), where no `u64` timestamp can predate the origin.
-    fn build_unique_daily_report_contract(origin_seconds: Option<u64>) -> DataContract {
+    /// `phase_seconds` shifts the window grid within one step (validation
+    /// requires `phase < step`); `None` leaves it at the default (0).
+    fn build_unique_daily_report_contract(phase_seconds: Option<u64>) -> DataContract {
         let factory =
             DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
         let mut time_range = vec![
@@ -770,11 +774,8 @@ mod unique_time_range_index_tests {
             (Value::Text("range".to_string()), Value::U64(DAY_SECONDS)),
             (Value::Text("step".to_string()), Value::U64(DAY_SECONDS)),
         ];
-        if let Some(origin_seconds) = origin_seconds {
-            time_range.push((
-                Value::Text("origin".to_string()),
-                Value::U64(origin_seconds),
-            ));
+        if let Some(phase_seconds) = phase_seconds {
+            time_range.push((Value::Text("phase".to_string()), Value::U64(phase_seconds)));
         }
         let index_map = vec![
             (
@@ -809,15 +810,15 @@ mod unique_time_range_index_tests {
     }
 
     fn setup(platform_version: &'static PlatformVersion) -> (Drive, DataContract) {
-        setup_with_origin(None, platform_version)
+        setup_with_phase(None, platform_version)
     }
 
-    fn setup_with_origin(
-        origin_seconds: Option<u64>,
+    fn setup_with_phase(
+        phase_seconds: Option<u64>,
         platform_version: &'static PlatformVersion,
     ) -> (Drive, DataContract) {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let contract = build_unique_daily_report_contract(origin_seconds);
+        let contract = build_unique_daily_report_contract(phase_seconds);
         drive
             .apply_contract(
                 &contract,
@@ -1114,49 +1115,51 @@ mod unique_time_range_index_tests {
         );
     }
 
-    /// A `$createdAt` predating the transform's origin produces no index
-    /// entries at all (the insert walker writes none), so such a document
-    /// cannot collide with anything: the probe must skip this index entirely
-    /// rather than invent a bucket for a timestamp that belongs to none.
+    /// A `$createdAt` inside the epoch sliver before the grid's phase anchor
+    /// produces no index entries at all (the insert walker writes none), so
+    /// such a document cannot collide with anything: the probe must skip this
+    /// index entirely rather than invent a bucket for a timestamp that
+    /// belongs to none. No real timestamp reaches the sliver — this pins the
+    /// defensive rule all three walkers and the probe share.
     #[test]
-    fn pre_origin_candidate_skips_the_time_range_index_check() {
+    fn epoch_sliver_candidate_skips_the_time_range_index_check() {
         let platform_version = PlatformVersion::latest();
-        let (drive, contract) = setup_with_origin(Some(WINDOW_SECONDS), platform_version);
+        let (drive, contract) = setup_with_phase(Some(PHASE_SECONDS), platform_version);
 
-        // A stored report in the transform's first window.
+        // A stored report in the phased grid's first window `[12h, 36h)`.
         insert_report(
             &drive,
             &contract,
-            WINDOW_MS + 3_600_000,
+            PHASE_MS + 3_600_000,
             "alice",
             platform_version,
         );
 
-        // Same author, timestamp one millisecond before the origin: it belongs
-        // to no window, so there is nothing for it to duplicate.
+        // Same author, timestamp one millisecond before the phase anchor: it
+        // belongs to no window, so there is nothing for it to duplicate.
         let result = check_uniqueness(
             &drive,
             &contract,
             Identifier::from([0xAA; 32]),
-            WINDOW_MS - 1,
+            PHASE_MS - 1,
             "alice",
             UniquenessOfDataRequestUpdateType::NewDocument,
             platform_version,
         );
         assert!(
             result.is_valid(),
-            "a pre-origin document is not indexed, so it cannot collide: {:?}",
+            "an epoch-sliver document is not indexed, so it cannot collide: {:?}",
             result.errors
         );
 
         // Contrast: inside the first window the same author does collide, so
-        // the skip above is the origin talking and not a probe that silently
+        // the skip above is the sliver talking and not a probe that silently
         // stopped working on this contract.
         let result = check_uniqueness(
             &drive,
             &contract,
             Identifier::from([0xAA; 32]),
-            WINDOW_MS + 9 * 3_600_000,
+            PHASE_MS + 9 * 3_600_000,
             "alice",
             UniquenessOfDataRequestUpdateType::NewDocument,
             platform_version,

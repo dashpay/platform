@@ -73,11 +73,11 @@ mod time_range_index_e2e_tests {
     //! Also covers the other half of that contract: a bucket-start equality
     //! only means "bucket" when it came from `IN_TIME_RANGE` resolution, so
     //! index selection is pinned by
-    //! [`DriveDocumentQuery::resolved_time_range_fields`] rather than left to
+    //! [`DriveDocumentQuery::resolved_time_ranges`] rather than left to
     //! whichever index happens to cover the fields.
     use crate::config::DriveConfig;
     use crate::drive::Drive;
-    use crate::query::DriveDocumentQuery;
+    use crate::query::{DriveDocumentQuery, ResolvedTimeRange};
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -177,7 +177,7 @@ mod time_range_index_e2e_tests {
             document_type,
             bucket,
             None,
-            vec!["$createdAt".to_string()],
+            created_at_resolution(document_type),
         );
         query
             .execute_raw_results_no_proof(drive, None, None, platform_version)
@@ -186,15 +186,32 @@ mod time_range_index_e2e_tests {
             .len()
     }
 
+    /// The provenance a real `IN_TIME_RANGE` resolution against this document
+    /// type's (single) `$createdAt` grid would have produced: the field plus
+    /// the exact transform, which is what pins index selection to the grid.
+    fn created_at_resolution(
+        document_type: dpp::data_contract::document_type::DocumentTypeRef,
+    ) -> Vec<ResolvedTimeRange> {
+        let transform = document_type
+            .indexes()
+            .values()
+            .find_map(|index| index.time_range.clone())
+            .expect("the fixture declares a time-range index");
+        vec![ResolvedTimeRange {
+            field: transform.source.clone(),
+            transform,
+        }]
+    }
+
     /// A `$createdAt == created_at` query, optionally ANDed with
-    /// `hashtag == <hashtag>`, carrying `resolved_time_range_fields` verbatim
+    /// `hashtag == <hashtag>`, carrying `resolved_time_ranges` verbatim
     /// so tests can drive both the resolved and the raw (empty) provenance.
     fn build_created_at_query<'a>(
         contract: &'a DataContract,
         document_type: dpp::data_contract::document_type::DocumentTypeRef<'a>,
         created_at: u64,
         hashtag: Option<&str>,
-        resolved_time_range_fields: Vec<String>,
+        resolved_time_ranges: Vec<ResolvedTimeRange>,
     ) -> DriveDocumentQuery<'a> {
         let mut clauses = vec![Value::Array(vec![
             Value::Text("$createdAt".to_string()),
@@ -220,7 +237,7 @@ mod time_range_index_e2e_tests {
             PlatformVersion::latest(),
         )
         .expect("build query");
-        query.resolved_time_range_fields = resolved_time_range_fields;
+        query.resolved_time_ranges = resolved_time_ranges;
         query
     }
 
@@ -668,7 +685,7 @@ mod time_range_index_e2e_tests {
             document_type,
             bucket,
             Some("ibiza"),
-            vec!["$createdAt".to_string()],
+            created_at_resolution(document_type),
         );
         assert_eq!(
             resolved
@@ -724,16 +741,17 @@ mod time_range_index_e2e_tests {
     /// servable shape and is refused rather than routed to whichever index
     /// happens to cover the fields.
     #[test]
-    fn two_resolved_time_range_fields_are_rejected() {
+    fn two_resolved_time_ranges_are_rejected() {
         let contract = build_competing_index_trending_contract();
         let document_type = contract.document_type_for_name("post").expect("post");
-        let query = build_created_at_query(
-            &contract,
-            document_type,
-            6 * HOUR_MS,
-            Some("ibiza"),
-            vec!["$createdAt".to_string(), "hashtag".to_string()],
-        );
+        let query = build_created_at_query(&contract, document_type, 6 * HOUR_MS, Some("ibiza"), {
+            let mut resolutions = created_at_resolution(document_type);
+            let mut second = resolutions[0].clone();
+            second.field = "hashtag".to_string();
+            second.transform.source = "hashtag".to_string();
+            resolutions.push(second);
+            resolutions
+        });
         let error = query
             .find_best_index(PlatformVersion::latest())
             .expect_err("two resolved time-range fields cannot be served");
@@ -797,7 +815,7 @@ mod time_range_index_e2e_tests {
             "byHashtagAndAuthor"
         );
 
-        query.resolved_time_range_fields = vec!["$createdAt".to_string()];
+        query.resolved_time_ranges = created_at_resolution(document_type);
         let error = query
             .find_best_index(PlatformVersion::latest())
             .expect_err("no bucketed index covers the ordering");
@@ -904,7 +922,7 @@ mod time_range_index_e2e_tests {
             PlatformVersion::latest(),
         )
         .expect("build query");
-        query.resolved_time_range_fields = vec!["$createdAt".to_string()];
+        query.resolved_time_ranges = created_at_resolution(document_type);
         query
             .execute_raw_results_no_proof(drive, None, None, platform_version)
             .expect("query")
@@ -1107,6 +1125,317 @@ mod time_range_index_e2e_tests {
                 )
             ),
             "expected a no-covering-index rejection, got {error:?}"
+        );
+    }
+    /// The multi-grid contract: one timestamp, two grids, sibling subtrees.
+    /// A 6h/2h "trending" grid and a 24h/24h "daily" grid both bucket
+    /// `$createdAt`; each level is keyed by the grid-qualified storage key,
+    /// so the two coexist — including bucket starts that are numerically
+    /// identical across grids (every daily start is also a trending start).
+    fn build_two_grid_contract() -> DataContract {
+        let factory =
+            DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+        let grid_index = |name: &str, range_seconds: u64, step_seconds: u64| {
+            Value::Map(vec![
+                (
+                    Value::Text("name".to_string()),
+                    Value::Text(name.to_string()),
+                ),
+                (
+                    Value::Text("properties".to_string()),
+                    Value::Array(vec![
+                        platform_value!({"$createdAt": "asc"}),
+                        platform_value!({"hashtag": "asc"}),
+                    ]),
+                ),
+                (
+                    Value::Text("timeRange".to_string()),
+                    Value::Map(vec![
+                        (
+                            Value::Text("on".to_string()),
+                            Value::Text("$createdAt".to_string()),
+                        ),
+                        (Value::Text("range".to_string()), Value::U64(range_seconds)),
+                        (Value::Text("step".to_string()), Value::U64(step_seconds)),
+                    ]),
+                ),
+                (
+                    Value::Text("countable".to_string()),
+                    Value::Text("countable".to_string()),
+                ),
+            ])
+        };
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "hashtag": {"type": "string", "maxLength": 63, "position": 0},
+            },
+            "required": ["hashtag", "$createdAt"],
+            "indices": Value::Array(vec![
+                grid_index("trending", 6 * HOUR_SECONDS, 2 * HOUR_SECONDS),
+                grid_index("daily", 24 * HOUR_SECONDS, 24 * HOUR_SECONDS),
+            ]),
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "post": document_schema });
+        factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("a contract may bucket one timestamp with several grids")
+            .data_contract_owned()
+    }
+
+    /// The provenance of a resolution against one named grid of a
+    /// multi-grid document type.
+    fn grid_resolution(contract: &DataContract, index_name: &str) -> Vec<ResolvedTimeRange> {
+        let transform = contract
+            .document_type_for_name("post")
+            .expect("post")
+            .indexes()
+            .get(index_name)
+            .expect("the fixture declares this index")
+            .time_range
+            .clone()
+            .expect("the index carries a transform");
+        vec![ResolvedTimeRange {
+            field: transform.source.clone(),
+            transform,
+        }]
+    }
+
+    /// Two grids over `$createdAt`: a document fans out into each grid's own
+    /// subtree, a resolution against one grid reads only that grid's bucket
+    /// — even when the two grids' bucket starts are the same number — and
+    /// deletion empties both. The bucket start chosen here (24h) is
+    /// deliberately a start on BOTH grids: without grid-qualified level keys
+    /// the two entry sets would interleave in one keyspace and the counts
+    /// below would be wrong in both directions.
+    #[test]
+    fn two_grids_over_one_timestamp_write_and_read_independently() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = build_two_grid_contract();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let document_type = contract.document_type_for_name("post").expect("post");
+
+        // 25h10m: the daily grid buckets it at 24h; the trending grid at
+        // [24h, 22h, 20h]. 24h is a bucket start on BOTH grids.
+        let created_at = 25 * HOUR_MS + 10 * 60_000;
+        let shared_bucket = 24 * HOUR_MS;
+
+        let trending = grid_resolution(&contract, "trending");
+        let daily = grid_resolution(&contract, "daily");
+        assert_eq!(
+            trending[0]
+                .transform
+                .containing_buckets(created_at)
+                .first()
+                .copied(),
+            Some(shared_bucket)
+        );
+        assert_eq!(
+            daily[0].transform.containing_buckets(created_at),
+            vec![shared_bucket],
+            "the same numeric start on both grids is the point of this fixture"
+        );
+
+        let owner_bytes = rand::random::<[u8; 32]>();
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from(rand::random::<[u8; 32]>()),
+            owner_id: Identifier::from(owner_bytes),
+            properties: BTreeMap::from([("hashtag".to_string(), Value::Text("ibiza".to_string()))]),
+            created_at: Some(created_at),
+            ..Default::default()
+        });
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(owner_bytes),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("add document");
+
+        let count_for = |resolutions: &Vec<ResolvedTimeRange>, bucket: u64| -> usize {
+            let query = build_created_at_query(
+                &contract,
+                document_type,
+                bucket,
+                Some("ibiza"),
+                resolutions.clone(),
+            );
+            query
+                .execute_raw_results_no_proof(&drive, None, None, platform_version)
+                .expect("query")
+                .0
+                .len()
+        };
+
+        // Selection pins to the resolved grid's index.
+        let trending_query = build_created_at_query(
+            &contract,
+            document_type,
+            shared_bucket,
+            Some("ibiza"),
+            trending.clone(),
+        );
+        assert_eq!(
+            trending_query
+                .find_best_index(platform_version)
+                .expect("the trending grid's index serves its own resolution")
+                .name,
+            "trending"
+        );
+        let daily_query = build_created_at_query(
+            &contract,
+            document_type,
+            shared_bucket,
+            Some("ibiza"),
+            daily.clone(),
+        );
+        assert_eq!(
+            daily_query
+                .find_best_index(platform_version)
+                .expect("the daily grid's index serves its own resolution")
+                .name,
+            "daily"
+        );
+
+        // Each grid's subtree holds the document under the shared start, and
+        // the trending grid additionally holds it under its two older
+        // overlapping starts — which the daily grid must NOT see.
+        assert_eq!(count_for(&trending, shared_bucket), 1);
+        assert_eq!(count_for(&daily, shared_bucket), 1);
+        assert_eq!(count_for(&trending, 22 * HOUR_MS), 1);
+        assert_eq!(
+            count_for(&daily, 22 * HOUR_MS),
+            0,
+            "22h is a trending fan-out entry only; leaking it into the daily \
+             grid would mean the levels share a keyspace again"
+        );
+
+        // Deletion empties both grids' subtrees.
+        drive
+            .delete_document_for_contract(
+                document.id(),
+                &contract,
+                "post",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("delete document");
+        assert_eq!(count_for(&trending, shared_bucket), 0);
+        assert_eq!(count_for(&trending, 22 * HOUR_MS), 0);
+        assert_eq!(count_for(&daily, shared_bucket), 0);
+    }
+
+    /// Resolution over a multi-grid field: the bare selector is ambiguous
+    /// and refused; a grid spec picks exactly the named grid; a spec no
+    /// index declares is refused. This is the query-language half of the
+    /// storage fork the previous test pins.
+    #[test]
+    fn multi_grid_resolution_requires_and_honors_a_grid_spec() {
+        use crate::query::TimeRangeGridSpec;
+
+        let contract = build_two_grid_contract();
+        let document_type = contract.document_type_for_name("post").expect("post");
+        let now_ms = 25 * HOUR_MS;
+
+        let error = crate::query::resolve_time_range_bucket_clause(
+            "$createdAt",
+            crate::query::TimeRangeSelector::Newest,
+            None,
+            document_type,
+            now_ms,
+        )
+        .expect_err("two grids on the field make the bare selector ambiguous");
+        assert!(
+            matches!(
+                error,
+                crate::error::Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
+            ),
+            "expected the ambiguity rejection, got {error:?}"
+        );
+
+        let (clause, resolution) = crate::query::resolve_time_range_bucket_clause(
+            "$createdAt",
+            crate::query::TimeRangeSelector::Newest,
+            Some(TimeRangeGridSpec {
+                range_seconds: 24 * HOUR_SECONDS,
+                step_seconds: 24 * HOUR_SECONDS,
+                phase_seconds: 0,
+            }),
+            document_type,
+            now_ms,
+        )
+        .expect("naming the daily grid resolves against it");
+        assert_eq!(clause.value, Value::U64(24 * HOUR_MS));
+        assert_eq!(resolution.transform.range_seconds, 24 * HOUR_SECONDS);
+
+        let (clause, resolution) = crate::query::resolve_time_range_bucket_clause(
+            "$createdAt",
+            crate::query::TimeRangeSelector::Newest,
+            Some(TimeRangeGridSpec {
+                range_seconds: 6 * HOUR_SECONDS,
+                step_seconds: 2 * HOUR_SECONDS,
+                phase_seconds: 0,
+            }),
+            document_type,
+            now_ms,
+        )
+        .expect("naming the trending grid resolves against it");
+        assert_eq!(
+            clause.value,
+            Value::U64(24 * HOUR_MS),
+            "at 25h both grids' newest start is 24h — same number, different \
+             subtree, which is exactly why provenance carries the grid"
+        );
+        assert_eq!(resolution.transform.step_seconds, 2 * HOUR_SECONDS);
+
+        let error = crate::query::resolve_time_range_bucket_clause(
+            "$createdAt",
+            crate::query::TimeRangeSelector::Newest,
+            Some(TimeRangeGridSpec {
+                range_seconds: 12 * HOUR_SECONDS,
+                step_seconds: 12 * HOUR_SECONDS,
+                phase_seconds: 0,
+            }),
+            document_type,
+            now_ms,
+        )
+        .expect_err("a grid no index declares must be refused");
+        assert!(
+            matches!(
+                error,
+                crate::error::Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
+            ),
+            "expected the unknown-grid rejection, got {error:?}"
         );
     }
 }

@@ -10,6 +10,7 @@ use super::super::{DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -26,7 +27,7 @@ impl Drive {
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
-        resolved_time_range_fields: &[String],
+        resolved_time_ranges: &[ResolvedTimeRange],
         options: RangeCountOptions,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -34,7 +35,7 @@ impl Drive {
         let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
-            resolved_time_range_fields,
+            resolved_time_ranges,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

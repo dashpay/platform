@@ -456,7 +456,7 @@ mod dpns_tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let documents = platform
@@ -504,7 +504,7 @@ mod dpns_tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let documents = platform
@@ -913,7 +913,7 @@ mod dpns_tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let documents = platform
@@ -948,7 +948,7 @@ mod dpns_tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let documents = platform
@@ -1182,7 +1182,7 @@ mod dpns_username_transfer_tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         platform
@@ -1278,7 +1278,7 @@ mod dpns_username_transfer_tests {
             limit: None,
             prove: false,
             drive_config: &platform.config.drive,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         match platform
@@ -1322,7 +1322,7 @@ mod dpns_username_transfer_tests {
             limit: None,
             prove: false,
             drive_config: &platform.config.drive,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         match platform
@@ -1366,7 +1366,7 @@ mod dpns_username_transfer_tests {
             limit: None,
             prove: false,
             drive_config: &platform.config.drive,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         match platform
@@ -1434,7 +1434,7 @@ mod dpns_username_transfer_tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         platform

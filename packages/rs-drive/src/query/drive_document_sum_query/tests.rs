@@ -469,7 +469,7 @@ mod limit_policy_regression {
             limit: None,
             prove: true,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let response = drive
@@ -567,7 +567,7 @@ mod limit_policy_regression {
             limit: Some(over_max),
             prove: true,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let err = drive
@@ -639,7 +639,7 @@ mod limit_policy_regression {
             limit,
             prove: false,
             drive_config: &drive_config,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         for (requested, expected) in [(None, 2), (Some(1), 1), (Some(10_000), 3)] {

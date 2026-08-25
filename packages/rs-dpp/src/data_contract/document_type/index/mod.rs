@@ -527,6 +527,37 @@ impl Index {
             .collect()
     }
 
+    /// The GroveDB index-level key for `property_name` at `position` in this
+    /// index's property list. The first property of a time-range index is
+    /// keyed by [`TimeRangeTransform::storage_key`] — the name qualified with
+    /// the grid, so several grids over one timestamp fork into sibling
+    /// subtrees; every other property keeps its bare name.
+    ///
+    /// Every place that turns this index's properties into GroveDB path
+    /// segments — contract setup, the document walkers (via `IndexLevel`,
+    /// which stores these same keys), query path derivation, the uniqueness
+    /// probe and proof verification — must derive the segment through this
+    /// rule, or one logical index splits into two trees.
+    pub fn level_key(&self, position: usize, property_name: &str) -> String {
+        match (&self.time_range, position) {
+            (Some(transform), 0) => transform.storage_key(property_name),
+            _ => property_name.to_string(),
+        }
+    }
+
+    /// Name-keyed variant of [`Self::level_key`] for callers that hold a
+    /// property name rather than its position: the transform's source is
+    /// validated to be the index's first property, so matching the name
+    /// against `time_range.source` identifies the grid-qualified level.
+    pub fn level_key_for_property(&self, property_name: &str) -> String {
+        match &self.time_range {
+            Some(transform) if transform.source == property_name => {
+                transform.storage_key(property_name)
+            }
+            _ => property_name.to_string(),
+        }
+    }
+
     /// Get values
     pub fn extract_values(&self, data: &BTreeMap<String, Value>) -> Vec<Value> {
         self.properties
@@ -1020,7 +1051,7 @@ impl Index {
                     let mut source: Option<String> = None;
                     let mut range_seconds: Option<u64> = None;
                     let mut step_seconds: Option<u64> = None;
-                    let mut origin_seconds: u64 = 0;
+                    let mut phase_seconds: u64 = 0;
 
                     for (tr_key_value, tr_value) in time_range_map {
                         let tr_key = tr_key_value
@@ -1051,10 +1082,10 @@ impl Index {
                                     )
                                 })?);
                             }
-                            "origin" => {
-                                origin_seconds = tr_value.to_integer().map_err(|_| {
+                            "phase" => {
+                                phase_seconds = tr_value.to_integer().map_err(|_| {
                                     DataContractError::ValueWrongType(
-                                        "timeRange.origin should be an integer".to_string(),
+                                        "timeRange.phase should be an integer".to_string(),
                                     )
                                 })?;
                             }
@@ -1087,7 +1118,7 @@ impl Index {
                         source,
                         range_seconds,
                         step_seconds,
-                        origin_seconds,
+                        phase_seconds,
                     });
                 }
                 "properties" => {
@@ -1437,7 +1468,7 @@ impl Index {
             for (field, seconds) in [
                 ("range", transform.range_seconds),
                 ("step", transform.step_seconds),
-                ("origin", transform.origin_seconds),
+                ("phase", transform.phase_seconds),
             ] {
                 if seconds > u64::MAX / 1_000 {
                     return Err(DataContractError::InvalidContractStructure(format!(
@@ -1450,6 +1481,20 @@ impl Index {
                 return Err(DataContractError::InvalidContractStructure(
                     "timeRange.step must be greater than zero".to_string(),
                 ));
+            }
+            // The phase is a pure alignment offset: shifting the grid by a
+            // whole number of steps reproduces the identical grid, so any
+            // value >= step is a second spelling of a smaller phase. One
+            // grid, one spelling — reject rather than normalize, so the
+            // contract, the transform and the storage key all carry the same
+            // number.
+            if transform.phase_seconds >= transform.step_seconds {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "timeRange.phase ({} seconds) must be less than timeRange.step ({} \
+                     seconds): the phase only aligns the grid within one step, and a larger \
+                     value would be a redundant spelling of phase % step",
+                    transform.phase_seconds, transform.step_seconds
+                )));
             }
             if transform.range_seconds == 0 {
                 return Err(DataContractError::InvalidContractStructure(
@@ -1650,6 +1695,99 @@ mod tests {
         map
     }
 
+    /// [`index_value_map`] with one extra `timeRange` key — for the `phase`
+    /// tests and for pinning that removed keys (like the pre-phase-era
+    /// `origin`) fall through to the unknown-field rejection.
+    fn index_value_map_with_extra_time_range_key(
+        range: u64,
+        step: u64,
+        key: &str,
+        value: u64,
+    ) -> Vec<(Value, Value)> {
+        let mut map = index_value_map("$createdAt", Some(("$createdAt", range, step)));
+        let Some((_, Value::Map(time_range))) = map
+            .iter_mut()
+            .find(|(k, _)| k.as_text() == Some("timeRange"))
+        else {
+            panic!("the helper always builds a timeRange map");
+        };
+        time_range.push((Value::Text(key.to_string()), Value::U64(value)));
+        map
+    }
+
+    /// `phase` parses into the transform, and its being strictly less than
+    /// `step` is a structural rule — a larger value is a redundant spelling
+    /// of `phase % step` and is rejected rather than normalized, so the
+    /// contract, the transform and the storage key all carry one number.
+    #[test]
+    fn time_range_phase_parses_and_must_be_less_than_step() {
+        let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "phase", 3_600);
+        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        let transform = index.time_range.expect("time_range should be set");
+        assert_eq!(transform.phase_seconds, 3_600);
+
+        // phase == step: one whole step of shift reproduces the identical
+        // grid, so this is the smallest redundant spelling.
+        let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "phase", 7_200);
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            DataContractError::InvalidContractStructure(_)
+        ));
+
+        let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "phase", 10_000);
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            DataContractError::InvalidContractStructure(_)
+        ));
+    }
+
+    /// The pre-phase grammar's `origin` key no longer exists: it named an
+    /// absolute grid anchor with beginning-of-time semantics the phase-only
+    /// design dropped, so it must be rejected as an unknown field rather
+    /// than silently ignored.
+    #[test]
+    fn time_range_rejects_the_removed_origin_key() {
+        let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "origin", 3_600);
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            DataContractError::InvalidContractStructure(_)
+        ));
+    }
+
+    /// Two grids over the same property produce distinct storage keys — the
+    /// fork that lets them coexist as sibling index subtrees — and identical
+    /// grids produce the identical key, so indexes sharing a grid share a
+    /// level. Zero phase is spelled by omission; a declared phase appends
+    /// the fourth part.
+    #[test]
+    fn time_range_storage_keys_are_grid_qualified() {
+        let map = index_value_map("$createdAt", Some(("$createdAt", 21_600, 7_200)));
+        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        assert_eq!(index.level_key(0, "$createdAt"), "$createdAt#21600#7200");
+        assert_eq!(
+            index.level_key_for_property("$createdAt"),
+            "$createdAt#21600#7200"
+        );
+        // non-first / non-source properties keep their bare names
+        assert_eq!(index.level_key(1, "hashtag"), "hashtag");
+        assert_eq!(index.level_key_for_property("hashtag"), "hashtag");
+
+        let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "phase", 3_600);
+        let phased = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        assert_eq!(
+            phased.level_key(0, "$createdAt"),
+            "$createdAt#21600#7200#3600"
+        );
+        assert_ne!(
+            phased.level_key(0, "$createdAt"),
+            index.level_key(0, "$createdAt"),
+            "different grids must fork into different levels"
+        );
+    }
+
     #[test]
     fn time_range_index_parses() {
         // A six-hour window refreshed every two hours.
@@ -1659,7 +1797,7 @@ mod tests {
         assert_eq!(transform.source, "$createdAt");
         assert_eq!(transform.range_seconds, 21_600);
         assert_eq!(transform.step_seconds, 7_200);
-        assert_eq!(transform.origin_seconds, 0);
+        assert_eq!(transform.phase_seconds, 0);
         assert_eq!(transform.overlap_factor(), 3);
         // The parsed seconds are what the bucket math scales into the
         // millisecond domain the source timestamps live in.

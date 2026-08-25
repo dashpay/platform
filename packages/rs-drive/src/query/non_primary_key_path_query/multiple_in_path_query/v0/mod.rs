@@ -230,14 +230,21 @@ impl<'a> DriveDocumentQuery<'a> {
             .map_err(Error::from)?;
 
         let mut path = document_type_path;
+        // Path segments are level keys: grid-qualified for a time-range
+        // index's first property (`Index::level_key_for_property`), the bare
+        // property name everywhere else.
         for (intermediate_index, intermediate_value) in index.properties[..equality_len]
             .iter()
             .zip(intermediate_values.iter())
         {
-            path.push(intermediate_index.name.as_bytes().to_vec());
+            path.push(
+                index
+                    .level_key_for_property(&intermediate_index.name)
+                    .into_bytes(),
+            );
             path.push(intermediate_value.as_slice().to_vec());
         }
-        path.push(child_field.as_bytes().to_vec());
+        path.push(index.level_key_for_property(&child_field).into_bytes());
 
         Ok(PathQuery::new(
             path,
@@ -298,7 +305,7 @@ impl<'a> DriveDocumentQuery<'a> {
             // query. See `index_admissible_for_resolved_time_range`.
             if !crate::query::index_admissible_for_resolved_time_range(
                 index,
-                &self.resolved_time_range_fields,
+                &self.resolved_time_ranges,
             ) {
                 continue;
             }

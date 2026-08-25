@@ -31,6 +31,7 @@ mod conversions;
 mod dispatch;
 mod routing;
 
+use drive::query::ResolvedTimeRange;
 use routing::{reject_offset_off_the_ranked_path, validate_and_route};
 // Re-exported so `tests.rs` (a `use super::*` consumer) keeps seeing
 // the routing probe under its old name.
@@ -203,7 +204,7 @@ impl<C> Platform<C> {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
-        let mut resolved_time_range_fields: Vec<String> = Vec::new();
+        let mut resolved_time_ranges: Vec<ResolvedTimeRange> = Vec::new();
 
         if !time_range_proto.is_empty() {
             // LOAD-BEARING TIME SOURCE: the verifier re-derives the bucket
@@ -250,23 +251,26 @@ impl<C> Platform<C> {
                     document_type, contract_id
                 ))));
             for proto_wc in time_range_proto {
-                let (field, selector) = match conversions::time_range_clause_from_proto(proto_wc) {
-                    Ok(parsed) => parsed,
-                    Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
-                };
+                let (field, selector, grid) =
+                    match conversions::time_range_clause_from_proto(proto_wc) {
+                        Ok(parsed) => parsed,
+                        Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+                    };
                 match drive::query::resolve_time_range_bucket_clause(
                     &field,
                     selector,
+                    grid,
                     doc_type,
                     block_time_ms,
                 ) {
-                    Ok(resolved) => {
-                        where_clauses.push(resolved);
+                    Ok((clause, resolved)) => {
+                        where_clauses.push(clause);
                         // The resolved clause is an ordinary equality; only
                         // this list tells the executors that it must be
-                        // matched against bucket starts rather than raw
-                        // timestamps, so it travels with the request.
-                        resolved_time_range_fields.push(field);
+                        // matched against bucket starts of the resolved
+                        // grid rather than raw timestamps (or another
+                        // grid's starts), so it travels with the request.
+                        resolved_time_ranges.push(resolved);
                     }
                     Err(drive::error::Error::Query(qe)) => {
                         return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)))
@@ -331,7 +335,7 @@ impl<C> Platform<C> {
                 data_contract_id,
                 document_type,
                 where_clauses,
-                resolved_time_range_fields,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 start,
@@ -343,7 +347,7 @@ impl<C> Platform<C> {
                 data_contract_id,
                 document_type,
                 where_clauses,
-                resolved_time_range_fields,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 start,
@@ -356,7 +360,7 @@ impl<C> Platform<C> {
                 data_contract_id,
                 document_type,
                 where_clauses,
-                resolved_time_range_fields,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 start,
@@ -370,7 +374,7 @@ impl<C> Platform<C> {
                 data_contract_id,
                 document_type,
                 where_clauses,
-                resolved_time_range_fields,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 start,
@@ -387,7 +391,7 @@ impl<C> Platform<C> {
                 group_by,
                 having_clauses,
                 where_clauses,
-                resolved_time_range_fields,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 offset,

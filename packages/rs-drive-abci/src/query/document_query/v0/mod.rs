@@ -16,6 +16,7 @@ use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
+use drive::query::ResolvedTimeRange;
 use drive::query::{DriveDocumentQuery, OrderClause, WhereClause};
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -160,7 +161,7 @@ impl<C> Platform<C> {
         data_contract_id: Vec<u8>,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
-        resolved_time_range_fields: Vec<String>,
+        resolved_time_ranges: Vec<ResolvedTimeRange>,
         order_by_clauses: Vec<OrderClause>,
         limit_u32: Option<u32>,
         prove: bool,
@@ -254,7 +255,7 @@ impl<C> Platform<C> {
         // hand-written one, so the provenance the v1 handler established is
         // attached here; index selection reads it to pin the query to the
         // index that buckets the field.
-        drive_query.resolved_time_range_fields = resolved_time_range_fields;
+        drive_query.resolved_time_ranges = resolved_time_ranges;
 
         let response = if prove {
             let proof =
@@ -653,7 +654,7 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -727,7 +728,7 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -813,7 +814,7 @@ mod tests {
             start_at: Some(after),
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -986,7 +987,7 @@ mod tests {
             start_at: Some(after.to_buffer()),
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let where_clauses = serialize_vec_to_cbor(
@@ -1154,7 +1155,7 @@ mod tests {
             start_at: Some(after.to_buffer()),
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let where_clauses = serialize_vec_to_cbor(
@@ -1310,7 +1311,7 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query
@@ -1477,7 +1478,7 @@ mod tests {
             start_at: Some(after.to_buffer()),
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query
@@ -1661,7 +1662,7 @@ mod tests {
             start_at: Some(after.to_buffer()),
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query

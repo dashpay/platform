@@ -9055,7 +9055,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         // The current shape: the In clause in in_clauses
@@ -9077,7 +9077,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         for protocol_version in [13u32, 14u32] {

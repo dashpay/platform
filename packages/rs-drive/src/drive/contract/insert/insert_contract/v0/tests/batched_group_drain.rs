@@ -317,7 +317,7 @@ fn run(
                 offset: Some(0),
                 has_start_at: false,
                 prove,
-                resolved_time_range_fields: &[],
+                resolved_time_ranges: &[],
             },
             None,
             platform_version(),

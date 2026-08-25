@@ -389,9 +389,15 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
   /**
    * Time-range bucket selection (v1 / `GetDocumentsRequestV1` only — the
    * v0 CBOR where surface is unaffected). The clause's `field` names a
-   * timestamp property covered by a `timeRange` index; the operand
-   * (`DocumentFieldValue.text`) is the selector `"newest"` or `"oldest"`.
-   * The server resolves it to a concrete equality on the bucket start
+   * timestamp property covered by a `timeRange` index. The operand is
+   * either `DocumentFieldValue.text` — the bare selector `"newest"` or
+   * `"oldest"`, legal while exactly one grid buckets the field — or
+   * `DocumentFieldValue.list` of `[text(selector), uint64(range),
+   * uint64(step)]` / `[…, uint64(phase)]`, naming one of the field's
+   * grids in the contract's own declared seconds (required when several
+   * grids bucket the field; a zero phase is spelled by omission, so
+   * every grid has exactly one wire spelling). The server resolves the
+   * selector to a concrete equality on the named grid's bucket start
    * using the current block time, and the verifier re-derives the same
    * bucket from the quorum-signed response metadata time — so the proof
    * is an ordinary index/count proof. See `timeRange` in the document

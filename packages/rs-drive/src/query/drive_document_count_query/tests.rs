@@ -541,7 +541,7 @@ fn test_aggregate_count_in_fan_out_ignores_default_query_limit() {
         limit: None,
         prove: false,
         drive_config: &drive_config,
-        resolved_time_range_fields: vec![],
+        resolved_time_ranges: vec![],
     };
 
     let response = drive
@@ -1345,7 +1345,7 @@ fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
         limit: None,
         prove: false,
         drive_config: &drive_config,
-        resolved_time_range_fields: vec![],
+        resolved_time_ranges: vec![],
     };
 
     let response = drive
@@ -1420,7 +1420,7 @@ fn test_count_request_with_duplicate_equality_clauses_is_rejected() {
         limit: None,
         prove: false,
         drive_config: &drive_config,
-        resolved_time_range_fields: vec![],
+        resolved_time_ranges: vec![],
     };
 
     let err = drive
@@ -1617,7 +1617,7 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
         limit: None,
         prove: true,
         drive_config: &drive_config,
-        resolved_time_range_fields: vec![],
+        resolved_time_ranges: vec![],
     };
 
     let response = drive
@@ -1742,7 +1742,7 @@ fn test_range_distinct_no_proof_rejects_zero_effective_limit() {
         limit: None,
         prove: false,
         drive_config: &drive_config,
-        resolved_time_range_fields: vec![],
+        resolved_time_ranges: vec![],
     };
 
     let result = drive.execute_document_count_request(request, None, platform_version);
@@ -3473,13 +3473,29 @@ mod time_range_picker_tests {
                     source: SOURCE.to_string(),
                     range_seconds: 6 * HOUR_SECONDS,
                     step_seconds: 2 * HOUR_SECONDS,
-                    origin_seconds: 0,
+                    phase_seconds: 0,
                 }),
             ),
         ]
         .into_iter()
         .map(|index| (index.name.clone(), index))
         .collect()
+    }
+
+    /// The provenance a real `IN_TIME_RANGE` resolution against the
+    /// `trending` grid produces: the source field plus the exact transform.
+    /// Constructed directly (not read from the candidate map) so tests that
+    /// remove the trending index can still present the resolution.
+    fn source_resolution() -> Vec<crate::query::ResolvedTimeRange> {
+        vec![crate::query::ResolvedTimeRange {
+            field: SOURCE.to_string(),
+            transform: TimeRangeTransform {
+                source: SOURCE.to_string(),
+                range_seconds: 6 * HOUR_SECONDS,
+                step_seconds: 2 * HOUR_SECONDS,
+                phase_seconds: 0,
+            },
+        }]
     }
 
     fn equal(field: &str, value: Value) -> WhereClause {
@@ -3502,7 +3518,7 @@ mod time_range_picker_tests {
         let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             &indexes,
             &where_clauses,
-            &[SOURCE.to_string()],
+            &source_resolution(),
         )
         .expect("the bucketed index exactly covers the resolved clause set");
         assert_eq!(picked.name, "trending");
@@ -3575,7 +3591,7 @@ mod time_range_picker_tests {
             DriveDocumentCountQuery::find_countable_index_for_where_clauses(
                 &indexes,
                 &where_clauses,
-                &[SOURCE.to_string()],
+                &source_resolution(),
             )
             .is_none()
         );

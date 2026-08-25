@@ -82,7 +82,7 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
-            resolved_time_range_fields: vec![],
+            resolved_time_ranges: vec![],
         };
 
         let result = query.verify_proof_keep_serialized(&[], &platform_version);
