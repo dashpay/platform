@@ -421,6 +421,66 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     })
 }
 
+/// Fund the shielded pool by DRAINING the wallet's CoinJoin account
+/// (`m/9'/coinType'/4'/accountIndex'`) into a single asset lock — bridges
+/// `platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain`.
+///
+/// Mirrors Swift's `PlatformWalletManager.shieldedFundFromCoinJoinDrain`.
+/// Sibling of [`Java_..._shieldedFundFromAssetLock`] with drain funding, so
+/// it differs in exactly two ways:
+///
+/// 1. **No amount** — every final mixed-coin UTXO is consumed and the lock
+///    value is `Σ inputs − L1 fee`, computed Rust-side. The mixed coins never
+///    hop through a transparent BIP44 address, which is what makes this the
+///    CoinJoin → Shielded migration path rather than a normal shield.
+/// 2. **No surplus output** — the single-recipient remainder flow pins the
+///    consensus surplus to zero, so the parameter is omitted rather than
+///    plumbed as null.
+///
+/// `coinJoinAccountIndex` selects the CoinJoin account to drain (0 for every
+/// current wallet); `recipientRaw43` is the 43-byte raw Orchard address;
+/// `coreSignerHandle` is the manager's `MnemonicResolverHandle`. The Rust
+/// preflight rejects a drain whose balance could not clear the Type 18 pool
+/// fee, so an unrecoverable dust lock is never broadcast, and a stuck lock
+/// resumes through the same `shieldedResumeFundFromAssetLock` entry point as a
+/// BIP44-funded one. The ~30s Halo 2 proof runs inside the call; nothing is
+/// returned on success.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedFundFromCoinJoinDrain(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    coin_join_account_index: jint,
+    recipient_raw43: JByteArray,
+    core_signer_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        // Reject a negative index at the boundary — it would otherwise
+        // bit-cast to a huge u32 on the FFI call.
+        if coin_join_account_index < 0 {
+            throw_sdk_exception(env, 1, "coinJoinAccountIndex must be non-negative");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                coin_join_account_index as u32,
+                recipient.as_ptr(),
+                core_signer_handle as *mut MnemonicResolverHandle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 /// Resume a shielded fund-from-asset-lock from an already-tracked lock by
 /// outpoint — bridges
 /// `platform_wallet_manager_shielded_resume_fund_from_asset_lock`. Sibling
