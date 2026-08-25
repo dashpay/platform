@@ -52,7 +52,7 @@ export default function analyseConfigFactory() {
             if (config.get('network') !== NETWORK_LOCAL) {
               const problem = new Problem(
                 'SSL certificates are disabled. Clients won\'t be able to connect securely',
-                chalk`Please enable and set up SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate}`,
+                chalk`Please enable and set up SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/docs/user/masternodes/setup-evonode.html#ssl-certificates}`,
                 SEVERITY.HIGH,
               );
 
@@ -63,7 +63,7 @@ export default function analyseConfigFactory() {
             if (config.get('network') === NETWORK_MAINNET) {
               const problem = new Problem(
                 'Self-signed SSL certificate is used on mainnet. Clients won\'t be able to connect securely',
-                chalk`Please use valid SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate}`,
+                chalk`Please use valid SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/docs/user/masternodes/setup-evonode.html#ssl-certificates}`,
                 SEVERITY.HIGH,
               );
 
@@ -88,7 +88,7 @@ Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}`,
 Certificate chain file path: {bold.cyanBright ${ssl?.data?.chainFilePath}}
 Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}
 
-Or use ZeroSSL https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate`,
+Or use ZeroSSL https://docs.dash.org/en/stable/docs/user/masternodes/setup-evonode.html#ssl-certificates`,
               },
             };
 

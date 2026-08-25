@@ -1159,6 +1159,19 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getSolution()).to.not.contain(escape);
     });
 
+    it('should point at the port 80 guide, because one message cannot hold the whole story', () => {
+      // The three firewall layers, why an external port check lies, and which
+      // causes must not be retried do not fit in a problem an operator will
+      // read. A short redirect rather than a full path: the last full path in
+      // this codebase went dead when the documentation was reorganised.
+      installedValid();
+      renewalFailed();
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('https://docs.dash.org/evonode-cert-port80');
+    });
+
     it('should say nothing about renewal for a provider dashmate does not renew', () => {
       // `file` and `self-signed` are installed by the operator; there is no
       // scheduled renewal to report on, and reporting one would call a

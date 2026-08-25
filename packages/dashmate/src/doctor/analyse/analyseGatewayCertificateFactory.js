@@ -103,6 +103,15 @@ const TRUST_PATH_FAILURES = [
 const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart ${cfg} --platform}`;
 
 /**
+ * Where an operator can read the whole story rather than one message of it.
+ *
+ * A short redirect rather than a full path: the last full path put here went
+ * dead when the documentation was reorganised, while the redirects around it
+ * survived.
+ */
+const PORT_80_GUIDE = 'https://docs.dash.org/evonode-cert-port80';
+
+/**
  * An operator reading a certificate problem is deciding whether their node is
  * falling behind. It is not: `update` pulls images whatever the certificate
  * does, and only refuses to report success. Leaving this out lets a client
@@ -225,7 +234,8 @@ that renews certificates may not be running. Start it:
 function renderPortEightyHint(code, cfg, isShortLived) {
   if (code === RENEWAL_FAILURE_CODES.PORT_80_IN_USE) {
     return chalk`Find what is using port 80 on this machine and move it off that port:
-{bold.cyanBright sudo ss -lntp 'sport = :80'}`;
+{bold.cyanBright sudo ss -lntp 'sport = :80'}
+{underline.cyanBright ${PORT_80_GUIDE}}`;
   }
 
   if (code === RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER) {
@@ -233,7 +243,8 @@ function renderPortEightyHint(code, cfg, isShortLived) {
 of this node. Check this machine first:
 {bold.cyanBright sudo ss -lntp 'sport = :80'}
 Nothing listed? Then it is answered before it reaches this machine - check
-your router's port forwarding and your hosting provider.`;
+your router's port forwarding and your hosting provider.
+{underline.cyanBright ${PORT_80_GUIDE}}`;
   }
 
   // Nothing reached the certificate authority, so none of the above is where
@@ -244,10 +255,11 @@ your router's port forwarding and your hosting provider.`;
 {bold.cyanBright dashmate logs ${cfg} dashmate_helper}`;
   }
 
-  return `Open inbound port 80 - on the machine's firewall, at your hosting provider,
+  return chalk`Open inbound port 80 - on the machine's firewall, at your hosting provider,
 and on your router if this node is behind one.${isShortLived
   ? '\nIt has to stay open: the certificate is renewed every few days.'
-  : ''}`;
+  : ''}
+{underline.cyanBright ${PORT_80_GUIDE}}`;
 }
 
 /**
