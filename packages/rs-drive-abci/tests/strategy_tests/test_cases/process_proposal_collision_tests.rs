@@ -94,7 +94,7 @@ mod tests {
             height: height as i64,
             time: Some(Timestamp {
                 seconds: (time_ms / 1000) as i64,
-                nanos: ((time_ms % 1000) * 1000) as i32,
+                nanos: ((time_ms % 1000) * 1_000_000) as i32,
             }),
             next_validators_hash: [0u8; 32].to_vec(),
             round: 0,
