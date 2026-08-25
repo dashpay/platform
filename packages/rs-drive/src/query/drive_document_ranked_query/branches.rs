@@ -33,7 +33,15 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
 #[cfg(feature = "server")]
-use grovedb::AxisKeys;
+use grovedb::{
+    query_result_type::QueryResultType, AxisKeys, GroveDb, PathQuery, PathQueryRun, TransactionArg,
+};
+#[cfg(feature = "server")]
+use grovedb_costs::CostContext;
+#[cfg(feature = "server")]
+use grovedb_query::AxisQuery;
+#[cfg(feature = "server")]
+use grovedb_version::version::GroveVersion;
 use std::cmp::Ordering;
 
 /// The position (index into a branch's segment list) at which the
@@ -215,6 +223,88 @@ pub(crate) fn axis_keys_to_ranked(
             "a branch of a {axis:?} read returned keys of a different axis shape"
         )))),
     }
+}
+
+/// The entire unproved branched-read sequence, shared by the ranked and
+/// having-range executors so the read/prove contract has exactly ONE
+/// implementation: decompose the branch paths, run one branched
+/// keys-only grovedb call, validate the run shape and the branch-set
+/// identity, translate and cap each branch's page, and merge with the
+/// shared comparator.
+///
+/// The union is served from **one committed state**: with no caller
+/// transaction the call runs under a grovedb snapshot read transaction,
+/// so every per-branch absence probe and axis walk inside grovedb's
+/// branched arm reads the same RocksDB snapshot and a block commit
+/// landing mid-read cannot mix committed states into the merged page. A
+/// caller transaction is used as-is — a transactional reader asks for
+/// its own writes over its base.
+///
+/// `page_cap` is the surface's page bound (`k` for ranked, `limit` for
+/// having-range): each branch may return at most that many entries and
+/// the merged union is cut at it. `surface` names the caller in the
+/// corrupted-state messages.
+#[cfg(feature = "server")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_branched_union(
+    grove: &GroveDb,
+    surface: &'static str,
+    prefix_branches: &[Vec<Vec<u8>>],
+    paths: &[Vec<Vec<u8>>],
+    axis: RankedAxis,
+    axis_query: AxisQuery,
+    page_cap: usize,
+    descending: bool,
+    transaction: TransactionArg,
+    grove_version: &GroveVersion,
+) -> Result<Vec<RankedEntry>, Error> {
+    let (prefix, keys, suffix) = decompose_branch_paths(paths)?;
+    let path_query =
+        PathQuery::new_branched_axis(prefix, keys.clone(), suffix, axis_query.keys_only());
+    let snapshot_transaction = if transaction.is_none() {
+        Some(grove.start_snapshot_read_transaction())
+    } else {
+        None
+    };
+    let read_transaction = snapshot_transaction.as_ref().or(transaction);
+    let CostContext { value, cost: _ } = grove.run_path_query(
+        &path_query,
+        true,
+        true,
+        true,
+        QueryResultType::QueryKeyElementPairResultType,
+        read_transaction,
+        grove_version,
+    );
+    let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+    let PathQueryRun::BranchedAxisKeys(branches) = run else {
+        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+            "a branched keys-only {surface} read returned a non-branched shape"
+        ))));
+    };
+    if branches.len() != keys.len() || branches.iter().map(|(key, _)| key).ne(keys.iter()) {
+        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+            "a branched {surface} read returned a different branch set than the request resolved"
+        ))));
+    }
+    let per_branch = branches
+        .into_iter()
+        .map(|(_key, page)| {
+            let entries = match page {
+                None => Vec::new(),
+                Some(page) => axis_keys_to_ranked(axis, page)?,
+            };
+            if entries.len() > page_cap {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                    "a branch of a {surface} read returned {} entries for a page cap of \
+                     {page_cap}",
+                    entries.len(),
+                ))));
+            }
+            Ok(entries)
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    merge_branch_pages(per_branch, prefix_branches, descending, page_cap)
 }
 
 /// Translate one branch's verified [`AxisEntries`] into drive entries

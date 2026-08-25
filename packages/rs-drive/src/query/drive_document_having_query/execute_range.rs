@@ -12,7 +12,7 @@
 //! `pub mod execute_range;` declaration.
 
 use super::super::drive_document_ranked_query::branches::{
-    axis_keys_to_ranked, decompose_branch_paths, merge_branch_pages,
+    decompose_branch_paths, read_branched_union,
 };
 use super::super::drive_document_ranked_query::{RankedAxis, RankedEntry, RankedEntryValue};
 use super::{AxisRangeBounds, DriveDocumentHavingQuery};
@@ -20,9 +20,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::query_result_type::QueryResultType;
+use grovedb::PathQuery;
 use grovedb::TransactionArg;
-use grovedb::{PathQuery, PathQueryRun};
 use grovedb_costs::CostContext;
 use grovedb_query::AxisQuery;
 
@@ -54,75 +53,26 @@ impl DriveDocumentHavingQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<RankedEntry>, Error> {
         if self.prefix_branches.len() > 1 {
-            // One grovedb call for the whole union, pinned to ONE
-            // committed state — a `None` read runs under a grovedb
-            // snapshot read transaction, a caller transaction is used
-            // as-is; same contract as the ranked executor (see its
-            // comment). Absence at any depth is the branched reader's
-            // empty branch.
-            let grove_version = &platform_version.drive.grove_version;
+            // ONE grovedb call for the whole union, pinned to one
+            // committed state — the entire sequence lives in the ranked
+            // surface's `branches::read_branched_union`, shared with the
+            // ranked executor so the two cannot drift.
             let paths = (0..self.prefix_branches.len())
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
-            let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
             let axis = self.bounds.axis();
             let (lo, hi) = self.bounds.inclusive_bounds_i128();
-            let path_query = PathQuery::new_branched_axis(
-                prefix,
-                keys.clone(),
-                suffix,
-                AxisQuery::bounded(axis.into(), lo, hi, self.limit, self.descending).keys_only(),
-            );
-            let snapshot_transaction = if transaction.is_none() {
-                Some(drive.grove.start_snapshot_read_transaction())
-            } else {
-                None
-            };
-            let read_transaction = snapshot_transaction.as_ref().or(transaction);
-            let CostContext { value, cost: _ } = drive.grove.run_path_query(
-                &path_query,
-                true,
-                true,
-                true,
-                QueryResultType::QueryKeyElementPairResultType,
-                read_transaction,
-                grove_version,
-            );
-            let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-            let PathQueryRun::BranchedAxisKeys(branches) = run else {
-                return Err(Error::Drive(DriveError::CorruptedDriveState(
-                    "a branched keys-only having read returned a non-branched shape".to_string(),
-                )));
-            };
-            if branches.len() != keys.len() || branches.iter().map(|(key, _)| key).ne(keys.iter()) {
-                return Err(Error::Drive(DriveError::CorruptedDriveState(
-                    "a branched having read returned a different branch set than the request \
-                     resolved"
-                        .to_string(),
-                )));
-            }
-            let per_branch = branches
-                .into_iter()
-                .map(|(_key, page)| {
-                    let entries = match page {
-                        None => Vec::new(),
-                        Some(page) => axis_keys_to_ranked(axis, page)?,
-                    };
-                    if entries.len() > self.limit as usize {
-                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                            "a branch of a having read returned {} entries for limit = {}",
-                            entries.len(),
-                            self.limit
-                        ))));
-                    }
-                    Ok(entries)
-                })
-                .collect::<Result<Vec<_>, Error>>()?;
-            return merge_branch_pages(
-                per_branch,
+            return read_branched_union(
+                &drive.grove,
+                "having",
                 &self.prefix_branches,
-                self.descending,
+                &paths,
+                axis,
+                AxisQuery::bounded(axis.into(), lo, hi, self.limit, self.descending),
                 self.limit as usize,
+                self.descending,
+                transaction,
+                &platform_version.drive.grove_version,
             );
         }
         self.execute_range_no_proof_branch(0, drive, transaction, platform_version)

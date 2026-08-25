@@ -2577,8 +2577,8 @@ mod pinned_prefix {
     /// branch's `in_key`, and a **cross-prefix aggregate tie** breaking
     /// by encoded prefix ascending (X's 32 `1`-bytes before Y's `2`s) —
     /// the comparator's middle term, observable only here. The proof is
-    /// a branch container, round-tripped through the shared resolver
-    /// against the live root hash.
+    /// one branched `PathQuery` envelope, round-tripped through the
+    /// shared resolver against the live root hash.
     #[test]
     fn in_pinned_top_k_merges_branches_and_proves() {
         let (drive, contract) = setup_grades_compound_ranked();
@@ -2634,7 +2634,7 @@ mod pinned_prefix {
         assert_eq!(query.prefix_branches.len(), 2, "two branches resolved");
         let (root_hash, verified) = query
             .verify_ranked_top_k_proof(&proof, platform_version())
-            .expect("the branch container must verify");
+            .expect("the branched envelope must verify");
         assert_eq!(verified.entries, page.entries);
         assert_eq!(
             root_hash,

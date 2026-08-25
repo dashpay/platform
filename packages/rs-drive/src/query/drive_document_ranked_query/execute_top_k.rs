@@ -10,14 +10,13 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_top_k;` declaration.
 
-use super::branches::{axis_keys_to_ranked, decompose_branch_paths, merge_branch_pages};
+use super::branches::{decompose_branch_paths, read_branched_union};
 use super::{DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue, RankedPage};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::query_result_type::QueryResultType;
-use grovedb::{IndexedTopKKeysPage, PathQuery, PathQueryRun, TransactionArg};
+use grovedb::{IndexedTopKKeysPage, PathQuery, TransactionArg};
 use grovedb_costs::CostContext;
 use grovedb_query::AxisQuery;
 
@@ -82,84 +81,31 @@ impl DriveDocumentRankedQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<RankedPage, Error> {
         if self.prefix_branches.len() > 1 {
-            // The whole union is read through ONE grovedb call — a branched
-            // keys-only PathQuery — pinned to ONE committed state: a `None`
-            // read runs under a grovedb snapshot read transaction, so every
-            // per-branch absence probe and axis walk inside the branched
-            // arm reads the same RocksDB snapshot and a block commit
-            // landing mid-read cannot mix committed states into the merged
-            // page. A caller transaction is used as-is — a transactional
-            // reader asks for its own writes over its base. Absence at any
-            // depth of a branch's chain is the branched reader's empty
-            // branch, exactly as the proved path authenticates it. `offset`
-            // is grammar-rejected with `IN`, so `skipped` is always 0 here.
-            let grove_version = &platform_version.drive.grove_version;
+            // ONE grovedb call for the whole union, pinned to one
+            // committed state and merged with the shared comparator —
+            // the entire sequence lives in
+            // `branches::read_branched_union`, shared with the
+            // having-range surface so the two cannot drift. `offset` is
+            // grammar-rejected with `IN`, so `skipped` is always 0 here.
             let paths = (0..self.prefix_branches.len())
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
-            let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
-            let path_query = PathQuery::new_branched_axis(
-                prefix,
-                keys.clone(),
-                suffix,
+            let entries = read_branched_union(
+                &drive.grove,
+                "ranked",
+                &self.prefix_branches,
+                &paths,
+                self.axis,
                 AxisQuery::top_k(
                     self.axis.into(),
                     self.k,
                     self.offset as u64,
                     self.descending,
-                )
-                .keys_only(),
-            );
-            let snapshot_transaction = if transaction.is_none() {
-                Some(drive.grove.start_snapshot_read_transaction())
-            } else {
-                None
-            };
-            let read_transaction = snapshot_transaction.as_ref().or(transaction);
-            let CostContext { value, cost: _ } = drive.grove.run_path_query(
-                &path_query,
-                true,
-                true,
-                true,
-                QueryResultType::QueryKeyElementPairResultType,
-                read_transaction,
-                grove_version,
-            );
-            let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-            let PathQueryRun::BranchedAxisKeys(branches) = run else {
-                return Err(Error::Drive(DriveError::CorruptedDriveState(
-                    "a branched keys-only ranked read returned a non-branched shape".to_string(),
-                )));
-            };
-            if branches.len() != keys.len() || branches.iter().map(|(key, _)| key).ne(keys.iter()) {
-                return Err(Error::Drive(DriveError::CorruptedDriveState(
-                    "a branched ranked read returned a different branch set than the request \
-                     resolved"
-                        .to_string(),
-                )));
-            }
-            let per_branch = branches
-                .into_iter()
-                .map(|(_key, page)| {
-                    let entries = match page {
-                        None => Vec::new(),
-                        Some(page) => axis_keys_to_ranked(self.axis, page)?,
-                    };
-                    if entries.len() > self.k as usize {
-                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                            "a branch of a ranked read returned {} entries for k = {}",
-                            entries.len(),
-                            self.k
-                        ))));
-                    }
-                    Ok(entries)
-                })
-                .collect::<Result<Vec<_>, Error>>()?;
-            let entries = merge_branch_pages(
-                per_branch,
-                &self.prefix_branches,
-                self.descending,
+                ),
                 self.k as usize,
+                self.descending,
+                transaction,
+                &platform_version.drive.grove_version,
             )?;
             return Ok(RankedPage {
                 skipped: 0,

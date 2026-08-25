@@ -2144,7 +2144,7 @@ mod pinned_prefix {
     /// A `null` element mixed with a real value in one `IN` pin: the
     /// null branch is the write path's empty segment, which sorts
     /// **first** in canonical branch order, and the merged bound covers
-    /// both subtrees — proved through the branch container.
+    /// both subtrees — proved through the branched envelope.
     #[test]
     fn a_mixed_null_in_pin_bounds_both_prefixes_and_proves() {
         const TAGGED_DOCTYPE: &str = "taggedGrade";
@@ -2285,7 +2285,7 @@ mod pinned_prefix {
         );
         let (root_hash, verified) = query
             .verify_having_range_proof(&proof, pv)
-            .expect("the mixed-null branch container must verify");
+            .expect("the mixed-null branched envelope must verify");
         assert_eq!(verified, entries);
         assert_eq!(
             root_hash,
