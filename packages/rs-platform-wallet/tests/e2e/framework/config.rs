@@ -433,53 +433,68 @@ impl Default for Config {
 /// Walk up from `start` looking for a `.claude` path component; if found,
 /// the parent of that component is the parent-repo root. Returns the
 /// `tests/.env` path under `packages/rs-platform-wallet/` in that root,
-/// or `/dev/null` (which never passes `.exists()`) when not found.
-fn find_parent_repo_env(start: &std::path::Path) -> PathBuf {
+/// or `None` when no such file exists.
+///
+/// "Absent" is `None`, never an in-band path. A sentinel path was used here
+/// previously (`/dev/null`, documented as "never passes `.exists()`"), but
+/// `/dev/null` is a real file on Unix: it passed `.exists()`, so a missing
+/// config resolved to a loadable candidate and `load_e2e_env` reported a
+/// successful load of an empty file. That masked the "not found" warning and
+/// made an unconfigured checkout look configured.
+fn find_parent_repo_env(start: &std::path::Path) -> Option<PathBuf> {
     for ancestor in start.ancestors() {
         let components: Vec<_> = ancestor.components().collect();
         if let Some(idx) = components.iter().position(|c| c.as_os_str() == ".claude") {
             let parent_root: PathBuf = components[..idx].iter().collect();
             let candidate = parent_root.join("packages/rs-platform-wallet/tests/.env");
             if candidate.exists() {
-                return candidate;
+                return Some(candidate);
             }
         }
     }
-    PathBuf::from("/dev/null")
+    None
+}
+
+/// First existing `.env` candidate for `manifest_dir`, or `None` when the
+/// checkout carries no config at all.
+///
+/// Split out from [`load_e2e_env`] so the candidate-resolution decision is
+/// testable without touching process env or a tracing subscriber.
+fn resolve_e2e_env_path(manifest_dir: &std::path::Path) -> Option<PathBuf> {
+    let manifest_env = manifest_dir.join("tests/.env");
+    if manifest_env.exists() {
+        return Some(manifest_env);
+    }
+    find_parent_repo_env(manifest_dir)
 }
 
 /// Try each candidate path in order; load the first one that exists.
 fn load_e2e_env() {
-    let manifest_env = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/.env");
-    let parent_env = find_parent_repo_env(Path::new(env!("CARGO_MANIFEST_DIR")));
+    let Some(candidate) = resolve_e2e_env_path(Path::new(env!("CARGO_MANIFEST_DIR"))) else {
+        tracing::warn!(
+            target: "platform_wallet::e2e::config",
+            "no e2e .env found in any candidate location (process env vars still apply)"
+        );
+        return;
+    };
 
-    for candidate in [&manifest_env, &parent_env] {
-        if candidate.exists() {
-            match dotenvy::from_path(candidate) {
-                Ok(()) => {
-                    tracing::info!(
-                        target: "platform_wallet::e2e::config",
-                        path = %candidate.display(),
-                        "loaded e2e .env"
-                    );
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        target: "platform_wallet::e2e::config",
-                        path = %candidate.display(),
-                        ?err,
-                        "failed to load e2e .env (process env vars still apply)"
-                    );
-                }
-            }
-            return;
+    match dotenvy::from_path(&candidate) {
+        Ok(()) => {
+            tracing::info!(
+                target: "platform_wallet::e2e::config",
+                path = %candidate.display(),
+                "loaded e2e .env"
+            );
+        }
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::config",
+                path = %candidate.display(),
+                ?err,
+                "failed to load e2e .env (process env vars still apply)"
+            );
         }
     }
-
-    tracing::warn!(
-        target: "platform_wallet::e2e::config",
-        "no e2e .env found in any candidate location (process env vars still apply)"
-    );
 }
 
 impl Config {
@@ -1060,10 +1075,86 @@ mod tests {
         assert_eq!(src, BankCoreGateSource::EnvInvalidFallback);
     }
 
+    /// Doc-sync guard: the README's env-var table must quote the same
+    /// defaults the constants actually use.
+    ///
+    /// These drifted 1000x apart once already (`MIN_BANK_CREDITS` documented
+    /// as `500_000_000` against a real `550_000_000_000`), which sends an
+    /// operator to top a bank wallet up to a thousandth of the gating amount
+    /// and makes the resulting panic look like a harness bug.
     #[test]
-    fn find_parent_repo_env_no_claude_component_returns_dev_null() {
+    fn readme_documents_the_real_numeric_defaults() {
+        let readme = include_str!("../README.md");
+
+        // (var name, value as the table spells it)
+        let expected = [
+            ("PLATFORM_WALLET_E2E_MIN_BANK_CREDITS", "550_000_000_000"),
+            ("PLATFORM_WALLET_E2E_MIN_IDENTITY_CREDITS", "30_000_000"),
+            ("PLATFORM_WALLET_E2E_MIN_SHIELDED_CREDITS", "0"),
+        ];
+        // Keep the literals above honest against the constants themselves.
+        assert_eq!(DEFAULT_MIN_BANK_CREDITS, 550_000_000_000);
+        assert_eq!(DEFAULT_MIN_IDENTITY_CREDITS, 30_000_000);
+        assert_eq!(DEFAULT_MIN_SHIELDED_CREDITS, 0);
+
+        for (var, default) in expected {
+            let row = readme
+                .lines()
+                .find(|l| l.starts_with(&format!("| `{var}`")))
+                .unwrap_or_else(|| panic!("README has no env-var table row for {var}"));
+            // Table shape: | `VAR` | required | default | purpose |
+            let documented = row
+                .split('|')
+                .nth(3)
+                .unwrap_or_else(|| panic!("malformed README table row for {var}: {row}"))
+                .trim();
+            assert_eq!(
+                documented,
+                format!("`{default}`"),
+                "README default for {var} is out of sync with the constant"
+            );
+        }
+    }
+
+    #[test]
+    fn find_parent_repo_env_no_claude_component_returns_none() {
         let result = find_parent_repo_env(std::path::Path::new("/usr/local/bin"));
-        assert_eq!(result, PathBuf::from("/dev/null"));
+        assert_eq!(result, None);
+    }
+
+    /// Regression: an absent config must never resolve to a *loadable* path.
+    /// The previous sentinel was `/dev/null`, documented as "never passes
+    /// `.exists()`" — false on Unix, so `load_e2e_env` logged a successful
+    /// load of an empty file and the "not found" warning was unreachable.
+    #[test]
+    fn resolve_e2e_env_path_absent_config_never_yields_a_loadable_path() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // A manifest dir with no `tests/.env` and no `.claude` ancestor.
+        let resolved = resolve_e2e_env_path(tmp.path());
+        assert_eq!(
+            resolved, None,
+            "absent config must resolve to None, got {resolved:?}"
+        );
+        assert!(
+            !resolved.is_some_and(|p| p.exists()),
+            "absent config must never resolve to an existing file"
+        );
+    }
+
+    /// The manifest-local `tests/.env` wins over any parent-repo candidate.
+    #[test]
+    fn resolve_e2e_env_path_prefers_manifest_local_env() {
+        use std::io::Write;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let manifest_env = tmp.path().join("tests/.env");
+        std::fs::create_dir_all(manifest_env.parent().unwrap()).expect("create dirs");
+        std::fs::File::create(&manifest_env)
+            .expect("create .env")
+            .write_all(b"TEST=1\n")
+            .expect("write .env");
+
+        assert_eq!(resolve_e2e_env_path(tmp.path()), Some(manifest_env));
     }
 
     #[test]
@@ -1086,20 +1177,20 @@ mod tests {
             .expect("write .env");
 
         let result = find_parent_repo_env(&worktree_pkg);
-        assert_eq!(result, parent_tests_env);
+        assert_eq!(result, Some(parent_tests_env));
     }
 
     #[test]
-    fn find_parent_repo_env_claude_present_but_no_env_file_returns_dev_null() {
+    fn find_parent_repo_env_claude_present_but_no_env_file_returns_none() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let worktree_pkg = tmp
             .path()
             .join(".claude/worktrees/agent-test/packages/rs-platform-wallet");
         std::fs::create_dir_all(&worktree_pkg).expect("create dirs");
-        // No .env file created — should fall through to /dev/null.
+        // No .env file created — should fall through to "not found".
 
         let result = find_parent_repo_env(&worktree_pkg);
-        assert_eq!(result, PathBuf::from("/dev/null"));
+        assert_eq!(result, None);
     }
 
     /// Process-wide env-var flag used to exercise [`is_truthy_env`].
