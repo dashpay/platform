@@ -1,110 +1,120 @@
 import XCTest
+import DashSDKFFI
 @testable import SwiftDashSDK
 
 /// Coverage for `PlatformWalletManager.shutdown()` — the explicit, off-main
 /// replacement for the old synchronous `deinit` teardown.
 ///
-/// Every test runs on the internal test seam (`makeForTesting(handle:teardown:)`
-/// + `nativeTeardownOverride`): a fake non-null handle exercises the real
-/// take-once / exactly-once / idempotency paths, while the injected teardown
-/// closure counts invocations and can hold completion — no FFI is touched, so
-/// the tests are deterministic and need no configured SDK.
-///
-/// Isolation: each test that leaves a live manager behind finishes it with an
-/// explicit `await manager.shutdown()` (or drains `destroyQueue`), so the
-/// asynchronous deinit fallback of one test can never overlap the next.
+/// Tests inject the six individual native functions, not the teardown result.
+/// The production `performNativeTeardown` orchestration therefore remains
+/// under test: order, handle propagation, result mapping, off-main execution,
+/// take-once behavior, and idempotency are all exercised without calling FFI.
 @MainActor
 final class PlatformWalletShutdownTests: XCTestCase {
 
-    /// Thread-safe invocation recorder shared with the injected teardown
-    /// closure (which runs on the SDK's destroy queue, off the main actor).
     private final class TeardownRecorder: @unchecked Sendable {
         private let lock = NSLock()
-        private var callCount = 0
-        private var handles: [Handle] = []
-        private var ranOnMainThread: [Bool] = []
+        private let failingStep: String?
+        private let firstCallGate: DispatchSemaphore?
+        private var invocations: [(name: String, handle: Handle, ranOnMainThread: Bool)] = []
 
-        func record(handle: Handle) {
-            lock.withLock {
-                callCount += 1
-                handles.append(handle)
-                ranOnMainThread.append(Thread.isMainThread)
-            }
+        init(failingStep: String? = nil, firstCallGate: DispatchSemaphore? = nil) {
+            self.failingStep = failingStep
+            self.firstCallGate = firstCallGate
         }
 
-        var count: Int { lock.withLock { callCount } }
-        var recordedHandles: [Handle] { lock.withLock { handles } }
-        var recordedMainThread: [Bool] { lock.withLock { ranOnMainThread } }
+        func record(name: String, handle: Handle) -> PlatformWalletFFIResult {
+            if name == "spv_stop" {
+                firstCallGate?.wait()
+            }
+            lock.withLock {
+                invocations.append((name, handle, Thread.isMainThread))
+            }
+            let code = name == failingStep
+                ? PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_INVALID_HANDLE
+                : PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS
+            return PlatformWalletFFIResult(code: code, message: nil)
+        }
+
+        var names: [String] { lock.withLock { invocations.map(\.name) } }
+        var handles: [Handle] { lock.withLock { invocations.map(\.handle) } }
+        var mainThreadFlags: [Bool] { lock.withLock { invocations.map(\.ranOnMainThread) } }
+        func count(named name: String) -> Int {
+            lock.withLock { invocations.count { $0.name == name } }
+        }
     }
 
-    /// `nonisolated static` on purpose: the injected teardown closures are
-    /// `@Sendable` and run on the destroy queue, off the main actor.
-    private nonisolated static func makeMetrics(code: Int32 = 0) -> PlatformWalletShutdownMetrics {
-        PlatformWalletShutdownMetrics(
-            steps: [.init(name: "destroy", ffiCode: code, milliseconds: 1)],
-            totalMilliseconds: 1,
-            ranOffMainThread: !Thread.isMainThread
+    private static let expectedOrder = [
+        "spv_stop",
+        "platform_address_sync_stop",
+        "shielded_sync_stop",
+        "dashpay_sync_stop",
+        "dpns_sync_stop",
+        "destroy",
+    ]
+
+    private nonisolated static func makeCalls(
+        recorder: TeardownRecorder
+    ) -> PlatformWalletNativeTeardownCalls {
+        PlatformWalletNativeTeardownCalls(
+            spvStop: { recorder.record(name: "spv_stop", handle: $0) },
+            platformAddressSyncStop: {
+                recorder.record(name: "platform_address_sync_stop", handle: $0)
+            },
+            shieldedSyncStop: { recorder.record(name: "shielded_sync_stop", handle: $0) },
+            dashPaySyncStop: { recorder.record(name: "dashpay_sync_stop", handle: $0) },
+            dpnsSyncStop: { recorder.record(name: "dpns_sync_stop", handle: $0) },
+            destroy: { recorder.record(name: "destroy", handle: $0) }
         )
     }
 
-    /// Drain the destroy queue so any scheduled (fallback) teardown has
-    /// provably run before the test asserts.
     private func drainDestroyQueue() {
         PlatformWalletManager.destroyQueue.sync {}
     }
 
     // MARK: - Idempotency
 
-    /// Two concurrent callers await ONE teardown and receive the same metrics.
     func testConcurrentShutdownRunsTeardownExactlyOnce() async {
         let recorder = TeardownRecorder()
-        let manager = PlatformWalletManager.makeForTesting(handle: 42) { handle in
-            recorder.record(handle: handle)
-            return PlatformWalletShutdownMetrics(
-                steps: [.init(name: "destroy", ffiCode: 0, milliseconds: 7)],
-                totalMilliseconds: 7,
-                ranOffMainThread: !Thread.isMainThread
-            )
-        }
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 42,
+            calls: Self.makeCalls(recorder: recorder)
+        )
 
         async let first = manager.shutdown()
         async let second = manager.shutdown()
         let (m1, m2) = await (first, second)
 
-        XCTAssertEqual(recorder.count, 1, "one native teardown for two callers")
-        XCTAssertEqual(recorder.recordedHandles, [42], "the taken handle reaches the teardown")
-        XCTAssertEqual(m1.totalMilliseconds, m2.totalMilliseconds, "both callers get the same metrics")
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
+        XCTAssertEqual(recorder.handles, Array(repeating: 42, count: 6))
+        XCTAssertEqual(recorder.count(named: "destroy"), 1)
+        XCTAssertEqual(m1.totalMilliseconds, m2.totalMilliseconds)
         XCTAssertEqual(m1.steps.map(\.name), m2.steps.map(\.name))
 
-        // A third, late caller still gets the recorded outcome, no new run.
         let third = await manager.shutdown()
-        XCTAssertEqual(recorder.count, 1)
+        XCTAssertEqual(recorder.names, Self.expectedOrder, "a late caller must not start teardown again")
         XCTAssertEqual(third.totalMilliseconds, m1.totalMilliseconds)
     }
 
     // MARK: - Take-once handle
 
-    /// The first `shutdown()` consumes the handle: it reads NULL afterwards
-    /// and every guarded entry point rejects.
     func testShutdownConsumesHandleExactlyOnce() async {
         let recorder = TeardownRecorder()
-        let manager = PlatformWalletManager.makeForTesting(handle: 7) { handle in
-            recorder.record(handle: handle)
-            return Self.makeMetrics()
-        }
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 7,
+            calls: Self.makeCalls(recorder: recorder)
+        )
         XCTAssertEqual(manager.handle, 7)
         XCTAssertTrue(manager.isConfigured)
 
         await manager.shutdown()
 
-        XCTAssertEqual(manager.handle, NULL_HANDLE, "handle is zeroed by the take-once")
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
         XCTAssertFalse(manager.isConfigured)
-        XCTAssertThrowsError(try manager.ensureConfigured(), "operations must fail fast after shutdown")
-        XCTAssertEqual(recorder.count, 1)
+        XCTAssertThrowsError(try manager.ensureConfigured())
+        XCTAssertEqual(recorder.count(named: "destroy"), 1)
     }
 
-    /// A never-configured manager (NULL handle) shuts down as a no-op —
-    /// no teardown call, empty metrics — and stays idempotent.
     func testShutdownWithoutHandleIsANoOp() async {
         let manager = PlatformWalletManager()
         let metrics = await manager.shutdown()
@@ -113,111 +123,126 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertTrue(again.steps.isEmpty)
     }
 
-    /// A no-op before configuration must not occupy the idempotency slot: if
-    /// the same manager is configured later, its live handle still tears down.
-    func testShutdownBeforeConfigurationDoesNotSuppressLaterTeardown() async {
+    func testShutdownBeforeConfigurationDoesNotSuppressLaterTeardown() async throws {
         let recorder = TeardownRecorder()
         let manager = PlatformWalletManager()
 
         let noOp = await manager.shutdown()
         XCTAssertTrue(noOp.steps.isEmpty)
 
-        manager.configureForTesting(handle: 17) { handle in
-            recorder.record(handle: handle)
-            return Self.makeMetrics()
-        }
+        try manager.configureForTesting(
+            handle: 17,
+            calls: Self.makeCalls(recorder: recorder)
+        )
 
         let metrics = await manager.shutdown()
-        XCTAssertEqual(recorder.count, 1)
-        XCTAssertEqual(recorder.recordedHandles, [17])
-        XCTAssertEqual(metrics.steps.map(\.name), ["destroy"])
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
+        XCTAssertEqual(recorder.handles, Array(repeating: 17, count: 6))
+        XCTAssertEqual(metrics.steps.map(\.name), Self.expectedOrder)
+    }
+
+    /// A completed real shutdown makes this manager terminal. Reconfiguration
+    /// must fail before another native handle or callback context is installed.
+    func testConfigurationAfterRealShutdownIsRejected() async {
+        let recorder = TeardownRecorder()
+        let calls = Self.makeCalls(recorder: recorder)
+        let manager = PlatformWalletManager.makeForTesting(handle: 17, calls: calls)
+
+        let first = await manager.shutdown()
+        XCTAssertEqual(first.steps.map(\.name), Self.expectedOrder)
+
+        XCTAssertThrowsError(try manager.configureForTesting(handle: 18, calls: calls)) { error in
+            guard let walletError = error as? PlatformWalletError else {
+                return XCTFail("unexpected error: \(error)")
+            }
+            guard case .invalidHandle(let message) = walletError else {
+                return XCTFail("expected invalidHandle, got \(walletError)")
+            }
+            XCTAssertTrue(message.contains("cannot be configured after shutdown"))
+        }
+
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
+        XCTAssertFalse(manager.isConfigured)
+        let repeated = await manager.shutdown()
+        XCTAssertEqual(repeated.steps.map(\.name), Self.expectedOrder)
+        XCTAssertEqual(recorder.names, Self.expectedOrder, "rejected configuration must not add teardown calls")
     }
 
     // MARK: - Caller cancellation
 
-    /// Cancelling the calling task does not interrupt the native teardown:
-    /// it runs to completion exactly once and the cancelled caller still
-    /// receives the metrics.
     func testCallerCancellationDoesNotInterruptTeardown() async {
-        let recorder = TeardownRecorder()
         let gate = DispatchSemaphore(value: 0)
-        let manager = PlatformWalletManager.makeForTesting(handle: 9) { handle in
-            gate.wait() // hold completion until the test releases it
-            recorder.record(handle: handle)
-            return Self.makeMetrics()
-        }
+        let recorder = TeardownRecorder(firstCallGate: gate)
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 9,
+            calls: Self.makeCalls(recorder: recorder)
+        )
 
         let caller = Task { await manager.shutdown() }
         caller.cancel()
         gate.signal()
 
         let metrics = await caller.value
-        XCTAssertEqual(recorder.count, 1, "teardown ran despite the cancelled caller")
-        XCTAssertEqual(metrics.steps.map(\.name), ["destroy"])
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
+        XCTAssertEqual(recorder.count(named: "destroy"), 1)
+        XCTAssertEqual(metrics.steps.map(\.name), Self.expectedOrder)
     }
 
     // MARK: - Deinit interplay
 
-    /// After an explicit `shutdown()`, deallocating the manager schedules no
-    /// second teardown (the handle was already consumed).
     func testDeinitAfterShutdownRunsNoSecondTeardown() async {
         let recorder = TeardownRecorder()
-        var manager: PlatformWalletManager? = PlatformWalletManager.makeForTesting(handle: 11) { handle in
-            recorder.record(handle: handle)
-            return Self.makeMetrics()
-        }
+        var manager: PlatformWalletManager? = PlatformWalletManager.makeForTesting(
+            handle: 11,
+            calls: Self.makeCalls(recorder: recorder)
+        )
 
         await manager?.shutdown()
-        XCTAssertEqual(recorder.count, 1)
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
 
         manager = nil
         drainDestroyQueue()
-        XCTAssertEqual(recorder.count, 1, "deinit must not run a second teardown")
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
+        XCTAssertEqual(recorder.count(named: "destroy"), 1)
     }
 
-    /// Dropping a live manager WITHOUT `shutdown()` triggers the emergency
-    /// fallback: exactly one teardown, off the main thread (the whole point —
-    /// the blocking destroy must never run on whatever thread ARC releases on).
     func testDeinitFallbackRunsTeardownOffMainExactlyOnce() {
         let recorder = TeardownRecorder()
-        var manager: PlatformWalletManager? = PlatformWalletManager.makeForTesting(handle: 13) { handle in
-            recorder.record(handle: handle)
-            return PlatformWalletShutdownMetrics(
-                steps: [], totalMilliseconds: 0, ranOffMainThread: !Thread.isMainThread)
-        }
+        var manager: PlatformWalletManager? = PlatformWalletManager.makeForTesting(
+            handle: 13,
+            calls: Self.makeCalls(recorder: recorder)
+        )
         withExtendedLifetime(manager) {}
 
-        manager = nil // MainActor release → deinit schedules the fallback
+        manager = nil
         drainDestroyQueue()
 
-        XCTAssertEqual(recorder.count, 1, "fallback teardown runs exactly once")
-        XCTAssertEqual(recorder.recordedMainThread, [false], "fallback teardown must not run on the main thread")
-        XCTAssertEqual(recorder.recordedHandles, [13])
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
+        XCTAssertEqual(recorder.mainThreadFlags, Array(repeating: false, count: 6))
+        XCTAssertEqual(recorder.handles, Array(repeating: 13, count: 6))
+        XCTAssertEqual(recorder.count(named: "destroy"), 1)
     }
 
-    // MARK: - Error propagation
+    // MARK: - Production orchestration
 
-    /// A failing FFI step's code travels in the returned metrics — the
-    /// lifecycle layer logs it; it never turns into a thrown error (destroy
-    /// of a live handle reports Success by Rust contract, and step failures
-    /// carry no control-flow decision).
-    func testFailingStepCodeLandsInMetrics() async {
-        let failingCode = PlatformWalletResultCode.errorInvalidHandle.rawValue
-        let manager = PlatformWalletManager.makeForTesting(handle: 21) { _ in
-            PlatformWalletShutdownMetrics(
-                steps: [
-                    .init(name: "spv_stop", ffiCode: 0, milliseconds: 2),
-                    .init(name: "destroy", ffiCode: failingCode, milliseconds: 3),
-                ],
-                totalMilliseconds: 5,
-                ranOffMainThread: !Thread.isMainThread
-            )
-        }
+    /// The injected calls still run through `performNativeTeardown`, proving
+    /// its exact order and association of each native result with its metric.
+    func testNativeTeardownOrderAndResultMapping() async {
+        let recorder = TeardownRecorder(failingStep: "shielded_sync_stop")
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 21,
+            calls: Self.makeCalls(recorder: recorder)
+        )
 
         let metrics = await manager.shutdown()
 
-        XCTAssertEqual(metrics.steps.count, 2)
-        XCTAssertEqual(metrics.steps.last?.ffiCode, failingCode, "step failure code is preserved for the host to log")
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
+        XCTAssertEqual(recorder.handles, Array(repeating: 21, count: 6))
+        XCTAssertEqual(metrics.steps.map(\.name), Self.expectedOrder)
+        XCTAssertEqual(
+            metrics.steps.map(\.ffiCode),
+            [0, 0, PlatformWalletResultCode.errorInvalidHandle.rawValue, 0, 0, 0]
+        )
         XCTAssertTrue(metrics.ranOffMainThread)
     }
 }
