@@ -34,16 +34,20 @@ describe('renderCertificateGuidance', () => {
    * @param {Object} [options]
    * @return {Object}
    */
-  const guidanceFor = ({ code = null, issuance = null, unreadable = false } = {}) => {
+  const guidanceFor = ({
+    code = null, issuance = null, unreadable = false, noExternalIp = false,
+  } = {}) => {
     if (unreadable) {
-      return deriveRenewalGuidance({ isRecordUnreadable: true });
+      return deriveRenewalGuidance({ isRecordUnreadable: true, hasNoExternalIp: noExternalIp });
     }
 
     if (code === null) {
-      return deriveRenewalGuidance({});
+      return deriveRenewalGuidance({ hasNoExternalIp: noExternalIp });
     }
 
     return deriveRenewalGuidance({
+      isCertificateUsable: false,
+      hasNoExternalIp: noExternalIp,
       record: RenewalRecord.fromObject({
         provider: 'letsencrypt',
         outcome: 'failed',
@@ -643,6 +647,36 @@ describe('renderCertificateGuidance', () => {
       });
 
       expect(output).to.not.contain('ssl obtain');
+    });
+
+    it('should not smuggle a certificate request in beside the address prerequisite', () => {
+      // The address is required either way, but the request that usually
+      // follows it is not exempt: an issuance already outstanding is still
+      // outstanding once the address is set.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({
+          provider: 'letsencrypt',
+          reasons: [{ code: CERTIFICATE_REASONS.NO_EXTERNAL_IP, message: 'no address' }],
+        }),
+        renewal: guidanceFor({
+          code: 'PORT_80_UNREACHABLE', issuance: 'spent', noExternalIp: true,
+        }),
+      });
+
+      expect(output).to.contain('externalIp');
+      expect(output).to.not.contain('ssl obtain');
+    });
+
+    it('should not call a plan restriction the three-certificate wall', () => {
+      const output = render({
+        verdict: verdict({ provider: 'zerossl' }),
+        renewal: guidanceFor({ code: 'PROVIDER_PLAN_REQUIRED' }),
+      });
+
+      expect(output).to.not.contain('all three');
+      expect(output).to.contain('plan this account is on');
     });
 
     it('should keep the existing text when nothing was recorded', () => {

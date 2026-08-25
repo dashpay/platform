@@ -26,6 +26,23 @@ export const RENEWAL_RECORD_STATES = {
  */
 const RECORD_FILE_MODE = 0o644;
 
+/**
+ * How long a held fence may go unrefreshed before another process may break it.
+ *
+ * Every holder does a few synchronous filesystem calls, so this is generous by
+ * orders of magnitude; it exists so a process killed mid-claim cannot block
+ * renewal bookkeeping for good.
+ */
+const LOCK_STALE_MS = 10000;
+
+/**
+ * How long to wait for another holder before giving up. Every holder keeps the
+ * fence for a handful of filesystem calls, so contention clears quickly.
+ */
+const LOCK_ACQUIRE_TIMEOUT_MS = 5000;
+
+const LOCK_RETRY_INTERVAL_MS = 10;
+
 export default class RenewalRecordRepository {
   /**
    * The high-water generation, kept beside the record and never removed with it.
@@ -42,6 +59,102 @@ export default class RenewalRecordRepository {
    * @param {string} configName
    * @return {number}
    */
+  /**
+   * Run fn with the fence held, so a read and the write it authorises cannot be
+   * separated by another process.
+   *
+   * Reading the high-water mark and then acting on it is only a guard if
+   * nothing can claim in between. Two processes reading the same number and
+   * both claiming it, or a superseded holder resuming after a newer one has
+   * written, would each pass a check that was true when it was made and false
+   * by the time it mattered - and the configuration lock does not cover this,
+   * because a renewal releases that before its bookkeeping runs.
+   *
+   * @param {string} configName
+   * @param {function(): *} fn
+   * @return {*}
+   */
+  #fenced(configName, fn) {
+    const generationPath = this.#generationPath(configName);
+
+    fs.mkdirSync(path.dirname(generationPath), { recursive: true });
+
+    if (!fs.existsSync(generationPath)) {
+      // proper-lockfile needs a target that exists; a fence nobody has claimed
+      // yet is zero.
+      writeFileAtomic.sync(generationPath, '0\n', { encoding: 'utf8', mode: RECORD_FILE_MODE });
+    }
+
+    const release = this.#acquire(generationPath);
+
+    try {
+      return fn();
+    } finally {
+      try {
+        release();
+      } catch {
+        // Releasing reports when the lock was already broken as stale. Nothing
+        // thrown here may replace the outcome the caller actually needs.
+      }
+    }
+  }
+
+  /**
+   * Take the fence, waiting out a holder rather than failing on first contention.
+   *
+   * An exclusive create rather than a lock library: this runs on the helper's
+   * only thread, inside a cron callback, and in tests that replace the global
+   * timers - so a fence that depends on a timer to stay alive is a fence that
+   * can fail for reasons having nothing to do with renewal. An exclusive
+   * create needs no timer and no refresh.
+   *
+   * @param {string} generationPath
+   * @return {function} release
+   */
+  // eslint-disable-next-line class-methods-use-this
+  #acquire(generationPath) {
+    const lockPath = `${generationPath}.lock`;
+    const deadline = Date.now() + LOCK_ACQUIRE_TIMEOUT_MS;
+
+    for (;;) {
+      try {
+        fs.closeSync(fs.openSync(lockPath, 'wx'));
+
+        return () => {
+          try {
+            fs.rmSync(lockPath, { force: true });
+          } catch {
+            // A fence that cannot be released goes stale and is reclaimed
+            // below. Nothing thrown here may replace the caller's outcome.
+          }
+        };
+      } catch (e) {
+        if (e.code !== 'EEXIST') {
+          throw e;
+        }
+
+        // A holder killed mid-claim would otherwise block bookkeeping for good.
+        try {
+          if (Date.now() - fs.statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
+            fs.rmSync(lockPath, { force: true });
+
+            continue;
+          }
+        } catch {
+          continue;
+        }
+
+        if (Date.now() >= deadline) {
+          throw new Error(`Timed out waiting for the renewal fence at '${lockPath}'`);
+        }
+
+        // Synchronous by necessity: there is no event loop to yield to here,
+        // and every holder keeps the fence for a handful of filesystem calls.
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, LOCK_RETRY_INTERVAL_MS);
+      }
+    }
+  }
+
   #readGeneration(configName) {
     let contents;
 
@@ -61,7 +174,15 @@ export default class RenewalRecordRepository {
 
     const parsed = Number.parseInt(contents, 10);
 
-    return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+    // A fence that exists and cannot be understood is not an absent one.
+    // Reading it as zero is what an absent fence reads as, so it would let
+    // every superseded writer through at exactly the moment it is needed.
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new Error(`The renewal generation at '${this.#generationPath(configName)}' is not a`
+        + ' number, so dashmate cannot tell which renewal attempt is current');
+    }
+
+    return parsed;
   }
 
   /**
@@ -74,13 +195,17 @@ export default class RenewalRecordRepository {
    * @return {number}
    */
   claimGeneration(configName) {
-    const next = this.#readGeneration(configName) + 1;
-    const generationPath = this.#generationPath(configName);
+    return this.#fenced(configName, () => {
+      const next = this.#readGeneration(configName) + 1;
 
-    fs.mkdirSync(path.dirname(generationPath), { recursive: true });
-    writeFileAtomic.sync(generationPath, `${next}\n`, { encoding: 'utf8', mode: RECORD_FILE_MODE });
+      writeFileAtomic.sync(
+        this.#generationPath(configName),
+        `${next}\n`,
+        { encoding: 'utf8', mode: RECORD_FILE_MODE },
+      );
 
-    return next;
+      return next;
+    });
   }
 
   /**
@@ -190,13 +315,24 @@ export default class RenewalRecordRepository {
    * @return {boolean} whether the write was applied
    */
   write(configName, record, generation = null) {
-    // A superseded chain must not describe a node it no longer renews. Its
-    // configuration changed under it, and the chain that took over has already
-    // written what is true now.
-    if (!this.#isCurrent(configName, generation)) {
-      return false;
-    }
+    return this.#fenced(configName, () => {
+      // A superseded chain must not describe a node it no longer renews. Its
+      // configuration changed under it, and the chain that took over has
+      // already written what is true now.
+      if (!this.#isCurrent(configName, generation)) {
+        return false;
+      }
 
+      return this.#writeRecord(configName, record);
+    });
+  }
+
+  /**
+   * @param {string} configName
+   * @param {RenewalRecord} record
+   * @return {boolean}
+   */
+  #writeRecord(configName, record) {
     const recordPath = this.getPath(configName);
 
     // The directory belongs to the certificate and is created when one is first
@@ -228,12 +364,14 @@ export default class RenewalRecordRepository {
    * @return {boolean} whether the removal was applied
    */
   remove(configName, generation = null) {
-    if (!this.#isCurrent(configName, generation)) {
-      return false;
-    }
+    return this.#fenced(configName, () => {
+      if (!this.#isCurrent(configName, generation)) {
+        return false;
+      }
 
-    fs.rmSync(this.getPath(configName), { force: true });
+      fs.rmSync(this.getPath(configName), { force: true });
 
-    return true;
+      return true;
+    });
   }
 }

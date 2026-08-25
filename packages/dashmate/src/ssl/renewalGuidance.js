@@ -11,8 +11,16 @@ import { describeRenewalFailure, REMEDY_CLASS } from './renewal-failure.js';
 export const SAFE_ACTION = {
   /** Ask for a certificate. Nothing known forbids it. */
   OBTAIN: 'OBTAIN',
-  /** Repair something here first; renewal comes back around on its own. */
-  FIX_LOCALLY_THEN_WAIT: 'FIX_LOCALLY_THEN_WAIT',
+  /**
+   * Repair something here first, then let renewal come back around on its own.
+   * Only while the certificate in use still works - there is time to wait.
+   */
+  WAIT_AFTER_LOCAL_FIX: 'WAIT_AFTER_LOCAL_FIX',
+  /**
+   * Repair something here first, then ask for a certificate.
+   * The one in use is already unusable, so waiting is a live outage.
+   */
+  OBTAIN_AFTER_LOCAL_FIX: 'OBTAIN_AFTER_LOCAL_FIX',
   /** This provider will not issue again; the operator picks another. */
   SWITCH_PROVIDER: 'SWITCH_PROVIDER',
   /** Asking again costs something and gains nothing. */
@@ -37,7 +45,7 @@ export const ISSUANCE_STATUS = {
  * @param {string} remedy
  * @return {string}
  */
-function safeActionForRemedy(remedy) {
+function safeActionForRemedy(remedy, isCertificateUsable) {
   if (remedy === REMEDY_CLASS.DO_NOT_RETRY || remedy === REMEDY_CLASS.SUPPORT) {
     return SAFE_ACTION.DO_NOT_OBTAIN;
   }
@@ -46,10 +54,15 @@ function safeActionForRemedy(remedy) {
     return SAFE_ACTION.SWITCH_PROVIDER;
   }
 
-  // Transient, and renewal retries by itself - so asking now spends an attempt
-  // on a condition that has not changed yet.
+  // Renewal retries by itself, so asking now spends an attempt on a condition
+  // that has not changed yet - but only while the certificate in use still
+  // works. Once it does not, waiting an hour is a live outage, and whether
+  // that is true is not something either surface may decide for itself: doing
+  // so is what made them contradict each other about the same node.
   if (remedy === REMEDY_CLASS.FIX_LOCALLY || remedy === REMEDY_CLASS.WAIT) {
-    return SAFE_ACTION.FIX_LOCALLY_THEN_WAIT;
+    return isCertificateUsable
+      ? SAFE_ACTION.WAIT_AFTER_LOCAL_FIX
+      : SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX;
   }
 
   return SAFE_ACTION.OBTAIN;
@@ -64,6 +77,8 @@ function safeActionForRemedy(remedy) {
  *   be read, so nothing about issuance can be established either way
  * @param {boolean} [options.hasNoExternalIp] - nothing can be issued without an
  *   address, so this outranks every other prerequisite
+ * @param {boolean} [options.isCertificateUsable] - whether the node still has a
+ *   working certificate, which decides whether waiting is affordable
  * @return {{cause: string|null, code: string|null, safeAction: string,
  *   issuanceStatus: string, prerequisites: string[]}}
  */
@@ -71,6 +86,7 @@ export default function deriveRenewalGuidance({
   record = null,
   isRecordUnreadable = false,
   hasNoExternalIp = false,
+  isCertificateUsable = true,
 }) {
   const prerequisites = hasNoExternalIp ? ['EXTERNAL_IP'] : [];
 
@@ -111,7 +127,7 @@ export default function deriveRenewalGuidance({
     // An outstanding issuance outranks the cause's own remedy: it is spent, or
     // may be, whether or not this particular failure could be repaired.
     safeAction: issuanceStatus === ISSUANCE_STATUS.NONE
-      ? safeActionForRemedy(remedy)
+      ? safeActionForRemedy(remedy, isCertificateUsable)
       : SAFE_ACTION.DO_NOT_OBTAIN,
     issuanceStatus,
     prerequisites,

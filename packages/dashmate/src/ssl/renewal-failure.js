@@ -82,7 +82,8 @@ const DESCRIPTIONS = {
     remedy: REMEDY_CLASS.FIX_LOCALLY,
   },
   [RENEWAL_FAILURE_CODES.RATE_LIMITED]: {
-    sentence: 'the certificate authority has temporarily refused further attempts for this node',
+    sentence: 'the certificate authority has temporarily refused further attempts for this'
+      + " account and this node's address",
     remedy: REMEDY_CLASS.DO_NOT_RETRY,
   },
   [RENEWAL_FAILURE_CODES.PROVIDER_REJECTED]: {
@@ -199,7 +200,10 @@ const ZEROSSL_QUOTA_CODES = [2817];
  * free tier that has run out of certificates.
  */
 const ZEROSSL_PLAN_CODES = [2839];
-const ZEROSSL_AUTH_CODES = [101, 102, 2801, 2841];
+// 2841 is deliberately absent: the provider reuses it for an unpaid-invoice
+// lock on one endpoint and a CAA check failure on another, so the number alone
+// does not establish an account problem. It falls through to a plain refusal.
+const ZEROSSL_AUTH_CODES = [101, 102, 2801];
 
 /**
  * Docker's wording when a port cannot be bound.

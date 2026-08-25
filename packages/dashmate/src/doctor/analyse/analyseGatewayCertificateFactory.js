@@ -289,7 +289,8 @@ function renderRemedy({
 
   // The derivation has already decided whether asking again is safe. Anything
   // below that would print a request must not run when it says no.
-  const mayObtain = safeAction !== SAFE_ACTION.DO_NOT_OBTAIN;
+  const mayObtain = safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
+    && safeAction !== SAFE_ACTION.WAIT_AFTER_LOCAL_FIX;
 
   // The spent issuance outranks everything except its own cause's wording: it
   // is the one state where asking again has a cost that is already incurred
@@ -346,8 +347,9 @@ ${obtain}`;
   // The node still works and renewal comes back around on its own once the
   // cause is gone. Ending here with a command spends one of the few failed
   // attempts this node is allowed, on a repair that has not been made yet.
-  if (isCertificateUsable
-    && (remedy === REMEDY_CLASS.FIX_LOCALLY || remedy === REMEDY_CLASS.WAIT)) {
+  // The derivation already decided this from the same inputs; re-deciding it
+  // here is what let the two surfaces disagree.
+  if (safeAction === SAFE_ACTION.WAIT_AFTER_LOCAL_FIX) {
     return null;
   }
 
@@ -377,6 +379,14 @@ ${obtain}`
 function renderCertificateRequest({
   cfg, force = '', safeAction, issuanceStatus,
 }) {
+  // A node that still works waits for the automatic attempt instead: asking now
+  // spends one of the few failures the authority allows, on a repair the
+  // operator has not made yet.
+  if (safeAction === SAFE_ACTION.WAIT_AFTER_LOCAL_FIX) {
+    return chalk`Fix the cause above. dashmate retries by itself - then check it worked:
+{bold.cyanBright dashmate doctor ${cfg}}`;
+  }
+
   if (safeAction !== SAFE_ACTION.DO_NOT_OBTAIN) {
     return chalk`{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}`;
   }
@@ -479,6 +489,10 @@ export default function analyseGatewayCertificateFactory() {
       // disagree again about the same node.
       isRecordUnreadable: isRenewalManaged(config)
         && renewalSample?.state === RENEWAL_RECORD_STATES.UNREADABLE,
+      // Decided here, once, and never again by a renderer: whether waiting for
+      // the next automatic attempt is affordable depends on whether this node
+      // still has a working certificate, and both surfaces have to agree.
+      isCertificateUsable: installed ? installed.status !== 'INVALID' : true,
     });
 
     // Bound once so no branch below can print a request the derivation forbids.

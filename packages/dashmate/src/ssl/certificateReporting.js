@@ -101,6 +101,9 @@ export async function reportUnresolved({
     isRecordUnreadable: isManaged && state === RENEWAL_RECORD_STATES.UNREADABLE,
     hasNoExternalIp: verdict.reasons
       .some(({ code }) => code === CERTIFICATE_REASONS.NO_EXTERNAL_IP),
+    // This surface only speaks when the certificate did not pass, so waiting
+    // for the next automatic attempt is never affordable here.
+    isCertificateUsable: false,
   });
 
   process.stderr.write(renderCertificateGuidance({

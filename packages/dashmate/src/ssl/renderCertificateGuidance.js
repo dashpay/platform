@@ -82,7 +82,12 @@ function renderZeroSslExplanation(renewal) {
   // Only where ZeroSSL actually said so. Printed against an unrelated failure
   // - an unreachable API, an interrupted renewal - it reads as the diagnosis
   // and sends an operator to switch provider over something transient.
-  if (renewal?.code === 'QUOTA_EXHAUSTED' || renewal?.code === 'PROVIDER_PLAN_REQUIRED') {
+  if (renewal?.code === 'PROVIDER_PLAN_REQUIRED') {
+    return `  This node uses ZeroSSL, and ${renewal.cause}.
+`;
+  }
+
+  if (renewal?.code === 'QUOTA_EXHAUSTED') {
     return `  This node uses ZeroSSL, and its free account has used all three of its
   certificates - so ZeroSSL will not issue another one.
 `;
@@ -169,13 +174,19 @@ function renderLetsEncryptDiagnosis(cfg, renewal) {
  * @param {string} cfg
  * @return {string}
  */
-function renderNoExternalIpGuidance(cfg) {
-  return `  To fix it, tell dashmate this node's public address, then get a
-  certificate for it:
+function renderNoExternalIpGuidance(cfg, mayObtain) {
+  // The address is required either way. The request that follows it is not
+  // exempt from the decision every other request goes through - an issuance
+  // already outstanding is still outstanding once the address is set.
+  const request = mayObtain
+    ? `      dashmate ssl obtain ${cfg} --provider letsencrypt\n`
+    : '';
+
+  return `  To fix it, tell dashmate this node's public address${mayObtain ? `, then get a
+  certificate for it` : ''}:
 
       dashmate config set ${cfg} externalIp <your-public-ip>
-      dashmate ssl obtain ${cfg} --provider letsencrypt
-`;
+${request}`;
 }
 
 /**
@@ -290,6 +301,7 @@ export default function renderCertificateGuidance({
   const guidance = renewal ?? deriveRenewalGuidance({
     hasNoExternalIp: verdict.reasons
       .some(({ code }) => code === CERTIFICATE_REASONS.NO_EXTERNAL_IP),
+    isCertificateUsable: false,
   });
   const provider = config.get('platform.gateway.ssl.provider');
   // Only when the interrupted switch is the whole problem. The installed pair
@@ -345,12 +357,15 @@ ${obtainAttemptFailed
     // The address is a prerequisite for every other repair, so it is said
     // first and regardless - the obtain command refuses to start without one.
     if (guidance.prerequisites.includes('EXTERNAL_IP')) {
-      blocks.push(renderNoExternalIpGuidance(cfg));
+      blocks.push(renderNoExternalIpGuidance(
+        cfg,
+        guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN,
+      ));
     }
 
     if (guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN) {
       blocks.push(renderWithheldObtain(cfg, guidance));
-    } else if (guidance.safeAction === SAFE_ACTION.FIX_LOCALLY_THEN_WAIT) {
+    } else if (guidance.safeAction === SAFE_ACTION.WAIT_AFTER_LOCAL_FIX) {
       blocks.push(renderFixLocallyThenWait(cfg));
     } else if (!guidance.prerequisites.includes('EXTERNAL_IP')) {
       blocks.push(renderFix(cfg, provider === SSL_PROVIDERS.LETSENCRYPT, verdict));

@@ -189,6 +189,28 @@ describe('recordRenewalOutcome', () => {
     expect(() => renewalRecordRepository.write(CONFIG_NAME, record, 1)).to.throw();
   });
 
+  it('should refuse to write against a fence it cannot understand', () => {
+    // Content that is not a number is not the same as no fence. Reading it as
+    // zero is what an absent fence reads as, so a superseded writer would pass.
+    const generationPath = path.join(
+      path.dirname(renewalRecordRepository.getPath(CONFIG_NAME)),
+      '.renewal-generation',
+    );
+
+    fs.mkdirSync(path.dirname(generationPath), { recursive: true });
+    fs.writeFileSync(generationPath, 'not-a-number\n');
+
+    const record = RenewalRecord.fromObject({
+      provider: PROVIDER,
+      outcome: 'failed',
+      code: RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE,
+      attemptedAt: new Date().toISOString(),
+      consecutiveFailures: 1,
+    });
+
+    expect(() => renewalRecordRepository.write(CONFIG_NAME, record, 1)).to.throw();
+  });
+
   it('should not let a superseded chain describe a node it no longer renews', () => {
     // The old job's callback keeps running after the configuration watcher
     // hands over, and both chains write to the same file. Without a fence the
