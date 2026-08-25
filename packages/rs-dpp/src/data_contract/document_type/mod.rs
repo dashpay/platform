@@ -47,10 +47,17 @@ pub const STORAGE_FLAGS_SIZE: usize = 2;
 /// serialized form (creates, updates, and disk loads all pass through
 /// there); a no-op for every contract predating the keyword, since their
 /// properties carry no annotation.
+///
+/// The failure is the dedicated consensus error, because the input is
+/// untrusted schema data: state-transition processing must classify it as
+/// consensus-invalid (nonce bump), never as an execution error. Callers map
+/// it through
+/// [`class_methods::consensus_or_protocol_required_fields_error`].
 pub(crate) fn validate_required_since_within_contract_version(
     document_types: &std::collections::BTreeMap<String, DocumentType>,
     contract_version: u32,
-) -> Result<(), crate::data_contract::errors::DataContractError> {
+) -> Result<(), crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError>
+{
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
     for (document_type_name, document_type) in document_types {
@@ -58,9 +65,10 @@ pub(crate) fn validate_required_since_within_contract_version(
             if let Some(required_since) = property.required_since {
                 if required_since > contract_version {
                     return Err(
-                        crate::data_contract::errors::DataContractError::InvalidContractStructure(
+                        crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError::new(
+                            document_type_name.clone(),
                             format!(
-                                "property '{property_name}' of document type '{document_type_name}' carries requiredSince {required_since} which exceeds the contract version {contract_version}"
+                                "property '{property_name}' carries requiredSince {required_since} which exceeds the contract version {contract_version}"
                             ),
                         ),
                     );

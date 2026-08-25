@@ -104,7 +104,9 @@ impl DataContractV1 {
             &document_types,
             version,
         )
-        .map_err(ProtocolError::DataContractError)?;
+        .map_err(
+            crate::data_contract::document_type::class_methods::consensus_or_protocol_required_fields_error,
+        )?;
 
         let data_contract = DataContractV1 {
             id,
@@ -171,7 +173,9 @@ impl DataContractV1 {
             &document_types,
             version,
         )
-        .map_err(ProtocolError::DataContractError)?;
+        .map_err(
+            crate::data_contract::document_type::class_methods::consensus_or_protocol_required_fields_error,
+        )?;
 
         let data_contract = DataContractV1 {
             id,
