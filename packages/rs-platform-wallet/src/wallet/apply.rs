@@ -126,8 +126,7 @@ impl PlatformWalletInfo {
             // mutates its store directly during sync / spend); the
             // canonical in-memory state lives there and the
             // changeset is persistence-side only. Drop here.
-            #[cfg(feature = "shielded")]
-                shielded: _,
+            shielded: _,
         } = cs;
 
         // 1. Core wallet state. In the new event-bus model, a

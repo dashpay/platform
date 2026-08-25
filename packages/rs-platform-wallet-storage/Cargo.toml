@@ -260,7 +260,7 @@ rehydration-apply = []
 # it in `[dev-dependencies]` ONLY. The constructors panic outside debug builds
 # and this crate's own test harness.
 test-util = []
-# Persists and restores Orchard viewing keys from the feature-gated
+# Persists and restores Orchard viewing keys from the
 # `PlatformWalletChangeSet::shielded` field. Other shielded state remains in
 # the host-provided `ShieldedStore`.
 shielded = ["platform-wallet/shielded"]

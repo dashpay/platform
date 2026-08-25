@@ -112,7 +112,9 @@ impl Domain {
 /// Domains carrying data in `cs`. The destructure is exhaustive (no `..`), so
 /// adding a field to `PlatformWalletChangeSet` is a compile error here until
 /// it gains a `Domain` variant and an arm below — the R8 forgotten-domain
-/// guard. The feature-gated `shielded` field maps only its natively persisted
+/// guard. The `shielded` field is present in every feature combination and is
+/// named in both arms of the pattern; the `cfg` chooses whether this crate
+/// *reads* it, never whether it exists. It maps only the natively persisted
 /// viewing keys; notes and sync state remain in the host `ShieldedStore`.
 ///
 /// `account_registrations` and `provider_key_account_registrations` share
@@ -139,6 +141,8 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         dpns_name_states,
         #[cfg(feature = "shielded")]
         shielded,
+        #[cfg(not(feature = "shielded"))]
+            shielded: _,
     } = cs;
 
     // A sub-changeset carried but empty (`Some(default)`) is not a real

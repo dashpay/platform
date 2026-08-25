@@ -1702,7 +1702,13 @@ pub struct PlatformWalletChangeSet {
     /// spent marks, sync watermarks, nullifier checkpoints. The
     /// commitment tree itself is **not** in here — it lives on
     /// disk in `ClientPersistentCommitmentTree`'s SQLite file.
-    #[cfg(feature = "shielded")]
+    ///
+    /// Present in every feature combination — downstream crates cannot
+    /// `cfg` on this crate's features, so a conditional field breaks their
+    /// exhaustive destructures under Cargo feature unification. Without
+    /// `shielded` the payload is an inert stand-in that stays empty and is
+    /// left out of the serde surface, so nothing observable changes.
+    #[cfg_attr(all(feature = "serde", not(feature = "shielded")), serde(skip))]
     pub shielded: Option<crate::changeset::ShieldedChangeSet>,
 }
 
@@ -1819,10 +1825,7 @@ impl Merge for PlatformWalletChangeSet {
             .extend(other.pending_contact_crypto_added);
         self.pending_contact_crypto_cleared
             .extend(other.pending_contact_crypto_cleared);
-        #[cfg(feature = "shielded")]
-        {
-            self.shielded.merge(other.shielded);
-        }
+        self.shielded.merge(other.shielded);
     }
 
     fn is_empty(&self) -> bool {
@@ -1846,14 +1849,7 @@ impl Merge for PlatformWalletChangeSet {
             && self.account_address_pools.is_empty()
             && self.pending_contact_crypto_added.is_empty()
             && self.pending_contact_crypto_cleared.is_empty();
-        #[cfg(feature = "shielded")]
-        {
-            core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
-        }
-        #[cfg(not(feature = "shielded"))]
-        {
-            core_empty
-        }
+        core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
     }
 }
 
@@ -1964,6 +1960,23 @@ mod tests {
     #[test]
     fn test_empty_changeset() {
         let cs = PlatformWalletChangeSet::default();
+        assert!(cs.is_empty());
+    }
+
+    /// The `shielded` slot is a field in every feature combination, so a
+    /// downstream crate can destructure the changeset exhaustively without
+    /// being able to `cfg` on *this* crate's features. Naming the field here
+    /// stops compiling the moment someone re-gates it — far cheaper than the
+    /// E0027 that re-gating inflicts on downstream destructures.
+    #[test]
+    fn shielded_slot_exists_in_every_feature_configuration() {
+        let mut cs = PlatformWalletChangeSet {
+            shielded: Default::default(),
+            ..Default::default()
+        };
+        assert!(cs.is_empty());
+
+        cs.merge(PlatformWalletChangeSet::default());
         assert!(cs.is_empty());
     }
 
