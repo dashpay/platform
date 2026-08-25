@@ -2,15 +2,15 @@ import { Listr } from 'listr2';
 import path from 'path';
 import fs from 'fs';
 
-import { clearRenewalRecord } from '../../../ssl/renewalRecord.js';
 import selectLeafCertificate from '../../../ssl/selectLeafCertificate.js';
 import renderConfigFlag from '../../../util/renderConfigFlag.js';
 
 /**
  * @param {HomeDir} homeDir
+ * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {saveCertificateTask}
  */
-export default function saveCertificateTaskFactory(homeDir) {
+export default function saveCertificateTaskFactory(homeDir, renewalRecordRepository) {
   /**
    * @typedef {function} saveCertificateTask
    * @param {Config} config
@@ -98,7 +98,7 @@ export default function saveCertificateTaskFactory(homeDir) {
           // their node is told renewal is failing, at the moment they run the
           // command to check their work.
           try {
-            clearRenewalRecord(homeDir, config.getName());
+            renewalRecordRepository.remove(config.getName());
           } catch (e) {
             // Bookkeeping must not fail an install. The pair is already on
             // disk and the provider is already set; throwing here would report

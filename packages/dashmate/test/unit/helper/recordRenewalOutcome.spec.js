@@ -8,11 +8,10 @@ import {
   recordRenewalFailure,
   recordRenewalSuccess,
 } from '../../../src/helper/recordRenewalOutcome.js';
-import readRenewalRecord, {
-  RENEWAL_OUTCOMES,
+import RenewalRecord from '../../../src/ssl/renewalRecord/RenewalRecord.js';
+import RenewalRecordRepository, {
   RENEWAL_RECORD_STATES,
-  renewalRecordPath,
-} from '../../../src/ssl/renewalRecord.js';
+} from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 import { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewalFailure.js';
 import LegoArtifactsMissingError from '../../../src/ssl/errors/LegoArtifactsMissingError.js';
 
@@ -21,14 +20,16 @@ const PROVIDER = 'letsencrypt';
 
 describe('recordRenewalOutcome', () => {
   let homeDir;
+  let renewalRecordRepository;
 
-  const read = () => readRenewalRecord(homeDir, CONFIG_NAME);
+  const read = () => renewalRecordRepository.read(CONFIG_NAME);
   const fail = (error) => recordRenewalFailure({
-    homeDir, configName: CONFIG_NAME, provider: PROVIDER, error,
+    renewalRecordRepository, homeDir, configName: CONFIG_NAME, provider: PROVIDER, error,
   });
 
   beforeEach(() => {
     homeDir = HomeDir.createTemp();
+    renewalRecordRepository = new RenewalRecordRepository(homeDir);
   });
 
   afterEach(() => {
@@ -38,15 +39,15 @@ describe('recordRenewalOutcome', () => {
   it('should create the certificate directory, which a node that never obtained one does not have', () => {
     // The directory is made when a certificate is first saved. A node that has
     // never had one is exactly the node whose renewal is worth recording.
-    expect(fs.existsSync(path.dirname(renewalRecordPath(homeDir, CONFIG_NAME)))).to.equal(false);
+    expect(fs.existsSync(path.dirname(renewalRecordRepository.getPath(CONFIG_NAME)))).to.equal(false);
 
-    recordRenewalSuccess({ homeDir, configName: CONFIG_NAME, provider: PROVIDER });
+    recordRenewalSuccess({ renewalRecordRepository, configName: CONFIG_NAME, provider: PROVIDER });
 
     expect(read().state).to.equal(RENEWAL_RECORD_STATES.PRESENT);
   });
 
   it('should carry the last success forward through failures, and count them', () => {
-    recordRenewalSuccess({ homeDir, configName: CONFIG_NAME, provider: PROVIDER });
+    recordRenewalSuccess({ renewalRecordRepository, configName: CONFIG_NAME, provider: PROVIDER });
     const { record: succeeded } = read();
 
     fail(new Error('urn:ietf:params:acme:error:connection :: timeout'));
@@ -54,19 +55,20 @@ describe('recordRenewalOutcome', () => {
 
     const { record } = read();
 
-    expect(record.outcome).to.equal(RENEWAL_OUTCOMES.FAILED);
-    expect(record.consecutiveFailures).to.equal(2);
+    expect(record.isFailed()).to.equal(true);
+    expect(record.getConsecutiveFailures()).to.equal(2);
     // Success is durable state, not something a reader has to observe in
     // flight: the next attempt is scheduled on the tick after a renewal
     // completes, so the succeeded outcome itself is gone within milliseconds.
-    expect(record.lastSuccessAt).to.equal(succeeded.lastSuccessAt);
+    expect(record.getLastSuccessAt().toISOString())
+      .to.equal(succeeded.getLastSuccessAt().toISOString());
   });
 
   it('should reset the failure count once a certificate arrives', () => {
     fail(new Error('urn:ietf:params:acme:error:connection :: timeout'));
-    recordRenewalSuccess({ homeDir, configName: CONFIG_NAME, provider: PROVIDER });
+    recordRenewalSuccess({ renewalRecordRepository, configName: CONFIG_NAME, provider: PROVIDER });
 
-    expect(read().record.consecutiveFailures).to.equal(0);
+    expect(read().record.getConsecutiveFailures()).to.equal(0);
   });
 
   it('should keep a spent issuance recorded when a later, different failure replaces the cause', () => {
@@ -77,54 +79,55 @@ describe('recordRenewalOutcome', () => {
     // it or the dangerous advice wins simply by being written last.
     fail(new Error('guidance', { cause: new LegoArtifactsMissingError('/tmp/x.crt') }));
 
-    const spentAt = read().record.issuanceSpentAt;
-    expect(spentAt).to.be.a('string');
+    const spentAt = read().record.toObject().issuanceSpentAt;
+    expect(spentAt).to.not.equal(null);
 
     fail(new Error('ENOENT: no such file or directory'));
 
     const { record } = read();
 
-    expect(record.code).to.not.equal(RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED);
-    expect(record.issuanceSpentAt).to.equal(spentAt);
+    expect(record.getCode()).to.not.equal(RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED);
+    expect(record.toObject().issuanceSpentAt).to.equal(spentAt);
   });
 
   it('should clear a spent issuance once a certificate actually arrives', () => {
     fail(new Error('guidance', { cause: new LegoArtifactsMissingError('/tmp/x.crt') }));
 
-    recordRenewalSuccess({ homeDir, configName: CONFIG_NAME, provider: PROVIDER });
+    recordRenewalSuccess({ renewalRecordRepository, configName: CONFIG_NAME, provider: PROVIDER });
 
-    expect(read().record.issuanceSpentAt).to.equal(null);
+    expect(read().record.toObject().issuanceSpentAt).to.equal(null);
   });
 
   it('should record a failed gateway reload without disturbing the renewal that succeeded', () => {
-    recordRenewalSuccess({ homeDir, configName: CONFIG_NAME, provider: PROVIDER });
+    recordRenewalSuccess({ renewalRecordRepository, configName: CONFIG_NAME, provider: PROVIDER });
 
-    recordGatewayReloadFailure({ homeDir, configName: CONFIG_NAME });
+    recordGatewayReloadFailure({ renewalRecordRepository, configName: CONFIG_NAME });
 
     const { record } = read();
 
-    expect(record.gatewayReloadFailedAt).to.be.a('string');
+    expect(record.getGatewayReloadFailedAt()).to.not.equal(null);
     // The certificate renewed. Counting this as a renewal failure would tell an
     // operator whose certificate is minutes old that renewal has been failing
     // since whenever it last worked.
-    expect(record.outcome).to.equal(RENEWAL_OUTCOMES.SUCCEEDED);
-    expect(record.consecutiveFailures).to.equal(0);
-    expect(record.lastSuccessAt).to.be.a('string');
+    expect(record.isFailed()).to.equal(false);
+    expect(record.getConsecutiveFailures()).to.equal(0);
+    expect(record.getLastSuccessAt()).to.not.equal(null);
   });
 
   it('should take the accepted code from the caller when the cause is already known', () => {
     recordRenewalFailure({
+      renewalRecordRepository,
       homeDir,
       configName: CONFIG_NAME,
       provider: PROVIDER,
       code: RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING,
     });
 
-    expect(read().record.code).to.equal(RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING);
+    expect(read().record.getCode()).to.equal(RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING);
   });
 
   it('should start over rather than throw when what is already there is corrupt', () => {
-    const recordPath = renewalRecordPath(homeDir, CONFIG_NAME);
+    const recordPath = renewalRecordRepository.getPath(CONFIG_NAME);
     fs.mkdirSync(path.dirname(recordPath), { recursive: true });
     fs.writeFileSync(recordPath, '{ this is not json');
 
@@ -133,15 +136,15 @@ describe('recordRenewalOutcome', () => {
     const { state, record } = read();
 
     expect(state).to.equal(RENEWAL_RECORD_STATES.PRESENT);
-    expect(record.consecutiveFailures).to.equal(1);
-    expect(record.lastSuccessAt).to.equal(null);
+    expect(record.getConsecutiveFailures()).to.equal(1);
+    expect(record.getLastSuccessAt()).to.equal(null);
   });
 
   it('should not throw when the record cannot be written, so a renewal never fails on bookkeeping', () => {
     // A throw from here reaches the cron callback that owns the renewal chain,
     // where it would skip the stop that schedules the next attempt and leave
     // the helper alive with nothing scheduled and nothing watching.
-    const recordPath = renewalRecordPath(homeDir, CONFIG_NAME);
+    const recordPath = renewalRecordRepository.getPath(CONFIG_NAME);
     fs.mkdirSync(recordPath, { recursive: true });
 
     expect(() => fail(new Error('urn:ietf:params:acme:error:connection :: timeout'))).to.not.throw();
@@ -150,14 +153,14 @@ describe('recordRenewalOutcome', () => {
   it('should not throw on anything the renewal might have thrown', () => {
     expect(() => fail(undefined)).to.not.throw();
     expect(() => fail('a string')).to.not.throw();
-    expect(read().record.code).to.equal(RENEWAL_FAILURE_CODES.UNKNOWN);
+    expect(read().record.getCode()).to.equal(RENEWAL_FAILURE_CODES.UNKNOWN);
   });
 
   it('should write a record readable by the account that runs doctor', () => {
-    recordRenewalSuccess({ homeDir, configName: CONFIG_NAME, provider: PROVIDER });
+    recordRenewalSuccess({ renewalRecordRepository, configName: CONFIG_NAME, provider: PROVIDER });
 
     // eslint-disable-next-line no-bitwise
-    const mode = fs.statSync(renewalRecordPath(homeDir, CONFIG_NAME)).mode & 0o777;
+    const mode = fs.statSync(renewalRecordRepository.getPath(CONFIG_NAME)).mode & 0o777;
 
     expect(mode).to.equal(0o644);
   });
@@ -165,13 +168,13 @@ describe('recordRenewalOutcome', () => {
   it('should forget the record when renewal stops being this provider\'s concern', () => {
     fail(new Error('urn:ietf:params:acme:error:connection :: timeout'));
 
-    clearRenewalRecord({ homeDir, configName: CONFIG_NAME });
+    clearRenewalRecord({ renewalRecordRepository, configName: CONFIG_NAME });
 
     expect(read().state).to.equal(RENEWAL_RECORD_STATES.ABSENT);
   });
 
   it('should not throw when asked to forget a record that was never written', () => {
-    expect(() => clearRenewalRecord({ homeDir, configName: CONFIG_NAME })).to.not.throw();
+    expect(() => clearRenewalRecord({ renewalRecordRepository, configName: CONFIG_NAME })).to.not.throw();
   });
 
   it('should never store an error object, whose message masking cannot reach', () => {
@@ -180,7 +183,7 @@ describe('recordRenewalOutcome', () => {
     // directory would travel out intact and arrive as an empty object.
     fail(new Error('urn:ietf:params:acme:error:connection :: timeout'));
 
-    const raw = JSON.parse(fs.readFileSync(renewalRecordPath(homeDir, CONFIG_NAME), 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(renewalRecordRepository.getPath(CONFIG_NAME), 'utf8'));
 
     Object.values(raw).forEach((value) => {
       expect(value === null || typeof value !== 'object').to.equal(true);

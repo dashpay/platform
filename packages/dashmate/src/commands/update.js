@@ -67,7 +67,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
     checkGatewayCertificate,
     gatewayCertificateTask,
     dockerCompose,
-    homeDir,
+    renewalRecordRepository,
   ) {
     const {
       format,
@@ -86,7 +86,7 @@ export default class UpdateCommand extends ConfigBaseCommand {
       config,
       verdict,
       dockerCompose,
-      homeDir,
+      renewalRecordRepository,
       pull: this.pullResult ?? null,
       obtainAttemptFailed,
     });

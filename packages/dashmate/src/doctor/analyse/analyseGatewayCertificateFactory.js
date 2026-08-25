@@ -7,7 +7,8 @@ import {
   GATED_NETWORKS,
   requiresReplacement,
 } from '../../ssl/checkGatewayCertificateFactory.js';
-import { isRenewalRecordCurrent, RENEWAL_OUTCOMES, RENEWAL_RECORD_STATES } from '../../ssl/renewalRecord.js';
+import RenewalRecord from '../../ssl/renewalRecord/RenewalRecord.js';
+import { RENEWAL_RECORD_STATES } from '../../ssl/renewalRecord/RenewalRecordRepository.js';
 import {
   describeRenewalFailure,
   MAX_DETAIL_CHARS,
@@ -171,7 +172,7 @@ function renderDeadline(installed) {
  * @return {string}
  */
 function renderHistory(record) {
-  const lastSuccess = asDay(record.lastSuccessAt);
+  const lastSuccess = asDay(record.getLastSuccessAt());
 
   return lastSuccess
     ? `Last renewed ${lastSuccess}; every attempt since has failed.`
@@ -193,13 +194,7 @@ function renderHistory(record) {
  * @return {string}
  */
 function renderNextAttempt(record, now, cfg) {
-  const attemptedAt = new Date(record.attemptedAt).getTime();
-
-  if (Number.isNaN(attemptedAt)) {
-    return '';
-  }
-
-  const nextAt = attemptedAt + RETRY_INTERVAL_MS;
+  const nextAt = record.getAttemptedAt().getTime() + RETRY_INTERVAL_MS;
 
   if (nextAt <= now) {
     return chalk`dashmate should have tried again by now and has not, so the part of dashmate
@@ -234,8 +229,8 @@ function renderPortEightyHint(code, cfg, isShortLived) {
   }
 
   if (code === RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER) {
-    return chalk`Another web server, a proxy, or your router is answering instead of this
-node. Check this machine first:
+    return chalk`Another web server, a proxy, or your router is answering on port 80 instead
+of this node. Check this machine first:
 {bold.cyanBright sudo ss -lntp 'sport = :80'}
 Nothing listed? Then it is answered before it reaches this machine - check
 your router's port forwarding and your hosting provider.`;
@@ -383,22 +378,24 @@ export default function analyseGatewayCertificateFactory() {
     // obtained by hand after a failure overtakes that failure entirely - the
     // helper cannot notice either, so the reader has to.
     const renewalSample = samples.getServiceInfo('gateway', 'certificateRenewal');
-    const renewal = isRenewalManaged(config)
-      && renewalSample?.state === RENEWAL_RECORD_STATES.PRESENT
-      && isRenewalRecordCurrent(renewalSample, {
-        provider: config.get('platform.gateway.ssl.provider'),
-        certificateValidFrom: installed?.validFrom ? new Date(installed.validFrom) : null,
-      })
-      ? renewalSample
+
+    // Rebuilt through the model rather than read field by field. An archived
+    // report reaches here without passing through the repository, so this is
+    // where a record that cannot be understood - a missing verdict, an
+    // unusable date - is turned into no record at all.
+    const renewalRecord = renewalSample?.state === RENEWAL_RECORD_STATES.PRESENT
+      ? RenewalRecord.fromObject(renewalSample)
       : null;
 
-    // A record with no usable attempt time cannot be judged against the samples
-    // or against the certificate, so it is treated as absent rather than
-    // reasoned about.
-    const failedRenewal = renewal?.outcome === RENEWAL_OUTCOMES.FAILED
-      && !Number.isNaN(new Date(renewal.attemptedAt).getTime())
-      ? renewal
+    const renewal = isRenewalManaged(config)
+      && renewalRecord?.appliesTo({
+        provider: config.get('platform.gateway.ssl.provider'),
+        certificateValidFrom: installed?.validFrom ?? null,
+      })
+      ? renewalRecord
       : null;
+
+    const failedRenewal = renewal?.isFailed() ? renewal : null;
 
     // Let's Encrypt issues IP certificates on a six-day profile, so port 80 has
     // to stay open permanently. ZeroSSL's last ninety days, and telling its
@@ -413,11 +410,11 @@ export default function analyseGatewayCertificateFactory() {
      * @return {string}
      */
     const renderRenewalCause = (isCertificateUsable) => {
-      const { remedy, sentence } = describeRenewalFailure(failedRenewal.code);
+      const { remedy, sentence } = describeRenewalFailure(failedRenewal.getCode());
       // Only the cause that actually produced this state may claim the
       // issuance. Carried forward from an earlier attempt it still forbids
       // asking again, but it does not get to describe a different failure.
-      const isIssuanceSpent = Boolean(failedRenewal.issuanceSpentAt);
+      const isIssuanceSpent = failedRenewal.isIssuanceSpent();
       // Led with the cause only where the description above is about the
       // certificate rather than the renewal. An operator reads until they find
       // something to run and stops, so a repair printed above the reason it is
@@ -426,11 +423,11 @@ export default function analyseGatewayCertificateFactory() {
       const blocks = isCertificateUsable ? [] : [`Renewal is failing: ${sentence}.`];
 
       if (remedy === REMEDY_CLASS.FIX_LOCALLY) {
-        blocks.push(renderPortEightyHint(failedRenewal.code, cfg, isShortLivedProvider));
+        blocks.push(renderPortEightyHint(failedRenewal.getCode(), cfg, isShortLivedProvider));
       }
 
       const ending = renderRemedy({
-        code: failedRenewal.code,
+        code: failedRenewal.getCode(),
         remedy,
         cfg,
         force: installedForce,
@@ -454,7 +451,7 @@ export default function analyseGatewayCertificateFactory() {
       // else, and this is the first free text either surface prints verbatim.
       // Left intact, a terminal escape in it could erase everything printed
       // above and repaint attacker text as dashmate's own output.
-      const detail = sanitizeDetail(failedRenewal.detail).slice(0, MAX_DETAIL_CHARS);
+      const detail = sanitizeDetail(failedRenewal.getDetail()).slice(0, MAX_DETAIL_CHARS);
 
       if (detail) {
         blocks.push(`It reported: ${detail}`);
@@ -499,7 +496,7 @@ Obtain a new certificate. No restart needed:
       if (failedRenewal && isCertificateUsable) {
         problems.push(new Problem(
           `This node's certificate is not being renewed: `
-          + `${describeRenewalFailure(failedRenewal.code).sentence}.${renderDeadline(installed)}`,
+          + `${describeRenewalFailure(failedRenewal.getCode()).sentence}.${renderDeadline(installed)}`,
           renderRenewalCause(true),
           SEVERITY.HIGH,
         ));
@@ -509,10 +506,10 @@ Obtain a new certificate. No restart needed:
       // branch below reports the same fault with the deadline attached, and
       // two problems about one certificate send an operator to arbitrate
       // between a signal and a restart.
-      if (renewal?.gatewayReloadFailedAt && !samples.getServiceInfo('gateway', 'servedCertificate')) {
+      if (renewal?.getGatewayReloadFailedAt() && !samples.getServiceInfo('gateway', 'servedCertificate')) {
         problems.push(new Problem(
-          `This node's certificate was renewed${asDay(renewal.lastSuccessAt)
-            ? ` on ${asDay(renewal.lastSuccessAt)}` : ''}, but the gateway is still using the old one`,
+          `This node's certificate was renewed${asDay(renewal.getLastSuccessAt())
+            ? ` on ${asDay(renewal.getLastSuccessAt())}` : ''}, but the gateway is still using the old one`,
           chalk`Load it without an outage:
 {bold.cyanBright dashmate ssl obtain ${cfg}}`,
           SEVERITY.HIGH,

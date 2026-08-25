@@ -1,24 +1,6 @@
-import fs from 'fs';
-import path from 'path';
-import writeFileAtomic from 'write-file-atomic';
-import classifyRenewalFailure from '../ssl/renewalFailure.js';
-import readRenewalRecord, {
-  clearRenewalRecord as removeRenewalRecord,
-  RENEWAL_OUTCOMES,
-  RENEWAL_RECORD_FORMAT_VERSION,
-  RENEWAL_RECORD_STATES,
-  renewalRecordPath,
-} from '../ssl/renewalRecord.js';
-
-/**
- * Readable by the operator's own tooling and by nothing that needs protecting.
- *
- * Nothing secret is written here by construction, so locking the file down
- * would contradict that and add the one failure this design can otherwise
- * avoid: a read refused because the account running `doctor` is not the
- * account that ran `start`. The private key beside it keeps its own mode.
- */
-const RECORD_FILE_MODE = 0o644;
+import classifyRenewalFailure, { RENEWAL_FAILURE_CODES } from '../ssl/renewalFailure.js';
+import RenewalRecord from '../ssl/renewalRecord/RenewalRecord.js';
+import { RENEWAL_RECORD_STATES } from '../ssl/renewalRecord/RenewalRecordRepository.js';
 
 /**
  * Everything that can throw, kept inside one boundary.
@@ -42,37 +24,14 @@ function attempt(write, configName) {
 }
 
 /**
- * @param {HomeDir} homeDir
+ * @param {RenewalRecordRepository} repository
  * @param {string} configName
- * @return {Object|null}
+ * @return {RenewalRecord|null}
  */
-function readPrevious(homeDir, configName) {
-  const { state, record } = readRenewalRecord(homeDir, configName);
+function readPrevious(repository, configName) {
+  const { state, record } = repository.read(configName);
 
   return state === RENEWAL_RECORD_STATES.PRESENT ? record : null;
-}
-
-/**
- * @param {HomeDir} homeDir
- * @param {string} configName
- * @param {Object} record
- */
-function save(homeDir, configName, record) {
-  const recordPath = renewalRecordPath(homeDir, configName);
-
-  // The directory belongs to the certificate and is created when one is first
-  // saved, so a node that has never obtained one does not have it yet - which
-  // is exactly the node whose renewal is worth recording.
-  fs.mkdirSync(path.dirname(recordPath), { recursive: true });
-
-  // Replaced by rename, so a reader never sees half a record. Safe here only
-  // because nothing mounts this file: the certificate beside it is bind-mounted
-  // into the gateway individually and has to be written in place instead.
-  writeFileAtomic.sync(
-    recordPath,
-    `${JSON.stringify({ formatVersion: RENEWAL_RECORD_FORMAT_VERSION, ...record }, undefined, 2)}\n`,
-    { encoding: 'utf8', mode: RECORD_FILE_MODE },
-  );
 }
 
 /**
@@ -85,23 +44,26 @@ function save(homeDir, configName, record) {
  * as long as the old date is old.
  *
  * @param {Object} options
- * @param {HomeDir} options.homeDir
+ * @param {RenewalRecordRepository} options.renewalRecordRepository
  * @param {string} options.configName
  * @param {string} options.provider
  */
-export function recordRenewalSuccess({ homeDir, configName, provider }) {
+export function recordRenewalSuccess({ renewalRecordRepository, configName, provider }) {
   attempt(() => {
-    save(homeDir, configName, {
+    // One instant for both, so they cannot order against each other.
+    const now = new Date().toISOString();
+
+    renewalRecordRepository.write(configName, RenewalRecord.fromObject({
       provider,
-      outcome: RENEWAL_OUTCOMES.SUCCEEDED,
-      attemptedAt: new Date().toISOString(),
-      lastSuccessAt: new Date().toISOString(),
+      outcome: RenewalRecord.OUTCOMES.SUCCEEDED,
+      attemptedAt: now,
+      lastSuccessAt: now,
       consecutiveFailures: 0,
       // A certificate arrived, so whatever was owed from an earlier attempt is
       // settled and the warning against asking for another one is lifted.
       issuanceSpentAt: null,
       gatewayReloadFailedAt: null,
-    });
+    }));
   }, configName);
 }
 
@@ -109,6 +71,7 @@ export function recordRenewalSuccess({ homeDir, configName, provider }) {
  * Record that a renewal did not produce a certificate.
  *
  * @param {Object} options
+ * @param {RenewalRecordRepository} options.renewalRecordRepository
  * @param {HomeDir} options.homeDir
  * @param {string} options.configName
  * @param {string} options.provider
@@ -117,34 +80,36 @@ export function recordRenewalSuccess({ homeDir, configName, provider }) {
  * @param {string} [options.apiKey] - redacted defensively out of the excerpt
  */
 export function recordRenewalFailure({
-  homeDir, configName, provider, error, code, apiKey,
+  renewalRecordRepository, homeDir, configName, provider, error, code, apiKey,
 }) {
   attempt(() => {
-    const previous = readPrevious(homeDir, configName);
+    const previous = readPrevious(renewalRecordRepository, configName);
     const classified = code
       ? { code, detail: null }
       : classifyRenewalFailure(error, { homeDirPath: homeDir.getPath(), apiKey });
 
-    const issuanceSpentAt = classified.code === 'CERTIFICATE_ISSUED_NOT_SAVED'
+    const spentBefore = previous?.isIssuanceSpent() ? previous.toObject().issuanceSpentAt : null;
+
+    const issuanceSpentAt = classified.code === RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED
       ? new Date().toISOString()
       // Carried until a certificate actually arrives. An issuance that was
       // spent and never landed stays true through every later failure, and the
       // next attempt an hour from now records a different cause whose ordinary
       // advice is to ask for another certificate - which is the one thing that
       // must not happen while this is set.
-      : previous?.issuanceSpentAt ?? null;
+      : spentBefore;
 
-    save(homeDir, configName, {
+    renewalRecordRepository.write(configName, RenewalRecord.fromObject({
       provider,
-      outcome: RENEWAL_OUTCOMES.FAILED,
+      outcome: RenewalRecord.OUTCOMES.FAILED,
       code: classified.code,
       detail: classified.detail,
       attemptedAt: new Date().toISOString(),
-      lastSuccessAt: previous?.lastSuccessAt ?? null,
-      consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
+      lastSuccessAt: previous?.getLastSuccessAt()?.toISOString() ?? null,
+      consecutiveFailures: (previous?.getConsecutiveFailures() ?? 0) + 1,
       issuanceSpentAt,
       gatewayReloadFailedAt: null,
-    });
+    }));
   }, configName);
 }
 
@@ -156,21 +121,21 @@ export function recordRenewalFailure({
  * loading of it failed, and only that is repaired.
  *
  * @param {Object} options
- * @param {HomeDir} options.homeDir
+ * @param {RenewalRecordRepository} options.renewalRecordRepository
  * @param {string} options.configName
  */
-export function recordGatewayReloadFailure({ homeDir, configName }) {
+export function recordGatewayReloadFailure({ renewalRecordRepository, configName }) {
   attempt(() => {
-    const previous = readPrevious(homeDir, configName);
+    const previous = readPrevious(renewalRecordRepository, configName);
 
     if (previous === null) {
       return;
     }
 
-    save(homeDir, configName, {
-      ...previous,
+    renewalRecordRepository.write(configName, RenewalRecord.fromObject({
+      ...previous.toObject(),
       gatewayReloadFailedAt: new Date().toISOString(),
-    });
+    }));
   }, configName);
 }
 
@@ -183,9 +148,9 @@ export function recordGatewayReloadFailure({ homeDir, configName }) {
  * node whose operator deliberately stopped renewing would be reported forever.
  *
  * @param {Object} options
- * @param {HomeDir} options.homeDir
+ * @param {RenewalRecordRepository} options.renewalRecordRepository
  * @param {string} options.configName
  */
-export function clearRenewalRecord({ homeDir, configName }) {
-  attempt(() => removeRenewalRecord(homeDir, configName), configName);
+export function clearRenewalRecord({ renewalRecordRepository, configName }) {
+  attempt(() => renewalRecordRepository.remove(configName), configName);
 }

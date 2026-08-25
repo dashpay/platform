@@ -11,6 +11,7 @@ import scheduleRenewalJob from './scheduleRenewalJob.js';
  * @param {ConfigFileJsonRepository} configFileRepository
  * @param {writeConfigTemplates} writeConfigTemplates
  * @param {HomeDir} homeDir
+ * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {scheduleRenewZeroSslCertificate}
  */
 export default function scheduleRenewZeroSslCertificateFactory(
@@ -20,6 +21,7 @@ export default function scheduleRenewZeroSslCertificateFactory(
   configFileRepository,
   writeConfigTemplates,
   homeDir,
+  renewalRecordRepository,
 ) {
   /**
    * @typedef scheduleRenewZeroSslCertificate
@@ -77,6 +79,7 @@ export default function scheduleRenewZeroSslCertificateFactory(
       // downstream records anything. This is the state most of the expired
       // nodes on mainnet are in.
       recordRenewalFailure({
+        renewalRecordRepository,
         homeDir,
         configName,
         provider: 'zerossl',
@@ -124,6 +127,10 @@ export default function scheduleRenewZeroSslCertificateFactory(
       writeConfigTemplates,
       dockerCompose,
       homeDir,
+      renewalRecordRepository,
+      // The obtain path is the one most likely to have the provider echo the
+      // key back at us, and its excerpt is what reaches a shared report.
+      apiKey: currentConfig.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),
       onConfigurationChanged,
       reschedule: (nextConfig) => scheduleRenewZeroSslCertificate(
         nextConfig,

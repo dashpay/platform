@@ -1,5 +1,6 @@
 import UpdateCommand from '../../../src/commands/update.js';
 import HomeDir from '../../../src/config/HomeDir.js';
+import RenewalRecordRepository from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import updateNodeFactory from '../../../src/update/updateNodeFactory.js';
 import CertificateUnresolvedError from '../../../src/ssl/errors/CertificateUnresolvedError.js';
@@ -68,7 +69,7 @@ describe('Update command', () => {
       checkGatewayCertificate,
       gatewayCertificateTask,
       dockerCompose,
-      homeDir,
+      new RenewalRecordRepository(homeDir),
     );
   }
 

@@ -2,10 +2,9 @@ import { expect } from 'chai';
 import HomeDir from '../../../src/config/HomeDir.js';
 import scheduleRenewalJob from '../../../src/helper/scheduleRenewalJob.js';
 import ServiceIsNotRunningError from '../../../src/docker/errors/ServiceIsNotRunningError.js';
-import readRenewalRecord, {
-  RENEWAL_OUTCOMES,
+import RenewalRecordRepository, {
   RENEWAL_RECORD_STATES,
-} from '../../../src/ssl/renewalRecord.js';
+} from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 import { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewalFailure.js';
 
 const CONFIG_NAME = 'base';
@@ -18,6 +17,7 @@ const PROVIDER = 'letsencrypt';
  */
 describe('scheduleRenewalJob', () => {
   let homeDir;
+  let renewalRecordRepository;
   let config;
   let configFileRepository;
   let dockerCompose;
@@ -26,7 +26,7 @@ describe('scheduleRenewalJob', () => {
   let retryDelay;
   let realSetTimeout;
 
-  const read = () => readRenewalRecord(homeDir, CONFIG_NAME);
+  const read = () => renewalRecordRepository.read(CONFIG_NAME);
 
   /**
    * Drive one firing of the job and wait for it to settle.
@@ -59,6 +59,7 @@ describe('scheduleRenewalJob', () => {
       writeConfigTemplates: () => {},
       dockerCompose,
       homeDir,
+      renewalRecordRepository,
       onConfigurationChanged: async (changed) => {
         configurationChangedWith.push(changed);
       },
@@ -75,6 +76,7 @@ describe('scheduleRenewalJob', () => {
 
   beforeEach(function beforeEach() {
     homeDir = HomeDir.createTemp();
+    renewalRecordRepository = new RenewalRecordRepository(homeDir);
     rescheduledWith = [];
     configurationChangedWith = [];
     retryDelay = null;
@@ -123,9 +125,9 @@ describe('scheduleRenewalJob', () => {
 
     const { record } = read();
 
-    expect(record.outcome).to.equal(RENEWAL_OUTCOMES.SUCCEEDED);
-    expect(record.consecutiveFailures).to.equal(0);
-    expect(record.lastSuccessAt).to.be.a('string');
+    expect(record.isFailed()).to.equal(false);
+    expect(record.getConsecutiveFailures()).to.equal(0);
+    expect(record.getLastSuccessAt()).to.not.equal(null);
     expect(rescheduledWith).to.have.lengthOf(1);
     expect(retryDelay).to.equal(null);
   });
@@ -137,9 +139,9 @@ describe('scheduleRenewalJob', () => {
 
     const { record } = read();
 
-    expect(record.outcome).to.equal(RENEWAL_OUTCOMES.FAILED);
-    expect(record.code).to.equal(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
-    expect(record.consecutiveFailures).to.equal(1);
+    expect(record.isFailed()).to.equal(true);
+    expect(record.getCode()).to.equal(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
+    expect(record.getConsecutiveFailures()).to.equal(1);
   });
 
   it('should arm the hourly retry before the record is written', async () => {
@@ -169,9 +171,9 @@ describe('scheduleRenewalJob', () => {
 
     const { record } = read();
 
-    expect(record.outcome).to.equal(RENEWAL_OUTCOMES.SUCCEEDED);
-    expect(record.gatewayReloadFailedAt).to.equal(null);
-    expect(record.consecutiveFailures).to.equal(0);
+    expect(record.isFailed()).to.equal(false);
+    expect(record.getGatewayReloadFailedAt()).to.equal(null);
+    expect(record.getConsecutiveFailures()).to.equal(0);
   });
 
   it('should record a failed signal as a reload failure, never as a failed renewal', async () => {
@@ -181,10 +183,10 @@ describe('scheduleRenewalJob', () => {
 
     const { record } = read();
 
-    expect(record.outcome).to.equal(RENEWAL_OUTCOMES.SUCCEEDED);
-    expect(record.gatewayReloadFailedAt).to.be.a('string');
-    expect(record.consecutiveFailures).to.equal(0);
-    expect(record.lastSuccessAt).to.be.a('string');
+    expect(record.isFailed()).to.equal(false);
+    expect(record.getGatewayReloadFailedAt()).to.not.equal(null);
+    expect(record.getConsecutiveFailures()).to.equal(0);
+    expect(record.getLastSuccessAt()).to.not.equal(null);
   });
 
   it('should forget the record before handing renewal to another provider', async () => {
@@ -197,7 +199,7 @@ describe('scheduleRenewalJob', () => {
     // clear rather than a fact about an empty directory.
     const { recordRenewalFailure } = await import('../../../src/helper/recordRenewalOutcome.js');
     recordRenewalFailure({
-      homeDir, configName: CONFIG_NAME, provider: PROVIDER, error: new Error('stale'),
+      renewalRecordRepository, homeDir, configName: CONFIG_NAME, provider: PROVIDER, error: new Error('stale'),
     });
     expect(read().state).to.equal(RENEWAL_RECORD_STATES.PRESENT);
 
@@ -220,6 +222,7 @@ describe('scheduleRenewalJob', () => {
       writeConfigTemplates: () => {},
       dockerCompose,
       homeDir,
+      renewalRecordRepository,
       onConfigurationChanged: async () => {
         recordDuringHandover = read().state;
       },

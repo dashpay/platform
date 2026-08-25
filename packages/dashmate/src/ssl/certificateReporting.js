@@ -1,9 +1,5 @@
 import renderCertificateGuidance from './renderCertificateGuidance.js';
-import readRenewalRecord, {
-  isRenewalRecordCurrent,
-  RENEWAL_OUTCOMES,
-  RENEWAL_RECORD_STATES,
-} from './renewalRecord.js';
+import { RENEWAL_RECORD_STATES } from './renewalRecord/RenewalRecordRepository.js';
 
 /**
  * Everything the certificate check needs to say to an operator, kept out of the
@@ -47,7 +43,7 @@ export function writeDiagnostics(verdict, config, extra = {}) {
  * @param {Config} options.config
  * @param {Object} options.verdict
  * @param {Object} options.dockerCompose
- * @param {HomeDir} options.homeDir
+ * @param {RenewalRecordRepository} options.renewalRecordRepository
  * @param {Object|null} options.pull
  * @param {boolean} [options.obtainAttemptFailed]
  * @return {Promise<void>}
@@ -56,7 +52,7 @@ export async function reportUnresolved({
   config,
   verdict,
   dockerCompose,
-  homeDir,
+  renewalRecordRepository,
   pull,
   obtainAttemptFailed = false,
 }) {
@@ -80,15 +76,15 @@ export async function reportUnresolved({
   // Only the cause is taken from it. The excerpt the helper stored is never
   // rendered here: nothing on this path masks the operator's identity the way
   // a collected report does.
-  const { state, record } = readRenewalRecord(homeDir, config.getName());
+  const { state, record } = renewalRecordRepository.read(config.getName());
   const renewal = state === RENEWAL_RECORD_STATES.PRESENT
     && config.get('platform.gateway.ssl.enabled') === true
-    && record.outcome === RENEWAL_OUTCOMES.FAILED
-    && isRenewalRecordCurrent(record, {
+    && record.isFailed()
+    && record.appliesTo({
       provider: config.get('platform.gateway.ssl.provider'),
       certificateValidFrom: verdict.installed ? verdict.installed.validFrom : null,
     })
-    ? { code: record.code }
+    ? { code: record.getCode() }
     : null;
 
   process.stderr.write(renderCertificateGuidance({

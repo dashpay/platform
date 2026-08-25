@@ -25,6 +25,9 @@ export const RETRY_INTERVAL_MS = 60 * 60 * 1000;
  * @param {writeConfigTemplates} options.writeConfigTemplates
  * @param {DockerCompose} options.dockerCompose
  * @param {HomeDir} options.homeDir
+ * @param {RenewalRecordRepository} options.renewalRecordRepository
+ * @param {string} [options.apiKey] - the provider key, redacted defensively out
+ *   of anything the provider echoes back into the recorded excerpt
  * @param {function(Config): Promise<boolean>} options.onConfigurationChanged
  * @param {function(Config): Promise<void>} options.reschedule
  */
@@ -39,6 +42,8 @@ export default function scheduleRenewalJob({
   writeConfigTemplates,
   dockerCompose,
   homeDir,
+  renewalRecordRepository,
+  apiKey = null,
   onConfigurationChanged,
   reschedule,
 }) {
@@ -85,7 +90,7 @@ export default function scheduleRenewalJob({
         // providers write to it synchronously while it runs, so clearing
         // afterwards would delete the incoming provider's first record and
         // leave a switched node reporting nothing until its next attempt.
-        clearRenewalRecord({ homeDir, configName });
+        clearRenewalRecord({ renewalRecordRepository, configName });
 
         await onConfigurationChanged(renewal.config);
 
@@ -94,7 +99,7 @@ export default function scheduleRenewalJob({
         // The certificate exists from here on, whatever happens to the signal
         // below, so it is recorded before the signal is sent rather than after
         // the whole step succeeds.
-        recordRenewalSuccess({ homeDir, configName, provider });
+        recordRenewalSuccess({ renewalRecordRepository, configName, provider });
 
         isRenewed = true;
 
@@ -141,11 +146,11 @@ export default function scheduleRenewalJob({
       // certificate problem, it is already reported as a stopped service, and
       // the renewal itself is already recorded as the success it was.
       if (reloadFailure !== null) {
-        recordGatewayReloadFailure({ homeDir, configName });
+        recordGatewayReloadFailure({ renewalRecordRepository, configName });
       }
     } else if (renewalFailure !== null) {
       recordRenewalFailure({
-        homeDir, configName, provider, error: renewalFailure,
+        renewalRecordRepository, homeDir, configName, provider, error: renewalFailure, apiKey,
       });
     }
   }, () => {

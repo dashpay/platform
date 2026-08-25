@@ -13,6 +13,7 @@ import scheduleRenewalJob from './scheduleRenewalJob.js';
  * @param {ConfigFileJsonRepository} configFileRepository
  * @param {writeConfigTemplates} writeConfigTemplates
  * @param {HomeDir} homeDir
+ * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {scheduleRenewLetsEncryptCertificate}
  */
 export default function scheduleRenewLetsEncryptCertificateFactory(
@@ -21,6 +22,7 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
   configFileRepository,
   writeConfigTemplates,
   homeDir,
+  renewalRecordRepository,
 ) {
   /**
    * @typedef scheduleRenewLetsEncryptCertificate
@@ -81,6 +83,7 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
       // file, for a permission denial and for a corrupt certificate alike, and
       // only the first of those is repaired by obtaining a new one.
       recordRenewalFailure({
+        renewalRecordRepository,
         homeDir,
         configName,
         provider: 'letsencrypt',
@@ -135,6 +138,7 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
       writeConfigTemplates,
       dockerCompose,
       homeDir,
+      renewalRecordRepository,
       onConfigurationChanged,
       reschedule: (nextConfig) => scheduleRenewLetsEncryptCertificate(
         nextConfig,

@@ -10,7 +10,6 @@ import LegoCertificate from '../../../ssl/letsencrypt/LegoCertificate.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
-import readRenewalRecord from '../../../ssl/renewalRecord.js';
 import providers from '../../../status/providers.js';
 import maskOperatorIdentity from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
@@ -42,6 +41,7 @@ async function fetchTextOrError(url) {
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
  * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
  * @param {checkGatewayCertificate} checkGatewayCertificate
+ * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {collectSamplesTask}
  */
 /**
@@ -104,6 +104,7 @@ export default function collectSamplesTaskFactory(
   validateZeroSslCertificate,
   validateLetsEncryptCertificate,
   checkGatewayCertificate,
+  renewalRecordRepository,
 ) {
   /**
    * @typedef {function} collectSamplesTask
@@ -294,7 +295,7 @@ export default function collectSamplesTaskFactory(
                 enabled: () => config.get('platform.enable'),
                 title: 'Gateway certificate renewal',
                 task: async () => {
-                  const renewal = readRenewalRecord(homeDir, config.getName());
+                  const renewal = renewalRecordRepository.read(config.getName());
 
                   // Absent and unreadable are kept apart all the way to the
                   // analyser. "Nothing was recorded" is a fair thing to say;
@@ -303,7 +304,7 @@ export default function collectSamplesTaskFactory(
                     state: renewal.state,
                     path: renewal.path,
                     error: renewal.error,
-                    ...renewal.record,
+                    ...renewal.record?.toObject(),
                   };
 
                   // Same treatment as the certificate above: the path is what
