@@ -1295,6 +1295,30 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getSeverity()).to.equal(SEVERITY.HIGH);
     });
 
+
+    it('should withhold a certificate request from every branch, not only the renewal one', () => {
+      // A branch that never heard of the renewal record was still printing an
+      // obtain command while an issuance was already outstanding. The
+      // derivation is the only thing allowed to decide that now.
+      installedValid();
+      renewalFailed({
+        code: 'PORT_80_UNREACHABLE',
+        issuanceSpentAt: new Date(Date.now() - DAY_MS).toISOString(),
+      });
+
+      // A trust failure - a branch entirely unrelated to renewal.
+      const problems = analyse(served({
+        chainVerified: false,
+        chainError: 'DEPTH_ZERO_SELF_SIGNED_CERT',
+      }));
+
+      const trust = problems.find((p) => p.getDescription().includes('not trusted'));
+
+      expect(trust).to.exist();
+      expect(trust.getSolution()).to.not.contain('ssl obtain');
+      expect(trust.getSolution()).to.contain('already issued');
+    });
+
     it('should say nothing about renewal for a provider dashmate does not renew', () => {
       // `file` and `self-signed` are installed by the operator; there is no
       // scheduled renewal to report on, and reporting one would call a

@@ -363,6 +363,41 @@ ${obtain}`
 {bold.cyanBright dashmate doctor report ${cfg}}`;
 }
 
+/**
+ * The command that asks the authority for a certificate, or the reason it is
+ * being withheld.
+ *
+ * Every branch that would request one goes through here. Deciding it per
+ * branch is what let a node with an issuance already outstanding be told to
+ * spend another, from a branch that had never heard of the renewal record.
+ *
+ * @param {Object} options
+ * @return {string}
+ */
+function renderCertificateRequest({
+  cfg, force = '', safeAction, issuanceStatus,
+}) {
+  if (safeAction !== SAFE_ACTION.DO_NOT_OBTAIN) {
+    return chalk`{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}`;
+  }
+
+  if (issuanceStatus === ISSUANCE_STATUS.SPENT) {
+    return chalk`Do not obtain one - a certificate was already issued and could not be saved,
+so asking again spends another. Send a report instead:
+{bold.cyanBright dashmate doctor report ${cfg}}`;
+  }
+
+  if (issuanceStatus === ISSUANCE_STATUS.UNCERTAIN) {
+    return chalk`Do not obtain one yet - an earlier attempt may already have been issued a
+certificate without dashmate seeing it:
+{bold.cyanBright dashmate doctor ${cfg}}`;
+  }
+
+  return chalk`Do not obtain one right now - it would not succeed, and each attempt counts
+against this node's limits:
+{bold.cyanBright dashmate doctor ${cfg}}`;
+}
+
 export default function analyseGatewayCertificateFactory() {
   /**
    * Analyse the certificate installed for the gateway and the one it serves.
@@ -446,6 +481,14 @@ export default function analyseGatewayCertificateFactory() {
         && renewalSample?.state === RENEWAL_RECORD_STATES.UNREADABLE,
     });
 
+    // Bound once so no branch below can print a request the derivation forbids.
+    const certificateRequest = (force = '') => renderCertificateRequest({
+      cfg,
+      force,
+      safeAction: guidance.safeAction,
+      issuanceStatus: guidance.issuanceStatus,
+    });
+
     // Let's Encrypt issues IP certificates on a six-day profile, so port 80 has
     // to stay open permanently. ZeroSSL's last ninety days, and telling its
     // operators the same thing is simply false.
@@ -522,11 +565,11 @@ export default function analyseGatewayCertificateFactory() {
 
 Set this node's public address, then obtain a certificate:
 {bold.cyanBright dashmate config set ${cfg} externalIp <your-public-ip>}
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`
+${certificateRequest()}`
           : chalk`${UPDATE_CONSEQUENCE}
 
 Obtain a new certificate. No restart needed:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`;
+${certificateRequest(installedForce)}`;
 
         // Nothing can be issued for an address dashmate does not have, and the
         // obtain command refuses to start without one - so this prerequisite
@@ -618,7 +661,7 @@ a second one against this node's weekly limit:
         problems.push(new Problem(
           message,
           chalk`Nothing is broken yet. If it needs attention, obtain a new certificate:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
+${certificateRequest(installedForce)}`,
           SEVERITY.LOW,
         ));
       });
@@ -665,7 +708,7 @@ another dashmate config, a reverse proxy, or a second node. Find what is
 listening there first.
 
 If this node's gateway is answering and the address is simply wrong:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt --force}`,
+${certificateRequest(' --force')}`,
         SEVERITY.HIGH,
       ));
 
@@ -715,7 +758,7 @@ If this node's gateway is answering and the address is simply wrong:
         + 'replacement',
         chalk`Neither the certificate in use nor the saved one is known to work, so
 restarting will not help. Get a current one:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
+${certificateRequest(installedForce)}`,
         SEVERITY.HIGH,
       ));
     } else if (isServedExpired) {
@@ -752,7 +795,7 @@ a second one against this node's weekly limit:
           + 'dashmate could not confirm the saved one is a working replacement',
           chalk`The certificate in use works. The saved one is not known to be a safe
 replacement, so do not restart to load it. Get a current one instead:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
+${certificateRequest(installedForce)}`,
           SEVERITY.HIGH,
         ));
       }
@@ -773,12 +816,12 @@ ${restartHint(cfg)}
 
 If the bundle is already complete, the authority that issued it is not one clients
 trust, and no restart changes that. Get a publicly trusted certificate:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt}`
+${certificateRequest()}`
           : chalk`Standard clients will reject this node. The chain itself is not the
 problem, so adding certificates to the bundle will not help. Check this node's
 clock first. If the clock is right, the certificate's own dates are wrong and it
 has to be replaced:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt --force}`,
+${certificateRequest(' --force')}`,
         SEVERITY.HIGH,
       ));
     }
