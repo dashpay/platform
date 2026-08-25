@@ -48,7 +48,12 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
     },
     methods: DataContractMethodVersions {
         validate_document: 0,
-        validate_update: 0,
+        // Generation 1 (requiredSince): feeds the new contract version into
+        // per-document-type update validation and validates requiredSince
+        // annotations on document types introduced by the update, which the
+        // per-type pass never sees. Generation 0 stays byte-identical for
+        // replay of pre-v14 blocks.
+        validate_update: 1,
         schema: 0,
         validate_groups: 0,
         equal_ignoring_time_fields: 0,

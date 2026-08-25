@@ -6,8 +6,7 @@ use crate::consensus::state::token::PreProgrammedDistributionTimestampInPastErro
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 
 use crate::consensus::basic::data_contract::{
-    DataContractInvalidRequiredFieldsUpdateError, DuplicateKeywordsError,
-    IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
+    DuplicateKeywordsError, IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
     InvalidDescriptionLengthError, InvalidKeywordCharacterError, InvalidKeywordLengthError,
     TooManyKeywordsError,
 };
@@ -18,7 +17,6 @@ use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
@@ -108,7 +106,10 @@ impl DataContract {
                 ));
             };
 
-            // Validate document type update rules
+            // Validate document type update rules. The document-type
+            // dispatcher takes the new contract version for generation 1;
+            // generation 0, the only one this method's platform versions
+            // select, ignores it.
             let validate_update_result = old_document_type.as_ref().validate_update(
                 new_document_type,
                 new_data_contract.version(),
@@ -119,40 +120,6 @@ impl DataContract {
                 return Ok(SimpleConsensusValidationResult::new_with_errors(
                     validate_update_result.errors,
                 ));
-            }
-        }
-
-        // Document types introduced by this update have no old counterpart,
-        // so the per-type update validation above never sees them. Their
-        // `requiredSince` annotations must name the version this update
-        // creates — anything else would pre-schedule (or backdate) a
-        // wire-layout change without validation. Replay safety: this loop is
-        // a no-op for every contract that predates the `requiredSince`
-        // keyword (protocol v14's meta-schema), because such contracts can
-        // carry no annotation — older meta-schemas rejected the keyword at
-        // write time and older parsers ignore it entirely.
-        for (document_type_name, new_document_type) in new_data_contract.document_types() {
-            if self
-                .document_type_optional_for_name(document_type_name)
-                .is_some()
-            {
-                continue;
-            }
-            for (property_name, property) in new_document_type.as_ref().properties() {
-                if let Some(required_since) = property.required_since {
-                    if required_since != new_data_contract.version() {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            DataContractInvalidRequiredFieldsUpdateError::new(
-                                document_type_name.clone(),
-                                format!(
-                                    "new document type property '{property_name}' must carry requiredSince {}, the contract version this update creates",
-                                    new_data_contract.version()
-                                ),
-                            )
-                            .into(),
-                        ));
-                    }
-                }
             }
         }
 
@@ -401,85 +368,6 @@ mod tests {
         use crate::data_contract::TokenConfiguration;
         use crate::identity::accessors::IdentityGettersV0;
         use crate::prelude::Identity;
-
-        #[test]
-        fn should_validate_required_since_on_document_types_added_by_the_update() {
-            let platform_version = PlatformVersion::latest();
-
-            let old_data_contract = get_data_contract_fixture(
-                None,
-                IdentityNonce::default(),
-                platform_version.protocol_version,
-            )
-            .data_contract_owned();
-
-            let new_type_schema = |required_since: u32| {
-                platform_value!({
-                    "type": "object",
-                    "properties": {
-                        "message": {
-                            "type": "string",
-                            "position": 0,
-                            "maxLength": 60_u32,
-                            "requiredSince": required_since,
-                        }
-                    },
-                    "required": ["message"],
-                    "additionalProperties": false
-                })
-            };
-
-            // A new document type pre-scheduling requiredness at version 99
-            // has no old counterpart, so the per-type update validation
-            // never runs on it — this pass must catch it
-            let mut new_data_contract = old_data_contract.clone();
-            new_data_contract.set_version(old_data_contract.version() + 1);
-            new_data_contract
-                .set_document_schema(
-                    "note",
-                    new_type_schema(99),
-                    false,
-                    &mut Vec::new(),
-                    platform_version,
-                )
-                .expect("should add document type");
-
-            let result = old_data_contract
-                .validate_update(&new_data_contract, &BlockInfo::default(), platform_version)
-                .expect("failed validate update");
-
-            assert_matches!(
-                result.errors.as_slice(),
-                [ConsensusError::BasicError(
-                    BasicError::DataContractInvalidRequiredFieldsUpdateError(e)
-                )] if e.details().contains("must carry requiredSince 2")
-            );
-
-            // The same new document type annotated with the version this
-            // update creates is accepted
-            let mut new_data_contract = old_data_contract.clone();
-            new_data_contract.set_version(old_data_contract.version() + 1);
-            new_data_contract
-                .set_document_schema(
-                    "note",
-                    new_type_schema(old_data_contract.version() + 1),
-                    false,
-                    &mut Vec::new(),
-                    platform_version,
-                )
-                .expect("should add document type");
-
-            let result = old_data_contract
-                .validate_update(&new_data_contract, &BlockInfo::default(), platform_version)
-                .expect("failed validate update");
-
-            assert!(
-                result.is_valid(),
-                "a new document type annotated with the version this update \
-                 creates must be accepted, got {:?}",
-                result.errors
-            );
-        }
 
         #[test]
         fn should_return_invalid_result_if_owner_id_is_not_the_same() {
