@@ -39,7 +39,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // so a reconstruct on the same path doesn't hit `AlreadyOpen`
                 // masking this error.
                 tracing::debug!(error = ?e, "persister load failed during rehydration");
-                self.shutdown().await;
+                let report = self.shutdown().await;
+                if !report.all_clean() {
+                    tracing::warn!(?report, "wallet workers unclean after aborting rehydration");
+                }
                 return Err(PlatformWalletError::PersisterLoad(e));
             }
         };
@@ -229,7 +232,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // Release the wallet-event adapter so a reconstruct on the same
             // persister path doesn't hit `AlreadyOpen` (see the early-return
             // path above).
-            self.shutdown().await;
+            let report = self.shutdown().await;
+            if !report.all_clean() {
+                tracing::warn!(
+                    ?report,
+                    "wallet workers left unclean after rolling back a failed rehydration"
+                );
+            }
             return Err(err);
         }
 
