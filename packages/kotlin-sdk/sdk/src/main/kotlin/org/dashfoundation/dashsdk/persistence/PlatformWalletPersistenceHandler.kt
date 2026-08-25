@@ -1342,6 +1342,32 @@ class PlatformWalletPersistenceHandler(
         }
         callbackExclusion.withLock {
             database.withTransaction {
+                // Watch-only DIP-15 contact (external) accounts, resolved up
+                // front because BOTH passes need the exclusion. The engine's
+                // UTXO inventory export includes these accounts' coins — it
+                // tracks them to show payments TO contacts — but they are the
+                // CONTACT's money and must never be healed into the store as
+                // ours. Before this check lived on the insert pass, a fresh
+                // restore's post-backfill reconcile healed every
+                // contact-payment coin into the store (12 rows / 0.05692493
+                // tDASH on the large-wallet validation run of 2026-08-25)
+                // while the reverse pass — the only place the exclusion
+                // existed — dutifully counted the same rows as foreign.
+                val foreignAccountIds = database.accountDao()
+                    .observeByWallet(walletId).first()
+                    .filter { it.accountType == ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL }
+                    .map { it.id }
+                    .toSet()
+                // Engine-side entries carry only an address; ownership
+                // resolves through core_addresses.accountId (the same second
+                // path rowIsForeign uses for store rows). An unresolvable
+                // address is NOT provably foreign — those proceed, keeping
+                // this pass's provable-only discipline symmetric: it neither
+                // mutates nor suppresses on guesswork.
+                suspend fun addressIsForeign(address: String): Boolean {
+                    val owner = database.coreAddressDao().getByAddress(address)?.accountId
+                    return owner != null && owner in foreignAccountIds
+                }
                 for (element in utxos) {
                     val row = element.jsonObject
                     val height = row["height"]?.jsonPrimitive?.int ?: 0
@@ -1352,6 +1378,10 @@ class PlatformWalletPersistenceHandler(
                     val address = row["address"]?.jsonPrimitive?.content.orEmpty()
                     if (address.isEmpty()) {
                         skippedNoAddress++
+                        continue
+                    }
+                    if (addressIsForeign(address)) {
+                        skippedForeign++
                         continue
                     }
                     val txid = row["txid"]?.jsonPrimitive?.content.orEmpty().hexToByteArray()
@@ -1392,24 +1422,18 @@ class PlatformWalletPersistenceHandler(
                         netAmountSuspects++
                         Log.w(
                             TAG,
-                            "txos reconcile: healed TXO ${'$'}{txid.toHex()}:${'$'}vout " +
-                                "(${'$'}amount duffs) has a pre-existing record whose " +
+                            "txos reconcile: healed TXO ${txid.toHex()}:$vout " +
+                                "($amount duffs) has a pre-existing record whose " +
                                 "netAmount may be short by that amount — LOG-ONLY, " +
-                                "storedNet=${'$'}{priorTx.netAmount}",
+                                "storedNet=${priorTx.netAmount}",
                         )
                     }
                 }
 
                 // ── Reverse pass: classify store rows the engine disagrees
                 // with (the widened scope from the #4425 / pre-#971 review).
-                // Watch-only DIP-15 contact rows are excluded up front: the
-                // engine's own accounts never report them, so their absence
-                // from both inventories is expected.
-                val foreignAccountIds = database.accountDao()
-                    .observeByWallet(walletId).first()
-                    .filter { it.accountType == ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL }
-                    .map { it.id }
-                    .toSet()
+                // Watch-only DIP-15 contact rows are excluded via the same
+                // `foreignAccountIds` the insert pass resolved above.
                 // Production changeset writes leave txos.accountId null and
                 // route ownership through coreAddressId -> core_addresses
                 // .accountId, so the exclusion must resolve BOTH paths — an

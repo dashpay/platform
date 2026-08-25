@@ -5733,6 +5733,56 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun reconcileInsertPassNeverHealsContactAccountCoins() = runTest {
+        // The engine's UTXO inventory export includes the watch-only DIP-15
+        // external accounts' coins — it tracks them to show payments TO
+        // contacts, but they are the CONTACT's money. With the foreign
+        // exclusion living only on the reverse pass, a fresh restore's
+        // post-backfill reconcile healed every contact-payment coin into the
+        // store as an ownerless row (12 rows / 5,692,493 duffs on the
+        // 2026-08-25 large-wallet validation run) while the reverse pass
+        // counted the very same rows as foreign — and the mirror-reload path
+        // hands such rows back to the engine on the next launch. The insert
+        // pass must skip any engine UTXO whose address resolves to an
+        // external account, and count it as foreign, not healed.
+        db.walletDao().upsert(WalletEntity(walletId, networkRaw = Network.TESTNET.ffiValue))
+        val foreignAccountId = db.accountDao().insert(
+            org.dashfoundation.dashsdk.persistence.entities.AccountEntity(
+                walletId = walletId,
+                accountType = PlatformWalletPersistenceHandler.ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL,
+                accountIndex = 2,
+                accountTypeName = "DashpayExternalAccount",
+            ),
+        )
+        db.coreAddressDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity(
+                address = "yContactPaid",
+                publicKey = ByteArray(33),
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/9'/1'/15'/0'/x/y/1",
+                isUsed = true,
+                accountId = foreignAccountId,
+            ),
+        )
+
+        val json =
+            """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,""" +
+                """"txid":"${changeTxid.toHexLower()}","vout":9,"amount":10000,""" +
+                """"address":"yContactPaid","scriptHex":"51",""" +
+                """"height":1400000,"isLocked":false}],"spent":[],"errors":[]}"""
+        val report = handler.reconcileTxos(walletId, json, tipHeight = reconcileTip)
+
+        assertEquals(0, report.inserted)
+        assertEquals(0L, report.insertedDuffs)
+        assertEquals(1, report.skippedForeign)
+        assertNull(
+            "the contact's coin must not enter the store",
+            db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 9)),
+        )
+    }
+
+    @Test
     fun reconcileNeverUnmarksSpentRowsEvenWhenEngineDisagrees() = runTest {
         // A row marked spent while the engine lists the coin unspent: either
         // a lost release event (pre-rust-dashcore#971) or a live spend the
