@@ -33,7 +33,11 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
 #[cfg(feature = "server")]
-use grovedb::AxisKeys;
+use grovedb::{AxisKeys, GroveDb, TransactionArg};
+#[cfg(feature = "server")]
+use grovedb_costs::CostContext;
+#[cfg(feature = "server")]
+use grovedb_version::version::GroveVersion;
 use std::cmp::Ordering;
 
 /// The position (index into a branch's segment list) at which the
@@ -176,6 +180,70 @@ pub fn decompose_branch_paths(paths: &[Vec<Vec<u8>>]) -> Result<BranchPathDecomp
         .collect::<Vec<_>>();
     let suffix = first[position + 1..].to_vec();
     Ok((prefix, keys, suffix))
+}
+
+/// Retry budget for [`read_branches_at_one_root`]: how many bracketed
+/// windows are attempted before the read fails closed. Commits land
+/// seconds apart while a window is one branched grovedb call, so even a
+/// second attempt racing a commit is rare and a third essentially
+/// unreachable — the budget exists so pathological churn degrades into
+/// a clean, retryable error rather than an unbounded loop.
+#[cfg(feature = "server")]
+pub(crate) const BRANCHED_READ_ATTEMPTS: usize = 3;
+
+/// Run a branched unproved read so its result is a function of **one**
+/// committed grovedb state.
+///
+/// The union is already a single grovedb call, but at the pinned
+/// grovedb revision the branched read's arm still forwards the
+/// caller's `TransactionArg` to each per-branch suffix probe and each
+/// axis walk — under the production `None`, every one of those opens
+/// its own implicit transaction, and even one hoisted optimistic
+/// transaction would not pin a snapshot (its reads see latest
+/// committed state). A block commit landing inside the call could
+/// therefore merge branch pages that never coexisted in any committed
+/// state — silently, since an unproved response carries nothing a
+/// client could cross-check.
+///
+/// This wrapper therefore **validates** what snapshot-pinning would
+/// otherwise guarantee: read the committed root hash, run the whole
+/// union, read the root hash again, and accept the result only when
+/// the two are equal — optimistic concurrency validation. The grove
+/// root hash commits the entire state and every Platform commit
+/// advances monotonic block metadata (so a window cannot tear A→B→A
+/// back to a byte-identical root), which makes equal endpoint hashes
+/// mean *no commit interleaved*: the same guarantee a pinned snapshot
+/// would give, without new storage-layer machinery. A torn window is
+/// discarded whole — the page or the error it produced may both be
+/// artifacts of the tear — and retried against the new state;
+/// persistent churn fails closed with a retryable
+/// [`DriveError::ConcurrentStateChurn`] after
+/// [`BRANCHED_READ_ATTEMPTS`] windows.
+///
+/// Under a caller transaction the bracket holds the same way: the root
+/// hash is then computed over the transaction's view, whose committed
+/// base a concurrent commit would move.
+#[cfg(feature = "server")]
+pub(crate) fn read_branches_at_one_root<T>(
+    grove: &GroveDb,
+    transaction: TransactionArg,
+    grove_version: &GroveVersion,
+    mut read: impl FnMut() -> Result<T, Error>,
+) -> Result<T, Error> {
+    for _ in 0..BRANCHED_READ_ATTEMPTS {
+        let CostContext { value, cost: _ } = grove.root_hash(transaction, grove_version);
+        let before = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+        let result = read();
+        let CostContext { value, cost: _ } = grove.root_hash(transaction, grove_version);
+        let after = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+        if before == after {
+            return result;
+        }
+    }
+    Err(Error::Drive(DriveError::ConcurrentStateChurn(
+        "a branched read raced concurrent commits and could not observe one committed \
+         state within its retry budget — retry the request",
+    )))
 }
 
 /// Translate one branch's keys-only [`AxisKeys`] page into drive entries

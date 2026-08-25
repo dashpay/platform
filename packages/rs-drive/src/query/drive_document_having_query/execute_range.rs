@@ -12,7 +12,7 @@
 //! `pub mod execute_range;` declaration.
 
 use super::super::drive_document_ranked_query::branches::{
-    axis_keys_to_ranked, decompose_branch_paths, merge_branch_pages,
+    axis_keys_to_ranked, decompose_branch_paths, merge_branch_pages, read_branches_at_one_root,
 };
 use super::super::drive_document_ranked_query::{RankedAxis, RankedEntry, RankedEntryValue};
 use super::{AxisRangeBounds, DriveDocumentHavingQuery};
@@ -47,10 +47,10 @@ impl DriveDocumentHavingQuery<'_> {
     ) -> Result<Vec<RankedEntry>, Error> {
         if self.prefix_branches.len() > 1 {
             // One grovedb call for the whole union under the caller's
-            // transaction — same read-consistency model as the ranked
-            // executor (see its comment: no storage-level snapshot for
-            // `None` reads exists in grovedb yet; DAPI's committed-height
-            // guard and the proved path carry consistency). Absence at any
+            // transaction, bracketed against the committed root hash —
+            // same one-committed-state contract as the ranked executor
+            // (see its comment and the ranked surface's
+            // `branches::read_branches_at_one_root`). Absence at any
             // depth is the branched reader's empty branch.
             let grove_version = &platform_version.drive.grove_version;
             let paths = (0..self.prefix_branches.len())
@@ -65,51 +65,56 @@ impl DriveDocumentHavingQuery<'_> {
                 suffix,
                 AxisQuery::bounded(axis.into(), lo, hi, self.limit, self.descending).keys_only(),
             );
-            let CostContext { value, cost: _ } = drive.grove.run_path_query(
-                &path_query,
-                true,
-                true,
-                true,
-                QueryResultType::QueryKeyElementPairResultType,
-                transaction,
-                grove_version,
-            );
-            let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-            let PathQueryRun::BranchedAxisKeys(branches) = run else {
-                return Err(Error::Drive(DriveError::CorruptedDriveState(
-                    "a branched keys-only having read returned a non-branched shape".to_string(),
-                )));
-            };
-            if branches.len() != keys.len() || branches.iter().map(|(key, _)| key).ne(keys.iter()) {
-                return Err(Error::Drive(DriveError::CorruptedDriveState(
-                    "a branched having read returned a different branch set than the request \
-                     resolved"
-                        .to_string(),
-                )));
-            }
-            let per_branch = branches
-                .into_iter()
-                .map(|(_key, page)| {
-                    let entries = match page {
-                        None => Vec::new(),
-                        Some(page) => axis_keys_to_ranked(axis, page)?,
-                    };
-                    if entries.len() > self.limit as usize {
-                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                            "a branch of a having read returned {} entries for limit = {}",
-                            entries.len(),
-                            self.limit
-                        ))));
-                    }
-                    Ok(entries)
-                })
-                .collect::<Result<Vec<_>, Error>>()?;
-            return merge_branch_pages(
-                per_branch,
-                &self.prefix_branches,
-                self.descending,
-                self.limit as usize,
-            );
+            return read_branches_at_one_root(&drive.grove, transaction, grove_version, || {
+                let CostContext { value, cost: _ } = drive.grove.run_path_query(
+                    &path_query,
+                    true,
+                    true,
+                    true,
+                    QueryResultType::QueryKeyElementPairResultType,
+                    transaction,
+                    grove_version,
+                );
+                let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+                let PathQueryRun::BranchedAxisKeys(branches) = run else {
+                    return Err(Error::Drive(DriveError::CorruptedDriveState(
+                        "a branched keys-only having read returned a non-branched shape"
+                            .to_string(),
+                    )));
+                };
+                if branches.len() != keys.len()
+                    || branches.iter().map(|(key, _)| key).ne(keys.iter())
+                {
+                    return Err(Error::Drive(DriveError::CorruptedDriveState(
+                        "a branched having read returned a different branch set than the request \
+                         resolved"
+                            .to_string(),
+                    )));
+                }
+                let per_branch = branches
+                    .into_iter()
+                    .map(|(_key, page)| {
+                        let entries = match page {
+                            None => Vec::new(),
+                            Some(page) => axis_keys_to_ranked(axis, page)?,
+                        };
+                        if entries.len() > self.limit as usize {
+                            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                                "a branch of a having read returned {} entries for limit = {}",
+                                entries.len(),
+                                self.limit
+                            ))));
+                        }
+                        Ok(entries)
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+                merge_branch_pages(
+                    per_branch,
+                    &self.prefix_branches,
+                    self.descending,
+                    self.limit as usize,
+                )
+            });
         }
         self.execute_range_no_proof_branch(0, drive, transaction, platform_version)
     }

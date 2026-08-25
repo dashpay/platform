@@ -3373,4 +3373,86 @@ mod pinned_prefix {
             "expected the fan-out ceiling rejection, got {error:?}"
         );
     }
+
+    /// Commit one unrelated item so the grove root hash moves — a
+    /// stand-in for a block commit landing inside a branched read's
+    /// bracketed window.
+    fn commit_unrelated_churn(drive: &Drive, nonce: u8) {
+        use crate::drive::RootTree;
+        use grovedb::Element;
+        use grovedb_costs::CostContext;
+        use grovedb_path::SubtreePath;
+        let misc: [&[u8]; 1] = [Into::<&[u8; 1]>::into(RootTree::Misc)];
+        let CostContext { value, cost: _ } = drive.grove.insert(
+            SubtreePath::from(misc.as_ref()),
+            &[b'c', b'h', b'u', b'r', b'n', nonce],
+            Element::new_item(vec![nonce]),
+            None,
+            None,
+            &platform_version().drive.grove_version,
+        );
+        value.expect("expected to commit the unrelated churn item");
+    }
+
+    /// A commit landing inside a branched read's window is detected by
+    /// the root-hash bracket and the whole union is retried against the
+    /// new committed state — a served page can never mix two states.
+    #[test]
+    fn a_branched_read_retries_across_a_concurrent_commit() {
+        let (drive, _contract) = setup_grades_compound_ranked();
+        let grove_version = &platform_version().drive.grove_version;
+        let mut window = 0u8;
+        let result = super::super::branches::read_branches_at_one_root(
+            &drive.grove,
+            None,
+            grove_version,
+            || {
+                window += 1;
+                if window == 1 {
+                    // A "block commit" lands mid-window.
+                    commit_unrelated_churn(&drive, window);
+                }
+                Ok(window)
+            },
+        );
+        assert_eq!(
+            result.expect("the second, untorn window serves"),
+            2,
+            "the torn first window must be discarded and retried"
+        );
+    }
+
+    /// Persistent churn exhausts the retry budget and fails closed with
+    /// a retryable error instead of serving a page that may mix
+    /// committed states — or looping unboundedly.
+    #[test]
+    fn a_branched_read_racing_every_window_fails_closed() {
+        let (drive, _contract) = setup_grades_compound_ranked();
+        let grove_version = &platform_version().drive.grove_version;
+        let mut window = 0u8;
+        let error = super::super::branches::read_branches_at_one_root(
+            &drive.grove,
+            None,
+            grove_version,
+            || {
+                window += 1;
+                commit_unrelated_churn(&drive, window);
+                Ok(window)
+            },
+        )
+        .expect_err("every window is torn, so the read must fail closed");
+        assert_eq!(
+            window as usize,
+            super::super::branches::BRANCHED_READ_ATTEMPTS,
+            "exactly the retry budget is spent"
+        );
+        assert!(
+            matches!(
+                &error,
+                Error::Drive(crate::error::drive::DriveError::ConcurrentStateChurn(message))
+                    if message.contains("retry")
+            ),
+            "expected the concurrent-churn rejection, got {error:?}"
+        );
+    }
 }
