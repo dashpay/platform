@@ -340,9 +340,11 @@ mod tests {
     }
 
     /// An offset far past any plausible population is **not** capped:
-    /// grovedb attests the skipped region from counted commitments
-    /// rather than walking it, so a deep page costs what a shallow one
-    /// does and there is nothing for a cap to protect.
+    /// grovedb counts the skipped region from the subtree aggregates
+    /// rather than walking it, on both `prove` settings, so the cost of
+    /// a deep page does not grow with the offset — `O(log n)` in the
+    /// size of the ranking, not in how far you page — and there is
+    /// nothing for a cap to protect.
     #[test]
     fn a_very_deep_offset_is_not_capped() {
         let query = top_five_by_avg_grade().with_limit(1).with_offset(u32::MAX);

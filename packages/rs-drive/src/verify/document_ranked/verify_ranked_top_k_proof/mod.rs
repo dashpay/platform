@@ -41,7 +41,7 @@ impl DriveDocumentRankedQuery<'_> {
             .document_ranked
             .verify_ranked_top_k_proof
         {
-            0 => self.verify_ranked_top_k_proof_v0(proof),
+            0 => self.verify_ranked_top_k_proof_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentRankedQuery::verify_ranked_top_k_proof".to_string(),
                 known_versions: vec![0],

@@ -89,6 +89,7 @@ fn ranked_count_groups(
         .unwrap()
         .expect("the ranked count read must succeed")
         .into_iter()
+        .map(|entry| entry.key_pair())
         .map(|(count, key)| {
             (
                 count,

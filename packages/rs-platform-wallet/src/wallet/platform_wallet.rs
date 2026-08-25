@@ -1709,6 +1709,97 @@ impl PlatformWallet {
         S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
         P: dpp::shielded::builder::OrchardProver,
     {
+        self.shielded_shield_from_account_impl(
+            coordinator,
+            shielded_account,
+            payment_account,
+            None,
+            amount,
+            [0u8; 36], // empty memo
+            signer,
+            prover,
+        )
+        .await
+    }
+
+    /// Shield credits from a Platform Payment account into a THIRD-PARTY
+    /// shielded pool: the resulting note is assigned to
+    /// `recipient_raw_43` (a raw 43-byte Orchard payment address — the
+    /// same shape [`shielded_transfer_to`](Self::shielded_transfer_to)
+    /// takes) instead of the wallet's own default address. Input
+    /// selection, fees, and error shapes are identical to
+    /// [`shielded_shield_from_account`](Self::shielded_shield_from_account);
+    /// the wallet still needs a bound shielded sub-wallet at
+    /// `shielded_account` because the send is OVK-encrypted to (and its
+    /// activity recorded under) that account — which is how the scan
+    /// later recovers it as outgoing history.
+    ///
+    /// The recipient must actually be a third party: an address this
+    /// account's own IVK recognizes (default or any diversified index)
+    /// is rejected, because its note would be spendable here and the
+    /// live `Sent`/`Out` row would diverge from the self-pay row a
+    /// restore's scan derives. Self-shields go through
+    /// [`shielded_shield_from_account`](Self::shielded_shield_from_account).
+    ///
+    /// `memo` is the 36-byte on-chain `DashMemo` encoding attached to
+    /// the recipient's note (all-zero = no memo).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_shield_from_account_to_recipient<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        payment_account: u32,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        signer: &S,
+        prover: P,
+    ) -> Result<(), PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
+            grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
+        )
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "invalid Orchard payment address bytes".to_string(),
+            )
+        })?;
+        self.shielded_shield_from_account_impl(
+            coordinator,
+            shielded_account,
+            payment_account,
+            Some(recipient),
+            amount,
+            memo,
+            signer,
+            prover,
+        )
+        .await
+    }
+
+    /// Shared body of the two shield entry points above; `recipient`
+    /// `None` = the wallet's own default Orchard address.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    async fn shielded_shield_from_account_impl<S, P>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        shielded_account: u32,
+        payment_account: u32,
+        recipient: Option<grovedb_commitment_tree::PaymentAddress>,
+        amount: u64,
+        memo: [u8; 36],
+        signer: &S,
+        prover: P,
+    ) -> Result<(), PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
         // Preserve the boundary behavior for non-Swift hosts and avoid taking
         // the single-flight/account locks for a request that can never build.
         if amount == 0 {
@@ -1753,15 +1844,17 @@ impl PlatformWallet {
                 })?
                 .clone()
         };
-        super::shielded::operations::shield(
+        super::shielded::operations::shield_to(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
             self.wallet_id,
             &keyset,
             shielded_account,
+            recipient.as_ref(),
             inputs,
             amount,
+            memo,
             signer,
             &prover,
         )

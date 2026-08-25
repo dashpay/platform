@@ -449,9 +449,75 @@ fn reserve_shield_fee_on_input_0(
     Ok(inputs)
 }
 
+/// The resolved Orchard output and live-activity classification for a
+/// shield — see [`resolve_shield_recipient`].
+#[derive(Debug)]
+struct ShieldRecipient {
+    /// The address the note is built for.
+    address: OrchardAddress,
+    /// Raw 43-byte recipient for the activity row (`Some` only for a
+    /// third-party recipient).
+    counterparty: Option<Vec<u8>>,
+    kind: ShieldedActivityKind,
+    direction: ShieldedDirection,
+}
+
+/// Resolve a shield's Orchard output address and live-activity
+/// classification from the optional third-party `recipient`.
+///
+/// `None` is the internal shield-to-self: the note goes to the
+/// account's default address and the live entry is `Shield`/`In` with
+/// no counterparty. `Some` pays a THIRD-PARTY address: `Sent`/`Out`
+/// with the raw 43-byte address as counterparty — the exact
+/// classification the scan deriver produces for an OVK-recovered send
+/// to a non-own address, so a restore derives the same row.
+///
+/// A `Some` address the account's own IVK recognizes (default or any
+/// diversified index — the same `diversifier_index` test the scan's
+/// `is_own_orchard_recipient` uses) is rejected instead of classified:
+/// its note WOULD be spendable here, so it is not a send, and
+/// recording it live as `Sent`/`Out` while a restore scan-derives a
+/// self-pay row would fork the two histories. Self-shields take the
+/// `None` path.
+fn resolve_shield_recipient(
+    keys: &AccountViewingKeys,
+    recipient: Option<&PaymentAddress>,
+) -> Result<ShieldRecipient, PlatformWalletError> {
+    match recipient {
+        Some(payment_address) => {
+            if keys
+                .incoming_viewing_key
+                .diversifier_index(payment_address)
+                .is_some()
+            {
+                return Err(PlatformWalletError::ShieldedBuildError(
+                    "recipient belongs to this shielded account; use the self-shield \
+                     entry point (no recipient) instead"
+                        .to_string(),
+                ));
+            }
+            Ok(ShieldRecipient {
+                address: payment_address_to_orchard(payment_address)?,
+                counterparty: Some(payment_address.to_raw_address_bytes().to_vec()),
+                kind: ShieldedActivityKind::Sent,
+                direction: ShieldedDirection::Out,
+            })
+        }
+        None => Ok(ShieldRecipient {
+            address: default_orchard_address(keys)?,
+            counterparty: None,
+            kind: ShieldedActivityKind::Shield,
+            direction: ShieldedDirection::In,
+        }),
+    }
+}
+
 /// Shield credits from transparent platform addresses into the
 /// shielded pool, with the resulting note assigned to `account`'s
 /// default Orchard payment address derived from `keys`.
+///
+/// Self-shield front for [`shield_to`], preserving the pre-recipient
+/// signature for existing callers.
 #[allow(clippy::too_many_arguments)]
 pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -465,7 +531,45 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     signer: &Sig,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let recipient_addr = default_orchard_address(keys)?;
+    shield_to(
+        sdk, store, persister, wallet_id, keys, account, None, inputs, amount,
+        [0u8; 36], // empty memo
+        signer, prover,
+    )
+    .await
+}
+
+/// Shield credits from transparent platform addresses into the
+/// shielded pool. `recipient` selects the note's Orchard payment
+/// address: `None` assigns it to `account`'s default address derived
+/// from `keys` (the internal shield-to-self); `Some` pays a
+/// third-party address — the note funds THAT wallet's pool and never
+/// becomes spendable here (a `Some` address this account's own IVK
+/// recognizes is rejected — see [`resolve_shield_recipient`]). Either
+/// way the output is encrypted under our own OVK, so the scan recovers
+/// the send from chain data and the live and scan-derived activity ids
+/// line up.
+#[allow(clippy::too_many_arguments)]
+pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &AccountViewingKeys,
+    account: u32,
+    recipient: Option<&PaymentAddress>,
+    inputs: BTreeMap<PlatformAddress, Credits>,
+    amount: u64,
+    memo: [u8; 36],
+    signer: &Sig,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    let ShieldRecipient {
+        address: recipient_addr,
+        counterparty: external_counterparty,
+        kind,
+        direction,
+    } = resolve_shield_recipient(keys, recipient)?;
     let id = SubwalletId::new(wallet_id, account);
 
     // Reserve the flat shielded fee `F` on top of `amount` in the input
@@ -518,7 +622,12 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     let fee_strategy: AddressFundsFeeStrategy =
         vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-    info!(account, credits = amount, "Shield: building proof");
+    info!(
+        account,
+        credits = amount,
+        external = external_counterparty.is_some(),
+        "Shield: building proof"
+    );
 
     let claimed_inputs = inputs_with_nonce.clone();
 
@@ -530,7 +639,7 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
         signer,
         0, // user_fee_increase
         prover,
-        [0u8; 36], // empty memo
+        memo,
         // Encrypt the output under the account's own OVK so the wallet's
         // shielded sync can recover this send (recipient, value, memo)
         // from chain data alone.
@@ -543,11 +652,12 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     trace!("Shield credits: state transition built, broadcasting...");
     let network = sdk.network;
 
-    // Live activity: Shield is `direction in`, amount = the note value
-    // entering the pool, fee = the flat shielded fee reserved above. The
-    // visible output cmx is the recipient note (own address, OVK-keyed),
-    // which the scan later sees as an outgoing note recovered to self —
-    // the ids line up.
+    // Live activity. Kind / direction / counterparty were resolved
+    // alongside the recipient above (see `resolve_shield_recipient` for
+    // why the rows match what a restore's scan derives). Fee = the flat
+    // shielded fee reserved above. The visible output cmx is the
+    // recipient note (OVK-keyed either way), so the live and scan ids
+    // line up.
     let pending_entry = record_pending_activity(
         store,
         persister,
@@ -555,12 +665,12 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
         id,
         keys,
         LiveEntryParams {
-            kind: ShieldedActivityKind::Shield,
-            direction: ShieldedDirection::In,
+            kind,
+            direction,
             amount,
             fee: Some(fee),
-            counterparty: None,
-            memo: None,
+            counterparty: external_counterparty,
+            memo: non_zero_memo(&memo),
             actions: shielded_actions(&state_transition),
             spent_notes: &[],
         },
@@ -2829,6 +2939,99 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
     let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
 
     Note::from_parts(recipient, value, rho, rseed).into_option()
+}
+
+#[cfg(test)]
+mod shield_recipient_tests {
+    use super::*;
+    use crate::wallet::shielded::keys::OrchardKeySet;
+    use dashcore::Network;
+
+    fn keyset(seed_byte: u8) -> OrchardKeySet {
+        OrchardKeySet::from_seed(&[seed_byte; 32], Network::Testnet, 0)
+            .expect("ZIP-32 derivation from a fixed seed should succeed")
+    }
+
+    /// `None` = the self-shield: the default address, `Shield`/`In`,
+    /// no counterparty — exactly what the pre-recipient path produced.
+    #[test]
+    fn no_recipient_resolves_to_the_default_address_as_shield_in() {
+        let keys = keyset(0x42).viewing_keys();
+
+        let resolved =
+            resolve_shield_recipient(&keys, None).expect("self-shield must always resolve");
+
+        assert_eq!(
+            resolved.address.to_raw_bytes(),
+            keys.default_address.to_raw_address_bytes(),
+            "the self-shield note must go to the account's default address"
+        );
+        assert_eq!(resolved.counterparty, None);
+        assert_eq!(resolved.kind, ShieldedActivityKind::Shield);
+        assert_eq!(resolved.direction, ShieldedDirection::In);
+    }
+
+    /// A third-party address resolves to `Sent`/`Out` with the raw
+    /// 43-byte address as counterparty — the classification the scan
+    /// deriver produces for an OVK-recovered send to a non-own address,
+    /// so live and restored rows agree.
+    #[test]
+    fn external_recipient_resolves_as_sent_out_with_raw_counterparty() {
+        let keys = keyset(0x42).viewing_keys();
+        let external = keyset(0x24).viewing_keys().default_address;
+
+        let resolved = resolve_shield_recipient(&keys, Some(&external))
+            .expect("a third-party recipient must resolve");
+
+        assert_eq!(
+            resolved.address.to_raw_bytes(),
+            external.to_raw_address_bytes(),
+            "the note must be built for the recipient's address"
+        );
+        assert_eq!(
+            resolved.counterparty,
+            Some(external.to_raw_address_bytes().to_vec()),
+            "the activity row must carry the recipient as raw 43 bytes"
+        );
+        assert_eq!(resolved.kind, ShieldedActivityKind::Sent);
+        assert_eq!(resolved.direction, ShieldedDirection::Out);
+    }
+
+    /// The account's own default address is not a third party: a
+    /// `Sent`/`Out` live row for it would diverge from the self-pay row
+    /// a restore's scan derives, so it must be rejected up front.
+    #[test]
+    fn own_default_address_as_recipient_is_rejected() {
+        let keys = keyset(0x42).viewing_keys();
+        let own = keys.default_address;
+
+        let error = resolve_shield_recipient(&keys, Some(&own))
+            .expect_err("the account's own address must be rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("belongs to this shielded account"),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// Orchard addresses are diversified, so ownership cannot be a
+    /// fixed-address comparison: a non-default diversified index of the
+    /// SAME account must also be recognized (via the IVK) and rejected.
+    #[test]
+    fn own_diversified_address_as_recipient_is_rejected() {
+        let ks = keyset(0x42);
+        let diversified = ks.address_at(7);
+        let keys = ks.viewing_keys();
+        assert_ne!(
+            diversified.to_raw_address_bytes(),
+            keys.default_address.to_raw_address_bytes(),
+            "test needs a non-default diversified address"
+        );
+
+        resolve_shield_recipient(&keys, Some(&diversified))
+            .expect_err("an own diversified address must be rejected");
+    }
 }
 
 #[cfg(test)]

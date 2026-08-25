@@ -1568,6 +1568,17 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
                      batch_insert_empty_provable_count_provable_sum_indexed_tree) instead.",
                 )))
             }
+            // A private document store's entry size lives only on the
+            // `Element` (it does not affect Merk node layout), so `TreeType`
+            // cannot describe the element to insert. Drive has no private
+            // document store surface yet; when it does, creation must go
+            // through a dedicated helper that takes the entry size.
+            TreeType::PrivateDocumentStore(_) => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "empty_tree_operation_for_known_path_key cannot create a \
+                     PrivateDocumentStore — the entry size is not carried by TreeType",
+                )))
+            }
         };
 
         Ok(LowLevelDriveOperation::insert_for_known_path_key_element(

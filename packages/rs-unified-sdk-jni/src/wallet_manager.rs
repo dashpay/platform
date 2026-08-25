@@ -623,6 +623,59 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
+/// `core_wallet_set_gap_limit` — widen an account's address-pool gap
+/// limit, generating the addresses the wider limit now requires (capped
+/// Rust-side at `MAX_GAP_LIMIT`). The window a compact-filter scan watches
+/// is `last used index + gap`, so this is the host's lever for wallets
+/// whose usage frontier moved OUTSIDE the SDK's view (another client on
+/// the same seed — dashj during the migration — spending past the default
+/// window; observed in the field as change addresses the SDK refused to
+/// recognise). `account_type`: 0 BIP44, 1 BIP32, 2 CoinJoin
+/// (3 AllSpendable is rejected — gap limits are per-account).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletSetGapLimit(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    account_type: jni::sys::jint,
+    account_index: jni::sys::jint,
+    gap_limit: jni::sys::jint,
+) {
+    guard(&mut env, (), |env| {
+        // A gap limit belongs to ONE account's address pools; the
+        // AllSpendable aggregate (3) has no pool of its own, so reject it
+        // here rather than letting the per-account FFI fail opaquely.
+        let account_type = match core_account_type(account_type) {
+            Some(platform_wallet_ffi::CoreAccountTypeFFI::AllSpendable) | None => {
+                throw_sdk_exception(
+                    env,
+                    1,
+                    "accountType must be a concrete account (0=BIP44, 1=BIP32, 2=CoinJoin)",
+                );
+                return;
+            }
+            Some(concrete) => concrete,
+        };
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return;
+        }
+        if gap_limit <= 0 {
+            throw_sdk_exception(env, 1, "gapLimit must be positive");
+            return;
+        }
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_set_gap_limit(
+                wallet_handle as Handle,
+                account_type,
+                account_index as u32,
+                gap_limit as u32,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─────
 //
 // The base refactor replaced the one-shot `core_wallet_send_to_addresses`
