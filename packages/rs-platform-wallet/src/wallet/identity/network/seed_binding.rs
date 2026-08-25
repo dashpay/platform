@@ -9,6 +9,13 @@
 //! Keychain slot — the signer resolving some other wallet's mnemonic — derives
 //! a different xpub and is refused, so it can never sign for the wrong wallet.
 //! This is the wrong-seed detection without ever holding a resident seed.
+//!
+//! The check is also the gate in front of the deferred contact-crypto drain —
+//! see [`PlatformWallet::drain_pending_contact_crypto_verified`], the primitive
+//! every client drains through so none of them can forget it.
+
+use dpp::identity::signer::Signer;
+use dpp::identity::IdentityPublicKey;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
@@ -113,6 +120,88 @@ impl PlatformWallet {
                 wallet_id: hex::encode(self.wallet_id()),
             })
         }
+    }
+
+    /// Drain the deferred contact-crypto queue, but only through a provider
+    /// that has been shown to resolve this wallet's seed.
+    ///
+    /// Runs the provider-only ops
+    /// ([`drain_pending_contact_crypto_until`]) and, when an identity signer is
+    /// supplied, the DIP-15 auto-accept pass
+    /// ([`drain_auto_accepts_until`]) — the same pair every drain entry point
+    /// runs — and returns their combined completed count. `deadline` bounds
+    /// both from the inside; `None` is unbounded.
+    ///
+    /// # Why the gate lives here
+    ///
+    /// Everything the drain derives comes from whatever seed the provider
+    /// resolves, and none of it is authenticated. A provider mapped to the
+    /// wrong wallet derives contact receiving xpubs from the wrong seed, and
+    /// `register_contact_account` keys its existence check on `(index, us,
+    /// them)` rather than on the xpub — so the wrong addresses are written
+    /// once and every later correct-seed pass no-ops. The corruption is
+    /// permanent and its only symptom is payments that never arrive.
+    ///
+    /// Putting the check in each client is what lets a client forget it: iOS
+    /// enforced it in its Swift wrapper while the FFI drain entry point had no
+    /// gate at all, so a JNI binding written against that entry point
+    /// inherited the bug rather than the rule. This is the one primitive both
+    /// the startup sequence and the FFI drain call, so there is a single place
+    /// the gate can be removed from and none where it can be omitted.
+    ///
+    /// # Cost
+    ///
+    /// Proportional to the risk: an empty queue would derive nothing, so there
+    /// is no wrong-seed write to prevent and the check is skipped entirely —
+    /// a warm launch with nothing queued resolves no key material at all. Both
+    /// drains ride the same queue, so one count covers both.
+    ///
+    /// # Errors
+    ///
+    /// Fails closed on **every** verification error, not only on
+    /// [`PlatformWalletError::SeedMismatch`]: a provider that cannot answer has
+    /// not been shown to own this wallet. Skipping costs nothing that is not
+    /// recoverable — the queue is untouched, so the next signer-present drain
+    /// completes exactly the work this one declined to guess at.
+    ///
+    /// [`drain_pending_contact_crypto_until`]: crate::wallet::identity::network::DashPayView::drain_pending_contact_crypto_until
+    /// [`drain_auto_accepts_until`]: crate::wallet::identity::network::DashPayView::drain_auto_accepts_until
+    pub async fn drain_pending_contact_crypto_verified<C, S>(
+        &self,
+        crypto: &C,
+        identity_signer: Option<&S>,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<usize, PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let dashpay = self.identity().dashpay();
+        if dashpay.drainable_contact_crypto_count().await == 0 {
+            return Ok(0);
+        }
+
+        self.verify_seed_binds(crypto).await.inspect_err(|e| {
+            tracing::error!(
+                wallet_id = %hex::encode(self.wallet_id()),
+                error = %e,
+                "the contact-crypto provider does not bind to this wallet's seed; skipping \
+                 the drain rather than deriving contact addresses that could never be corrected"
+            );
+        })?;
+
+        let drained = dashpay
+            .drain_pending_contact_crypto_until(crypto, deadline)
+            .await;
+        let accepted = match identity_signer {
+            Some(signer) => {
+                dashpay
+                    .drain_auto_accepts_until(signer, crypto, deadline)
+                    .await
+            }
+            None => 0,
+        };
+        Ok(drained + accepted)
     }
 }
 
@@ -505,5 +594,209 @@ mod tests {
             matches!(err, PlatformWalletError::InvalidIdentityData(_)),
             "expected InvalidIdentityData, got: {err:?}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // The gate in front of the drain.
+    //
+    // `verify_seed_binds` above proves the check itself is right. These prove
+    // the drain cannot run without it — the property that matters, because the
+    // FFI entry point every JNI client binds to used to call the drains
+    // directly and skip the check entirely.
+    // -----------------------------------------------------------------------
+
+    /// A different valid BIP-39 vector: the mis-mapped Keychain slot.
+    const FOREIGN_MNEMONIC: &str =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
+    /// Only ever passed as `None`, so the auto-accept pass is skipped — but the
+    /// generic still has to be named.
+    #[derive(Debug)]
+    struct UnusedSigner;
+
+    #[async_trait::async_trait]
+    impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> for UnusedSigner {
+        async fn sign(
+            &self,
+            _key: &dpp::identity::IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            unreachable!("the auto-accept pass is never reached with a None signer")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &dpp::identity::IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("the auto-accept pass is never reached with a None signer")
+        }
+
+        fn can_sign_with(&self, _key: &dpp::identity::IdentityPublicKey) -> bool {
+            false
+        }
+    }
+
+    /// A wallet owning one identity with a single queued `RegisterReceiving`
+    /// op — the smallest state in which the drain has real work, and the op
+    /// that derives a contact receiving xpub straight from the provider with
+    /// no network round trip.
+    async fn wallet_with_queued_contact_crypto() -> (
+        Arc<PlatformWalletManager<NoopPersister>>,
+        Arc<crate::PlatformWallet>,
+        WalletId,
+    ) {
+        use crate::changeset::{
+            upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+        };
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+        use dpp::identity::v0::IdentityV0;
+        use dpp::prelude::Identifier;
+
+        let manager = make_manager();
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed_for(TEST_MNEMONIC),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        let wallet_id = wallet.wallet_id();
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+
+        let mut wm = manager.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+        info.identity_manager
+            .add_identity(
+                dpp::identity::Identity::V0(IdentityV0 {
+                    id: Identifier::from([1u8; 32]),
+                    public_keys: std::collections::BTreeMap::new(),
+                    balance: 0,
+                    revision: 0,
+                }),
+                0,
+                wallet_id,
+                &persister,
+            )
+            .expect("add identity");
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&Identifier::from([1u8; 32]))
+            .expect("managed identity");
+        upsert_pending_contact_crypto(
+            managed.dashpay_pending_contact_crypto_mut(),
+            PendingContactCrypto {
+                owner_identity_id: Identifier::from([1u8; 32]),
+                contact_id: Identifier::from([2u8; 32]),
+                op: PendingContactCryptoOp::RegisterReceiving,
+                enqueued_at_ms: 0,
+            },
+        );
+        drop(wm);
+
+        (manager, wallet, wallet_id)
+    }
+
+    /// The DashPay receiving accounts the wallet is watching — the thing a
+    /// wrong-seed drain corrupts. `register_contact_account` keys its
+    /// existence check on `(index, us, them)` and NOT on the xpub, so an
+    /// account written from the wrong seed is never revisited.
+    async fn receiving_account_count(
+        manager: &PlatformWalletManager<NoopPersister>,
+        wallet_id: &WalletId,
+    ) -> usize {
+        let wm = manager.wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .map(|info| info.core_wallet.accounts.dashpay_receival_accounts.len())
+            .unwrap_or(0)
+    }
+
+    async fn drainable(wallet: &crate::PlatformWallet) -> usize {
+        wallet
+            .identity()
+            .dashpay()
+            .drainable_contact_crypto_count()
+            .await
+    }
+
+    /// The defect: a provider resolving someone else's seed derives contact
+    /// receiving xpubs that are written once and never corrected, so the
+    /// wallet watches addresses nobody pays to. The drain must not run at all,
+    /// and the queue must survive intact for the next signer-present attempt.
+    #[tokio::test]
+    async fn a_wrong_seed_provider_is_refused_before_the_drain() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        assert_eq!(receiving_account_count(&manager, &wallet_id).await, 0);
+        assert_eq!(drainable(&wallet).await, 1);
+
+        let foreign = SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), Network::Testnet);
+        let err = wallet
+            .drain_pending_contact_crypto_verified(&foreign, None::<&UnusedSigner>, None)
+            .await
+            .expect_err("a provider that does not own the wallet must be refused");
+
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "the refusal must be the typed wrong-seed error, got: {err:?}"
+        );
+        assert_eq!(
+            receiving_account_count(&manager, &wallet_id).await,
+            0,
+            "not one contact account may be registered from the wrong seed"
+        );
+        assert_eq!(
+            drainable(&wallet).await,
+            1,
+            "the queue must survive so the next correct-seed drain can do the work"
+        );
+    }
+
+    /// The other half: the wallet's own seed passes the gate and the drain
+    /// runs. Without this the test above would also pass if the gate simply
+    /// refused everything.
+    #[tokio::test]
+    async fn the_owning_seed_passes_the_gate_and_the_drain_runs() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+
+        let owning = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+        let drained = wallet
+            .drain_pending_contact_crypto_verified(&owning, None::<&UnusedSigner>, None)
+            .await
+            .expect("the wallet's own seed must bind");
+
+        assert_eq!(drained, 1, "the queued RegisterReceiving op must complete");
+        assert_eq!(
+            receiving_account_count(&manager, &wallet_id).await,
+            1,
+            "the contact receiving account must exist after a verified drain"
+        );
+    }
+
+    /// The gate is paid for only when there is something to protect. An empty
+    /// queue would derive nothing, so no key material is resolved — which is
+    /// what keeps this affordable on a warm launch. Proven with a provider
+    /// that would FAIL the check: an `Ok` shows it was never consulted.
+    #[tokio::test]
+    async fn an_empty_queue_never_consults_the_provider() {
+        let manager = make_manager();
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed_for(TEST_MNEMONIC),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        assert_eq!(drainable(&wallet).await, 0);
+
+        let foreign = SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), Network::Testnet);
+        let drained = wallet
+            .drain_pending_contact_crypto_verified(&foreign, None::<&UnusedSigner>, None)
+            .await
+            .expect("with nothing to drain the binding check must not run at all");
+        assert_eq!(drained, 0);
     }
 }
