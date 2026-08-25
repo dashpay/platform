@@ -2,6 +2,8 @@ import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory
 import HomeDir from '../../../src/config/HomeDir.js';
 import renderCertificateGuidance from '../../../src/ssl/renderCertificateGuidance.js';
 import { CERTIFICATE_REASONS, CERTIFICATE_STATUS } from '../../../src/ssl/checkGatewayCertificateFactory.js';
+import deriveRenewalGuidance from '../../../src/ssl/renewalGuidance.js';
+import RenewalRecord from '../../../src/ssl/renewalRecord/RenewalRecord.js';
 
 describe('renderCertificateGuidance', () => {
   let config;
@@ -23,6 +25,36 @@ describe('renderCertificateGuidance', () => {
     expiresInDays: -111,
     ...overrides,
   });
+
+  /**
+   * Build the derived state the way the update command does, from a real
+   * record, so these assert the shipped derivation rather than a hand-made
+   * shape that could drift from it.
+   *
+   * @param {Object} [options]
+   * @return {Object}
+   */
+  const guidanceFor = ({ code = null, issuance = null, unreadable = false } = {}) => {
+    if (unreadable) {
+      return deriveRenewalGuidance({ isRecordUnreadable: true });
+    }
+
+    if (code === null) {
+      return deriveRenewalGuidance({});
+    }
+
+    return deriveRenewalGuidance({
+      record: RenewalRecord.fromObject({
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code,
+        attemptedAt: new Date().toISOString(),
+        consecutiveFailures: 1,
+        issuanceSpentAt: issuance === 'spent' ? new Date().toISOString() : null,
+        issuanceUncertainAt: issuance === 'uncertain' ? new Date().toISOString() : null,
+      }),
+    });
+  };
 
   /**
    * @param {Object} [options]
@@ -526,7 +558,7 @@ describe('renderCertificateGuidance', () => {
 
       const output = render({
         verdict: verdict({ provider: 'letsencrypt' }),
-        renewal: { code: 'PORT_80_WRONG_RESPONDER' },
+        renewal: guidanceFor({ code: 'PORT_80_WRONG_RESPONDER' }),
       });
 
       expect(output).to.contain("something answered on port 80, but not this node's certificate check");
@@ -539,7 +571,7 @@ describe('renderCertificateGuidance', () => {
     it('should state the ZeroSSL limit as what happened once ZeroSSL has said so', () => {
       const output = render({
         verdict: verdict({ provider: 'zerossl' }),
-        renewal: { code: 'QUOTA_EXHAUSTED' },
+        renewal: guidanceFor({ code: 'QUOTA_EXHAUSTED' }),
       });
 
       expect(output).to.contain('ZeroSSL will not issue another one');
@@ -553,10 +585,10 @@ describe('renderCertificateGuidance', () => {
 
       const output = render({
         verdict: verdict({ provider: 'letsencrypt' }),
-        renewal: { code: 'RATE_LIMITED' },
+        renewal: guidanceFor({ code: 'RATE_LIMITED' }),
       });
 
-      expect(output).to.contain('temporarily refused this address');
+      expect(output).to.contain('temporarily refused further attempts');
       expect(output).to.not.contain('ssl obtain');
     });
 
@@ -565,7 +597,7 @@ describe('renderCertificateGuidance', () => {
 
       const output = render({
         verdict: verdict({ provider: 'letsencrypt' }),
-        renewal: { code: 'CERTIFICATE_ISSUED_NOT_SAVED' },
+        renewal: guidanceFor({ code: 'CERTIFICATE_ISSUED_NOT_SAVED', issuance: 'spent' }),
       });
 
       expect(output).to.contain('already spent');
@@ -580,7 +612,7 @@ describe('renderCertificateGuidance', () => {
 
       const output = render({
         verdict: verdict({ provider: 'letsencrypt' }),
-        renewal: { code: 'PORT_80_UNREACHABLE', isIssuanceSpent: true },
+        renewal: guidanceFor({ code: 'PORT_80_UNREACHABLE', issuance: 'spent' }),
       });
 
       expect(output).to.not.contain('ssl obtain');
@@ -595,11 +627,11 @@ describe('renderCertificateGuidance', () => {
 
       const output = render({
         verdict: verdict({ provider: 'letsencrypt' }),
-        isRenewalUnreadable: true,
+        renewal: guidanceFor({ unreadable: true }),
       });
 
       expect(output).to.not.contain('ssl obtain');
-      expect(output).to.contain('could not read');
+      expect(output).to.contain('may already have been issued');
     });
 
     it('should withhold the obtain command for a cause that established nothing', () => {
@@ -607,7 +639,7 @@ describe('renderCertificateGuidance', () => {
 
       const output = render({
         verdict: verdict({ provider: 'letsencrypt' }),
-        renewal: { code: 'UNKNOWN' },
+        renewal: guidanceFor({ code: 'UNKNOWN' }),
       });
 
       expect(output).to.not.contain('ssl obtain');
@@ -629,7 +661,7 @@ describe('renderCertificateGuidance', () => {
 
       const output = render({
         verdict: verdict({ provider: 'letsencrypt' }),
-        renewal: { code: 'PORT_80_UNREACHABLE', detail: 'SHOULD-NOT-APPEAR' },
+        renewal: guidanceFor({ code: 'PORT_80_UNREACHABLE' }),
       });
 
       expect(output).to.not.contain('SHOULD-NOT-APPEAR');

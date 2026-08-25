@@ -14,6 +14,7 @@ import RenewalRecordRepository, {
 import { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewal-failure.js';
 import LegoArtifactsMissingError from '../../../src/ssl/errors/LegoArtifactsMissingError.js';
 import LegoResultNotObservedError from '../../../src/ssl/errors/LegoResultNotObservedError.js';
+import LegoDidNotStartError from '../../../src/ssl/errors/LegoDidNotStartError.js';
 
 const CONFIG_NAME = 'mainnet';
 const PROVIDER = 'letsencrypt';
@@ -160,6 +161,91 @@ describe('recordRenewalOutcome', () => {
     }));
 
     expect(read().state).to.not.equal(RENEWAL_RECORD_STATES.PRESENT);
+  });
+
+  it('should not let a superseded chain describe a node it no longer renews', () => {
+    // The old job's callback keeps running after the configuration watcher
+    // hands over, and both chains write to the same file. Without a fence the
+    // attempt that was replaced overwrites the one that replaced it, and both
+    // say letsencrypt so the provider guard cannot see it.
+    const superseded = renewalRecordRepository.claimGeneration(CONFIG_NAME);
+    const current = renewalRecordRepository.claimGeneration(CONFIG_NAME);
+
+    recordRenewalFailure({
+      renewalRecordRepository,
+      homeDir,
+      configName: CONFIG_NAME,
+      provider: PROVIDER,
+      code: RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING,
+      generation: current,
+    });
+
+    recordRenewalFailure({
+      renewalRecordRepository,
+      homeDir,
+      configName: CONFIG_NAME,
+      provider: PROVIDER,
+      error: new Error('urn:ietf:params:acme:error:rateLimited :: too many'),
+      generation: superseded,
+    });
+
+    expect(read().record.getCode()).to.equal(RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING);
+  });
+
+  it('should keep the fence after the record is cleared, so a stale writer cannot recreate it', () => {
+    // A fence living only inside the record would not survive its removal: the
+    // superseded writer finds nothing on disk, concludes it is first, and
+    // resurrects state the current chain deliberately dropped.
+    const superseded = renewalRecordRepository.claimGeneration(CONFIG_NAME);
+
+    fail(new Error('urn:ietf:params:acme:error:connection :: timeout'));
+
+    const current = renewalRecordRepository.claimGeneration(CONFIG_NAME);
+    clearRenewalRecord({ renewalRecordRepository, configName: CONFIG_NAME, generation: current });
+
+    expect(read().state).to.equal(RENEWAL_RECORD_STATES.ABSENT);
+
+    recordRenewalFailure({
+      renewalRecordRepository,
+      homeDir,
+      configName: CONFIG_NAME,
+      provider: PROVIDER,
+      error: new Error('urn:ietf:params:acme:error:connection :: timeout'),
+      generation: superseded,
+    });
+
+    expect(read().state).to.equal(RENEWAL_RECORD_STATES.ABSENT);
+  });
+
+  it('should not let a superseded chain delete what the current one recorded', () => {
+    const superseded = renewalRecordRepository.claimGeneration(CONFIG_NAME);
+    const current = renewalRecordRepository.claimGeneration(CONFIG_NAME);
+
+    recordRenewalFailure({
+      renewalRecordRepository,
+      homeDir,
+      configName: CONFIG_NAME,
+      provider: PROVIDER,
+      error: new Error('urn:ietf:params:acme:error:connection :: timeout'),
+      generation: current,
+    });
+
+    clearRenewalRecord({ renewalRecordRepository, configName: CONFIG_NAME, generation: superseded });
+
+    expect(read().state).to.equal(RENEWAL_RECORD_STATES.PRESENT);
+  });
+
+  it('should treat a start Docker never confirmed as one that may have spent an issuance', () => {
+    // Docker can reject a start it already accepted, so the certificate check
+    // may be running and may already have asked the authority.
+    fail(new Error('guidance', {
+      cause: new LegoDidNotStartError(new Error('connection reset'), false),
+    }));
+
+    const { record } = read();
+
+    expect(record.getCode()).to.equal(RENEWAL_FAILURE_CODES.HELPER_START_UNCONFIRMED);
+    expect(record.isIssuanceUncertain()).to.equal(true);
   });
 
   it('should clear a spent issuance once a certificate actually arrives', () => {

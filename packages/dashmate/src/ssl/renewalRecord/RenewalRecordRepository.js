@@ -28,6 +28,67 @@ const RECORD_FILE_MODE = 0o644;
 
 export default class RenewalRecordRepository {
   /**
+   * The high-water generation, kept beside the record and never removed with it.
+   *
+   * A fence that lived only inside the record would not survive the record
+   * being cleared: a superseded writer would find nothing on disk, conclude it
+   * was first, and recreate state the current chain had deliberately dropped.
+   */
+  #generationPath(configName) {
+    return this.homeDir.joinPath(configName, 'platform', 'gateway', 'ssl', '.renewal-generation');
+  }
+
+  /**
+   * @param {string} configName
+   * @return {number}
+   */
+  #readGeneration(configName) {
+    try {
+      const parsed = Number.parseInt(fs.readFileSync(this.#generationPath(configName), 'utf8'), 10);
+
+      return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Take the next generation, making every earlier holder superseded.
+   *
+   * Claimed once per scheduling chain, and again by a certificate installed by
+   * hand - whoever acts now outranks an attempt still in flight from before.
+   *
+   * @param {string} configName
+   * @return {number}
+   */
+  claimGeneration(configName) {
+    const next = this.#readGeneration(configName) + 1;
+    const generationPath = this.#generationPath(configName);
+
+    fs.mkdirSync(path.dirname(generationPath), { recursive: true });
+    writeFileAtomic.sync(generationPath, `${next}\n`, { encoding: 'utf8', mode: RECORD_FILE_MODE });
+
+    return next;
+  }
+
+  /**
+   * Whether a holder of this generation may still write.
+   *
+   * @param {string} configName
+   * @param {number|null} generation
+   * @return {boolean}
+   */
+  #isCurrent(configName, generation) {
+    // An unfenced caller is one that predates the fence or has no chain of its
+    // own; it is not superseded by anything.
+    if (generation === null || generation === undefined) {
+      return true;
+    }
+
+    return generation >= this.#readGeneration(configName);
+  }
+
+  /**
    * @param {HomeDir} homeDir
    */
   constructor(homeDir) {
@@ -113,9 +174,17 @@ export default class RenewalRecordRepository {
   /**
    * @param {string} configName
    * @param {RenewalRecord} record
-   * @return {void}
+   * @param {number|null} [generation] - refuses the write when superseded
+   * @return {boolean} whether the write was applied
    */
-  write(configName, record) {
+  write(configName, record, generation = null) {
+    // A superseded chain must not describe a node it no longer renews. Its
+    // configuration changed under it, and the chain that took over has already
+    // written what is true now.
+    if (!this.#isCurrent(configName, generation)) {
+      return false;
+    }
+
     const recordPath = this.getPath(configName);
 
     // The directory belongs to the certificate and is created when one is first
@@ -131,6 +200,8 @@ export default class RenewalRecordRepository {
       `${JSON.stringify(record.toObject(), undefined, 2)}\n`,
       { encoding: 'utf8', mode: RECORD_FILE_MODE },
     );
+
+    return true;
   }
 
   /**
@@ -141,9 +212,16 @@ export default class RenewalRecordRepository {
    * settles any failure that came before it.
    *
    * @param {string} configName
-   * @return {void}
+   * @param {number|null} [generation] - refuses the removal when superseded
+   * @return {boolean} whether the removal was applied
    */
-  remove(configName) {
+  remove(configName, generation = null) {
+    if (!this.#isCurrent(configName, generation)) {
+      return false;
+    }
+
     fs.rmSync(this.getPath(configName), { force: true });
+
+    return true;
   }
 }

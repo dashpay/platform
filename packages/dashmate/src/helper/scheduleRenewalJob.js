@@ -26,6 +26,8 @@ export const RETRY_INTERVAL_MS = 60 * 60 * 1000;
  * @param {DockerCompose} options.dockerCompose
  * @param {HomeDir} options.homeDir
  * @param {RenewalRecordRepository} options.renewalRecordRepository
+ * @param {number|null} options.generation - this scheduling chain's fence; a
+ *   chain superseded by a configuration change may no longer describe the node
  * @param {string} [options.apiKey] - the provider key, redacted defensively out
  *   of anything the provider echoes back into the recorded excerpt
  * @param {function(Config): Promise<boolean>} options.onConfigurationChanged
@@ -43,6 +45,7 @@ export default function scheduleRenewalJob({
   dockerCompose,
   homeDir,
   renewalRecordRepository,
+  generation = null,
   apiKey = null,
   onConfigurationChanged,
   reschedule,
@@ -90,7 +93,7 @@ export default function scheduleRenewalJob({
         // providers write to it synchronously while it runs, so clearing
         // afterwards would delete the incoming provider's first record and
         // leave a switched node reporting nothing until its next attempt.
-        clearRenewalRecord({ renewalRecordRepository, configName });
+        clearRenewalRecord({ renewalRecordRepository, configName, generation });
 
         await onConfigurationChanged(renewal.config);
 
@@ -99,7 +102,9 @@ export default function scheduleRenewalJob({
         // The certificate exists from here on, whatever happens to the signal
         // below, so it is recorded before the signal is sent rather than after
         // the whole step succeeds.
-        recordRenewalSuccess({ renewalRecordRepository, configName, provider });
+        recordRenewalSuccess({
+          renewalRecordRepository, configName, provider, generation,
+        });
 
         isRenewed = true;
 
@@ -146,11 +151,17 @@ export default function scheduleRenewalJob({
       // certificate problem, it is already reported as a stopped service, and
       // the renewal itself is already recorded as the success it was.
       if (reloadFailure !== null) {
-        recordGatewayReloadFailure({ renewalRecordRepository, configName });
+        recordGatewayReloadFailure({ renewalRecordRepository, configName, generation });
       }
     } else if (renewalFailure !== null) {
       recordRenewalFailure({
-        renewalRecordRepository, homeDir, configName, provider, error: renewalFailure, apiKey,
+        renewalRecordRepository,
+        homeDir,
+        configName,
+        provider,
+        error: renewalFailure,
+        apiKey,
+        generation,
       });
     }
   }, () => {

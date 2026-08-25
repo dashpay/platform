@@ -1220,6 +1220,41 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getSolution()).to.not.contain('ssl obtain');
     });
 
+    it('should not claim the authority was unreachable when the check may have run', () => {
+      installedValid();
+      renewalFailed({
+        code: 'HELPER_START_UNCONFIRMED',
+        issuanceUncertainAt: new Date().toISOString(),
+      });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getDescription()).to.not.contain('nothing reached');
+      expect(renewal.getSolution()).to.not.contain('ssl obtain');
+    });
+
+    it('should be less urgent for a node still far outside its renewal window', () => {
+      // A ZeroSSL API failure months before expiry is not the same emergency as
+      // a Let's Encrypt node two days from dark, and calling both HIGH teaches
+      // an operator to discount the ones that are.
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      installedValid({ validTo: validTo(60) });
+      renewalFailed({ provider: 'zerossl', code: 'PROVIDER_UNREACHABLE' });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSeverity()).to.equal(SEVERITY.MEDIUM);
+    });
+
+    it('should stay urgent inside the renewal window', () => {
+      installedValid({ validTo: validTo(1) });
+      renewalFailed();
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSeverity()).to.equal(SEVERITY.HIGH);
+    });
+
     it('should say nothing about renewal for a provider dashmate does not renew', () => {
       // `file` and `self-signed` are installed by the operator; there is no
       // scheduled renewal to report on, and reporting one would call a

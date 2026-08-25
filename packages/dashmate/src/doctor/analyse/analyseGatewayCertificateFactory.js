@@ -17,7 +17,10 @@ import {
   sanitizeDetail,
 } from '../../ssl/renewal-failure.js';
 import { RETRY_INTERVAL_MS } from '../../helper/scheduleRenewalJob.js';
+import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from '../../ssl/renewalGuidance.js';
 import { SSL_PROVIDERS } from '../../constants.js';
+import LegoCertificate from '../../ssl/letsencrypt/LegoCertificate.js';
+import ZeroSslCertificate from '../../ssl/zerossl/Certificate.js';
 
 /**
  * The manual obtain command writes certificate files but does not signal the gateway, so an
@@ -99,6 +102,9 @@ const TRUST_PATH_FAILURES = [
   'UNABLE_TO_GET_ISSUER_CERT',
   'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
 ];
+
+const LEGO_EXPIRATION_LIMIT_DAYS = LegoCertificate.EXPIRATION_LIMIT_DAYS;
+const ZEROSSL_EXPIRATION_LIMIT_DAYS = ZeroSslCertificate.EXPIRATION_LIMIT_DAYS;
 
 const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart ${cfg} --platform}`;
 
@@ -277,9 +283,13 @@ and on your router if this node is behind one.${isShortLived
  * @return {string|null} null when there is nothing for the operator to do
  */
 function renderRemedy({
-  code, remedy, cfg, force, isIssuanceSpent, isIssuanceUncertain, isCertificateUsable,
+  code, remedy, cfg, force, isIssuanceSpent, isIssuanceUncertain, isCertificateUsable, safeAction,
 }) {
   const obtain = chalk`{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}`;
+
+  // The derivation has already decided whether asking again is safe. Anything
+  // below that would print a request must not run when it says no.
+  const mayObtain = safeAction !== SAFE_ACTION.DO_NOT_OBTAIN;
 
   // The spent issuance outranks everything except its own cause's wording: it
   // is the one state where asking again has a cost that is already incurred
@@ -346,8 +356,11 @@ ${obtain}`;
 ${obtain}`;
   }
 
-  return chalk`Get a working certificate:
-${obtain}`;
+  return mayObtain
+    ? chalk`Get a working certificate:
+${obtain}`
+    : chalk`Send a report to Dash support:
+{bold.cyanBright dashmate doctor report ${cfg}}`;
 }
 
 export default function analyseGatewayCertificateFactory() {
@@ -419,6 +432,12 @@ export default function analyseGatewayCertificateFactory() {
 
     const failedRenewal = renewal?.isFailed() ? renewal : null;
 
+    // The same derivation the update surface uses. Precedence - whether asking
+    // for a certificate is safe, and what an outstanding issuance does to that
+    // - is decided in one place, because deciding it twice is what let the two
+    // surfaces contradict each other about the same node.
+    const guidance = deriveRenewalGuidance({ record: failedRenewal });
+
     // Let's Encrypt issues IP certificates on a six-day profile, so port 80 has
     // to stay open permanently. ZeroSSL's last ninety days, and telling its
     // operators the same thing is simply false.
@@ -436,8 +455,6 @@ export default function analyseGatewayCertificateFactory() {
       // Only the cause that actually produced this state may claim the
       // issuance. Carried forward from an earlier attempt it still forbids
       // asking again, but it does not get to describe a different failure.
-      const isIssuanceSpent = failedRenewal.isIssuanceSpent();
-      const isIssuanceUncertain = failedRenewal.isIssuanceUncertain();
       // Led with the cause only where the description above is about the
       // certificate rather than the renewal. An operator reads until they find
       // something to run and stops, so a repair printed above the reason it is
@@ -454,9 +471,10 @@ export default function analyseGatewayCertificateFactory() {
         remedy,
         cfg,
         force: installedForce,
-        isIssuanceSpent,
-        isIssuanceUncertain,
+        isIssuanceSpent: guidance.issuanceStatus === ISSUANCE_STATUS.SPENT,
+        isIssuanceUncertain: guidance.issuanceStatus === ISSUANCE_STATUS.UNCERTAIN,
         isCertificateUsable,
+        safeAction: guidance.safeAction,
       });
 
       if (ending) {
@@ -527,12 +545,24 @@ Obtain a new certificate. No restart needed:
       // is a couple of days away.
       const isCertificateUsable = installed.status !== 'INVALID';
 
+      // Inside the window - or overdue - the failing retries are the only thing
+      // between this node and darkness, so it is urgent. A ZeroSSL node whose
+      // API call failed months before expiry is not, and calling it HIGH there
+      // teaches an operator to discount the ones that are.
+      const expiresInDays = installed?.validTo
+        ? (new Date(installed.validTo).getTime() - sampledAt) / (24 * 60 * 60 * 1000)
+        : null;
+      const renewalWindowDays = config.get('platform.gateway.ssl.provider') === SSL_PROVIDERS.ZEROSSL
+        ? ZEROSSL_EXPIRATION_LIMIT_DAYS
+        : LEGO_EXPIRATION_LIMIT_DAYS;
+      const isInsideRenewalWindow = expiresInDays === null || expiresInDays <= renewalWindowDays;
+
       if (failedRenewal && isCertificateUsable) {
         problems.push(new Problem(
           `This node's certificate is not being renewed: `
           + `${describeRenewalFailure(failedRenewal.getCode()).sentence}.${renderDeadline(installed)}`,
           renderRenewalCause(true),
-          SEVERITY.HIGH,
+          isInsideRenewalWindow ? SEVERITY.HIGH : SEVERITY.MEDIUM,
         ));
       }
 

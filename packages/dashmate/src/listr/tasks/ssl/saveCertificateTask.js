@@ -98,7 +98,13 @@ export default function saveCertificateTaskFactory(homeDir, renewalRecordReposit
           // their node is told renewal is failing, at the moment they run the
           // command to check their work.
           try {
-            renewalRecordRepository.remove(config.getName());
+            // Claims a new generation first: the operator is acting now, so a
+            // renewal attempt still in flight from before must not be able to
+            // recreate the failure this install just settled.
+            renewalRecordRepository.remove(
+              config.getName(),
+              renewalRecordRepository.claimGeneration(config.getName()),
+            );
           } catch (e) {
             // Bookkeeping must not fail an install. The pair is already on
             // disk and the provider is already set; throwing here would report

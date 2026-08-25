@@ -1,4 +1,3 @@
-/* eslint-disable quote-props */
 import { Flags } from '@oclif/core';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import printArrayOfObjects from '../../printers/printArrayOfObjects.js';

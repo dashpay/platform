@@ -103,34 +103,34 @@ export default class Config {
    * @return {boolean} true when the path is allowed by the schema.
    */
   static isSchemaPathAllowed(path) {
-    if (typeof path !== 'string' || path.length === 0) return false;
+    if (typeof path !== 'string' || path.length === 0) { return false; }
 
     // Reject empty segments (leading/trailing/double dots, e.g. `a..b` or
     // `…buildArgs.`) — an empty key must not slip through a map's
     // `additionalProperties` descent.
     const pathSegments = path.split('.');
-    if (pathSegments.some((segment) => segment.length === 0)) return false;
+    if (pathSegments.some((segment) => segment.length === 0)) { return false; }
 
     const resolveRef = (node) => {
-      if (!node || typeof node !== 'object') return node;
-      if (typeof node.$ref !== 'string') return node;
+      if (!node || typeof node !== 'object') { return node; }
+      if (typeof node.$ref !== 'string') { return node; }
       const ref = node.$ref;
-      if (!ref.startsWith('#/')) return null;
+      if (!ref.startsWith('#/')) { return null; }
       const segments = ref.slice(2).split('/');
       let resolved = configJsonSchema;
       for (const seg of segments) {
-        if (!resolved || typeof resolved !== 'object') return null;
+        if (!resolved || typeof resolved !== 'object') { return null; }
         resolved = resolved[seg];
       }
       return resolveRef(resolved);
     };
 
     let node = resolveRef(configJsonSchema);
-    if (!node) return false;
+    if (!node) { return false; }
 
     for (const segment of pathSegments) {
       node = resolveRef(node);
-      if (!node || typeof node !== 'object') return false;
+      if (!node || typeof node !== 'object') { return false; }
 
       // Typed property.
       if (node.properties && Object.prototype.hasOwnProperty.call(node.properties, segment)) {

@@ -48,7 +48,9 @@ function readPrevious(repository, configName) {
  * @param {string} options.configName
  * @param {string} options.provider
  */
-export function recordRenewalSuccess({ renewalRecordRepository, configName, provider }) {
+export function recordRenewalSuccess({
+  renewalRecordRepository, configName, provider, generation = null,
+}) {
   attempt(() => {
     // One instant for both, so they cannot order against each other.
     const now = new Date().toISOString();
@@ -64,7 +66,7 @@ export function recordRenewalSuccess({ renewalRecordRepository, configName, prov
       issuanceSpentAt: null,
       issuanceUncertainAt: null,
       gatewayReloadFailedAt: null,
-    }));
+    }), generation);
   }, configName);
 }
 
@@ -79,9 +81,11 @@ export function recordRenewalSuccess({ renewalRecordRepository, configName, prov
  * @param {*} [options.error] - classified here, never by the caller
  * @param {string} [options.code] - when the caller already knows the cause
  * @param {string} [options.apiKey] - redacted defensively out of the excerpt
+ * @param {number|null} [options.generation] - the chain that owns this write;
+ *   a superseded chain is refused
  */
 export function recordRenewalFailure({
-  renewalRecordRepository, homeDir, configName, provider, error, code, apiKey,
+  renewalRecordRepository, homeDir, configName, provider, error, code, apiKey, generation = null,
 }) {
   attempt(() => {
     // Only this provider's own history. A provider change handed over by the
@@ -110,7 +114,10 @@ export function recordRenewalFailure({
     // The helper ran and nobody read how it finished, so a request may have
     // reached the authority. Unlike the case above this is not a certainty,
     // and it withholds the same advice for a different reason.
-    const issuanceUncertainAt = classified.code === RENEWAL_FAILURE_CODES.RESULT_UNKNOWN
+    const isIssuanceUnconfirmed = classified.code === RENEWAL_FAILURE_CODES.RESULT_UNKNOWN
+      || classified.code === RENEWAL_FAILURE_CODES.HELPER_START_UNCONFIRMED;
+
+    const issuanceUncertainAt = isIssuanceUnconfirmed
       ? new Date().toISOString()
       : asObject?.issuanceUncertainAt ?? null;
 
@@ -125,7 +132,7 @@ export function recordRenewalFailure({
       issuanceSpentAt,
       issuanceUncertainAt,
       gatewayReloadFailedAt: null,
-    }));
+    }), generation);
   }, configName);
 }
 
@@ -140,7 +147,9 @@ export function recordRenewalFailure({
  * @param {RenewalRecordRepository} options.renewalRecordRepository
  * @param {string} options.configName
  */
-export function recordGatewayReloadFailure({ renewalRecordRepository, configName }) {
+export function recordGatewayReloadFailure({
+  renewalRecordRepository, configName, generation = null,
+}) {
   attempt(() => {
     const previous = readPrevious(renewalRecordRepository, configName);
 
@@ -151,7 +160,7 @@ export function recordGatewayReloadFailure({ renewalRecordRepository, configName
     renewalRecordRepository.write(configName, RenewalRecord.fromObject({
       ...previous.toObject(),
       gatewayReloadFailedAt: new Date().toISOString(),
-    }));
+    }), generation);
   }, configName);
 }
 
@@ -167,6 +176,6 @@ export function recordGatewayReloadFailure({ renewalRecordRepository, configName
  * @param {RenewalRecordRepository} options.renewalRecordRepository
  * @param {string} options.configName
  */
-export function clearRenewalRecord({ renewalRecordRepository, configName }) {
-  attempt(() => renewalRecordRepository.remove(configName), configName);
+export function clearRenewalRecord({ renewalRecordRepository, configName, generation = null }) {
+  attempt(() => renewalRecordRepository.remove(configName, generation), configName);
 }

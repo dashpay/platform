@@ -1,4 +1,3 @@
-/* eslint-disable import-x/prefer-default-export */
 export const ServiceStatusEnum = {
   stopped: 'stopped',
   up: 'up',

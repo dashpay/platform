@@ -1,4 +1,3 @@
-/* eslint-disable import-x/prefer-default-export */
 // according doc https://dashcore.readme.io/docs/core-api-ref-remote-procedure-calls-dash#masternode-status
 export const MasternodeStateEnum = {
   WAITING_FOR_PROTX: 'WAITING_FOR_PROTX',

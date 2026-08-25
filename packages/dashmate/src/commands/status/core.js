@@ -1,4 +1,3 @@
-/* eslint-disable quote-props */
 import { Flags } from '@oclif/core';
 import { OUTPUT_FORMATS } from '../../constants.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';

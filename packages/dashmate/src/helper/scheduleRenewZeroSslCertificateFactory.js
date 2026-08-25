@@ -31,6 +31,13 @@ export default function scheduleRenewZeroSslCertificateFactory(
    */
   async function scheduleRenewZeroSslCertificate(config, onConfigurationChanged) {
     const configName = config.getName();
+
+    // Claimed once per chain. A chain started later supersedes one still in
+    // flight, so a configuration change cannot be overwritten by the attempt it
+    // replaced - the old job's callback keeps running after the watcher hands
+    // over, and both chains write to the same file.
+    const generation = renewalRecordRepository.claimGeneration(configName);
+
     let currentConfig;
 
     try {
@@ -80,6 +87,7 @@ export default function scheduleRenewZeroSslCertificateFactory(
       // nodes on mainnet are in.
       recordRenewalFailure({
         renewalRecordRepository,
+        generation,
         homeDir,
         configName,
         provider: 'zerossl',
@@ -128,6 +136,7 @@ export default function scheduleRenewZeroSslCertificateFactory(
       dockerCompose,
       homeDir,
       renewalRecordRepository,
+      generation,
       // The obtain path is the one most likely to have the provider echo the
       // key back at us, and its excerpt is what reaches a shared report.
       apiKey: currentConfig.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),

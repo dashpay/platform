@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { Listr } from 'listr2';
 import waitForDKGWindowPass from '../../core/quorum/waitForDKGWindowPass.js';
 import isMasternodeSafeToStopDuringDkg, {

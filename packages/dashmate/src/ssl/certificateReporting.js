@@ -1,5 +1,7 @@
 import renderCertificateGuidance from './renderCertificateGuidance.js';
 import { RENEWAL_RECORD_STATES } from './renewalRecord/RenewalRecordRepository.js';
+import deriveRenewalGuidance from './renewalGuidance.js';
+import { CERTIFICATE_REASONS } from './checkGatewayCertificateFactory.js';
 
 /**
  * Everything the certificate check needs to say to an operator, kept out of the
@@ -79,29 +81,27 @@ export async function reportUnresolved({
   const { state, record } = renewalRecordRepository.read(config.getName());
   const isManaged = config.get('platform.gateway.ssl.enabled') === true;
 
-  // A record that exists and cannot be read is not the same as no record. It
-  // may be the one that says an issuance is already outstanding, so restoring
-  // the ordinary obtain advice here would spend a certificate on the strength
-  // of evidence nobody could inspect.
-  const isRenewalUnreadable = isManaged && state === RENEWAL_RECORD_STATES.UNREADABLE;
-
-  const renewal = state === RENEWAL_RECORD_STATES.PRESENT
+  const applicable = state === RENEWAL_RECORD_STATES.PRESENT
     && isManaged
     && record.isFailed()
     && record.appliesTo({
       provider: config.get('platform.gateway.ssl.provider'),
       certificateValidFrom: verdict.installed ? verdict.installed.validFrom : null,
     })
-    // Both issuance markers travel with the cause. Without them this surface
-    // prints the obtain command for a repairable cause while the doctor
-    // withholds it for the same node - and that certificate is spent, or may
-    // be, whether or not the current failure is repairable.
-    ? {
-      code: record.getCode(),
-      isIssuanceSpent: record.isIssuanceSpent(),
-      isIssuanceOutstanding: record.isIssuanceOutstanding(),
-    }
+    ? record
     : null;
+
+  // Derived once, by the same function the doctor uses. Both surfaces reached
+  // their own conclusion from the raw record before, and drifted apart three
+  // times about whether a command was safe to print.
+  const renewal = deriveRenewalGuidance({
+    record: applicable,
+    // A record that exists and cannot be read may be the one that says an
+    // issuance is outstanding, so nothing may be spent on the strength of it.
+    isRecordUnreadable: isManaged && state === RENEWAL_RECORD_STATES.UNREADABLE,
+    hasNoExternalIp: verdict.reasons
+      .some(({ code }) => code === CERTIFICATE_REASONS.NO_EXTERNAL_IP),
+  });
 
   process.stderr.write(renderCertificateGuidance({
     config,
@@ -110,6 +110,5 @@ export async function reportUnresolved({
     pull,
     obtainAttemptFailed,
     renewal,
-    isRenewalUnreadable,
   }));
 }

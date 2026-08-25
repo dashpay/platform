@@ -32,6 +32,13 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
    */
   async function scheduleRenewLetsEncryptCertificate(config, onConfigurationChanged) {
     const configName = config.getName();
+
+    // Claimed once per chain. A chain started later supersedes one still in
+    // flight, so a configuration change cannot be overwritten by the attempt it
+    // replaced - the old job's callback keeps running after the watcher hands
+    // over, and both chains write to the same file.
+    const generation = renewalRecordRepository.claimGeneration(configName);
+
     let currentConfig;
 
     try {
@@ -84,6 +91,7 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
       // only the first of those is repaired by obtaining a new one.
       recordRenewalFailure({
         renewalRecordRepository,
+        generation,
         homeDir,
         configName,
         provider: 'letsencrypt',
@@ -139,6 +147,7 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
       dockerCompose,
       homeDir,
       renewalRecordRepository,
+      generation,
       onConfigurationChanged,
       reschedule: (nextConfig) => scheduleRenewLetsEncryptCertificate(
         nextConfig,

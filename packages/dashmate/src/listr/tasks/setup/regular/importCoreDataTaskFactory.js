@@ -136,10 +136,8 @@ export default function importCoreDataTaskFactory(
 
           // Store values to fill in the configure node form
 
-          // eslint-disable-next-line prefer-destructuring
           ctx.importedP2pPort = configFileContent.match(/^port=([^ \n]+)/m)?.[1];
 
-          // eslint-disable-next-line prefer-destructuring
           ctx.importedExternalIp = configFileContent.match(/^externalip=([^ \n]+)/m)?.[1];
 
           // Copy data directory to docker a volume

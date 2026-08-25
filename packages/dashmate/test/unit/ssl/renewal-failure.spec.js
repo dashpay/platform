@@ -129,6 +129,21 @@ describe('renewalFailure', () => {
         expect(describeRenewalFailure(code).remedy).to.equal(REMEDY_CLASS.SWITCH_PROVIDER);
       });
 
+      it('should not call a plan restriction the three-certificate wall', () => {
+        // 2839 is "requires an upgrade from Free Plan to Basic Plan"; the wall
+        // is 2817. Reporting the wall for both tells an operator their free
+        // certificates are used up when they may not be.
+        const error = Object.assign(
+          new Error('ZeroSSL requires an upgrade from Free Plan to Basic Plan'),
+          { code: 2839 },
+        );
+
+        const { code } = classifyRenewalFailure(error);
+
+        expect(code).to.equal(RENEWAL_FAILURE_CODES.PROVIDER_PLAN_REQUIRED);
+        expect(describeRenewalFailure(code).sentence).to.not.contain('all three');
+      });
+
       it('should name a rejected account separately from a rejected request', () => {
         const error = Object.assign(new Error('ZeroSSL API key is invalid'), { code: 101 });
 

@@ -23,7 +23,7 @@ export default class Certificate {
   /**
    * @type {string}
    */
-  // eslint-disable-next-line camelcase
+
   common_name;
 
   static EXPIRATION_LIMIT_DAYS = 3;

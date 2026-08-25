@@ -19,9 +19,11 @@ export const RENEWAL_FAILURE_CODES = {
   RATE_LIMITED: 'RATE_LIMITED',
   PROVIDER_REJECTED: 'PROVIDER_REJECTED',
   HELPER_DID_NOT_START: 'HELPER_DID_NOT_START',
+  HELPER_START_UNCONFIRMED: 'HELPER_START_UNCONFIRMED',
   CERTIFICATE_ISSUED_NOT_SAVED: 'CERTIFICATE_ISSUED_NOT_SAVED',
   RESULT_UNKNOWN: 'RESULT_UNKNOWN',
   QUOTA_EXHAUSTED: 'QUOTA_EXHAUSTED',
+  PROVIDER_PLAN_REQUIRED: 'PROVIDER_PLAN_REQUIRED',
   PROVIDER_AUTH: 'PROVIDER_AUTH',
   PROVIDER_UNREACHABLE: 'PROVIDER_UNREACHABLE',
   CERTIFICATE_FILE_MISSING: 'CERTIFICATE_FILE_MISSING',
@@ -80,7 +82,7 @@ const DESCRIPTIONS = {
     remedy: REMEDY_CLASS.FIX_LOCALLY,
   },
   [RENEWAL_FAILURE_CODES.RATE_LIMITED]: {
-    sentence: 'the certificate authority has temporarily refused this address',
+    sentence: 'the certificate authority has temporarily refused further attempts for this node',
     remedy: REMEDY_CLASS.DO_NOT_RETRY,
   },
   [RENEWAL_FAILURE_CODES.PROVIDER_REJECTED]: {
@@ -91,6 +93,13 @@ const DESCRIPTIONS = {
     sentence: 'dashmate could not start the certificate check on this machine, so nothing reached'
       + ' the certificate authority',
     remedy: REMEDY_CLASS.FIX_LOCALLY,
+  },
+  [RENEWAL_FAILURE_CODES.HELPER_START_UNCONFIRMED]: {
+    // Says nothing about whether the authority was reached, because that is
+    // exactly what is not known here.
+    sentence: 'dashmate could not tell whether the certificate check started, so it does not know'
+      + ' whether a certificate was requested',
+    remedy: REMEDY_CLASS.DO_NOT_RETRY,
   },
   [RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED]: {
     sentence: 'a certificate was issued but dashmate could not save it',
@@ -104,6 +113,10 @@ const DESCRIPTIONS = {
   [RENEWAL_FAILURE_CODES.QUOTA_EXHAUSTED]: {
     sentence: "this node's free ZeroSSL account has used all three of its certificates, so ZeroSSL"
       + ' will not issue another one',
+    remedy: REMEDY_CLASS.SWITCH_PROVIDER,
+  },
+  [RENEWAL_FAILURE_CODES.PROVIDER_PLAN_REQUIRED]: {
+    sentence: 'ZeroSSL will not issue this certificate on the plan this account is on',
     remedy: REMEDY_CLASS.SWITCH_PROVIDER,
   },
   [RENEWAL_FAILURE_CODES.PROVIDER_AUTH]: {
@@ -179,7 +192,13 @@ const ACME_PROBLEM_CODES = {
  * ZeroSSL's own numeric codes, which survive to here because the API client
  * copies them onto the error it throws.
  */
-const ZEROSSL_QUOTA_CODES = [2817, 2839];
+const ZEROSSL_QUOTA_CODES = [2817];
+
+/**
+ * A plan that will not issue what was asked for, which is not the same as a
+ * free tier that has run out of certificates.
+ */
+const ZEROSSL_PLAN_CODES = [2839];
 const ZEROSSL_AUTH_CODES = [101, 102, 2801, 2841];
 
 /**
@@ -325,6 +344,15 @@ function classifyCode(error, message) {
   }
 
   if (cause instanceof LegoDidNotStartError) {
+    // Docker can reject a start it has already accepted, and the error carries
+    // whether that was ruled out. When it was not, the certificate check may be
+    // running and may already have asked the authority for a certificate -
+    // so nothing may be claimed about what reached it, and the attempt has to
+    // be treated as one that may already have spent an issuance.
+    if (cause.neverRan === false) {
+      return RENEWAL_FAILURE_CODES.HELPER_START_UNCONFIRMED;
+    }
+
     // Bounded like everything else: this one comes from the Docker daemon,
     // which is the only message here that is not dashmate's or a certificate
     // authority's, and the pattern below is the one that is not linear.
@@ -344,6 +372,10 @@ function classifyCode(error, message) {
   if (providerCode !== null) {
     if (ZEROSSL_QUOTA_CODES.includes(providerCode)) {
       return RENEWAL_FAILURE_CODES.QUOTA_EXHAUSTED;
+    }
+
+    if (ZEROSSL_PLAN_CODES.includes(providerCode)) {
+      return RENEWAL_FAILURE_CODES.PROVIDER_PLAN_REQUIRED;
     }
 
     if (ZEROSSL_AUTH_CODES.includes(providerCode)) {
