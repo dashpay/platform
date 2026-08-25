@@ -136,20 +136,6 @@ pub fn merge_branch_pages(
     Ok(merged)
 }
 
-/// Test-only seam for [`read_branched_union`]: invoked after the
-/// internal snapshot transaction is taken and before the branched call
-/// runs, so a test can land a commit deterministically inside the
-/// window and prove the production `None` path's automatic snapshot
-/// selection end-to-end.
-#[cfg(test)]
-pub(crate) mod test_hooks {
-    use std::cell::RefCell;
-    thread_local! {
-        pub(crate) static AFTER_BRANCHED_SNAPSHOT: RefCell<Option<Box<dyn FnMut()>>> =
-            const { RefCell::new(None) };
-    }
-}
-
 /// The `(shared prefix, branch keys, shared suffix)` decomposition of a
 /// branch path set — the triple `PathQuery::new_branched_axis` takes.
 pub type BranchPathDecomposition = (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>);
@@ -380,5 +366,21 @@ pub fn axis_entries_to_ranked(
             "a branch of a {axis:?} proof verified to {} entries of a different axis shape",
             other.len()
         )))),
+    }
+}
+
+/// Test-only seam for [`read_branched_union`]: invoked after the
+/// internal snapshot transaction is taken and before the branched call
+/// runs, so a test can land a commit deterministically inside the
+/// window and prove the production `None` path's automatic snapshot
+/// selection end-to-end. Last in the file: clippy's
+/// `items_after_test_module` forbids items after a `#[cfg(test)]`
+/// module.
+#[cfg(test)]
+pub(crate) mod test_hooks {
+    use std::cell::RefCell;
+    thread_local! {
+        pub(crate) static AFTER_BRANCHED_SNAPSHOT: RefCell<Option<Box<dyn FnMut()>>> =
+            const { RefCell::new(None) };
     }
 }
