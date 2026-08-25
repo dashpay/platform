@@ -3155,13 +3155,17 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
  * routes to the ranked executor (`group_by` + a single `order_by`
  * naming the selected aggregate), `offset` skips that many ranks
  * before the returned page, so `ORDER BY avg(grade) DESC LIMIT 1
- * OFFSET 4` is the 5th-best group. The skip is **count-attested**,
- * not walked: grovedb proves it from the counted subtree
- * commitments, so the proof stays `O(log n + k)` at any offset and
- * the response echoes the attested number in
- * `RankedEntries.skipped`. There is deliberately no ceiling — an
- * offset of 4 and an offset of four billion cost the same, so
- * there is no denial-of-service lever a cap would close. An offset
+ * OFFSET 4` is the 5th-best group. The skip is **counted, not
+ * walked**: grovedb descends on each subtree's aggregate count and
+ * collapses whole subtrees that fit inside the remaining offset, so
+ * the work stays `O(log n + k)` at any offset and the response
+ * reports the skip it performed in `RankedEntries.skipped`. On a
+ * proved request that count is additionally *attested* — committed
+ * to by the proof and re-derived by the verifier; on an unproved
+ * one it is the node's own report. See `RankedEntries.skipped`. There is deliberately no ceiling — an
+ * offset of 4 and an offset of four billion cost the same *order*
+ * of work — neither walks the region it skips — so there is no
+ * denial-of-service lever a cap would close. An offset
  * past the end of the ranking is a provable answer rather than an
  * error: `entries` comes back empty and `skipped` is the ranking's
  * whole population.
@@ -3842,20 +3846,31 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries :
  * group rather than the best.
  *
  * **When a requested offset exceeds the population**, `entries`
- * is empty and `skipped` is the ranking's attested *total*
+ * is empty and `skipped` is the ranking's *total* reported
  * population — a positive, useful answer ("there are only 12
  * groups") rather than a bare empty list.
  *
- * On the proved path the number is grovedb's cryptographically
- * attested count, re-derived by the verifier from the counted
- * subtree commitments in the proof bytes rather than trusted
- * from this field; a proving client should use the verified
- * value. On the unproven read there is nothing to attest and
- * grovedb's read API does not report a short walk, so the server
- * echoes the requested offset. The two therefore disagree in
- * exactly one case — an offset past the end, where the unproven
- * read reports the request and the proved one reports the truth.
- * Callers who need the population must prove.
+ * Both paths report the same quantity: the offset you asked for
+ * when the skip succeeded, and the ranking's total population
+ * when the walk ran out of groups first. They no longer disagree
+ * anywhere, including past the end.
+ *
+ * What differs is the *warrant*, not the value. On the proved
+ * path the number is cryptographically attested — re-derived by
+ * the verifier from the counted subtree commitments in the proof
+ * bytes rather than trusted from this field — so a proving client
+ * should use the verified value and ignore this one. On the
+ * unproven path it is an **unverified claim**, exactly like the
+ * entries beside it: it equals the attested value on an honest
+ * node, and nothing forces a node to be honest. Read "the true
+ * population" as "what this node says the population is".
+ * Callers who need to trust it, rather than merely receive it,
+ * must still prove.
+ *
+ * Do not assume this field equals the offset you requested. It
+ * equals the offset only when the skip succeeded; when the walk
+ * ran out of groups first it is smaller, and that is the answer
+ * rather than an inconsistency.
  **/
 @property(nonatomic, readwrite) uint64_t skipped;
 

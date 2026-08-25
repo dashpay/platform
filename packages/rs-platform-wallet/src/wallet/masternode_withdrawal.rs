@@ -304,20 +304,6 @@ impl PlatformWallet {
         keys: &MasternodeWithdrawalKeys,
         signer: &S,
     ) -> Result<u64, PlatformWalletError> {
-        if request.amount_credits == 0 {
-            return Err(PlatformWalletError::InvalidParameter(
-                "masternode withdrawal amount must be greater than zero".to_string(),
-            ));
-        }
-        if !signer.supports(SignerMethod::Digest) {
-            return Err(PlatformWalletError::InvalidParameter(format!(
-                "signer backend cannot sign digests: it advertises {:?}, but an identity \
-                 credit withdrawal requires {:?}",
-                signer.supported_methods(),
-                SignerMethod::Digest,
-            )));
-        }
-
         // Resolve (path, expected hash160, destination) per signing key.
         let (path, expected_hash160, destination) = match request.signing_key {
             MasternodeWithdrawalKey::Owner => {
@@ -381,118 +367,235 @@ impl PlatformWallet {
             }
         };
 
-        // Owner identity id = display-order proTxHash.
-        let mut id_bytes = request.pro_tx_hash;
-        id_bytes.reverse();
-        let identity_id = Identifier::from(id_bytes);
-
-        let identity = Identity::fetch(self.sdk(), identity_id)
-            .await?
-            .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;
-
-        let identity_key = match request.signing_key {
-            MasternodeWithdrawalKey::Owner => {
-                select_owner_withdrawal_key(identity.public_keys().values(), &expected_hash160)
-            }
-            MasternodeWithdrawalKey::Transfer => {
-                select_transfer_withdrawal_key(identity.public_keys().values(), &expected_hash160)
-            }
-        }
-        .cloned()
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "the masternode identity {identity_id} has no {} key matching this wallet's key \
-                 (hash160 {}); not broadcasting",
-                match request.signing_key {
-                    MasternodeWithdrawalKey::Owner => "OWNER",
-                    MasternodeWithdrawalKey::Transfer => "TRANSFER",
-                },
-                hex::encode(expected_hash160),
-            ))
-        })?;
-
-        let identity_signer = DerivedKeyIdentitySigner {
-            signer,
-            path,
-            expected_key_hash160: expected_hash160,
-        };
-
-        let sdk = self.sdk();
-        let definitive = |e: dash_sdk::Error| {
-            crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "masternode withdrawal failed: {e}"
-                ))
-            })
-        };
-
-        // Build + sign locally. Nothing has left the wallet yet, so every
-        // error here is definitive and retryable.
-        let nonce = sdk
-            .get_identity_nonce(identity_id, true, None)
-            .await
-            .map_err(definitive)?;
-        let output_script = destination.map(|address| CoreScript::new(address.script_pubkey()));
-        let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
-            &identity,
-            output_script,
+        execute_masternode_withdrawal(
+            self.sdk(),
+            request.pro_tx_hash,
             request.amount_credits,
-            Pooling::Never,
-            MIN_CORE_FEE_PER_BYTE,
-            0,
-            identity_signer,
-            Some(&identity_key),
-            PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
-            nonce,
-            sdk.version(),
-            None,
+            request.signing_key,
+            expected_hash160,
+            path,
+            destination,
+            signer,
         )
         .await
-        .map_err(|e| definitive(dash_sdk::Error::Protocol(e)))?;
+    }
+}
 
-        // Broadcast, then wait — split so an ambiguous outcome stays typed.
-        let unconfirmed = |reason: String| PlatformWalletError::MasternodeWithdrawalUnconfirmed {
-            identity_id,
-            amount_credits: request.amount_credits,
-            reason,
-        };
-        match state_transition.broadcast(sdk, None).await {
-            Ok(()) => {}
-            Err(e) if broadcast_definitely_failed(&e) => return Err(definitive(e)),
-            Err(e) => {
-                tracing::warn!(
-                    identity = %identity_id,
-                    error = %e,
-                    "masternode withdrawal broadcast returned no verdict; the transition may \
-                     have been admitted — falling through to the result wait"
-                );
-            }
-        }
+/// The network half of a masternode withdrawal, shared by the wallet path
+/// ([`PlatformWallet::masternode_withdraw`], key resolved by derivation) and
+/// the tracked path (`PlatformWalletManager::tracked_masternode_withdraw`,
+/// key supplied by the host): fetch the owner identity (id = display-order
+/// proTxHash), select the OWNER / TRANSFER identity key matching
+/// `expected_hash160`, sign with `signer` at `path` through
+/// [`DerivedKeyIdentitySigner`] (which re-checks the derived key against
+/// `expected_hash160` before emitting a signature), broadcast, and wait for
+/// the proved balance. Error semantics are unchanged from #4451: definitive
+/// rejections stay retryable, ambiguous outcomes are
+/// [`PlatformWalletError::MasternodeWithdrawalUnconfirmed`].
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>(
+    sdk: &dash_sdk::Sdk,
+    pro_tx_hash: [u8; 32],
+    amount_credits: u64,
+    signing_key: MasternodeWithdrawalKey,
+    expected_hash160: [u8; 20],
+    path: DerivationPath,
+    destination: Option<DashAddress>,
+    signer: &S,
+) -> Result<u64, PlatformWalletError> {
+    if amount_credits == 0 {
+        return Err(PlatformWalletError::InvalidParameter(
+            "masternode withdrawal amount must be greater than zero".to_string(),
+        ));
+    }
+    if !signer.supports(SignerMethod::Digest) {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "signer backend cannot sign digests: it advertises {:?}, but an identity \
+             credit withdrawal requires {:?}",
+            signer.supported_methods(),
+            SignerMethod::Digest,
+        )));
+    }
 
-        match state_transition
-            .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
-            .await
-        {
-            Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => {
-                partial.balance.ok_or_else(|| {
-                    unconfirmed("the result proof carried no identity balance".to_string())
-                })
-            }
-            // Proved, but not the shape a withdrawal produces — the transition
-            // landed; only the balance read-back is missing.
-            Ok(_) => Err(unconfirmed(
-                "the result proof did not carry the identity's balance".to_string(),
-            )),
-            Err(e) if carries_consensus_rejection(&e) => Err(definitive(e)),
-            Err(e) => Err(unconfirmed(e.to_string())),
+    // Owner identity id = display-order proTxHash.
+    let mut id_bytes = pro_tx_hash;
+    id_bytes.reverse();
+    let identity_id = Identifier::from(id_bytes);
+
+    let identity = Identity::fetch(sdk, identity_id)
+        .await?
+        .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;
+
+    let identity_key = match signing_key {
+        MasternodeWithdrawalKey::Owner => {
+            select_owner_withdrawal_key(identity.public_keys().values(), &expected_hash160)
         }
+        MasternodeWithdrawalKey::Transfer => {
+            select_transfer_withdrawal_key(identity.public_keys().values(), &expected_hash160)
+        }
+    }
+    .cloned()
+    .ok_or_else(|| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "the masternode identity {identity_id} has no {} key matching this wallet's key \
+             (hash160 {}); not broadcasting",
+            match signing_key {
+                MasternodeWithdrawalKey::Owner => "OWNER",
+                MasternodeWithdrawalKey::Transfer => "TRANSFER",
+            },
+            hex::encode(expected_hash160),
+        ))
+    })?;
+
+    let identity_signer = DerivedKeyIdentitySigner {
+        signer,
+        path,
+        expected_key_hash160: expected_hash160,
+    };
+
+    let definitive = |e: dash_sdk::Error| {
+        crate::error::preserve_signer_key_unavailable_or(e, |e| {
+            PlatformWalletError::InvalidIdentityData(format!("masternode withdrawal failed: {e}"))
+        })
+    };
+
+    // Build + sign locally. Nothing has left the wallet yet, so every
+    // error here is definitive and retryable.
+    let nonce = sdk
+        .get_identity_nonce(identity_id, true, None)
+        .await
+        .map_err(definitive)?;
+    let output_script = destination.map(|address| CoreScript::new(address.script_pubkey()));
+    let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
+        &identity,
+        output_script,
+        amount_credits,
+        Pooling::Never,
+        MIN_CORE_FEE_PER_BYTE,
+        0,
+        identity_signer,
+        Some(&identity_key),
+        PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
+        nonce,
+        sdk.version(),
+        None,
+    )
+    .await
+    .map_err(|e| definitive(dash_sdk::Error::Protocol(e)))?;
+
+    // Broadcast, then wait — split so an ambiguous outcome stays typed.
+    let unconfirmed = |reason: String| PlatformWalletError::MasternodeWithdrawalUnconfirmed {
+        identity_id,
+        amount_credits,
+        reason,
+    };
+    match state_transition.broadcast(sdk, None).await {
+        Ok(()) => {}
+        Err(e) if broadcast_definitely_failed(&e) => return Err(definitive(e)),
+        Err(e) => {
+            tracing::warn!(
+                identity = %identity_id,
+                error = %e,
+                "masternode withdrawal broadcast returned no verdict; the transition may \
+                 have been admitted — falling through to the result wait"
+            );
+        }
+    }
+
+    match state_transition
+        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+        .await
+    {
+        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => partial
+            .balance
+            .ok_or_else(|| unconfirmed("the result proof carried no identity balance".to_string())),
+        // Proved, but not the shape a withdrawal produces — the transition
+        // landed; only the balance read-back is missing.
+        Ok(_) => Err(unconfirmed(
+            "the result proof did not carry the identity's balance".to_string(),
+        )),
+        Err(e) if carries_consensus_rejection(&e) => Err(definitive(e)),
+        Err(e) => Err(unconfirmed(e.to_string())),
+    }
+}
+
+/// A [`CoreSigner`] over ONE raw secp256k1 secret, path-agnostic — the
+/// tracked-masternode withdrawal signer, where the key was supplied by the
+/// host (keychain / Keystore) instead of derived from a wallet seed. Every
+/// `sign_ecdsa` call answers with this key regardless of the requested
+/// path; [`DerivedKeyIdentitySigner`] then re-checks the produced public
+/// key against the masternode identity key's hash160, so a wrong key still
+/// cannot produce a broadcastable signature.
+pub struct RawSecretCoreSigner {
+    secret: dashcore::secp256k1::SecretKey,
+}
+
+impl RawSecretCoreSigner {
+    /// `secret` must be a valid secp256k1 scalar (32 bytes).
+    pub fn from_bytes(secret: &[u8; 32]) -> Result<Self, PlatformWalletError> {
+        let secret = dashcore::secp256k1::SecretKey::from_slice(secret).map_err(|_| {
+            PlatformWalletError::InvalidParameter("not a valid secp256k1 private key".to_string())
+        })?;
+        Ok(Self { secret })
+    }
+
+    /// hash160 of this key's compressed public key.
+    pub fn public_key_hash160(&self) -> [u8; 20] {
+        let secp = Secp256k1::signing_only();
+        let public = dashcore::secp256k1::PublicKey::from_secret_key(&secp, &self.secret);
+        hash160::Hash::hash(&public.serialize()).to_byte_array()
+    }
+}
+
+impl fmt::Debug for RawSecretCoreSigner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RawSecretCoreSigner")
+            .finish_non_exhaustive()
+    }
+}
+
+#[async_trait]
+impl CoreSigner for RawSecretCoreSigner {
+    type Error = String;
+
+    fn supported_methods(&self) -> &[SignerMethod] {
+        &[SignerMethod::Digest]
+    }
+
+    async fn sign_ecdsa(
+        &self,
+        _path: &DerivationPath,
+        sighash: [u8; 32],
+    ) -> Result<
+        (
+            dashcore::secp256k1::ecdsa::Signature,
+            dashcore::secp256k1::PublicKey,
+        ),
+        Self::Error,
+    > {
+        let secp = Secp256k1::new();
+        let msg = Message::from_digest(sighash);
+        Ok((
+            secp.sign_ecdsa(&msg, &self.secret),
+            dashcore::secp256k1::PublicKey::from_secret_key(&secp, &self.secret),
+        ))
+    }
+
+    async fn public_key(
+        &self,
+        _path: &DerivationPath,
+    ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
+        Ok(dashcore::secp256k1::PublicKey::from_secret_key(
+            &Secp256k1::new(),
+            &self.secret,
+        ))
     }
 }
 
 /// `m/9'/coin'/3'/2'/index` — the `ProviderOwnerKeys` account base path plus
 /// the (non-hardened) key index, exactly as the account's address pool
 /// derives it.
-fn provider_owner_key_path(
+pub(crate) fn provider_owner_key_path(
     network: Network,
     index: u32,
 ) -> Result<DerivationPath, PlatformWalletError> {

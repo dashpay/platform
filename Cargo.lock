@@ -576,7 +576,7 @@ dependencies = [
  "bitflags 2.13.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1229,7 +1229,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1662,7 +1662,7 @@ dependencies = [
 [[package]]
 name = "dash-network"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -1673,7 +1673,7 @@ dependencies = [
 [[package]]
 name = "dash-network-seeds"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "dash-network",
 ]
@@ -1768,7 +1768,7 @@ dependencies = [
 [[package]]
 name = "dash-spv"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1797,7 +1797,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1823,12 +1823,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1841,7 +1841,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1856,7 +1856,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "bincode",
  "dashcore-private",
@@ -2493,7 +2493,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2554,7 +2554,7 @@ checksum = "0ce92ff622d6dadf7349484f42c93271a0d49b7cc4d466a936405bacbe10aa78"
 dependencies = [
  "cfg-if",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2923,7 +2923,7 @@ dependencies = [
 [[package]]
 name = "git-state"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 
 [[package]]
 name = "glob"
@@ -2973,7 +2973,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "axum 0.8.9",
  "bincode",
@@ -2987,6 +2987,7 @@ dependencies = [
  "grovedb-merk",
  "grovedb-merkle-mountain-range",
  "grovedb-path",
+ "grovedb-private-document-store",
  "grovedb-query",
  "grovedb-storage",
  "grovedb-version",
@@ -3011,7 +3012,7 @@ dependencies = [
 [[package]]
 name = "grovedb-bulk-append-tree"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "bincode",
  "blake3",
@@ -3020,19 +3021,22 @@ dependencies = [
  "grovedb-merkle-mountain-range",
  "grovedb-query",
  "grovedb-storage",
+ "grovedb-version",
  "hex",
+ "integer-encoding",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "grovedb-commitment-tree"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "blake3",
  "grovedb-bulk-append-tree",
  "grovedb-costs",
  "grovedb-storage",
+ "grovedb-version",
  "incrementalmerkletree",
  "orchard",
  "rusqlite",
@@ -3043,7 +3047,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -3053,24 +3057,26 @@ dependencies = [
 [[package]]
 name = "grovedb-dense-fixed-sized-merkle-tree"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "bincode",
  "blake3",
  "grovedb-costs",
  "grovedb-query",
  "grovedb-storage",
+ "grovedb-version",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "grovedb-element"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "bincode",
  "bincode_derive",
  "grovedb-path",
+ "grovedb-query",
  "grovedb-version",
  "grovedb-visualize",
  "hex",
@@ -3081,7 +3087,7 @@ dependencies = [
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -3093,7 +3099,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -3119,26 +3125,41 @@ dependencies = [
 [[package]]
 name = "grovedb-merkle-mountain-range"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "bincode",
  "blake3",
  "grovedb-costs",
  "grovedb-storage",
+ "grovedb-version",
+ "integer-encoding",
 ]
 
 [[package]]
 name = "grovedb-path"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "hex",
 ]
 
 [[package]]
+name = "grovedb-private-document-store"
+version = "5.0.1"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
+dependencies = [
+ "blake3",
+ "grovedb-bulk-append-tree",
+ "grovedb-costs",
+ "grovedb-storage",
+ "grovedb-version",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "grovedb-query"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "bincode",
  "byteorder",
@@ -3154,7 +3175,7 @@ dependencies = [
 [[package]]
 name = "grovedb-storage"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -3173,7 +3194,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "thiserror 2.0.18",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3182,7 +3203,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "hex",
  "itertools 0.14.0",
@@ -3191,7 +3212,7 @@ dependencies = [
 [[package]]
 name = "grovedbg-types"
 version = "5.0.1"
-source = "git+https://github.com/dashpay/grovedb?rev=a2791bbdca756d6a6113024aec48f09f7a33faa9#a2791bbdca756d6a6113024aec48f09f7a33faa9"
+source = "git+https://github.com/dashpay/grovedb?rev=753a11f14c9a4bc72bf2d5302751dd43d174621e#753a11f14c9a4bc72bf2d5302751dd43d174621e"
 dependencies = [
  "serde",
  "serde_with 3.21.0",
@@ -3858,7 +3879,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4114,7 +4135,7 @@ dependencies = [
 [[package]]
 name = "key-wallet"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "aes",
  "async-trait",
@@ -4143,7 +4164,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-ffi"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "cbindgen 0.29.4",
  "dash-network",
@@ -4159,7 +4180,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-manager"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=1322ef7252fe00cbe941a574c78fe94d755c27cd#1322ef7252fe00cbe941a574c78fe94d755c27cd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=33030acfd30b1d4370374924cd3869c5af1df06a#33030acfd30b1d4370374924cd3869c5af1df06a"
 dependencies = [
  "async-trait",
  "bincode",
@@ -4670,7 +4691,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5560,7 +5581,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
  "heck 0.4.1",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "petgraph",
@@ -5581,7 +5602,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5594,7 +5615,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5770,7 +5791,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6578,7 +6599,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6591,7 +6612,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6650,7 +6671,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7510,7 +7531,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8959,7 +8980,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

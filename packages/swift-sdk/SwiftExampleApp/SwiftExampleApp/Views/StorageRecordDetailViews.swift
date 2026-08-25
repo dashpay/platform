@@ -2217,6 +2217,34 @@ struct MasternodeStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentTrackedMasternode
+
+struct TrackedMasternodeStorageDetailView: View {
+    let record: PersistentTrackedMasternode
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Network", value: record.network?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "proTxHash (wire)", value: hexString(record.proTxHash))
+                FieldRow(label: "Label", value: record.label ?? "—")
+                FieldRow(
+                    label: "Added",
+                    value: dateString(Date(timeIntervalSince1970: TimeInterval(record.addedAt))))
+            }
+            Section("Snapshot") {
+                // Opaque, Rust-owned document (PUBLIC material only) —
+                // shown verbatim; only Rust interprets it.
+                Text(record.snapshotJSON)
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        }
+        .navigationTitle(record.label ?? "Tracked Masternode")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentShieldedNote
 
 struct ShieldedNoteStorageDetailView: View {

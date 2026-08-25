@@ -4,6 +4,7 @@ import { ERRORS as LETSENCRYPT_ERRORS } from '../../ssl/letsencrypt/validateLets
 import { ERRORS as ZEROSSL_ERRORS } from '../../ssl/zerossl/validateZeroSslCertificateFactory.js';
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
+import renderConfigFlag from '../../util/renderConfigFlag.js';
 
 /**
  * Whether a ZeroSSL certificate can be renewed depends on the operator's plan, which dashmate
@@ -154,10 +155,6 @@ ${LETSENCRYPT_ALTERNATIVE}`,
             };
 
             const letsEncryptProblems = {
-              [LETSENCRYPT_ERRORS.EMAIL_IS_NOT_SET]: {
-                description: 'Let\'s Encrypt email is not set.',
-                solution: chalk`Please update your configuration with {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email [EMAIL]}`,
-              },
               [LETSENCRYPT_ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
                 description: 'External IP is not set.',
                 solution: chalk`Please update your configuration to include your external IP using {bold.cyanBright dashmate config set externalIp [IP]}`,
@@ -178,11 +175,18 @@ ${LETSENCRYPT_ALTERNATIVE}`,
                 description: chalk`Let's Encrypt certificate expires at ${ssl?.data?.certificate?.expires}.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt} to renew`,
               },
+              // Never a restart. This fires because the issued certificate was not
+              // copied to where the gateway loads from, so a restart makes the gateway
+              // re-read the copy it already has - the out-of-date one. On a node still
+              // serving a valid certificate that is what takes it off the network.
               [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_INSTALLED]: {
                 description: chalk`A renewed Let's Encrypt certificate has not been installed for the gateway.`,
-                solution: chalk`The gateway keeps serving the previous certificate until it is reloaded,
-and will stop accepting clients when that one expires.
-Please restart Platform: {bold.cyanBright dashmate restart --platform}`,
+                solution: chalk`The issued certificate was never copied to where the gateway loads
+from. Install it - no restart needed:
+{bold.cyanBright dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider=letsencrypt}
+
+Do not restart Platform. That reloads the out-of-date copy and may throw away
+a working certificate.`,
               },
               [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_VALID]: {
                 description: chalk`Let's Encrypt certificate is not valid.`,
@@ -200,6 +204,7 @@ Please restart Platform: {bold.cyanBright dashmate restart --platform}`,
             const {
               description,
               solution,
+              severity = SEVERITY.HIGH,
             } = {
               ...fileProblems,
               ...providerProblems,
@@ -209,7 +214,7 @@ Please restart Platform: {bold.cyanBright dashmate restart --platform}`,
               const problem = new Problem(
                 description,
                 solution,
-                SEVERITY.HIGH,
+                severity,
               );
 
               problems.push(problem);

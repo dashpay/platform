@@ -1,6 +1,7 @@
 use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
+pub mod v10;
 pub mod v2;
 pub mod v3;
 pub mod v4;
@@ -163,6 +164,7 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub rebroadcast_expired_withdrawal_documents: FeatureVersion,
     pub append_signatures_and_broadcast_withdrawal_transactions: FeatureVersion,
     pub cleanup_expired_locks_of_withdrawal_amounts: FeatureVersion,
+    pub record_total_credits_history_for_withdrawals: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
