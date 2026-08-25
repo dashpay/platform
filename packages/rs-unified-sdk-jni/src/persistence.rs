@@ -728,9 +728,12 @@ unsafe fn persist_changeset_sweep_batch(
     // The winner's finality context: its mined height for a block-context
     // sweep, -1 for an InstantSend-locked winner still waiting to be mined.
     // The sentinel is unambiguous — block heights are non-negative — and
-    // the Kotlin bridge maps it back to null. The handler keys the whole
-    // lifetime rule of a pending-input tombstone on it: no height, no
-    // tombstone.
+    // the Kotlin bridge maps it back to null. The handler keys a
+    // pending-input tombstone's LIFETIME on it, never its existence: every
+    // non-released input keeps a durable claim in either context, stamped
+    // and collectible at the chainlock finality boundary when the winner
+    // mined, unstamped and held until resolved by proof (funding arrival,
+    // a later block-context re-stamp, or a release) when it did not.
     let winner_mined_height: i32 = if batch.has_winner_mined_height {
         batch.winner_mined_height as i32
     } else {

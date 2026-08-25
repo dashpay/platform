@@ -308,18 +308,34 @@ abstract class NativePersistenceBridge {
     open fun onWalletChangesetAccountEnd(walletId: ByteArray, accountIndex: Int): Int = 0
 
     /**
-     * Transactions the wallet removed this round, as raw 32-byte txids,
-     * each paired by index with the transaction that settled its inputs,
-     * plus the outpoints the removals actually freed. Fired once after the
-     * per-account decomposition, and only when the round swept something.
+     * Transactions the wallet removed in one sweep batch, as raw 32-byte
+     * txids, each paired by index with the transaction that settled its
+     * inputs, plus the outpoints this batch actually freed. Invoked once
+     * PER BATCH, in the round's emission order, after the per-account
+     * decomposition and only when the round swept something. The order is
+     * load-bearing, not cosmetic: batches are non-commutative — each
+     * release is true only of the wallet its own sweep saw, and a later
+     * batch can keep spent a coin an earlier one freed — so an
+     * implementation must apply every call's holds before its releases and
+     * must never fold calls together or reorder them.
      * Descriptor `([B[[B[[B[[BI)I`.
      *
      * [winnerMinedHeight] is the winner's own mined block height for a
      * block-context sweep, or -1 for an InstantSend-locked winner not yet
      * mined (the sentinel is unambiguous — block heights are
      * non-negative — and the handler maps it back to null). It keys the
-     * whole lifetime rule of a pending-input tombstone: no height, no
-     * tombstone.
+     * lifetime of the durable claim every non-released input retains: a
+     * stamped hold is collectible once the chainlock finality boundary
+     * reaches the stamp, while the null case leaves the SAME hold
+     * UNSTAMPED — an IS-locked winner has no mining deadline, so no
+     * boundary can prove the held input's funding delivered-or-never — and
+     * no collector may ever remove an unstamped hold: it resolves only
+     * through proof, when the funding TXO materializes it, a later
+     * block-context sweep re-stamps it, or a release deletes it. An
+     * implementation that drops the hold instead (either by skipping it
+     * for a -1 winner or by aging it out) deletes the only cross-restart
+     * carrier of a consumed coin's spend claim and later restores that
+     * coin as spendable.
      *
      * Each removed transaction was a recorded spend that its winner beat to
      * one of its inputs, so it can never confirm. Every other slot on this

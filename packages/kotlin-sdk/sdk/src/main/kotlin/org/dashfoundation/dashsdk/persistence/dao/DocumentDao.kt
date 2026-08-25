@@ -250,10 +250,15 @@ interface DocumentDao {
      * the junk case (a foreign input of a swept incoming payment) is
      * exactly what this removes; a genuine claim's row was already
      * deleted by the drain that moved the hold onto the TXO. Unstamped
-     * rows are never collected — no current writer produces one (a
-     * mempool-context sweep creates no tombstone, an IS-locked re-point
-     * keeps the existing stamp), so an unstamped row is legacy or foreign
-     * data and holding it forever is the safe reading.
+     * rows are never collected — and they are a CURRENT, deliberate
+     * shape, not legacy data: a mempool-context sweep (IS-locked, unmined
+     * winner) writes its tombstone with a null stamp, because such a
+     * winner has no mining deadline and no boundary can prove the held
+     * funding delivered-or-never. An unstamped hold resolves only through
+     * proof — the funding TXO drains it, a later block-context sweep
+     * re-stamps it into this collector's reach, or a release deletes it —
+     * and holding an unresolved one forever is the contract, not a safe
+     * fallback.
      */
     @Query(
         "DELETE FROM pending_inputs " +

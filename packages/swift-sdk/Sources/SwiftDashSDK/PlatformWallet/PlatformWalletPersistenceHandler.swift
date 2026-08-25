@@ -1170,13 +1170,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
                 // The winner's finality context, carried on the batch
                 // itself: `nil` means the winner is InstantSend-locked and
-                // NOT yet mined (upstream's only other sweep trigger), and
-                // such a sweep must leave no durable placeholder — this is
-                // the projection of key-wallet's `observed_spent_outpoints`,
-                // which records nothing for an unconfirmed spend. A present
-                // height is the winner's OWN mined block, the stamp every
-                // tombstone this batch writes (or re-points) carries and
-                // the collector's whole lifetime rule.
+                // NOT yet mined (upstream's only other sweep trigger). It
+                // keys a tombstone's LIFETIME, never its existence — every
+                // non-released input keeps a durable claim in either
+                // context. A present height is the winner's OWN mined
+                // block, the stamp that makes the hold collectible at the
+                // chainlock finality boundary; `nil` leaves the SAME hold
+                // unstamped, which no collector may remove — an IS-locked
+                // winner has no mining deadline, so an unstamped hold
+                // resolves only through proof: the funding TXO drains it,
+                // a later block-context sweep re-stamps it, or a release
+                // deletes it.
                 let winnerMinedHeight: UInt32? =
                     batch.has_winner_mined_height ? batch.winner_mined_height : nil
 
