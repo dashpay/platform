@@ -100,17 +100,31 @@ pub(super) fn verify_having_query(
         .metadata()
         .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
-    // Resolve any pending time-range selection into a where clause before
-    // the shape check, exactly as the server does before routing: a
-    // having-range query must have no where clauses, so a resolved
-    // selection is rejected here the same way the server rejects it —
-    // without this, the verifier would accept a query shape the server
-    // refuses. The resolved-field list is discarded: nothing survives the
-    // non-empty-where rejection to consume it.
-    super::document_query::normalize_time_range_clauses_with_metadata_time(
-        &mut request,
-        mtd.time_ms,
-    )?;
+    // Resolve any pending time-range selection through the shared
+    // normalization helper, then reject the request outright if anything
+    // resolved — mirroring the server-side rejection in drive's
+    // `execute_document_having_request`. HAVING accepts equality prefixes
+    // on compound ranked indexes (which exclude transformed indexes), so a
+    // resolved bucket-start equality would pin a *plain* ranked index on
+    // the same timestamp field, and a malicious node could return a valid
+    // proof over raw-timestamp matches at the bucket boundary instead of
+    // the requested window. Without this guard the verifier would
+    // authenticate a request shape honest servers refuse.
+    let resolved_time_ranges =
+        super::document_query::normalize_time_range_clauses_with_metadata_time(
+            &mut request,
+            mtd.time_ms,
+        )?;
+    if !resolved_time_ranges.is_empty() {
+        return Err(drive_proof_verifier::Error::RequestError {
+            error: "a HAVING query cannot carry a time-range (IN_TIME_RANGE) selection: its \
+                    equality prefixes pin plain ranked indexes, so a resolved bucket-start \
+                    equality would authenticate raw-timestamp matches at the bucket boundary \
+                    instead of window membership — the server rejects this request and the \
+                    verifier must not authenticate a proof for it"
+                .to_string(),
+        });
+    }
 
     let document_type = request
         .data_contract

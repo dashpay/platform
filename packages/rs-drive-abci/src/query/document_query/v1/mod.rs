@@ -407,6 +407,7 @@ impl<C> Platform<C> {
                 group_by,
                 having_clauses,
                 where_clauses,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 offset,

@@ -213,8 +213,14 @@ impl DocumentQuery {
     }
 
     /// Create new document query based on a [DriveDocumentQuery].
-    pub fn new_with_drive_query(d: &DriveDocumentQuery) -> Self {
-        Self::from(d)
+    ///
+    /// Fails when the drive query carries time-range resolution provenance
+    /// (`resolved_time_ranges`): the resolved bucket equality cannot be
+    /// represented without it — see the `TryFrom` impl. Build the query
+    /// with [`Self::with_time_range`] / [`Self::with_time_range_grid`]
+    /// instead for time-range selections.
+    pub fn new_with_drive_query(d: &DriveDocumentQuery) -> Result<Self, crate::error::Error> {
+        Self::try_from(d)
     }
 
     /// Point to a specific document ID.
@@ -950,8 +956,28 @@ fn encode_v0(
     })
 }
 
-impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
-    fn from(value: &'a DriveDocumentQuery<'a>) -> Self {
+impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
+    type Error = crate::error::Error;
+
+    /// Fallible by necessity: a drive query carrying `resolved_time_ranges`
+    /// holds bucket-start equalities whose meaning lives in the provenance,
+    /// and `DocumentQuery` has no field to carry it — the original
+    /// `IN_TIME_RANGE` selector cannot be reconstructed from the resolved
+    /// query. Serializing such a query would silently demote the bucket
+    /// equality to a raw-timestamp predicate: a transformed-index-only
+    /// contract then rejects the request, while a contract with a competing
+    /// plain index returns a different — but validly proven — result.
+    fn try_from(value: &'a DriveDocumentQuery<'a>) -> Result<Self, Self::Error> {
+        if !value.resolved_time_ranges.is_empty() {
+            return Err(crate::error::Error::Config(
+                "a drive query carrying time-range resolution provenance cannot be \
+                 converted to a DocumentQuery: the resolved bucket equality would be \
+                 demoted to a raw-timestamp predicate. Build the DocumentQuery with \
+                 `with_time_range` / `with_time_range_grid` instead, so the selector \
+                 is resolved against the signed response metadata"
+                    .to_string(),
+            ));
+        }
         let data_contract = value.contract.clone();
         let document_type_name = value.document_type.name();
         let where_clauses = value.internal_clauses.clone().into();
@@ -968,7 +994,7 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             None
         };
 
-        Self {
+        Ok(Self {
             // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING/time-range
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
@@ -983,44 +1009,17 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             limit,
             offset,
             start,
-        }
+        })
     }
 }
 
-impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
-    fn from(value: DriveDocumentQuery<'a>) -> Self {
-        let data_contract = value.contract.clone();
-        let document_type_name = value.document_type.name();
-        let where_clauses = value.internal_clauses.clone().into();
-        let order_by_clauses = value.order_by.iter().map(|(_, v)| v.clone()).collect();
-        let limit = value.limit.unwrap_or(0) as u32;
-        let offset = value.offset.map(u32::from);
+impl<'a> TryFrom<DriveDocumentQuery<'a>> for DocumentQuery {
+    type Error = crate::error::Error;
 
-        let start = if let Some(start_at) = value.start_at {
-            match value.start_at_included {
-                true => Some(Start::StartAt(start_at.to_vec())),
-                false => Some(Start::StartAfter(start_at.to_vec())),
-            }
-        } else {
-            None
-        };
-
-        Self {
-            // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING/time-range
-            // concept — it's a documents-only query. Default to the
-            // v1 documents shape.
-            select: SelectProjection::documents(),
-            data_contract: Arc::new(data_contract),
-            document_type_name: document_type_name.to_string(),
-            where_clauses,
-            time_range_clauses: Vec::new(),
-            group_by: Vec::new(),
-            having: Vec::new(),
-            order_by_clauses,
-            limit,
-            offset,
-            start,
-        }
+    /// By-value twin of the by-reference conversion above — same
+    /// provenance rejection, same rationale.
+    fn try_from(value: DriveDocumentQuery<'a>) -> Result<Self, Self::Error> {
+        DocumentQuery::try_from(&value)
     }
 }
 

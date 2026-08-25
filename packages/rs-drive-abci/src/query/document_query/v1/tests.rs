@@ -4041,6 +4041,7 @@ mod having_trust_boundary {
                     having: &having,
                     order_by: &[],
                     where_clauses: &[],
+                    resolved_time_ranges: &[],
                     limit: Some(10),
                     offset: None,
                     has_start_at: false,
@@ -5372,5 +5373,141 @@ mod time_range_proof_verification {
                 grid
             );
         }
+    }
+    // ----- routes that must refuse time-range selections ------------------
+
+    use drive_proof_verifier::{DocumentHavingEntries, DocumentRankedEntries};
+
+    /// The HAVING route accepts equality prefixes that pin plain ranked
+    /// indexes, and its picker excludes transformed ones — so a resolved
+    /// bucket-start equality reaching it would be served from raw
+    /// timestamps at the bucket boundary instead of the selected window.
+    /// The server must refuse the combination outright (drive owns the
+    /// rejection, through `DocumentHavingRequest::resolved_time_ranges`).
+    #[test]
+    fn the_having_route_refuses_a_time_range_selection() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            group_by: vec!["hashtag".to_string()],
+            having: vec![hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThan,
+                Value::U64(0),
+            )],
+            ..trending_request(contract.id().to_vec(), "ibiza", select_count_star())
+        };
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("transport-level success");
+        assert!(
+            format!("{:?}", result.errors).contains("time-range"),
+            "the HAVING route must refuse a time-range selection, got {:?}",
+            result.errors
+        );
+    }
+
+    /// The ranked and HAVING *verifiers* must refuse a time-range request
+    /// before authenticating anything: both surfaces pin plain ranked
+    /// indexes with equality prefixes, so a malicious node could otherwise
+    /// prove raw-timestamp matches at the bucket boundary against a request
+    /// shape every honest server rejects. The rejection fires ahead of
+    /// proof verification, so any signed response works as the fixture.
+    #[test]
+    fn ranked_and_having_verifiers_refuse_time_range_requests() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let time_range_query = || {
+            SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
+                .expect("the fixture has this document type")
+                .with_select(SelectProjection::count_star())
+                .with_time_range(CREATED_AT, TimeRangeSelector::Newest)
+        };
+
+        let error =
+            <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                time_range_query(),
+                signed_response(proof.clone(), &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect_err("the ranked verifier must refuse a time-range request");
+        assert!(
+            error.to_string().contains("time-range"),
+            "expected the ranked time-range refusal, got {error}"
+        );
+
+        let error =
+            <DocumentHavingEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                time_range_query().with_having(vec![drive::query::HavingClause {
+                    aggregate: drive::query::HavingAggregate {
+                        function: drive::query::HavingAggregateFunction::Count,
+                        field: String::new(),
+                    },
+                    operator: drive::query::HavingOperator::GreaterThan,
+                    right: drive::query::HavingRightOperand::Value(Value::U64(0)),
+                }]),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect_err("the HAVING verifier must refuse a time-range request");
+        assert!(
+            error.to_string().contains("time-range"),
+            "expected the HAVING time-range refusal, got {error}"
+        );
+    }
+
+    /// A drive query carrying resolution provenance has no faithful
+    /// `DocumentQuery` form — serializing it would demote the resolved
+    /// bucket equality to a raw-timestamp predicate — so the conversion
+    /// must refuse rather than silently rewrite the question.
+    #[test]
+    fn a_resolved_drive_query_cannot_convert_to_a_document_query() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let block_time_ms = state
+            .last_committed_block_time_ms()
+            .expect("the fixture committed a block");
+        let (clause, resolution) = drive::query::resolve_time_range_bucket_clause(
+            CREATED_AT,
+            TimeRangeSelector::Newest,
+            None,
+            document_type,
+            block_time_ms,
+        )
+        .expect("the committed block time is inside an active range");
+
+        let mut drive_query = DriveDocumentQuery::from_typed_clauses(
+            vec![clause],
+            Vec::new(),
+            None,
+            None,
+            true,
+            None,
+            &contract,
+            document_type,
+            &platform.config.drive,
+            version,
+        )
+        .expect("the resolved clause builds a drive query");
+        drive_query.resolved_time_ranges = vec![resolution];
+
+        let error = SdkDocumentQuery::try_from(&drive_query)
+            .expect_err("resolution provenance must not survive the conversion");
+        assert!(
+            error.to_string().contains("provenance"),
+            "expected the provenance rejection, got {error}"
+        );
     }
 }
