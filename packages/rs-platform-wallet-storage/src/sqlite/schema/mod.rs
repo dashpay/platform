@@ -22,7 +22,9 @@ pub mod platform_addrs;
 #[cfg(feature = "shielded")]
 pub mod shielded_viewing_keys;
 pub mod token_balances;
+pub mod tracked_masternodes;
 pub mod versions;
+pub mod wallet_meta;
 pub mod wallets;
 
 /// Map a `WalletId` to a nullable `wallet_id` column: the all-zero

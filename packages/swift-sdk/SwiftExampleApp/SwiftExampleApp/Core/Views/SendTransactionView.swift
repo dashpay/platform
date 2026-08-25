@@ -246,6 +246,15 @@ struct SendTransactionView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Send") {
+                        // The estimator reads the SDK's live platform
+                        // version on every call, and the SDK can ratchet
+                        // that version from ANY proof-verified query's
+                        // response metadata without `AppState` publishing
+                        // again — so a read taken here, immediately
+                        // before `executeSend`, is the only one
+                        // guaranteed to agree with the version the
+                        // shielded builders carve their fee at.
+                        resolveShieldedFees()
                         Task {
                             guard let sdk = platformState.sdk else { return }
                             // Look up the managed wallet by the
@@ -351,9 +360,22 @@ struct SendTransactionView: View {
                 // `canSend` can reject a sub-`min_output_amount` platform
                 // transfer up front instead of after submit.
                 resolvePlatformLimits()
+                // Same push pattern for the consensus-pinned shielded fees:
+                // the estimator needs the manager handle (it resolves the
+                // network-tracked platform version), which the view model
+                // deliberately doesn't hold.
+                resolveShieldedFees()
             }
             .onChange(of: viewModel.detectedAddressType) { _, _ in
                 autoSelectSource()
+            }
+            .onChange(of: platformState.platformProtocolVersion) { _, _ in
+                // The SDK learns the network's protocol version on a
+                // detached task after `AppState` publishes it; estimates
+                // resolved before that ratchet completed were computed at
+                // the seed version. Re-resolve so the preview matches the
+                // version the builders will read at submission time.
+                resolveShieldedFees()
             }
             .sheet(isPresented: $showQRScanner) {
                 // Same network the view model was built with
@@ -517,6 +539,36 @@ struct SendTransactionView: View {
         }
         if viewModel.platformMinOutputAmount == nil {
             viewModel.platformMinOutputAmount = try? addressWallet.minOutputAmount()
+        }
+    }
+
+    /// Resolve the consensus-pinned shielded fee estimates (2 Orchard
+    /// actions — single-note spend with change) and push them into the
+    /// view model, mirroring `resolvePlatformLimits()`. The estimator
+    /// computes at the manager's network-tracked platform version, so a
+    /// network still on an older protocol version quotes the fee its
+    /// consensus gate actually validates. A kind that fails to resolve is
+    /// simply absent — `estimateFee(for:)` falls back to the static
+    /// placeholder.
+    ///
+    /// Runs on appear, whenever `platformState.platformProtocolVersion`
+    /// publishes, and once more from the Send action: the startup refresh
+    /// is async AND can fail (it then republishes the unchanged seed),
+    /// while the SDK independently ratchets its version from any
+    /// proof-verified query's response metadata without publishing at
+    /// all. Only a read taken at submit time is guaranteed to match the
+    /// version the builders carve with (the recompute is a pure handle
+    /// lookup — no caching guard needed).
+    private func resolveShieldedFees() {
+        var fees: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
+        for kind: PlatformWalletManager.ShieldedFeeKind in [.transfer, .unshield, .withdrawal] {
+            fees[kind] = try? walletManager.estimateShieldedFee(kind: kind, numActions: 2)
+        }
+        viewModel.shieldedFeeEstimates = fees
+        // A flow detected before the push (e.g. a prefilled recipient)
+        // computed its fee from the placeholder — recompute it.
+        if viewModel.detectedFlow != nil {
+            viewModel.updateFlow()
         }
     }
 

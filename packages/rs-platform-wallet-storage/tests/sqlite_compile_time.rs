@@ -130,10 +130,6 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "invitations.rs",
         "SELECT outpoint, status, funding_index, amount_duffs",
     ),
-    (
-        "dpns_name_states.rs",
-        "SELECT document_id, identity_id, label, normalized_label",
-    ),
 ];
 
 /// TC-P1-003: writer paths in `src/sqlite/schema/*.rs` must not call

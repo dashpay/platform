@@ -41,7 +41,7 @@ impl DriveDocumentHavingQuery<'_> {
             .document_ranked
             .verify_having_range_proof
         {
-            0 => self.verify_having_range_proof_v0(proof),
+            0 => self.verify_having_range_proof_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentHavingQuery::verify_having_range_proof".to_string(),
                 known_versions: vec![0],

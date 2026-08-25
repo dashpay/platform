@@ -1195,7 +1195,8 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
-            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
+            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+            .union(PersistenceCapabilities::TRACKED_MASTERNODES);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -1204,6 +1205,29 @@ impl PlatformWalletPersistence for SqlitePersister {
         {
             capabilities
         }
+    }
+
+    fn persist_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+        records: &[platform_wallet::masternode::TrackedMasternode],
+    ) -> Result<(), PersistenceError> {
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))?;
+        schema::tracked_masternodes::replace_all(&tx, network, records)
+            .map_err(PersistenceError::from)?;
+        tx.commit()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))
+    }
+
+    fn load_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+    ) -> Result<Vec<platform_wallet::masternode::TrackedMasternode>, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        schema::tracked_masternodes::load_all(&conn, network).map_err(PersistenceError::from)
     }
 
     /// Merge `changeset` into the per-wallet buffer.
@@ -1611,6 +1635,34 @@ impl PlatformWalletPersistence for SqlitePersister {
         let ctx = LoadCtx::new(self.config.load_policy);
         schema::core_state::get_tx_record(&conn, &wallet_id, txid, &ctx)
             .map_err(PersistenceError::from)
+    }
+
+    /// Served from the `dpns_name_states` table this persister already
+    /// writes (`DPNS_NAME_STATES` is attested above), so the marketplace
+    /// sync pass can recover a departed name's `document_id` after a
+    /// restart instead of orphaning the row.
+    ///
+    /// Reads the *committed* table. In [`FlushMode::Manual`] a row that
+    /// is still sitting in the write buffer is not visible yet and this
+    /// returns `Ok(None)` — the caller degrades to the pre-fix behaviour
+    /// for that one name, never to a wrong id. Not a concern for the
+    /// departure path: it is looking for a row written by an earlier
+    /// session, and the default [`FlushMode::Immediate`] commits on every
+    /// `store`.
+    fn get_dpns_name_state(
+        &self,
+        wallet_id: WalletId,
+        wallet_identity_id: &dpp::prelude::Identifier,
+        normalized_label: &str,
+    ) -> Result<Option<platform_wallet::changeset::DpnsNameStateEntry>, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        schema::dpns_name_states::get_by_identity_and_label(
+            &conn,
+            &wallet_id,
+            wallet_identity_id,
+            normalized_label,
+        )
+        .map_err(PersistenceError::from)
     }
 }
 

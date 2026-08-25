@@ -160,7 +160,8 @@ fn offset_is_optional_defaults_to_zero_and_is_uncapped() {
     assert!(fifth_best.descending);
 
     // Far past any plausible population, and far past MAX_RANKED_LIMIT:
-    // still accepted, because offset costs nothing to prove.
+    // still accepted, because the skip is counted from subtree
+    // aggregates — work bounded by tree depth, not by the offset.
     let deep = detect_avg(false, Some(10), Some(u32::MAX)).expect("a huge OFFSET is well-formed");
     assert_eq!(deep.offset, u32::MAX);
     assert_eq!(deep.k, 10);
@@ -1298,10 +1299,10 @@ fn top_k_larger_than_the_group_count_returns_every_group() {
 ///    page is.
 /// 3. **A window entirely past the end** — the page is empty *and*
 ///    `skipped` collapses to the secondary's true population, which is
-///    the proof's way of saying "there is nothing here, and here is how
-///    much there is in total". That is the one case where the proved
-///    and unproven paths differ: the unproven read cannot see the short
-///    walk and reports the requested offset.
+///    the counted walk's way of saying "there is nothing here, and here
+///    is how much there is in total". Both paths report it: the counted
+///    descent tracks how far the skip got, so an unproven read reports a
+///    population rather than the offset it was asked for.
 #[test]
 fn offset_pages_through_the_ranking_and_the_proof_attests_the_starting_rank() {
     let (drive, contract) = setup_restaurants();
@@ -1360,8 +1361,10 @@ fn offset_pages_through_the_ranking_and_the_proof_attests_the_starting_rank() {
         "there is no rank 9 in a five-group ranking"
     );
     assert_eq!(
-        page.skipped, 9,
-        "the unproven read cannot see the short walk, so it echoes the requested offset"
+        page.skipped, 5,
+        "the unproven read reports the population it actually reached, not the requested \
+         offset of 9: grovedb's counted descent knows how far the walk got and returns it \
+         on the page"
     );
     let verified = assert_proof_round_trips(&drive, &contract, &past_end, &page.entries);
     assert_eq!(

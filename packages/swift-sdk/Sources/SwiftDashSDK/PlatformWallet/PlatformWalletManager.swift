@@ -65,6 +65,10 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Tracked asset-lock rows, including status and proof updates, can be
     /// persisted. Restart hydration is separately attested by `walletRestore`.
     public static let trackedAssetLocks: UInt64 = 1 << 9
+    /// Tracked (wallet-independent) masternodes are persisted and restored
+    /// across restarts. Mirrors
+    /// `PersistenceCapabilities::TRACKED_MASTERNODES`.
+    public static let trackedMasternodes: UInt64 = 1 << 10
 
     public let version: UInt32
     public let bits: UInt64

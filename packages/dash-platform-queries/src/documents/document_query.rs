@@ -30,6 +30,7 @@ use dpp::{
     prelude::{DataContract, Identifier},
     InvalidVectorSizeError, ProtocolError,
 };
+use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
     DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
@@ -343,9 +344,15 @@ impl DocumentQuery {
     /// Only the ranked surface honours it (see
     /// [`Self::order_by_selected_aggregate`]); on every other path the
     /// server rejects a set offset with `Unsupported`. There is no
-    /// ceiling: grovedb attests the skipped region from counted
-    /// subtree commitments instead of walking it, so a deep offset
-    /// costs exactly what a shallow one does.
+    /// ceiling: grovedb counts the skipped region from the subtree
+    /// aggregates instead of walking it, on both `prove` settings, so
+    /// the cost of a deep offset does not scale with the offset. It is
+    /// not identical to a shallow one — `offset = 0` keeps a sequential
+    /// fast path, a positive offset descends the tree in `O(log n)`,
+    /// and an offset at or past the population is answered from the
+    /// root without descending at all — but nothing here grows with how
+    /// far you page, which is why there is no ceiling. Only a proved
+    /// response additionally attests the count.
     ///
     /// An offset past the end of the ranking is a legitimate answer
     /// rather than an error — the page comes back empty, and on a
@@ -788,10 +795,28 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
         )
         .map_err(Error::Drive)?;
 
-        let limit = if request.limit != 0 {
-            Some(request.limit as u16)
-        } else {
-            None
+        // Mirror the limit contract of the server's
+        // `DriveDocumentQuery::from_typed_clauses` exactly: `0` (this
+        // struct's "unset" sentinel — V0's `limit: 0`, V1's
+        // `limit: None`) falls back to the server default, and anything
+        // above `DEFAULT_QUERY_LIMIT` (the `config.default_query_limit`
+        // every deployed server runs with) is refused with the server's
+        // own `QuerySyntaxError::InvalidLimit` rather than truncated or
+        // passed through. A `u16::try_from` alone would not do: limits
+        // 101..=65535 fit a `u16` but the server refuses them, so a raw
+        // `DriveDocumentQuery` carrying one would verify a proof no
+        // honest server could have produced.
+        let limit = match request.limit {
+            0 => Some(DEFAULT_QUERY_LIMIT),
+            limit if limit > u32::from(DEFAULT_QUERY_LIMIT) => {
+                return Err(Error::Drive(drive::error::Error::Query(
+                    drive::error::query::QuerySyntaxError::InvalidLimit(format!(
+                        "limit {} greater than max limit {}",
+                        limit, DEFAULT_QUERY_LIMIT
+                    )),
+                )));
+            }
+            limit => Some(limit as u16),
         };
 
         let (start_at, start_at_included) = match request.start.as_ref() {

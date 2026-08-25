@@ -1381,7 +1381,16 @@ impl<'a> DriveDocumentQuery<'a> {
             return Ok(main_path_query);
         }
 
-        if let Some(start_at_path_query) = start_at_path_query {
+        if let Some(mut start_at_path_query) = start_at_path_query {
+            // The cursor query selects exactly one key, so its walk
+            // direction carries no meaning — but grovedb's merge (V4+)
+            // requires every input to agree on direction and propagates
+            // the shared one to the merged root. Align it to the main
+            // query's `orderBy` direction so a descending page merges,
+            // and so the merged root keeps the direction the verifier
+            // will rebuild through this same path.
+            start_at_path_query.query.query.left_to_right =
+                main_path_query.query.query.left_to_right;
             let limit = main_path_query.query.limit.take();
             let mut merged = PathQuery::merge(
                 vec![&start_at_path_query, &main_path_query],

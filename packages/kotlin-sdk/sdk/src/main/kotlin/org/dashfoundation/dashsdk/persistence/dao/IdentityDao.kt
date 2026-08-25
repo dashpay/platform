@@ -89,6 +89,20 @@ interface IdentityDao {
     )
     suspend fun updateMainDpnsName(identityId: ByteArray, mainDpnsName: String?, nowMillis: Long): Int
 
+    /**
+     * One-shot upgrade heal — promote `isLocal` on wallet-linked rows
+     * still carrying `false`. The persister used to write a constant
+     * `false`, so a wallet's own identities (which are always local) were
+     * mis-marked on stores from that era.
+     *
+     * Promote-only and idempotent: a `true` on an unlinked row (a manual
+     * add) is never touched, and a second run matches no rows. Returns the
+     * number of rows healed. Mirror of Swift `healIdentityIsLocalFlags`
+     * (PlatformWalletPersistenceHandler.swift:4688).
+     */
+    @Query("UPDATE identities SET isLocal = 1 WHERE walletId IS NOT NULL AND isLocal = 0")
+    suspend fun healIsLocalFlags(): Int
+
     @Delete
     suspend fun delete(identity: IdentityEntity)
 

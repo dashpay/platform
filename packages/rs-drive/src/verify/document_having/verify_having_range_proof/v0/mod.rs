@@ -2,6 +2,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::{DriveDocumentHavingQuery, RankedAxis, RankedEntry, RankedEntryValue};
 use crate::verify::RootHash;
+use dpp::version::PlatformVersion;
 use grovedb::operations::proof::indexed_axis::AxisEntries;
 use grovedb::GroveDb;
 
@@ -40,6 +41,7 @@ impl DriveDocumentHavingQuery<'_> {
     pub(super) fn verify_having_range_proof_v0(
         &self,
         proof: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
         let path = self.indexed_property_name_tree_path()?;
         let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
@@ -51,18 +53,21 @@ impl DriveDocumentHavingQuery<'_> {
                 path_refs.as_slice(),
                 secondary_query,
                 Some(self.limit),
+                &platform_version.drive.grove_version,
             ),
             RankedAxis::Sum => GroveDb::verify_indexed_sum_query(
                 proof,
                 path_refs.as_slice(),
                 secondary_query,
                 Some(self.limit),
+                &platform_version.drive.grove_version,
             ),
             RankedAxis::Avg => GroveDb::verify_indexed_avg_query(
                 proof,
                 path_refs.as_slice(),
                 secondary_query,
                 Some(self.limit),
+                &platform_version.drive.grove_version,
             ),
         }
         .map_err(|e| Error::GroveDB(Box::new(e)))?;
@@ -70,6 +75,7 @@ impl DriveDocumentHavingQuery<'_> {
         let entries = match (self.bounds.axis(), result.entries) {
             (RankedAxis::Count, AxisEntries::Count(entries)) => entries
                 .into_iter()
+                .map(|entry| entry.key_pair())
                 .map(|(count, key)| RankedEntry {
                     key,
                     value: RankedEntryValue::Count(count),
@@ -77,6 +83,7 @@ impl DriveDocumentHavingQuery<'_> {
                 .collect::<Vec<_>>(),
             (RankedAxis::Sum, AxisEntries::Sum(entries)) => entries
                 .into_iter()
+                .map(|entry| entry.key_pair())
                 .map(|(sum, key)| RankedEntry {
                     key,
                     value: RankedEntryValue::Sum(sum),
@@ -84,6 +91,7 @@ impl DriveDocumentHavingQuery<'_> {
                 .collect::<Vec<_>>(),
             (RankedAxis::Avg, AxisEntries::Avg(entries)) => entries
                 .into_iter()
+                .map(|entry| entry.key_pair())
                 .map(|(avg, key)| RankedEntry {
                     key,
                     value: RankedEntryValue::AvgFixedPoint(avg),

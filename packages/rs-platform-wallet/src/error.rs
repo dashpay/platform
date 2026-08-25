@@ -578,6 +578,29 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
+    /// A masternode (evonode) identity credit withdrawal was **broadcast and
+    /// accepted**, but its execution result could not be confirmed (the
+    /// result-proof fetch/verify failed — transient DAPI/proof error or
+    /// timeout, not a Platform rejection). The claim may already have
+    /// executed, and the SDK's identity-nonce cache was bumped for it, so
+    /// re-submitting could execute a SECOND withdrawal with the next nonce.
+    /// Callers must NOT retry until they have re-read the identity's
+    /// claimable balance (and the payout) and reconciled the outcome.
+    /// `reason` carries the underlying SDK error for diagnostics.
+    ///
+    /// Shielded sibling: [`Self::ShieldedSpendUnconfirmed`]; core sibling:
+    /// [`Self::TransactionBroadcastUnconfirmed`].
+    #[error(
+        "Masternode withdrawal of {amount_credits} credits from identity {identity_id} was \
+         broadcast but its result could not be confirmed; it may already have executed — do \
+         not re-submit until the claimable balance has been re-read: {reason}"
+    )]
+    MasternodeWithdrawalUnconfirmed {
+        identity_id: Identifier,
+        amount_credits: u64,
+        reason: String,
+    },
+
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
 

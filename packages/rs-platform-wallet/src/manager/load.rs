@@ -52,6 +52,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 shielded: _,
         } = start_state;
 
+        // Tracked (wallet-independent) masternodes ride the same startup
+        // hydration; a failure logs and starts empty rather than failing
+        // wallet restore.
+        self.load_tracked_masternodes_from_persistence();
+
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
 
         // Track every wallet successfully inserted into
