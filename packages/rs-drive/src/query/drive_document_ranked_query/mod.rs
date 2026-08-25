@@ -52,7 +52,8 @@
 //!    by aggregate, not by group key — and is rejected rather than
 //!    silently ignored, as is any non-equality prefix clause except one
 //!    `IN`: exactly one leading pin may carry 2..=[`MAX_PREFIX_IN_BRANCHES`]
-//!    distinct elements, read as one walk per element and merged by
+//!    distinct elements (a single-element `IN` normalizes to the
+//!    equality pin), read as one walk per element and merged by
 //!    `(aggregate, encoded pin, group key)`, proved in a single branched
 //!    `PathQuery` envelope with per-element authenticated absence. A
 //!    `null` pin cannot combine with an `IN` (null addresses its prefix

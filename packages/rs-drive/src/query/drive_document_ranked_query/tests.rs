@@ -2746,6 +2746,14 @@ mod pinned_prefix {
             DocumentRankedResponse::Entries(page) => page,
             DocumentRankedResponse::Proof(_) => panic!("expected entries"),
         };
+        let in_page = match run(&drive, &contract, &single_in, 2, false).expect("read") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(
+            eq_page.entries, in_page.entries,
+            "a singleton IN reads exactly what the equality pin reads"
+        );
         assert!(
             eq_page.entries.iter().all(|e| e.in_key.is_none()),
             "single-branch entries carry no in_key"
@@ -3322,9 +3330,11 @@ mod pinned_prefix {
             "expected the committed-state-only rejection, got {error:?}"
         );
 
-        // The unproved read under the same transaction still serves.
+        // The unproved read is unaffected by the failed prove; it serves
+        // committed state (the transactional case is pinned by
+        // `a_branched_unproved_read_honors_the_transaction`).
         let page = match run(&drive, &contract, &pins, 2, false)
-            .expect("the unproved read is unaffected")
+            .expect("the committed unproved read is unaffected")
         {
             DocumentRankedResponse::Entries(page) => page,
             DocumentRankedResponse::Proof(_) => panic!("expected entries"),

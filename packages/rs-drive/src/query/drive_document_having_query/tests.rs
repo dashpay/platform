@@ -1894,10 +1894,10 @@ mod pinned_prefix {
         }
     }
 
-    /// `IN` on the prefix is rejected at detection with the
-    /// not-yet-supported message (v1 pins are equality-only), and a pin
-    /// on a property that is not the index's leading property fails
-    /// resolution.
+    /// `IN` on the leading prefix property resolves to one branch per
+    /// element, each bounded separately and merged (entries carrying
+    /// `in_key`), while a pin on a property that is not the index's
+    /// leading property still fails resolution.
     #[test]
     fn in_prefix_merges_branches_and_wrong_pins_are_rejected() {
         let (drive, contract) = setup_grades_compound_ranked();
