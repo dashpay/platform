@@ -33,10 +33,9 @@ impl DriveDocumentRankedQuery<'_> {
     /// the branch key itself, or any deeper pinned segment under a
     /// *present* key — contributes an **empty branch** (union
     /// semantics), exactly as the proved envelope authenticates it, and
-    /// the union is served from **one committed state**: the branched
-    /// read is bracketed against the committed root hash and retried if
-    /// a concurrent commit tears the window
-    /// (`branches::read_branches_at_one_root`). A
+    /// the union is served from **one committed state**: a `None` read
+    /// runs under a grovedb snapshot read transaction, so every
+    /// per-branch probe and walk reads the same RocksDB snapshot. A
     /// missing path under a single `==` pin *is* an error rather than
     /// an empty result: the indexed property-name tree is created when
     /// the contract is registered, so its absence means the
@@ -84,20 +83,16 @@ impl DriveDocumentRankedQuery<'_> {
     ) -> Result<RankedPage, Error> {
         if self.prefix_branches.len() > 1 {
             // The whole union is read through ONE grovedb call — a branched
-            // keys-only PathQuery — under the caller's transaction, and the
-            // call is bracketed against the committed root hash. At the
-            // pinned grovedb revision the branched read still opens one
-            // implicit transaction per suffix probe and per branch walk
-            // when no transaction is supplied (and an optimistic
-            // transaction would not pin a snapshot either), so the bracket
-            // VALIDATES what pinning would otherwise guarantee: equal root
-            // hashes around the call mean every probe and walk observed
-            // one committed state, and a torn window is retried rather
-            // than served (`branches::read_branches_at_one_root`).
-            // Absence at any depth of a branch's chain is the branched
-            // reader's empty branch, exactly as the proved path
-            // authenticates it. `offset` is grammar-rejected with `IN`,
-            // so `skipped` is always 0 here.
+            // keys-only PathQuery — pinned to ONE committed state: a `None`
+            // read runs under a grovedb snapshot read transaction, so every
+            // per-branch absence probe and axis walk inside the branched
+            // arm reads the same RocksDB snapshot and a block commit
+            // landing mid-read cannot mix committed states into the merged
+            // page. A caller transaction is used as-is — a transactional
+            // reader asks for its own writes over its base. Absence at any
+            // depth of a branch's chain is the branched reader's empty
+            // branch, exactly as the proved path authenticates it. `offset`
+            // is grammar-rejected with `IN`, so `skipped` is always 0 here.
             let grove_version = &platform_version.drive.grove_version;
             let paths = (0..self.prefix_branches.len())
                 .map(|branch| self.indexed_property_name_tree_path(branch))
@@ -115,62 +110,56 @@ impl DriveDocumentRankedQuery<'_> {
                 )
                 .keys_only(),
             );
-            let entries = super::branches::read_branches_at_one_root(
-                &drive.grove,
-                transaction,
+            let snapshot_transaction = if transaction.is_none() {
+                Some(drive.grove.start_snapshot_read_transaction())
+            } else {
+                None
+            };
+            let read_transaction = snapshot_transaction.as_ref().or(transaction);
+            let CostContext { value, cost: _ } = drive.grove.run_path_query(
+                &path_query,
+                true,
+                true,
+                true,
+                QueryResultType::QueryKeyElementPairResultType,
+                read_transaction,
                 grove_version,
-                || {
-                    let CostContext { value, cost: _ } = drive.grove.run_path_query(
-                        &path_query,
-                        true,
-                        true,
-                        true,
-                        QueryResultType::QueryKeyElementPairResultType,
-                        transaction,
-                        grove_version,
-                    );
-                    let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-                    let PathQueryRun::BranchedAxisKeys(branches) = run else {
-                        return Err(Error::Drive(DriveError::CorruptedDriveState(
-                            "a branched keys-only ranked read returned a non-branched shape"
-                                .to_string(),
-                        )));
+            );
+            let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+            let PathQueryRun::BranchedAxisKeys(branches) = run else {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched keys-only ranked read returned a non-branched shape".to_string(),
+                )));
+            };
+            if branches.len() != keys.len() || branches.iter().map(|(key, _)| key).ne(keys.iter()) {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched ranked read returned a different branch set than the request \
+                     resolved"
+                        .to_string(),
+                )));
+            }
+            let per_branch = branches
+                .into_iter()
+                .map(|(_key, page)| {
+                    let entries = match page {
+                        None => Vec::new(),
+                        Some(page) => axis_keys_to_ranked(self.axis, page)?,
                     };
-                    if branches.len() != keys.len()
-                        || branches.iter().map(|(key, _)| key).ne(keys.iter())
-                    {
-                        return Err(Error::Drive(DriveError::CorruptedDriveState(
-                            "a branched ranked read returned a different branch set than the \
-                             request resolved"
-                                .to_string(),
-                        )));
+                    if entries.len() > self.k as usize {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "a branch of a ranked read returned {} entries for k = {}",
+                            entries.len(),
+                            self.k
+                        ))));
                     }
-                    let per_branch = branches
-                        .into_iter()
-                        .map(|(_key, page)| {
-                            let entries = match page {
-                                None => Vec::new(),
-                                Some(page) => axis_keys_to_ranked(self.axis, page)?,
-                            };
-                            if entries.len() > self.k as usize {
-                                return Err(Error::Drive(DriveError::CorruptedDriveState(
-                                    format!(
-                                        "a branch of a ranked read returned {} entries for k = {}",
-                                        entries.len(),
-                                        self.k
-                                    ),
-                                )));
-                            }
-                            Ok(entries)
-                        })
-                        .collect::<Result<Vec<_>, Error>>()?;
-                    merge_branch_pages(
-                        per_branch,
-                        &self.prefix_branches,
-                        self.descending,
-                        self.k as usize,
-                    )
-                },
+                    Ok(entries)
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            let entries = merge_branch_pages(
+                per_branch,
+                &self.prefix_branches,
+                self.descending,
+                self.k as usize,
             )?;
             return Ok(RankedPage {
                 skipped: 0,

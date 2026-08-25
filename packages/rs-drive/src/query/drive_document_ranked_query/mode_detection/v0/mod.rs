@@ -16,9 +16,10 @@ use crate::query::projection::{SelectFunction, SelectProjection};
 use crate::query::{OrderClause, WhereClause, WhereOperator};
 use dpp::platform_value::Value;
 
-/// Translate a request's `where` clauses into equality pins —
-/// `(property, value)` pairs, one per clause — for the ranked and
-/// having-range surfaces.
+/// Translate a request's `where` clauses into prefix pins — one
+/// [`PrefixPin`] per clause, carrying the pinned property and its
+/// value(s): one value from an `==` clause, several from the (at most
+/// one) `IN` — for the ranked and having-range surfaces.
 ///
 /// Both surfaces read a compound index's per-prefix secondary by
 /// descending through one prefix value tree per **leading** index
@@ -137,12 +138,19 @@ pub fn prefix_pins_from_where_clauses(
 /// with no `HAVING`, no `START AT` / `START AFTER`, exactly one
 /// `GROUP BY` property, exactly one `ORDER BY` clause naming the
 /// selected aggregate, `1 ≤ n ≤` [`MAX_RANKED_LIMIT`], and any
-/// `m ≥ 0`. `WHERE` clauses, when present, must be **equality pins** on
-/// distinct properties — one per leading property of a covering
-/// compound ranked index (see
-/// [`prefix_pins_from_where_clauses`]); the ranking then reads that
-/// pinned prefix's own secondary. With no `where` the covering index is
-/// single-property, exactly as before.
+/// `m ≥ 0`. `WHERE` clauses, when present, pin distinct properties —
+/// one per leading property of a covering compound ranked index — each
+/// an **equality**, except that at most one may be a bounded **`IN`**
+/// (2..=10 distinct elements; a singleton `IN` normalizes to `==` — see
+/// [`prefix_pins_from_where_clauses`]). A `==`-pinned request reads
+/// that pinned prefix's own secondary; an `IN` fans the read out into
+/// one prefix branch per element, walked separately and merged
+/// deterministically, with merged entries carrying their branch's
+/// `in_key`. A **non-zero** `OFFSET` is rejected together with the
+/// `IN`: the counted rank-skip is attested per-secondary and cannot
+/// span the union (`OFFSET 0` stays legal as the offset-free
+/// spelling). With no `where` the covering index is single-property,
+/// exactly as before.
 ///
 /// `DESC` walks the axis from the largest aggregate down (the "top n"
 /// reading), `ASC` from the smallest up (the "bottom n" reading).

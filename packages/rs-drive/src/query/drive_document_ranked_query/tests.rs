@@ -3374,85 +3374,107 @@ mod pinned_prefix {
         );
     }
 
-    /// Commit one unrelated item so the grove root hash moves — a
-    /// stand-in for a block commit landing inside a branched read's
-    /// bracketed window.
-    fn commit_unrelated_churn(drive: &Drive, nonce: u8) {
-        use crate::drive::RootTree;
-        use grovedb::Element;
-        use grovedb_costs::CostContext;
-        use grovedb_path::SubtreePath;
-        let misc: [&[u8]; 1] = [Into::<&[u8; 1]>::into(RootTree::Misc)];
-        let CostContext { value, cost: _ } = drive.grove.insert(
-            SubtreePath::from(misc.as_ref()),
-            &[b'c', b'h', b'u', b'r', b'n', nonce],
-            Element::new_item(vec![nonce]),
-            None,
-            None,
-            &platform_version().drive.grove_version,
-        );
-        value.expect("expected to commit the unrelated churn item");
-    }
-
-    /// A commit landing inside a branched read's window is detected by
-    /// the root-hash bracket and the whole union is retried against the
-    /// new committed state — a served page can never mix two states.
+    /// The `IN` union is served from ONE committed state: a `None` read
+    /// runs under a grovedb snapshot read transaction internally, and
+    /// the same primitive is exercised here explicitly — a branched read
+    /// under a snapshot transaction taken before a commit returns the
+    /// pre-commit union (the new branch still absent, the changed page
+    /// unchanged), while a fresh committed read returns the post-commit
+    /// union.
     #[test]
-    fn a_branched_read_retries_across_a_concurrent_commit() {
-        let (drive, _contract) = setup_grades_compound_ranked();
-        let grove_version = &platform_version().drive.grove_version;
-        let mut window = 0u8;
-        let result = super::super::branches::read_branches_at_one_root(
-            &drive.grove,
-            None,
-            grove_version,
-            || {
-                window += 1;
-                if window == 1 {
-                    // A "block commit" lands mid-window.
-                    commit_unrelated_churn(&drive, window);
-                }
-                Ok(window)
-            },
-        );
-        assert_eq!(
-            result.expect("the second, untorn window serves"),
-            2,
-            "the torn first window must be discarded and retried"
-        );
-    }
+    fn a_branched_read_is_pinned_to_one_committed_state() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        let pv = platform_version();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
 
-    /// Persistent churn exhausts the retry budget and fails closed with
-    /// a retryable error instead of serving a page that may mix
-    /// committed states — or looping unboundedly.
-    #[test]
-    fn a_branched_read_racing_every_window_fails_closed() {
-        let (drive, _contract) = setup_grades_compound_ranked();
-        let grove_version = &platform_version().drive.grove_version;
-        let mut window = 0u8;
-        let error = super::super::branches::read_branches_at_one_root(
-            &drive.grove,
-            None,
-            grove_version,
-            || {
-                window += 1;
-                commit_unrelated_churn(&drive, window);
-                Ok(window)
-            },
-        )
-        .expect_err("every window is torn, so the read must fail closed");
+        let snapshot_transaction = drive.grove.start_snapshot_read_transaction();
+
+        // A "block commit" lands after the snapshot: Y's branch springs
+        // into existence and X gains a class. Documents are built with
+        // distinct seeds so they cannot collide with `insert_grades`'.
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        for (seed, identity, class, grade) in [
+            (9100u64, IDENTITY_Y, "science", 95i64),
+            (9101u64, IDENTITY_X, "art", 90i64),
+        ] {
+            let mut doc: Document = document_type
+                .random_document(Some(seed), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(identity));
+            props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to commit the post-snapshot grade");
+        }
+
+        let pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let request = || DocumentRankedRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &[],
+            order_by: &order_by,
+            where_clauses: &pins,
+            limit: Some(4),
+            offset: None,
+            has_start_at: false,
+            prove: false,
+        };
+
+        // Under the pre-commit snapshot the union is the pre-commit
+        // state: Y's branch is still absent (empty, not an error) and X
+        // has only math.
+        let pinned = match drive
+            .execute_document_ranked_request(request(), Some(&snapshot_transaction), pv)
+            .expect("the snapshot branched read serves")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
         assert_eq!(
-            window as usize,
-            super::super::branches::BRANCHED_READ_ATTEMPTS,
-            "exactly the retry budget is spent"
+            pinned.entries.len(),
+            1,
+            "the snapshot union is the pre-commit state"
         );
-        assert!(
-            matches!(
-                &error,
-                Error::Drive(crate::error::drive::DriveError::ConcurrentStateChurn(message))
-                    if message.contains("retry")
-            ),
-            "expected the concurrent-churn rejection, got {error:?}"
+        assert_eq!(pinned.entries[0].key, b"math".to_vec());
+
+        // A fresh committed read sees the post-commit union.
+        let fresh = match run(&drive, &contract, &pins, 4, false)
+            .expect("the committed branched read serves")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(
+            fresh.entries.len(),
+            3,
+            "the committed union reflects the commit"
         );
     }
 }

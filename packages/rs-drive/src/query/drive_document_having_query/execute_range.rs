@@ -12,7 +12,7 @@
 //! `pub mod execute_range;` declaration.
 
 use super::super::drive_document_ranked_query::branches::{
-    axis_keys_to_ranked, decompose_branch_paths, merge_branch_pages, read_branches_at_one_root,
+    axis_keys_to_ranked, decompose_branch_paths, merge_branch_pages,
 };
 use super::super::drive_document_ranked_query::{RankedAxis, RankedEntry, RankedEntryValue};
 use super::{AxisRangeBounds, DriveDocumentHavingQuery};
@@ -33,12 +33,20 @@ impl DriveDocumentHavingQuery<'_> {
     ///
     /// Fewer than `limit` entries is normal (fewer groups match) and is
     /// not an error; exactly `limit` entries may mean the match set was
-    /// cut. A missing path *is* an error rather than an empty result,
-    /// for the same reason as on the ranked surface: the indexed
-    /// property-name tree is created at contract registration, so its
-    /// absence means the contract-level state is not what the request
-    /// claims. (An index with no documents has the tree, with an empty
-    /// secondary, and yields an empty entry list.)
+    /// cut.
+    ///
+    /// Missing paths follow the ranked surface's rule. Under a single
+    /// `==` pin (or no pins) a missing path *is* an error rather than an
+    /// empty result: the indexed property-name tree is created at
+    /// contract registration, so its absence means the contract-level
+    /// state is not what the request claims. On an `IN`-pinned request,
+    /// an element whose branch chain is missing at ANY depth — the
+    /// branch key, or any deeper pinned segment under a *present* key —
+    /// contributes an **empty branch** instead (union semantics, exactly
+    /// as the proved envelope authenticates it), and the union is served
+    /// from one committed state (a `None` read runs under a grovedb
+    /// snapshot read transaction). An index with no documents has the
+    /// tree, with an empty secondary, and yields an empty entry list.
     pub fn execute_range_no_proof(
         &self,
         drive: &Drive,
@@ -46,12 +54,12 @@ impl DriveDocumentHavingQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<RankedEntry>, Error> {
         if self.prefix_branches.len() > 1 {
-            // One grovedb call for the whole union under the caller's
-            // transaction, bracketed against the committed root hash —
-            // same one-committed-state contract as the ranked executor
-            // (see its comment and the ranked surface's
-            // `branches::read_branches_at_one_root`). Absence at any
-            // depth is the branched reader's empty branch.
+            // One grovedb call for the whole union, pinned to ONE
+            // committed state — a `None` read runs under a grovedb
+            // snapshot read transaction, a caller transaction is used
+            // as-is; same contract as the ranked executor (see its
+            // comment). Absence at any depth is the branched reader's
+            // empty branch.
             let grove_version = &platform_version.drive.grove_version;
             let paths = (0..self.prefix_branches.len())
                 .map(|branch| self.indexed_property_name_tree_path(branch))
@@ -65,56 +73,57 @@ impl DriveDocumentHavingQuery<'_> {
                 suffix,
                 AxisQuery::bounded(axis.into(), lo, hi, self.limit, self.descending).keys_only(),
             );
-            return read_branches_at_one_root(&drive.grove, transaction, grove_version, || {
-                let CostContext { value, cost: _ } = drive.grove.run_path_query(
-                    &path_query,
-                    true,
-                    true,
-                    true,
-                    QueryResultType::QueryKeyElementPairResultType,
-                    transaction,
-                    grove_version,
-                );
-                let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-                let PathQueryRun::BranchedAxisKeys(branches) = run else {
-                    return Err(Error::Drive(DriveError::CorruptedDriveState(
-                        "a branched keys-only having read returned a non-branched shape"
-                            .to_string(),
-                    )));
-                };
-                if branches.len() != keys.len()
-                    || branches.iter().map(|(key, _)| key).ne(keys.iter())
-                {
-                    return Err(Error::Drive(DriveError::CorruptedDriveState(
-                        "a branched having read returned a different branch set than the request \
-                         resolved"
-                            .to_string(),
-                    )));
-                }
-                let per_branch = branches
-                    .into_iter()
-                    .map(|(_key, page)| {
-                        let entries = match page {
-                            None => Vec::new(),
-                            Some(page) => axis_keys_to_ranked(axis, page)?,
-                        };
-                        if entries.len() > self.limit as usize {
-                            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                                "a branch of a having read returned {} entries for limit = {}",
-                                entries.len(),
-                                self.limit
-                            ))));
-                        }
-                        Ok(entries)
-                    })
-                    .collect::<Result<Vec<_>, Error>>()?;
-                merge_branch_pages(
-                    per_branch,
-                    &self.prefix_branches,
-                    self.descending,
-                    self.limit as usize,
-                )
-            });
+            let snapshot_transaction = if transaction.is_none() {
+                Some(drive.grove.start_snapshot_read_transaction())
+            } else {
+                None
+            };
+            let read_transaction = snapshot_transaction.as_ref().or(transaction);
+            let CostContext { value, cost: _ } = drive.grove.run_path_query(
+                &path_query,
+                true,
+                true,
+                true,
+                QueryResultType::QueryKeyElementPairResultType,
+                read_transaction,
+                grove_version,
+            );
+            let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+            let PathQueryRun::BranchedAxisKeys(branches) = run else {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched keys-only having read returned a non-branched shape".to_string(),
+                )));
+            };
+            if branches.len() != keys.len() || branches.iter().map(|(key, _)| key).ne(keys.iter()) {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a branched having read returned a different branch set than the request \
+                     resolved"
+                        .to_string(),
+                )));
+            }
+            let per_branch = branches
+                .into_iter()
+                .map(|(_key, page)| {
+                    let entries = match page {
+                        None => Vec::new(),
+                        Some(page) => axis_keys_to_ranked(axis, page)?,
+                    };
+                    if entries.len() > self.limit as usize {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "a branch of a having read returned {} entries for limit = {}",
+                            entries.len(),
+                            self.limit
+                        ))));
+                    }
+                    Ok(entries)
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            return merge_branch_pages(
+                per_branch,
+                &self.prefix_branches,
+                self.descending,
+                self.limit as usize,
+            );
         }
         self.execute_range_no_proof_branch(0, drive, transaction, platform_version)
     }

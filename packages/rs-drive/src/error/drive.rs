@@ -147,13 +147,6 @@ pub enum DriveError {
     #[error("corrupted drive state error: {0}")]
     CorruptedDriveState(String),
 
-    /// A multi-operation read raced concurrent block commits and could
-    /// not observe one committed state within its retry budget. Nothing
-    /// is corrupted — the condition is transient and the request is safe
-    /// to retry.
-    #[error("concurrent state churn during a read: {0}")]
-    ConcurrentStateChurn(&'static str),
-
     /// Error
     #[error("corrupted cache state error: {0}")]
     CorruptedCacheState(String),
