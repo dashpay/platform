@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import classifyRenewalFailure, {
   describeRenewalFailure,
+  MAX_EXAMINED_CHARS,
   RENEWAL_FAILURE_CODES,
   REMEDY_CLASS,
   sanitizeDetail,
@@ -64,6 +65,54 @@ describe('renewalFailure', () => {
         // The type is kept so the reading is recoverable even though the
         // classifier had nothing to do with it.
         expect(detail).to.contain('serverInternal');
+      });
+
+      // A rejected nonce is retried and survived - RFC 8555 requires the retry
+      // and authorities issue them routinely - so it turns up before the
+      // failure that actually ended the run. Reading it instead reports a
+      // refusal the operator can do nothing about, and hides a port they could
+      // have opened. Observed against a real ACME server, where it appeared in
+      // roughly half of otherwise identical failures.
+      it('should name what ended the run, not a problem that was recovered from', () => {
+        const { code, detail } = classifyRenewalFailure(new Error(
+          `Failed to obtain Let's Encrypt certificate: Lego exited with code 1
+2026/08/25 10:00:00 [INFO] [1.2.3.4] acme: Obtaining bundled SAN certificate
+2026/08/25 10:00:01 acme: error: 400 :: urn:ietf:params:acme:error:badNonce :: JWS has an invalid anti-replay nonce
+2026/08/25 10:00:02 [INFO] [1.2.3.4] acme: Trying to solve HTTP-01
+2026/08/25 10:00:20 Could not obtain certificates:
+\terror: one or more domains had a problem:
+[1.2.3.4] acme: error: 403 :: urn:ietf:params:acme:error:unauthorized :: 1.2.3.4: Invalid response from http://1.2.3.4/.well-known/acme-challenge/abc: 404`,
+        ));
+
+        expect(code).to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
+        // The quoted evidence has to come from the same place as the verdict,
+        // or the record contradicts itself for whoever reads both.
+        expect(detail).to.contain('unauthorized');
+        expect(detail).to.not.contain('badNonce');
+      });
+
+      // The verdict is taken from the end of what is examined, and what is
+      // examined is capped - so the cap must not be able to sever the type it
+      // is about to read. A severed name matches no known type and falls
+      // through to a bare refusal, which is the misreading this whole branch
+      // exists to avoid.
+      it('should not read a problem type the length cap cut in half', () => {
+        const prefix = 'urn:ietf:params:acme:error:';
+        const head = `Failed to obtain Let's Encrypt certificate: Lego exited with code 1
+[1.2.3.4] acme: error: 403 :: ${prefix}unauthorized :: 1.2.3.4: Invalid response
+`;
+        const severed = `[1.2.3.4] acme: error: 400 :: ${prefix}connection :: never reached`;
+
+        // Padded so the cap lands four characters into the final type name,
+        // leaving `conn` behind if nothing cuts back to the line break.
+        const padding = MAX_EXAMINED_CHARS - 4 - head.length
+          - (severed.indexOf(prefix) + prefix.length);
+
+        const { code } = classifyRenewalFailure(new Error(
+          `${head}${'n'.repeat(padding - 1)}\n${severed}`,
+        ));
+
+        expect(code).to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
       });
     });
 

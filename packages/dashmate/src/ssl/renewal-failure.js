@@ -163,7 +163,7 @@ export function describeRenewalFailure(code) {
  * refresh lives on. Bounding the input first keeps a hostile or merely verbose
  * line from stalling it.
  */
-const MAX_EXAMINED_CHARS = 2048;
+export const MAX_EXAMINED_CHARS = 2048;
 
 /**
  * How much of it is kept.
@@ -188,6 +188,31 @@ const ACME_PROBLEM_CODES = {
   unauthorized: RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER,
   rateLimited: RENEWAL_FAILURE_CODES.RATE_LIMITED,
 };
+
+/**
+ * The problem type that ended the run, which is the last one and not the first.
+ *
+ * A client recovers from some of these and carries on: a rejected nonce has to
+ * be retried under RFC 8555, and authorities reject nonces routinely, so a
+ * failed run's output regularly opens with a type that was survived. Reading
+ * that one reports a cause the operator can do nothing about and buries the
+ * one they can - and it does so intermittently, which is worse than either.
+ *
+ * @param {string} message
+ * @return {string|null}
+ */
+function readAcmeProblemType(message) {
+  let type = null;
+
+  // A separate expression from the one used to test lines: a global regular
+  // expression carries its own position between calls, and sharing one makes
+  // every second test start from wherever the last left off.
+  for (const match of message.matchAll(/urn:ietf:params:acme:error:([A-Za-z]+)/g)) {
+    [, type] = match;
+  }
+
+  return type;
+}
 
 /**
  * ZeroSSL's own numeric codes, which survive to here because the API client
@@ -297,7 +322,10 @@ function redact(text) {
 function selectEvidence(message, providerCode) {
   const lines = message.split('\n').map((line) => line.trim()).filter(Boolean);
 
-  const acmeLine = lines.find((line) => ACME_PROBLEM_PATTERN.test(line));
+  // The last, for the same reason the type is taken from the end: evidence
+  // quoting a problem that was recovered from would contradict the code beside
+  // it, and the two are read together.
+  const acmeLine = lines.findLast((line) => ACME_PROBLEM_PATTERN.test(line));
 
   if (acmeLine) {
     // The authority quotes back what it fetched from port 80, which on the
@@ -365,10 +393,10 @@ function classifyCode(error, message) {
       : RENEWAL_FAILURE_CODES.HELPER_DID_NOT_START;
   }
 
-  const acmeProblem = message.match(ACME_PROBLEM_PATTERN);
+  const acmeProblem = readAcmeProblemType(message);
 
-  if (acmeProblem) {
-    return ACME_PROBLEM_CODES[acmeProblem[1]] ?? RENEWAL_FAILURE_CODES.PROVIDER_REJECTED;
+  if (acmeProblem !== null) {
+    return ACME_PROBLEM_CODES[acmeProblem] ?? RENEWAL_FAILURE_CODES.PROVIDER_REJECTED;
   }
 
   const providerCode = readProviderCode(error);
@@ -449,7 +477,15 @@ export default function classifyRenewalFailure(error, { homeDirPath = null, apiK
   // unbounded length and these patterns run on the helper's event loop - the
   // same loop that refreshes the configuration lock's lease, so a stall here
   // is a lease that stops being renewed while the helper still looks alive.
-  const examined = readMessage(error).slice(0, MAX_EXAMINED_CHARS);
+  const raw = readMessage(error);
+
+  // Cut back to a line break when it does not fit. The problem type is taken
+  // from the end of what is examined, so a cut landing inside the last one
+  // would leave a shortened name that matches nothing and reads as a plain
+  // refusal - which is the misreading this is meant to prevent.
+  const examined = raw.length <= MAX_EXAMINED_CHARS
+    ? raw
+    : raw.slice(0, raw.lastIndexOf('\n', MAX_EXAMINED_CHARS) + 1 || MAX_EXAMINED_CHARS);
 
   const code = classifyCode(error, examined);
   const evidence = selectEvidence(

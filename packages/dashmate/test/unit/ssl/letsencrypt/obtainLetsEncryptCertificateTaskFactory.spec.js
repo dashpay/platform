@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import { Listr } from 'listr2';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import obtainLetsEncryptCertificateTaskFactory from '../../../../src/listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
@@ -8,6 +9,28 @@ import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
 import { ERRORS } from '../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import LegoDidNotStartError from '../../../../src/ssl/errors/LegoDidNotStartError.js';
 import LegoArtifactsMissingError from '../../../../src/ssl/errors/LegoArtifactsMissingError.js';
+
+/**
+ * A container's output the way the daemon hands it over: a stream attached
+ * while the container is still running, demultiplexed by the caller.
+ *
+ * Reading it after the container exits is a race the daemon usually wins, so
+ * the double has to be a stream - a resolved buffer would let a regression
+ * back into a path that is only observable against a real Docker.
+ *
+ * @param {string} text
+ * @return {Object}
+ */
+function getOutputMock(text) {
+  return {
+    logs: () => Promise.resolve(Readable.from([Buffer.from(text)])),
+    modem: {
+      demuxStream: (source, stdout) => {
+        source.on('data', (chunk) => stdout.write(chunk));
+      },
+    },
+  };
+}
 
 describe('obtainLetsEncryptCertificateTaskFactory', () => {
   it('should reject a plaintext ACME directory before lego starts', async function it() {
@@ -159,6 +182,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       );
       const container = {
         start: this.sinon.stub().resolves(),
+        ...getOutputMock(''),
         wait: this.sinon.stub().callsFake(async () => {
           fs.writeFileSync(path.join(legoCertificatesDir, `${externalIp}.crt`), 'certificate');
           fs.writeFileSync(path.join(legoCertificatesDir, `${externalIp}.key`), 'private-key');
@@ -253,6 +277,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: this.sinon.stub().rejects(missingContainerError),
         createContainer: this.sinon.stub().resolves({
           start: this.sinon.stub().resolves(),
+          ...getOutputMock(''),
           wait: this.sinon.stub().resolves({ StatusCode: 0 }),
         }),
       };
@@ -309,7 +334,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: sinon.stub().rejects(missing),
         createContainer: sinon.stub().resolves({
           start: sinon.stub().resolves(),
-          logs: sinon.stub().resolves(Buffer.from('Timeout during connect (likely firewall problem)')),
+          ...getOutputMock('Timeout during connect (likely firewall problem)'),
           wait: sinon.stub().callsFake(async () => {
             if (statusCode === 0) {
               const certificates = path.join(legoDir, 'certificates');
@@ -492,9 +517,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: sinon.stub().rejects(missing),
         createContainer: sinon.stub().resolves({
           start: sinon.stub().resolves(),
-          logs: sinon.stub().resolves(
-            Buffer.from('Timeout during connect (likely firewall problem)'),
-          ),
+          ...getOutputMock('Timeout during connect (likely firewall problem)'),
           wait: sinon.stub().resolves({ StatusCode: 1 }),
         }),
       };
@@ -529,6 +552,48 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
 
       return tasks;
     }
+
+    // The container is started with AutoRemove, so the daemon deletes it - and
+    // its output with it - the moment it exits. Output read after that point
+    // is a race the daemon usually wins, and losing it leaves the authority's
+    // own account of the failure out of the error entirely: what reaches the
+    // operator is an exit code, and every cause looks alike. Measured against
+    // a real Docker before this was changed, the reason was absent from every
+    // one of eight runs.
+    it('should attach to the output before the container can exit', async function it() {
+      let attached = false;
+      let attachedBeforeExit = false;
+
+      const missing = Object.assign(new Error('container not found'), { statusCode: 404 });
+      const docker = {
+        getContainer: this.sinon.stub().rejects(missing),
+        createContainer: this.sinon.stub().resolves({
+          start: this.sinon.stub().resolves(),
+          logs: () => {
+            attached = true;
+
+            return Promise.resolve(Readable.from([Buffer.from('lego said why')]));
+          },
+          modem: {
+            demuxStream: (source, stdout) => {
+              source.on('data', (chunk) => stdout.write(chunk));
+            },
+          },
+          wait: async () => {
+            attachedBeforeExit = attached;
+
+            return { StatusCode: 1 };
+          },
+        }),
+      };
+
+      const task = buildFailingTask(this.sinon, docker);
+
+      await expect(inject(task(config), getEnquirerMock(this.sinon, false)).run({ force: true }))
+        .to.be.rejected();
+
+      expect(attachedBeforeExit).to.be.true();
+    });
 
     // Every attempt spends one of Let's Encrypt's five failed authorizations
     // per hour, and that budget is shared with the helper's renewal of a
@@ -566,7 +631,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: this.sinon.stub().rejects(missing),
         createContainer: this.sinon.stub().resolves({
           start: this.sinon.stub().rejects(bindRefused),
-          logs: this.sinon.stub().resolves(Buffer.from('')),
+          ...getOutputMock(''),
           wait: this.sinon.stub().resolves({ StatusCode: 0 }),
         }),
       };
@@ -609,7 +674,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: this.sinon.stub().rejects(missing),
         createContainer: this.sinon.stub().resolves({
           start: this.sinon.stub().resolves(),
-          logs: this.sinon.stub().resolves(Buffer.from('')),
+          ...getOutputMock(''),
           // Exits cleanly, but writes nothing.
           wait: this.sinon.stub().resolves({ StatusCode: 0 }),
         }),
@@ -705,7 +770,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: this.sinon.stub().rejects(missing),
         createContainer: this.sinon.stub().resolves({
           start: this.sinon.stub().resolves(),
-          logs: this.sinon.stub().resolves(Buffer.from('')),
+          ...getOutputMock(''),
           wait: this.sinon.stub().rejects(new Error('connection reset by peer')),
         }),
       };

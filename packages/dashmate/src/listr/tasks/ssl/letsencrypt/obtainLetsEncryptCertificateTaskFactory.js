@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { PassThrough } from 'stream';
 
 import { ERRORS } from '../../../../ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import LegoCertificate from '../../../../ssl/letsencrypt/LegoCertificate.js';
@@ -13,6 +14,77 @@ import promptOrThrow from '../../../../util/promptOrThrow.js';
 import renderConfigFlag from '../../../../util/renderConfigFlag.js';
 
 const LEGO_IMAGE = 'goacme/lego:v4.31.0';
+
+/**
+ * How long to wait for a container's output after it has already exited.
+ *
+ * The stream is attached and mostly drained by then, so this only bounds a
+ * daemon that stops producing without closing the connection - a renewal runs
+ * unattended, and one that never returns reports nothing at all.
+ */
+const OUTPUT_DRAIN_TIMEOUT_MS = 10000;
+
+/**
+ * Start collecting a container's output while it is still running.
+ *
+ * `AutoRemove` deletes a container the moment it exits, and takes its logs with
+ * it - so reading them after `wait()` returns is a race against the daemon that
+ * the daemon usually wins. Losing it drops the certificate authority's own
+ * account of the failure, which is the only part worth reporting: what remains
+ * is an exit code, and every cause looks alike. Attaching first means the
+ * output has already been read by the time the container can be removed.
+ *
+ * @param {Object} container
+ * @return {function(): Promise<string>}
+ */
+function collectContainerOutput(container) {
+  const chunks = [];
+
+  const collected = container.logs({ follow: true, stdout: true, stderr: true })
+    .then((stream) => new Promise((resolve) => {
+      const sink = new PassThrough();
+      let finished = false;
+
+      // The connection can both end and close; ending the sink twice makes it
+      // raise, and this must not turn evidence into a failure.
+      const finish = () => {
+        if (!finished) {
+          finished = true;
+          sink.end();
+        }
+      };
+
+      sink.on('data', (chunk) => chunks.push(chunk));
+
+      // Resolved when the sink drains rather than when the connection ends:
+      // the last frames are still in flight at that point, and a reader that
+      // stops there loses the end of the output - which is where lego says
+      // what went wrong.
+      sink.on('end', resolve);
+
+      // Docker frames stdout and stderr into a single connection unless a TTY
+      // was allocated, and lego is run without one. Undemultiplexed, each
+      // frame's eight-byte header lands in the middle of the text - which is
+      // read by an operator and stored as the recorded reason for the failure.
+      container.modem.demuxStream(stream, sink, sink);
+
+      stream.on('end', finish);
+      stream.on('close', finish);
+      stream.on('error', finish);
+    }))
+    // Output is evidence, never the outcome. A daemon that will not hand it
+    // over leaves the error thinner, and must not replace it.
+    .catch(() => {});
+
+  return async () => {
+    await Promise.race([
+      collected,
+      new Promise((resolve) => { setTimeout(resolve, OUTPUT_DRAIN_TIMEOUT_MS); }),
+    ]);
+
+    return Buffer.concat(chunks).toString();
+  };
+}
 
 /**
  * Let's Encrypt allows five failed authorizations per address per account per
@@ -436,6 +508,10 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               () => startedContainers.addContainer(containerName),
             );
 
+            // Attached before the wait below, not after it: see
+            // collectContainerOutput.
+            const readOutput = collectContainerOutput(container);
+
             // eslint-disable-next-line no-param-reassign
             task.output = `Running lego ${command}...`;
 
@@ -453,14 +529,11 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               // Boulder answers "why did port 80 fail" in prose better than any
               // classifier dashmate could keep current.
               let errorMessage = `Lego exited with code ${result.StatusCode}`;
-              try {
-                const logs = await container.logs({
-                  stdout: true,
-                  stderr: true,
-                });
-                errorMessage += `\n${logs.toString()}`;
-              } catch (e) {
-                // Container may have been auto-removed
+
+              const output = await readOutput();
+
+              if (output.length > 0) {
+                errorMessage += `\n${output}`;
               }
 
               throw new Error(`Failed to obtain Let's Encrypt certificate: ${errorMessage}`);

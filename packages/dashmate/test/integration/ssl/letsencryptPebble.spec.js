@@ -11,6 +11,11 @@ import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import isCertificatePairInstalled from '../../../src/ssl/letsencrypt/isCertificatePairInstalled.js';
 import renewCertificate from '../../../src/helper/renewCertificate.js';
+import classifyRenewalFailure, {
+  MAX_DETAIL_CHARS,
+  RENEWAL_FAILURE_CODES,
+} from '../../../src/ssl/renewal-failure.js';
+import { recordRenewalFailure } from '../../../src/helper/record-renewal-outcome.js';
 
 /**
  * Obtain a certificate from a real ACME server.
@@ -575,6 +580,150 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
       expect(after.certificate.serialNumber).to.not.equal(before);
       expect(after.certificate.subjectAltName).to.equal(`IP Address:${legoIp}`);
       expect(after.paired).to.be.true();
+    });
+  });
+
+  /**
+   * The two causes an operator actually meets, produced by a real authority.
+   *
+   * The classifier branches on the ACME problem type, and every test that
+   * pinned that branch until now supplied the problem document itself - so
+   * they proved the mapping and assumed the input. These obtain the input by
+   * breaking validation the same two ways a node breaks it: nothing answers on
+   * port 80, and something answers that is not this node.
+   *
+   * Pebble is not Boulder. What this establishes is that a server implementing
+   * RFC 8555 produces these types for these two conditions and that dashmate
+   * reads them, not that Let's Encrypt phrases every refusal the same way.
+   */
+  describe('failures produced by a real authority', () => {
+    // Small, and its httpd needs no configuration file to answer wrongly.
+    const DECOY_IMAGE = 'busybox:latest';
+
+    let decoyContainer;
+    let unreachableIp;
+    let decoyIp;
+
+    before(async () => {
+      const octets = legoIp.split('.').slice(0, 3);
+
+      unreachableIp = [...octets, '9'].join('.');
+      decoyIp = [...octets, '4'].join('.');
+
+      await new Promise((resolve, reject) => {
+        docker.pull(DECOY_IMAGE, (err, stream) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          docker.modem.followProgress(stream, (e) => (e ? reject(e) : resolve()));
+        });
+      });
+
+      decoyContainer = await docker.createContainer({
+        Image: DECOY_IMAGE,
+        // An empty document root, so the challenge path gets a 404 - the shape
+        // of a router page or an unrelated web server holding this address.
+        Cmd: ['httpd', '-f', '-p', '80', '-h', '/tmp'],
+        HostConfig: {
+          AutoRemove: true,
+          NetworkMode: networkName,
+        },
+        NetworkingConfig: {
+          EndpointsConfig: {
+            [networkName]: { IPAMConfig: { IPv4Address: decoyIp } },
+          },
+        },
+      });
+
+      await decoyContainer.start();
+    });
+
+    after(async () => {
+      if (decoyContainer) {
+        await decoyContainer.stop().catch(() => {});
+      }
+    });
+
+    /**
+     * Ask for a certificate covering an address validation cannot succeed for.
+     *
+     * @param {string} name
+     * @param {string} externalIp
+     * @return {Promise<Error>}
+     */
+    async function failObtaining(name, externalIp) {
+      const target = new Config(name, getBaseConfigFactory(homeDir)().getOptions());
+
+      target.set('externalIp', externalIp);
+      target.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', null);
+      target.set(
+        'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+        `https://${PEBBLE_HOSTNAME}:${PEBBLE_ACME_PORT}/dir`,
+      );
+
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+
+      try {
+        await obtainLetsEncryptCertificateTask(target).run({ force: true });
+      } catch (e) {
+        return e;
+      }
+
+      throw new Error(`Obtaining a certificate for ${externalIp} was expected to fail`);
+    }
+
+    it('should read nothing answering on port 80 as an unreachable port', async () => {
+      const error = await failObtaining('unreachable', unreachableIp);
+
+      // The branch keys on this token. Asserting it is what makes the mapping
+      // below evidence rather than a restatement of the fixture behind it.
+      expect(error.message).to.include('urn:ietf:params:acme:error:connection');
+
+      expect(classifyRenewalFailure(error).code)
+        .to.equal(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
+    });
+
+    it('should read the wrong thing answering on port 80 as a wrong responder', async () => {
+      const error = await failObtaining('wrongresponder', decoyIp);
+
+      expect(error.message).to.include('urn:ietf:params:acme:error:unauthorized');
+
+      expect(classifyRenewalFailure(error).code)
+        .to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
+    });
+
+    // The whole write path on a real error: two thousand characters of lego
+    // output, across a dozen lines, reduced to the one bounded line a reader
+    // is shown. Redaction is measured in the unit tests, which can supply the
+    // inputs worth redacting; what this adds is that a real authority's output
+    // survives the reduction with its verdict intact.
+    it('should reduce a real failure to one bounded line that still carries the verdict', async () => {
+      const error = await failObtaining('recorded', decoyIp);
+      const renewalRecordRepository = container.resolve('renewalRecordRepository');
+
+      recordRenewalFailure({
+        renewalRecordRepository,
+        homeDir,
+        configName: 'recorded',
+        provider: 'letsencrypt',
+        error,
+      });
+
+      const { record } = renewalRecordRepository.read('recorded');
+
+      expect(record.getCode()).to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
+
+      const detail = record.getDetail();
+
+      // Something has to survive, or the record answers nothing.
+      expect(detail).to.include('urn:ietf:params:acme:error:unauthorized');
+      expect(detail).to.not.include(homeDir.getPath());
+      expect(detail.length).to.be.at.most(MAX_DETAIL_CHARS);
+      // One line: the reduction is what keeps a record readable, and lego's
+      // output is a dozen lines of banner and progress around the verdict.
+      expect(detail.split('\n')).to.have.lengthOf(1);
+      expect(error.message.length).to.be.above(MAX_DETAIL_CHARS);
     });
   });
 });
