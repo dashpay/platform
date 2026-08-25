@@ -68,21 +68,28 @@ pub fn validate_auto_accept_proof(proof: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-/// Build the id and property map of a DIP-15 `contactRequest` document from
-/// already-derived crypto material.
+/// Build a DIP-15 `contactRequest` document from already-derived crypto
+/// material, exactly as platform consensus expects it.
 ///
 /// This is the pure document-assembly half of [`Sdk::create_contact_request`]:
-/// the document id derives from `params.entropy`, and the property map
-/// carries exactly the fields the DashPay contract defines (`toUserId`,
-/// `encryptedPublicKey`, `senderKeyIndex`, `recipientKeyIndex`,
-/// `accountReference`, plus the optional `encryptedAccountLabel` and
-/// `autoAcceptProof`).
+/// the document id derives from `params.entropy`, the owner is
+/// `params.sender_id`, and the property map carries exactly the fields the
+/// DashPay contract defines (`toUserId`, `encryptedPublicKey`,
+/// `senderKeyIndex`, `recipientKeyIndex`, `accountReference`, plus the
+/// optional `encryptedAccountLabel` and `autoAcceptProof`).
 ///
-/// Returns `(document_id, properties)`.
+/// Consensus recomputes the document id from
+/// `(contract, owner_id, "contactRequest", entropy)` and rejects the create
+/// transition on any mismatch, so the id/owner/entropy relation is fixed
+/// here rather than left to callers to assemble consistently. Broadcast the
+/// returned document with the same `params.entropy` attached to the create
+/// transition.
+///
+/// Returns the assembled `contactRequest` [`Document`].
 pub fn build_contact_request_document(
     contract: &DataContract,
     params: ContactRequestDocumentParams,
-) -> Result<(Identifier, BTreeMap<String, Value>), Error> {
+) -> Result<Document, Error> {
     if let Some(ref proof) = params.auto_accept_proof {
         validate_auto_accept_proof(proof)?;
     }
@@ -148,7 +155,23 @@ pub fn build_contact_request_document(
         properties.insert("autoAcceptProof".to_string(), Value::Bytes(proof));
     }
 
-    Ok((document_id, properties))
+    Ok(Document::V0(DocumentV0 {
+        contract_version: None,
+        id: document_id,
+        owner_id: params.sender_id,
+        properties,
+        revision: None,
+        created_at: None,
+        updated_at: None,
+        transferred_at: None,
+        created_at_block_height: None,
+        updated_at_block_height: None,
+        transferred_at_block_height: None,
+        created_at_core_block_height: None,
+        updated_at_core_block_height: None,
+        transferred_at_core_block_height: None,
+        creator_id: None,
+    }))
 }
 
 /// ECDH provider for contact request encryption
@@ -233,13 +256,10 @@ pub struct ContactRequestInput {
 /// Result of creating a contact request document
 #[derive(Debug)]
 pub struct ContactRequestResult {
-    /// The document ID
-    pub id: Identifier,
-    /// The owner ID (sender identity ID)
-    pub owner_id: Identifier,
-    /// The document properties
-    pub properties: BTreeMap<String, Value>,
-    /// The entropy used to derive `id`.
+    /// The assembled `contactRequest` document, not yet submitted to the
+    /// platform. Its id derives from `entropy` and its owner is the sender.
+    pub document: Document,
+    /// The entropy used to derive the document id.
     ///
     /// This must be reused when broadcasting the document so that the
     /// document id computed at creation matches the id platform consensus
@@ -511,11 +531,10 @@ impl Sdk {
 
         // Assemble the document in the pure builder above, keeping document
         // assembly separate from this networked flow.
-        let sender_id = input.sender_identity.id().to_owned();
-        let (document_id, properties) = build_contact_request_document(
+        let document = build_contact_request_document(
             &dashpay_contract,
             ContactRequestDocumentParams {
-                sender_id,
+                sender_id: input.sender_identity.id().to_owned(),
                 recipient_id: recipient_identity.id().to_owned(),
                 sender_key_index: input.sender_key_index,
                 recipient_key_index: input.recipient_key_index,
@@ -527,14 +546,9 @@ impl Sdk {
             },
         )?;
 
-        // Return the essential fields for the contact request, including the
-        // entropy that derived `document_id` so the broadcast path can reuse it.
-        Ok(ContactRequestResult {
-            id: document_id,
-            owner_id: sender_id,
-            properties,
-            entropy,
-        })
+        // Return the assembled document together with the entropy that
+        // derived its id so the broadcast path can reuse it.
+        Ok(ContactRequestResult { document, entropy })
     }
 
     /// Send a contact request to the platform
@@ -596,30 +610,12 @@ impl Sdk {
                 Error::Generic("DashPay contactRequest document type not found".to_string())
             })?;
 
-        // Reuse the entropy that derived result.id during creation. Platform
-        // consensus recomputes the document id from this entropy and rejects the
-        // create transition unless it matches result.id, so a freshly generated
+        // Reuse the entropy that derived the document id during creation.
+        // Platform consensus recomputes the id from this entropy and rejects
+        // the create transition unless it matches, so a freshly generated
         // entropy here would always be rejected (InvalidDocumentTransitionIdError).
         let entropy = result.entropy;
-
-        // Create the document from the result
-        let document = Document::V0(DocumentV0 {
-            contract_version: None,
-            id: result.id,
-            owner_id: result.owner_id,
-            properties: result.properties,
-            revision: None,
-            created_at: None,
-            updated_at: None,
-            transferred_at: None,
-            created_at_block_height: None,
-            updated_at_block_height: None,
-            transferred_at_block_height: None,
-            created_at_core_block_height: None,
-            updated_at_core_block_height: None,
-            transferred_at_core_block_height: None,
-            creator_id: None,
-        });
+        let document = result.document;
 
         // Submit the document to the platform
         let platform_document = document
@@ -648,6 +644,7 @@ mod tests {
     use super::*;
     use dpp::dashcore::secp256k1::rand::{self, RngCore};
     use dpp::dashcore::secp256k1::Secp256k1;
+    use dpp::document::DocumentV0Getters;
 
     #[test]
     fn test_ecdh_encryption_produces_correct_size() {
@@ -738,9 +735,11 @@ mod tests {
         );
 
         let result = ContactRequestResult {
-            id,
-            owner_id,
-            properties: BTreeMap::new(),
+            document: Document::V0(DocumentV0 {
+                id,
+                owner_id,
+                ..Default::default()
+            }),
             entropy,
         };
 
@@ -748,12 +747,13 @@ mod tests {
         // exact id that was returned at creation time.
         let regenerated = Document::generate_document_id_v0(
             &contract_id,
-            &result.owner_id,
+            &result.document.owner_id(),
             "contactRequest",
             result.entropy.as_slice(),
         );
         assert_eq!(
-            regenerated, result.id,
+            regenerated,
+            result.document.id(),
             "entropy carried in ContactRequestResult must derive the returned document id"
         );
     }
