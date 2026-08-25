@@ -61,7 +61,7 @@ pub(super) fn delete_withdrawal_data_trigger_v1(
                 operator: WhereOperator::Equal,
                 value: Value::Identifier(dt_delete.base().id().to_buffer()),
             }),
-            in_clause: None,
+            in_clauses: Vec::new(),
             range_clause: None,
             equal_clauses: BTreeMap::default(),
         },

@@ -13,6 +13,43 @@ describe('Config', () => {
     });
   });
 
+  describe('change tracking', () => {
+    let storedOptions;
+
+    beforeEach(() => {
+      storedOptions = getBaseConfigFactory(HomeDir.createTemp())().getStoredOptions();
+    });
+
+    // Loading a config off disk is not an edit to it. When hydration marks a
+    // config dirty, every command - including pure readers like `config get` -
+    // persists the whole config file on exit, and a slow reader can write its
+    // stale snapshot over a concurrent `config set`.
+    it('should not consider a freshly hydrated config changed', () => {
+      const config = new Config('testnet', storedOptions);
+
+      expect(config.isChanged()).to.be.false();
+    });
+
+    it('should consider a config changed after set()', () => {
+      const config = new Config('testnet', storedOptions);
+
+      config.set('description', 'changed');
+
+      expect(config.isChanged()).to.be.true();
+    });
+
+    // setOptions() is a genuine mutation when called on an existing config
+    // (resetNodeTaskFactory restores defaults through it), so only the
+    // constructor's initial hydration is exempt.
+    it('should consider a config changed after setOptions() post-construction', () => {
+      const config = new Config('testnet', storedOptions);
+
+      config.setOptions(storedOptions);
+
+      expect(config.isChanged()).to.be.true();
+    });
+  });
+
   describe('.isSchemaPathAllowed', () => {
     // The bug that triggered this method: `dashmate config set
     // platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA true`

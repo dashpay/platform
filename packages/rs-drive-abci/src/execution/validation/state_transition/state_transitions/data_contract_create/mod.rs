@@ -26,6 +26,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 
 use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v0::DataContractCreatedStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::data_contract_create::state::v1::DataContractCreateStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
@@ -171,9 +172,17 @@ impl StateTransitionStateValidation for DataContractCreateTransition {
                 execution_context,
                 platform_version,
             ),
+            1 => self.validate_state_v1(
+                platform,
+                block_info,
+                validation_mode,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -4154,8 +4163,9 @@ mod tests {
             .expect("expected to load contract");
 
             // Convert the contract back to Value so we can mutate its fields
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Insert 21 keywords to exceed the max limit
             let mut excessive_keywords: Vec<Value> = vec![];
@@ -4236,8 +4246,9 @@ mod tests {
             .expect("expected to load contract");
 
             // Convert to Value to mutate fields
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Insert some duplicates
             let duplicated_keywords = vec!["keyword1", "keyword2", "keyword2"];
@@ -4320,8 +4331,9 @@ mod tests {
             .expect("expected to load contract");
 
             // Convert to Value for mutation
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Insert a keyword with length < 3
             contract_value["keywords"] = Value::Array(vec![Value::Text("hi".to_string())]);
@@ -4392,8 +4404,9 @@ mod tests {
             )
             .expect("expected to load contract");
 
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Create a 51-char keyword
             let too_long_keyword = "x".repeat(51);
@@ -4465,8 +4478,9 @@ mod tests {
             .expect("expected to load contract");
 
             // Convert to Value so we can adjust fields if needed
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Insert a valid set of keywords: all distinct, fewer than 20
             let valid_keywords = vec!["key1", "key2", "key3"];
@@ -4629,8 +4643,9 @@ mod tests {
             )
             .expect("expected to load contract");
 
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Inject `keywords` onto the `preorder` document type schema — the
             // wrong place for it. This should be rejected by the v1 meta
@@ -4718,8 +4733,9 @@ mod tests {
             )
             .expect("expected to load contract");
 
-            let mut contract_value =
-                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
 
             // Ensure the `keywords` array is not empty so that Drive will attempt
             // to create the description documents.
@@ -5219,5 +5235,213 @@ mod tests {
             processing_result.execution_results().as_slice(),
             [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
+    }
+
+    mod permanent_document_reference_declarations {
+        use super::*;
+        use dpp::consensus::state::state_error::StateError;
+        use drive::util::test_helpers::setup_contract;
+
+        const FOREIGN_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-foreign.json";
+
+        /// Processes a data contract create transition built from the given
+        /// fixture, with the foreign permanent-document fixture contract
+        /// already in state, and returns the execution result.
+        async fn run_contract_create(fixture_path: &str) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+            setup_contract(
+                &platform.drive,
+                FOREIGN_CONTRACT_PATH,
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                None,
+                None,
+            );
+
+            let mut data_contract = json_document_to_contract_with_ids(
+                fixture_path,
+                None,
+                None,
+                false, //no need to validate the data contracts in tests for drive
+                platform_version,
+            )
+            .expect("expected to get json based contract");
+
+            data_contract
+                .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract create transition");
+
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            processing_result
+                .execution_results()
+                .first()
+                .expect("expected one execution result")
+                .clone()
+        }
+
+        #[tokio::test]
+        async fn should_register_contract_with_valid_permanent_document_references() {
+            // A self reference (no contractId) and a reference into the
+            // registered foreign contract are both valid declarations
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_referencing_deletable_document_type() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-deletable.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeDeletableError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_referencing_unknown_own_document_type() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-unknown-type.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_contract_with_valid_identity_key_reference() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-valid.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_undefined_key_id_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-missing-prop.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_with_non_integer_key_id_property() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-key-registration-non-integer.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedKeyIdPropertyInvalidError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_contract_referencing_missing_contract() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-missing-contract.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeNotFoundError(_)
+                    ),
+                    ..
+                }
+            );
+        }
     }
 }

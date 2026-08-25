@@ -1477,6 +1477,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.walletRestore
                 | PlatformWalletPersistenceCapabilities.dpnsNameStates
                 | PlatformWalletPersistenceCapabilities.trackedAssetLocks
+                | PlatformWalletPersistenceCapabilities.trackedMasternodes
         )
     }
 
@@ -1489,6 +1490,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.version = UInt32(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION)
         extensionCallbacks.reserved = 0
         extensionCallbacks.on_persist_dpns_name_states_fn = persistDpnsNameStatesCallback
+        extensionCallbacks.on_persist_tracked_masternodes_fn = persistTrackedMasternodesCallback
+        extensionCallbacks.on_load_tracked_masternodes_fn = loadTrackedMasternodesCallback
+        extensionCallbacks.on_load_tracked_masternodes_free_fn = loadTrackedMasternodesFreeCallback
         return extensionCallbacks
     }
 
@@ -1711,15 +1715,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // `.testnet` so we never block the write path on a
                 // missing network column (the CreateIdentity flow
                 // restamps the network on return anyway).
-                let resolvedWalletId = entry.walletId ?? walletId
-                let network = walletNetwork(walletId: resolvedWalletId) ?? .testnet
-                // `isLocal` is the "Local Only" badge in the UI —
-                // identities the user created locally but Platform
-                // hasn't confirmed yet. The persister fires *after*
-                // Platform has confirmed, so any row created here
-                // is by definition on-network. Wallet ownership
-                // travels on `row.wallet` (the relationship set
-                // below), not on this flag.
+                let networkWalletId = entry.walletId ?? walletId
+                let network = walletNetwork(walletId: networkWalletId) ?? .testnet
+                // `isLocal` = "this identity is yours or tracked
+                // here": wallet-derived identities are ALWAYS local
+                // (promoted below once the wallet linkage attaches)
+                // and manual adds (LoadIdentityView et al.) mark
+                // their own rows local. Only incidental rows —
+                // observed foreign identities materialized by sync —
+                // stay `false`. Seed `false` at creation; the
+                // wallet-attach below promotes wallet-owned rows,
+                // and NOTHING ever demotes (sync must not erase a
+                // user's manual mark, and losing a wallet link
+                // doesn't un-track an identity).
                 row = PersistentIdentity(
                     identityId: entry.identityId,
                     balance: Int64(bitPattern: entry.balance),
@@ -1802,28 +1810,49 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
 
             // Attach the identity to its owning `PersistentWallet`
-            // via the relationship. This is the sole wallet-side
-            // association on the row — there is no denormalized
-            // scalar — so downstream `@Query` views traverse
-            // `identity.wallet?.walletId` when they need the raw
-            // id. `deleteRule: .nullify` on the inverse nulls this
-            // out cleanly if the wallet row is ever removed.
+            // via the relationship — the sole wallet-side
+            // association on the row (`deleteRule: .nullify` on the
+            // inverse nulls it if the wallet row is removed).
             //
-            // Wallet id resolution: prefer the per-entry
-            // `walletId` when Rust sets it (covers corner cases
-            // where a changeset carries identities anchored to a
-            // different wallet — e.g. a BLAST pass that surfaces
-            // foreign identities the local wallet observes). Fall
-            // back to the scope `walletId` that parameterised this
-            // callback, which is always the wallet whose
-            // changeset we're applying. The fallback matters for
-            // the "create new identity" flow: Rust emits the
-            // identity entry with `wallet_id_is_some == false`
-            // (the identity wasn't wallet-linked in its own Rust
-            // struct at emit time), and without the fallback we'd
-            // orphan the just-registered row.
-            let resolvedWalletId = entry.walletId ?? walletId
-            row.wallet = fetchWalletForLink(walletId: resolvedWalletId)
+            // Owner resolution: prefer the per-entry `walletId`;
+            // an entry with no `walletId` but a real
+            // `identityIndex` is wallet-derived and falls back to
+            // the scope wallet (the "create new identity" corner
+            // case). An entry with NEITHER is an out-of-wallet
+            // (observed) identity — `add_out_of_wallet_identity`
+            // emits that shape — and must NOT inherit the scope
+            // wallet: the old unconditional fallback mislinked
+            // observed identities to whatever wallet's changeset
+            // carried them.
+            let ownerWalletId: Data? =
+                entry.walletId ?? (entry.identityIndex != nil ? walletId : nil)
+            if let ownerWallet = fetchWalletForLink(walletId: ownerWalletId) {
+                row.wallet = ownerWallet
+                // Things from the wallet are always local — promote.
+                // One-way: no path ever writes `false` over a `true`.
+                row.isLocal = true
+            } else if let declaredOwnerId = ownerWalletId {
+                // Declared owner didn't resolve (e.g. its wallet row
+                // is absent on this handler's network scope). Keep
+                // the existing link only when it already points at
+                // that declared owner; a link to any OTHER wallet
+                // contradicts the entry's declared ownership and is
+                // cleared.
+                if row.wallet?.walletId != declaredOwnerId {
+                    row.wallet = nil
+                }
+            } else if row.wallet?.walletId == walletId {
+                // A genuinely out-of-wallet entry unlinks ONLY a
+                // relationship to this changeset's scope wallet —
+                // the one the old fallback could have fabricated.
+                // "Out-of-wallet" is relative to the emitting Rust
+                // manager: wallet A resolving wallet B's identity
+                // via `load_identity_by_dpns_name` emits the
+                // nil/nil shape from A's manager, and the row is
+                // globally keyed by identityId, so wallet B's valid
+                // relationship must survive.
+                row.wallet = nil
+            }
         }
 
         for identityId in removed {
@@ -4652,9 +4681,46 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// wallet_id, accounts)`; accounts come directly from the spec
     /// array, wallet id from the top-level struct.
     ///
+    /// One-shot upgrade heal: promote `isLocal` on wallet-linked rows
+    /// still carrying `false` — the persister used to write a
+    /// constant `false`, so a wallet's own identities (which are
+    /// always local) were mis-marked on stores from that era.
+    /// Promote-only and idempotent; a `true` on an unlinked row
+    /// (manual add) is never touched. Runs here because load is the
+    /// one guaranteed per-launch pass over the store, outside any
+    /// changeset round.
+    private func healIdentityIsLocalFlags() {
+        guard !inChangeset else { return }
+        guard let rows = try? backgroundContext.fetch(
+            FetchDescriptor<PersistentIdentity>()
+        ) else { return }
+        var healed = 0
+        for row in rows where row.wallet != nil && !row.isLocal {
+            row.isLocal = true
+            healed += 1
+        }
+        guard healed > 0 else { return }
+        do {
+            try backgroundContext.save()
+            NSLog(
+                "[persistor-load:swift] healed isLocal on %d identity row(s)",
+                healed
+            )
+        } catch {
+            // Non-fatal: the next launch retries. Roll back so the
+            // failed heal can't bleed into the restore fetches below.
+            backgroundContext.rollback()
+            NSLog(
+                "[persistor-load:swift] isLocal heal save failed: %@",
+                String(describing: error)
+            )
+        }
+    }
+
     /// Returns `(nil, 0)` if nothing is restorable.
     func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int, errored: Bool) {
         onQueue {
+        healIdentityIsLocalFlags()
         // Scope the fetch to the handler's bound network so a
         // per-network manager only sees its own wallets. If
         // `network` is `nil` (legacy callers that haven't threaded
@@ -6032,6 +6098,146 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// we handed to Rust. Drained by `loadWalletListFree`.
     private var loadAllocations: [UnsafeRawPointer: LoadAllocation] = [:]
 
+    // MARK: - Tracked (wallet-independent) masternodes
+
+    /// One tracked-masternode row crossing the persistence boundary.
+    struct TrackedMasternodeRow {
+        let proTxHash: Data
+        let label: String?
+        let addedAt: UInt64
+        let snapshotJSON: String
+    }
+
+    /// Replace the stored tracked-masternode set for `networkRaw` with
+    /// `rows` (whole-set semantics, mirroring the Rust trait contract).
+    ///
+    /// Registry writes arrive OUTSIDE Rust `store()` rounds, so this
+    /// method saves immediately — unless a changeset round is open on the
+    /// shared context, in which case the round's `endChangeset` commits
+    /// (or rolls back) these rows together with the round. A rolled-back
+    /// registry write is re-issued by the next registry mutation (the
+    /// Rust side always writes the whole set).
+    func persistTrackedMasternodes(networkRaw: UInt32, rows: [TrackedMasternodeRow]) -> Bool {
+        onQueue {
+            do {
+                let existing = try backgroundContext.fetch(
+                    FetchDescriptor<PersistentTrackedMasternode>(
+                        predicate: #Predicate { $0.networkRaw == networkRaw }
+                    )
+                )
+                var stale: [Data: PersistentTrackedMasternode] = [:]
+                for row in existing {
+                    stale[row.proTxHash] = row
+                }
+                for row in rows {
+                    if let found = stale.removeValue(forKey: row.proTxHash) {
+                        found.label = row.label
+                        found.addedAt = row.addedAt
+                        found.snapshotJSON = row.snapshotJSON
+                    } else {
+                        backgroundContext.insert(PersistentTrackedMasternode(
+                            networkRaw: networkRaw,
+                            proTxHash: row.proTxHash,
+                            label: row.label,
+                            addedAt: row.addedAt,
+                            snapshotJSON: row.snapshotJSON
+                        ))
+                    }
+                }
+                for removed in stale.values {
+                    backgroundContext.delete(removed)
+                }
+                if !inChangeset {
+                    try backgroundContext.save()
+                }
+                return true
+            } catch {
+                print("⚠️ persistTrackedMasternodes: \(error)")
+                return false
+            }
+        }
+    }
+
+    /// Load every tracked-masternode row for `networkRaw` into
+    /// Rust-readable C rows. The allocation is loaned to Rust and released
+    /// by `loadTrackedMasternodesFree`.
+    func loadTrackedMasternodes(
+        networkRaw: UInt32
+    ) -> (entries: UnsafePointer<TrackedMasternodeFFI>?, count: Int, errored: Bool) {
+        onQueue {
+            let rows: [PersistentTrackedMasternode]
+            do {
+                var descriptor = FetchDescriptor<PersistentTrackedMasternode>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw }
+                )
+                descriptor.sortBy = [
+                    SortDescriptor(\.addedAt, order: .forward)
+                ]
+                rows = try backgroundContext.fetch(descriptor)
+            } catch {
+                print("⚠️ loadTrackedMasternodes: \(error)")
+                return (nil, 0, true)
+            }
+            guard !rows.isEmpty else {
+                return (nil, 0, false)
+            }
+            let allocation = TrackedMasternodeLoadAllocation()
+            let buf = UnsafeMutablePointer<TrackedMasternodeFFI>.allocate(capacity: rows.count)
+            allocation.entries = buf
+            var written = 0
+            for row in rows {
+                // A proTxHash that is not 32 bytes has no usable identity —
+                // skip the row (same convention as the shielded loaders)
+                // rather than keying a phantom masternode on zeros.
+                guard row.proTxHash.count == 32 else {
+                    print("⚠️ loadTrackedMasternodes: skipping a row with a \(row.proTxHash.count)-byte proTxHash")
+                    continue
+                }
+                var entry = TrackedMasternodeFFI()
+                withUnsafeMutableBytes(of: &entry.pro_tx_hash) { dst in
+                    row.proTxHash.withUnsafeBytes { src in
+                        dst.copyMemory(from: src)
+                    }
+                }
+                if let label = row.label, let dup = strdup(label) {
+                    allocation.strings.append(dup)
+                    entry.label = UnsafePointer(dup)
+                }
+                entry.added_at = row.addedAt
+                if let dup = strdup(row.snapshotJSON) {
+                    allocation.strings.append(dup)
+                    entry.snapshot_json = UnsafePointer(dup)
+                }
+                buf[written] = entry
+                written += 1
+            }
+            allocation.count = written
+            guard written > 0 else {
+                allocation.release()
+                return (nil, 0, false)
+            }
+            trackedMasternodeLoadAllocations[UnsafeRawPointer(buf)] = allocation
+            return (UnsafePointer(buf), written, false)
+        }
+    }
+
+    /// Release a loan handed out by `loadTrackedMasternodes`.
+    func loadTrackedMasternodesFree(entries: UnsafeRawPointer?) {
+        onQueue {
+            guard let entries = entries,
+                  let allocation = trackedMasternodeLoadAllocations.removeValue(forKey: entries)
+            else {
+                return
+            }
+            allocation.release()
+        }
+    }
+
+    /// Outstanding tracked-masternode load allocations keyed by the
+    /// entries pointer we handed to Rust.
+    private var trackedMasternodeLoadAllocations:
+        [UnsafeRawPointer: TrackedMasternodeLoadAllocation] = [:]
+
     /// Human-readable name for a persisted account, mirroring the
     /// top-level `AccountTypeTagFFI` discriminant plus — for tag 0
     /// (Standard) — the `StandardAccountTypeTagFFI` sub-discriminant.
@@ -6265,6 +6471,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
 /// Retains all heap allocations produced by a single
 /// `loadWalletList` call. Released wholesale by `loadWalletListFree`.
+/// Owned allocations behind one `loadTrackedMasternodes` answer: the
+/// entries buffer plus every strdup'd label / snapshot string. Trivial C
+/// structs — deallocate only.
+private final class TrackedMasternodeLoadAllocation {
+    var entries: UnsafeMutablePointer<TrackedMasternodeFFI>?
+    var count: Int = 0
+    var strings: [UnsafeMutablePointer<CChar>] = []
+
+    func release() {
+        for string in strings {
+            free(string)
+        }
+        strings.removeAll()
+        entries?.deallocate()
+        entries = nil
+        count = 0
+    }
+}
+
 private final class LoadAllocation {
     var entries: UnsafeMutablePointer<WalletRestoreEntryFFI>?
     /// Allocated capacity — equal to `restorable.count`. Used for
@@ -6754,6 +6979,93 @@ private func loadWalletListFreeCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
     handler.loadWalletListFree(entries: entries.map(UnsafeRawPointer.init))
+}
+
+/// Map the `network` C string Rust passes to the tracked-masternode
+/// persistence callbacks onto `Network.rawValue`. Unknown names return
+/// `nil` and the callback reports failure rather than filing rows under
+/// the wrong network.
+private func networkRawFromCString(_ ptr: UnsafePointer<CChar>?) -> UInt32? {
+    guard let ptr = ptr else { return nil }
+    switch String(cString: ptr) {
+    case "mainnet": return Network.mainnet.rawValue
+    case "testnet": return Network.testnet.rawValue
+    case "devnet": return Network.devnet.rawValue
+    case "regtest": return Network.regtest.rawValue
+    default: return nil
+    }
+}
+
+/// C shim for `on_persist_tracked_masternodes_fn`. Deep-copies every row
+/// (label + snapshot strings included) before invoking the handler, so
+/// Rust can drop its allocations the moment we return.
+private func persistTrackedMasternodesCallback(
+    context: UnsafeMutableRawPointer?,
+    networkPtr: UnsafePointer<CChar>?,
+    rowsPtr: UnsafePointer<TrackedMasternodeFFI>?,
+    rowsCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let networkRaw = networkRawFromCString(networkPtr) else {
+        return 1
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    var rows: [PlatformWalletPersistenceHandler.TrackedMasternodeRow] = []
+    if rowsCount > 0, let rowsPtr = rowsPtr {
+        rows.reserveCapacity(Int(rowsCount))
+        for i in 0..<Int(rowsCount) {
+            var entry = rowsPtr[i]
+            rows.append(.init(
+                proTxHash: withUnsafeBytes(of: &entry.pro_tx_hash) { Data($0) },
+                label: entry.label.map { String(cString: $0) },
+                addedAt: entry.added_at,
+                snapshotJSON: entry.snapshot_json.map { String(cString: $0) } ?? "{}"
+            ))
+        }
+    }
+    return handler.persistTrackedMasternodes(networkRaw: networkRaw, rows: rows) ? 0 : 1
+}
+
+/// C shim for `on_load_tracked_masternodes_fn`. Hands Rust a loaned
+/// array released by the free shim below.
+private func loadTrackedMasternodesCallback(
+    context: UnsafeMutableRawPointer?,
+    networkPtr: UnsafePointer<CChar>?,
+    outRows: UnsafeMutablePointer<UnsafePointer<TrackedMasternodeFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context = context,
+          let outRows = outRows,
+          let outCount = outCount else {
+        return 1
+    }
+    outRows.pointee = nil
+    outCount.pointee = 0
+    guard let networkRaw = networkRawFromCString(networkPtr) else {
+        return 1
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let (entries, count, errored) = handler.loadTrackedMasternodes(networkRaw: networkRaw)
+    outRows.pointee = entries
+    outCount.pointee = UInt(count)
+    return errored ? 1 : 0
+}
+
+/// C shim for `on_load_tracked_masternodes_free_fn`.
+private func loadTrackedMasternodesFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    rows: UnsafePointer<TrackedMasternodeFFI>?,
+    _ count: UInt
+) {
+    guard let context = context else { return }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    handler.loadTrackedMasternodesFree(entries: rows.map(UnsafeRawPointer.init))
 }
 
 /// C shim for `on_persist_account_address_pools_fn`. Walks the

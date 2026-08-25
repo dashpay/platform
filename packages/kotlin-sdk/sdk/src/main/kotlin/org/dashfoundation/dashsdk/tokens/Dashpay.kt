@@ -416,9 +416,9 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * ← Swift `ManagedPlatformWallet.createInvitation`
      * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
      *
-     * Amount bounds (`MIN_INVITATION_DUFFS = 300_000`,
-     * `MAX_INVITATION_DUFFS = 5_000_000`) are enforced in Rust — a voucher
-     * below the floor could fund neither a claim nor a reclaim.
+     * Amount bounds ([minInvitationDuffs], [maxInvitationDuffs]) are
+     * enforced in Rust — a voucher below the floor could fund neither a
+     * claim nor a reclaim.
      *
      * Pass a non-null [inviterIdentityId] (32 bytes) + [inviterUsername]
      * to opt into the contact-bootstrap (the link then carries the
@@ -559,6 +559,25 @@ class Dashpay internal constructor(private val walletHandle: Long,
             out.add(id)
         }
         return out
+    }
+
+    companion object {
+        /**
+         * Upper bound, in duffs, on the amount an invitation voucher may
+         * lock — the Rust-enforced cap [createInvitation] rejects above.
+         * Read it rather than restating it: Rust owns the value, and a
+         * client-side copy diverges the moment the constant moves.
+         * ← Swift `ManagedPlatformWallet.maxInvitationDuffs`.
+         */
+        val maxInvitationDuffs: Long get() = DashpayNative.invitationMaxDuffs()
+
+        /**
+         * Lower bound, in duffs, on the amount an invitation voucher may
+         * lock — the Rust-enforced floor [createInvitation] rejects below
+         * (a smaller voucher can fund neither a claim nor a reclaim).
+         * ← Swift `ManagedPlatformWallet.minInvitationDuffs`.
+         */
+        val minInvitationDuffs: Long get() = DashpayNative.invitationMinDuffs()
     }
 }
 

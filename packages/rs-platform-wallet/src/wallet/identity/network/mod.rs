@@ -35,6 +35,7 @@ mod transfer;
 mod transfer_to_addresses;
 mod update;
 mod withdrawal;
+pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
 
 // DashPay-contract operations, namespaced behind `IdentityWallet::dashpay()`.
 mod contact_info;
@@ -42,7 +43,9 @@ mod contact_requests;
 mod contacts;
 mod dashpay_view;
 mod invitation;
-pub use invitation::{Invitation, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS};
+pub use invitation::{
+    Invitation, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+};
 mod payment_handler;
 pub(crate) use payment_handler::DashPayPaymentHandler;
 // Re-exported for the payments unit tests, which drive the hooks
@@ -73,7 +76,8 @@ pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use dpns_marketplace::{
     DepartedDpnsName, DpnsDomainState, DpnsMarketplaceSyncSummary, DpnsNameHistoryEvent,
-    DpnsNameHistoryEventKind, DpnsPriceChange, DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
+    DpnsNameHistoryEventKind, DpnsPriceChange, FailedDpnsDeparture,
+    DOCUMENT_TRANSITION_FEE_RESERVE_CREDITS,
 };
 pub use identity_handle::{
     derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,

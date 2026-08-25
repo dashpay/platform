@@ -16,7 +16,7 @@ export default class Certificate {
   created;
 
   /**
-   * @type {Date}
+   * @type {Date|null}
    */
   expires;
 
@@ -35,7 +35,8 @@ export default class Certificate {
    * @param {string} object.common_name - The common name of the certificate.
    * @param {string} object.additional_domains - Any additional domains in the certificate.
    * @param {string} object.created - The exact time the certificate was created.
-   * @param {string} object.expires - The exact time the certificate will expire.
+   * @param {string|null} object.expires - The exact time the certificate will expire,
+   * or null until the certificate is issued.
    * @param {string} object.status - The current certificate status.
    * @param {string|null} object.validation_type - The selected verification type, or null
    * if not initiated.
@@ -64,7 +65,7 @@ export default class Certificate {
    * the CNAME-record for domain verification.
    */
   constructor(object) {
-    const expires = convertDate(object.expires);
+    const expires = object.expires === null ? null : convertDate(object.expires);
     const created = convertDate(object.created);
 
     Object.assign(this, {
@@ -105,6 +106,10 @@ export default class Certificate {
    * @param {number} days
    */
   isExpiredInDays(days) {
+    if (this.expires === null) {
+      return false;
+    }
+
     const expiresInDays = new Date(this.expires);
     expiresInDays.setDate(expiresInDays.getDate() - days);
 

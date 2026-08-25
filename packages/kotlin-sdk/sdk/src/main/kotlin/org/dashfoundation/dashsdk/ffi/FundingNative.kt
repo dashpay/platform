@@ -6,8 +6,10 @@ package org.dashfoundation.dashsdk.ffi
  * mirrors `rs-unified-sdk-jni/src/funding.rs`.
  *
  * Internal: the public API is
- * [org.dashfoundation.dashsdk.funding.ShieldedProver]. These entry points
- * are process-global (no wallet handle) and back the shielded funding
+ * [org.dashfoundation.dashsdk.funding.ShieldedProver] for the
+ * process-global prover probes and
+ * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.estimateShieldedFee]
+ * for the (manager-handle) fee estimator. They back the shielded funding
  * screens' prover-status indicator and fee preview. Available only when
  * the native library was built with shielded support
  * ([org.dashfoundation.dashsdk.Sdk.hasShielded]); calling them on a
@@ -24,10 +26,11 @@ internal object FundingNative {
     /**
      * The flat shielded fee in credits for a transition of [kind]
      * (0 = ShieldedTransfer/Shield, 1 = Unshield, 2 = ShieldedWithdrawal)
-     * and Orchard action count [numActions]. Pure computation; throws on
-     * an unknown kind or overflow.
+     * and Orchard action count [numActions], computed at [managerHandle]'s
+     * network-tracked platform version. No network round-trip; throws on
+     * an unknown kind, an invalid manager handle, or overflow.
      */
-    external fun estimateShieldedFee(kind: Int, numActions: Int): Long
+    external fun estimateShieldedFee(managerHandle: Long, kind: Int, numActions: Int): Long
 
     // ── Shielded funding submits (manager-handle calls) ──────────────
 

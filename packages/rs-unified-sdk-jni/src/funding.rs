@@ -7,15 +7,18 @@
 //!
 //! ## What lives here (and what deliberately doesn't)
 //!
-//! These three entry points are process-global, take no wallet handle,
-//! and back the shielded funding screens' prover-status indicator and
-//! fee preview:
+//! Three support entry points back the shielded funding screens'
+//! prover-status indicator and fee preview:
 //! - [`platform_wallet_shielded_warm_up_prover`] — kick the ~30s Halo 2
-//!   proving-key build onto a background thread.
+//!   proving-key build onto a background thread (process-global, no
+//!   handle).
 //! - [`platform_wallet_shielded_prover_is_ready`] — poll whether that
-//!   build has finished (UI "preparing prover…" affordance).
+//!   build has finished (UI "preparing prover…" affordance; also
+//!   process-global).
 //! - [`platform_wallet_shielded_estimate_fee`] — the flat shielded fee in
-//!   credits for a transition of a given kind + action count.
+//!   credits for a transition of a given kind + action count, computed at
+//!   the manager's network-tracked platform version (so it takes the
+//!   manager `Handle`, unlike the two prover probes).
 //!
 //! The heavy shielded funding transitions themselves — the shielded
 //! fund-from-asset-lock (+ its resume-by-outpoint variant) and the
@@ -87,12 +90,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_proverI
 /// The flat shielded fee in credits for a transition of the given `kind`
 /// (`0` = ShieldedTransfer/Shield, `1` = Unshield, `2` = ShieldedWithdrawal)
 /// and Orchard action `count` (a single-note spend with change is 2
-/// actions). Pure computation — no wallet handle, no network. Throws on an
-/// unknown kind or a fee-formula overflow.
+/// actions), computed at `managerHandle`'s network-tracked platform
+/// version — the same version the shielded builders carve fees with. No
+/// network round-trip. Throws on an unknown kind, an invalid manager
+/// handle, or a fee-formula overflow.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_estimateShieldedFee(
     mut env: JNIEnv,
     _class: JClass,
+    manager_handle: jlong,
     kind: jint,
     num_actions: jint,
 ) -> jlong {
@@ -104,6 +110,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_estimat
         let mut out_fee: u64 = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_shielded_estimate_fee(
+                manager_handle as Handle,
                 kind as u8,
                 num_actions.max(0) as usize,
                 &mut out_fee as *mut u64,

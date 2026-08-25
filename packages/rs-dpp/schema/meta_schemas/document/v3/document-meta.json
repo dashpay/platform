@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL THE RELEASE CARRYING PROTOCOL V14 SHIPS — FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once the release carrying protocol v14 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL THE RELEASE CARRYING PROTOCOL V14 SHIPS — FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable) and the refersTo reference keyword on identifier properties, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once the release carrying protocol v14 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -90,6 +90,90 @@
         },
         "uniqueItems": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/uniqueItems"
+        },
+        "refersTo": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "identity",
+                "contract",
+                "token",
+                "permanentDocument",
+                "identityPublicKey"
+              ]
+            },
+            "contractId": {
+              "description": "The id of the data contract the referenced document lives in, as a base58 string or a 32-byte array; when absent the reference targets the declaring contract itself",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 32,
+                  "maxLength": 44,
+                  "pattern": "^[123456789A-HJ-NP-Za-km-z]{32,44}$"
+                },
+                {
+                  "type": "array",
+                  "minItems": 32,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                }
+              ]
+            },
+            "documentType": {
+              "description": "The name of the referenced document type; it must forbid deletion (canBeDeleted: false)",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-zA-Z0-9-_]{1,64}$"
+            },
+            "keyIdProperty": {
+              "description": "The property of the same document type whose value carries the referenced key id; the reference property's value carries the identity id",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[a-zA-Z0-9-_]{1,64}(\\.[a-zA-Z0-9-_]{1,64})*$"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": { "type": { "const": "permanentDocument" } },
+                "required": ["type"]
+              },
+              "then": {
+                "required": ["type", "documentType"]
+              },
+              "else": {
+                "properties": {
+                  "contractId": false,
+                  "documentType": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "type": { "const": "identityPublicKey" } },
+                "required": ["type"]
+              },
+              "then": {
+                "required": ["type", "keyIdProperty"]
+              },
+              "else": {
+                "properties": {
+                  "keyIdProperty": false
+                }
+              }
+            }
+          ]
         },
         "contains": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/applicator#/properties/contains"
@@ -190,6 +274,33 @@
           },
           "required": [
             "maxLength"
+          ]
+        },
+        "refersTo": {
+          "description": "refersTo is only allowed on identifier properties",
+          "properties": {
+            "type": {
+              "const": "array"
+            },
+            "byteArray": {
+              "const": true
+            },
+            "contentMediaType": {
+              "const": "application/x.dash.dpp.identifier"
+            },
+            "minItems": {
+              "const": 32
+            },
+            "maxItems": {
+              "const": 32
+            }
+          },
+          "required": [
+            "type",
+            "byteArray",
+            "contentMediaType",
+            "minItems",
+            "maxItems"
           ]
         },
         "format": {

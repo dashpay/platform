@@ -37,19 +37,18 @@ use grovedb::TransactionArg;
 /// canonicalized or rewritten the way count's where-clauses are, so
 /// taking ownership would just force the handler into a clone.
 ///
-/// `where_clauses`, `having` and `start_at` are carried even though a
-/// ranked request must leave all of them empty: drive owns the
-/// rejection, so the contract is enforced identically no matter which
-/// upstream path built the request. See
-/// [`super::mode_detection::detect_ranked_mode_v0`] for why each is
-/// refused rather than ignored.
+/// `having` and `start_at` are carried even though a ranked request
+/// must leave both empty: drive owns the rejection, so the contract is
+/// enforced identically no matter which upstream path built the
+/// request. See [`super::mode_detection::detect_ranked_mode_v0`] for
+/// why each is refused rather than ignored.
 pub struct DocumentRankedRequest<'a> {
     /// Live contract (already loaded by the handler).
     pub contract: &'a DataContract,
     /// Resolved document type within `contract`.
     pub document_type: DocumentTypeRef<'a>,
-    /// The single `GROUP BY` property. Must be the ranked index's only
-    /// property.
+    /// The single `GROUP BY` property. Must be the covering ranked
+    /// index's trailing property.
     pub group_by: &'a [String],
     /// The projection being ranked: `COUNT(*)`, `SUM(field)` or
     /// `AVG(field)`.
@@ -61,7 +60,9 @@ pub struct DocumentRankedRequest<'a> {
     /// aggregate (`$count` for `COUNT(*)`, otherwise the select's
     /// field); its direction is the ranking direction.
     pub order_by: &'a [OrderClause],
-    /// Structured `where` clauses. Must be empty.
+    /// Structured `where` clauses. Empty for the single-property form;
+    /// equality pins on the covering compound index's leading
+    /// properties for the pinned-prefix form.
     pub where_clauses: &'a [WhereClause],
     /// Request `limit` — the ranking's `k`. **Required**; there is no
     /// server default a verifying client could reproduce.
