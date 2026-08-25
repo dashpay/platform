@@ -5783,6 +5783,76 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun reconcileStampsResolvedAccountOnHealedRows() = runTest {
+        // The blocking scenario from review: persistence lost BOTH the TXO
+        // and its address row. The heal must resolve the owning Room account
+        // from the inventory's account tuple and stamp it on the inserted
+        // row — a healed row with neither accountId nor a resolvable address
+        // is skipped by the restore loader at the next mirror-reload,
+        // recreating the fund loss the heal repaired.
+        db.walletDao().upsert(WalletEntity(walletId, networkRaw = Network.TESTNET.ffiValue))
+        // Production shape: onPersistAccountRegistration stores the FFI's
+        // 32-zero-byte identity ids verbatim (the entity ctor default of an
+        // EMPTY array never occurs on persisted rows).
+        val bip44Id = db.accountDao().insert(
+            org.dashfoundation.dashsdk.persistence.entities.AccountEntity(
+                walletId = walletId,
+                accountType = 0,
+                accountIndex = 0,
+                accountTypeName = "standardBip44",
+                userIdentityId = ByteArray(32),
+                friendIdentityId = ByteArray(32),
+            ),
+        )
+        // Deliberately NO core_addresses row for this address.
+        val report = handler.reconcileTxos(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 11, amount = 70_000L, address = "yOrphanAddr"),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(1, report.inserted)
+        assertEquals(0, report.healedUnowned)
+        assertEquals(
+            "the healed row must carry the account resolved from the inventory tuple",
+            bip44Id, db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 11))!!.accountId,
+        )
+    }
+
+    @Test
+    fun reconcileCountsHealsWhoseAccountCannotBeResolved() = runTest {
+        // No matching Room account row at all (a store damaged past the
+        // account registrations): the heal proceeds — the address projection
+        // may still attribute it — but the unresolved owner is surfaced.
+        db.walletDao().upsert(WalletEntity(walletId, networkRaw = Network.TESTNET.ffiValue))
+        val report = handler.reconcileTxos(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 12, amount = 5_000L),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(1, report.inserted)
+        assertEquals(1, report.healedUnowned)
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 12))!!.accountId)
+    }
+
+    @Test
+    fun reconcileForeignSkipKeysOffTheInventoryTagWithoutAddressRow() = runTest {
+        // The tag is the authoritative foreign check: a contact's coin must
+        // be skipped even when its address row never survived persistence
+        // (the case the address-based fallback cannot see).
+        val json =
+            """{"utxos":[{"typeTag":13,"standardTag":0,"index":0,""" +
+                """"userIdentityId":"${"11".repeat(32)}","friendIdentityId":"${"22".repeat(32)}",""" +
+                """"txid":"${changeTxid.toHexLower()}","vout":13,"amount":10000,""" +
+                """"address":"yContactNoRow","scriptHex":"51",""" +
+                """"height":1400000,"isLocked":false}],"spent":[],"errors":[]}"""
+        val report = handler.reconcileTxos(walletId, json, tipHeight = reconcileTip)
+
+        assertEquals(0, report.inserted)
+        assertEquals(1, report.skippedForeign)
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 13)))
+    }
+
+    @Test
     fun reconcileNeverUnmarksSpentRowsEvenWhenEngineDisagrees() = runTest {
         // A row marked spent while the engine lists the coin unspent: either
         // a lost release event (pre-rust-dashcore#971) or a live spend the

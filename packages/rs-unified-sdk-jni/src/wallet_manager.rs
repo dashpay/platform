@@ -3252,14 +3252,31 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                     let address = dashcore::Address::from_script(&script_buf, net)
                         .map(|a| a.to_string())
                         .unwrap_or_default();
+                    // The DashPay identity halves of the account tuple are
+                    // emitted only when set (all-zero on every non-DashPay
+                    // account) — the reconcile needs the COMPLETE tuple to
+                    // resolve the owning Room account and stamp it on healed
+                    // rows, so ownership survives even when the address
+                    // projection is absent.
+                    let mut identity_suffix = String::new();
+                    if acc.user_identity_id != [0u8; 32] || acc.friend_identity_id != [0u8; 32] {
+                        identity_suffix = format!(
+                            ",\"userIdentityId\":\"{}\",\"friendIdentityId\":\"{}\"",
+                            hex_lower(&acc.user_identity_id),
+                            hex_lower(&acc.friend_identity_id),
+                        );
+                    }
                     rows.push(format!(
                         "{{\"typeTag\":{},\"standardTag\":{},\"index\":{},\
+                         \"registrationIndex\":{},\"keyClass\":{},\
                          \"txid\":\"{}\",\"vout\":{},\"amount\":{},\
                          \"address\":{},\"scriptHex\":\"{}\",\
-                         \"height\":{},\"isLocked\":{}}}",
+                         \"height\":{},\"isLocked\":{}{}}}",
                         acc.type_tag as u8,
                         acc.standard_tag as u8,
                         acc.index,
+                        acc.registration_index,
+                        acc.key_class,
                         hex_lower(&u.outpoint_txid),
                         u.outpoint_vout,
                         u.value_duffs,
@@ -3267,6 +3284,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                         hex_lower(script),
                         u.height,
                         u.is_locked,
+                        identity_suffix,
                     ));
                 }
                 unsafe {
