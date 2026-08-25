@@ -3149,10 +3149,6 @@ mod tests {
     //  Format 3: the contract-version stamp and requiredSince layouts
     // ================================================================
 
-    /// A document type with:
-    ///   - `a`: required at every version
-    ///   - `b`: required since contract version 2
-    ///   - `c`: plain optional
     /// A document type exercising every schema-reachable property type in
     /// both required and optional positions. Not represented because no
     /// document schema can produce them (`try_from_value_map` dispatches on
@@ -3319,6 +3315,10 @@ mod tests {
         }
     }
 
+    /// A document type with:
+    ///   - `a`: required at every version
+    ///   - `b`: required since contract version 2
+    ///   - `c`: plain optional
     fn required_since_document_type() -> crate::data_contract::document_type::DocumentType {
         use crate::data_contract::config::DataContractConfig;
         use crate::data_contract::document_type::DocumentType;
