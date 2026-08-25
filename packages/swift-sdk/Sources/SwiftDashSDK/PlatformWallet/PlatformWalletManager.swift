@@ -9,8 +9,8 @@ import os.log
 /// generation already superseded by a `stop`/`clear`/`reset`, even when a
 /// restart happens in the same `@MainActor` turn (a plain boolean gate
 /// can't, because the restart re-opens the gate before the stale,
-/// previously-enqueued completion task runs). Shared by the shielded and
-/// platform-address sync paths.
+/// previously-enqueued completion task runs). Shared by the shielded,
+/// platform-address, and DPNS sync paths.
 final class SyncGenerationCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var value: UInt64 = 0
@@ -81,6 +81,72 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     public func contains(_ capability: UInt64) -> Bool {
         bits & capability == capability
     }
+}
+
+/// Timing + FFI-result record of one native manager teardown, returned by
+/// [`PlatformWalletManager/shutdown()`] so the host can log it (the SDK has
+/// no dependency on any app-side logger).
+///
+/// Deliberately NOT a worker-level shutdown report: the Rust FFI returns
+/// `Success` for a live handle even when a worker missed its join budget
+/// (that outcome is a Rust-side WARN, not an error), so Swift cannot know
+/// clean-vs-timed-out per worker. These metrics report only what Swift
+/// observes — the result code and wall time of each FFI call, and the
+/// thread the teardown ran on.
+public struct PlatformWalletShutdownMetrics: Sendable {
+    public struct Step: Sendable {
+        /// FFI entry point, e.g. "spv_stop", "destroy".
+        public let name: String
+        /// Raw `PlatformWalletResultCode` of the call (0 = success).
+        public let ffiCode: Int32
+        public let milliseconds: Int
+
+        public init(name: String, ffiCode: Int32, milliseconds: Int) {
+            self.name = name
+            self.ffiCode = ffiCode
+            self.milliseconds = milliseconds
+        }
+    }
+
+    /// The six teardown calls in execution order (5× sync stop + destroy).
+    public let steps: [Step]
+    public let totalMilliseconds: Int
+    /// Whether the blocking native teardown ran off the main thread. The
+    /// whole point of `shutdown()` is that this is `true`.
+    public let ranOffMainThread: Bool
+
+    public init(steps: [Step], totalMilliseconds: Int, ranOffMainThread: Bool) {
+        self.steps = steps
+        self.totalMilliseconds = totalMilliseconds
+        self.ranOffMainThread = ranOffMainThread
+    }
+}
+
+/// Native entry points used by the production teardown orchestration.
+///
+/// Keeping the functions injectable as a group lets tests exercise the real
+/// ordering, timing, result mapping, and logging in
+/// [`PlatformWalletManager.performNativeTeardown`] without calling Rust. The
+/// unchecked conformance is intentional: these closures are immutable C-entry
+/// wrappers, and the whole value is copied onto the dedicated destroy queue.
+struct PlatformWalletNativeTeardownCalls: @unchecked Sendable {
+    typealias Call = @Sendable (Handle) -> PlatformWalletFFIResult
+
+    let spvStop: Call
+    let platformAddressSyncStop: Call
+    let shieldedSyncStop: Call
+    let dashPaySyncStop: Call
+    let dpnsSyncStop: Call
+    let destroy: Call
+
+    static let live = PlatformWalletNativeTeardownCalls(
+        spvStop: platform_wallet_manager_spv_stop,
+        platformAddressSyncStop: platform_wallet_manager_platform_address_sync_stop,
+        shieldedSyncStop: platform_wallet_manager_shielded_sync_stop,
+        dashPaySyncStop: platform_wallet_manager_dashpay_sync_stop,
+        dpnsSyncStop: platform_wallet_manager_dpns_sync_stop,
+        destroy: platform_wallet_manager_destroy
+    )
 }
 
 /// The one thing SwiftUI needs for all wallet operations.
@@ -216,6 +282,12 @@ public class PlatformWalletManager: ObservableObject {
     /// sync-status UI.
     nonisolated let platformAddressSyncGeneration = SyncGenerationCounter()
 
+    /// Generation guard for DPNS marketplace completion events. A native
+    /// completion can already be queued for the main actor when shutdown
+    /// begins; bumping this generation when the handle is consumed prevents
+    /// that trailing callback from publishing after the manager is stopped.
+    nonisolated let dpnsSyncGeneration = SyncGenerationCounter()
+
     /// All wallets currently held by the Rust-side
     /// `PlatformWalletManager`, keyed by the 32-byte wallet id.
     ///
@@ -271,6 +343,30 @@ public class PlatformWalletManager: ObservableObject {
     /// Background task that polls SPV progress.
     private var progressPollTask: Task<Void, Never>?
 
+    /// The single in-flight (or completed) [`shutdown()`] operation. Set
+    /// exactly once by the first caller that takes a live handle; later
+    /// callers await the same task and receive the same metrics. MainActor
+    /// isolation serializes the check-and-set (no suspension point between
+    /// them), so no lock is needed. A shutdown before configuration remains
+    /// an uncached no-op because the manager can still be configured later.
+    private var shutdownTask: Task<PlatformWalletShutdownMetrics, Never>?
+
+    /// Test seam for the individual native calls. Production keeps `.live`;
+    /// tests replace the function table while still running the production
+    /// teardown orchestration end-to-end.
+    internal var nativeTeardownCalls = PlatformWalletNativeTeardownCalls.live
+
+    /// Dedicated serial queue for the blocking native teardown. The Rust
+    /// `destroy` runs `block_on(shutdown())` on the calling thread and can
+    /// legitimately take tens of seconds when an in-flight sync pass ignores
+    /// cancellation, so it must park a plain GCD thread — never the main
+    /// thread, and never a Swift Concurrency cooperative-pool thread (which
+    /// is why this is a DispatchQueue and not `Task.detached`).
+    nonisolated static let destroyQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.destroy",
+        qos: .userInitiated
+    )
+
     // MARK: - Init
 
     /// Empty init for `@StateObject` usage. Call [`configure`] before
@@ -285,28 +381,185 @@ public class PlatformWalletManager: ObservableObject {
 
     deinit {
         progressPollTask?.cancel()
+        // Emergency fallback ONLY. The supported teardown path is an explicit
+        // `await shutdown()` before dropping the last reference — it takes the
+        // handle exactly once and runs the blocking native teardown off-main
+        // deterministically. Reaching this branch means a code path dropped a
+        // configured manager without shutting it down; schedule the same
+        // teardown fire-and-forget on the dedicated queue rather than
+        // blocking whatever thread ARC happens to release on (the destroy's
+        // Rust-side `block_on(shutdown())` can take tens of seconds when a
+        // sync pass is wedged — running it inline here is the historical
+        // network-switch UI freeze).
+        //
+        // Safe without `self`: `Handle` is a registry key from a monotonic
+        // counter (never reused), destroying an already-removed handle is an
+        // Ok no-op, and Rust owns the persistence/event callback contexts
+        // (handed over retained at `configure`, with a `release_fn`) — a
+        // straggling worker keeps its handler alive through that retain and
+        // Rust releases it when the worker exits.
         if handle != NULL_HANDLE {
-            // Stop the network event source first as defense in depth for
-            // the teardown order; Rust's destroy path provides the
-            // authoritative join barrier.
-            platform_wallet_manager_spv_stop(handle).discard()
-            platform_wallet_manager_platform_address_sync_stop(handle).discard()
-            platform_wallet_manager_shielded_sync_stop(handle).discard()
-            platform_wallet_manager_dashpay_sync_stop(handle).discard()
-            platform_wallet_manager_dpns_sync_stop(handle).discard()
-            // Rust OWNS the persistence/event callback handlers (they were
-            // handed over retained at `configure`, with a `release_fn`):
-            // any worker that outlives destroy keeps its handler alive
-            // through that retain and Rust releases it when the worker
-            // exits. Nothing to leak, retain, or gate on here — ARC
-            // releasing this class's own references below is always safe.
-            let destroyResult = PlatformWalletResult(platform_wallet_manager_destroy(handle))
-            if !destroyResult.isSuccess {
+            let h = handle
+            let calls = nativeTeardownCalls
+            Self.log.warning(
+                "PlatformWalletManager deallocated without shutdown(); scheduling fallback native teardown off-main for handle \(h, privacy: .public)"
+            )
+            Self.destroyQueue.async {
+                _ = Self.performNativeTeardown(h, calls: calls)
+            }
+        }
+    }
+
+    // MARK: - Shutdown
+
+    /// Tear down the native manager without blocking the main thread.
+    ///
+    /// Takes ownership of the FFI handle exactly once on the main actor
+    /// (zeroing [`handle`] and flipping [`isConfigured`] so every later
+    /// operation fails fast through `ensureConfigured()`), then runs the
+    /// full native teardown — the same five sync stops plus
+    /// `platform_wallet_manager_destroy` the old `deinit` performed, in the
+    /// same order — on [`destroyQueue`]. The Rust destroy `block_on`s its
+    /// bounded lifecycle shutdown on that queue's thread, which can take
+    /// tens of seconds when an in-flight sync pass ignores cancellation;
+    /// the caller awaits a continuation instead of blocking.
+    ///
+    /// Idempotent: the first caller starts the teardown, every later caller
+    /// awaits the same task and receives the same metrics. Cancellation of
+    /// a calling task does not interrupt the teardown (`Task<_, Never>.value`
+    /// is a non-throwing await), so the native teardown always runs to
+    /// completion once started.
+    ///
+    /// Never throws by design: `platform_wallet_manager_destroy` returns
+    /// `Success` for a live handle even when a worker misses its join budget
+    /// (a Rust-side WARN, not an error), so a thrown error would carry no
+    /// actionable signal. Per-step FFI codes travel in the returned metrics
+    /// for the host to log.
+    @discardableResult
+    public func shutdown() async -> PlatformWalletShutdownMetrics {
+        if let task = shutdownTask {
+            return await task.value
+        }
+        guard handle != NULL_HANDLE else {
+            // Never configured (or a test double without a handle): nothing
+            // to tear down. Do not cache this no-op: a manager may still be
+            // configured later, and that live handle must then be torn down.
+            return PlatformWalletShutdownMetrics(
+                steps: [],
+                totalMilliseconds: 0,
+                ranOffMainThread: false)
+        }
+
+        // Take-once: from this point every FFI entry gated on
+        // `ensureConfigured()` / `handle != NULL_HANDLE` rejects cleanly,
+        // and the generation bumps drop any trailing sync event the main
+        // actor delivers after this turn.
+        let h = handle
+        handle = NULL_HANDLE
+        isConfigured = false
+        progressPollTask?.cancel()
+        shieldedSyncGeneration.bump()
+        platformAddressSyncGeneration.bump()
+        dpnsSyncGeneration.bump()
+
+        let calls = nativeTeardownCalls
+        let task = Task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<PlatformWalletShutdownMetrics, Never>) in
+                Self.destroyQueue.async {
+                    continuation.resume(returning: Self.performNativeTeardown(h, calls: calls))
+                }
+            }
+        }
+        shutdownTask = task
+        return await task.value
+    }
+
+    /// The blocking native teardown body, shared by [`shutdown()`] and the
+    /// `deinit` fallback: exactly the five sync stops plus destroy the old
+    /// synchronous `deinit` ran, in the same order, each timed and its FFI
+    /// code recorded.
+    ///
+    /// The stops are kept even though Rust's `shutdown()` inside destroy is
+    /// a superset — they preserve the historical teardown order as defense
+    /// in depth (`spv_stop` is itself a blocking, abort-escalating join, so
+    /// it too must run on this queue, never the main thread). Rust's destroy
+    /// path provides the authoritative join barrier.
+    nonisolated static func performNativeTeardown(
+        _ handle: Handle,
+        calls: PlatformWalletNativeTeardownCalls = .live
+    ) -> PlatformWalletShutdownMetrics {
+        let offMain = !Thread.isMainThread
+        let totalStart = CFAbsoluteTimeGetCurrent()
+        var steps: [PlatformWalletShutdownMetrics.Step] = []
+        steps.reserveCapacity(6)
+
+        func run(_ name: String, _ call: (Handle) -> PlatformWalletFFIResult) {
+            let start = CFAbsoluteTimeGetCurrent()
+            let result = PlatformWalletResult(call(handle))
+            let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
+            steps.append(.init(name: name, ffiCode: result.code.rawValue, milliseconds: ms))
+            if !result.isSuccess {
                 Self.log.error(
-                    "Platform wallet manager teardown failed with \(String(describing: destroyResult.code), privacy: .public): \(destroyResult.message ?? "<no detail from Rust>", privacy: .public)"
+                    "native teardown step \(name, privacy: .public) failed with \(String(describing: result.code), privacy: .public): \(result.message ?? "<no detail from Rust>", privacy: .public)"
                 )
             }
         }
+
+        // Stop the network event source first as defense in depth for the
+        // teardown order; Rust's destroy path provides the authoritative
+        // join barrier.
+        run("spv_stop", calls.spvStop)
+        run("platform_address_sync_stop", calls.platformAddressSyncStop)
+        run("shielded_sync_stop", calls.shieldedSyncStop)
+        run("dashpay_sync_stop", calls.dashPaySyncStop)
+        run("dpns_sync_stop", calls.dpnsSyncStop)
+        // Rust OWNS the persistence/event callback handlers (handed over
+        // retained at `configure`, with a `release_fn`): any worker that
+        // outlives destroy keeps its handler alive through that retain and
+        // Rust releases it when the worker exits. Nothing to leak, retain,
+        // or gate on here.
+        run("destroy", calls.destroy)
+
+        let metrics = PlatformWalletShutdownMetrics(
+            steps: steps,
+            totalMilliseconds: Int((CFAbsoluteTimeGetCurrent() - totalStart) * 1000),
+            ranOffMainThread: offMain
+        )
+        let stepSummary = steps
+            .map { "\($0.name)=\($0.milliseconds)ms(code \($0.ffiCode))" }
+            .joined(separator: " ")
+        Self.log.info(
+            "native teardown finished in \(metrics.totalMilliseconds, privacy: .public)ms offMain=\(offMain, privacy: .public): \(stepSummary, privacy: .public)"
+        )
+        return metrics
+    }
+
+    /// Test-only factory: a manager carrying a fake non-null handle and an
+    /// injected native-call table, so shutdown tests exercise the real
+    /// take-once / exactly-once / idempotency and teardown-orchestration paths
+    /// without calling FFI.
+    /// Internal on purpose — never call from production code (`configure`
+    /// is the only production path that assigns a handle).
+    static func makeForTesting(
+        handle: Handle,
+        calls: PlatformWalletNativeTeardownCalls
+    ) -> PlatformWalletManager {
+        let manager = PlatformWalletManager()
+        try! manager.configureForTesting(handle: handle, calls: calls)
+        return manager
+    }
+
+    /// Test-only equivalent of a successful native configuration. Keeping it
+    /// separate from the factory lets tests cover shutdown-before-configure.
+    func configureForTesting(
+        handle: Handle,
+        calls: PlatformWalletNativeTeardownCalls
+    ) throws {
+        try ensureConfigurationAllowed()
+        precondition(handle != NULL_HANDLE)
+        self.handle = handle
+        isConfigured = true
+        nativeTeardownCalls = calls
     }
 
     // MARK: - Configuration
@@ -317,7 +570,7 @@ public class PlatformWalletManager: ObservableObject {
     /// Spawns a background task that polls SPV sync progress every
     /// second and publishes it to [`spvProgress`].
     public func configure(sdk: SDK, modelContainer: ModelContainer? = nil) throws {
-        precondition(!isConfigured, "PlatformWalletManager already configured")
+        try ensureConfigurationAllowed()
         guard let sdkHandle = sdk.handle else {
             throw PlatformWalletError.invalidParameter("SDK has no handle")
         }
@@ -344,6 +597,7 @@ public class PlatformWalletManager: ObservableObject {
         modelContainer: ModelContainer? = nil,
         network: Network? = nil
     ) throws {
+        try ensureConfigurationAllowed()
         var handle: Handle = NULL_HANDLE
 
         let handler: PlatformWalletPersistenceHandler?
@@ -427,6 +681,19 @@ public class PlatformWalletManager: ObservableObject {
         self.isConfigured = true
 
         startProgressPolling()
+    }
+
+    /// A manager owns at most one configured native lifetime. A no-op shutdown
+    /// before first configuration is allowed, but once a live handle has been
+    /// consumed its cached shutdown result makes the instance terminal; a new
+    /// native handle must be owned by a new manager.
+    private func ensureConfigurationAllowed() throws {
+        precondition(!isConfigured, "PlatformWalletManager already configured")
+        guard shutdownTask == nil else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager cannot be configured after shutdown"
+            )
+        }
     }
 
     /// Access the persistence handler for loading cached data.
