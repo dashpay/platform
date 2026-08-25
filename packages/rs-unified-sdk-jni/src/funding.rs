@@ -44,7 +44,7 @@
 
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
-use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
+use jni::objects::{GlobalRef, JByteArray, JClass, JLongArray, JObject, JString};
 use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
@@ -233,11 +233,15 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
     }
 }
 
-/// Read an OPTIONAL Java `String` into `Option<CString>`. JVM null (or an
-/// empty string) → `Ok(None)` — the FFI treats a null memo pointer as "no
-/// memo", and Rust's `encode_memo_text` maps an empty string to the same
-/// all-zero memo anyway, so both normalize to null here. Returns `Err(())`
-/// (after throwing) on an interior NUL; a JNI read error is treated as null.
+/// Read an OPTIONAL Java `String` into `Option<CString>`. ONLY a JVM null or
+/// an empty string means "absent" (`Ok(None)`) — the FFI treats a null memo
+/// pointer as "no memo", and Rust's `encode_memo_text` maps an empty string to
+/// the same all-zero memo anyway, so both normalize to null here. Returns
+/// `Err(())` (after throwing) on an interior NUL **or on a JNI read failure**:
+/// a non-null string the JVM could not hand over must abort the call, not
+/// silently degrade to "absent" — the callers are irreversible spend paths,
+/// and dropping a requested memo would prove and broadcast the transfer
+/// without it.
 fn read_cstring_opt(
     env: &mut JNIEnv,
     s: &JString,
@@ -250,7 +254,8 @@ fn read_cstring_opt(
         Ok(v) => v.into(),
         Err(_) => {
             let _ = env.exception_clear();
-            return Ok(None);
+            throw_sdk_exception(env, 1, &format!("{field} String could not be read"));
+            return Err(());
         }
     };
     if owned.is_empty() {
@@ -845,6 +850,151 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 account as u32,
                 recipient.as_ptr(),
                 amount as u64,
+                memo_ptr,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Multi-output shielded → shielded transfer (Type 16) — bridges
+/// `platform_wallet_manager_shielded_transfer_multi`.
+///
+/// `recipientsRaw43` is `amounts.length` raw 43-byte Orchard addresses laid
+/// out back to back (so its length must be `43 * amounts.length`), and
+/// `amounts` holds the matching credit amounts. Each pair becomes its own
+/// note; repeating the same address funds that address with several
+/// independent notes. `memoText` is attached to every recipient note.
+///
+/// At most `platform_wallet_ffi::MAX_SHIELDED_TRANSFER_RECIPIENTS` recipients
+/// are accepted, and that ceiling is enforced from the Java array LENGTHS
+/// before either array is copied into a native buffer — so no allocation is
+/// ever sized by an unvalidated caller-supplied count.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedTransferMulti(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    account: jint,
+    recipients_raw43: JByteArray,
+    amounts: JLongArray,
+    memo_text: JString,
+) {
+    guard(&mut env, (), |env| {
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        if recipients_raw43.is_null() {
+            throw_sdk_exception(env, 1, "recipientsRaw43 byte[] was null");
+            return;
+        }
+        if amounts.is_null() {
+            throw_sdk_exception(env, 1, "amounts long[] was null");
+            return;
+        }
+        // Establish the recipient count and bound it BEFORE any caller-sized allocation. Both
+        // `convert_byte_array` (43 bytes per recipient) and the amount buffers below are sized
+        // from Java-supplied lengths, so an accidental or hostile oversized call would otherwise
+        // drive several large allocations — and possibly an allocator OOM — on its way to the
+        // native layer's clean `ErrorInvalidParameter`. `get_array_length` reads a header field
+        // and allocates nothing.
+        let amount_len = match env.get_array_length(&amounts) {
+            Ok(n) if n >= 0 => n as usize,
+            _ => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "amounts long[] was invalid");
+                return;
+            }
+        };
+        if amount_len == 0 {
+            throw_sdk_exception(env, 1, "amounts must contain at least one entry");
+            return;
+        }
+        if amount_len > platform_wallet_ffi::MAX_SHIELDED_TRANSFER_RECIPIENTS {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!(
+                    "amounts must hold at most {} entries, got {amount_len}",
+                    platform_wallet_ffi::MAX_SHIELDED_TRANSFER_RECIPIENTS
+                ),
+            );
+            return;
+        }
+        // Same rule for the address blob: verify its LENGTH (a header read) against the bounded
+        // recipient count before copying it into a native buffer, so the copy that follows is
+        // bounded by `MAX_SHIELDED_TRANSFER_RECIPIENTS * 43` rather than by the caller.
+        let recipients_len = match env.get_array_length(&recipients_raw43) {
+            Ok(n) if n >= 0 => n as usize,
+            _ => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "recipientsRaw43 byte[] was invalid");
+                return;
+            }
+        };
+        if recipients_len != amount_len * 43 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!(
+                    "recipientsRaw43 must be 43 bytes per amount ({} expected), got {}",
+                    amount_len * 43,
+                    recipients_len
+                ),
+            );
+            return;
+        }
+        let recipients = match env.convert_byte_array(&recipients_raw43) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "recipientsRaw43 byte[] was invalid");
+                return;
+            }
+        };
+        let mut amount_buf = vec![0i64; amount_len];
+        if env
+            .get_long_array_region(&amounts, 0, &mut amount_buf)
+            .is_err()
+        {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "amounts long[] could not be read");
+            return;
+        }
+        // Reject sign errors at the boundary — negatives would otherwise bit-cast to huge
+        // unsigned values (never clamp).
+        for (index, &amount) in amount_buf.iter().enumerate() {
+            if amount <= 0 {
+                throw_sdk_exception(
+                    env,
+                    1,
+                    &format!("amounts[{index}] must be positive, got {amount}"),
+                );
+                return;
+            }
+        }
+        let amounts_u64: Vec<u64> = amount_buf.iter().map(|&a| a as u64).collect();
+
+        let memo = match read_cstring_opt(env, &memo_text, "memoText") {
+            Ok(m) => m,
+            Err(()) => return,
+        };
+        let memo_ptr = memo.as_ref().map_or(ptr::null(), |c| c.as_ptr());
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_transfer_multi(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                account as u32,
+                recipients.as_ptr(),
+                amounts_u64.as_ptr(),
+                amount_len,
                 memo_ptr,
             )
         };

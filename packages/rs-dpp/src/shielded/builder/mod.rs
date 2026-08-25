@@ -43,7 +43,10 @@ pub use identity_create_from_shielded_pool::{
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition;
 #[cfg(feature = "core_key_wallet")]
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_signer;
-pub use shielded_transfer::build_shielded_transfer_transition;
+pub use shielded_transfer::{
+    build_shielded_transfer_transition, build_shielded_transfer_transition_multi,
+    ShieldedTransferOutput,
+};
 pub use shielded_withdrawal::build_shielded_withdrawal_transition;
 pub use unshield::build_unshield_transition;
 
@@ -52,6 +55,7 @@ use grovedb_commitment_tree::{
     FullViewingKey, MerklePath, Note, NoteValue, OutgoingViewingKey, PaymentAddress, ProvingKey,
     Scope, SpendAuthorizingKey, SpendingKey,
 };
+use platform_version::version::PlatformVersion;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
@@ -101,6 +105,138 @@ impl From<&OrchardAddress> for PaymentAddress {
     fn from(address: &OrchardAddress) -> Self {
         *address.inner()
     }
+}
+
+/// The number of Orchard actions a `BundleType::DEFAULT` bundle built from `num_spends` spends
+/// and `num_outputs` outputs will publish **on the wire**, validated against the consensus
+/// action ceiling.
+///
+/// Every shielded fee predictor MUST size its fee with this function, because consensus prices
+/// the fee off the on-wire `actions.len()` (see
+/// `StateTransitionShieldedMinimumFeeValidationV0::validate_minimum_shielded_fee`, which reads
+/// `v0.actions.len()`), and an Orchard action is a *joined* spend/output slot: the action count
+/// is `max(num_spends, num_outputs)`, then padded up to Orchard's `MIN_ACTIONS = 2`.
+///
+/// The output side matters. A predictor that looks only at the spend count is correct **only**
+/// while `num_outputs <= 2`, because `max(n, 1).max(2) == max(n, 2).max(2)`. As soon as a
+/// transition publishes three or more outputs (a multi-recipient transfer plus change), a
+/// spends-only predictor under-counts and carves a fee below the one consensus computes — fatal
+/// for `ShieldedTransfer`, whose `value_balance` must equal the minimum fee **exactly**.
+///
+/// This delegates to Orchard's own [`BundleType::num_actions`] rather than re-deriving the rule,
+/// so the predictor cannot drift from the builder that actually lays out the bundle.
+///
+/// # The consensus ceilings
+///
+/// TWO versioned limits bound a shielded bundle, and this gate enforces both
+/// BEFORE any proving work starts:
+///
+/// 1. **Structural**: every shielded transition's `validate_structure` rejects a bundle whose
+///    `actions.len()` exceeds `platform_version.system_limits.max_shielded_transition_actions`
+///    (via `validate_actions_count`).
+/// 2. **Size**: the serialized transition must fit
+///    `platform_version.system_limits.max_state_transition_size` (20 KiB), enforced by DAPI's
+///    byte prefilter / Tenderdash `mempool.max-tx-bytes` and the Drive-ABCI consensus decoder
+///    — which run BEFORE structural validation ever sees the transition. At current constants
+///    this is the binding limit: 6 actions serialize to ~19.0 KiB while 7 need ~21.7 KiB, so
+///    7..16-action bundles pass the structural check yet are guaranteed dead on arrival.
+///
+/// The `try_from_bundle` constructors run no structural validation and nothing checks the byte
+/// size client-side — so without this gate an over-limit bundle is built, proved (~30 s of
+/// Halo 2 *per bundle*), and only then rejected. The effective ceiling is derived from BOTH
+/// limits via [`crate::shielded::max_shielded_actions_for_envelope`], never hardcoded, so a
+/// future `max_state_transition_size` raise widens this gate automatically. Because the action
+/// count is `max(spends, outputs)`, bounding it here bounds BOTH sides: a fragmented wallet
+/// spending too many notes and a caller asking for too many outputs are rejected by the same
+/// comparison, before any proving work starts.
+///
+/// `extra_envelope_bytes` is the serialized size of the transition's variable-length
+/// non-Orchard fields beyond the measured baseline envelope — an embedded instant
+/// asset-lock proof (its funding transaction and `InstantLock` both carry input
+/// vectors; DPP admits up to 100 inputs) or an identity-create key set. Callers whose
+/// envelope is covered by the baseline (transfer, unshield, withdrawal) pass `0`;
+/// `ShieldFromAssetLock` passes the serialized proof size and identity creation the
+/// serialized key-set size (see [`serialized_envelope_bytes`]), so an oversized
+/// envelope tightens the ceiling here instead of after the proof (#4312 review
+/// finding e90e9cf15f52).
+pub fn shielded_bundle_action_count(
+    num_spends: usize,
+    num_outputs: usize,
+    extra_envelope_bytes: u64,
+    platform_version: &PlatformVersion,
+) -> Result<usize, ProtocolError> {
+    let num_actions = BundleType::DEFAULT
+        .num_actions(num_spends, num_outputs)
+        .map_err(|e| {
+            ProtocolError::ShieldedBuildError(format!(
+                "invalid Orchard bundle shape ({num_spends} spends, {num_outputs} outputs): {e}"
+            ))
+        })?;
+
+    let max_actions = platform_version
+        .system_limits
+        .max_shielded_transition_actions as usize;
+    if num_actions > max_actions {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "a bundle of {num_spends} spends and {num_outputs} outputs publishes {num_actions} \
+             Orchard actions, exceeding the consensus limit of {max_actions} \
+             (max_shielded_transition_actions); consensus would reject the proved transition"
+        )));
+    }
+
+    let effective_max =
+        crate::shielded::max_shielded_actions_for_envelope(platform_version, extra_envelope_bytes);
+    if num_actions > effective_max {
+        let estimated = crate::shielded::estimated_shielded_transition_wire_bytes_with_envelope(
+            num_actions,
+            extra_envelope_bytes,
+        );
+        let max_size = platform_version.system_limits.max_state_transition_size;
+        let envelope_note = if extra_envelope_bytes > 0 {
+            format!(" (including {extra_envelope_bytes} bytes of transition-specific envelope)")
+        } else {
+            String::new()
+        };
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "a bundle of {num_spends} spends and {num_outputs} outputs publishes {num_actions} \
+             Orchard actions, which serializes to an estimated {estimated} bytes{envelope_note} \
+             and exceeds max_state_transition_size ({max_size} bytes); at most {effective_max} \
+             actions fit, so DAPI's byte prefilter would reject the proved transition"
+        )));
+    }
+
+    Ok(num_actions)
+}
+
+/// Conservative per-key allowance for an identity key's proof-of-possession
+/// signature at pre-proving gate time: the keys are measured BEFORE PoP
+/// signing, when each `IdentityPublicKeyInCreation.signature` is still empty,
+/// while the wire form carries the signature. 97 bytes = the largest
+/// signature a key type can produce (BLS12-381, 96 bytes) plus its one-byte
+/// length prefix; ECDSA (65) and EdDSA (64) keys under-fill the allowance,
+/// which errs on the conservative (smaller-ceiling) side.
+pub const PER_KEY_SIGNATURE_ALLOWANCE_BYTES: u64 = 97;
+
+/// Serialized size of one variable-length transition envelope field, measured
+/// with the same bincode configuration the transition's own wire serialization
+/// uses (`standard().with_big_endian().with_no_limit()`, per
+/// `platform_serialization`'s unversioned `PlatformSerialize` path), so the
+/// pre-proving gate prices exactly the bytes the byte prefilter will see.
+/// `what` names the field in the error.
+pub fn serialized_envelope_bytes<T: bincode::Encode>(
+    field: &T,
+    what: &str,
+) -> Result<u64, ProtocolError> {
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_no_limit();
+    bincode::encode_to_vec(field, config)
+        .map(|bytes| bytes.len() as u64)
+        .map_err(|e| {
+            ProtocolError::ShieldedBuildError(format!(
+                "failed to measure the serialized size of {what} for the pre-proving size gate: {e}"
+            ))
+        })
 }
 
 /// Serializes an authorized Orchard bundle into the raw fields used by
@@ -779,6 +915,133 @@ mod mod_tests {
                 assert_eq!(msg, "closure rejected", "closure error must pass through");
             }
             other => panic!("expected the closure's error to propagate, got {:?}", other),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // `shielded_bundle_action_count` — the shared fee-sizing predictor.
+    // ------------------------------------------------------------------
+
+    /// The predictor must be `max(num_spends, num_outputs)` padded to Orchard's 2-action
+    /// minimum — for the OUTPUT side as well as the spend side. The `num_outputs >= 3` rows are
+    /// the ones a spends-only predictor gets wrong.
+    #[test]
+    fn shielded_bundle_action_count_is_max_spends_outputs_padded_to_two() {
+        let platform_version = PlatformVersion::latest();
+        for (spends, outputs, expected) in [
+            (0usize, 1usize, 2usize),
+            (1, 1, 2),
+            (1, 2, 2),
+            (2, 2, 2),
+            // Output-dominated shapes: the spend count no longer determines the fee.
+            (1, 3, 3),
+            (2, 3, 3),
+            (1, 4, 4),
+            (5, 3, 5),
+            (3, 6, 6),
+        ] {
+            let actual = shielded_bundle_action_count(spends, outputs, 0, platform_version)
+                .expect("DEFAULT bundles accept any spend/output mix");
+            assert_eq!(
+                actual, expected,
+                "action count for {spends} spends / {outputs} outputs"
+            );
+        }
+    }
+
+    /// A real bundle's on-wire `actions.len()` — the number consensus prices the fee off — must
+    /// equal what the predictor said. Exercised through the output-only builder because it is
+    /// the cheapest real bundle to construct at several output counts.
+    #[test]
+    fn shielded_bundle_action_count_matches_a_real_bundle() {
+        let platform_version = PlatformVersion::latest();
+        let recipient = test_orchard_address();
+        // (dummy_outputs, total outputs = 1 real + dummies)
+        for dummies in [0usize, 1, 4] {
+            let num_outputs = 1 + dummies;
+            let bundle =
+                build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, dummies, &TestProver)
+                    .expect("bundle should build");
+            let predicted = shielded_bundle_action_count(0, num_outputs, 0, platform_version)
+                .expect("valid bundle shape");
+            assert_eq!(
+                bundle.actions().len(),
+                predicted,
+                "predicted action count must match the real bundle's on-wire count for \
+                 {num_outputs} outputs"
+            );
+        }
+    }
+
+    /// The predictor is also the CONSENSUS gate — for BOTH ceilings. The effective (size-derived)
+    /// boundary itself must still pass, from each side: at current constants that is 6 actions
+    /// (~19.0 KiB against the 20 KiB `max_state_transition_size`).
+    #[test]
+    fn shielded_bundle_action_count_accepts_the_effective_boundary() {
+        let platform_version = PlatformVersion::latest();
+        let effective = crate::shielded::max_shielded_actions_per_transition(platform_version);
+
+        // Exactly at the effective ceiling, from each side and from both at once.
+        for (spends, outputs) in [(1usize, effective), (effective, 1), (effective, effective)] {
+            assert_eq!(
+                shielded_bundle_action_count(spends, outputs, 0, platform_version).unwrap_or_else(
+                    |e| panic!("{spends} spends / {outputs} outputs is AT the effective ceiling and must be accepted: {e}")
+                ),
+                effective
+            );
+        }
+    }
+
+    /// One action over the EFFECTIVE ceiling must fail fast, pre-proving — from the OUTPUT side
+    /// (a 6-recipient multi transfer becomes 7 outputs once the unconditional change output is
+    /// added) and from the SPEND side (a fragmented wallet selecting 7 notes). These shapes pass
+    /// the 16-action structural cap, but a 7-action transition serializes to ~21.7 KiB and is
+    /// rejected by DAPI's 20 KiB byte prefilter — AFTER ~30 s of Halo 2 proving, without this
+    /// gate. This test completing in milliseconds is itself part of the assertion.
+    #[test]
+    fn shielded_bundle_action_count_rejects_over_the_size_derived_ceiling() {
+        let platform_version = PlatformVersion::latest();
+        let effective = crate::shielded::max_shielded_actions_per_transition(platform_version);
+        let structural = platform_version
+            .system_limits
+            .max_shielded_transition_actions as usize;
+        assert!(
+            effective < structural,
+            "this test requires the size limit to be the binding one (effective {effective} < \
+             structural {structural}); if the size limit was raised, retire or rework this test"
+        );
+
+        let over = effective + 1;
+        // Output-dominated, spend-dominated, and both-sided 7-action shapes.
+        for (spends, outputs) in [(1usize, over), (over, 1), (over, over)] {
+            let err = shielded_bundle_action_count(spends, outputs, 0, platform_version)
+                .expect_err("a bundle over the size-derived ceiling must be rejected pre-proving");
+            assert!(
+                err.to_string().contains("max_state_transition_size"),
+                "unexpected error for {spends} spends / {outputs} outputs: {err}"
+            );
+        }
+    }
+
+    /// One action over the STRUCTURAL ceiling must fail fast — from the OUTPUT side (a
+    /// 16-recipient call, which becomes 17 outputs once the unconditional change output is
+    /// added) and from the SPEND side (a fragmented wallet selecting too many notes). The
+    /// structural check fires first, so these carry the `max_shielded_transition_actions`
+    /// message rather than the size-derived one.
+    #[test]
+    fn shielded_bundle_action_count_rejects_over_the_consensus_limit() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version
+            .system_limits
+            .max_shielded_transition_actions as usize;
+
+        for (spends, outputs) in [(1usize, max + 1), (max + 1, 1), (max + 1, max + 1)] {
+            let err = shielded_bundle_action_count(spends, outputs, 0, platform_version)
+                .expect_err("a bundle over the consensus action limit must be rejected");
+            assert!(
+                err.to_string().contains("exceeding the consensus limit"),
+                "unexpected error for {spends} spends / {outputs} outputs: {err}"
+            );
         }
     }
 }

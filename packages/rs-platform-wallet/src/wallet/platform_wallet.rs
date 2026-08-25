@@ -1359,6 +1359,58 @@ impl PlatformWallet {
         .await
     }
 
+    /// Multi-output sibling of [`shielded_transfer_to`](Self::shielded_transfer_to): spend
+    /// `account`'s notes and create SEVERAL notes in one atomic Type-16 transition.
+    ///
+    /// `outputs` pairs each recipient (43 raw Orchard address bytes) with its amount in credits.
+    /// Repeating the same address is allowed and is the point of this call: it funds one address
+    /// with several independent notes, so a later spend of that address spends several REAL
+    /// notes instead of one real note plus an Orchard padding dummy (whose nullifier is random
+    /// and therefore not reproducible offline).
+    ///
+    /// `memo` is attached to every recipient note. `seed` supplies the transient spend authority
+    /// (see [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_transfer_multi_to<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        outputs: &[([u8; 43], u64)],
+        memo: [u8; 36],
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        let parsed: Vec<(grovedb_commitment_tree::PaymentAddress, u64)> = outputs
+            .iter()
+            .map(|(raw, amount)| {
+                Option::<grovedb_commitment_tree::PaymentAddress>::from(
+                    grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(raw),
+                )
+                .map(|addr| (addr, *amount))
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedBuildError(
+                        "invalid Orchard payment address bytes".to_string(),
+                    )
+                })
+            })
+            .collect::<Result<_, _>>()?;
+
+        super::shielded::operations::transfer_multi(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            &parsed,
+            memo,
+            &prover,
+        )
+        .await
+    }
+
     /// Unshield from `account`'s notes to a transparent platform
     /// address (`"dash1…"` / `"tdash1…"`). Parsed via
     /// `PlatformAddress::from_bech32m_string`; the recipient's HRP is
@@ -2272,22 +2324,24 @@ mod shield_input_selection_tests {
 
     #[test]
     fn regression_reports_max_from_usable_suffix_not_total_account_balance() {
-        // Real account snapshot: the leading address is below the reserve, so
-        // capacity must come from the usable suffix, not the account total.
-        assert!(
-            297_264_780 <= reserve(),
-            "regression shape requires the leading address to stay below the reserve; \
-             re-seed the balances if the versioned reserve drops under 297_264_780"
-        );
+        // Real account snapshot shape: the leading address must not qualify as
+        // the fee-paying input 0 (eligibility requires strictly exceeding the
+        // reserve), so capacity must come from the usable suffix, not the
+        // account total. Seed it AT the versioned reserve — deriving it keeps
+        // the shape valid across fee rebalances, where the old 297_264_780
+        // literal broke the moment protocol 14 dropped the reserve under it.
         let candidates = vec![
-            (addr(1), 297_264_780),
+            (addr(1), reserve()),
             (addr(2), 2_000_000_000),
             (addr(3), 1_623_849_220),
         ];
         let plan = plan(candidates).unwrap();
         let expected_max = 3_623_849_220 - reserve();
 
-        assert_eq!(plan.preflight.account_balance_credits, 3_921_114_000);
+        assert_eq!(
+            plan.preflight.account_balance_credits,
+            reserve() + 3_623_849_220
+        );
         assert_eq!(plan.preflight.usable_balance_credits, 3_623_849_220);
         assert_eq!(plan.preflight.fee_reserve_credits, reserve());
         assert_eq!(plan.preflight.max_shieldable_credits, expected_max);

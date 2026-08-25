@@ -1746,6 +1746,69 @@ class PlatformWalletManager(
     }
 
     /**
+     * Multi-output shielded → shielded transfer (Type 16). Spends notes from
+     * [account] on [walletId] and creates ONE note per entry of [outputs] in
+     * a single atomic transition.
+     *
+     * Repeating the same address across entries is allowed and is the point
+     * of this call: it funds one address with several independent notes, so
+     * a later spend of that address spends several REAL notes rather than
+     * one real note plus an Orchard padding dummy (whose nullifier is
+     * randomly generated and therefore not reproducible offline).
+     *
+     * The transition always emits a change note, so the spendable balance
+     * must strictly exceed the summed amounts plus the fee. The fee grows
+     * with the output count: the bundle publishes
+     * `max(spentNotes, outputs.size + 1, 2)` Orchard actions.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param outputs (raw 43-byte Orchard address, credits) pairs; must be
+     *   non-empty, hold at most [MAX_SHIELDED_TRANSFER_RECIPIENTS] entries
+     *   (the native ceiling — 5, bound by the 20 KiB transition-size limit),
+     *   and every amount must be positive.
+     * @param account the ZIP-32 shielded account to spend from (usually 0).
+     * @param memo optional UTF-8 memo attached to EVERY recipient note
+     *   (null / empty = no memo; at most 32 UTF-8 bytes).
+     */
+    suspend fun shieldedTransferMulti(
+        walletId: ByteArray,
+        outputs: List<Pair<ByteArray, Long>>,
+        account: Int = 0,
+        memo: String? = null,
+    ): Unit = teardownGate.op {
+        require(outputs.isNotEmpty()) { "outputs must not be empty" }
+        // Mirror the native ceiling BEFORE flattening: the arrays built below are sized by
+        // `outputs.size`, and the native layer would reject an oversized call anyway — after
+        // this side had already allocated for it.
+        require(outputs.size <= MAX_SHIELDED_TRANSFER_RECIPIENTS) {
+            "outputs must hold at most $MAX_SHIELDED_TRANSFER_RECIPIENTS entries, got ${outputs.size}"
+        }
+        require(account >= 0) { "account must be non-negative, got $account" }
+        outputs.forEachIndexed { index, (recipientRaw43, amount) ->
+            require(recipientRaw43.size == 43) {
+                "outputs[$index] address must be exactly 43 bytes, got ${recipientRaw43.size}"
+            }
+            require(amount > 0) { "outputs[$index] amount must be positive, got $amount" }
+        }
+        val recipientsRaw43 = ByteArray(outputs.size * 43)
+        outputs.forEachIndexed { index, (recipientRaw43, _) ->
+            recipientRaw43.copyInto(recipientsRaw43, index * 43)
+        }
+        val amounts = LongArray(outputs.size) { outputs[it].second }
+        mapNativeErrors {
+            FundingNative.shieldedTransferMulti(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                recipientsRaw43,
+                amounts,
+                memo?.takeIf { it.isNotEmpty() },
+            )
+        }
+    }
+
+    /**
      * Shielded → Platform unshield (Type 17) — port of Swift's
      * `PlatformWalletManager.shieldedUnshield(walletId:account:toPlatformAddress:amount:)`
      * (`PlatformWalletManagerShieldedSync.swift`). Spends notes from
@@ -2378,6 +2441,20 @@ class PlatformWalletManager(
     private companion object {
         /** SPV progress poll cadence — matches Swift's 1 Hz `startProgressPolling`. */
         const val POLL_INTERVAL_MS = 1_000L
+
+        /**
+         * Recipient ceiling of [shieldedTransferMulti] — mirrors
+         * `MAX_SHIELDED_TRANSFER_RECIPIENTS` in
+         * `packages/rs-platform-wallet-ffi/src/shielded_send.rs`, which the JNI adapter enforces
+         * from the array lengths before allocating. Checked here too so an oversized call is
+         * refused before this side flattens caller-sized buffers.
+         *
+         * 5 = the effective per-transition Orchard action ceiling (6, bound by the 20 KiB
+         * `max_state_transition_size` — a 7-action transition serializes to ~21.7 KiB) minus
+         * the unconditional change output. The native constant is pinned to the dpp derivation
+         * by a Rust test; raise this only in lockstep with it.
+         */
+        const val MAX_SHIELDED_TRANSFER_RECIPIENTS = 5
 
         /** De-offset `PlatformWalletFFIResultCode::ErrorInvalidParameter`. */
         const val PWFFI_INVALID_PARAMETER = 2
