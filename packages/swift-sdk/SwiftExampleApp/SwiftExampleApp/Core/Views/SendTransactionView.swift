@@ -355,6 +355,14 @@ struct SendTransactionView: View {
             .onChange(of: viewModel.detectedAddressType) { _, _ in
                 autoSelectSource()
             }
+            .onChange(of: platformState.platformProtocolVersion) { _, _ in
+                // The SDK learns the network's protocol version on a
+                // detached task after `AppState` publishes it; estimates
+                // resolved before that ratchet completed were computed at
+                // the seed version. Re-resolve so the preview matches the
+                // version the builders will read at submission time.
+                resolveShieldedFees()
+            }
             .sheet(isPresented: $showQRScanner) {
                 // Same network the view model was built with
                 // (`wallet.network ?? .testnet`) so the scanner validates
@@ -521,15 +529,20 @@ struct SendTransactionView: View {
     }
 
     /// Resolve the consensus-pinned shielded fee estimates (2 Orchard
-    /// actions — single-note spend with change) once on appear and push
-    /// them into the view model, mirroring `resolvePlatformLimits()`. The
-    /// estimator computes at the manager's network-tracked platform
-    /// version, so a network still on an older protocol version quotes the
-    /// fee its consensus gate actually validates. A kind that fails to
-    /// resolve is simply absent — `estimateFee(for:)` falls back to the
-    /// static placeholder.
+    /// actions — single-note spend with change) and push them into the
+    /// view model, mirroring `resolvePlatformLimits()`. The estimator
+    /// computes at the manager's network-tracked platform version, so a
+    /// network still on an older protocol version quotes the fee its
+    /// consensus gate actually validates. A kind that fails to resolve is
+    /// simply absent — `estimateFee(for:)` falls back to the static
+    /// placeholder.
+    ///
+    /// Runs on appear AND whenever `platformState.platformProtocolVersion`
+    /// publishes: the version refresh is async, so estimates resolved
+    /// before the ratchet completed were computed at the seed version and
+    /// must be replaced (the recompute is a pure handle lookup — no
+    /// caching guard needed).
     private func resolveShieldedFees() {
-        guard viewModel.shieldedFeeEstimates.isEmpty else { return }
         var fees: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
         for kind: PlatformWalletManager.ShieldedFeeKind in [.transfer, .unshield, .withdrawal] {
             fees[kind] = try? walletManager.estimateShieldedFee(kind: kind, numActions: 2)

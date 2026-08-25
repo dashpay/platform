@@ -289,7 +289,13 @@ fun SendTransactionScreen(
             }
         }
     }
-    val shieldedFeeEstimate by produceState<Long?>(initialValue = null, flow, manager) {
+    // Re-key on the published protocol version too: the SDK learns the
+    // network's version on a background refresh after the manager exists,
+    // so an estimate produced before the ratchet completed was computed at
+    // the seed version (← iOS SendTransactionView re-resolves on
+    // `platformState.platformProtocolVersion` the same way).
+    val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
+    val shieldedFeeEstimate by produceState<Long?>(initialValue = null, flow, manager, protocolVersion) {
         val activeManager = manager
         val kind = when (flow) {
             // Type 15 Shield reserves the same compute_minimum_shielded_fee(2)

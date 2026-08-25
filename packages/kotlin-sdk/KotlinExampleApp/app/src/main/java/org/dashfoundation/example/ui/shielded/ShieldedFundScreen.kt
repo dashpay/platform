@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ShieldedFundProgress
 import org.dashfoundation.example.services.shielded.ShieldedFundFromAssetLockCoordinator.StartFundingResult
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
@@ -66,6 +67,7 @@ import org.dashfoundation.example.util.toHex
 fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
     ShieldedGate(navController) {
         val container = LocalAppContainer.current
+        val appState = LocalAppState.current
         val walletId = remember(walletIdHex) { walletIdHex.hexToBytes() }
         val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
@@ -79,7 +81,13 @@ fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
             runCatching { ShieldedProver.warmUp() }
             value = runCatching { ShieldedProver.isReady() }.getOrDefault(false)
         }
-        val feeEstimate by produceState<Long?>(initialValue = null, manager) {
+        // Re-keyed on the published protocol version: the SDK learns the
+        // network's version on a background refresh after the manager
+        // exists, so an estimate produced before the ratchet completed was
+        // computed at the seed version (← iOS SendTransactionView
+        // re-resolves on `platformState.platformProtocolVersion`).
+        val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
+        val feeEstimate by produceState<Long?>(initialValue = null, manager, protocolVersion) {
             value = manager?.let { m ->
                 runCatching {
                     m.estimateShieldedFee(ShieldedProver.FeeKind.TransferOrShield, 2)

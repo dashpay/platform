@@ -139,7 +139,8 @@ class SendViewModel: ObservableObject {
     /// Consensus-pinned shielded fee estimates (credits, 2 actions) per fee
     /// kind, resolved through the wallet manager's network-tracked platform
     /// version and pushed in by the VIEW
-    /// (`SendTransactionView.resolveShieldedFees()`) on appear — the view
+    /// (`SendTransactionView.resolveShieldedFees()`) on appear and again
+    /// when the async protocol-version refresh publishes — the view
     /// model has no wallet handle of its own, same as
     /// `platformMinOutputAmount` above. A missing entry falls back to the
     /// static `SendFlow.estimatedFee` placeholder in `estimateFee(for:)`.
