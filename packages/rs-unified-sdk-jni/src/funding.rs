@@ -465,7 +465,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return;
         };
-        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+        let Some(recipient) = read_recipient43(env, &recipient_raw43, "recipientRaw43") else {
             return;
         };
         let result = unsafe {
