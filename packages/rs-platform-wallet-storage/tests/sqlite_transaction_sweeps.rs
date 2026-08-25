@@ -500,6 +500,146 @@ fn a_released_coin_a_surviving_record_reclaims_stays_spent() {
     );
 }
 
+/// The reviewer scenario for the pruned-finalized-release defect: upstream
+/// computes `released_outpoints` from its live records, and a chainlocked
+/// spender F is pruned to a bare txid under the default
+/// `keep-finalized-transactions = off` — so a loser L that arrived after the
+/// pruning, reusing F's input alongside an attacker-owned one, reports F's
+/// input as released when a final W beats L on the attacker input. The
+/// pinned `TransactionsSwept` doc calls this unresolvable at its layer; this
+/// store is the layer that CAN resolve it, because F's full record survives
+/// in `core_transactions`. The release must be refused for F's coin — and
+/// still honoured for a coin only the swept loser claimed, in the same
+/// batch, or the guard would strand legitimately freed money.
+#[test]
+fn a_release_naming_a_coin_a_stored_finalized_record_claims_is_refused() {
+    use key_wallet::transaction_checking::transaction_context::BlockInfo;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xE9);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x09);
+    let funding_txid = Txid::from_byte_array([0x90; 32]);
+    // F's coin — consumed on chain, must never come back.
+    let settled_coin = OutPoint::new(funding_txid, 0);
+    // Claimed only by the loser — must come free.
+    let losers_own_coin = OutPoint::new(funding_txid, 1);
+    // Attacker-owned input shared by L and W — never ours, no row.
+    let attacker_input = OutPoint::new(Txid::from_byte_array([0x9A; 32]), 0);
+
+    let finalized_txid = Txid::from_byte_array([0x91; 32]);
+    let loser_txid = Txid::from_byte_array([0x92; 32]);
+    let winner_txid = Txid::from_byte_array([0x93; 32]);
+
+    // F: chainlocked spender of `settled_coin`. Upstream keeps only its
+    // txid from here on; this row keeps everything.
+    let mut finalized = tx_record(
+        finalized_txid,
+        vec![settled_coin],
+        vec![TxOut {
+            value: 400,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    finalized.context = TransactionContext::InChainLockedBlock(BlockInfo::new(
+        42,
+        dashcore::BlockHash::from_byte_array([0x9B; 32]),
+        1_735_689_600,
+    ));
+
+    // L: arrives after F's pruning, pays this wallet, reuses F's input and
+    // the attacker's.
+    let loser = tx_record(
+        loser_txid,
+        vec![settled_coin, attacker_input, losers_own_coin],
+        vec![TxOut {
+            value: 1_000,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![
+                make_utxo(&addr, funding_txid, 0, 400),
+                make_utxo(&addr, funding_txid, 1, 600),
+            ],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![finalized],
+            spent_utxos: vec![make_utxo(&addr, funding_txid, 0, 400)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![loser],
+            spent_utxos: vec![make_utxo(&addr, funding_txid, 1, 600)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // W (final) conflicts with L on the attacker input alone. Upstream's
+    // release set — computed from live records that no longer include F —
+    // wrongly names F's coin alongside the loser's own.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
+                superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![settled_coin, losers_own_coin],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    let visible = unspent(&conn, &w);
+    assert!(
+        !visible.contains(&settled_coin),
+        "a released coin a stored finalized record still claims must stay spent"
+    );
+    assert!(
+        visible.contains(&losers_own_coin),
+        "a coin only the swept loser claimed must still come free"
+    );
+
+    drop(conn);
+    drop(persister);
+
+    // Restart: the guard's verdict must be what a relaunch loads — this is
+    // exactly where the unguarded release manufactured the double spend.
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let conn = persister.lock_conn_for_test();
+    let visible = unspent(&conn, &w);
+    assert!(
+        !visible.contains(&settled_coin),
+        "the refused release must hold across a restart"
+    );
+    assert!(
+        visible.contains(&losers_own_coin),
+        "the honoured release must hold across a restart"
+    );
+}
+
 /// A chainlocked winner may evict an InstantSend-locked loser, so a swept
 /// transaction can own a row in `core_instant_locks`. Nothing ties that table
 /// to `core_transactions`, so the lock has to be deleted explicitly or it

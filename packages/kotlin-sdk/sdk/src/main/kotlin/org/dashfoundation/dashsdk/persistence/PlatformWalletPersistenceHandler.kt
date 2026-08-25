@@ -972,11 +972,29 @@ class PlatformWalletPersistenceHandler(
                     // Found: link the spend. Monotonic — only a confirmed
                     // (in-block) context flips isSpent; a mempool re-emit never
                     // downgrades a flag that is already true (mirrors spendIsInBlock).
+                    //
+                    // The LINK is guarded, not last-writer-wins. `spendingTxid`
+                    // is this store's spend attribution, and the sweep release
+                    // pass trusts it: `holdSpentWithoutSpender` detaches rows
+                    // by it and `releaseByOutpoint` frees only detached rows.
+                    // A network-final spender's link must therefore never be
+                    // stolen by a later conflicting record — upstream prunes a
+                    // chainlocked spender to a bare txid (and after a restart
+                    // holds no history at all), so a loser reusing that coin
+                    // arrives with upstream unable to see the settled claim,
+                    // and its own eventual sweep would name the coin released.
+                    // With the link intact the hold pass never detaches the
+                    // row and the release is refused; with it stolen, the
+                    // provably consumed coin reads unspent after the next
+                    // restart — a guaranteed double spend. The one legitimate
+                    // theft is DIP-10 precedence: a chainlocked arrival may
+                    // take a coin from a spender that was only IS-locked.
+                    val keepExistingLink = keepSettledSpenderLink(db, txo, txid, context)
                     db.txoDao().upsert(
                         txo.copy(
                             isSpent = txo.isSpent || context >= CONTEXT_IN_BLOCK,
-                            spendingTxid = txid,
-                            spendingInputIndex = i,
+                            spendingTxid = if (keepExistingLink) txo.spendingTxid else txid,
+                            spendingInputIndex = if (keepExistingLink) txo.spendingInputIndex else i,
                             lastUpdated = now(),
                         ),
                     )
@@ -1171,10 +1189,27 @@ class PlatformWalletPersistenceHandler(
             // until the winner reaches a block.
             val spending = db.transactionDao().getByTxid(spendingTxid)
             val spentInBlock = spending != null && spending.context >= CONTEXT_IN_BLOCK
+            // Same link guard as `onWalletChangesetTransaction`: a
+            // network-final spender's attribution is what the sweep release
+            // pass trusts, so it is never stolen by a conflicting later
+            // spend. Unreachable on this channel today — upstream only
+            // emits utxos_spent for inputs it classified against a
+            // still-present funding UTXO, which a settled spend has already
+            // consumed — but the invariant is cheap to hold here and does
+            // not depend on that classification detail staying true.
+            val keepExistingLink =
+                keepSettledSpenderLink(db, txo, spendingTxid, spending?.context ?: 0)
             db.txoDao().upsert(
                 txo.copy(
-                    spendingTxid = if (spending != null) spendingTxid else txo.spendingTxid,
-                    isSpent = if (spending != null) {
+                    spendingTxid = if (spending != null && !keepExistingLink) {
+                        spendingTxid
+                    } else {
+                        txo.spendingTxid
+                    },
+                    // When the settled link is kept, the `isSpent` gate is
+                    // not re-answered from the usurper either — the whole
+                    // claim is dropped, not just the link write.
+                    isSpent = if (spending != null && !keepExistingLink) {
                         spentInBlock || txo.supersededByTxid != null
                     } else {
                         txo.isSpent
@@ -1481,6 +1516,43 @@ class PlatformWalletPersistenceHandler(
             }
         }
         0
+    }
+
+    /**
+     * Whether [txo]'s existing `spendingTxid` link must survive an arriving
+     * record ([newSpendingTxid], at [newContext]) that also claims the
+     * outpoint. See the guard's call site in `onWalletChangesetTransaction`
+     * for why a network-final spender's link is load-bearing: it is the only
+     * attribution the sweep release pass consults, and upstream cannot
+     * re-supply it for a spender it has pruned or lost across a restart.
+     *
+     * Kept when the existing spender's row still exists, has not been
+     * globally swept (a swept spender's claims were resolved by its own
+     * sweep — its link is dead weight a new spend may legitimately replace),
+     * and is network-final: IS-locked, in-block, or chainlocked
+     * (context >= [CONTEXT_INSTANT_SEND]). Two mempool spenders keep
+     * last-writer-wins, as before — neither claim outranks the other and a
+     * final winner sorts them out. The single sanctioned takeover mirrors
+     * DIP-10 precedence: a chainlocked arrival
+     * (context == [CONTEXT_CHAIN_LOCKED]) may take the coin from a spender
+     * that was only IS-locked — a plain in-block arrival may not, exactly as
+     * upstream's sweep gate refuses a plain block against a signed lock. A
+     * re-emit of the same spender is never a takeover.
+     */
+    private suspend fun keepSettledSpenderLink(
+        db: DashDatabase,
+        txo: TxoEntity,
+        newSpendingTxid: ByteArray,
+        newContext: Int,
+    ): Boolean {
+        val existingTxid = txo.spendingTxid ?: return false
+        if (existingTxid.contentEquals(newSpendingTxid)) return false
+        val existing = db.transactionDao().getByTxid(existingTxid) ?: return false
+        if (existing.isGloballySwept) return false
+        if (existing.context < CONTEXT_INSTANT_SEND) return false
+        val chainlockOverIsLock =
+            newContext >= CONTEXT_CHAIN_LOCKED && existing.context == CONTEXT_INSTANT_SEND
+        return !chainlockOverIsLock
     }
 
     /**
@@ -3722,8 +3794,14 @@ class PlatformWalletPersistenceHandler(
 
         private const val TAG = "DashPersistence"
 
+        /** `TransactionContext::InstantSend` — network-final under DIP-10. */
+        private const val CONTEXT_INSTANT_SEND = 1
+
         /** `TransactionContext::InBlock` — spends only count once in-block. */
         private const val CONTEXT_IN_BLOCK = 2
+
+        /** `TransactionContext::InChainLockedBlock` — outranks an IS lock. */
+        private const val CONTEXT_CHAIN_LOCKED = 3
 
         /** `Network.testnet` rawValue — the Swift fallback network. */
         private const val NETWORK_TESTNET = 1

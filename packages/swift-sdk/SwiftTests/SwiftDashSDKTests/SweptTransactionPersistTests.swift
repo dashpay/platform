@@ -549,6 +549,163 @@ final class SweptTransactionPersistTests: XCTestCase {
         _ = handler.endChangeset(walletId: walletId, success: true)
     }
 
+    /// Multi-input record delivery with no spent emit — the shape a
+    /// wallet-relevant loser takes when its inputs were never classified
+    /// against live UTXOs (`input_outpoints` carries every raw input either
+    /// way).
+    private func deliverRecord(
+        _ handler: PlatformWalletPersistenceHandler,
+        txid: Data,
+        context: UInt32,
+        inputOutpoints: [(txid: Data, vout: UInt32)]
+    ) {
+        let name = strdup("Standard { index: 0 }")
+        defer { free(name) }
+
+        var inputs: [OutPointFFI] = inputOutpoints.map { outpoint in
+            var input = OutPointFFI()
+            Swift.withUnsafeMutableBytes(of: &input.txid) { dst in
+                outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+            }
+            input.vout = outpoint.vout
+            return input
+        }
+
+        var record = TransactionRecordFFI()
+        Swift.withUnsafeMutableBytes(of: &record.txid) { dst in
+            txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        record.context = context
+        record.block_height = 0
+
+        handler.beginChangeset(walletId: walletId)
+        inputs.withUnsafeMutableBufferPointer { inputsPtr in
+            record.input_outpoints = inputsPtr.baseAddress
+            record.input_outpoints_count = UInt(inputsPtr.count)
+            withUnsafeMutablePointer(to: &record) { recordPtr in
+                var account = AccountChangeSetFFI()
+                account.account_type_name = name
+                account.transactions = recordPtr
+                account.transactions_count = 1
+                withUnsafeMutablePointer(to: &account) { accountPtr in
+                    var cs = WalletChangeSetFFI()
+                    cs.accounts = accountPtr
+                    cs.accounts_count = 1
+                    withUnsafePointer(to: &cs) { csPtr in
+                        handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                    }
+                }
+            }
+        }
+        _ = handler.endChangeset(walletId: walletId, success: true)
+    }
+
+    /// The pruned-finalized-release defect, on this store's terms: a
+    /// chainlocked spender F is pruned upstream to a bare txid, so a later
+    /// loser L that pays this wallet while reusing F's input (plus an
+    /// attacker-owned one) sweeps with F's coin wrongly named in the
+    /// released set. F's row and its `spendingTransaction` link survive
+    /// HERE, and `settledSpenderLinkIsKept` keeps L's record pass from
+    /// stealing the attribution — so the loser walk never detaches F's coin
+    /// and the by-outpoint release refuses it (`spendingTransaction == nil`
+    /// gate), while the coin only L claimed still comes free in the same
+    /// batch.
+    func testAReleaseNamingACoinASettledSpenderStillClaimsIsRefused() throws {
+        let (handler, container) = try makeHandler()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+
+        let finalizedTxid = Data(repeating: 0x46, count: 32)
+        let attackerTxid = Data(repeating: 0x47, count: 32)
+
+        let funding = PersistentTransaction(
+            txid: fundingTxid,
+            transactionData: Data(repeating: 0x04, count: 10),
+            context: 2,
+            blockHeight: 100,
+            netAmount: 200_000
+        )
+        // F: the chainlocked spender of the settled coin — upstream keeps
+        // only its txid from here on; this store keeps the row and the link.
+        let finalized = PersistentTransaction(
+            txid: finalizedTxid,
+            transactionData: Data(repeating: 0x05, count: 10),
+            context: 3,
+            blockHeight: 120,
+            netAmount: -100_000
+        )
+        context.insert(funding)
+        context.insert(finalized)
+
+        let settledCoin = PersistentTxo(
+            transaction: funding,
+            vout: 0,
+            amount: 100_000,
+            address: "yFundAddr",
+            height: 100
+        )
+        settledCoin.walletId = walletId
+        settledCoin.isSpent = true
+        settledCoin.spendingTransaction = finalized
+        context.insert(settledCoin)
+
+        let losersOwnCoin = PersistentTxo(
+            transaction: funding,
+            vout: 1,
+            amount: 100_000,
+            address: "yFundAddr",
+            height: 100
+        )
+        losersOwnCoin.walletId = walletId
+        context.insert(losersOwnCoin)
+        try context.save()
+
+        // L: arrives after F's pruning — pays this wallet, reuses F's input
+        // alongside the attacker's and one coin of its own. Its record pass
+        // must NOT steal F's link.
+        deliverRecord(
+            handler,
+            txid: sweptTxid,
+            context: 0,
+            inputOutpoints: [
+                (txid: fundingTxid, vout: 0),
+                (txid: attackerTxid, vout: 0),
+                (txid: fundingTxid, vout: 1),
+            ]
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0)).spendingTransaction?.txid,
+            finalizedTxid,
+            "a settled spender's link is not stolen by a conflicting record"
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1)).spendingTransaction?.txid,
+            sweptTxid,
+            "the loser's own coin links normally"
+        )
+
+        // W (final) beats L on the attacker input alone. Upstream's release
+        // set — computed from live records that no longer include F —
+        // wrongly names F's coin alongside the loser's own.
+        sweep(handler, [Batch(
+            losers: [sweptTxid],
+            winner: winnerTxid,
+            winnerMinedHeight: 400,
+            released: [(txid: fundingTxid, vout: 0), (txid: fundingTxid, vout: 1)]
+        )])
+
+        let settled = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertTrue(
+            settled.isSpent,
+            "a released coin a settled stored spender still claims must stay spent"
+        )
+        XCTAssertEqual(settled.spendingTransaction?.txid, finalizedTxid)
+        let freed = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 1))
+        XCTAssertFalse(freed.isSpent, "a coin only the swept loser claimed must come free")
+        XCTAssertNil(freed.spendingTransaction)
+        XCTAssertNil(freed.supersededByTxid)
+    }
+
     /// The backstop for rows written before holds named their winner: a
     /// coin held spent with neither a spender nor a `supersededByTxid`
     /// stamp has nothing durable behind it, so the wallet re-delivering it

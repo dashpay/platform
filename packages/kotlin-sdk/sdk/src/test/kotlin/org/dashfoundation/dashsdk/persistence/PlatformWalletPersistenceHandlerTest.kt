@@ -2344,6 +2344,119 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aReleaseNamingACoinASettledSpenderStillClaimsIsRefused() = runTest {
+        // The pruned-finalized-release defect, on this store's terms: a
+        // chainlocked spender F is pruned upstream to a bare txid, so a
+        // later loser L that pays this wallet while reusing F's input (plus
+        // an attacker-owned one) sweeps with F's coin wrongly named in
+        // `releasedOutpoints`. F's row and its `spendingTxid` link survive
+        // HERE, and the link guard keeps L's record pass from stealing the
+        // attribution — so the hold pass never detaches F's coin and
+        // `releaseByOutpoint` refuses it, while the coin only L claimed
+        // still comes free in the same batch. The restore surface is the
+        // restart: what `onLoadWalletList` hands back is what a relaunch
+        // spends from.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 60 }
+        val settledCoin = makeOutpoint(fundingTxid, 0)
+        val losersOwnCoin = makeOutpoint(fundingTxid, 1)
+        val attackerInput = makeOutpoint(ByteArray(32) { 61 }, 0)
+        val finalizedTxid = ByteArray(32) { 62 }
+        val loserTxid = ByteArray(32) { 63 }
+        val winnerTxid = ByteArray(32) { 64 }
+
+        // Fund both coins.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 200_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 1, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // F: the chainlocked spender of `settledCoin` — upstream keeps only
+        // its txid from here on; this store keeps the row and the link.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, finalizedTxid, ByteArray(10) { 5 }, 3, 120, ByteArray(32) { 8 },
+            1_700_000_100, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_050,
+            settledCoin, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        val linked = db.txoDao().getByOutpoint(settledCoin)!!
+        assertTrue("sanity: F's spend marked", linked.isSpent)
+        assertTrue("sanity: F holds the link", finalizedTxid.contentEquals(linked.spendingTxid))
+
+        // L: arrives after F's pruning — pays this wallet, reuses F's input
+        // alongside the attacker's and one coin of its own. Its record pass
+        // must NOT steal F's link.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 6 }, 0, 0, ByteArray(32),
+            0, 0, "Standard", 0, 50_000, 0, false, "", 1_700_000_200,
+            settledCoin + attackerInput + losersOwnCoin, 3,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        val guarded = db.txoDao().getByOutpoint(settledCoin)!!
+        assertTrue(
+            "a settled spender's link is not stolen by a conflicting record",
+            finalizedTxid.contentEquals(guarded.spendingTxid),
+        )
+        assertTrue(
+            "the loser's own coin links normally",
+            loserTxid.contentEquals(db.txoDao().getByOutpoint(losersOwnCoin)!!.spendingTxid),
+        )
+
+        // W (final) beats L on the attacker input alone. Upstream's release
+        // set — computed from live records that no longer include F — wrongly
+        // names F's coin alongside the loser's own.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid),
+            arrayOf(settledCoin, losersOwnCoin), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val settled = db.txoDao().getByOutpoint(settledCoin)!!
+        assertTrue(
+            "a released coin a settled stored spender still claims must stay spent",
+            settled.isSpent,
+        )
+        assertTrue(finalizedTxid.contentEquals(settled.spendingTxid))
+        val freed = db.txoDao().getByOutpoint(losersOwnCoin)!!
+        assertFalse("a coin only the swept loser claimed must come free", freed.isSpent)
+        assertNull(freed.spendingTxid)
+        assertEquals(
+            "the restore surface hands back exactly the freed coin",
+            1,
+            handler.onLoadWalletList().single().utxos.size,
+        )
+    }
+
+    @Test
     fun aPreStampHoldStillFreesOnRedelivery() = runTest {
         // The backstop for rows written before holds named their winner: a
         // coin held spent with neither a spender nor a `supersededByTxid`

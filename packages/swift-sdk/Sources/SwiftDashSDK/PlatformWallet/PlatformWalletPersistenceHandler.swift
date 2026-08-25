@@ -2128,6 +2128,44 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         tx.context >= TransactionContextType.inBlock.rawValue
     }
 
+    /// Whether a TXO's existing spender link must survive an arriving
+    /// record that also claims the outpoint. The link is this store's spend
+    /// attribution, and the sweep release pass trusts it: the loser walk
+    /// detaches rows by their spender and the by-outpoint release frees
+    /// only detached rows (`spendingTransaction == nil`). A network-final
+    /// spender's link must therefore never be stolen by a later conflicting
+    /// record — upstream prunes a chainlocked spender to a bare txid (and
+    /// after a restart holds no history at all), so a loser reusing that
+    /// coin arrives with upstream unable to see the settled claim, and its
+    /// own eventual sweep names the coin released. With the link intact the
+    /// release is refused; with it stolen, the provably consumed coin reads
+    /// unspent after the next restart — a guaranteed double spend.
+    ///
+    /// Kept when the existing spender has not been globally swept (a swept
+    /// spender's claims were resolved by its own sweep) and is
+    /// network-final: IS-locked, in-block, or chainlocked. Two mempool
+    /// spenders keep last-writer-wins, as before. The single sanctioned
+    /// takeover mirrors DIP-10 precedence: a chainlocked arrival may take
+    /// the coin from a spender that was only IS-locked — a plain in-block
+    /// arrival may not, exactly as upstream's sweep gate refuses a plain
+    /// block against a signed lock. A re-emit of the same spender is never
+    /// a takeover.
+    private static func settledSpenderLinkIsKept(
+        existing: PersistentTransaction?,
+        newTxid: Data,
+        newContext: UInt32
+    ) -> Bool {
+        guard let existing, existing.txid != newTxid else { return false }
+        guard !existing.isGloballySwept else { return false }
+        guard existing.context >= TransactionContextType.instantSend.rawValue else {
+            return false
+        }
+        let chainlockOverIsLock =
+            newContext >= TransactionContextType.inChainLockedBlock.rawValue
+            && existing.context == TransactionContextType.instantSend.rawValue
+        return !chainlockOverIsLock
+    }
+
     /// Mark the `PersistentTxo` whose 36-byte `outpoint` matches the
     /// given input as spent and link it to `spendingTransaction`.
     /// If no matching TXO exists yet (in-Swift out-of-order, or
@@ -2160,19 +2198,31 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // restore set until the winner reaches a block. Flips to
             // false stay with the paths that own them: the sweep
             // release pass and `upsertUtxo`'s recovery clear.
+            // The LINK is guarded, not last-writer-wins — see
+            // `settledSpenderLinkIsKept` for why a network-final
+            // spender's attribution must survive a conflicting later
+            // record. `isSpent` stays monotonic either way.
+            let keepExistingLink = Self.settledSpenderLinkIsKept(
+                existing: txo.spendingTransaction,
+                newTxid: spendingTxid,
+                newContext: spendingTransaction.context
+            )
             let expectedIsSpent = txo.isSpent || Self.spendIsInBlock(spendingTransaction)
             let linkageChanged =
                 txo.isSpent != expectedIsSpent
-                || txo.spendingTransaction?.txid != spendingTxid
-                || txo.spendingInputIndex != inputIndex
+                || (!keepExistingLink
+                    && (txo.spendingTransaction?.txid != spendingTxid
+                        || txo.spendingInputIndex != inputIndex))
             if linkageChanged {
                 txo.isSpent = expectedIsSpent
-                if txo.spendingTransaction?.txid != spendingTxid {
-                    txo.spendingTransaction = spendingTransaction
+                if !keepExistingLink {
+                    if txo.spendingTransaction?.txid != spendingTxid {
+                        txo.spendingTransaction = spendingTransaction
+                    }
+                    // Capture the canonical vin index so the detail
+                    // view can render inputs in serialized order.
+                    txo.spendingInputIndex = inputIndex
                 }
-                // Capture the canonical vin index so the detail
-                // view can render inputs in serialized order.
-                txo.spendingInputIndex = inputIndex
                 txo.lastUpdated = Date()
             }
             // A pending entry from an earlier write is now stale —
@@ -2459,9 +2509,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             if txo.spendingTransaction?.txid == spendingTxid {
                 spendingTx = txo.spendingTransaction
             } else {
-                spendingTx = fetchTransactionRow(txid: spendingTxid)
-                if let spending = spendingTx {
+                // Same link guard as `resolveInputOutpoint`: a
+                // network-final spender's attribution is what the sweep
+                // release pass trusts, so it is never stolen by a
+                // conflicting later spend — and the `isSpent` gate below
+                // must not be re-answered from the usurper either, so the
+                // whole claim is dropped, not just the link write.
+                // Unreachable on this channel today — upstream only emits
+                // `utxos_spent` for inputs it classified against a
+                // still-present funding UTXO, which a settled spend has
+                // already consumed — but the invariant is cheap to hold
+                // here and does not depend on that classification detail
+                // staying true.
+                if let spending = fetchTransactionRow(txid: spendingTxid),
+                   !Self.settledSpenderLinkIsKept(
+                       existing: txo.spendingTransaction,
+                       newTxid: spendingTxid,
+                       newContext: spending.context
+                   ) {
                     txo.spendingTransaction = spending
+                    spendingTx = spending
                 }
             }
         }
