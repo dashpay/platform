@@ -640,6 +640,209 @@ fn a_release_naming_a_coin_a_stored_finalized_record_claims_is_refused() {
     );
 }
 
+/// The stored-claims veto is settled-evidence only: a bare mempool row must
+/// not outrank an authoritative release. A mempool record is the one context
+/// that can go stale forever — an evicted or abandoned mempool transaction
+/// has no removal path in this store other than a later sweep, and
+/// restoration does not repopulate ordinary history — so a stale claimant
+/// surviving a restart must not veto the release of a coin a later loser
+/// claimed, or the coin is attributed to an unrelated winner and stranded
+/// durably spent: the mirror image of the wrong-release bug the veto exists
+/// to stop.
+#[test]
+fn a_stale_mempool_claimant_does_not_veto_an_authoritative_release() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xEA);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x0A);
+    let funding_txid = Txid::from_byte_array([0xA0; 32]);
+    let coin = OutPoint::new(funding_txid, 0);
+
+    let stale_txid = Txid::from_byte_array([0xA1; 32]);
+    let loser_txid = Txid::from_byte_array([0xA2; 32]);
+    let winner_txid = Txid::from_byte_array([0xA3; 32]);
+
+    // M: a mempool spend of the coin, marked spent when recorded. It is
+    // then evicted from the network's mempool without the wallet ever
+    // hearing — its row simply goes stale.
+    let stale = tx_record(
+        stale_txid,
+        vec![coin],
+        vec![TxOut {
+            value: 400,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 400)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![stale],
+            spent_utxos: vec![make_utxo(&addr, funding_txid, 0, 400)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // Restart: upstream's memory of M is gone for good; only the stale row
+    // remains.
+    drop(persister);
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let mut conn = persister.lock_conn_for_test();
+
+    // A fresh loser claims the same coin, and an authoritative sweep later
+    // frees it — upstream's word, computed from the wallet it actually
+    // holds.
+    let loser = tx_record(
+        loser_txid,
+        vec![coin],
+        vec![TxOut {
+            value: 300,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            records: vec![loser],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser_txid],
+                superseded_by: winner_txid,
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![coin],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    assert!(
+        unspent(&conn, &w).contains(&coin),
+        "a stale mempool claimant must not veto an authoritative release"
+    );
+}
+
+/// The stored-claims scan is the final guard against re-crediting a
+/// consumed coin, so corrupt claimant rows fail the round instead of
+/// silently losing their veto: a wrong-length `txid` key and a record blob
+/// whose decoded txid disagrees with its typed key are both `BlobDecode`
+/// errors.
+#[test]
+fn a_corrupt_stored_claimant_fails_the_sweep_round_closed() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xEB);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x0B);
+    let funding_txid = Txid::from_byte_array([0xB0; 32]);
+    let coin = OutPoint::new(funding_txid, 0);
+    let loser_txid = Txid::from_byte_array([0xB1; 32]);
+    let winner_txid = Txid::from_byte_array([0xB2; 32]);
+
+    let loser = tx_record(
+        loser_txid,
+        vec![coin],
+        vec![TxOut {
+            value: 300,
+            script_pubkey: addr.script_pubkey(),
+        }],
+    );
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 400)],
+            records: vec![loser],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // A claimant row whose typed key is not 32 bytes. The blob is a real,
+    // decodable record so the failure is attributable to the key alone.
+    let honest = tx_record(Txid::from_byte_array([0xB3; 32]), vec![coin], Vec::new());
+    let honest_blob = blob::encode(&honest).unwrap();
+    conn.execute(
+        "INSERT INTO core_transactions \
+            (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
+         VALUES (?1, ?2, NULL, NULL, NULL, 1, ?3)",
+        params![w.as_slice(), &[0xB3u8; 31][..], &honest_blob[..]],
+    )
+    .unwrap();
+
+    let sweep_cs = CoreChangeSet {
+        sweeps: vec![SweepBatch {
+            txids: vec![loser_txid],
+            superseded_by: winner_txid,
+            winner_mined_height: Some(WINNER_HEIGHT),
+            released_outpoints: vec![coin],
+        }],
+        ..Default::default()
+    };
+    {
+        let tx = conn.transaction().unwrap();
+        let err = core_state::apply(&tx, &w, &sweep_cs).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                platform_wallet_storage::sqlite::error::WalletStorageError::BlobDecode { .. }
+            ),
+            "a wrong-length claimant key must fail the round closed, got {err:?}"
+        );
+    }
+
+    // Repair the key length but leave it disagreeing with the record's own
+    // txid — the typed key decides swept-loser exclusion, so the mismatch
+    // must fail too.
+    conn.execute(
+        "DELETE FROM core_transactions WHERE wallet_id = ?1 AND length(txid) = 31",
+        params![w.as_slice()],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO core_transactions \
+            (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
+         VALUES (?1, ?2, NULL, NULL, NULL, 1, ?3)",
+        params![w.as_slice(), &[0xB4u8; 32][..], &honest_blob[..]],
+    )
+    .unwrap();
+    {
+        let tx = conn.transaction().unwrap();
+        let err = core_state::apply(&tx, &w, &sweep_cs).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                platform_wallet_storage::sqlite::error::WalletStorageError::BlobDecode { .. }
+            ),
+            "a key/record txid mismatch must fail the round closed, got {err:?}"
+        );
+    }
+}
+
 /// A chainlocked winner may evict an InstantSend-locked loser, so a swept
 /// transaction can own a row in `core_instant_locks`. Nothing ties that table
 /// to `core_transactions`, so the lock has to be deleted explicitly or it

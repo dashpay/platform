@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -197,9 +198,12 @@ pub fn apply(
     // reporting its own amnesia — honouring it flips the materialized UTXO
     // to `spent = 0` and hands a provably consumed coin back as spendable
     // after the next load, a guaranteed double spend. The same applies
-    // after a restart for records of ANY context: hydration rebuilds the
-    // in-memory wallet without its transaction history, so every claim the
-    // store holds is one upstream can no longer see.
+    // after a restart for every NETWORK-FINAL record (IS-locked, in-block,
+    // chainlocked): hydration rebuilds the in-memory wallet without its
+    // transaction history, so every settled claim the store holds is one
+    // upstream can no longer see. Bare mempool rows are deliberately not
+    // part of the veto — see `surviving_stored_input_claims` for why a
+    // stale one must not strand a legitimately released coin.
     //
     // `stored_input_claims` is therefore upstream's own `retain_unclaimed`
     // predicate — "drop outpoints some surviving record still spends" —
@@ -295,16 +299,36 @@ pub fn apply(
 /// This is the durable mirror of upstream's `retain_unclaimed` claimed-set,
 /// with one decisive difference: it includes records the in-memory wallet
 /// has pruned (chainlocked, under the default
-/// `keep-finalized-transactions = off`) or lost across a restart. Rows of
-/// EVERY context count as claimants on purpose. A mined or chainlocked
-/// record's spend is settled and may never be re-freed; an InstantSend-
-/// locked record's inputs are settled under DIP-10 the moment the lock
-/// lands; and a plain mempool record is a claim upstream itself would have
-/// retained had it still held the record — refusing matches what
-/// `retain_unclaimed` computes from an unpruned, unrestarted wallet, no
-/// more and no less. In-session a live claimant never appears in a released
-/// set anyway (upstream filters it), so any hit here is by construction a
-/// claim upstream forgot.
+/// `keep-finalized-transactions = off`) or lost across a restart.
+///
+/// Only NETWORK-FINAL claimants count: InstantSend-locked (settled under
+/// DIP-10 the moment the lock lands), in-block, or chainlocked. A bare
+/// `Mempool` row is deliberately not settled-spend evidence, because it is
+/// the one context that can go stale forever: an evicted or abandoned
+/// mempool transaction has no removal path in this store other than a later
+/// sweep (upstream's abandon path emits no events —
+/// dashpay/rust-dashcore#976), and restoration deliberately does not
+/// repopulate ordinary transaction history, so nothing ever re-asserts or
+/// retracts the row. Letting it veto an authoritative release would leave
+/// the coin attributed to an unrelated winner and durably spent — the
+/// mirror image of the wrong-release bug this guard exists to stop. This is
+/// also exactly the mobile stores' rule: their link guard protects a
+/// network-final spender's link and lets a mempool link be replaced. A LIVE
+/// mempool claim loses nothing here: in-session upstream holds the record
+/// and never names its inputs released, and within the round
+/// `claimed_by_survivors` carries the changeset's own mempool records. The
+/// one accepted trade: after a restart a still-alive mempool claimant on
+/// disk no longer vetoes, so the release wins and the coin may be
+/// transiently re-offered while that pending spend races — self-resolving
+/// when the pending spend confirms or dies, and strictly better than a
+/// permanent strand.
+///
+/// Fails CLOSED. This scan is the final guard against re-crediting a
+/// consumed coin, so a malformed stored key must fail the round rather than
+/// silently drop that row's veto: a `txid` column of the wrong length and a
+/// record blob whose decoded `TransactionRecord::txid` disagrees with the
+/// typed key (the key is what excludes a row as a swept loser) are both
+/// `BlobDecode` errors, matching the other typed-column readers.
 ///
 /// One pass over the wallet's rows, decoding each blob once — the same
 /// build-the-set-then-probe shape (and rationale) as upstream's
@@ -328,13 +352,25 @@ fn surviving_stored_input_claims(
     while let Some(row) = rows.next()? {
         let txid_bytes: Vec<u8> = row.get(0)?;
         let Ok(txid_array) = <[u8; 32]>::try_from(txid_bytes.as_slice()) else {
-            continue;
+            return Err(WalletStorageError::blob_decode(
+                "core_transactions.txid must be exactly 32 bytes",
+            ));
         };
-        if swept_txids.contains(&dashcore::Txid::from_byte_array(txid_array)) {
+        let key_txid = dashcore::Txid::from_byte_array(txid_array);
+        if swept_txids.contains(&key_txid) {
             continue;
         }
         let blob_bytes: Vec<u8> = row.get(1)?;
         let record: TransactionRecord = blob::decode(&blob_bytes)?;
+        if record.txid != key_txid {
+            return Err(WalletStorageError::blob_decode(
+                "core_transactions.txid disagrees with the decoded record's txid",
+            ));
+        }
+
+        if matches!(record.context, TransactionContext::Mempool) {
+            continue;
+        }
         claims.extend(
             record
                 .transaction
