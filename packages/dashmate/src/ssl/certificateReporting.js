@@ -84,7 +84,11 @@ export async function reportUnresolved({
       provider: config.get('platform.gateway.ssl.provider'),
       certificateValidFrom: verdict.installed ? verdict.installed.validFrom : null,
     })
-    ? { code: record.getCode() }
+    // The spent issuance travels with the cause. Without it this surface
+    // prints the obtain command for a repairable cause while the doctor
+    // withholds it for the same node - and that certificate is spent whether
+    // or not the current failure is repairable.
+    ? { code: record.getCode(), isIssuanceSpent: record.isIssuanceSpent() }
     : null;
 
   process.stderr.write(renderCertificateGuidance({

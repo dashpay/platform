@@ -83,7 +83,14 @@ export function recordRenewalFailure({
   renewalRecordRepository, homeDir, configName, provider, error, code, apiKey,
 }) {
   attempt(() => {
-    const previous = readPrevious(renewalRecordRepository, configName);
+    // Only this provider's own history. A provider change handed over by the
+    // configuration watcher does not clear the record, so without this the new
+    // provider's first failure would inherit the old one's last success, its
+    // failure count, and its spent issuance - and a certificate spent on one
+    // provider would suppress the repair for an unrelated failure on another.
+    const candidate = readPrevious(renewalRecordRepository, configName);
+    const previous = candidate?.getProvider() === provider ? candidate : null;
+
     const classified = code
       ? { code, detail: null }
       : classifyRenewalFailure(error, { homeDirPath: homeDir.getPath(), apiKey });

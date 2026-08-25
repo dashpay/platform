@@ -8,7 +8,6 @@ import {
   recordRenewalFailure,
   recordRenewalSuccess,
 } from '../../../src/helper/recordRenewalOutcome.js';
-import RenewalRecord from '../../../src/ssl/renewalRecord/RenewalRecord.js';
 import RenewalRecordRepository, {
   RENEWAL_RECORD_STATES,
 } from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
@@ -88,6 +87,36 @@ describe('recordRenewalOutcome', () => {
 
     expect(record.getCode()).to.not.equal(RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED);
     expect(record.toObject().issuanceSpentAt).to.equal(spentAt);
+  });
+
+  it('should not inherit the previous provider\'s history when the provider changed', () => {
+    // A provider change handed over by the configuration watcher does not clear
+    // the record. Carrying the old provider's spent issuance forward would
+    // suppress the repair for an unrelated failure on the new one.
+    recordRenewalFailure({
+      renewalRecordRepository,
+      homeDir,
+      configName: CONFIG_NAME,
+      provider: 'letsencrypt',
+      error: new Error('guidance', { cause: new LegoArtifactsMissingError('/tmp/x.crt') }),
+    });
+
+    expect(read().record.isIssuanceSpent()).to.equal(true);
+
+    recordRenewalFailure({
+      renewalRecordRepository,
+      homeDir,
+      configName: CONFIG_NAME,
+      provider: 'zerossl',
+      error: new Error('urn:ietf:params:acme:error:connection :: timeout'),
+    });
+
+    const { record } = read();
+
+    expect(record.getProvider()).to.equal('zerossl');
+    expect(record.isIssuanceSpent()).to.equal(false);
+    expect(record.getConsecutiveFailures()).to.equal(1);
+    expect(record.getLastSuccessAt()).to.equal(null);
   });
 
   it('should clear a spent issuance once a certificate actually arrives', () => {

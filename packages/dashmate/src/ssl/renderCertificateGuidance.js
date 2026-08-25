@@ -1,7 +1,7 @@
 import { SSL_PROVIDERS } from '../constants.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
-import { describeRenewalFailure, REMEDY_CLASS } from './renewalFailure.js';
+import { describeRenewalFailure, REMEDY_CLASS, RENEWAL_FAILURE_CODES } from './renewalFailure.js';
 
 /**
  * @param {Object} verdict
@@ -86,7 +86,7 @@ function renderObservation(verdict) {
 function renderZeroSslExplanation(renewal) {
   // Once ZeroSSL has actually said so, this stops being background about how
   // the free tier works and becomes what happened to this node.
-  if (renewal?.code === 'QUOTA_EXHAUSTED') {
+  if (renewal?.code === RENEWAL_FAILURE_CODES.QUOTA_EXHAUSTED) {
     return `  This node uses ZeroSSL, and its free account has used all three of its
   certificates - so ZeroSSL will not issue another one.
 `;
@@ -194,7 +194,9 @@ const WITHHOLDS_OBTAIN = [REMEDY_CLASS.DO_NOT_RETRY];
  * @return {string}
  */
 function renderWithheldObtain(cfg, renewal) {
-  if (renewal.code === 'CERTIFICATE_ISSUED_NOT_SAVED') {
+  // Whatever the current cause is. The issuance outlives the failure that
+  // spent it, and it is spent whether or not this failure is repairable.
+  if (renewal.isIssuanceSpent || renewal.code === RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED) {
     return `  A certificate was issued and could not be saved, so it is already spent
   against this node's limit and asking again spends another. Check free space
   and permissions where dashmate saves certificates first:
@@ -320,7 +322,9 @@ ${obtainAttemptFailed
 
     if (hasReason(verdict, CERTIFICATE_REASONS.NO_EXTERNAL_IP)) {
       blocks.push(renderNoExternalIpGuidance(cfg));
-    } else if (renewal && WITHHOLDS_OBTAIN.includes(describeRenewalFailure(renewal.code).remedy)) {
+    } else if (renewal
+      && (renewal.isIssuanceSpent
+        || WITHHOLDS_OBTAIN.includes(describeRenewalFailure(renewal.code).remedy))) {
       // The recorded cause says asking again cannot work, so this surface must
       // not prescribe it either. The doctor withholds the same command for the
       // same reason; printing it here would make the two disagree about the

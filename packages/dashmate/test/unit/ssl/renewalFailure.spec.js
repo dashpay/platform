@@ -136,13 +136,15 @@ describe('renewalFailure', () => {
           .to.equal(RENEWAL_FAILURE_CODES.PROVIDER_AUTH);
       });
 
-      it('should treat a verification server that never answered as a local problem', () => {
-        // It binds this machine's port 80 before ZeroSSL is asked to look at
-        // it, so nothing here is the provider's verdict.
+      it('should treat a verification server that never answered as unreachable, not occupied', () => {
+        // The server had already bound port 80 successfully by then - the check
+        // that failed fetches the node's public validation URL. Nothing local
+        // holds the port, so sending an operator to `ss` looks for a listener
+        // that is not there and leaves the firewall unexamined.
         const error = new Error('Verification server is not responding.\nPlease ensure that port 80');
 
         expect(classifyRenewalFailure(error).code)
-          .to.equal(RENEWAL_FAILURE_CODES.PORT_80_IN_USE);
+          .to.equal(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
       });
     });
 

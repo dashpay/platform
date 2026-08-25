@@ -572,6 +572,21 @@ describe('renderCertificateGuidance', () => {
       expect(output).to.not.contain('ssl obtain');
     });
 
+    it('should withhold the obtain command while an issuance is spent, whatever the current cause', () => {
+      // The doctor withholds it for the same node. Printing it here made the
+      // two surfaces contradict each other about a certificate that is spent
+      // whether or not the current failure is repairable.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: { code: 'PORT_80_UNREACHABLE', isIssuanceSpent: true },
+      });
+
+      expect(output).to.not.contain('ssl obtain');
+      expect(output).to.contain('already spent');
+    });
+
     it('should keep the existing text when nothing was recorded', () => {
       config.set('platform.gateway.ssl.provider', 'letsencrypt');
 

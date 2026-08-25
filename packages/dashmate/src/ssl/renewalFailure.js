@@ -356,11 +356,14 @@ function classifyCode(error, message) {
     return RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED;
   }
 
-  // The verification server binds port 80 on this machine before ZeroSSL is
-  // asked to look at it, so a server that never answered is a local condition
-  // rather than anything the provider said.
+  // The verification server had already bound port 80 on this machine by the
+  // time this was raised - the check that failed fetches the node's PUBLIC
+  // validation URL. So nothing answered from outside, which is a firewall, a
+  // forward or an upstream responder, and never a local process holding the
+  // port. Sending an operator to `ss` here looks for a listener that is not
+  // there and leaves the real cause unexamined.
   if (message.includes('Verification server is not responding')) {
-    return RENEWAL_FAILURE_CODES.PORT_80_IN_USE;
+    return RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE;
   }
 
   if (message.includes('Invalid ZeroSSL API response')
