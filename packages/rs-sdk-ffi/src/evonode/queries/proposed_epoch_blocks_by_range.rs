@@ -10,7 +10,7 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// # Parameters
 /// * `sdk_handle` - Handle to the SDK instance
 /// * `epoch` - Epoch number (optional, 0 for current epoch)
-/// * `limit` - Maximum number of results to return (optional, 0 for no limit)
+/// * `limit` - Maximum number of results per page (0 ⇒ Drive's default page size); carried in the request so the proof verifies
 /// * `start_after` - Start after this pro_tx_hash (hex-encoded, optional)
 /// * `start_at` - Start at this pro_tx_hash (hex-encoded, optional)
 ///
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
 fn get_evonodes_proposed_epoch_blocks_by_range(
     sdk_handle: *const SDKHandle,
     epoch: u32,
-    _limit: u32,
+    limit: u32,
     start_after: *const c_char,
     start_at: *const c_char,
 ) -> Result<Option<String>, String> {
@@ -125,8 +125,14 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
         };
 
         // Create a query with the epoch and range parameters
+        // The limit MUST travel in the request: Drive builds the proof for the
+        // limit it applied (its default when none is given), and the verifier
+        // re-derives the query shape from the request — a request without a
+        // limit therefore fails proof verification ("Proof is missing data for
+        // query range"). `0` means "Drive's default page".
         let query = EvonodesProposedEpochBlocksByRangeQuery {
             epoch: if epoch > 0 { Some(epoch) } else { None },
+            limit: if limit > 0 { Some(limit) } else { None },
             start_after: start_after_hash,
             start_at: start_at_hash,
         };
@@ -163,6 +169,7 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
 #[derive(Debug, Clone)]
 struct EvonodesProposedEpochBlocksByRangeQuery {
     pub epoch: Option<u32>,
+    pub limit: Option<u32>,
     pub start_after: Option<ProTxHash>,
     pub start_at: Option<ProTxHash>,
 }
@@ -201,7 +208,7 @@ impl
                 version: Some(Version::V0(
                     GetEvonodesProposedEpochBlocksByRangeRequestV0 {
                         epoch: self.epoch,
-                        limit: None, // Limit is handled by LimitQuery wrapper
+                        limit: self.limit,
                         start,
                         prove: settings.prove,
                     },

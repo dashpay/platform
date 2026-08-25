@@ -96,6 +96,9 @@ import obtainZeroSSLCertificateTaskFactory from './listr/tasks/ssl/zerossl/obtai
 import obtainLetsEncryptCertificateTaskFactory from './listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
 import VerificationServer from './listr/tasks/ssl/VerificationServer.js';
 import saveCertificateTaskFactory from './listr/tasks/ssl/saveCertificateTask.js';
+import installCertificateFilesTaskFactory from './listr/tasks/ssl/installCertificateFilesTaskFactory.js';
+import checkGatewayCertificateFactory from './ssl/checkGatewayCertificateFactory.js';
+import gatewayCertificateTaskFactory from './listr/tasks/update/gatewayCertificateTaskFactory.js';
 
 import createZeroSSLCertificate from './ssl/zerossl/createZeroSSLCertificate.js';
 import verifyDomain from './ssl/zerossl/verifyDomain.js';
@@ -329,6 +332,8 @@ export default async function createDIContainer(options = {}) {
     obtainLetsEncryptCertificateTask: asFunction(obtainLetsEncryptCertificateTaskFactory)
       .singleton(),
     saveCertificateTask: asFunction(saveCertificateTaskFactory),
+    installCertificateFilesTask: asFunction(installCertificateFilesTaskFactory).singleton(),
+    gatewayCertificateTask: asFunction(gatewayCertificateTaskFactory).singleton(),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
     getCoreScope: asFunction(getCoreScopeFactory).singleton(),
     getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),
@@ -354,6 +359,7 @@ export default async function createDIContainer(options = {}) {
   container.register({
     validateZeroSslCertificate: asFunction(validateZeroSslCertificateFactory).singleton(),
     validateLetsEncryptCertificate: asFunction(validateLetsEncryptCertificateFactory).singleton(),
+    checkGatewayCertificate: asFunction(checkGatewayCertificateFactory).singleton(),
     getCertificate: asValue(getCertificate),
   });
 

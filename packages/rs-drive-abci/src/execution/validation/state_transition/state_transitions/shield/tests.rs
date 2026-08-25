@@ -1896,23 +1896,26 @@ mod tests {
             }
         }
 
-        /// Binary-search both edges of the funding range to measure the band where
-        /// `validate_fees_of_event` accepts a shield that execution then rejects.
+        /// Measure the lower edge of the funding range — the least headroom
+        /// `validate_fees_of_event` accepts — and require that exact headroom to EXECUTE.
         ///
-        /// * lower edge = the ESTIMATED fee (below it, validation rejects cleanly)
-        /// * upper edge = the ACTUAL metered fee (at or above it, the shield executes)
-        ///
-        /// If the two cost models agreed, the edges would coincide and the band would be empty.
-        /// Any width is a range of funding levels where the transition is accepted by validation
+        /// If the two cost models agreed everywhere, the least accepted headroom would execute;
+        /// any gap is a band of funding levels where the transition is accepted by validation
         /// and then dropped at execution — no longer a chain halt since the proposer-side
         /// per-transition rollback (shipped in 4.1.1), but still a transition that can never
-        /// confirm despite paying the quoted fee.
+        /// confirm despite paying the quoted fee. Because execution's metered cost is a fixed
+        /// function of the state, "the least accepted headroom executes" is equivalent to the
+        /// band being empty at every funding level, so one edge search plus one execution probe
+        /// replaces the old two-edge search at half the cost.
         ///
-        /// Ignored until the estimation gap is closed: the estimated-cost path skips the keyless
-        /// commitment-tree append entirely (dashpay/grovedb#812), so the band is measurably open
-        /// (18,919,200 credits, 10.7% of the fee, at 494 notes). Re-enable with the grovedb pin
-        /// bump that fixes it. Also ~40 full Orchard proving runs, so keep it out of routine CI.
-        #[ignore = "open until the grovedb#812 estimator fix is pinned; ~40 Orchard proving runs"]
+        /// Under protocol version 13 (GROVE_V3) the estimated-cost path skips the keyless
+        /// commitment-tree append entirely (dashpay/grovedb#812, locked for replay), so the band
+        /// is measurably open there (18,919,200 credits, 10.7% of the fee, at 494 notes). From
+        /// protocol version 14 (GROVE_V4) the estimator prices the fixed per-append model
+        /// (grovedb #829/#830) and the band is closed EXACTLY: measured at 494 notes, the least
+        /// accepted headroom and the metered fee coincide (the estimate IS the metered fee, so
+        /// an address funds precisely what it is charged). ~30 fresh-platform runs; the Orchard
+        /// proof is built once.
         #[tokio::test]
         async fn shield_fee_estimate_and_actual_must_not_leave_a_halting_band() {
             let pv = PlatformVersion::latest();
@@ -1926,7 +1929,12 @@ mod tests {
                 "sanity: the upper bound must comfortably fund the shield ({top_msg})"
             );
 
-            // Upper edge: least headroom that actually executes == the ACTUAL metered fee.
+            // Least headroom that EXECUTES. Success is the one monotone
+            // predicate over the whole funding range — below it the outcome
+            // is some rejection whose error class varies with the gate that
+            // fires (the input-minimum gate at tiny headroom, the structural
+            // fee minimum, then the metered-affordability rejection), so
+            // searching on any single rejection class would not converge.
             let (mut lo, mut hi) = (0u64, CEILING);
             while lo + 1 < hi {
                 let mid = lo + (hi - lo) / 2;
@@ -1936,44 +1944,30 @@ mod tests {
                     lo = mid;
                 }
             }
-            let actual_fee = hi;
+            let admission = hi;
 
-            // Lower edge: below the flat structural minimum shielded fee the transition is
-            // rejected in BASIC validation (`ShieldedInvalidValueBalanceError`) before any write,
-            // which is safe. The dangerous band starts where that gate stops rejecting.
-            let (mut lo2, mut hi2) = (0u64, actual_fee);
-            while lo2 + 1 < hi2 {
-                let mid = lo2 + (hi2 - lo2) / 2;
-                if run_at(mid, &b, pv).await.0 == Outcome::Internal {
-                    hi2 = mid;
-                } else {
-                    lo2 = mid;
-                }
-            }
-            let band_start = hi2;
+            let (below, below_msg) = run_at(admission - 1, &b, pv).await;
 
-            let (edge_outcome, edge_msg) = run_at(band_start - 1, &b, pv).await;
+            println!("shield_amount      = {}", b.shield_amount);
+            println!("least executing    = {admission}");
+            println!("just below         = {below:?} :: {below_msg}");
 
-            println!("shield_amount   = {}", b.shield_amount);
-            println!("band start      = {band_start}  (first headroom that reaches execution)");
-            println!("actual fee      = {actual_fee}  (execution, apply=true)");
-            println!("just below band = {edge_outcome:?} :: {edge_msg}");
-            println!(
-                "HALTING BAND    = [{band_start}, {actual_fee})  width = {} credits ({:.1}% of the fee)",
-                actual_fee - band_start,
-                100.0 * (actual_fee - band_start) as f64 / actual_fee as f64
+            // One credit below the least headroom that executes must be a
+            // VALIDATION rejection. If it is instead the InternalError drop,
+            // validation accepted a transition execution then rejected — the
+            // mainnet-halt band is open at every funding level in the gap
+            // between the two thresholds.
+            assert_ne!(
+                below,
+                Outcome::Internal,
+                "HALTING BAND: headroom {} is accepted by validation and dropped at \
+                 execution ({below_msg})",
+                admission - 1
             );
-
-            assert_eq!(
-                band_start, actual_fee,
-                "HALTING BAND: any shield whose fee headroom falls in [{band_start}, {actual_fee}) \
-                 clears both the structural minimum-fee gate and validate_fees_of_event (which \
-                 prices the batch with the synthetic apply=false cost model, and which SKIPS the \
-                 keyless commitment-tree append entirely), and is then REJECTED by \
-                 paid_from_address_inputs_and_outputs on the real apply=true cost — after its drive \
-                 operations were already written to the block transaction. Such a transition is \
-                 stripped from the block as TxAction::Removed while its writes remain in the \
-                 proposer's app hash, so no validator can reproduce that hash."
+            assert_ne!(
+                below,
+                Outcome::Success,
+                "binary search must have found the least executing headroom"
             );
         }
 
@@ -1984,12 +1978,70 @@ mod tests {
         /// the block without it compute a different app hash and can never agree.
         ///
         /// This pins the invariant that a dropped transition must not mutate state.
+        ///
+        /// Runs under protocol version 13 — the version mainnet was on at the halt, the one
+        /// whose estimation path leaves the funding band open (the estimated-cost model skips
+        /// the keyless commitment-tree append, dashpay/grovedb#812). The band's absolute edges
+        /// move whenever fee constants or grovedb cost models move — and parts of execution
+        /// resolve constants through the platform state's own version rather than the passed
+        /// one — so a hardcoded headroom goes stale. The test therefore calibrates itself: it
+        /// binary-searches the least headroom validation lets through and the least headroom
+        /// that executes, asserts the band between them is still open, and drops a shield
+        /// funded at the midpoint.
+        /// From protocol version 14 (GROVE_V4) the estimator prices the fixed per-append
+        /// model exactly (grovedb #829/#830), so the mid-band shield this test needs cannot be
+        /// built there — see `shield_fee_estimate_and_actual_must_not_leave_a_halting_band`.
         #[tokio::test]
         async fn dropped_shield_must_not_mutate_state() {
-            let pv = PlatformVersion::latest();
+            let pv = PlatformVersion::get(13).expect("protocol version 13 should exist");
             let b = build_bundle();
-            // Sits inside the measured band: accepted by validation, rejected by execution.
-            let headroom = 177_215_759u64;
+
+            // Least headroom validation lets through to execution.
+            const CEILING: u64 = 5_000_000_000;
+            let (top, top_msg) = run_at(CEILING, &b, pv).await;
+            assert_eq!(
+                top,
+                Outcome::Success,
+                "sanity: the ceiling must comfortably fund the shield ({top_msg})"
+            );
+            // "Accepted" means validation let the transition through to
+            // execution: the outcome is either a successful execution or the
+            // mid-band InternalError drop. Everything below the band is a
+            // clean rejection — the structural-minimum gate at tiny
+            // headroom, then AddressesNotEnoughFunds — so the predicate is
+            // monotone across the funding range.
+            let is_accepted =
+                |outcome: Outcome| matches!(outcome, Outcome::Internal | Outcome::Success);
+            let (mut lo, mut hi) = (0u64, CEILING);
+            while lo + 1 < hi {
+                let mid = lo + (hi - lo) / 2;
+                if is_accepted(run_at(mid, &b, pv).await.0) {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            let accepted = hi;
+            // Least headroom that actually executes.
+            let (mut lo, mut hi) = (accepted, CEILING);
+            while lo + 1 < hi {
+                let mid = lo + (hi - lo) / 2;
+                if run_at(mid, &b, pv).await.0 == Outcome::Success {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            let executes = hi;
+            println!("band at protocol 13: [{accepted}, {executes})");
+            assert!(
+                accepted < executes,
+                "the protocol-13 funding band must be open (its estimator skips the keyless \
+                 commitment-tree append); if it has closed, this reproduction is no longer \
+                 constructible and should be retired deliberately"
+            );
+            // Mid-band: accepted by validation, rejected by execution.
+            let headroom = accepted + (executes - accepted) / 2;
 
             let mut platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
