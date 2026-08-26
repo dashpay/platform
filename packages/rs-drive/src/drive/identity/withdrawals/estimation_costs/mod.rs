@@ -46,9 +46,9 @@ impl Drive {
             },
         );
 
-        // The withdrawals tree itself holds six single-byte keys: the index counter item, the
-        // queue, the sum of reserved amounts, the broadcasted queue, the total credits history
-        // and the credit inflows sum tree.
+        // The withdrawals tree itself holds six single-byte keys: three sum trees (the
+        // reserved amounts, the broadcasted queue and the credit inflows) and three that are
+        // not (the index counter item, the queue and the total credits history).
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(get_withdrawal_root_path_vec()),
             EstimatedLayerInformation {
@@ -57,11 +57,11 @@ impl Drive {
                 estimated_layer_sizes: AllSubtrees(
                     1,
                     SomeSumTrees {
-                        sum_trees_weight: 2,
+                        sum_trees_weight: 3,
                         big_sum_trees_weight: 0,
                         count_trees_weight: 0,
                         count_sum_trees_weight: 0,
-                        non_sum_trees_weight: 4,
+                        non_sum_trees_weight: 3,
                         provable_sum_trees_weight: 0,
                         provable_count_trees_weight: 0,
                         provable_count_sum_trees_weight: 0,
