@@ -313,8 +313,9 @@ mod tests {
 
     /// HAVING limits are a hard inclusive range, `1..=100`: `0` (the
     /// unset sentinel) and anything above `MAX_HAVING_LIMIT` are
-    /// rejected client side rather than clamped, because the limit is
-    /// echoed in the proof envelope and re-checked by the verifier.
+    /// rejected client side rather than clamped, because the limit
+    /// bounds the coverage the verifier's rebuilt `PathQuery` demands
+    /// of the proof.
     #[test]
     fn limit_is_required_and_capped_client_side() {
         for limit in [0u32, 101] {

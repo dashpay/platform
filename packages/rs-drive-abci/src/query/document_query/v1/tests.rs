@@ -2805,8 +2805,8 @@ mod ranked_tests {
     }
 
     /// `limit` is **required** on the ranked path — it is the `k` the
-    /// proof envelope echoes, so there is no server default a verifying
-    /// client could reproduce. What this pins is that drive's
+    /// verifier rebuilds its `PathQuery` around, so there is no server
+    /// default a verifying client could reproduce. What this pins is that drive's
     /// `Error::Query` reaches the caller as a query error on the
     /// validation result, rather than being swallowed into an internal
     /// error by the dispatcher's `Err(e) => Err(e.into())` arm.

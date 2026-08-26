@@ -256,8 +256,9 @@ fn count_star_is_ordered_by_the_dollar_count_sentinel() {
 }
 
 /// `LIMIT 0` selects nothing and `LIMIT > MAX_RANKED_LIMIT` is refused
-/// rather than clamped — a clamp would produce a proof whose echoed `k`
-/// the client's own reconstruction rejects. The boundary itself is
+/// rather than clamped — a clamp would truncate the server's walk below
+/// the cap the client's rebuilt `PathQuery` demands coverage for, so the
+/// client's own reconstruction rejects the proof. The boundary itself is
 /// accepted.
 #[test]
 fn k_is_bounded_to_one_through_max_ranked_limit() {
@@ -280,9 +281,9 @@ fn k_is_bounded_to_one_through_max_ranked_limit() {
 }
 
 /// `LIMIT` is mandatory in ranked mode. There is no server-side default
-/// because `k` is echoed inside the proof envelope and re-checked by the
-/// verifier: a number the client never chose is a number it cannot
-/// reproduce when rebuilding the query to verify.
+/// because the verifier re-executes proofs against a `PathQuery` rebuilt
+/// from the request: a number the client never chose is a number it
+/// cannot reproduce when rebuilding the query to verify.
 #[test]
 fn limit_is_required() {
     let error = detect_avg(false, None, None).expect_err(
@@ -1210,8 +1211,9 @@ fn count_axis_ranks_reads_and_proves_consistently() {
     assert_proof_round_trips(&drive, &contract, &bottom_one, &entries);
 
     // A missing LIMIT is refused end to end, not just in the pure
-    // detector: `k` is echoed in the proof envelope, so there is no
-    // server-side default a verifying client could reproduce.
+    // detector: `k` binds verification through the client's rebuilt
+    // `PathQuery`, so there is no server-side default a verifying
+    // client could reproduce.
     let mut no_limit = RankedCase::count(true, None);
     no_limit.limit = None;
     let error = run(&drive, &contract, &no_limit, false)
@@ -1396,8 +1398,8 @@ fn offset_pages_through_the_ranking_and_the_proof_attests_the_starting_rank() {
 }
 
 /// A proof of one page must not verify as another page of the same
-/// ranking. `offset` is echoed in the envelope and re-checked, which is
-/// what stops a server from answering "the 5th best" with a proof of
+/// ranking. `offset` shifts where the verifier's re-executed walk must
+/// start, which is what stops a server from answering "the 5th best" with a proof of
 /// "the best" — the entries would look perfectly valid, and only the
 /// offset binding distinguishes them.
 #[test]
@@ -1452,7 +1454,7 @@ fn a_proof_does_not_verify_under_a_different_offset() {
 /// has no entries", so a freshly registered contract queried with
 /// `prove = true` got an error until the first document landed.
 ///
-/// `prove_indexed_axis_top_k_paginated` closes that gap — it emits a
+/// The unified `PathQuery` prover closes that gap — it emits a
 /// guaranteed-empty range against the secondary rather than refusing —
 /// so the two paths now agree on empty state, and this test is the
 /// tripwire that says so. The attested `skipped` is `0`, which for an
@@ -1621,8 +1623,9 @@ fn a_tampered_proof_never_verifies_to_the_honest_root_hash() {
 
 /// The verifier must be checking the ranking it was asked about: a proof
 /// generated for one `(axis, k, descending)` triple must not verify under
-/// another. grovedb echoes all three in the envelope and re-checks them,
-/// and this pins that drive passes each of them through faithfully — a
+/// another. grovedb rebuilds the traversal from all three and re-executes
+/// the proof against it, and this pins that drive passes each of them
+/// through faithfully — a
 /// dropped argument here would let a client accept a proof of a
 /// different question.
 #[test]
@@ -2256,11 +2259,11 @@ mod pinned_prefix {
                 having: &[],
                 order_by: &order_by,
                 where_clauses,
+                resolved_time_ranges: &[],
                 limit: Some(limit),
                 offset: None,
                 has_start_at: false,
                 prove,
-                resolved_time_ranges: &[],
             },
             None,
             platform_version(),
@@ -3054,6 +3057,7 @@ mod pinned_prefix {
                 having: &[],
                 order_by: &order_by,
                 where_clauses,
+                resolved_time_ranges: &[],
                 limit: Some(limit),
                 offset: None,
                 has_start_at: false,
@@ -3251,6 +3255,7 @@ mod pinned_prefix {
             having: &[],
             order_by: &order_by,
             where_clauses: &pins,
+            resolved_time_ranges: &[],
             limit: Some(4),
             offset: None,
             has_start_at: false,
@@ -3281,6 +3286,7 @@ mod pinned_prefix {
             having: &[],
             order_by: &order_by,
             where_clauses: &y_pin,
+            resolved_time_ranges: &[],
             limit: Some(4),
             offset: None,
             has_start_at: false,
@@ -3348,6 +3354,7 @@ mod pinned_prefix {
                     having: &[],
                     order_by: &order_by,
                     where_clauses: &pins,
+                    resolved_time_ranges: &[],
                     limit: Some(2),
                     offset: None,
                     has_start_at: false,

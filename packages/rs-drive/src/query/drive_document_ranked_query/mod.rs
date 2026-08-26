@@ -167,7 +167,8 @@ pub const RANKED_COUNT_ORDER_KEY: &str = "$count";
 /// Which per-group aggregate the groups are ranked by.
 ///
 /// Maps 1:1 onto [`grovedb::element::IndexAxis`], the axis tag stored in
-/// an indexed tree's TLV and echoed in the proof envelope. Kept as a
+/// an indexed tree's TLV and rebuilt into the `PathQuery` a verifier
+/// re-executes proofs against. Kept as a
 /// separate drive-side type (rather than re-exporting grovedb's) so the
 /// query surface's error messages and validation can talk about
 /// `rankedCountable` / `rankedSummable` / `rankedAverageable` — contract
