@@ -319,7 +319,9 @@ jobs:
       # wall time) is reduced here to the single comprehensive simulation —
       # see the doc comment on
       # run_chain_comprehensive_mixed_operations_with_epoch_change_and_quorum_rotation
-      # for what it covers. The remaining simulations run in their own phase
+      # for what it covers — plus the process_proposal collision module,
+      # which pins a consensus-halt regression and runs in under a second
+      # combined. The remaining simulations run in their own phase
       # below on push and nightly only, so a regression in one of them is
       # caught minutes after merge — the same safety-net pattern as the
       # shielded phase. Keeping this phase's filter identical across events
@@ -352,7 +354,7 @@ jobs:
             --package keyword-search-contract \
             --all-features \
             --locked \
-            -E 'not test(~shield) and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations))'
+            -E 'not test(~shield) and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations) or test(~process_proposal_collision))'
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
@@ -380,7 +382,7 @@ jobs:
             --package drive-abci \
             --all-features \
             --locked \
-            -E 'binary_id(=drive-abci::strategy_tests) and not test(~comprehensive_mixed_operations) and not test(~shield)'
+            -E 'binary_id(=drive-abci::strategy_tests) and not test(~comprehensive_mixed_operations) and not test(~process_proposal_collision) and not test(~shield)'
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"

@@ -3,11 +3,12 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::{
-    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
+    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters, ProposerResults,
 };
 use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Setters,
 };
+use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -17,6 +18,76 @@ use dpp::version::TryIntoPlatformVersioned;
 use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
+use tenderdash_abci::proto::ToMillis;
+
+/// Compares the proposal our own `PrepareProposal` executed against the one `request` describes,
+/// returning the name of the first execution input that differs, or `None` when the two are the
+/// same block.
+///
+/// Tenderdash computes a block hash only once `PrepareProposal` has returned, so a context it
+/// left behind has no hash to match on and identity has to come from the execution inputs
+/// instead. Every field `run_block_proposal` reads is compared here, the round excepted — the
+/// caller has already established that. The request fields left out are exactly the ones
+/// `BlockProposal` discards on conversion — `proposed_last_commit`, `misbehavior`,
+/// `next_validators_hash` and the consensus block version — which therefore cannot reach
+/// execution or move the app hash.
+fn prepared_proposal_difference(
+    block_state_info: &BlockStateInfo,
+    proposer_results: &ProposerResults,
+    request: &proto::RequestProcessProposal,
+) -> Option<&'static str> {
+    if u64::try_from(request.height).ok() != Some(block_state_info.height()) {
+        return Some("height");
+    }
+
+    let request_block_time_ms = request.time.as_ref().and_then(|time| time.to_millis().ok());
+    if request_block_time_ms != Some(block_state_info.block_time_ms()) {
+        return Some("block time");
+    }
+
+    if request.proposer_pro_tx_hash != block_state_info.proposer_pro_tx_hash() {
+        return Some("proposer pro tx hash");
+    }
+
+    if request.core_chain_locked_height != block_state_info.core_chain_locked_height() {
+        return Some("core chain locked height");
+    }
+
+    if request.core_chain_lock_update != proposer_results.response.core_chain_lock_update {
+        return Some("core chain lock update");
+    }
+
+    if request.proposed_app_version != proposer_results.proposed_app_version {
+        return Some("proposed app version");
+    }
+
+    if request.quorum_hash != proposer_results.validator_set_quorum_hash {
+        return Some("validator set quorum hash");
+    }
+
+    if request.version.as_ref().map(|version| version.app)
+        != Some(proposer_results.response.app_version)
+    {
+        return Some("consensus app version");
+    }
+
+    // The transactions Tenderdash builds the block from are the ones we did not ask it to drop,
+    // in the order we returned them, so compare the bytes rather than just how many there are.
+    let prepared_transactions = proposer_results
+        .response
+        .tx_records
+        .iter()
+        .filter(|record| {
+            record.action != TxAction::Removed as i32 && record.action != TxAction::Delayed as i32
+        })
+        .map(|record| &record.tx);
+
+    if !prepared_transactions.eq(request.txs.iter()) {
+        return Some("transactions");
+    }
+
+    None
+}
 
 pub fn process_proposal<'a, A, C>(
     app: &A,
@@ -38,95 +109,99 @@ where
             // We were not the proposer, and we should process something new
             drop_block_execution_context = true;
         } else if let Some(current_block_hash) = block_state_info.block_hash() {
-            // There is also the possibility that this block already came in, but tenderdash crashed
-            // Now tenderdash is sending it again
-            if let Some(proposal_info) = block_execution_context.proposer_results() {
-                tracing::debug!(
-                    method = "process_proposal",
-                    "we knew block hash, block execution context already had a proposer result",
-                );
-                // We were the proposer as well, so we have the result in cache
-                return Ok(proto::ResponseProcessProposal {
-                    status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-                    app_hash: proposal_info.app_hash.clone(),
-                    tx_results: proposal_info.tx_results.clone(),
-                    consensus_param_updates: proposal_info.consensus_param_updates.clone(),
-                    validator_set_update: proposal_info.validator_set_update.clone(),
-                    events: Vec::new(),
-                });
-            }
-
             if current_block_hash.as_slice() == request.hash {
+                // There is also the possibility that this block already came in, but tenderdash crashed
+                // Now tenderdash is sending it again
+                if let Some(proposer_results) = block_execution_context.proposer_results() {
+                    tracing::debug!(
+                        method = "process_proposal",
+                        "we knew block hash, block execution context already had a proposer result",
+                    );
+                    // We were the proposer as well, so we have the result in cache
+                    return Ok(proto::ResponseProcessProposal {
+                        status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+                        app_hash: proposer_results.response.app_hash.clone(),
+                        tx_results: proposer_results.response.tx_results.clone(),
+                        consensus_param_updates: proposer_results
+                            .response
+                            .consensus_param_updates
+                            .clone(),
+                        validator_set_update: proposer_results
+                            .response
+                            .validator_set_update
+                            .clone(),
+                        events: Vec::new(),
+                    });
+                }
+
                 // We were not the proposer, just drop the execution context
                 tracing::warn!(
-                        method = "process_proposal",
-                        "block execution context already existed, but we are running it again for same height {}/round {}",
-                        request.height,
-                        request.round,
-                    );
-                drop_block_execution_context = true;
-            } else {
-                // We are getting a different block hash for a block of the same round
-                // This is a terrible issue
-                tracing::error!(
                     method = "process_proposal",
-                    block_state_info = ?block_state_info,
-                    "received a process proposal request twice with different hash for height {}/round {}: existing hash {:?}, new hash {:?}",
+                    "block execution context already existed, but we are running it again for same height {}/round {}",
                     request.height,
                     request.round,
-                    current_block_hash,
-                    request.hash,
                 );
-                Err(Error::Abci(AbciError::BadRequest(
-                    "received a process proposal request twice with different hash".to_string(),
-                )))?;
+                drop_block_execution_context = true;
+            } else {
+                // A different block for the same height and round. With a single honest
+                // proposer per round this only happens when the block we hold is stale:
+                // typically our own proposal, built while we were still catching up, and
+                // now the block the network actually committed at this height and round
+                // arrives through consensus catch-up. The cached result belongs to the
+                // other block, so it must neither be served nor block execution; the only
+                // correct answer is to execute the block we were asked about.
+                tracing::warn!(
+                    method = "process_proposal",
+                    block_state_info = ?block_state_info,
+                    "received a process proposal request for a different block at the same height {}/round {}: existing hash {}, new hash {}; dropping the existing block execution context and executing the new block",
+                    request.height,
+                    request.round,
+                    hex::encode(current_block_hash),
+                    hex::encode(&request.hash),
+                );
+                drop_block_execution_context = true;
             }
         } else {
-            // we were the proposer
-            let Some(proposal_info) = block_execution_context.proposer_results() else {
+            // We were the proposer. Tenderdash only computes the block hash after our
+            // PrepareProposal has returned, so the context we hold carries none and the block
+            // we prepared has to be recognised by the inputs it executed.
+            let Some(proposer_results) = block_execution_context.proposer_results() else {
                 Err(Error::Abci(AbciError::BadRequest(
                     "received a process proposal request twice".to_string(),
                 )))?
             };
 
-            let expected_transactions = proposal_info
-                .tx_records
-                .iter()
-                .filter_map(|record| {
-                    if record.action == TxAction::Removed as i32
-                        || record.action == TxAction::Delayed as i32
-                    {
-                        None
-                    } else {
-                        Some(&record.tx)
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            // While it is true that the length could be same, seeing how this is such a rare situation
-            // It does not seem worth to deal with situations where the length is the same but the transactions have changed
-            if expected_transactions.len() == request.txs.len()
-                && proposal_info.core_chain_lock_update == request.core_chain_lock_update
+            if let Some(difference) =
+                prepared_proposal_difference(block_state_info, proposer_results, &request)
             {
-                let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
-                    tracing::debug!(
-                            method = "process_proposal",
-                            "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}",
-                            proposal_info,
-                        );
+                // A different block at the same height and round, reaching us before Tenderdash
+                // ever told us a hash for the one we prepared. Answering it with the prepared
+                // app hash is the same failure the hash-aware branch above guards against, so
+                // take the same way out: discard the stale context and execute what we were
+                // asked about.
+                tracing::warn!(
+                    method = "process_proposal",
+                    block_state_info = ?block_state_info,
+                    difference,
+                    "received a process proposal request for a block that is not the one we prepared at the same height {}/round {}; dropping the existing block execution context and executing the new block",
+                    request.height,
+                    request.round,
+                );
 
-                    // Cloning all required properties from proposal_info and then dropping it
-                    let app_hash = proposal_info.app_hash.clone();
-                    let tx_results = proposal_info.tx_results.clone();
-                    let consensus_param_updates = proposal_info.consensus_param_updates.clone();
-                    let validator_set_update = proposal_info.validator_set_update.clone();
-                    (
-                        app_hash,
-                        tx_results,
-                        consensus_param_updates,
-                        validator_set_update,
-                    )
-                };
+                drop_block_execution_context = true;
+            } else {
+                tracing::debug!(
+                    method = "process_proposal",
+                    "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}",
+                    proposer_results,
+                );
+
+                // Cloning all required properties from the prepared response and then dropping it
+                let app_hash = proposer_results.response.app_hash.clone();
+                let tx_results = proposer_results.response.tx_results.clone();
+                let consensus_param_updates =
+                    proposer_results.response.consensus_param_updates.clone();
+                let validator_set_update = proposer_results.response.validator_set_update.clone();
 
                 // We need to set the block hash
                 block_execution_context
@@ -144,14 +219,7 @@ where
                     validator_set_update,
                     events: Vec::new(),
                 });
-            } else {
-                tracing::warn!(
-                    method = "process_proposal",
-                    "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result, but we are requesting a different amount of transactions, dropping the cache",
-                );
-
-                drop_block_execution_context = true;
-            };
+            }
         }
     }
 
