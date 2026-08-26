@@ -1,9 +1,6 @@
 name: Migration Validate (mac-runner-1b)
 
 on:
-  push:
-    branches:
-      - ci/migration-validate-mac-runner
   workflow_dispatch:
 
 permissions:
