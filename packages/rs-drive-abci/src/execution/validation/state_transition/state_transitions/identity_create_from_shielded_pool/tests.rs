@@ -464,6 +464,7 @@ fn failure_path_charge_executes_through_execute_event() {
             &block_info,
             &transaction,
             None,
+            &mut 0,
             platform_version,
             &fee_versions,
         )

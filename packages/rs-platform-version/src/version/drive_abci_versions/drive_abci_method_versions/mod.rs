@@ -164,6 +164,9 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub rebroadcast_expired_withdrawal_documents: FeatureVersion,
     pub append_signatures_and_broadcast_withdrawal_transactions: FeatureVersion,
     pub cleanup_expired_locks_of_withdrawal_amounts: FeatureVersion,
+    /// Recording the block's credit mints as an inflow the net daily withdrawal limit adds to
+    /// its daily maximum; exists from protocol version 14.
+    pub record_credit_inflows_for_withdrawals: OptionalFeatureVersion,
     pub record_total_credits_history_for_withdrawals: OptionalFeatureVersion,
 }
 

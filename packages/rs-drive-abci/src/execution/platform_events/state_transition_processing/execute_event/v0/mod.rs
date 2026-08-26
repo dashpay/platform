@@ -43,10 +43,12 @@ where
         block_info: &BlockInfo,
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
+            let credit_mints = DriveOperation::credit_mints(&operations);
             //todo: make this into an atomic event with partial batches
             let mut individual_fee_result = self
                 .drive
@@ -59,6 +61,8 @@ where
                     Some(previous_fee_versions),
                 )
                 .map_err(Error::Drive)?;
+
+            *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
             ValidationOperation::add_many_to_fee_result(
                 &execution_operations,
@@ -115,10 +119,12 @@ where
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
         mut address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         if fee_validation_result.is_valid_with_data() {
+            let credit_mints = DriveOperation::credit_mints(&operations);
             // Apply the drive operations first to calculate the fee
             let mut individual_fee_result = self
                 .drive
@@ -131,6 +137,8 @@ where
                     Some(previous_fee_versions),
                 )
                 .map_err(Error::Drive)?;
+
+            *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
             ValidationOperation::add_many_to_fee_result(
                 &execution_operations,
@@ -369,6 +377,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
@@ -412,6 +421,7 @@ where
                     block_info,
                     consensus_errors,
                     transaction,
+                    block_credit_mints,
                     platform_version,
                     previous_fee_versions,
                 )
@@ -437,6 +447,7 @@ where
                     block_info,
                     consensus_errors,
                     transaction,
+                    block_credit_mints,
                     platform_version,
                     previous_fee_versions,
                 )?;
@@ -477,6 +488,7 @@ where
                     consensus_errors,
                     transaction,
                     address_balances_in_update,
+                    block_credit_mints,
                     platform_version,
                     previous_fee_versions,
                 )
@@ -487,6 +499,7 @@ where
                 processing_fees,
                 operations,
             } => {
+                let credit_mints = DriveOperation::credit_mints(&operations);
                 self.drive
                     .apply_drive_operations(
                         operations,
@@ -497,6 +510,8 @@ where
                         Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
+
+                *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
                 if consensus_errors.is_empty() {
                     Ok(SuccessfulPaidExecution(
@@ -516,6 +531,7 @@ where
                 fees_to_add_to_pool,
             } => {
                 if consensus_errors.is_empty() {
+                    let credit_mints = DriveOperation::credit_mints(&operations);
                     self.drive
                         .apply_drive_operations(
                             operations,
@@ -526,6 +542,8 @@ where
                             Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
+
+                    *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
                     Ok(SuccessfulPaidExecution(
                         None,
@@ -566,6 +584,7 @@ where
                     return Ok(UnpaidConsensusExecutionError(consensus_errors));
                 }
 
+                let credit_mints = DriveOperation::credit_mints(&operations);
                 let applied_fees = self
                     .drive
                     .apply_drive_operations(
@@ -577,6 +596,8 @@ where
                         Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
+
+                *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
                 // The ops just applied credited any transparent output address (an Unshield's
                 // recipient, including the chargeable-failure fallback address). Record that credit
@@ -625,6 +646,7 @@ where
                 all_errors.extend(consensus_errors);
 
                 if all_errors.is_empty() {
+                    let credit_mints = DriveOperation::credit_mints(&operations);
                     let applied_fees = self
                         .drive
                         .apply_drive_operations(
@@ -636,6 +658,8 @@ where
                             Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
+
+                    *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
 
                     // The ops just applied credited the shield's transparent surplus-output address
                     // (when set). Record that credit so incremental client sync sees it. ShieldedSpend
@@ -696,11 +720,13 @@ where
                     block_info,
                     consensus_errors,
                     transaction,
+                    block_credit_mints,
                     platform_version,
                     previous_fee_versions,
                 )
             }
             ExecutionEvent::Free { operations } => {
+                let credit_mints = DriveOperation::credit_mints(&operations);
                 self.drive
                     .apply_drive_operations(
                         operations,
@@ -711,6 +737,7 @@ where
                         Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
+                *block_credit_mints = block_credit_mints.saturating_add(credit_mints);
                 Ok(SuccessfulFreeExecution)
             }
         }

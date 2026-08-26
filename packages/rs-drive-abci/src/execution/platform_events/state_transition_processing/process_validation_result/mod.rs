@@ -10,6 +10,7 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::fee::Credits;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -35,6 +36,7 @@ where
         validation_result: ConsensusValidationResult<ExecutionEvent>,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
@@ -50,6 +52,7 @@ where
                 validation_result,
                 block_info,
                 transaction,
+                block_credit_mints,
                 platform_version,
                 previous_fee_versions,
             ),
@@ -59,6 +62,7 @@ where
                 validation_result,
                 block_info,
                 transaction,
+                block_credit_mints,
                 platform_version,
                 previous_fee_versions,
             ),

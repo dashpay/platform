@@ -187,18 +187,16 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99859022940)
+        assert_eq!(balance, 99864009940)
     }
 
     #[tokio::test]
     async fn run_chain_one_identity_in_solitude_protocol_version_13() {
         // Pins the fee shape at protocol version 13. The grove v4 cleanup
         // gates active from v14 derive their inspection from data the merk
-        // apply already loads, so they are cost-neutral. From v14 the identity
-        // create also records its asset-lock credits in the credit inflows sum
-        // tree for the net daily withdrawal limit, so the latest-version test's
-        // balance is 4,987,000 credits lower than this one; the pair pins both
-        // sides of the v13 -> v14 boundary.
+        // apply already loads, so they are cost-neutral: this balance is
+        // identical to the latest-version test's, and the pair proves the
+        // v13 -> v14 boundary changes nothing about this run's fees.
         // This is different because in the root tree we added GroupActions
         //                                                                                DataContract_Documents 64
         //                                 /                                                                                                       \

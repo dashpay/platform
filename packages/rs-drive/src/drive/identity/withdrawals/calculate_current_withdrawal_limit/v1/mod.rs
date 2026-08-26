@@ -158,7 +158,6 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::identity::withdrawals::fetch_total_credits_in_platform_a_day_ago::DAY_IN_MS;
-    use crate::util::batch::{DriveOperation, SystemOperationType};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
@@ -240,8 +239,8 @@ mod tests {
 
     /// The regression guard for the gross-accounting starvation of issue #4471: a
     /// deposit -> withdraw cycle of one user's own coins must not consume the withdrawal
-    /// budget of everyone else. The deposit lands through the production mint operation
-    /// (`SystemOperationType::AddToSystemCredits`, what every asset-lock funded transition
+    /// budget of everyone else. The deposit lands as a recorded credit inflow
+    /// (recorded per block by `record_credit_inflow`, fed by the mints every asset-lock
     /// emits), which records it in the credit inflows sum tree; the limit adds those inflows
     /// to the daily maximum, so the cycle nets out to the untouched base.
     #[test]
@@ -285,22 +284,23 @@ mod tests {
         let day_one = t0 + DAY_IN_MS;
         assert_eq!(limit(day_one).daily_maximum, dash_to_credits!(1500));
 
-        // The user deposits 1,000 Dash of their own money: the production mint operation
-        // records the inflow, which extends the daily maximum by the same amount.
+        // The user deposits 1,000 Dash of their own money; the block records the mint as a
+        // credit inflow, which extends the daily maximum by the same amount.
         drive
-            .apply_drive_operations(
-                vec![DriveOperation::SystemOperation(
-                    SystemOperationType::AddToSystemCredits {
-                        amount: dash_to_credits!(1000),
-                    },
-                )],
-                true,
+            .add_to_system_credits(
+                dash_to_credits!(1000),
+                Some(&transaction),
+                &platform_version,
+            )
+            .expect("expected to add the deposit");
+        drive
+            .record_credit_inflow(
+                dash_to_credits!(1000),
                 &block(day_one),
                 Some(&transaction),
                 &platform_version,
-                None,
             )
-            .expect("expected to apply the deposit");
+            .expect("expected to record the inflow");
         assert_eq!(limit(day_one).daily_maximum, dash_to_credits!(2500));
 
         // ... and withdraws the same 1,000 Dash again: pooling reserves the amount and the
@@ -373,19 +373,20 @@ mod tests {
         // Core's 4,000 Dash of unlock capacity per day.
         let day_one = t0 + DAY_IN_MS;
         drive
-            .apply_drive_operations(
-                vec![DriveOperation::SystemOperation(
-                    SystemOperationType::AddToSystemCredits {
-                        amount: dash_to_credits!(5000),
-                    },
-                )],
-                true,
+            .add_to_system_credits(
+                dash_to_credits!(5000),
+                Some(&transaction),
+                &platform_version,
+            )
+            .expect("expected to add the deposit");
+        drive
+            .record_credit_inflow(
+                dash_to_credits!(5000),
                 &block(day_one),
                 Some(&transaction),
                 &platform_version,
-                None,
             )
-            .expect("expected to apply the deposit");
+            .expect("expected to record the inflow");
 
         let info = drive
             .calculate_current_withdrawal_limit(
@@ -440,19 +441,16 @@ mod tests {
         // An hour later 500 Dash is deposited and the new total of 20,500 recorded.
         let t1 = t0 + hour;
         drive
-            .apply_drive_operations(
-                vec![DriveOperation::SystemOperation(
-                    SystemOperationType::AddToSystemCredits {
-                        amount: dash_to_credits!(500),
-                    },
-                )],
-                true,
+            .add_to_system_credits(dash_to_credits!(500), Some(&transaction), &platform_version)
+            .expect("expected to add the deposit");
+        drive
+            .record_credit_inflow(
+                dash_to_credits!(500),
                 &block(t1),
                 Some(&transaction),
                 &platform_version,
-                None,
             )
-            .expect("expected to apply the deposit");
+            .expect("expected to record the inflow");
         drive
             .record_total_credits_history(&block(t1), 64, Some(&transaction), &platform_version)
             .expect("expected to record");
@@ -508,19 +506,16 @@ mod tests {
         // A day later 500 Dash is deposited; its inflow entry expires 25 hours after that.
         let t1 = t0 + DAY_IN_MS;
         drive
-            .apply_drive_operations(
-                vec![DriveOperation::SystemOperation(
-                    SystemOperationType::AddToSystemCredits {
-                        amount: dash_to_credits!(500),
-                    },
-                )],
-                true,
+            .add_to_system_credits(dash_to_credits!(500), Some(&transaction), &platform_version)
+            .expect("expected to add the deposit");
+        drive
+            .record_credit_inflow(
+                dash_to_credits!(500),
                 &block(t1),
                 Some(&transaction),
                 &platform_version,
-                None,
             )
-            .expect("expected to apply the deposit");
+            .expect("expected to record the inflow");
 
         // At the exact expiration block the entry still counts, exactly like a reservation
         // with that key would still be held: the cleanup deletes strictly older keys only.

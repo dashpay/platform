@@ -148,6 +148,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             &platform_version.drive,
         )?;
 
+        let credit_mints = DriveOperation::credit_mints(&batch);
+
         self.drive.apply_drive_operations(
             batch,
             true,
@@ -166,6 +168,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             payouts,
             refunded_epochs_count: storage_fee_distribution_outcome
                 .map(|outcome| outcome.refunded_epochs_count),
+            credit_mints,
         };
 
         if self.config.execution.verify_sum_trees {

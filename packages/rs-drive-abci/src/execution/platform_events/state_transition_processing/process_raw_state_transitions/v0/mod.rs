@@ -4,6 +4,7 @@ use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Method
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
+use dpp::fee::Credits;
 
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
@@ -138,6 +139,11 @@ where
 
         let mut processing_result = StateTransitionsProcessingResult::default();
 
+        // Credits the block's applied operations mint into Platform (asset locks), summed
+        // across state transitions and recorded once per block as a credit inflow the net
+        // daily withdrawal limit adds to its daily maximum.
+        let mut block_credit_mints: Credits = 0;
+
         for decoded_state_transition in state_transition_container.into_iter() {
             // If we propose state transitions, we need to check if we have a time limit for processing
             // set and if we have exceeded it.
@@ -198,6 +204,7 @@ where
                                 validation_result,
                                 block_info,
                                 transaction,
+                                &mut block_credit_mints,
                                 platform_version,
                                 platform_ref.state.previous_fee_versions(),
                             )
@@ -320,6 +327,8 @@ where
 
             processing_result.add(execution_result)?;
         }
+
+        processing_result.set_credit_mints(block_credit_mints);
 
         Ok(processing_result)
     }

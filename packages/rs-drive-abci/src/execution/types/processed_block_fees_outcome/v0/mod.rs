@@ -10,6 +10,10 @@ pub struct ProcessedBlockFeesOutcome {
     pub payouts: Option<proposer_payouts::v0::ProposersPayouts>,
     /// A number of epochs which had refunded
     pub refunded_epochs_count: Option<u16>,
+    /// The credits the applied batch minted into Platform (the epoch Core block rewards, on an
+    /// epoch change): the fee-processing share of the block's credit inflow, recorded for the
+    /// net daily withdrawal limit
+    pub credit_mints: dpp::fee::Credits,
 }
 
 impl fmt::Display for ProcessedBlockFeesOutcome {
@@ -54,6 +58,7 @@ mod tests {
                 paid_epoch_index: 5,
             }),
             refunded_epochs_count: Some(2),
+            credit_mints: 0,
         };
         let output = format!("{}", outcome);
         assert!(output.contains("ProcessedBlockFeesOutcome"));
@@ -71,6 +76,7 @@ mod tests {
             },
             payouts: None,
             refunded_epochs_count: None,
+            credit_mints: 0,
         };
         let output = format!("{}", outcome);
         assert!(output.contains("payouts: None"));
