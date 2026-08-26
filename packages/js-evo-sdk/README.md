@@ -77,6 +77,7 @@ Static helpers are also exported:
 - `await EvoSDK.getLatestVersionNumber()` — return the latest Platform protocol version supported by the bundled Wasm SDK.
 - `await EvoSDK.maxRankedLimit()` — the hard ceiling on a [ranked / having-range](#ranked-queries) `limit`.
 - `await EvoSDK.rankedAverageScale()` — the fixed-point divisor for the `avg` axis of a ranked / having-range result.
+- `await EvoSDK.maxPrefixInBranches()` — the hard ceiling on the element count of a branching `in` [prefix pin](#ranked-queries).
 
 ## Facades
 
@@ -122,6 +123,32 @@ for (const entry of page.entries) {
 ```
 
 `limit` is required and capped at `await EvoSDK.maxRankedLimit()` (a hard reject, not a clamp). `offset` skips ranks — `{ limit: 1, offset: 4 }` is "the 5th best" — and has no ceiling, because the skipped region is attested rather than walked.
+
+### Pinning a compound index
+
+A compound ranked index keeps one ordered secondary per prefix value, with no ordering across prefixes, so a ranked read has to name the prefixes it descends into. `where` pins each leading index property:
+
+```ts
+// The best-rated restaurants in either of two cities.
+const page = await sdk.documents.ranked({
+  dataContractId: RESTAURANTS,
+  documentTypeName: 'review',
+  groupBy: 'restaurantId',
+  aggregate: { type: 'avg', property: 'grade' },
+  limit: 3,
+  where: [['city', 'in', ['Berlin', 'Hamburg']]],
+});
+
+for (const entry of page.entries) {
+  // Only set on a merged page: the same `groupKeyHex` can appear under
+  // two pinned prefixes, and this says which branch the entry came from.
+  console.log(entry.branchKeyHex, entry.groupValue);
+}
+```
+
+Each pin is a `==`, except that at most **one** may be a branching `in` carrying 2..=`await EvoSDK.maxPrefixInBranches()` elements — one secondary walk per element, merged into a single proved page. Several `in`s would multiply into a cartesian product of walks inside one proof, so they are rejected. A single-element `in` normalizes to `==` and never spends that budget. Range operators cannot pin a prefix at all.
+
+A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested from one secondary's counted commitments, and there is no counted structure over a branch union. Page one prefix at a time (`==` plus `offset`), or drop the offset.
 
 `sdk.documents.having()` bounds the same axis by value instead of by position (`{ operator: '>', value: 100 }`), and `rankedWithProof` / `havingWithProof` return the proof and block metadata alongside the result.
 

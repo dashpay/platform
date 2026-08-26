@@ -312,6 +312,16 @@ describe('EvoSDK', () => {
       expect(limit).to.be.greaterThan(0);
     });
 
+    it('should expose the prefix IN branch ceiling', async () => {
+      // Same reason as the limit ceiling: the README tells callers to read
+      // it from here rather than hardcode it, so the static has to exist.
+      const branches = await EvoSDK.maxPrefixInBranches();
+
+      expect(branches).to.be.a('number');
+      // A ceiling below 2 would make every branching `in` unwritable.
+      expect(branches).to.be.greaterThan(1);
+    });
+
     it('should expose the avg fixed-point scale as a bigint', async () => {
       // Returned rather than documented as a literal precisely so callers
       // never hardcode it — it has already changed once.

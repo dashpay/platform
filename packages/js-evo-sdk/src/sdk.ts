@@ -233,6 +233,17 @@ export class EvoSDK {
   }
 
   /**
+   * Hard ceiling on the element count of a branching `in` prefix pin on a
+   * ranked / having-range query. Each element is its own secondary walk and
+   * its own proof branch, so this bounds the fan-out one request can ask
+   * for. A pin above it is rejected, not truncated.
+   */
+  static async maxPrefixInBranches(): Promise<number> {
+    await initWasm();
+    return wasm.WasmSdk.maxPrefixInBranches();
+  }
+
+  /**
    * Fixed-point divisor for the `avg` axis of a ranked / having-range
    * result. Exposed so a caller who persisted a `DocumentsGroupEntry.value`
    * can re-render it without holding on to the result that produced it.

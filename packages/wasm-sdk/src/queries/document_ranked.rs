@@ -70,24 +70,37 @@ export type DocumentsAggregateSelect =
   | { type: 'avg'; property: string };
 
 /**
- * One equality pin on a compound ranked index's leading property,
- * spelled like a `DocumentsQuery` where clause: `[property, '==', value]`.
+ * One pin on a compound ranked index's leading property, spelled like a
+ * `DocumentsQuery` where clause: `[property, '==', value]`, or
+ * `[property, 'in', values]`.
  *
  * A compound ranked index keeps one ordered secondary per prefix value,
  * with no global ordering across prefixes — so a ranked read has to name
- * exactly one prefix, and only `==` names a single value tree. That
- * means: one pin per leading index property, each on a distinct
- * property, and none on the `groupBy` property itself. A single-property
- * ranked index takes no pins at all.
+ * the prefixes it descends into. `==` names exactly one; `in` names one
+ * per element, each walked separately and merged into a single proved
+ * page. That means: one pin per leading index property, each on a
+ * distinct property, and none on the `groupBy` property itself. A
+ * single-property ranked index takes no pins at all.
+ *
+ * At most **one** pin across the request may be a branching `in`, and it
+ * carries 2..=`maxPrefixInBranches()` elements — several `in`s would
+ * multiply into a cartesian product of prefix walks inside one proof. A
+ * single-element `in` is normalized to `==` and never spends that
+ * budget. Entries merged from an `in` carry `branchKeyHex` to say which
+ * branch they came from.
+ *
+ * A branching `in` cannot combine with a non-zero `offset` — see
+ * `DocumentsRankedQuery.offset`.
  *
  * A `null` value is legal and addresses the subtree the write path
  * creates for an *absent* optional value.
  *
- * `>` / `<` / `between` / `in` / `startsWith` are all rejected: a range
- * cannot pin one prefix, and `in` would need one secondary walk per
- * element.
+ * `>` / `<` / `between` / `startsWith` are all rejected: a range cannot
+ * pin one prefix.
  */
-export type DocumentsIndexPin = [string, '==' | '=', unknown];
+export type DocumentsIndexPin =
+  | [string, '==' | '=', unknown]
+  | [string, 'in' | 'In', unknown[]];
 
 /** How a ranked / having-range walk runs along the aggregate axis. */
 export type DocumentsRankDirection = 'asc' | 'desc';
@@ -173,13 +186,18 @@ export interface DocumentsRankedQuery {
    * An offset past the end of the ranking is a legitimate answer rather
    * than an error — the page comes back empty and `startingRank` is the
    * ranking's whole attested population.
+   *
+   * Cannot combine with a branching `in` pin: that attestation is per
+   * secondary, and an `in` merges several with no counted structure over
+   * the union. Page one prefix at a time (`==` pin plus `offset`), or
+   * drop the offset. `0` stays legal as the offset-free spelling.
    * @default undefined
    */
   offset?: number;
 
   /**
-   * Equality pins on the covering compound index's leading properties.
-   * Omit entirely for a single-property ranked index.
+   * Pins on the covering compound index's leading properties — `==`, or
+   * one bounded `in`. Omit entirely for a single-property ranked index.
    * @default []
    */
   where?: DocumentsIndexPin[];
@@ -270,7 +288,9 @@ export interface DocumentsHavingQuery {
   direction?: DocumentsRankDirection;
 
   /**
-   * Equality pins on the covering compound index's leading properties.
+   * Pins on the covering compound index's leading properties — `==`, or
+   * one bounded `in`. A having-range query has no `offset`, so the
+   * ranked surface's offset-versus-`in` exclusion does not arise here.
    * @default []
    */
   where?: DocumentsIndexPin[];
@@ -329,6 +349,18 @@ export interface DocumentsGroupEntry {
    * differ can round to the same `number`, so never compare with this.
    */
   valueAsNumber: number;
+
+  /**
+   * Hex-encoded index-key segment of the `in` branch this entry was
+   * merged in from — the pinned value's own encoding, or empty bytes for
+   * the `null` branch.
+   *
+   * Present only when the request carried a branching `in` pin, because
+   * only then is the page a merge of several prefixes and only then can
+   * one `groupKeyHex` legitimately appear twice. Absent — not
+   * `undefined`-valued — on every single-prefix page.
+   */
+  branchKeyHex?: string;
 }
 
 /** One group in a ranked result, pinned to its absolute position. */
@@ -844,6 +876,11 @@ struct GroupEntryParts {
     key_absent: bool,
     /// The group's aggregate, straight off the verified page.
     value: RankedEntryValue,
+    /// Hex of the `IN` branch this entry was merged in from, when the
+    /// request carried a branching `IN` pin. `None` on a single-branch
+    /// page — drive only sets it where it discriminates, because the
+    /// same group key legitimately appears under two pinned prefixes.
+    branch_key_hex: Option<String>,
 }
 
 /// Decode a verified page's entries.
@@ -875,6 +912,7 @@ fn group_entry_parts(
                 decoded,
                 key_absent,
                 value: entry.value,
+                branch_key_hex: entry.in_key.as_deref().map(hex::encode),
             }
         })
         .collect()
@@ -999,6 +1037,17 @@ fn group_entry_to_js(parts: &GroupEntryParts, rank: Option<u64>) -> Result<JsVal
         &JsValue::from_f64(parts.value.as_f64()),
     );
 
+    // Only on a merged page. Emitting `undefined` on every single-branch
+    // entry would make the discriminator look optional-per-entry rather
+    // than absent-for-the-whole-page.
+    if let Some(branch_key_hex) = &parts.branch_key_hex {
+        set_field(
+            &entry,
+            "branchKeyHex",
+            &JsValue::from_str(branch_key_hex.as_str()),
+        );
+    }
+
     if let Some(rank) = rank {
         set_field(&entry, "rank", &JsValue::from(rank));
     }
@@ -1122,6 +1171,16 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "maxRankedLimit")]
     pub fn max_ranked_limit() -> u32 {
         drive::query::MAX_RANKED_LIMIT as u32
+    }
+
+    /// Hard ceiling on the element count of a branching `in` prefix pin.
+    ///
+    /// Each element is its own secondary walk and its own branch of the
+    /// proof, so this bounds the fan-out a single request can ask for.
+    /// A pin above it is rejected, not truncated — split the request.
+    #[wasm_bindgen(js_name = "maxPrefixInBranches")]
+    pub fn max_prefix_in_branches() -> u32 {
+        drive::query::drive_document_ranked_query::MAX_PREFIX_IN_BRANCHES as u32
     }
 
     /// Rank groups by an aggregate and return the top (or bottom) `n`.
@@ -1316,6 +1375,7 @@ mod wasm_tests {
             decoded: Some(Value::U64(u64::MAX)),
             key_absent: false,
             value: RankedEntryValue::Count(1),
+            branch_key_hex: None,
         };
 
         let entry =
@@ -1326,6 +1386,51 @@ mod wasm_tests {
         assert_eq!(js_type_of(&group_value), "bigint");
         assert_eq!(group_value, JsValue::from(u64::MAX));
     }
+
+    /// The branch discriminator is *absent* on a single-branch page, not
+    /// present-and-undefined: a caller testing `'branchKeyHex' in entry`
+    /// must read "this page is not a merge", and an `undefined`-valued key
+    /// would answer the opposite. Only reachable at the JS boundary, so it
+    /// cannot be asserted on the host target.
+    #[wasm_bindgen_test]
+    fn a_single_branch_entry_omits_the_branch_key_field() {
+        let parts = GroupEntryParts {
+            key_hex: "ff".to_string(),
+            decoded: Some(Value::Text("alice".to_string())),
+            key_absent: false,
+            value: RankedEntryValue::Count(1),
+            branch_key_hex: None,
+        };
+
+        let entry = group_entry_to_js(&parts, Some(0)).expect("a single-branch entry converts");
+
+        assert!(
+            !js_sys::Reflect::has(&entry, &JsValue::from_str("branchKeyHex"))
+                .expect("has() on a fresh object"),
+            "a single-branch entry must not carry the key at all"
+        );
+    }
+
+    /// The `null` branch's pinned value encodes to empty bytes. That is a
+    /// real branch, so it has to cross as an empty string rather than
+    /// collapsing into the absent case above.
+    #[wasm_bindgen_test]
+    fn a_merged_entry_carries_its_branch_key_as_a_string() {
+        let parts = GroupEntryParts {
+            key_hex: "ff".to_string(),
+            decoded: Some(Value::Text("alice".to_string())),
+            key_absent: false,
+            value: RankedEntryValue::Count(1),
+            branch_key_hex: Some(String::new()),
+        };
+
+        let entry = group_entry_to_js(&parts, Some(0)).expect("a merged entry converts");
+        let branch_key = js_sys::Reflect::get(&entry, &JsValue::from_str("branchKeyHex"))
+            .expect("the entry carries a branchKeyHex");
+
+        assert_eq!(js_type_of(&branch_key), "string");
+        assert_eq!(branch_key, JsValue::from_str(""));
+    }
 }
 
 #[cfg(test)]
@@ -1333,7 +1438,8 @@ mod tests {
     use super::*;
     use dash_sdk::dpp::prelude::DataContract;
     use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-    use drive::query::{MAX_HAVING_LIMIT, MAX_RANKED_LIMIT, RANKED_COUNT_ORDER_KEY};
+    use drive::query::drive_document_ranked_query::MAX_PREFIX_IN_BRANCHES;
+    use drive::query::{WhereOperator, MAX_HAVING_LIMIT, MAX_RANKED_LIMIT, RANKED_COUNT_ORDER_KEY};
     use serde_json::json;
 
     /// DPNS stands in for any contract here. Every function under test is
@@ -1647,6 +1753,128 @@ mod tests {
         assert!(error.to_string().contains("ranked"));
     }
 
+    /// An `IN` pin fans the read into one prefix branch per element.
+    /// The binding does not gatekeep the operator itself — it hands the
+    /// clause to rs-drive's grammar — so this pins that the clause
+    /// survives the builder intact rather than being dropped or
+    /// rewritten on the way through.
+    #[test]
+    fn ranked_in_pin_is_carried() {
+        let query = build_ranked(ranked_input(
+            GROUP_BY,
+            count(),
+            3,
+            None,
+            None,
+            Some(vec![json!([
+                "normalizedParentDomainName",
+                "in",
+                ["dash", "dashpay"]
+            ])]),
+        ))
+        .expect("a bounded IN is a legitimate prefix pin from protocol 14");
+
+        assert_eq!(query.where_clauses.len(), 1);
+        assert_eq!(query.where_clauses[0].operator, WhereOperator::In);
+        assert_eq!(
+            query.where_clauses[0].value,
+            Value::Array(vec![
+                Value::Text("dash".to_string()),
+                Value::Text("dashpay".to_string()),
+            ])
+        );
+    }
+
+    /// Rank-skip is attested from one secondary's counted commitments,
+    /// and a branching `IN` merges several with no counted structure
+    /// over the union. The two are mutually exclusive, and the caller
+    /// finds out here rather than at the node.
+    #[test]
+    fn ranked_offset_with_a_branching_in_pin_is_rejected() {
+        let error = build_ranked(ranked_input(
+            GROUP_BY,
+            count(),
+            3,
+            None,
+            Some(4),
+            Some(vec![json!([
+                "normalizedParentDomainName",
+                "in",
+                ["dash", "dashpay"]
+            ])]),
+        ))
+        .expect_err("offset cannot span a merged branch union");
+
+        assert!(error.to_string().contains("OFFSET"));
+    }
+
+    /// A single-element `IN` normalizes to an equality pin, so it does
+    /// not branch and does not conflict with `offset`. Without this the
+    /// exclusion above could be over-broad — rejecting every `IN` — and
+    /// still pass.
+    #[test]
+    fn ranked_offset_with_a_singleton_in_pin_is_accepted() {
+        let query = build_ranked(ranked_input(
+            GROUP_BY,
+            count(),
+            3,
+            None,
+            Some(4),
+            Some(vec![json!(["normalizedParentDomainName", "in", ["dash"]])]),
+        ))
+        .expect("a singleton IN is an equality pin and never branches");
+
+        assert_eq!(query.offset, Some(4));
+    }
+
+    /// Each element is a secondary walk and a proof branch, so the
+    /// fan-out is bounded. Asserted against the constant rather than the
+    /// literal so a future ceiling change moves this test with it.
+    #[test]
+    fn ranked_in_pin_is_bounded_by_max_prefix_in_branches() {
+        let over_ceiling: Vec<JsonValue> = (0..=MAX_PREFIX_IN_BRANCHES)
+            .map(|index| json!(format!("domain{index}")))
+            .collect();
+
+        let error = build_ranked(ranked_input(
+            GROUP_BY,
+            count(),
+            3,
+            None,
+            None,
+            Some(vec![json!([
+                "normalizedParentDomainName",
+                "in",
+                over_ceiling
+            ])]),
+        ))
+        .expect_err("one element past the ceiling is rejected, not truncated");
+
+        assert!(error
+            .to_string()
+            .contains(&MAX_PREFIX_IN_BRANCHES.to_string()));
+    }
+
+    /// Several branching `IN`s would multiply into a cartesian product
+    /// of prefix walks inside a single proof.
+    #[test]
+    fn ranked_two_branching_in_pins_are_rejected() {
+        let error = build_ranked(ranked_input(
+            GROUP_BY,
+            count(),
+            3,
+            None,
+            None,
+            Some(vec![
+                json!(["normalizedParentDomainName", "in", ["dash", "dashpay"]]),
+                json!(["records.identity", "in", ["alice", "bob"]]),
+            ]),
+        ))
+        .expect_err("at most one pin may branch");
+
+        assert!(error.to_string().contains("ranked"));
+    }
+
     // ---- having-range builder shape ------------------------------------
 
     /// The caller never restates the aggregate in the bound, so the
@@ -1829,6 +2057,7 @@ mod tests {
         let entry = RankedEntry {
             key: b"alice".to_vec(),
             value: RankedEntryValue::Count(3),
+            in_key: None,
         };
 
         let parts = parts_for(&[entry], GROUP_BY);
@@ -1837,11 +2066,58 @@ mod tests {
         assert!(!parts[0].key_absent);
     }
 
+    /// A merged page's entries have to say which prefix branch they came
+    /// from: the same group key legitimately appears under two pinned
+    /// prefixes, so without the discriminator the two are one row.
+    #[test]
+    fn a_merged_entry_carries_its_branch_key() {
+        let entry = RankedEntry {
+            key: b"alice".to_vec(),
+            value: RankedEntryValue::Count(3),
+            in_key: Some(vec![0xde, 0xad]),
+        };
+
+        let parts = parts_for(&[entry], GROUP_BY);
+
+        assert_eq!(parts[0].branch_key_hex.as_deref(), Some("dead"));
+    }
+
+    /// Absent on a single-branch page — the discriminator is a property
+    /// of the request, not of the entry.
+    #[test]
+    fn a_single_branch_entry_carries_no_branch_key() {
+        let entry = RankedEntry {
+            key: b"alice".to_vec(),
+            value: RankedEntryValue::Count(3),
+            in_key: None,
+        };
+
+        let parts = parts_for(&[entry], GROUP_BY);
+
+        assert!(parts[0].branch_key_hex.is_none());
+    }
+
+    /// The `null` branch's pinned value encodes to empty bytes, which is
+    /// a real branch — it must not collapse to "no branch".
+    #[test]
+    fn the_null_branch_key_is_empty_rather_than_absent() {
+        let entry = RankedEntry {
+            key: b"alice".to_vec(),
+            value: RankedEntryValue::Count(3),
+            in_key: Some(Vec::new()),
+        };
+
+        let parts = parts_for(&[entry], GROUP_BY);
+
+        assert_eq!(parts[0].branch_key_hex.as_deref(), Some(""));
+    }
+
     #[test]
     fn group_entry_parts_decodes_a_string_group_key() {
         let entry = RankedEntry {
             key: b"alice".to_vec(),
             value: RankedEntryValue::Count(3),
+            in_key: None,
         };
 
         let parts = parts_for(&[entry], GROUP_BY);
@@ -1857,6 +2133,7 @@ mod tests {
         let entry = RankedEntry {
             key: Vec::new(),
             value: RankedEntryValue::Count(1),
+            in_key: None,
         };
 
         let parts = parts_for(&[entry], GROUP_BY);
@@ -1875,6 +2152,7 @@ mod tests {
             // `$createdAt` decodes an 8-byte timestamp; two bytes is not one.
             key: vec![0x01, 0x02],
             value: RankedEntryValue::Count(1),
+            in_key: None,
         };
 
         let parts = parts_for(&[entry], "$createdAt");
