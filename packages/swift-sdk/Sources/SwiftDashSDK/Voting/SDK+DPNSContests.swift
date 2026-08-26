@@ -1,6 +1,44 @@
 import Foundation
 import DashSDKFFI
 
+private final class DPNSActiveContestsRequest: @unchecked Sendable {
+  private enum Phase {
+    case queued
+    case running
+    case cancelled
+  }
+
+  let sdk: SDK
+  let sdkHandle: OpaquePointer
+
+  private let lock = NSLock()
+  private var phase = Phase.queued
+
+  init(sdk: SDK, sdkHandle: OpaquePointer) {
+    self.sdk = sdk
+    self.sdkHandle = sdkHandle
+  }
+
+  func begin() -> Bool {
+    lock.withLock {
+      guard case .queued = phase else { return false }
+      phase = .running
+      return true
+    }
+  }
+
+  func cancel() {
+    lock.withLock { phase = .cancelled }
+  }
+
+  var isCancelled: Bool {
+    lock.withLock {
+      if case .cancelled = phase { return true }
+      return false
+    }
+  }
+}
+
 // MARK: - DPNS contested-username browsing
 //
 // Typed reads for the *voter's* view of DPNS username contests: every open
@@ -21,6 +59,14 @@ import DashSDKFFI
 
 @MainActor
 extension SDK {
+
+  /// Serializes the blocking active-contest FFI call on a GCD worker rather
+  /// than occupying Swift's cooperative executor. Serial execution also lets
+  /// canceled refreshes waiting behind an in-flight query skip entering Rust.
+  nonisolated private static let activeContestsQueue = DispatchQueue(
+    label: "org.dash.swiftdashsdk.dpns-active-contests",
+    qos: .userInitiated
+  )
 
   // MARK: - Label normalization
 
@@ -75,34 +121,46 @@ extension SDK {
       throw SDKError.invalidState("SDK not initialized")
     }
 
-    let task = Task.detached(priority: .userInitiated) { [self] in
-      try Task.checkCancellation()
-
-      // `SDK` owns `sdkHandle`; pin it until the synchronous FFI call has
-      // returned and any owned result has been copied and freed.
-      let contests: [DPNSContest]? = withExtendedLifetime(self) {
-        guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(
-          sdkHandle, limit
-        ) else { return nil }
-        return Self.consumeContestedNamesList(listPtr)
-      }
-
-      // The FFI call cannot be interrupted. Check only after consuming the
-      // result so cancellation cannot leak an allocated list.
-      try Task.checkCancellation()
-      guard let contests else {
-        throw SDKError.internalError("Failed to fetch contested DPNS usernames")
-      }
-      return contests
-    }
+    let request = DPNSActiveContestsRequest(sdk: self, sdkHandle: sdkHandle)
 
     return try await withTaskCancellationHandler {
-      let contests = try await task.value
+      try Task.checkCancellation()
+
+      let contests = try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<[DPNSContest], Error>) in
+        Self.activeContestsQueue.async {
+          guard request.begin() else {
+            continuation.resume(throwing: CancellationError())
+            return
+          }
+
+          // `SDK` owns its handle; pin it until the synchronous FFI call has
+          // returned and any owned result has been copied and freed.
+          let contests: [DPNSContest]? = withExtendedLifetime(request.sdk) {
+            guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(
+              request.sdkHandle, limit
+            ) else { return nil }
+            return Self.consumeContestedNamesList(listPtr)
+          }
+
+          // The FFI call cannot be interrupted. Check only after consuming the
+          // result so cancellation cannot leak an allocated list.
+          if request.isCancelled {
+            continuation.resume(throwing: CancellationError())
+          } else if let contests {
+            continuation.resume(returning: contests)
+          } else {
+            continuation.resume(
+              throwing: SDKError.internalError("Failed to fetch contested DPNS usernames")
+            )
+          }
+        }
+      }
       // Cover cancellation after the worker's check but before this task resumes.
       try Task.checkCancellation()
       return contests
     } onCancel: {
-      task.cancel()
+      request.cancel()
     }
   }
 
