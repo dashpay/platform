@@ -218,41 +218,49 @@ it is restacked onto #4185 and follows 34 (see below).
 
 ### Non-conforming allocations (withdraw and reissue)
 
-These branches allocate into the same range from a stale base. They are listed
+These branches allocate below the frontier without a row here. They are listed
 here rather than in the proposed table because their numbers cannot stand as
 written — each row is a claim to be **withdrawn and reissued**, not an
 allocation of record.
 
-A rebase is a precondition, not the remedy. `#3968`'s head does contain the
-2026-08-01 base `ed4116b26c` (merge commit `debf67bdae` brought it in), so it is
-not simply an un-rebased branch; it is behind the 2026-08-06 base
-`97904ed2fc` (current when this analysis was recorded — the base has moved
-since, which changes nothing below), which is where both #4268's merged
-`ErrorShutdownIncomplete = 27` and #4183's merged
-`ErrorSigningKeyUnavailable = 31` live. Rebasing
-picks those up, but rebasing alone will not resolve anything below, because git
-sees no conflict in any of it — the branch has to **edit its own enum**.
+**#3968's branch state, re-read 2026-08-26 at its current head
+`396977be4e7c`.** The stale-base half of its old defect is cured: the branch
+merged `v4.2-dev` in on 2026-08-20 (merge commit `9d0dd5a49d`) and again on
+2026-08-25 (`c86d237117`, `4dbf38f5da`), so `ErrorTransactionBroadcastRejected`
+is back on its merged-ABI 26, `ErrorShutdownIncomplete = 27` comes in from the
+base, and the rule-3 renumber (26 → 28) this table used to record is gone.
+But the 2026-08-20 merge also renumbered the two persister codes to **42 and
+43** — below the frontier, with no row here (rule 2), and onto numbers this
+file records as taken. This file's earlier prediction stands
+half-vindicated: rebasing cured what the base could cure, and the enum edit
+that was always required was made — onto the wrong integers.
 
 | Code | Name | Owning PR | Conflict |
 | ---: | --- | --- | --- |
-| 26 | `ErrorPersisterTransient` | #3968 | Contradicts **merged ABI** — 26 is `ErrorTransactionBroadcastRejected` |
-| 27 | `ErrorPersisterFatal` | #3968 | Contradicts **merged ABI** — 27 is #4268's `ErrorShutdownIncomplete` (was a #4185 collision until 2026-08-02) |
-| 28 | `ErrorTransactionBroadcastRejected` | #3968 | **Renumbers a shipped code** 26 → 28 — forbidden by rule 3 |
+| 42 | `ErrorPersisterTransient` | #3968 | Contradicts **merged ABI** — 42 is #4451's `ErrorMasternodeWithdrawalUnconfirmed` (merged 2026-08-22). Not a paper conflict: since the 2026-08-25 base merges, #3968's **own tree** carries both variants — a hard E0081 in `error.rs` (`= 42` at both variants) and a duplicate raw value 42 in Swift's `PlatformWalletResultCode` — so the branch does not compile as-is |
+| 43 | `ErrorPersisterFatal` | #3968 | Collides with **active #4313**, whose recorded claim is `ErrorShieldedInviteAlreadyClaimed = 43` (see its proposed row). The silent shape: nothing conflicts textually and neither tree carries both variants, so only this file shows it |
 
 PR `#3954`'s `ErrorShutdownIncomplete = 27` used to sit in this table. It is
 gone because that claim **won**: #3954 was closed and superseded by **#4268**,
 which merged 27 into `v4.2-dev` on 2026-08-02. See the collision history below.
 
-PR `#3968` is the serious one: rule 3 forbids renumbering a code that has
-shipped, and `ErrorTransactionBroadcastRejected = 26` is merged ABI. Moving it
-to 28 would silently reinterpret every 26 an already-compiled host returns.
-PR #3968 must keep 26 where it is and take fresh integers **from the
-frontier for its two persister codes — per the frontier note above, which is
-the single canonical source; no number is copied here because any copy goes
-stale the moment another PR merges** (as the original "46+" copy in this
-paragraph did when #4465 shipped 46). Its 27 is now doubly wrong: 27 is merged
-ABI (`ErrorShutdownIncomplete`), so rule 3 protects it too. Note that 28 is
-reserved, not free — it is not available to #3968 either.
+The 42 is the instructive half, because its timeline shows why "check the
+table on the day you allocate" is not enough. When `9d0dd5a49d` minted
+`ErrorPersisterTransient = 42` on 2026-08-20, 42 was not yet merged ABI — it
+was **#4356's recorded claim** in this file's proposed table, so the mint
+violated rule 1 against a *proposed* allocation. Two days later #4451 merged
+42 as `ErrorMasternodeWithdrawalUnconfirmed` and it became unrenumberable ABI
+(the same event that pushed #4356 to 47); three days after that, #3968's own
+base merges imported the merged variant and turned the paper conflict into an
+E0081 in its own tree. A registry row filed with the mint (rule 2) would have
+been challenged on day one. Both persister codes must now take fresh integers
+**from the frontier note above, which is the single canonical source; no
+number is copied here because any copy goes stale the moment another PR
+merges** (as the original "46+" copy in this paragraph did when #4465 shipped
+46 — the frontier note reads 48 as of 2026-08-26, so a pair claimed today
+takes 48 and 49, recording the claim there and here in the same PR). 26 and
+27 need nothing: they are the merged base's own values, correctly inherited,
+and rule 3 keeps them where they are.
 
 ## Contested and pending
 
@@ -383,11 +391,14 @@ rule 1 and the primary table, which RESERVE both values. Until a follow-up
 corrects those in-tree comments, this registry is the authority: 28 and 30
 are reserved, not allocatable.
 
-### 27 / 28 — #3968 still collides; #3954's claim merged as #4268
+### 27 / 28 — #3968's original collision, since moved to 42 / 43; #3954's claim merged as #4268
 
-Found by the same 2026-08-01 sweep. These now have rows — see **Non-conforming
-allocations** above for #3968 and #3954, and the inherited-code table for #4259.
-The detail behind those rows:
+Found by the same 2026-08-01 sweep. #3968's live rows — now at 42 and 43 —
+are in **Non-conforming allocations** above; #3954's story is there too, and
+the inherited-code table covers #4259. The detail below is the 2026-08-01
+record of the original 26 / 27 / 28 layout, kept because the branch's later
+history (see the closing paragraph) repeated the same mistake against a fresh
+pair of numbers:
 
 * **#3968** (`5931df745a`) numbers `ErrorPersisterTransient = 26`,
   `ErrorPersisterFatal = 27`, `ErrorTransactionBroadcastRejected = 28`. It
@@ -414,9 +425,22 @@ The detail behind those rows:
   #4183 merged on 2026-08-04, so at #4259's current head `5b77dfd8f1` the 31 is
   simply the merged base's, and there is no second claim to reconcile.
 
-PR `#3968` needs a rebase onto current `v4.2-dev` **and** fresh integers from
-the frontier (**46+**, per the frontier note above). It must leave 26 alone; 27 is no longer available to it
-either (merged ABI now), and neither are the reserved 28 and 30.
+That 26 / 27 / 28 layout is now history, resolved the only way half of it
+could be: by the branch merging its base. At head `396977be4e7c`
+(re-read 2026-08-26) the 2026-08-20 merge `9d0dd5a49d` and the 2026-08-25
+follow-ups have `ErrorTransactionBroadcastRejected` back on 26,
+`ErrorShutdownIncomplete = 27` inherited from trunk, and the rule-3 renumber
+gone. But the same 2026-08-20 merge moved the persister pair to
+`ErrorPersisterTransient = 42` / `ErrorPersisterFatal = 43` — numbers already
+spoken for: 42 was the recorded claim of #4356 (since merged out from under
+it by #4451) and 43 was held in-tree by #4313. So the branch now collides at
+42 (hard:
+E0081 plus a duplicate Swift raw value in its own tree, since the 08-25 base
+merges imported merged 42) and at 43 (silent, against an active proposal).
+The full account, timeline included, is in **Non-conforming allocations**
+above. Both persister codes still owe fresh integers from the frontier note —
+the single canonical source; 48 as of 2026-08-26 — and a registry row in the
+same PR (rule 2).
 
 ### 26 — RESOLVED: #4196 restacked onto #4185 and is on 34 / 35 / 36
 
