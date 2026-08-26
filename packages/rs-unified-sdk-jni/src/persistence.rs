@@ -54,12 +54,13 @@ use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
-    ContactRequestRemovalFFI, CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
-    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI,
-    PaymentRestoreEntryFFI, PersistenceCallbacks, PlatformAddressFFI,
-    ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, TokenBalanceRemovalFFI,
-    TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
-    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
+    ContactRequestRemovalFFI, CoreAddressEntryFFI, DpnsNameStateFFI, IdentityEntryFFI,
+    IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
+    InvitationEntryFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
+    SpentOutPointFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
+    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
+    WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -116,8 +117,9 @@ unsafe impl Sync for KotlinPersistenceCtx {}
 //   ShieldedActivityData      org/dashfoundation/dashsdk/ffi/ShieldedActivityData
 //   CoreTxRecordData          org/dashfoundation/dashsdk/ffi/CoreTxRecordData
 
-/// Assemble the full 32-slot vtable. `context` is the boxed
-/// [`KotlinPersistenceCtx`] pointer.
+/// Assemble the full persistence vtable (every slot named, wired or an
+/// explicit `None`). `context` is the boxed [`KotlinPersistenceCtx`]
+/// pointer.
 pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
     PersistenceCallbacks {
         context,
@@ -173,7 +175,30 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         on_get_core_tx_record_free_fn: Some(tramp_get_core_tx_record_free),
         on_persist_asset_locks_fn: Some(tramp_persist_asset_locks),
         on_persist_invitations_fn: Some(tramp_persist_invitations),
+        // Android hasn't wired transaction enumeration yet. `None` makes
+        // `list_wallet_core_txids` return an empty list, so the sent-payment
+        // reconstruction sweep finds nothing to match and records nothing —
+        // Android keeps today's behaviour (a restored wallet shows no
+        // pre-restore contact payments) rather than misreporting.
+        on_list_wallet_core_txids_fn: None,
+        on_list_wallet_core_txids_free_fn: None,
+        // Android derives contact attribution from transaction history on
+        // reads and doesn't consume `PaymentEntry` rows, so there is
+        // nothing to land these in. `None` keeps the Rust-side payment
+        // recording in-memory-only on Android — same behaviour as before
+        // the slot existed.
+        on_persist_dashpay_payments_fn: None,
         release_fn: Some(release_persistence_ctx),
+    }
+}
+
+/// Assemble the additive, size/version-tagged persistence callbacks. It shares
+/// the legacy vtable's context and release hook; this value is copied by the
+/// native manager during creation and owns nothing itself.
+pub(crate) fn build_extension() -> PersistenceCallbacksExtension {
+    PersistenceCallbacksExtension {
+        on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
+        ..Default::default()
     }
 }
 
@@ -826,6 +851,73 @@ unsafe extern "C" fn tramp_persist_identities(
                     "onPersistIdentityRemoval",
                     "([B[B)I",
                     &[(&wid).into(), (&idb).into()],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+// ── DPNS marketplace name state ──────────────────────────────────────
+
+unsafe extern "C" fn tramp_persist_dpns_name_states(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    rows_ptr: *const DpnsNameStateFFI,
+    rows_count: usize,
+    removed_ptr: *const [u8; 32],
+    removed_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for row in slice_or_empty(rows_ptr, rows_count) {
+            let code = env.with_local_frame(32, |env| {
+                let document_id = env.byte_array_from_slice(&row.document_id)?;
+                let identity_id = env.byte_array_from_slice(&row.wallet_identity_id)?;
+                let counterparty_id = env.byte_array_from_slice(&row.counterparty_id)?;
+                let label = cstr(env, row.label)?;
+                let normalized_label = cstr(env, row.normalized_label)?;
+                let parent = cstr(env, row.normalized_parent_domain_name)?;
+                env.call_method(
+                    bridge,
+                    "onPersistDpnsNameState",
+                    "([B[B[BZ[BLjava/lang/String;Ljava/lang/String;Ljava/lang/String;ZJBJJJJ)I",
+                    &[
+                        (&wid).into(),
+                        (&document_id).into(),
+                        (&identity_id).into(),
+                        JValue::Bool(row.has_counterparty as u8),
+                        (&counterparty_id).into(),
+                        (&label).into(),
+                        (&normalized_label).into(),
+                        (&parent).into(),
+                        JValue::Bool(row.has_price as u8),
+                        JValue::Long(row.price as i64),
+                        JValue::Byte(row.status as i8),
+                        JValue::Long(row.created_at_ms as i64),
+                        JValue::Long(row.updated_at_ms as i64),
+                        JValue::Long(row.transferred_at_ms as i64),
+                        JValue::Long(row.last_synced_at_ms as i64),
+                    ],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        for document_id in slice_or_empty(removed_ptr, removed_count) {
+            let code = env.with_local_frame(8, |env| {
+                let document_id = env.byte_array_from_slice(document_id)?;
+                env.call_method(
+                    bridge,
+                    "onRemoveDpnsNameState",
+                    "([B[B)I",
+                    &[(&wid).into(), (&document_id).into()],
                 )?
                 .i()
             })?;
@@ -3691,6 +3783,14 @@ unsafe extern "C" fn tramp_load_shielded_activity(
                             block_height,
                             has_block_height,
                             created_at_ms,
+                            // TODO(kotlin-shielded-chain-order): the Kotlin
+                            // store doesn't persist the scan deriver's
+                            // chain-order key yet (the persist bridge doesn't
+                            // carry it either), so "absent" is the honest
+                            // restore value — the Rust sort falls back to the
+                            // deterministic id order for these rows.
+                            min_note_position: 0,
+                            has_min_note_position: 0,
                             identity_id,
                             has_identity_id,
                             counterparty_ptr: ptr::null(),

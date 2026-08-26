@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
-use crate::wallet::core::WalletBalance;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
@@ -44,6 +44,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             ))
         })?;
 
+        // Tracked (wallet-independent) masternodes ride the same startup
+        // hydration; a failure logs and starts empty rather than failing
+        // wallet restore.
+        self.load_tracked_masternodes_from_persistence();
+
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
 
         // Track every wallet successfully inserted into
@@ -77,7 +82,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 tracked_asset_locks.extend(account_locks);
             }
 
-            let balance = Arc::new(WalletBalance::new());
+            let generation = Arc::new(WalletGeneration::new());
             // Mirror the inner `ManagedWalletInfo.balance` (already
             // recomputed from the freshly-loaded UTXO set on the FFI
             // side via `update_balance`) into the lock-free `Arc` the
@@ -88,7 +93,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // step has to live inside `platform_wallet` rather than
             // the FFI loader.
             let core_balance = &wallet_info.balance;
-            balance.set(
+            generation.set(
                 core_balance.confirmed(),
                 core_balance.unconfirmed(),
                 core_balance.immature(),
@@ -96,9 +101,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             );
             let platform_info = PlatformWalletInfo {
                 core_wallet: wallet_info,
-                balance: Arc::clone(&balance),
+                generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
+                dpns_name_states: std::collections::BTreeMap::new(),
             };
 
             // Canonical id recomputed from the wallet's own key material.
@@ -156,7 +162,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Arc::clone(&self.sdk),
                 wallet_id,
                 Arc::clone(&self.wallet_manager),
-                balance,
+                generation,
                 Arc::clone(&self.lock_notify),
                 Arc::clone(&persister_dyn),
                 broadcaster,

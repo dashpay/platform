@@ -38,23 +38,30 @@
 //! secondary Merk, keyed by `(sort_key ‖ group_key)`. Three consequences
 //! shape the API:
 //!
-//! 1. **No `where` clauses.** Ranked indexes are single-property only
-//!    (compound ones are rejected at contract-parse time in rs-dpp —
-//!    their terminal level is created lazily by the same batch that
-//!    populates it, which grovedb rejects for indexed trees). With one
-//!    property there is no equality prefix to narrow, and a `where` on
-//!    the ranked property itself would ask for a *filtered* ranking,
-//!    which the secondary cannot express — it is sorted by aggregate,
-//!    not by group key. Non-empty `where` is therefore rejected rather
-//!    than silently ignored.
-//! 2. **`limit` is mandatory, `offset` is free, `start_at` is refused.**
+//! 1. **`where` clauses are equality pins on a compound prefix — or
+//!    absent.** A single-property ranked index has no prefix to narrow,
+//!    so its requests carry no `where`. A compound ranked index
+//!    `[p1, …, pn]` maintains one secondary **per prefix value**
+//!    (per-prefix semantics: each terminal `pn` property-name tree,
+//!    inside the `[p1, …, pn-1]` value trees, is its own indexed tree
+//!    — grovedb creates and populates it in the same document batch),
+//!    so a request must pin every leading property with an equality
+//!    clause to name which prefix's secondary the walk reads. A `where`
+//!    on the grouped (terminal) property itself would ask for a
+//!    *filtered* ranking, which no secondary can express — it is sorted
+//!    by aggregate, not by group key — and is rejected rather than
+//!    silently ignored, as is any non-equality prefix clause (`IN`
+//!    included: one walk per element is a future multi-`IN` capability).
+//! 2. **`limit` is mandatory, `offset` is depth-bounded, `start_at` is
+//!    refused.**
 //!    `limit` is the `k` of the walk and the ranked surface has no
 //!    server default for it, so it must be supplied. `offset` is the
-//!    rank the page starts at and is unbounded above: grovedb's
-//!    paginated prover is `O(log n + k)` *regardless of offset* (the
-//!    skipped region is attested by counted subtree commitments, never
-//!    walked entry by entry), so a large offset is not a cost lever and
-//!    needs no ceiling. `start_at` / `start_after` name a document id,
+//!    rank the page starts at and is unbounded above: grovedb counts
+//!    the skipped region from the subtree aggregates rather than
+//!    walking it entry by entry, so both executors are `O(log n + k)`
+//!    *regardless of offset* and a large offset is not a cost lever on
+//!    either. Only the proved result additionally attests the count.
+//!    So the offset needs no ceiling. `start_at` / `start_after` name a document id,
 //!    which does not appear anywhere in an aggregate-ordered keyspace.
 //! 3. **Entry order IS the ranking order.** The executor returns entries
 //!    in the order grovedb walked the secondary; callers must not
@@ -63,6 +70,8 @@
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::platform_value::Value;
 
 /// The fixed-point scale grovedb's Avg axis sorts by:
 /// `avg_fixed_point = floor(sum * RANKED_AVG_SCALE / count)` with
@@ -268,10 +277,19 @@ pub struct DriveDocumentRankedQuery<'a> {
     pub contract_id: [u8; 32],
     /// The document type name — a path segment.
     pub document_type_name: String,
-    /// The covering ranked index. Single-property by construction; its
-    /// one property is both the `GROUP BY` property and the last path
-    /// segment.
+    /// The covering ranked index. Its **last** property is the `GROUP
+    /// BY` property and the final path segment; any leading properties
+    /// are pinned by [`Self::equality_prefix_values`].
     pub index: &'a Index,
+    /// Encoded index-key bytes of each leading index property's pinned
+    /// value, in index-property order — empty for a single-property
+    /// index. Together with `index` these determine the grove path
+    /// (each leading property contributes a name segment and a value
+    /// segment), so they are as much a part of the prover/verifier
+    /// agreement as the path builder itself. Produced by
+    /// [`index_picker::encode_equality_prefix_values`] from the
+    /// request's equality `where` pins.
+    pub equality_prefix_values: Vec<Vec<u8>>,
     /// Which aggregate the groups are ranked by. Must be covered by
     /// `index`'s matching `ranked_*` flag.
     pub axis: RankedAxis,
@@ -296,14 +314,17 @@ pub struct DriveDocumentRankedQuery<'a> {
     /// How many ranks to skip before the returned page — the request's
     /// `OFFSET`. `0` for an unpaginated ranking.
     ///
-    /// Unbounded above (any `u32`), on purpose. grovedb attests the
-    /// skipped region through the counted subtree commitments
-    /// (`HashWithCount` / `HashWithCountAndSum`) rather than by walking
-    /// it, so both the prover's work and the proof's size stay
-    /// `O(log n + k)` **at any offset** — an offset of 4 and an offset
-    /// of four billion cost the same. There is therefore no
-    /// denial-of-service lever to cap, and capping would only stop
-    /// honest deep pagination.
+    /// Unbounded above (any `u32`), on purpose. grovedb skips by
+    /// counting rather than walking — descending the secondary on each
+    /// subtree's aggregate count (`HashWithCount` /
+    /// `HashWithCountAndSum`) and collapsing any subtree that fits
+    /// inside the remaining offset — so work and proof size stay
+    /// `O(log n + k)` **at any offset**, and an offset of 4 and an
+    /// offset of four billion cost the same order of work, the deeper
+    /// one in fact slightly less. Both executors go through that
+    /// descent, the unproved one without building a proof, so there is
+    /// no denial-of-service lever to cap on either path and capping
+    /// would only stop honest deep pagination.
     ///
     /// An offset past the end of the secondary is a provable answer, not
     /// an error: the page comes back empty and
@@ -323,19 +344,28 @@ pub struct DriveDocumentRankedQuery<'a> {
 pub struct RankedPage {
     /// Number of secondary entries skipped before this page.
     ///
-    /// On the **proved** path this is grovedb's cryptographically
-    /// attested count, independently re-derived by the verifier from the
-    /// counted subtree commitments in the proof bytes: it equals the
-    /// requested offset unless the walk ran out of entries first, in
-    /// which case `entries` is empty and `skipped` is a proof that the
-    /// secondary holds exactly `skipped` groups in total.
+    /// Both paths report the same quantity, and it is never an echo of
+    /// the request: grovedb's counted descent tracks how far the skip
+    /// actually got, so this equals the requested offset when the skip
+    /// succeeded and the secondary's whole population when the walk ran
+    /// out of groups first (in which case `entries` is empty).
     ///
-    /// On the **unproven** read there is nothing to attest and grovedb's
-    /// read API does not report the short walk, so this is simply the
-    /// requested offset. The two paths therefore disagree in exactly one
-    /// case — an offset past the end — where the unproven read reports
-    /// the requested offset and the proved one reports the true
-    /// population. Callers that need the population must prove.
+    /// What differs between the paths is the warrant. On the **proved**
+    /// path the value is cryptographically attested — independently
+    /// re-derived by the verifier from the counted subtree commitments
+    /// in the proof bytes — so a verifying client uses its own
+    /// reconstruction rather than trusting the server's. On the
+    /// **unproven** read it is the node's unverified claim, exactly like
+    /// the entries beside it: equal to the attested value on an honest
+    /// node, with nothing forcing a node to be honest.
+    ///
+    /// One nuance worth knowing on the unproven path: the population is
+    /// read from the secondary's root aggregate, while grovedb's
+    /// per-node payload check only fires on nodes the descent visits. In
+    /// a *corrupt* secondary whose count violation lies outside the
+    /// visited region, this value can therefore disagree with the true
+    /// row count where the proved path's would not. On any valid
+    /// secondary the two are identical by construction.
     pub skipped: u64,
     /// The groups on this page, **in ranking order**. Never longer than
     /// the query's `k`.
@@ -371,8 +401,11 @@ pub struct RankedPaginationInputs {
 /// the versioned classification of a request — but carries data rather
 /// than being a bare discriminant, because the ranked surface has exactly
 /// one executor pair (no-proof / proof) and all of its variation is in
-/// these five values.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// these values.
+///
+/// Not `Eq`: the equality pins carry [`Value`]s, whose float variant
+/// keeps the type at `PartialEq`.
+#[derive(Debug, Clone, PartialEq)]
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct DocumentRankedMode {
     /// The ranking axis, from the `SELECT` function.
@@ -383,11 +416,19 @@ pub struct DocumentRankedMode {
     pub k: u16,
     /// Ranks to skip — the `OFFSET`, `0` when unset.
     pub offset: u32,
-    /// The single `GROUP BY` property; must be the ranked index's only
-    /// property.
+    /// The single `GROUP BY` property; must be the covering ranked
+    /// index's **last** property.
     pub group_by_property: String,
     /// The field the aggregate applies to. Empty for
     /// [`RankedAxis::Count`] (`COUNT(*)`); the index's `summable`
     /// property for [`RankedAxis::Sum`] / [`RankedAxis::Avg`].
     pub aggregate_field: String,
+    /// The equality `where` pins, `(property, value)` per clause —
+    /// exactly one per leading property of the covering compound index,
+    /// in whatever order the request supplied them (the resolver
+    /// re-orders them into index-property order when it encodes the
+    /// path). Empty for the single-property form. Shape-validated only:
+    /// the index-aware checks (does a compound index exist whose leading
+    /// properties these pin?) live in [`index_picker`].
+    pub equality_pins: Vec<(String, Value)>,
 }

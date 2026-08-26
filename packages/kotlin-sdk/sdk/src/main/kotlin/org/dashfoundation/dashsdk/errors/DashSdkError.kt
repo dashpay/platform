@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.errors
 
 import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.json.JSONObject
 
 /**
  * Public error hierarchy of the Kotlin SDK — the Android analog of the
@@ -89,9 +90,25 @@ sealed class DashSdkError(
         class CoreInsufficientFunds(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
+        /**
+         * `ErrorShieldedInsufficientBalance` (native code 41; historical FFI
+         * spelling). A Platform Payment account's deterministic shield input
+         * set cannot cover the requested amount plus input 0's retained fee
+         * reserve. Nothing was built or broadcast. Refresh preflight and ask
+         * the user to confirm a smaller amount rather than retrying unchanged.
+         * This is distinct from insufficient private shielded-note balance.
+         */
+        class PlatformShieldCapacityExceeded(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
         class AssetLockNotTracked(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
+        /**
+         * The one-shot output cannot be reused. This may be a retained local
+         * tombstone or an unauthenticated Platform report; operation completion
+         * must not be inferred from this signal.
+         */
         class AssetLockAlreadyConsumed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
@@ -128,6 +145,23 @@ sealed class DashSdkError(
                 "$message (do NOT retry: the spend may already be on chain; " +
                     "the wallet keeps the spent notes reserved until the next " +
                     "shielded sync reconciles the outcome)",
+                cause,
+            )
+
+        /**
+         * `ErrorMasternodeWithdrawalUnconfirmed` (native code 42). A
+         * masternode (evonode) identity credit withdrawal was broadcast and
+         * accepted, but its execution result couldn't be confirmed — it may
+         * already have executed, and the identity nonce was consumed for it,
+         * so a blind retry could submit a SECOND withdrawal. Do NOT retry;
+         * re-read the identity's claimable balance and reconcile first. The
+         * Android analog of Swift's
+         * `PlatformWalletError.masternodeWithdrawalUnconfirmed`.
+         */
+        class MasternodeWithdrawalUnconfirmed(message: String, cause: Throwable? = null) :
+            PlatformWallet(
+                "$message (do NOT retry: the withdrawal may already have executed; " +
+                    "re-read the claimable balance first)",
                 cause,
             )
 
@@ -192,6 +226,13 @@ sealed class DashSdkError(
          * `PlatformWalletManager.repairIdentityKey`) instead of treating it
          * as an opaque [Generic] failure. Not retryable as-is — the key must
          * be (re-)derived first.
+         *
+         * Also raised WITHOUT any signer round-trip by
+         * [org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.signMessage],
+         * for a message-signing address this wallet does not own — or owns only
+         * watch-only, since a DashPay *external* account holds a contact's
+         * addresses whose private keys we never had. Same conclusion, same host
+         * response: correct the address or repair the keys, do not retry.
          */
         class SigningKeyUnavailable(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
@@ -238,6 +279,108 @@ sealed class DashSdkError(
          */
         class NotFound(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
+
+        /**
+         * `ErrorTransactionBroadcastRejected` (native code 26). Core
+         * DEFINITIVELY rejected the core transaction: it is not on the network
+         * and will not get there. The build's UTXO reservation was released and,
+         * on the deferred (BIP70/BIP270) path, the token was consumed at the
+         * same time — so the inputs are spendable again and the token is gone.
+         *
+         * The definitive counterpart to [TransactionBroadcastUnconfirmed] (20),
+         * whose outcome is AMBIGUOUS and which therefore keeps its inputs
+         * reserved. Because the reservation and token are already gone, this is
+         * NOT retryable in place: address the rejection reason carried in the
+         * message, then rebuild with
+         * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment]
+         * (deferred) or re-issue the send.
+         */
+        class TransactionBroadcastRejected(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorStaleReservationToken` (native code 34). A deferred
+         * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
+         * token has outlived its funding reservation's lifetime: key-wallet's
+         * TTL may already have swept and re-selected the inputs, so acting on it
+         * could touch a newer, unrelated reservation. The call did NOT touch the
+         * network. NOT retryable in place — rebuild the payment with
+         * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment].
+         *
+         * Sibling of the other two deferred-token failures this code used to
+         * conflate: [ReservationTokenConsumed] (unknown / already broadcast /
+         * already released) and [ReservationWalletMismatch] (minted against a
+         * different wallet generation).
+         */
+        class StaleReservationToken(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorReservationTokenConsumed` (native code 35). A deferred
+         * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
+         * token is unknown, already broadcast, or already released — the guard
+         * that turns a double-broadcast (or a broadcast after release) into a
+         * typed error instead of a second send. The call did NOT touch the
+         * network. NOT retryable: rebuild the payment with
+         * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment].
+         * (Release is idempotent and never raises this.)
+         */
+        class ReservationTokenConsumed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorReservationWalletMismatch` (native code 36). A deferred
+         * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
+         * token was minted against a different wallet *generation* than the one
+         * broadcasting it (e.g. a wallet re-created under the same id); its
+         * reservation lives in that other generation's reservation set. The call
+         * did NOT touch the network and did NOT consume the rightful owner's
+         * token. NOT retryable through this handle: rebuild the payment with
+         * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment].
+         */
+        class ReservationWalletMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** The DPNS name is not currently listed for sale. */
+        class DocumentNotForSale(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** The listing changed after the user confirmed [expectedCredits]. */
+        class DocumentPriceChanged(
+            val documentId: String,
+            val expectedCredits: ULong,
+            val actualCredits: ULong,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "The DPNS price changed from $expectedCredits to $actualCredits credits. " +
+                "Nothing was purchased.",
+            cause,
+        )
+
+        /** The purchasing identity cannot cover price plus the fee reserve. */
+        class InsufficientIdentityCredits(
+            val identityId: String,
+            val requiredCredits: ULong,
+            val availableCredits: ULong,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "Identity $identityId has $availableCredits credits but $requiredCredits are required.",
+            cause,
+        )
+
+        /** The name is still in an active contested-name vote. */
+        class ContestedNameNotTradable(
+            val label: String,
+            val endsAtMs: Long,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            if (endsAtMs == 0L) {
+                "\"$label\" cannot be traded until its contested-name vote resolves."
+            } else {
+                "\"$label\" cannot be traded until its contested-name vote ends at $endsAtMs ms."
+            },
+            cause,
+        )
 
         /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
@@ -335,21 +478,80 @@ sealed class DashSdkError(
             // RAW code via translateManagedIdentityNotFoundToZero (#4051)
             // before this mapping ever runs. BREAKING for Kotlin hosts that
             // caught DashSdkError.NotFound from platform-wallet operations.
+            //
+            // 98 is also what the wallet-was-REMOVED case returns on BOTH
+            // deferred-send paths:
+            //  * deferred (BIP70/BIP270) TOKEN path — a signed-payment broadcast
+            //    whose wallet is no longer registered in the manager, or a
+            //    signed-payment finalize whose wallet was removed while it was
+            //    being signed;
+            //  * finalized-transaction HANDLE path — a tx-builder finalize
+            //    whose wallet was removed or re-created during signing (no handle
+            //    is published), or a finalized-handle broadcast whose generation is gone.
+            // Every one reconciles the build's UTXO reservation before returning.
+            // Nothing was broadcast, and unlike ReservationWalletMismatch (36)
+            // no other live generation holds the payment either — so it is not
+            // retryable. See dashpay/platform#4185.
             PLATFORM_WALLET_NOT_FOUND_CODE ->
                 PlatformWallet.NotFound(message, cause)
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
+            42 -> PlatformWallet.MasternodeWithdrawalUnconfirmed(message, cause) // ErrorMasternodeWithdrawalUnconfirmed
             22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
+            26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
+            // The deferred-token trio sits at the contiguous block 34-36 because
+            // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
+            // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
+            // (#4184), 31 ErrorSigningKeyUnavailable (#4183/#4259), 32
+            // ErrorTransactionBuild (#4247/#4256), 33 ErrorTransactionSigning
+            // (#4256). See packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
+            34 -> PlatformWallet.StaleReservationToken(message, cause) // ErrorStaleReservationToken
+            35 -> PlatformWallet.ReservationTokenConsumed(message, cause) // ErrorReservationTokenConsumed
+            36 -> PlatformWallet.ReservationWalletMismatch(message, cause) // ErrorReservationWalletMismatch
+            37 -> PlatformWallet.DocumentNotForSale(message, cause)
+            38 -> parseMarketplaceDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.DocumentPriceChanged(
+                        documentId = detail.getString("documentId"),
+                        expectedCredits = detail.requiredULong("expected"),
+                        actualCredits = detail.requiredULong("actual"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            39 -> parseMarketplaceDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.InsufficientIdentityCredits(
+                        identityId = detail.getString("identityId"),
+                        requiredCredits = detail.requiredULong("required"),
+                        availableCredits = detail.requiredULong("available"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            40 -> parseMarketplaceDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.ContestedNameNotTradable(
+                        label = detail.getString("label"),
+                        endsAtMs = detail.getLong("endsAtMs"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            41 -> PlatformWallet.PlatformShieldCapacityExceeded(message, cause)
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message
-            // sniffing involved. (Codes 26-30 are reserved by sibling PRs
-            // #4185 / #4184 — see PlatformWalletFFIResultCode.)
+            // sniffing involved. (Codes 26-33 are claimed by merged/sibling
+            // PRs — 26 broadcast-rejected, 27 shutdown-incomplete, 29
+            // asset-lock insufficient funds, 32/33 transaction build/signing;
+            // the deferred-token trio sits at 34-36 above. See
+            // PlatformWalletFFIResultCode for the authoritative map.)
             31 -> PlatformWallet.SigningKeyUnavailable(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
@@ -363,6 +565,12 @@ sealed class DashSdkError(
 
         private fun isSigningKeyUnavailable(message: String): Boolean =
             message.contains(PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER)
+
+        private fun parseMarketplaceDetail(message: String): JSONObject? =
+            runCatching { JSONObject(message) }.getOrNull()
+
+        private fun JSONObject.requiredULong(name: String): ULong =
+            get(name).toString().toULong()
     }
 }
 

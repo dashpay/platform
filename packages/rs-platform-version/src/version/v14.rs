@@ -5,7 +5,7 @@ use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_document_versions::v3::DOCUMENT_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_method_versions::v2::DPP_METHOD_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
@@ -15,22 +15,22 @@ use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VE
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
-use crate::version::drive_abci_versions::drive_abci_method_versions::v9::DRIVE_ABCI_METHOD_VERSIONS_V9;
-use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
+use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
-use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
+use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
-use crate::version::system_data_contract_versions::v2::SYSTEM_DATA_CONTRACT_VERSIONS_V2;
-use crate::version::system_limits::v3::SYSTEM_LIMITS_V3;
+use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
+use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts three consensus changes:
+/// v14 hosts four consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates** (this branch): an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -66,6 +66,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    the contest was created on — which halts the chain when that poll
 ///    ends — or open a contest for a document that is not a contested
 ///    resource at all.
+/// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
+///    applied from v8 becomes 15% of the total credits Platform held a day ago
+///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
+///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
+///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
+///    withdrawal eventually fits and cannot block the pooling queue, and never
+///    above `max_daily_withdrawal_amount` (4000 Dash, Core's unlock capacity per
+///    day under V24) since pooling more than Core mines only cycles through
+///    expiry and re-signing. The base is
+///    the total credits recorded at the latest block at least 24 hours before
+///    the current one: `DRIVE_ABCI_METHOD_VERSIONS_V10` turns on
+///    `record_total_credits_history_for_withdrawals`, which checks the total
+///    credits every block once fees and epoch rewards are in, writes it under
+///    the withdrawals tree keyed by block time whenever it changed (an entry
+///    describes the total until the next one) and prunes entries older than the
+///    one the limit reads, and `DRIVE_VERSION_V9`'s identity withdrawal table
+///    bumps `calculate_current_withdrawal_limit` to 1 to read that lagged
+///    value. Until an entry is a day old — the first day after activation — the
+///    flat 2000 Dash keeps applying, so the lag cannot be skipped by inflating
+///    the total before or at activation. The lag is the guardrail: a sudden
+///    jump in the total credits does not raise the limit for a day. Amounts
+///    already pooled in the last 24 hours keep counting against the maximum
+///    exactly as before. Core's own unlock limit is unaffected: pre-V24 Core
+///    caps unlocks at `LimitAmountV22` (2000 Dash) per *block*, with the amount
+///    checked only at block level, so any daily total is still minable across
+///    blocks; after V24 it enforces 4000 Dash per 576-block window, which the
+///    cap above never exceeds.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
@@ -75,8 +102,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// shared-prefix shapes.
 ///
 /// Until a contract uses the ranked grammar, the only v14 behavior changes
-/// are the shared-prefix fix, the contested-index cross-check and the
-/// index-reorder schema-compatibility fix; everything else matches v13:
+/// are the shared-prefix fix, the contested-index cross-check, the
+/// index-reorder schema-compatibility fix and the relative daily withdrawal
+/// limit; everything else matches v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
@@ -95,21 +123,27 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   `verify_ranked_top_k_proof`. All are 0 today. The same table bumps the
 ///   four index walkers to v2 and the document update walker to v1 for the
 ///   shared-prefix fix.
-/// * `DRIVE_ABCI_QUERY_VERSIONS_V2` bumps
-///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 1,
-///   opening the ranked path on the v1 document-query handler: a grouped
-///   aggregate whose single `order_by` names the selected aggregate
-///   (`ORDER BY <agg> [ASC|DESC] LIMIT n [OFFSET m]`) routes to the ranked
-///   executor. v13 and earlier keep the v1 table and therefore keep
-///   rejecting that shape, so mixed-version networks agree across the
-///   upgrade.
+/// * `DRIVE_ABCI_QUERY_VERSIONS_V3` bumps
+///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 2,
+///   opening two routes on the v1 document-query handler: the ranked path
+///   (a grouped aggregate whose single `order_by` names the selected
+///   aggregate — `ORDER BY <agg> [ASC|DESC] LIMIT n [OFFSET m]`) and the
+///   boolean-`HAVING` range path (a grouped aggregate carrying exactly one
+///   `having` clause on the selected aggregate — `GROUP BY p HAVING <agg>
+///   <op> <value> LIMIT n`), the latter served as a value-bounded range
+///   read of the covering ranked index's axis secondary. v13 and earlier
+///   keep the v1 table and therefore keep rejecting both shapes, so
+///   mixed-version networks agree across the upgrade.
 /// * `DRIVE_ABCI_VALIDATION_VERSIONS_V10` bumps
 ///   `document_create_transition_structure_validation` 0 → 1, requiring a
 ///   contested create transition's prefunded voting balance to name the
 ///   same vote poll the document itself resolves to, and rejecting one on a
-///   document that resolves to no contested index. v13 keeps the v9 table
-///   and therefore keeps accepting both, so replay of pre-upgrade blocks is
-///   unchanged.
+///   document that resolves to no contested index. It also bumps document
+///   create state validation to 2 and document replace state validation to
+///   1, enforcing `refersTo` document references: a document whose
+///   reference property names an identity or contract that does not exist
+///   is rejected. v13 keeps the v9 table and therefore keeps
+///   accepting all of these, so replay of pre-upgrade blocks is unchanged.
 ///
 /// The wire surface is deliberately unchanged: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
@@ -120,10 +154,10 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V9,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested create transitions must name the contested index they resolve to
-        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
-        query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked HAVING routing gate
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
+        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
+        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
@@ -139,12 +173,12 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V2,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        methods: DPP_METHOD_VERSIONS_V2,
+        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V2,
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V3,
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
@@ -155,16 +189,18 @@ mod tests {
     use super::*;
     use crate::version::v13::PLATFORM_V13;
 
-    /// The ranked-HAVING routing gate lives in v14's own query table, so
-    /// flipping it to feature version 1 touches only v14: a v13 node keeps
-    /// running the v0 helper, which rejects every non-empty HAVING, so a
+    /// The ranked / boolean-HAVING routing gate lives in v14's own query
+    /// table, so flipping it touches only v14: a v13 node keeps running
+    /// the v0 helper, which rejects every non-empty HAVING, so a
     /// mixed-version network agrees until the upgrade vote carries.
     ///
-    /// The flip is real as of the ranked routing landing — v14 selects the
-    /// v1 helper, which routes a single ranking-operand HAVING clause to
-    /// `dispatch_ranked_v1`. A change that made v13 non-zero here would be
-    /// consensus-breaking for already-deployed nodes, which is exactly what
-    /// the v13 half of this assertion guards.
+    /// v14 selects the v2 helper, which routes the ranked shape
+    /// (`ORDER BY <agg> LIMIT n`) to `dispatch_ranked_v1` and the
+    /// boolean-HAVING range shape (exactly one `having` clause on the
+    /// selected aggregate) to `dispatch_having_v1`. A change that made
+    /// v13 non-zero here would be consensus-breaking for
+    /// already-deployed nodes, which is exactly what the v13 half of
+    /// this assertion guards.
     #[test]
     fn ranked_having_routing_gate_is_v14_only() {
         assert_eq!(
@@ -181,7 +217,7 @@ mod tests {
                 .query
                 .document_query_helpers
                 .compute_aggregate_mode_and_check_limit,
-            1
+            2
         );
     }
 
@@ -264,12 +300,25 @@ mod tests {
             0
         );
         assert_eq!(
+            PLATFORM_V14.drive.methods.document.query.detect_having_mode,
+            0
+        );
+        assert_eq!(
             PLATFORM_V14
                 .drive
                 .methods
                 .verify
                 .document_ranked
                 .verify_ranked_top_k_proof,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive
+                .methods
+                .verify
+                .document_ranked
+                .verify_having_range_proof,
             0
         );
         let grove = &PLATFORM_V14.drive.grove_methods.batch;

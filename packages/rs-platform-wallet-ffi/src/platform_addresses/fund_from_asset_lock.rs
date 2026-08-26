@@ -34,10 +34,12 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// → consume), with the asset-lock signature produced by an external
 /// `MnemonicResolverHandle`.
 ///
-/// `account_index` selects the BIP44 *standard* Core account whose
-/// UTXOs fund the asset lock (only BIP44 standard accounts supported
-/// today). `platform_account_index` selects which platform-payment
-/// account the recipient addresses belong to.
+/// `account_index` addresses the *standard* Core families: the asset
+/// lock POOLS the BIP44 and BIP32 accounts at that index together with
+/// every DashPay receiving account (change returns to BIP44); the index
+/// does not restrict which DashPay receiving accounts contribute.
+/// `platform_account_index` selects which platform-payment account the
+/// recipient addresses belong to.
 ///
 /// # Safety
 /// - `signer_address_handle` must be a valid, non-destroyed

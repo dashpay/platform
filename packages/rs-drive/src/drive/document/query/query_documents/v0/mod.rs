@@ -140,9 +140,13 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let sql = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql, &contract, Some(&DriveConfig::default()))
-                .expect("valid query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("valid query");
 
         let outcome = drive
             .query_documents_v0(query, None, true, None, platform_version)
@@ -161,9 +165,13 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let sql = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql, &contract, Some(&DriveConfig::default()))
-                .expect("valid query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("valid query");
 
         let outcome = drive
             .query_documents_v0(query, None, false, None, platform_version)
@@ -234,9 +242,13 @@ mod tests {
             .expect("insert");
 
         let sql = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql, &contract, Some(&DriveConfig::default()))
-                .expect("valid query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("valid query");
 
         let outcome = drive
             .query_documents_v0(query, None, false, None, platform_version)

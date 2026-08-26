@@ -135,11 +135,26 @@ public class WalletStorage {
         return mnemonic
     }
 
-    /// Cheap existence check used by signer preflight paths.
+    /// Three-way answer to "can this wallet's mnemonic be read right now?".
     ///
-    /// Unlike `retrieveMnemonic(...)`, this does not materialize the
-    /// mnemonic bytes into Swift heap objects.
-    public func hasMnemonic(for walletId: Data) -> Bool {
+    /// [`hasMnemonic(for:)`] collapses the last two cases into `false`, which
+    /// is fine where the question is "is this watch-only?" but wrong wherever
+    /// the caller has to decide between giving up and trying again later.
+    public enum MnemonicAvailability: Sendable, Equatable {
+        /// The item exists and its attributes were readable.
+        case present
+        /// The Keychain answered definitively that there is no such item —
+        /// a genuine watch-only wallet.
+        case absent
+        /// The lookup failed for another reason: the device is locked, access
+        /// was denied, the daemon was unavailable. Says nothing about whether
+        /// a mnemonic exists, so callers should retry rather than conclude.
+        case unavailable(OSStatus)
+    }
+
+    /// Whether the wallet's mnemonic is readable, keeping "no such item" apart
+    /// from "could not tell". Attribute-only; no secret is materialized.
+    public func mnemonicAvailability(for walletId: Data) -> MnemonicAvailability {
         let account = perWalletMnemonicAccount(for: walletId)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -149,8 +164,23 @@ public class WalletStorage {
             kSecReturnAttributes as String: true
         ]
         var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        return status == errSecSuccess
+        switch SecItemCopyMatching(query as CFDictionary, &result) {
+        case errSecSuccess: return .present
+        case errSecItemNotFound: return .absent
+        case let status: return .unavailable(status)
+        }
+    }
+
+    /// Cheap existence check used by signer preflight paths.
+    ///
+    /// Unlike `retrieveMnemonic(...)`, this does not materialize the
+    /// mnemonic bytes into Swift heap objects.
+    ///
+    /// Answers `false` both for "no such item" and for "could not tell",
+    /// which is what a preflight wants. A caller that has to choose between
+    /// giving up and retrying needs `mnemonicAvailability(for:)` instead.
+    public func hasMnemonic(for walletId: Data) -> Bool {
+        mnemonicAvailability(for: walletId) == .present
     }
 
     /// Attribute-only identity stamp of the wallet's mnemonic Keychain

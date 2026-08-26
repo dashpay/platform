@@ -7,9 +7,10 @@
 //! the per-axis *secondary* Merk of an indexed tree (grovedb PR #657),
 //! so it costs `O(log n + k)` and comes with a proof that commits to
 //! exactly the `k` returned `(aggregate, group key)` pairs — plus the
-//! `OFFSET`, which grovedb attests from counted subtree commitments
-//! rather than by walking the skipped region, so deep pages cost the
-//! same as the first one.
+//! `OFFSET`, which grovedb counts from the subtree aggregates rather
+//! than by walking the skipped region — and additionally attests, on
+//! this proved path — so a deep page costs `O(log n + k)` like any
+//! other rather than growing with the offset.
 //!
 //! This module holds the client-facing result type
 //! ([`DocumentRankedEntries`]), the tenderdash-composition wrapper
@@ -188,10 +189,11 @@ impl DocumentRankedEntries {
                 return Err(Error::ResponseDecodeError {
                     error: format!(
                         "expected a `ResultData.ranked` payload for a ranked request, got \
-                         {other:?}. A response on another variant means the node routed the \
+                         {}. A response on another variant means the node routed the \
                          request to a different executor — check that the request carries a \
                          `group_by` and a single `order_by` naming the single `select`'s \
-                         aggregate (`$count` for `COUNT(*)`)."
+                         aggregate (`$count` for `COUNT(*)`).",
+                        result_variant_name(other)
                     ),
                 });
             }
@@ -203,6 +205,28 @@ impl DocumentRankedEntries {
             },
             metadata,
         ))
+    }
+}
+
+/// The received-but-unexpected shape of a `getDocuments` V1 result, by
+/// **name only** — never the payload. Interpolating the payload into an
+/// error would make the message (and any log line carrying it) grow
+/// with an untrusted response, and could copy returned document bytes
+/// into logs. Shared by the ranked and having-range decoders.
+pub(crate) fn result_variant_name(
+    result: Option<&get_documents_response_v1::Result>,
+) -> &'static str {
+    match result {
+        None => "an absent result",
+        Some(get_documents_response_v1::Result::Proof(_)) => "a proof",
+        Some(get_documents_response_v1::Result::Data(ResultData { variant })) => match variant {
+            None => "a ResultData with no variant",
+            Some(result_data::Variant::Documents(_)) => "a ResultData.documents payload",
+            Some(result_data::Variant::Counts(_)) => "a ResultData.counts payload",
+            Some(result_data::Variant::Sums(_)) => "a ResultData.sums payload",
+            Some(result_data::Variant::Averages(_)) => "a ResultData.averages payload",
+            Some(result_data::Variant::Ranked(_)) => "a ResultData.ranked payload",
+        },
     }
 }
 
@@ -224,7 +248,7 @@ impl DocumentRankedEntries {
 /// out-of-range double into `i128::MIN`/`MAX`. Every legitimate value
 /// fits comfortably, since `|sum| ≤ i64::MAX` bounds the true fixed
 /// point at `i64::MAX * 10^19 ≈ 9.2e37 < i128::MAX`.
-fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<RankedEntry, Error> {
+pub(crate) fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<RankedEntry, Error> {
     let value = match entry.value.as_ref() {
         Some(ranked_entry::Value::Count(count)) => RankedEntryValue::Count(*count),
         Some(ranked_entry::Value::Sum(sum)) => RankedEntryValue::Sum(*sum),

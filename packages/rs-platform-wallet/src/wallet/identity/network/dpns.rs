@@ -184,6 +184,16 @@ impl IdentityWallet {
     {
         use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
 
+        // Ensure the on-chain DPNS contract is fetched and registered
+        // with the SDK's context provider BEFORE broadcasting: the
+        // post-broadcast proof of the preorder/domain documents needs it,
+        // `Sdk::register_dpns_name` never registers it back, and a host
+        // that doesn't pre-seed known contracts (e.g. a headless
+        // consumer) would otherwise fail proof verification with
+        // "unknown contract ... in document verification" even though
+        // the registration landed on-chain.
+        self.dpns_contract().await?;
+
         let (identity, auth_key) = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {

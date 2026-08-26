@@ -1,6 +1,7 @@
 use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityMethodVersions {
@@ -19,6 +20,9 @@ pub struct DriveIdentityWithdrawalMethodVersions {
     pub document: DriveIdentityWithdrawalDocumentMethodVersions,
     pub transaction: DriveIdentityWithdrawalTransactionMethodVersions,
     pub calculate_current_withdrawal_limit: FeatureVersion,
+    /// The total credits history under the withdrawals tree exists from protocol version 14.
+    pub record_total_credits_history: OptionalFeatureVersion,
+    pub fetch_total_credits_in_platform_a_day_ago: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

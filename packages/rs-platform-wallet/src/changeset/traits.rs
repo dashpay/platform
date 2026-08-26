@@ -5,12 +5,29 @@
 
 use std::error::Error as StdError;
 
-use crate::changeset::changeset::PlatformWalletChangeSet;
+use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
+use dpp::prelude::Identifier;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
+
+/// One row of [`PlatformWalletPersistence::list_wallet_core_txids`]:
+/// a persisted Core transaction id plus the host's per-wallet
+/// ownership verdict for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListedCoreTxid {
+    /// The persisted transaction's id.
+    pub txid: Txid,
+    /// `true` when the transaction spends at least one input funded by
+    /// this wallet's own spendable accounts — i.e. the wallet actually
+    /// paid out in this transaction. `false` for transactions the host
+    /// persisted for other reasons: incoming payments, and third-party
+    /// transactions that merely pay an address on a watch-only DashPay
+    /// external (contact) account.
+    pub spends_wallet_input: bool,
+}
 
 /// Retry classification for [`PersistenceError::Backend`].
 ///
@@ -189,6 +206,16 @@ impl PersistenceError {
 /// to guarantee a batch flush, it should call `flush` explicitly after all
 /// `store` calls and treat `store` as a best-effort buffer hint.
 pub trait PlatformWalletPersistence: Send + Sync {
+    /// Whether a successful [`store`](Self::store) makes its changeset
+    /// durable before [`flush`](Self::flush) is called.
+    ///
+    /// The default is conservative for buffered backends. Inline-committing
+    /// implementations override this so callers do not roll back live state
+    /// after a later, post-commit flush-notification failure.
+    fn store_commits_inline(&self) -> bool {
+        false
+    }
+
     /// Feature-specific contracts this backend can persist and, where the
     /// capability requires it, restore after process restart.
     ///
@@ -283,6 +310,34 @@ pub trait PlatformWalletPersistence: Send + Sync {
     // instead; a sentinel-scope flush path is still to be designed.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
+    /// Replace the persisted tracked-masternode set for `network` with
+    /// `records` (whole-set write; the set is user-curated and small).
+    ///
+    /// Default: a successful no-op — tracking then works but is
+    /// session-scoped. Backends that persist AND restore the rows attest
+    /// [`PersistenceCapabilities::TRACKED_MASTERNODES`] so hosts can tell
+    /// the difference; the default deliberately does not.
+    ///
+    /// The same reentrancy contract as [`Self::store`] applies.
+    fn persist_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+        records: &[crate::masternode::TrackedMasternode],
+    ) -> Result<(), PersistenceError> {
+        let _ = (network, records);
+        Ok(())
+    }
+
+    /// Load the persisted tracked-masternode set for `network`. Default:
+    /// empty (see [`Self::persist_tracked_masternodes`]).
+    fn load_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+    ) -> Result<Vec<crate::masternode::TrackedMasternode>, PersistenceError> {
+        let _ = network;
+        Ok(Vec::new())
+    }
+
     /// Load the full client state from storage.
     ///
     /// Returns a [`ClientStartState`] — a ready-to-boot snapshot covering
@@ -322,25 +377,162 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// (`SqliteWalletPersister`, the SwiftData iOS persister) should
     /// override.
     ///
-    /// **Field contract.** Implementations are only required to
-    /// populate `txid` and `context` (with the `BlockInfo` inside
-    /// `InChainLockedBlock` / `InBlock` carrying real height + block
-    /// hash + timestamp). Other fields (`transaction`, `input_details`,
+    /// **Field contract.** Implementations must populate `txid`,
+    /// `context` (with the `BlockInfo` inside `InChainLockedBlock` /
+    /// `InBlock` carrying real height + block hash + timestamp) and
+    /// `transaction` — the real consensus-decoded transaction, never a
+    /// synthetic body. A backend that cannot produce the real
+    /// transaction for a txid must return `Ok(None)` instead;
+    /// DashPay sent-payment reconstruction walks
+    /// `record.transaction.output` and treats a miss on a txid the
+    /// backend itself enumerated (via
+    /// [`Self::list_wallet_core_txids`]) as "not available yet", so a
+    /// placeholder body would silently corrupt reconstruction where a
+    /// miss is retried safely. The remaining fields (`input_details`,
     /// `output_details`, `account_type`, `transaction_type`,
     /// `direction`, `net_amount`, `fee`, `label`) MAY be returned as
-    /// best-effort placeholders and MUST NOT be relied upon by callers.
-    /// The current consumer — the asset-lock proof flow — only reads
-    /// `context` and `height()` (which is
-    /// `context.block_info().map(|b| b.height)`). FFI-backed
-    /// implementations (e.g. the SwiftData iOS persister) take
-    /// advantage of this contract by emitting a synthetic record with a
-    /// placeholder transaction body, since reconstructing the full
-    /// `Transaction` over the C ABI is not free and isn't needed.
+    /// best-effort placeholders and MUST NOT be relied upon by callers
+    /// — the asset-lock proof flow reads only `context` and `height()`
+    /// (which is `context.block_info().map(|b| b.height)`).
     fn get_core_tx_record(
         &self,
         _wallet_id: WalletId,
         _txid: &Txid,
     ) -> Result<Option<TransactionRecord>, PersistenceError> {
+        Ok(None)
+    }
+
+    /// Enumerate the persisted Core transaction ids that belong to
+    /// `wallet_id`, each tagged with whether the transaction spends an
+    /// input this wallet funded.
+    ///
+    /// Used by DashPay sent-payment reconstruction to walk the
+    /// wallet's locally persisted transaction history without relying
+    /// on the optional in-memory `transactions()` map.
+    ///
+    /// Returns `Ok(None)` when the backend does not index wallet-scoped
+    /// transaction history at all — the default, kept by backends that
+    /// never wire the capability (e.g. the Android vtable leaves the
+    /// enumeration callbacks unset). `None` is NOT an empty table: an
+    /// empty table (`Some(vec![])`) means "supported, nothing persisted
+    /// yet" and reconstruction keeps retrying until rows appear, while
+    /// `None` tells the caller to skip reconstruction entirely instead
+    /// of re-deriving candidate windows against a table that will never
+    /// materialize.
+    ///
+    /// `spends_wallet_input` must be `true` only when at least one of
+    /// the transaction's inputs spends an output owned by one of this
+    /// wallet's own spendable accounts. Watch-only mirrors — a DashPay
+    /// external account tracking a *contact's* addresses — do NOT
+    /// count: a third party paying that contact produces a transaction
+    /// the host persists as wallet-involved, but nothing in it was
+    /// funded by this wallet. Reconstruction only considers
+    /// wallet-funded transactions, so an over-broad `true` here turns
+    /// other people's payments into fabricated `Sent` history.
+    fn list_wallet_core_txids(
+        &self,
+        _wallet_id: WalletId,
+    ) -> Result<Option<Vec<ListedCoreTxid>>, PersistenceError> {
+        Ok(None)
+    }
+
+    /// Look up the persisted DPNS marketplace row for one
+    /// `(wallet_id, wallet_identity_id, normalized_label)` triple.
+    ///
+    /// Used by the DPNS marketplace sync pass to recover a departed
+    /// name's `document_id` when the in-memory working set cannot
+    /// supply it.
+    ///
+    /// ## Why this read has to exist
+    ///
+    /// `PlatformWalletInfo::dpns_name_states` — the map the sync pass
+    /// diffs against — is **session-scoped**: the load path initializes
+    /// it EMPTY on every process start and nothing rehydrates it (the
+    /// SQLite backend deliberately does not attest
+    /// [`PersistenceCapabilities::WALLET_RESTORE`](crate::changeset::PersistenceCapabilities),
+    /// and `ClientStartState::wallets` is still unimplemented). The
+    /// durable copy is the host mirror this trait feeds — Swift
+    /// `PersistentDPNSName`, the Android Room `dpns_names` table.
+    ///
+    /// Marketplace rows are keyed by `document_id`, but a departure is
+    /// only ever *detected* by label: the sync pass notices a label on
+    /// the identity's list that the ownership scan no longer returns.
+    /// Turning that label back into the `document_id` the removal delta
+    /// must carry is precisely what the in-memory map was doing — so
+    /// when a name departs during the FIRST sync pass after a restart,
+    /// the map is empty, the id is unknown, and no removal is emitted.
+    /// The label is dropped locally all the same, so the departure never
+    /// comes back around on a later pass: the host mirror keeps a stale
+    /// owned/listed row for a name the wallet no longer holds, forever.
+    /// This lookup closes that hole by asking the mirror itself.
+    ///
+    /// ## Contract
+    ///
+    /// - `normalized_label` is the homograph-normalized label
+    ///   (`convert_to_homograph_safe_chars`), matching
+    ///   [`DpnsNameStateEntry::normalized_label`] as written through
+    ///   [`Self::store`]. Implementations MUST compare against the
+    ///   stored normalized column, never the display label.
+    /// - The returned row MUST belong to `wallet_id` AND carry
+    ///   `wallet_identity_id == wallet_identity_id`. Rows for a name
+    ///   that already left the wallet are retained (`Sold` /
+    ///   `Transferred`), so an implementation that dropped the identity
+    ///   filter could hand back another identity's row and remove the
+    ///   wrong document.
+    /// - Several rows CAN match, and WHICH one is returned matters. A
+    ///   name can be deleted and re-registered under a fresh
+    ///   `document_id`, while rows for names that already left are
+    ///   retained, so one identity may hold a historical row and the
+    ///   current row under the same normalized label. Implementations
+    ///   MUST return the CURRENT row, chosen deterministically:
+    ///   [`Owned`](crate::changeset::DpnsNameSaleStatus::Owned) ahead of
+    ///   any retained
+    ///   [`Sold`](crate::changeset::DpnsNameSaleStatus::Sold) /
+    ///   [`Transferred`](crate::changeset::DpnsNameSaleStatus::Transferred)
+    ///   row, then the greatest
+    ///   [`DpnsNameStateEntry::last_synced_at_ms`], then the
+    ///   greatest `document_id` as a final tie-break. Returning an
+    ///   arbitrary match is NOT acceptable: a historical row makes the
+    ///   caller delete that row and drop the identity's label, leaving
+    ///   the current row permanently orphaned — the very failure this
+    ///   lookup exists to prevent, just aimed at the wrong row. The
+    ///   SQLite backend implements exactly this order; see
+    ///   `schema::dpns_name_states::get_by_identity_and_label`.
+    /// - Returning `Ok(None)` while a matching row exists is likewise
+    ///   not acceptable — that reintroduces the orphan.
+    ///
+    /// ## Default
+    ///
+    /// `Ok(None)` — "this backend does not index DPNS rows by label".
+    /// Backends without the lookup keep the default and the caller
+    /// degrades to exactly the pre-fallback behaviour: the departure is
+    /// still classified and the label still removed, only the removal
+    /// delta is skipped — the restart orphan described above remains.
+    /// `Ok(None)` is therefore never an error condition — it means "no
+    /// better answer than the in-memory map already gave".
+    ///
+    /// ## Who actually implements this
+    ///
+    /// Today: `SqlitePersister` only.
+    /// [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence)
+    /// keeps the default by design. So does the FFI persister — and not
+    /// as a host choice: the persistence vtable has NO read slot for
+    /// this lookup, so there is no callback a host could set. The
+    /// mobile mirrors that persist
+    /// [`DpnsNameStateChangeSet`](crate::changeset::DpnsNameStateChangeSet)
+    /// rows (the Android Room `dpns_names` table, the iOS SwiftData
+    /// `PersistentDPNSName`) hold exactly the row this method asks for,
+    /// but cannot be asked for it until a `get_dpns_name_state` read
+    /// callback is added to the vtable — planned with the other batched
+    /// vtable/ABI additions, deliberately not part of the change that
+    /// introduced this method. Until then the restart orphan is closed
+    /// on SQLite-backed hosts only and is still live on FFI hosts.
+    fn get_dpns_name_state(
+        &self,
+        _wallet_id: WalletId,
+        _wallet_identity_id: &Identifier,
+        _normalized_label: &str,
+    ) -> Result<Option<DpnsNameStateEntry>, PersistenceError> {
         Ok(None)
     }
 

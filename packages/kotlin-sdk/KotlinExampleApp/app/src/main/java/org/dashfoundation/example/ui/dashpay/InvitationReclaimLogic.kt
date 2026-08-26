@@ -11,23 +11,13 @@ import org.dashfoundation.dashsdk.errors.DashSdkError
  */
 object InvitationReclaimLogic {
 
-    /** The terminal state a reclaim attempt resolves to. */
+    /** The state a failed reclaim attempt resolves to. */
     enum class ReclaimOutcome {
         /**
-         * This wallet retained a tombstone written after its successful
-         * local consume, so the interrupted reclaim recovers definitively.
+         * The lock was reported as consumed, but neither consumption nor this
+         * reclaim's completion is authenticated.
          */
-        RECLAIMED,
-
-        /** The voucher was consumed with no local attempt in flight — a foreign claim. */
-        CLAIMED,
-
-        /**
-         * Provably consumed (deterministic Platform rejection), but our own
-         * in-flight attempt makes the consumer ambiguous. Resolves to the
-         * conservative terminal Claimed, never an inferred Reclaimed.
-         */
-        CONSUMED_AMBIGUOUS,
+        CONSUMPTION_UNKNOWN,
 
         /**
          * The wallet no longer tracks the voucher lock and our own attempt
@@ -42,25 +32,15 @@ object InvitationReclaimLogic {
 
     /**
      * Pure decision for the reclaim failure path. A typed wallet
-     * [DashSdkError.PlatformWallet.AssetLockAlreadyConsumed] comes from a
-     * retained local tombstone written only after this wallet's successful
-     * consume, and therefore recovers Reclaimed. Consensus wording is only
-     * proof the lock is consumed — not who consumed it — so the prior
-     * in-flight marker splits that fallback into a foreign claim vs an
-     * explicitly ambiguous consumption.
+     * [DashSdkError.PlatformWallet.AssetLockAlreadyConsumed] and the legacy
+     * consensus wording are both consumption-unknown signals. Code 24 cannot
+     * distinguish a local tombstone from an unauthenticated remote report.
      */
     fun classifyReclaimFailure(
         error: Throwable,
         hadPriorReclaimInFlight: Boolean,
     ): ReclaimOutcome {
-        if (isLocallyConsumedTombstone(error)) return ReclaimOutcome.RECLAIMED
-        if (isAlreadyConsumed(error.message.orEmpty())) {
-            return if (hadPriorReclaimInFlight) {
-                ReclaimOutcome.CONSUMED_AMBIGUOUS
-            } else {
-                ReclaimOutcome.CLAIMED
-            }
-        }
+        if (isAlreadyConsumed(error)) return ReclaimOutcome.CONSUMPTION_UNKNOWN
         // A retry after our own crash-interrupted consume can also fail
         // LOCALLY ("…is not tracked") — before Platform. Consistent with the
         // consume having landed but not proof of it, so it gets its own
@@ -79,7 +59,7 @@ object InvitationReclaimLogic {
      * proof the consume never started, so the freshly-set marker is stale
      * (leaving it would degrade an identical retry into the two-attempt
      * false-ambiguity outcome). Every other error keeps the marker so a later
-     * "already consumed" stays classified as ambiguous.
+     * "already consumed" retains its consumption-unknown recovery state.
      */
     fun shouldClearInFlightMarker(
         error: Throwable,
@@ -87,25 +67,19 @@ object InvitationReclaimLogic {
     ): Boolean = !hadPriorReclaimInFlight && isLockNoLongerTracked(error.message.orEmpty())
 
     /**
-     * The wallet's typed local consumed tombstone — written only after this
-     * wallet's own successful consume, so it can safely recover Reclaimed.
-     */
-    fun isLocallyConsumedTombstone(error: Throwable): Boolean =
-        error is DashSdkError.PlatformWallet.AssetLockAlreadyConsumed
-
-    /**
-     * The deterministic consensus 10504 rejection. Matched on the exact
+     * Legacy consensus-10504 compatibility fallback. Matched on the exact
      * canonical Display phrase of
      * `IdentityAssetLockTransactionOutPointAlreadyConsumedError` ONLY —
-     * broader phrases would widen false-positive risk (misclassifying an
-     * unrelated failure as a benign "already claimed" wrongly flips the row
-     * to Claimed). The typed tombstone above is the primary signal; this
-     * wording is the compatibility fallback for errors originating below the
-     * typed wallet boundary. (A typed FFI code for 10504 is a known
-     * follow-up shared with iOS.)
+     * broader phrases would widen false-positive risk. The report is not
+     * authenticated and never proves the requested operation completed. The
+     * typed code is the primary signal; wording remains for older boundaries.
      */
     fun isAlreadyConsumed(message: String): Boolean =
         message.lowercase().contains("already completely used")
+
+    fun isAlreadyConsumed(error: Throwable): Boolean =
+        error is DashSdkError.PlatformWallet.AssetLockAlreadyConsumed ||
+            isAlreadyConsumed(error.message.orEmpty())
 
     /**
      * The wallet's LOCAL "asset lock … is not tracked" resume-guard failure

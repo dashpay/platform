@@ -205,8 +205,10 @@ pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
 ///
 /// The record source (rust-dashcore #876 provider-payload retention) is
 /// populated in every feature configuration; see
-/// `PlatformWalletManager::provider_masternode_txs_blocking`. `out_*` are
-/// set to null / 0 when the wallet has no masternodes or isn't found.
+/// `PlatformWalletManager::wallet_masternodes_blocking`, which also resolves
+/// status and operator / platform key ownership — this function only
+/// marshals. `out_*` are set to null / 0 when the wallet has no masternodes
+/// or isn't found.
 ///
 /// Reads the wallet manager lock via `blocking_read` — must not be called
 /// from within a tokio async context.
@@ -229,43 +231,16 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
     let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        manager.provider_masternode_txs_blocking(&wid)
+        manager.wallet_masternodes_blocking(&wid)
     });
     // Outer Option: handle resolved. Inner Option: wallet found.
     let inner = unwrap_option_or_return!(option);
-    let (network, txs, dml, operator_index, platform_index) = unwrap_option_or_return!(inner);
+    let masternodes = unwrap_option_or_return!(inner);
 
-    // Derive DML membership from the owned snapshot (`None` ⇒ list not
-    // available ⇒ Unknown status ⇒ persist layer keeps the prior value).
-    use crate::core_wallet_types::ListMembership;
-    let membership = |pro_tx_hash: &[u8; 32]| -> ListMembership {
-        match &dml {
-            None => ListMembership::ListUnavailable,
-            Some(map) => match map.get(pro_tx_hash) {
-                Some(true) => ListMembership::ValidEntry,
-                Some(false) => ListMembership::InvalidEntry,
-                None => ListMembership::Absent,
-            },
-        }
-    };
-
-    let aggregates = crate::core_wallet_types::aggregate_masternodes(
-        txs.iter().map(|(h, p, tx)| (*h, *p, tx)),
-        membership,
-    );
-
-    let entries: Vec<crate::core_wallet_types::MasternodeEntryFFI> = aggregates
+    let entries: Vec<crate::core_wallet_types::MasternodeEntryFFI> = masternodes
+        .records
         .iter()
-        .enumerate()
-        .map(|(idx, mn)| {
-            crate::core_wallet_types::masternode_entry_ffi(
-                mn,
-                idx as u32,
-                network,
-                &operator_index,
-                &platform_index,
-            )
-        })
+        .map(|mn| crate::core_wallet_types::masternode_entry_ffi(mn, masternodes.network))
         .collect();
     let count = entries.len();
 
@@ -300,6 +275,7 @@ pub unsafe extern "C" fn platform_wallet_manager_free_masternodes(
             entry.payout_address,
             entry.operator_pseudo_address,
             entry.platform_node_address,
+            entry.label,
         ] {
             if !ptr.is_null() {
                 let _ = std::ffi::CString::from_raw(ptr);
@@ -309,87 +285,137 @@ pub unsafe extern "C" fn platform_wallet_manager_free_masternodes(
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
-/// Claim (withdraw) credits from a masternode's Platform identity to L1
-/// via an Identity Credit Withdrawal, signed with the wallet-held OWNER
-/// key. Writes the remaining balance to `out_new_balance`.
-///
-/// - `pro_tx_hash`: 32 bytes in WIRE order (as stored). The masternode
-///   identity id is the **display-order** (reversed) form, so this fn
-///   reverses before fetching — same orientation as the balance fetch.
-/// - `owner_key_index`: the ProviderOwnerKeys derivation index the app
-///   resolved from the persisted address join (in-memory pools may be
-///   empty for imported wallets, so the index is passed in rather than
-///   re-derived here).
-/// - `dest_address` MUST be null for the owner-key path: Platform routes
-///   an owner-key withdrawal to the registered payout address; a
-///   destination can't be chosen. (`use_owner_key == false` / a TRANSFER
-///   destination is a documented follow-up.)
-///
-/// Orchestration (all in Rust, per `swift-sdk/CLAUDE.md`):
-///   1. Resolve the wallet + masternode by `pro_tx_hash`; read its
-///      `owner_key_hash`.
-///   2. `Identity::fetch_by_identifier(reversed(pro_tx_hash))`.
-///   3. GUARD: `select_owner_withdrawal_key(identity.public_keys(),
-///      owner_key_hash)` — if `None`, return `InvalidIdentityData` WITHOUT
-///      broadcasting (signing with an unrecognised key wastes the attempt).
-///   4. Derive the ECDSA owner private key at `owner_key_index` on the
-///      ProviderOwnerKeys account; build a `Signer<IdentityPublicKey>`
-///      over it; `withdraw_credits_with_signer(identity, None, amount,
-///      Some(matched_owner_key), signer, None)`.
-///
-/// NOTE: steps 1-3 are wired below; step 4 (the internal owner-key
-/// `Signer<IdentityPublicKey>` + ECDSA owner-key derivation + DPP
-/// signature encoding for `ECDSA_HASH160`) is a NEW money-signing
-/// component with no existing production analogue (identity ops sign via
-/// an external Swift signer). It is gated behind a distinct error until it
-/// can be built and verified against a real testnet claim, so the
-/// end-to-end plumbing (UI → wrapper → FFI → fetch → guard → error) is
-/// exercisable without risking a malformed money transition.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_masternode_withdraw(
-    manager_handle: Handle,
-    wallet_id: *const u8,
-    pro_tx_hash: *const u8,
-    amount: u64,
-    owner_key_index: u32,
-    dest_address: *const std::os::raw::c_char,
-    use_owner_key: bool,
-    out_new_balance: *mut u64,
-) -> PlatformWalletFFIResult {
-    check_ptr!(wallet_id);
-    check_ptr!(pro_tx_hash);
-    check_ptr!(out_new_balance);
-
-    use crate::error::PlatformWalletFFIResultCode;
-
-    // Owner-key path only, for now.
-    if !use_owner_key {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "TRANSFER-key masternode withdrawal is not yet supported; use the owner key",
-        );
-    }
-    if !dest_address.is_null() {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "owner-key withdrawal pays the registered payout address; dest_address must be null",
-        );
-    }
-
-    // See the doc comment: steps 1-3 (resolve → fetch → guard) plus the
-    // owner-key `Signer<IdentityPublicKey>` derivation + sign are the
-    // remaining verified-implementation work. Surface a distinct, non-fatal
-    // error rather than broadcasting an unverified money transition.
-    let _ = (manager_handle, amount, owner_key_index);
-    PlatformWalletFFIResult::err(
-        PlatformWalletFFIResultCode::ErrorWalletOperation,
-        "masternode owner-key withdrawal is not yet enabled (pending verified signer)",
-    )
-}
-
 /// Destroy a PlatformWallet handle.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_destroy(handle: Handle) -> PlatformWalletFFIResult {
-    PLATFORM_WALLET_STORAGE.remove(handle);
+    // Destroying a wrapper alias must NOT touch the deferred-payment registry.
+    //
+    // `platform_wallet_manager_get_wallet` hands out an independent handle for
+    // each alias of a wallet *generation*, but none of those wrappers OWN the
+    // logical wallet — the manager still owns it and can hand out another alias,
+    // `platform_wallet_get_core` yields independently-owned core handles, and
+    // each registry entry pins its own `CoreWallet` (keeping the reservation
+    // live). A registered deferred-payment token is owned by the payment flow
+    // that minted it, NOT by any wrapper handle, so closing or garbage-collecting
+    // the last wrapper must leave the token intact: a later merchant ack has to
+    // remain broadcastable through a retained core handle or a re-acquired alias.
+    //
+    // Token cleanup therefore follows the payment owner (an explicit
+    // broadcast/release) or actual wallet-generation removal
+    // (`platform_wallet_manager_remove_wallet`, which drops the entries because
+    // the reservation ceases to exist with the generation) — never a transient
+    // wrapper-alias count. Dropping this handle just releases its `Arc`s; the
+    // registry entry's own `CoreWallet` clone keeps the generation alive as long
+    // as a token references it. (`dashpay/platform#4185`, blocker 2.)
+    let _ = PLATFORM_WALLET_STORAGE.remove(handle);
     PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod destroy_tests {
+    use super::*;
+    use crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY;
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+    use platform_wallet::test_support::test_platform_wallet_manager;
+    use platform_wallet::SignedCoreTransaction;
+
+    fn dummy_tx() -> dashcore::Transaction {
+        dashcore::Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        }
+    }
+
+    /// Destroying wrapper alias handles must NEVER invalidate a deferred-payment
+    /// token — not even when the FINAL alias is destroyed. A wrapper handle does
+    /// not own the logical wallet or the registered payment; the token is owned
+    /// by the payment flow that minted it and stays live and actionable until its
+    /// owner broadcasts/releases it or the generation is actually removed
+    /// (`platform_wallet_manager_remove_wallet`). Regression for
+    /// `dashpay/platform#4185` blocker 2: the old final-alias sweep consumed
+    /// independently-owned payments.
+    #[test]
+    fn destroying_wrapper_aliases_never_sweeps_tokens() {
+        // Asserts `outstanding()` DELTAS against a captured baseline, so it must
+        // not run while a sibling test mints or consumes tokens in the same
+        // process-global registry.
+        let _registry = crate::core_wallet::signed_payment::registry_test_guard();
+
+        // Async setup only. `platform_wallet_destroy` and the final `release`
+        // each do their own `runtime().block_on(...)`, exactly as the JNI /
+        // NativeCleaner threads do (never from inside a tokio runtime). Calling
+        // them from within an outer `block_on` would nest runtimes and abort, so
+        // they run on the plain test thread below.
+        let (manager, handle_a, handle_b, token, baseline) = runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+
+            // Two independent handles for the SAME logical wallet, exactly as two
+            // `platform_wallet_manager_get_wallet` calls would hand out.
+            let alias_a = manager.get_wallet(&wallet_id).await.expect("alias a");
+            let alias_b = manager.get_wallet(&wallet_id).await.expect("alias b");
+            let core = alias_a.core().clone();
+            let handle_a = PLATFORM_WALLET_STORAGE.insert(alias_a);
+            let handle_b = PLATFORM_WALLET_STORAGE.insert(alias_b);
+
+            // Register a deferred-payment token (the process-global registry is
+            // shared, so reason about deltas against a captured baseline). The
+            // dummy tx reserved nothing (reservation height 0, no funding token) —
+            // this test exercises destroy/ownership, not the age or owner guard.
+            let baseline = SIGNED_PAYMENT_REGISTRY.outstanding();
+            let token = SIGNED_PAYMENT_REGISTRY
+                .register(
+                    core.clone(),
+                    SignedCoreTransaction::new_for_test(
+                        dummy_tx(),
+                        0,
+                        vec![AccountTypePreference::BIP44
+                            .account_type(0)
+                            .expect("single account")],
+                        0,
+                        None,
+                        // Bind the finalized payment to this exact wallet
+                        // generation so `register` accepts it (it now validates
+                        // the wallet against the finalizing generation).
+                        core.test_generation_marker(),
+                    ),
+                )
+                .expect("register with the same generation");
+            assert_eq!(SIGNED_PAYMENT_REGISTRY.outstanding(), baseline + 1);
+            (manager, handle_a, handle_b, token, baseline)
+        });
+
+        // Destroy alias A while B is still live → token must survive.
+        let result = unsafe { platform_wallet_destroy(handle_a) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            SIGNED_PAYMENT_REGISTRY.outstanding(),
+            baseline + 1,
+            "a sibling alias's token must survive destroying another alias"
+        );
+
+        // Destroy the FINAL alias B → the token STILL survives: a wrapper alias
+        // does not own the payment, so its destruction must not consume the token.
+        let result = unsafe { platform_wallet_destroy(handle_b) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            SIGNED_PAYMENT_REGISTRY.outstanding(),
+            baseline + 1,
+            "destroying the final wrapper alias must NOT sweep an independently-owned token"
+        );
+
+        // The token is still fully live: its owner can release it even after both
+        // wrappers are gone (the registry entry pinned its own `CoreWallet`).
+        runtime().block_on(SIGNED_PAYMENT_REGISTRY.release(token));
+        assert_eq!(
+            SIGNED_PAYMENT_REGISTRY.outstanding(),
+            baseline,
+            "the payment owner can still release the surviving token"
+        );
+
+        // Keep the manager alive until the end (owns the wallet + adapter).
+        drop(manager);
+    }
 }

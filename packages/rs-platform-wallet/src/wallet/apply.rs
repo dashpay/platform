@@ -105,6 +105,7 @@ impl PlatformWalletInfo {
             // is future). Drop explicitly so future readers don't expect a
             // replay hook.
             invitations: _,
+            dpns_name_states,
             // Registration-round metadata / per-account specs /
             // per-pool snapshots are persistence-only — the
             // canonical in-memory wallet state is built up at
@@ -158,6 +159,18 @@ impl PlatformWalletInfo {
             // reach in and touch the index from out here.
             for removed_id in &removed {
                 self.identity_manager.remove_for_apply(removed_id);
+            }
+        }
+
+        // 2a. DPNS name states (username marketplace): upserts land
+        //     first, then tombstones, into the in-memory working set —
+        //     same LWW-then-remove discipline as the rest of this
+        //     function.
+        if let Some(dpns_cs) = dpns_name_states {
+            let crate::changeset::DpnsNameStateChangeSet { names, removed } = dpns_cs;
+            self.dpns_name_states.extend(names);
+            for document_id in &removed {
+                self.dpns_name_states.remove(document_id);
             }
         }
 
@@ -359,7 +372,7 @@ impl PlatformWalletInfo {
         // Mirror the recomputed balance into the lock-free Arc that the
         // UI reads.
         let core_balance = &self.core_wallet.balance;
-        self.balance.set(
+        self.generation.set(
             core_balance.confirmed(),
             core_balance.unconfirmed(),
             core_balance.immature(),
@@ -389,7 +402,7 @@ mod tests {
         ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
     };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
-    use crate::wallet::core::WalletBalance;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::state::managed_identity::ManagedIdentity;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::identity::{ContactRequest, EstablishedContact};
@@ -410,9 +423,10 @@ mod tests {
     fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
         PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
-            balance: std::sync::Arc::new(WalletBalance::new()),
+            generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
         }
     }
 

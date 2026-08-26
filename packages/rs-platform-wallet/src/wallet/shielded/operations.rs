@@ -28,6 +28,7 @@ use super::note_selection::{
     select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
 };
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
+use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::persister::WalletPersister;
@@ -58,6 +59,7 @@ use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
@@ -74,6 +76,41 @@ use tracing::{debug, info, trace, warn};
 /// `F = compute_minimum_shielded_fee(actions.len())` from the on-wire action
 /// count, so the wallet's fee reservation must use the same count.
 const SHIELD_NUM_ACTIONS: usize = 2;
+
+/// Multiplier applied to the versioned minimum shield fee when sizing the
+/// planner's input-0 reserve.
+///
+/// Execution deducts the ACTUAL fee — the GroveDB-metered storage/processing
+/// of the note/nullifier writes plus `compute_shielded_verification_fee` —
+/// from input 0's post-reallocation residue, and rejects the shield when the
+/// residue can't cover it. `compute_minimum_shielded_fee` estimates that
+/// actual fee with a flat per-action storage term the client cannot meter
+/// itself, so the reserve keeps one extra fee of headroom for metering
+/// variance. The reserve is NOT what satisfies the structure gate
+/// (`Σ claims ≥ amount + fee`) — `reserve_shield_fee_on_input_0` loads the
+/// claimed fee for that — so it needs no allowance beyond metering variance.
+const SHIELD_FEE_RESERVE_MULTIPLIER: u64 = 2;
+
+/// Versioned balance the shield planner keeps unclaimed on the
+/// lexicographically first (fee-paying) input.
+///
+/// The preflight and the execution path both derive capacity from this one
+/// value, so it directly sets three host-visible numbers: the viability
+/// threshold an address must exceed to serve as input 0, the account's
+/// `max_shieldable_credits`, and the residue a Max shield leaves transparent
+/// (`reserve − actual fee`). Deriving it from the versioned fee formula keeps
+/// all three tracking fee-constant bumps instead of freezing a magic number
+/// that overstates the fee and understates capacity.
+pub fn shield_fee_reserve_credits(
+    platform_version: &PlatformVersion,
+) -> Result<Credits, PlatformWalletError> {
+    let fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, platform_version)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    fee.checked_mul(SHIELD_FEE_RESERVE_MULTIPLIER)
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError("shield fee reserve overflows u64".to_string())
+        })
+}
 
 /// Try to extract a structured `AddressesNotEnoughFundsError` from
 /// a broadcast error so the shield path can format a diagnostic
@@ -118,6 +155,23 @@ fn address_not_enough_funds(
     match consensus {
         ConsensusError::StateError(StateError::AddressNotEnoughFundsError(err)) => Some(err),
         _ => None,
+    }
+}
+
+/// Promote the shield pre-broadcast hard balance check into the typed capacity
+/// error the FFI and Swift layers recognize.
+///
+/// The values are Platform's live per-input view, not the cached planner
+/// snapshot. Their `Display` rendering therefore preserves the actionable
+/// available/required diagnostic while the typed variant lets the host refresh
+/// preflight instead of retrying the stale amount unchanged.
+fn map_shield_input_fetch_error(e: &dash_sdk::Error) -> PlatformWalletError {
+    match address_not_enough_funds(e) {
+        Some(short) => PlatformWalletError::PlatformShieldCapacityExceeded {
+            available: short.balance(),
+            required: short.required_balance(),
+        },
+        None => PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}")),
     }
 }
 
@@ -392,9 +446,75 @@ fn reserve_shield_fee_on_input_0(
     Ok(inputs)
 }
 
+/// The resolved Orchard output and live-activity classification for a
+/// shield — see [`resolve_shield_recipient`].
+#[derive(Debug)]
+struct ShieldRecipient {
+    /// The address the note is built for.
+    address: OrchardAddress,
+    /// Raw 43-byte recipient for the activity row (`Some` only for a
+    /// third-party recipient).
+    counterparty: Option<Vec<u8>>,
+    kind: ShieldedActivityKind,
+    direction: ShieldedDirection,
+}
+
+/// Resolve a shield's Orchard output address and live-activity
+/// classification from the optional third-party `recipient`.
+///
+/// `None` is the internal shield-to-self: the note goes to the
+/// account's default address and the live entry is `Shield`/`In` with
+/// no counterparty. `Some` pays a THIRD-PARTY address: `Sent`/`Out`
+/// with the raw 43-byte address as counterparty — the exact
+/// classification the scan deriver produces for an OVK-recovered send
+/// to a non-own address, so a restore derives the same row.
+///
+/// A `Some` address the account's own IVK recognizes (default or any
+/// diversified index — the same `diversifier_index` test the scan's
+/// `is_own_orchard_recipient` uses) is rejected instead of classified:
+/// its note WOULD be spendable here, so it is not a send, and
+/// recording it live as `Sent`/`Out` while a restore scan-derives a
+/// self-pay row would fork the two histories. Self-shields take the
+/// `None` path.
+fn resolve_shield_recipient(
+    keys: &AccountViewingKeys,
+    recipient: Option<&PaymentAddress>,
+) -> Result<ShieldRecipient, PlatformWalletError> {
+    match recipient {
+        Some(payment_address) => {
+            if keys
+                .incoming_viewing_key
+                .diversifier_index(payment_address)
+                .is_some()
+            {
+                return Err(PlatformWalletError::ShieldedBuildError(
+                    "recipient belongs to this shielded account; use the self-shield \
+                     entry point (no recipient) instead"
+                        .to_string(),
+                ));
+            }
+            Ok(ShieldRecipient {
+                address: payment_address_to_orchard(payment_address)?,
+                counterparty: Some(payment_address.to_raw_address_bytes().to_vec()),
+                kind: ShieldedActivityKind::Sent,
+                direction: ShieldedDirection::Out,
+            })
+        }
+        None => Ok(ShieldRecipient {
+            address: default_orchard_address(keys)?,
+            counterparty: None,
+            kind: ShieldedActivityKind::Shield,
+            direction: ShieldedDirection::In,
+        }),
+    }
+}
+
 /// Shield credits from transparent platform addresses into the
 /// shielded pool, with the resulting note assigned to `account`'s
 /// default Orchard payment address derived from `keys`.
+///
+/// Self-shield front for [`shield_to`], preserving the pre-recipient
+/// signature for existing callers.
 #[allow(clippy::too_many_arguments)]
 pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -408,7 +528,45 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     signer: &Sig,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let recipient_addr = default_orchard_address(keys)?;
+    shield_to(
+        sdk, store, persister, wallet_id, keys, account, None, inputs, amount,
+        [0u8; 36], // empty memo
+        signer, prover,
+    )
+    .await
+}
+
+/// Shield credits from transparent platform addresses into the
+/// shielded pool. `recipient` selects the note's Orchard payment
+/// address: `None` assigns it to `account`'s default address derived
+/// from `keys` (the internal shield-to-self); `Some` pays a
+/// third-party address — the note funds THAT wallet's pool and never
+/// becomes spendable here (a `Some` address this account's own IVK
+/// recognizes is rejected — see [`resolve_shield_recipient`]). Either
+/// way the output is encrypted under our own OVK, so the scan recovers
+/// the send from chain data and the live and scan-derived activity ids
+/// line up.
+#[allow(clippy::too_many_arguments)]
+pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &AccountViewingKeys,
+    account: u32,
+    recipient: Option<&PaymentAddress>,
+    inputs: BTreeMap<PlatformAddress, Credits>,
+    amount: u64,
+    memo: [u8; 36],
+    signer: &Sig,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    let ShieldRecipient {
+        address: recipient_addr,
+        counterparty: external_counterparty,
+        kind,
+        direction,
+    } = resolve_shield_recipient(keys, recipient)?;
     let id = SubwalletId::new(wallet_id, account);
 
     // Reserve the flat shielded fee `F` on top of `amount` in the input
@@ -422,9 +580,10 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     //
     // The fee is loaded onto the smallest-key input — the `DeductFromInput(0)`
     // fee-strategy payer (input 0 == BTreeMap-smallest address). The caller
-    // (`shielded_shield_from_account`) reserves ~1e9 credits of unclaimed
-    // headroom on input 0 specifically for this, and `F` (~1.2e8 credits)
-    // fits well within it. Inflating the claim BEFORE the fetch lets the
+    // (`shielded_shield_from_account`) reserves `shield_fee_reserve_credits`
+    // (a small multiple of this same versioned fee) of unclaimed headroom on
+    // input 0 specifically for this, so `F` always fits within the reserve.
+    // Inflating the claim BEFORE the fetch lets the
     // single hard balance check below validate the fee-inclusive claim
     // against the on-chain balance in one shot — no second round-trip and
     // no claim that outruns its balance check.
@@ -443,23 +602,9 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     // nonce — bail loudly here instead).
     use dash_sdk::platform::transition::fetch_inputs_with_nonce;
 
-    let fetched = fetch_inputs_with_nonce(sdk, &inputs).await.map_err(|e| {
-        // The hard balance check is the common pre-broadcast failure;
-        // surface its structured (address, balance, required) info as a
-        // diagnostic string rather than the opaque `{e}` form, matching
-        // the richness of the broadcast-side handler below. The FFI
-        // shape is unchanged (the host still receives a string body).
-        if let Some(short) = address_not_enough_funds(&e) {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "shield input {} has insufficient balance: requires {} credits, has {}",
-                short.address().to_bech32m_string(sdk.network),
-                short.required_balance(),
-                short.balance(),
-            ))
-        } else {
-            PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}"))
-        }
-    })?;
+    let fetched = fetch_inputs_with_nonce(sdk, &inputs)
+        .await
+        .map_err(|error| map_shield_input_fetch_error(&error))?;
 
     let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
     for (addr, (nonce, credits)) in fetched {
@@ -474,7 +619,12 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     let fee_strategy: AddressFundsFeeStrategy =
         vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-    info!(account, credits = amount, "Shield: building proof");
+    info!(
+        account,
+        credits = amount,
+        external = external_counterparty.is_some(),
+        "Shield: building proof"
+    );
 
     let claimed_inputs = inputs_with_nonce.clone();
 
@@ -486,7 +636,7 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
         signer,
         0, // user_fee_increase
         prover,
-        [0u8; 36], // empty memo
+        memo,
         // Encrypt the output under the account's own OVK so the wallet's
         // shielded sync can recover this send (recipient, value, memo)
         // from chain data alone.
@@ -499,11 +649,12 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     trace!("Shield credits: state transition built, broadcasting...");
     let network = sdk.network;
 
-    // Live activity: Shield is `direction in`, amount = the note value
-    // entering the pool, fee = the flat shielded fee reserved above. The
-    // visible output cmx is the recipient note (own address, OVK-keyed),
-    // which the scan later sees as an outgoing note recovered to self —
-    // the ids line up.
+    // Live activity. Kind / direction / counterparty were resolved
+    // alongside the recipient above (see `resolve_shield_recipient` for
+    // why the rows match what a restore's scan derives). Fee = the flat
+    // shielded fee reserved above. The visible output cmx is the
+    // recipient note (OVK-keyed either way), so the live and scan ids
+    // line up.
     let pending_entry = record_pending_activity(
         store,
         persister,
@@ -511,12 +662,12 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
         id,
         keys,
         LiveEntryParams {
-            kind: ShieldedActivityKind::Shield,
-            direction: ShieldedDirection::In,
+            kind,
+            direction,
             amount,
             fee: Some(fee),
-            counterparty: None,
-            memo: None,
+            counterparty: external_counterparty,
+            memo: non_zero_memo(&memo),
             actions: shielded_actions(&state_transition),
             spent_notes: &[],
         },
@@ -1420,7 +1571,6 @@ where
             }
         };
 
-
         // Pull the verified `Identity` out of the proof result. The expected variant is
         // `VerifiedIdentityWithShieldedNullifiers`; if drive-abci ever returns a different one the
         // broadcast still SUCCEEDED, so we don't turn it into an error — we synthesize the identity
@@ -2285,37 +2435,6 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
     }
 }
 
-/// Whether an SDK error carries Platform's own consensus verdict on the
-/// transition. Two shapes qualify:
-///
-/// - `Error::Protocol(ProtocolError::ConsensusError(_))` — DAPI attached the
-///   serialized consensus error as gRPC metadata
-///   (`dash-serialized-consensus-error-bin`), which the dapi-client decodes
-///   on any failed request. This is how a CheckTx rejection of the
-///   transition surfaces from `broadcast()` (rs-dapi's
-///   `map_broadcast_error` decodes the consensus error from Tenderdash's
-///   `info` field and `TenderdashStatus` re-attaches it as metadata);
-/// - a `StateTransitionBroadcastError` whose `cause` deserialized from
-///   non-empty consensus `data` — the wait-stream error envelope for a
-///   transition Platform executed and rejected on its merits.
-///
-/// Recurses through a `NoAvailableAddressesToRetry` envelope, mirroring
-/// [`crate::error::as_address_invalid_nonce`].
-///
-/// Only these prove the transition was evaluated and REJECTED. Everything
-/// else — transport errors, timeouts, `AlreadyExists` (which proves the
-/// opposite: the transition is already in the mempool or on chain),
-/// DAPI-internal failures, cause-less broadcast envelopes (the shape DAPI
-/// uses for its own wait-side timeouts) — leaves the outcome unknown.
-fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
-    match err {
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(_)) => true,
-        dash_sdk::Error::StateTransitionBroadcastError(e) => e.cause.is_some(),
-        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => carries_consensus_rejection(inner),
-        _ => false,
-    }
-}
-
 /// Broadcast a built shielded spend transition (unshield / transfer /
 /// withdraw) and wait for proven execution, staging the two SDK calls
 /// separately so the caller's reservation rollback only runs when the
@@ -2370,75 +2489,6 @@ async fn broadcast_shielded_spend(
         .await
         .map(|_| ())
         .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
-}
-
-/// Whether a failed `broadcast()` call DEFINITIVELY left the transition
-/// out of every mempool, so any note reservations may be released and the
-/// caller may rebuild and retry:
-///
-/// - a consensus verdict ([`carries_consensus_rejection`]): CheckTx
-///   evaluated the transition and refused it;
-/// - a gRPC response whose status code is a server-side rejection or a
-///   connection-establishment failure. `Unavailable` is the common shape
-///   of a connect-refused/offline attempt — classifying it as definitive
-///   keeps the no-network failure's notes immediately re-spendable
-///   instead of stranding them until the next restart — and rejection
-///   codes (`InvalidArgument`, `ResourceExhausted` = mempool full, …) are
-///   verdicts that the tx was refused admission;
-/// - no usable DAPI addresses at all (nothing was ever sent).
-///
-/// `Unavailable` is NOT an absolute never-delivered guarantee: HTTP/2
-/// stream resets after the request bytes left can surface the same code,
-/// and the dapi-client's cross-address retry only retains the LAST
-/// transport error, so an earlier-attempt delivery can hide behind a
-/// later attempt's `Unavailable`. Releasing the notes in that residual
-/// window is still fund-safe — the authoritative no-reuse guarantee is
-/// the on-chain nullifier set, so a re-selected note at worst wastes a
-/// ~30 s proof on a nullifier-already-used rejection (see the
-/// `finalize_pending` downgrade rationale in `unshield`); never fund
-/// loss. The trade is deliberate: UX for the dominant offline case over
-/// strict conservatism in a rare race.
-///
-/// Everything else leaves the outcome unknown and the caller must fall
-/// through to the result wait instead of failing: `AlreadyExists` proves
-/// the tx IS in the mempool or on chain (a lost-ACK attempt was re-sent
-/// by the dapi-client retry and hit tenderdash's dedupe), and
-/// timeout/cancellation/no-response shapes (`TimeoutReached`,
-/// `Cancelled`, gRPC `DeadlineExceeded`/`Cancelled`, plus
-/// `Internal`/`Unknown`/`Aborted`/`DataLoss`, which DAPI also uses for
-/// its own tenderdash-side failures that can postdate delivery) allow
-/// the request to have outlived its lost ACK.
-fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
-    use dash_sdk::dapi_client::transport::TransportError;
-    use dash_sdk::dapi_client::DapiClientError;
-    use dash_sdk::dapi_grpc::tonic::Code;
-
-    fn status_is_verdict(t: &TransportError) -> bool {
-        let TransportError::Grpc(status) = t;
-        !matches!(
-            status.code(),
-            Code::DeadlineExceeded
-                | Code::Cancelled
-                | Code::Unknown
-                | Code::Internal
-                | Code::Aborted
-                | Code::DataLoss
-        )
-    }
-
-    if carries_consensus_rejection(e) {
-        return true;
-    }
-    match e {
-        dash_sdk::Error::AlreadyExists(_) => false,
-        dash_sdk::Error::DapiClientError(DapiClientError::Transport(t)) => status_is_verdict(t),
-        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses) => true,
-        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(t)) => {
-            status_is_verdict(t)
-        }
-        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => broadcast_definitely_failed(inner),
-        _ => false,
-    }
 }
 
 /// Classify a `wait_for_response` failure for an already-broadcast
@@ -2528,6 +2578,99 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
     let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
 
     Note::from_parts(recipient, value, rho, rseed).into_option()
+}
+
+#[cfg(test)]
+mod shield_recipient_tests {
+    use super::*;
+    use crate::wallet::shielded::keys::OrchardKeySet;
+    use dashcore::Network;
+
+    fn keyset(seed_byte: u8) -> OrchardKeySet {
+        OrchardKeySet::from_seed(&[seed_byte; 32], Network::Testnet, 0)
+            .expect("ZIP-32 derivation from a fixed seed should succeed")
+    }
+
+    /// `None` = the self-shield: the default address, `Shield`/`In`,
+    /// no counterparty — exactly what the pre-recipient path produced.
+    #[test]
+    fn no_recipient_resolves_to_the_default_address_as_shield_in() {
+        let keys = keyset(0x42).viewing_keys();
+
+        let resolved =
+            resolve_shield_recipient(&keys, None).expect("self-shield must always resolve");
+
+        assert_eq!(
+            resolved.address.to_raw_bytes(),
+            keys.default_address.to_raw_address_bytes(),
+            "the self-shield note must go to the account's default address"
+        );
+        assert_eq!(resolved.counterparty, None);
+        assert_eq!(resolved.kind, ShieldedActivityKind::Shield);
+        assert_eq!(resolved.direction, ShieldedDirection::In);
+    }
+
+    /// A third-party address resolves to `Sent`/`Out` with the raw
+    /// 43-byte address as counterparty — the classification the scan
+    /// deriver produces for an OVK-recovered send to a non-own address,
+    /// so live and restored rows agree.
+    #[test]
+    fn external_recipient_resolves_as_sent_out_with_raw_counterparty() {
+        let keys = keyset(0x42).viewing_keys();
+        let external = keyset(0x24).viewing_keys().default_address;
+
+        let resolved = resolve_shield_recipient(&keys, Some(&external))
+            .expect("a third-party recipient must resolve");
+
+        assert_eq!(
+            resolved.address.to_raw_bytes(),
+            external.to_raw_address_bytes(),
+            "the note must be built for the recipient's address"
+        );
+        assert_eq!(
+            resolved.counterparty,
+            Some(external.to_raw_address_bytes().to_vec()),
+            "the activity row must carry the recipient as raw 43 bytes"
+        );
+        assert_eq!(resolved.kind, ShieldedActivityKind::Sent);
+        assert_eq!(resolved.direction, ShieldedDirection::Out);
+    }
+
+    /// The account's own default address is not a third party: a
+    /// `Sent`/`Out` live row for it would diverge from the self-pay row
+    /// a restore's scan derives, so it must be rejected up front.
+    #[test]
+    fn own_default_address_as_recipient_is_rejected() {
+        let keys = keyset(0x42).viewing_keys();
+        let own = keys.default_address;
+
+        let error = resolve_shield_recipient(&keys, Some(&own))
+            .expect_err("the account's own address must be rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("belongs to this shielded account"),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// Orchard addresses are diversified, so ownership cannot be a
+    /// fixed-address comparison: a non-default diversified index of the
+    /// SAME account must also be recognized (via the IVK) and rejected.
+    #[test]
+    fn own_diversified_address_as_recipient_is_rejected() {
+        let ks = keyset(0x42);
+        let diversified = ks.address_at(7);
+        let keys = ks.viewing_keys();
+        assert_ne!(
+            diversified.to_raw_address_bytes(),
+            keys.default_address.to_raw_address_bytes(),
+            "test needs a non-default diversified address"
+        );
+
+        resolve_shield_recipient(&keys, Some(&diversified))
+            .expect_err("an own diversified address must be rejected");
+    }
 }
 
 #[cfg(test)]
@@ -2883,8 +3026,35 @@ mod classify_spend_wait_failure_tests {
 }
 
 #[cfg(test)]
+mod shield_input_fetch_error_tests {
+    use super::*;
+    use dpp::consensus::state::address_funds::AddressNotEnoughFundsError;
+
+    #[test]
+    fn live_address_shortfall_maps_to_typed_shield_capacity_error() {
+        let sdk_error = dash_sdk::Error::from(AddressNotEnoughFundsError::new(
+            PlatformAddress::P2pkh([7; 20]),
+            3_623_849_220,
+            3_623_849_221,
+        ));
+
+        let mapped = map_shield_input_fetch_error(&sdk_error);
+        assert!(matches!(
+            &mapped,
+            PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
+                if *available == 3_623_849_220 && *required == 3_623_849_221
+        ));
+        assert_eq!(
+            mapped.to_string(),
+            "Platform shield capacity exceeded: available 3623849220, required 3623849221"
+        );
+    }
+}
+
+#[cfg(test)]
 mod reserve_shield_fee_tests {
     use super::*;
+    use dpp::version::LATEST_PLATFORM_VERSION;
 
     fn addr(b: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([b; 20])
@@ -2909,6 +3079,37 @@ mod reserve_shield_fee_tests {
         );
         // Σ claims grew by exactly `fee`, satisfying `Σ inputs >= amount + F`.
         assert_eq!(out.values().sum::<u64>(), 6_000_000 + fee);
+    }
+
+    #[test]
+    fn versioned_fee_keeps_input_zero_valid_and_reserve_tracks_the_fee() {
+        let min_input_amount = LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let shield_fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, LATEST_PLATFORM_VERSION)
+            .expect("latest shield fee must be computable");
+        let reserve = shield_fee_reserve_credits(LATEST_PLATFORM_VERSION)
+            .expect("latest shield fee reserve must be computable");
+        let smallest_fee_inclusive_claim = shield_fee
+            .checked_add(1)
+            .expect("latest shield fee plus one credit must fit");
+
+        assert!(
+            smallest_fee_inclusive_claim >= min_input_amount,
+            "adding the fee must lift even input 0's smallest positive base claim above the protocol minimum"
+        );
+        assert!(
+            reserve >= shield_fee,
+            "the retained input-0 headroom must cover the versioned shield fee"
+        );
+        assert!(
+            reserve <= shield_fee.saturating_mul(4),
+            "the reserve must stay a small multiple of the versioned fee — an oversized \
+             reserve silently understates preflight capacity and strands the excess \
+             below the input-0 viability threshold after a Max shield"
+        );
     }
 
     #[test]
@@ -2990,6 +3191,7 @@ mod record_activity_status_tests {
             block_height: None,
             status: ShieldedActivityStatus::Pending,
             created_at_ms: 1,
+            min_note_position: None,
             note_cmxs: vec![[0x01; 32]],
             spent_nullifiers: vec![],
         }

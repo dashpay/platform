@@ -38,6 +38,13 @@ jobs:
         with:
           clean: false
 
+      - name: Fail on local rust-dashcore patch override
+        run: |
+          if grep -q '^\[patch\."https://github.com/dashpay/rust-dashcore"\]' Cargo.toml; then
+            echo "::error::Remove the local rust-dashcore [patch] override before merging"
+            exit 1
+          fi
+
       # target/llvm-cov-target is deliberately NOT pruned here: it holds the
       # coverage-instrumented build (~10GB) that makes the test step's compile
       # incremental (~2.5 min saved per run). The size/free-disk guard below
@@ -169,10 +176,14 @@ jobs:
       - name: Verify wallet reverse-dependency closure
         run: python3 .github/scripts/check-wallet-closure.py
 
+      # `--all-targets` keeps test/bench/example code in scope. Without it
+      # clippy only sees the lib/bin targets, so lints in `#[cfg(test)]` code
+      # merge unnoticed and only surface for whoever runs clippy locally.
       - name: Clippy lints
         run: |
           cargo clippy \
             --workspace \
+            --all-targets \
             --all-features \
             --locked \
             -- --no-deps -D warnings
@@ -181,6 +192,39 @@ jobs:
         run: |
           cargo install cargo-machete 2>/dev/null || true
           cargo machete
+
+      # The transport-free cuts are how embedders with their own networking
+      # (Dash Core's platform GUI, explorers) consume verification: feature
+      # unification hides regressions in whole-workspace builds, so check the
+      # standalone graphs and assert the networking stack stays out of the
+      # proof-verification tree (native) and out of wasm builds.
+      - name: Check transport-free feature cuts
+        run: |
+          cargo check -p dapi-grpc --no-default-features --features core,platform,client --locked
+          cargo check -p drive-proof-verifier --locked
+          cargo check -p dash-platform-queries --locked
+          # Native graphs: assert the networking transport stack stays out.
+          # `tonic` itself is present (dapi-grpc's generated client types) but
+          # without its transport feature — which is exactly what the absence
+          # of hyper/rustls/tower proves. tokio is deliberately NOT asserted
+          # absent: dash-context-provider depends on dash-async, which uses it
+          # on native targets, and that edge predates the queries-crate split.
+          for native_package in drive-proof-verifier dash-platform-queries; do
+            for banned in hyper rustls tower; do
+              if cargo tree -p "$native_package" -e normal -i "$banned" 2>/dev/null | grep -q .; then
+                echo "::error::$banned leaked into $native_package's dependency tree"
+                exit 1
+              fi
+            done
+          done
+          for banned in hyper rustls tower mio; do
+            for wasm_package in dash-sdk wasm-sdk; do
+              if cargo tree -p "$wasm_package" --target wasm32-unknown-unknown -e normal -i "$banned" 2>/dev/null | grep -q .; then
+                echo "::error::$banned leaked into $wasm_package's wasm32 dependency tree"
+                exit 1
+              fi
+            done
+          done
 
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'

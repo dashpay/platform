@@ -47,6 +47,20 @@ pub struct DriveAbciValidationConstants {
     /// Per-action fee (in credits) for processing: RedPallas spend auth signature
     /// verification, nullifier duplicate check, and tree insertion.
     pub shielded_per_action_processing_fee: u64,
+    /// Per-action long-term storage allowance, in bytes, priced at the full
+    /// storage rate (disk + processing credits per byte) by
+    /// `compute_minimum_shielded_fee` — the flat storage component every
+    /// pool-paid shielded transition carries per action.
+    ///
+    /// The physical payload is 344 bytes: 312 in the BulkAppendTree — 32
+    /// (`cmx`) + 32 (`rho`) + 32 (`cv_net`, stored unencrypted for OVK
+    /// recovery) + 216 (the `DashMemo` Orchard `TransmittedNoteCiphertext`:
+    /// `epk(32) || enc_ciphertext(104) || out_ciphertext(80)`) — plus 32 in
+    /// the nullifier tree. The allowance may exceed that to cover what the
+    /// metering actually charges per append under the GroveVersion in force
+    /// (Merk node framing, dense path records, the amortized chunk-blob
+    /// framing).
+    pub shielded_storage_bytes_per_action: u64,
     /// Maximum surplus (in credits) that a `ShieldFromAssetLock` may implicitly
     /// donate to the fee pools when no `surplus_output` address is set. Above this
     /// cap the transition is rejected so a client cannot accidentally forfeit a
@@ -115,6 +129,10 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub masternode_vote_state_transition_balance_pre_check: FeatureVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    /// Validation of the `refersTo` reference declarations a contract's
+    /// document types carry, run at contract create and update. Only
+    /// reachable from contract create/update state validation 1 and above.
+    pub data_contract_reference_validation: FeatureVersion,
     pub batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
     pub identity_create_from_addresses_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_from_addresses_state_transition: DriveAbciStateTransitionValidationVersion,
@@ -212,6 +230,7 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_transfer_transition_state_validation: FeatureVersion,
     pub document_purchase_transition_state_validation: FeatureVersion,
     pub document_update_price_transition_state_validation: FeatureVersion,
+    pub document_reference_validation: FeatureVersion,
     pub token_mint_transition_structure_validation: FeatureVersion,
     pub token_burn_transition_structure_validation: FeatureVersion,
     pub token_transfer_transition_structure_validation: FeatureVersion,
@@ -248,6 +267,7 @@ pub struct DriveAbciValidationDataTriggerAndBindingVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationDataTriggerVersions {
     pub create_contact_request_data_trigger: FeatureVersion,
+    pub validate_profile_payment_addresses_data_trigger: FeatureVersion,
     pub create_domain_data_trigger: FeatureVersion,
     pub create_identity_data_trigger: FeatureVersion,
     pub create_feature_flag_data_trigger: FeatureVersion,

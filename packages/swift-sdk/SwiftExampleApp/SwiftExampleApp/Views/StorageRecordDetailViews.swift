@@ -174,6 +174,7 @@ struct DPNSNameStorageDetailView: View {
                 FieldRow(label: "Network", value: record.network.displayName)
             }
             Section("Status") {
+                FieldRow(label: "Currently Owned", value: record.isOwned ? "Yes" : "No")
                 // `acquiredAt` is Unix-millis from
                 // `DpnsNameInfo.acquired_at`. Zero when the FFI
                 // changeset didn't carry a timestamp (legacy rows
@@ -188,6 +189,35 @@ struct DPNSNameStorageDetailView: View {
                     )
                     FieldRow(label: "Acquired", value: dateString(date))
                 }
+            }
+            Section("Marketplace") {
+                FieldRow(label: "Document ID", value: record.documentIdBase58 ?? "—")
+                FieldRow(
+                    label: "Sale Status",
+                    value: record.saleStatus.map(DpnsMarketplaceUI.status) ?? "Not tracked"
+                )
+                FieldRow(
+                    label: "Price",
+                    value: record.listedPriceCredits.map(DpnsMarketplaceUI.price) ?? "Not listed"
+                )
+                FieldRow(label: "Counterparty", value: record.counterpartyIdBase58 ?? "—")
+                FieldRow(
+                    label: "Document Created (ms)",
+                    value: record.documentCreatedAtMs.map { String($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Document Updated (ms)",
+                    value: record.documentUpdatedAtMs.map { String($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Document Transferred (ms)",
+                    value: record.documentTransferredAtMs.map { String($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Marketplace Synced (ms)",
+                    value: record.marketplaceUpdatedAt == 0
+                        ? "—" : String(record.marketplaceUpdatedAt)
+                )
             }
             Section("Relationships") {
                 NavigationLink(destination: IdentityStorageDetailView(record: record.identity)) {
@@ -2183,6 +2213,34 @@ struct MasternodeStorageDetailView: View {
             }
         }
         .navigationTitle(record.displayTitle)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentTrackedMasternode
+
+struct TrackedMasternodeStorageDetailView: View {
+    let record: PersistentTrackedMasternode
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Network", value: record.network?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "proTxHash (wire)", value: hexString(record.proTxHash))
+                FieldRow(label: "Label", value: record.label ?? "—")
+                FieldRow(
+                    label: "Added",
+                    value: dateString(Date(timeIntervalSince1970: TimeInterval(record.addedAt))))
+            }
+            Section("Snapshot") {
+                // Opaque, Rust-owned document (PUBLIC material only) —
+                // shown verbatim; only Rust interprets it.
+                Text(record.snapshotJSON)
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        }
+        .navigationTitle(record.label ?? "Tracked Masternode")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

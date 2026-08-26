@@ -35,6 +35,7 @@ impl Drive {
             document_type_name,
             indexes,
             mode,
+            platform_version,
         )?;
         ranked_query.execute_top_k_with_proof(self, transaction, platform_version)
     }

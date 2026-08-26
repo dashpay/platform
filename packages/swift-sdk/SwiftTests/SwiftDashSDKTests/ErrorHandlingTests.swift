@@ -56,6 +56,43 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testShieldedInsufficientBalanceFFIResultMapping() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INSUFFICIENT_BALANCE
+            ),
+            .errorShieldedInsufficientBalance
+        )
+        XCTAssertEqual(
+            PlatformWalletResultCode.errorShieldedInsufficientBalance.rawValue,
+            41
+        )
+
+        let error = PlatformWalletError(
+            code: .errorShieldedInsufficientBalance,
+            message: "available 3623849220, required 3623849221"
+        )
+        guard case .shieldedInsufficientBalance(let message) = error else {
+            return XCTFail("expected typed shieldedInsufficientBalance error")
+        }
+        XCTAssertEqual(message, "available 3623849220, required 3623849221")
+    }
+
+    @MainActor
+    func testShieldedShieldPreflightRejectsUnconfiguredManager() async {
+        let manager = PlatformWalletManager()
+        do {
+            _ = try await manager.shieldedShieldPreflight(
+                walletId: Data(repeating: 0, count: 32)
+            )
+            XCTFail("Expected invalidHandle")
+        } catch PlatformWalletError.invalidHandle {
+            // Expected.
+        } catch {
+            XCTFail("Expected invalidHandle, got \(error)")
+        }
+    }
+
     func testKeychainSignerMissingKeyErrorsClassifyAsSigningKeyUnavailable() {
         // The trampoline's structured completion code: "no stored key"
         // outcomes carry SigningKeyUnavailable (1); operational failures

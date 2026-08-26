@@ -1,4 +1,4 @@
-use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
+use versioned_feature_core::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 pub mod v1;
 pub mod v2;
 pub mod v3;
@@ -78,6 +78,10 @@ pub struct DocumentTypeSchemaVersions {
     pub should_add_creator_id: FeatureVersion,
     pub enrich_with_base_schema: FeatureVersion,
     pub find_identifier_and_binary_paths: FeatureVersion,
+    /// Folds the `refersTo` reference keyword into the parsed property type.
+    /// `None` on versions that predate the keyword: they ignore it entirely,
+    /// exactly as they parsed before it existed.
+    pub apply_property_reference: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
