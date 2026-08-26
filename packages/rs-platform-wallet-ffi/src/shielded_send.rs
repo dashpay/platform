@@ -712,6 +712,36 @@ fn catch_spend_panic(
     )
 }
 
+/// Post-panic guidance for the asset-lock funding exports. Paired with
+/// `ErrorTransactionBroadcastUnconfirmed` in [`catch_funding_panic`].
+const FUNDING_PANIC_GUIDANCE: &str = "The asset lock may or may not have been broadcast — do \
+     NOT retry; the funding UTXOs stay reserved, and the reservation TTL or the next sync \
+     reconciles the outcome (a tracked lock resumes via the resume entry point).";
+
+/// [`catch_panic_to_code`] specialized for the asset-lock funding exports.
+///
+/// The panic is mapped to
+/// [`PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed`], NOT to a definitive
+/// failure code: a panic can strike after the asset-lock transaction reached the wire (broadcast
+/// precedes the ChainLock wait, the Platform submit, and the note bookkeeping), so the outcome
+/// is genuinely ambiguous. That code's contract is exactly the conservative one this needs — the
+/// host must not auto-retry, the funding UTXOs' reservation is still held (`ReservationToken` is
+/// a plain id, not a drop-release guard, so the unwind does not free it and an immediate retry
+/// fails at input selection instead of double-spending), and the reservation TTL or a sync
+/// observing the transaction reconciles the outcome; a tracked lock is resumable through
+/// `platform_wallet_manager_shielded_resume_fund_from_asset_lock`.
+fn catch_funding_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        FUNDING_PANIC_GUIDANCE,
+        body,
+    )
+}
+
 /// Preserve the typed funding reports that hosts branch on across the FFI
 /// boundary while keeping every other funding failure on the existing generic
 /// error path.
@@ -1423,6 +1453,38 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
 ///   `dash_sdk_mnemonic_resolver_create`. The caller retains ownership.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account_index: u32,
+    recipient_raw_43: *const u8,
+    core_signer_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
+    // The whole body runs under `catch_unwind`: a panic (most concretely `block_on_worker`'s
+    // `.expect` on a panicking funding/proving task) must NOT reach this `extern "C"` frame,
+    // where it would abort the process instead of surfacing to the host as a typed error — on
+    // Android that abort strikes before the JNI layer's `support::guard`, which sits on the far
+    // side of this export. A panic can land after the whole-account lock was broadcast, so the
+    // ambiguous broadcast-unconfirmed contract applies (the same code the flow's own
+    // ambiguous-outcome errors use); the host resumes a tracked lock via
+    // `platform_wallet_manager_shielded_resume_fund_from_asset_lock` rather than re-draining.
+    catch_funding_panic("shielded CoinJoin-drain fund-from-asset-lock", || {
+        shielded_fund_from_asset_lock_coinjoin_drain_inner(
+            handle,
+            wallet_id_bytes,
+            account_index,
+            recipient_raw_43,
+            core_signer_handle,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain`], as an
+/// ordinary Rust function so a panic unwinds into [`catch_funding_panic`] instead of across
+/// the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
     account_index: u32,
@@ -2158,6 +2220,35 @@ mod tests {
         let message = message_of(&result);
         assert!(
             message.contains("shielded shield to recipient panicked")
+                && message.contains("tokio worker panicked"),
+            "the panic payload must survive into the FFI message: {message}"
+        );
+        assert!(
+            message.contains("do NOT retry"),
+            "the message must carry the do-not-retry guidance: {message}"
+        );
+    }
+
+    /// A panic inside the CoinJoin-drain funding export must NOT unwind into the `extern "C"`
+    /// frame (that aborts the Android process before the JNI layer's own guard can translate it
+    /// into a Java exception). It becomes `ErrorTransactionBroadcastUnconfirmed` — the
+    /// conservative "may already be on the wire, do NOT retry" contract — because a panic can
+    /// strike after the whole-account lock was broadcast. Same panic-hook note as the spend
+    /// sibling above.
+    #[test]
+    fn catch_funding_panic_maps_a_panic_to_the_broadcast_unconfirmed_contract() {
+        let result = catch_funding_panic("shielded CoinJoin-drain fund-from-asset-lock", || {
+            panic!("tokio worker panicked");
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            "a funding panic must map to the ambiguous, do-not-retry code"
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("shielded CoinJoin-drain fund-from-asset-lock panicked")
                 && message.contains("tokio worker panicked"),
             "the panic payload must survive into the FFI message: {message}"
         );
