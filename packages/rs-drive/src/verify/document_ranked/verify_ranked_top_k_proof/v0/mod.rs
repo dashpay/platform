@@ -3,12 +3,9 @@ use crate::error::Error;
 use crate::query::drive_document_ranked_query::branches::{
     axis_entries_to_ranked, decompose_branch_paths, merge_branch_pages,
 };
-use crate::query::{
-    DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue, RankedPage,
-};
+use crate::query::{DriveDocumentRankedQuery, RankedPage};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
-use grovedb::operations::proof::indexed_axis::AxisEntries;
 use grovedb::operations::proof::VerifiedPathQuery;
 use grovedb::GroveDb;
 use grovedb::PathQuery;
@@ -151,71 +148,40 @@ impl DriveDocumentRankedQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, RankedPage), Error> {
         let path = self.indexed_property_name_tree_path(branch)?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
-
-        let result = GroveDb::verify_indexed_axis_top_k_paginated(
-            proof,
-            path_refs.as_slice(),
+        let path_query = PathQuery::new_axis_top_k(
+            path,
             self.axis.into(),
             self.k,
             self.offset as u64,
             self.descending,
-            &platform_version.drive.grove_version,
-        )
-        .map_err(|e| Error::GroveDB(Box::new(e)))?;
-
-        let entries = match (self.axis, result.entries) {
-            (RankedAxis::Count, AxisEntries::Count(entries)) => entries
-                .into_iter()
-                .map(|entry| entry.key_pair())
-                .map(|(count, key)| RankedEntry {
-                    in_key: None,
-                    key,
-                    value: RankedEntryValue::Count(count),
-                })
-                .collect::<Vec<_>>(),
-            (RankedAxis::Sum, AxisEntries::Sum(entries)) => entries
-                .into_iter()
-                .map(|entry| entry.key_pair())
-                .map(|(sum, key)| RankedEntry {
-                    in_key: None,
-                    key,
-                    value: RankedEntryValue::Sum(sum),
-                })
-                .collect::<Vec<_>>(),
-            (RankedAxis::Avg, AxisEntries::Avg(entries)) => entries
-                .into_iter()
-                .map(|entry| entry.key_pair())
-                .map(|(avg, key)| RankedEntry {
-                    in_key: None,
-                    key,
-                    value: RankedEntryValue::AvgFixedPoint(avg),
-                })
-                .collect::<Vec<_>>(),
-            (axis, other) => {
-                return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                    "ranked top-k proof for the {axis:?} axis verified to {} entries of a \
-                     different axis shape",
-                    other.len()
-                ))));
-            }
+        );
+        let verified =
+            GroveDb::verify_path_query(proof, &path_query, &platform_version.drive.grove_version)
+                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        let VerifiedPathQuery::AxisEntries {
+            root_hash,
+            entries,
+            skipped,
+        } = verified
+        else {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "a ranked top-k proof verified to a different shape".to_string(),
+            )));
         };
-
+        let entries = axis_entries_to_ranked(self.axis, entries)?;
         if entries.len() > self.k as usize {
             return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                "ranked top-k proof for the {:?} axis verified to {} entries for k = {}",
-                self.axis,
+                "ranked top-k proof verified to {} entries for k = {}",
                 entries.len(),
                 self.k
             ))));
         }
-
-        Ok((
-            result.root_hash,
-            RankedPage {
-                skipped: result.skipped,
-                entries,
-            },
-        ))
+        // A paginated traversal's proof always attests its skip.
+        let skipped = skipped.ok_or_else(|| {
+            Error::Drive(DriveError::CorruptedDriveState(
+                "a paginated ranked proof carried no skip attestation".to_string(),
+            ))
+        })?;
+        Ok((root_hash, RankedPage { skipped, entries }))
     }
 }

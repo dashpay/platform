@@ -3,10 +3,9 @@ use crate::error::Error;
 use crate::query::drive_document_ranked_query::branches::{
     axis_entries_to_ranked, decompose_branch_paths, merge_branch_pages,
 };
-use crate::query::{DriveDocumentHavingQuery, RankedAxis, RankedEntry, RankedEntryValue};
+use crate::query::{DriveDocumentHavingQuery, RankedEntry};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
-use grovedb::operations::proof::indexed_axis::AxisEntries;
 use grovedb::operations::proof::VerifiedPathQuery;
 use grovedb::GroveDb;
 use grovedb::PathQuery;
@@ -130,80 +129,31 @@ impl DriveDocumentHavingQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
         let path = self.indexed_property_name_tree_path(branch)?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
-        let secondary_query = self.bounds.merk_query(self.descending);
-
-        let result = match self.bounds.axis() {
-            RankedAxis::Count => GroveDb::verify_indexed_count_query(
-                proof,
-                path_refs.as_slice(),
-                secondary_query,
-                Some(self.limit),
-                &platform_version.drive.grove_version,
-            ),
-            RankedAxis::Sum => GroveDb::verify_indexed_sum_query(
-                proof,
-                path_refs.as_slice(),
-                secondary_query,
-                Some(self.limit),
-                &platform_version.drive.grove_version,
-            ),
-            RankedAxis::Avg => GroveDb::verify_indexed_avg_query(
-                proof,
-                path_refs.as_slice(),
-                secondary_query,
-                Some(self.limit),
-                &platform_version.drive.grove_version,
-            ),
-        }
-        .map_err(|e| Error::GroveDB(Box::new(e)))?;
-
-        let entries = match (self.bounds.axis(), result.entries) {
-            (RankedAxis::Count, AxisEntries::Count(entries)) => entries
-                .into_iter()
-                .map(|entry| entry.key_pair())
-                .map(|(count, key)| RankedEntry {
-                    in_key: None,
-                    key,
-                    value: RankedEntryValue::Count(count),
-                })
-                .collect::<Vec<_>>(),
-            (RankedAxis::Sum, AxisEntries::Sum(entries)) => entries
-                .into_iter()
-                .map(|entry| entry.key_pair())
-                .map(|(sum, key)| RankedEntry {
-                    in_key: None,
-                    key,
-                    value: RankedEntryValue::Sum(sum),
-                })
-                .collect::<Vec<_>>(),
-            (RankedAxis::Avg, AxisEntries::Avg(entries)) => entries
-                .into_iter()
-                .map(|entry| entry.key_pair())
-                .map(|(avg, key)| RankedEntry {
-                    in_key: None,
-                    key,
-                    value: RankedEntryValue::AvgFixedPoint(avg),
-                })
-                .collect::<Vec<_>>(),
-            (axis, other) => {
-                return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                    "having range proof for the {axis:?} axis verified to {} entries of a \
-                     different axis shape",
-                    other.len()
-                ))));
-            }
+        let axis = self.bounds.axis();
+        let (lo, hi) = self.bounds.inclusive_bounds_i128();
+        let path_query =
+            PathQuery::new_axis_bounded(path, axis.into(), lo, hi, self.limit, self.descending);
+        let verified =
+            GroveDb::verify_path_query(proof, &path_query, &platform_version.drive.grove_version)
+                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        let VerifiedPathQuery::AxisEntries {
+            root_hash,
+            entries,
+            skipped: _,
+        } = verified
+        else {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "a having range proof verified to a different shape".to_string(),
+            )));
         };
-
+        let entries = axis_entries_to_ranked(axis, entries)?;
         if entries.len() > self.limit as usize {
             return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
-                "having range proof for the {:?} axis verified to {} entries for limit = {}",
-                self.bounds.axis(),
+                "having range proof verified to {} entries for limit = {}",
                 entries.len(),
                 self.limit
             ))));
         }
-
-        Ok((result.root_hash, entries))
+        Ok((root_hash, entries))
     }
 }

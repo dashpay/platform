@@ -10,13 +10,14 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_top_k;` declaration.
 
-use super::branches::{decompose_branch_paths, read_branched_union};
-use super::{DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue, RankedPage};
+use super::branches::{axis_keys_to_ranked, decompose_branch_paths, read_branched_union};
+use super::{DriveDocumentRankedQuery, RankedPage};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::{IndexedTopKKeysPage, PathQuery, TransactionArg};
+use grovedb::query_result_type::QueryResultType;
+use grovedb::{PathQuery, PathQueryRun, TransactionArg};
 use grovedb_costs::CostContext;
 use grovedb_query::AxisQuery;
 
@@ -128,89 +129,46 @@ impl DriveDocumentRankedQuery<'_> {
     ) -> Result<RankedPage, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path(branch)?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
-        let offset = self.offset as u64;
 
         // The cost is dropped rather than `.unwrap()`-ed:
         // `CostContext::unwrap` is infallible (it drops the cost field)
         // but reads like a panicking unwrap at the call site. Dropping it
         // is all there is to do with it — nothing meters a query on this
-        // surface: neither this executor's caller nor the dispatcher
-        // above it accumulates or charges the cost, and no credit is
-        // debited for a read. grovedb computes the `OperationCost`
-        // because its API always does, and it ends here.
-        let (entries, skipped) = match self.axis {
-            RankedAxis::Count => {
-                let CostContext { value, cost: _ } =
-                    drive.grove.indexed_count_top_k_paginated_keys(
-                        path_refs.as_slice(),
-                        self.k,
-                        offset,
-                        self.descending,
-                        transaction,
-                        grove_version,
-                    );
-                let IndexedTopKKeysPage { entries, skipped } =
-                    value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-                (
-                    entries
-                        .into_iter()
-                        .map(|(count, key)| RankedEntry {
-                            in_key: None,
-                            key,
-                            value: RankedEntryValue::Count(count),
-                        })
-                        .collect::<Vec<_>>(),
-                    skipped,
-                )
-            }
-            RankedAxis::Sum => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_sum_top_k_paginated_keys(
-                    path_refs.as_slice(),
-                    self.k,
-                    offset,
-                    self.descending,
-                    transaction,
-                    grove_version,
-                );
-                let IndexedTopKKeysPage { entries, skipped } =
-                    value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-                (
-                    entries
-                        .into_iter()
-                        .map(|(sum, key)| RankedEntry {
-                            in_key: None,
-                            key,
-                            value: RankedEntryValue::Sum(sum),
-                        })
-                        .collect::<Vec<_>>(),
-                    skipped,
-                )
-            }
-            RankedAxis::Avg => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_avg_top_k_paginated_keys(
-                    path_refs.as_slice(),
-                    self.k,
-                    offset,
-                    self.descending,
-                    transaction,
-                    grove_version,
-                );
-                let IndexedTopKKeysPage { entries, skipped } =
-                    value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-                (
-                    entries
-                        .into_iter()
-                        .map(|(avg, key)| RankedEntry {
-                            in_key: None,
-                            key,
-                            value: RankedEntryValue::AvgFixedPoint(avg),
-                        })
-                        .collect::<Vec<_>>(),
-                    skipped,
-                )
-            }
+        // surface. grovedb computes the `OperationCost` because its API
+        // always does, and it ends here.
+        let path_query = PathQuery::new_axis(
+            path,
+            AxisQuery::top_k(
+                self.axis.into(),
+                self.k,
+                self.offset as u64,
+                self.descending,
+            )
+            .keys_only(),
+        );
+        let CostContext { value, cost: _ } = drive.grove.run_path_query(
+            &path_query,
+            true,
+            true,
+            true,
+            QueryResultType::QueryKeyElementPairResultType,
+            transaction,
+            grove_version,
+        );
+        let run = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+        let PathQueryRun::AxisKeys { keys, skipped } = run else {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "a keys-only ranked read returned a different result shape".to_string(),
+            )));
         };
+        let entries = axis_keys_to_ranked(self.axis, keys)?;
+        // A `RankedPage` traversal always attests its skip; its absence
+        // would mean grovedb answered a different traversal than asked.
+        let skipped = skipped.ok_or_else(|| {
+            Error::Drive(DriveError::CorruptedDriveState(
+                "a paginated ranked read carried no skip attestation".to_string(),
+            ))
+        })?;
 
         // `k` is the contract with the caller, and on the prove path it
         // is re-checked inside the proof envelope. Asserting it here too
@@ -265,21 +223,21 @@ impl DriveDocumentRankedQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        // grovedb's `prove_query` — since the indexed-axis prover
+        // retirement, the only proof surface — proves COMMITTED state
+        // only: it takes one internal snapshot and threads it through
+        // every proof layer, and cannot see the caller's transaction.
+        // Serving a proof for a different snapshot than the unproved
+        // read would silently desynchronize the two paths, so a
+        // transactional prove fails closed, single-prefix and branched
+        // alike.
+        if transaction.is_some() {
+            return Err(Error::Drive(DriveError::NotSupported(
+                "a ranked proof is generated from committed state only: grovedb's \
+                 prove_query cannot see the caller's transaction — commit first",
+            )));
+        }
         if self.prefix_branches.len() > 1 {
-            // grovedb's unified `prove_query` proves COMMITTED state only —
-            // it takes one internal snapshot of committed state and threads
-            // it through every proof layer, and cannot see the caller's
-            // transaction. Serving a proof for a different snapshot than the
-            // unproved read would silently desynchronize the two paths, so a
-            // transactional branched prove fails closed instead — exactly
-            // like the branched unproved read.
-            if transaction.is_some() {
-                return Err(Error::Drive(DriveError::NotSupported(
-                    "an IN-pinned (branched) ranked proof is generated from committed state \
-                     only: grovedb's unified prove_query cannot see the caller's transaction \
-                     — prove per prefix element, or commit first",
-                )));
-            }
             // One grovedb **branched** envelope: shared ancestor layers
             // once, one multi-key proof at the branching level, one
             // secondary proof per branch — a single proof with a single
@@ -306,7 +264,7 @@ impl DriveDocumentRankedQuery<'_> {
                 drive.grove.prove_query(&path_query, None, grove_version);
             return value.map_err(|e| Error::GroveDB(Box::new(e)));
         }
-        self.execute_top_k_with_proof_branch(0, drive, transaction, platform_version)
+        self.execute_top_k_with_proof_branch(0, drive, platform_version)
     }
 
     /// One branch's proof — the entire pre-`IN` prover, parameterized by
@@ -315,23 +273,20 @@ impl DriveDocumentRankedQuery<'_> {
         &self,
         branch: usize,
         drive: &Drive,
-        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path(branch)?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
-
-        // Same destructure-don't-unwrap rationale as the no-proof arm.
-        let CostContext { value, cost: _ } = drive.grove.prove_indexed_axis_top_k_paginated(
-            path_refs.as_slice(),
+        let path_query = PathQuery::new_axis_top_k(
+            path,
             self.axis.into(),
             self.k,
             self.offset as u64,
             self.descending,
-            transaction,
-            grove_version,
         );
+        // Same destructure-don't-unwrap rationale as the no-proof arm.
+        let CostContext { value, cost: _ } =
+            drive.grove.prove_query(&path_query, None, grove_version);
         value.map_err(|e| Error::GroveDB(Box::new(e)))
     }
 }

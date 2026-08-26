@@ -1047,25 +1047,19 @@ mod execution {
     fn an_empty_match_set_reads_empty_and_proves_empty() {
         let (drive, contract) = setup_restaurants();
 
-        // Empty secondary (no documents at all): the unproven read
-        // returns the empty list, but grovedb's range prover — unlike
-        // the ranked surface's paginated prover — has no absence-proof
-        // shape for a completely empty tree and refuses. drive-abci
-        // maps this exact failure class onto an `InvalidArgument`
-        // telling the caller to retry unproved
-        // (`empty_ranking_proof_rejection`); at the drive level it
-        // surfaces as the grovedb error asserted here. If a future
-        // grovedb pin makes empty range proofs work, this arm should
-        // flip to a round-trip assertion.
+        // Empty secondary (no documents at all): both the unproven read
+        // and — since the unified PathQuery prover replaced grovedb's
+        // standalone range prover — the PROVED read serve the empty
+        // answer: the envelope commits the element's empty secondary
+        // (NULL_HASH convention), so complete absence is authenticated
+        // rather than refused, exactly as on the ranked surface. (The
+        // retired standalone prover refused with "Cannot create proof
+        // for empty tree"; drive-abci's InvalidArgument mapping for
+        // that class is vestigial on this surface now.)
         let case = HavingCase::count(HavingOperator::GreaterThan, Value::U64(100), 10);
         let entries = entries_of(run(&drive, &contract, &case, false).expect("read succeeds"));
         assert!(entries.is_empty());
-        let error = run(&drive, &contract, &case, true)
-            .expect_err("proving against an empty secondary is refused by grovedb");
-        assert!(
-            format!("{error}").contains("Cannot create proof for empty tree"),
-            "the failure must be the recognized empty-tree class, got: {error}"
-        );
+        assert_proof_round_trips(&drive, &contract, &case, &entries);
 
         // Populated secondary, bound above every count: a genuine
         // absence proof, which works — the tree has content to anchor
@@ -1145,11 +1139,36 @@ mod execution {
             .verify_having_range_proof(&proof, platform_version())
             .is_err());
 
+        // The limit is a CAP, not an identity parameter: the unified
+        // verifier re-executes the proof under the queried limit rather
+        // than comparing echoes, so a proof whose walk EXHAUSTED the
+        // bound (one entry here) is a complete, valid answer under any
+        // cap that admits it — the `limit 10` proof verifies under
+        // `limit 5` too, and that is sound.
         tampered_query = client_side_query(&contract, &over_two);
         tampered_query.limit = 5;
-        assert!(tampered_query
-            .verify_having_range_proof(&proof, platform_version())
-            .is_err());
+        assert!(
+            tampered_query
+                .verify_having_range_proof(&proof, platform_version())
+                .is_ok(),
+            "an exhausted-walk proof is a complete answer under a smaller cap too"
+        );
+
+        // What must NOT verify is the truncation direction: a proof cut
+        // by a SMALLER limit (2 of the 3 groups matching `> 0`, with
+        // more in range) misrepresents completeness under a larger cap,
+        // and the reconstruction rejects it for missing coverage of the
+        // rest of the bound.
+        let truncated = HavingCase::count(HavingOperator::GreaterThan, Value::U64(0), 2);
+        let truncated_proof =
+            proof_of(run(&drive, &contract, &truncated, true).expect("prove succeeds"));
+        let widened = HavingCase::count(HavingOperator::GreaterThan, Value::U64(0), 10);
+        assert!(
+            client_side_query(&contract, &widened)
+                .verify_having_range_proof(&truncated_proof, platform_version())
+                .is_err(),
+            "a limit-truncated proof must not verify under a larger cap"
+        );
     }
 
     /// A `having` on an axis no index declares is refused with the
