@@ -98,20 +98,30 @@ jobs:
         with:
           targets: x86_64-linux-android
 
-      - name: Ensure cargo-ndk is installed
+      # Pinned: this runner is persistent, so an unpinned `cargo install`
+      # leaves whatever version happened to be current on the day it first ran,
+      # and every later job silently builds with it. Assert after installing so
+      # a drifted host fails here instead of somewhere in the NDK build.
+      - name: Ensure cargo-ndk v4.1.2 is installed
         run: |
-          if ! cargo ndk --version >/dev/null 2>&1; then
-            cargo install cargo-ndk --locked
+          set -euo pipefail
+          if ! cargo ndk --version 2>/dev/null | grep -qx 'cargo-ndk 4.1.2'; then
+            cargo install cargo-ndk --version 4.1.2 --locked --force
           fi
           cargo ndk --version
+          cargo ndk --version | grep -qx 'cargo-ndk 4.1.2'
 
       - name: Ensure protoc v32.0 is installed (repo-standard; apt's 3.21 breaks tenderdash-proto)
         run: |
+          set -euo pipefail
           if ! protoc --version 2>/dev/null | grep -qx 'libprotoc 32.0'; then
             curl -fsSL -o /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
             sudo unzip -o /tmp/protoc.zip -d /usr/local 'bin/protoc' 'include/*'
           fi
           protoc --version
+          # A stale protoc earlier on PATH would shadow the one just unpacked
+          # into /usr/local; catch that here rather than in a codegen failure.
+          protoc --version | grep -qx 'libprotoc 32.0'
 
       - name: Build native library (x86_64, dev profile)
         working-directory: packages/kotlin-sdk
