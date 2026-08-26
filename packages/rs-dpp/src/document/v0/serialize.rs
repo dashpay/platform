@@ -3590,6 +3590,192 @@ mod tests {
         );
     }
 
+    /// A document type whose `requiredSince` annotations sit on properties of
+    /// every distinct byte layout — variable and fixed byte arrays, an
+    /// identifier, integers, a float, a bool, and a nested object — at two
+    /// different annotation versions, so a stamp can fall before, between,
+    /// and after them:
+    ///   - `a`: string, required at every version
+    ///   - `bytv2`, `fixv2`, `objv2`: required since contract version 2
+    ///   - `idv3`, `intv3`, `fltv3`, `boolv3`: required since contract version 3
+    fn multi_type_required_since_document_type() -> crate::data_contract::document_type::DocumentType
+    {
+        use crate::data_contract::config::DataContractConfig;
+        use crate::data_contract::document_type::DocumentType;
+        use platform_value::platform_value;
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::latest();
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a":      {"type": "string", "position": 0, "maxLength": 60_u32},
+                "bytv2":  {"type": "array", "position": 1, "byteArray": true, "minItems": 0, "maxItems": 32, "requiredSince": 2},
+                "fixv2":  {"type": "array", "position": 2, "byteArray": true, "minItems": 8, "maxItems": 8, "requiredSince": 2},
+                "objv2":  {
+                    "type": "object",
+                    "position": 3,
+                    "properties": {
+                        "inner": {"type": "string", "position": 0, "maxLength": 10_u32},
+                    },
+                    "required": ["inner"],
+                    "additionalProperties": false,
+                    "requiredSince": 2,
+                },
+                "idv3":   {"type": "array", "position": 4, "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier", "requiredSince": 3},
+                "intv3":  {"type": "integer", "position": 5, "requiredSince": 3},
+                "fltv3":  {"type": "number", "position": 6, "requiredSince": 3},
+                "boolv3": {"type": "boolean", "position": 7, "requiredSince": 3},
+            },
+            "required": ["a", "bytv2", "fixv2", "objv2", "idv3", "intv3", "fltv3", "boolv3"],
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            platform_value::Identifier::new([5; 32]),
+            3,
+            config.version(),
+            "multi",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create multi-type document type")
+    }
+
+    fn multi_type_properties_since_v2() -> BTreeMap<String, Value> {
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+        properties.insert("bytv2".to_string(), Value::Bytes(vec![1, 2, 3]));
+        properties.insert("fixv2".to_string(), Value::Bytes(vec![9; 8]));
+        properties.insert(
+            "objv2".to_string(),
+            Value::Map(vec![(
+                Value::Text("inner".to_string()),
+                Value::Text("in".to_string()),
+            )]),
+        );
+        properties
+    }
+
+    fn multi_type_properties_since_v3() -> BTreeMap<String, Value> {
+        let mut properties = multi_type_properties_since_v2();
+        properties.insert("idv3".to_string(), Value::Identifier([7; 32]));
+        properties.insert("intv3".to_string(), Value::I64(-42));
+        properties.insert("fltv3".to_string(), Value::Float(1.5));
+        properties.insert("boolv3".to_string(), Value::Bool(true));
+        properties
+    }
+
+    #[test]
+    fn serialize_v3_round_trips_annotated_non_string_types_at_every_stamp() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = multi_type_required_since_document_type();
+        let document_type_ref = document_type.as_ref();
+
+        let mut base = BTreeMap::new();
+        base.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+        // Unstamped and stamped-at-1: every annotation postdates the bytes,
+        // so all annotated properties may be absent
+        for stamp in [None, Some(1)] {
+            let document = stamped_document(stamp, base.clone(), document_type_ref);
+            let serialized = document
+                .serialize_v3(document_type_ref)
+                .expect("document predating every annotation should serialize");
+            let deserialized =
+                DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+                    .expect("expected deserialization to succeed");
+            assert_eq!(deserialized, document, "stamp {stamp:?}");
+        }
+
+        // Stamped between the two annotation versions: the version-2 group is
+        // required (raw layout), the version-3 group still optional and absent
+        let document =
+            stamped_document(Some(2), multi_type_properties_since_v2(), document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("document stamped between annotations should serialize");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+        assert_eq!(deserialized, document);
+
+        // Same stamp with the version-3 group present: still optional, so it
+        // rides the presence-flagged layout and must round-trip
+        let document =
+            stamped_document(Some(2), multi_type_properties_since_v3(), document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("optional-but-present annotated fields should serialize");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+        assert_eq!(deserialized, document);
+
+        // Stamped at the newest annotation: everything required, raw layouts
+        let document =
+            stamped_document(Some(3), multi_type_properties_since_v3(), document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("document stamped at the newest annotation should serialize");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+        assert_eq!(deserialized, document);
+
+        // A stamp at the newest annotation with one of its fields missing
+        // errors for non-string types just like for strings
+        let mut missing = multi_type_properties_since_v3();
+        missing.remove("idv3");
+        let document = stamped_document(Some(3), missing, document_type_ref);
+        assert!(
+            matches!(
+                document.serialize_v3(document_type_ref),
+                Err(ProtocolError::DataContractError(
+                    DataContractError::MissingRequiredKey(_)
+                ))
+            ),
+            "a stamped-at-annotation document missing an annotated identifier must error"
+        );
+    }
+
+    #[test]
+    fn serialize_v3_layouts_diverge_between_stamps_across_property_types() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = multi_type_required_since_document_type();
+        let document_type_ref = document_type.as_ref();
+
+        // Identical content, different stamps: at stamp 2 the version-3 group
+        // is presence-flagged, at stamp 3 it serializes raw — the bytes must
+        // differ beyond the stamp varint itself, and each layout must decode
+        // only under its own stamp
+        let at_2 = stamped_document(Some(2), multi_type_properties_since_v3(), document_type_ref)
+            .serialize_v3(document_type_ref)
+            .expect("stamp-2 document should serialize");
+        let at_3 = stamped_document(Some(3), multi_type_properties_since_v3(), document_type_ref)
+            .serialize_v3(document_type_ref)
+            .expect("stamp-3 document should serialize");
+
+        // Four version-3 properties drop one presence byte each when the
+        // stamp makes them required; the stamp varint is one byte in both
+        assert_eq!(
+            at_2.len(),
+            at_3.len() + 4,
+            "the presence-flagged layout must carry one extra byte per annotated property"
+        );
+
+        let from_2 = DocumentV0::from_bytes(&at_2, document_type_ref, platform_version)
+            .expect("stamp-2 bytes should decode");
+        let from_3 = DocumentV0::from_bytes(&at_3, document_type_ref, platform_version)
+            .expect("stamp-3 bytes should decode");
+        assert_eq!(from_2.properties, from_3.properties);
+        assert_eq!(from_2.contract_version, Some(2));
+        assert_eq!(from_3.contract_version, Some(3));
+    }
+
     #[test]
     fn stamp_survives_the_wire_for_documents_stamped_past_required_since() {
         let platform_version = PlatformVersion::latest();
