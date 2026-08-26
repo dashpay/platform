@@ -26,9 +26,10 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 ///   behavior change; v0 stays byte-frozen for protocol versions up to 13.
 /// * `withdrawals.calculate_current_withdrawal_limit` 0 -> 1: the daily
 ///   maximum derives from the total credits Platform held a day ago (the
-///   relative daily withdrawal limit) instead of the current total, extended
-///   by the credit inflows of the last 25 hours (net accounting), still capped
-///   by `max_daily_withdrawal_amount`.
+///   relative daily withdrawal limit) instead of the current total. The
+///   `max_daily_withdrawal_amount` cap applies to that day-old base; credit
+///   inflows from the active window are added after the cap so matching
+///   deposit-withdraw cycles do not consume the capped budget.
 /// * `withdrawals.record_total_credits_history` and
 ///   `withdrawals.fetch_total_credits_in_platform_a_day_ago` `None -> Some(0)`:
 ///   the per-block total credits history under the withdrawals tree that the

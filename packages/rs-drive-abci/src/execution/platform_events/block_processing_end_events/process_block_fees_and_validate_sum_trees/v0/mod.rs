@@ -242,7 +242,9 @@ mod tests {
                 block_time_ms,
                 previous_block_time_ms,
                 proposer_pro_tx_hash,
-                core_chain_locked_height: 1,
+                // Advance Core with the chain so an epoch spans Core blocks and its payout
+                // carries non-zero Core rewards for the credit-mint assertion below.
+                core_chain_locked_height: block_height as u32,
                 block_hash: None,
                 app_hash: None,
             };
@@ -330,10 +332,15 @@ mod tests {
 
             // Should pay for previous epoch
 
+            // The epoch Core rewards minted by the payout batch must be reported in the
+            // outcome's credit mints, which `run_block_proposal` records as a
+            // withdrawal-limit inflow; a block without a payout mints nothing.
             if epoch_info.is_epoch_change() && epoch_index > GENESIS_EPOCH_INDEX {
                 assert!(storage_fee_distribution_outcome.payouts.is_some());
+                assert_ne!(storage_fee_distribution_outcome.credit_mints, 0);
             } else {
                 assert!(storage_fee_distribution_outcome.payouts.is_none());
+                assert_eq!(storage_fee_distribution_outcome.credit_mints, 0);
             }
 
             // Should distribute block fees into pools
