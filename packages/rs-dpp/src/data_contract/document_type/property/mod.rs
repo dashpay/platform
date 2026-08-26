@@ -58,6 +58,15 @@ impl DocumentProperty {
                 Some(since) => contract_version.is_some_and(|version| version >= since),
             }
     }
+
+    /// Whether this property is required regardless of any document's
+    /// contract-version stamp: `required` without a `requiredSince` gate.
+    /// This is the requiredness the pre-stamp serialization formats (0–2)
+    /// encode, and it equals `required_at(None)` — an unstamped document
+    /// predates every `requiredSince` annotation.
+    pub fn always_required(&self) -> bool {
+        self.required && self.required_since.is_none()
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]

@@ -216,7 +216,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if property.required_at(None) && !property.transient {
+                        if property.always_required() && !property.transient {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -229,24 +229,24 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required_at(None) || property.transient {
+                        if !property.always_required() || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
                         let value = if property.property_type.is_integer() {
                             DocumentPropertyType::I64
-                                .encode_value_ref_with_size(value, property.required_at(None))
+                                .encode_value_ref_with_size(value, property.always_required())
                         } else {
                             property
                                 .property_type
-                                .encode_value_ref_with_size(value, property.required_at(None))
+                                .encode_value_ref_with_size(value, property.always_required())
                         }?;
 
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required_at(None) && !property.transient {
+                } else if property.always_required() && !property.transient {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -440,7 +440,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if property.required_at(None) && !property.transient {
+                        if property.always_required() && !property.transient {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -453,18 +453,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required_at(None) || property.transient {
+                        if !property.always_required() || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
                         let value = property
                             .property_type
-                            .encode_value_ref_with_size(value, property.required_at(None))?;
+                            .encode_value_ref_with_size(value, property.always_required())?;
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required_at(None) && !property.transient {
+                } else if property.always_required() && !property.transient {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -668,7 +668,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if property.required_at(None) && !property.transient {
+                        if property.always_required() && !property.transient {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -681,18 +681,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required_at(None) || property.transient {
+                        if !property.always_required() || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
                         let value = property
                             .property_type
-                            .encode_value_ref_with_size(value, property.required_at(None))?;
+                            .encode_value_ref_with_size(value, property.always_required())?;
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required_at(None) && !property.transient {
+                } else if property.always_required() && !property.transient {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -1114,7 +1114,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .iter()
             .filter_map(|(key, property)| {
                 if finished_buffer {
-                    return if property.required_at(None) && !property.transient {
+                    return if property.always_required() && !property.transient {
                         Some(Err(DataContractError::CorruptedSerialization(
                             "required field after finished buffer".to_string(),
                         )))
@@ -1127,12 +1127,12 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                 let read_value = if property.property_type.is_integer() {
                     DocumentPropertyType::I64.read_optionally_from(
                         &mut buf,
-                        property.required_at(None) & !property.transient,
+                        property.always_required() & !property.transient,
                     )
                 } else {
                     property.property_type.read_optionally_from(
                         &mut buf,
-                        property.required_at(None) & !property.transient,
+                        property.always_required() & !property.transient,
                     )
                 };
 
@@ -1342,7 +1342,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .iter()
             .filter_map(|(key, property)| {
                 if finished_buffer {
-                    return if property.required_at(None) && !property.transient {
+                    return if property.always_required() && !property.transient {
                         Some(Err(DataContractError::CorruptedSerialization(
                             "required field after finished buffer".to_string(),
                         )))
@@ -1352,7 +1352,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                 }
                 let read_value = property.property_type.read_optionally_from(
                     &mut buf,
-                    property.required_at(None) & !property.transient,
+                    property.always_required() & !property.transient,
                 );
 
                 match read_value {
@@ -1586,7 +1586,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .iter()
             .filter_map(|(key, property)| {
                 if finished_buffer {
-                    return if property.required_at(None) && !property.transient {
+                    return if property.always_required() && !property.transient {
                         Some(Err(DataContractError::CorruptedSerialization(
                             "required field after finished buffer".to_string(),
                         )))
@@ -1596,7 +1596,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                 }
                 let read_value = property.property_type.read_optionally_from(
                     &mut buf,
-                    property.required_at(None) & !property.transient,
+                    property.always_required() & !property.transient,
                 );
 
                 match read_value {
