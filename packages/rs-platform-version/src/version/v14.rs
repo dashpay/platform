@@ -71,10 +71,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
 ///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
 ///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
-///    withdrawal eventually fits and cannot block the pooling queue, and never
-///    above `max_daily_withdrawal_amount` (4000 Dash, Core's unlock capacity per
-///    day under V24) since pooling more than Core mines only cycles through
-///    expiry and re-signing. The base is
+///    withdrawal eventually fits and cannot block the pooling queue. The base is
+///    capped at `max_daily_withdrawal_amount` (4000 Dash, Core's unlock capacity
+///    per day under V24 as written); the credit inflows of the active window —
+///    every credit mint, recorded per block by
+///    `record_credit_inflows_for_withdrawals` in the credit inflows sum tree —
+///    are added after the cap, so the limit counts net outflow and a matching
+///    deposit -> withdraw cycle does not consume the capped budget of other
+///    users (#4471). Outflow funded by same-window deposits may therefore
+///    exceed the cap; this mirrors the net credit-pool rule Core adopts for V24
+///    alongside this change (tracked in #4471), which must land before V24
+///    activates. Both the inflows and the pooled reservations count over the
+///    interval after the base snapshot only — an entry the snapshot already
+///    reflects is neither added nor subtracted again. The base is
 ///    the total credits recorded at the latest block at least 24 hours before
 ///    the current one: `DRIVE_ABCI_METHOD_VERSIONS_V10` turns on
 ///    `record_total_credits_history_for_withdrawals`, which checks the total
@@ -88,11 +97,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    the total before or at activation. The lag is the guardrail: a sudden
 ///    jump in the total credits does not raise the limit for a day. Amounts
 ///    already pooled in the last 24 hours keep counting against the maximum
-///    exactly as before. Core's own unlock limit is unaffected: pre-V24 Core
-///    caps unlocks at `LimitAmountV22` (2000 Dash) per *block*, with the amount
-///    checked only at block level, so any daily total is still minable across
-///    blocks; after V24 it enforces 4000 Dash per 576-block window, which the
-///    cap above never exceeds.
+///    exactly as before. Pre-V24 Core caps unlocks at `LimitAmountV22` (2000
+///    Dash) per *block*, with the amount checked only at block level, so any
+///    daily total is still minable across blocks; V24's 4000 Dash per 576-block
+///    window matches the capped base and is raised to the same net rule before
+///    activation (see above).
 /// 5. **Time-range indexes**: an index can declare a `timeRange` transform
 ///    that buckets a required system timestamp (`$createdAt` /
 ///    `$updatedAt` / `$transferredAt`) into fixed-length, regularly-spaced,
