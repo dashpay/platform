@@ -77,7 +77,12 @@ mod time_range_index_e2e_tests {
     //! whichever index happens to cover the fields.
     use crate::config::DriveConfig;
     use crate::drive::Drive;
-    use crate::query::{DriveDocumentQuery, ResolvedTimeRange};
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::{
+        resolve_time_range_bucket_clause, DriveDocumentQuery, ResolvedTimeRange, TimeRangeGridSpec,
+        TimeRangeSelector,
+    };
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -771,10 +776,7 @@ mod time_range_index_e2e_tests {
             .find_best_index(PlatformVersion::latest())
             .expect_err("two resolved time-range fields cannot be served");
         assert!(
-            matches!(
-                error,
-                crate::error::Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
-            ),
+            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
             "expected an Unsupported rejection, got {error:?}"
         );
     }
@@ -837,9 +839,7 @@ mod time_range_index_e2e_tests {
         assert!(
             matches!(
                 error,
-                crate::error::Error::Query(
-                    crate::error::query::QuerySyntaxError::WhereClauseOnNonIndexedProperty(_)
-                )
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
             ),
             "expected a no-covering-index rejection, got {error:?}"
         );
@@ -1135,9 +1135,7 @@ mod time_range_index_e2e_tests {
         assert!(
             matches!(
                 error,
-                crate::error::Error::Query(
-                    crate::error::query::QuerySyntaxError::WhereClauseOnNonIndexedProperty(_)
-                )
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
             ),
             "expected a no-covering-index rejection, got {error:?}"
         );
@@ -1376,31 +1374,26 @@ mod time_range_index_e2e_tests {
     /// storage fork the previous test pins.
     #[test]
     fn multi_grid_resolution_requires_and_honors_a_grid_spec() {
-        use crate::query::TimeRangeGridSpec;
-
         let contract = build_two_grid_contract();
         let document_type = contract.document_type_for_name("post").expect("post");
         let now_ms = 25 * HOUR_MS;
 
-        let error = crate::query::resolve_time_range_bucket_clause(
+        let error = resolve_time_range_bucket_clause(
             "$createdAt",
-            crate::query::TimeRangeSelector::Newest,
+            TimeRangeSelector::Newest,
             None,
             document_type,
             now_ms,
         )
         .expect_err("two grids on the field make the bare selector ambiguous");
         assert!(
-            matches!(
-                error,
-                crate::error::Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
-            ),
+            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
             "expected the ambiguity rejection, got {error:?}"
         );
 
-        let (clause, resolution) = crate::query::resolve_time_range_bucket_clause(
+        let (clause, resolution) = resolve_time_range_bucket_clause(
             "$createdAt",
-            crate::query::TimeRangeSelector::Newest,
+            TimeRangeSelector::Newest,
             Some(TimeRangeGridSpec {
                 range_seconds: 24 * HOUR_SECONDS,
                 step_seconds: 24 * HOUR_SECONDS,
@@ -1413,9 +1406,9 @@ mod time_range_index_e2e_tests {
         assert_eq!(clause.value, Value::U64(24 * HOUR_MS));
         assert_eq!(resolution.transform.range_seconds, 24 * HOUR_SECONDS);
 
-        let (clause, resolution) = crate::query::resolve_time_range_bucket_clause(
+        let (clause, resolution) = resolve_time_range_bucket_clause(
             "$createdAt",
-            crate::query::TimeRangeSelector::Newest,
+            TimeRangeSelector::Newest,
             Some(TimeRangeGridSpec {
                 range_seconds: 6 * HOUR_SECONDS,
                 step_seconds: 2 * HOUR_SECONDS,
@@ -1433,9 +1426,9 @@ mod time_range_index_e2e_tests {
         );
         assert_eq!(resolution.transform.step_seconds, 2 * HOUR_SECONDS);
 
-        let error = crate::query::resolve_time_range_bucket_clause(
+        let error = resolve_time_range_bucket_clause(
             "$createdAt",
-            crate::query::TimeRangeSelector::Newest,
+            TimeRangeSelector::Newest,
             Some(TimeRangeGridSpec {
                 range_seconds: 12 * HOUR_SECONDS,
                 step_seconds: 12 * HOUR_SECONDS,
@@ -1446,11 +1439,58 @@ mod time_range_index_e2e_tests {
         )
         .expect_err("a grid no index declares must be refused");
         assert!(
-            matches!(
-                error,
-                crate::error::Error::Query(crate::error::query::QuerySyntaxError::Unsupported(_))
-            ),
+            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
             "expected the unknown-grid rejection, got {error:?}"
+        );
+    }
+
+    /// The multiple-`In` execution lowering picks its index directly
+    /// (without `find_best_index`), so it must run the shared
+    /// resolved-source shape guard itself: a direct caller pairing
+    /// fabricated provenance with an `In` clause ON the bucketed source
+    /// would otherwise have its raw `In` values serialized as bucket
+    /// keys — a validly-proven answer over arbitrary buckets.
+    #[test]
+    fn multiple_in_route_refuses_an_in_clause_on_the_bucketed_source() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = build_trending_contract();
+        let document_type = contract.document_type_for_name("post").expect("post");
+
+        let query_value = Value::Map(vec![(
+            Value::Text("where".to_string()),
+            Value::Array(vec![
+                Value::Array(vec![
+                    Value::Text("$createdAt".to_string()),
+                    Value::Text("in".to_string()),
+                    Value::Array(vec![Value::U64(2 * HOUR_MS), Value::U64(4 * HOUR_MS)]),
+                ]),
+                Value::Array(vec![
+                    Value::Text("hashtag".to_string()),
+                    Value::Text("in".to_string()),
+                    Value::Array(vec![
+                        Value::Text("dash".to_string()),
+                        Value::Text("evo".to_string()),
+                    ]),
+                ]),
+            ]),
+        )]);
+        let mut query = DriveDocumentQuery::from_value(
+            query_value,
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+            platform_version,
+        )
+        .expect("two In clauses are a valid protocol-version-14 query shape");
+        query.resolved_time_ranges = created_at_resolution(document_type);
+
+        let error = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect_err("an In on the bucketed source must not reach bucket keys");
+        assert!(
+            matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+            "expected the source-shape rejection, got {error:?}"
         );
     }
 }

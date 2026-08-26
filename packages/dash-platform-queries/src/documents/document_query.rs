@@ -33,6 +33,7 @@ use dpp::{
 use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
+    resolve_time_range_bucket_clause, validate_resolved_time_range_clause_shapes,
     DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
     HavingRightOperand, InternalClauses, OrderClause, ResolvedTimeRange, SelectFunction,
     SelectProjection, TimeRangeGridSpec, TimeRangeSelector, WhereClause, WhereOperator,
@@ -249,7 +250,8 @@ impl DocumentQuery {
     /// active range. Emitted as an `IN_TIME_RANGE` clause on the v1 wire and
     /// resolved server-side from the current block time; the proof verifier
     /// re-derives the identical bucket from the quorum-signed response
-    /// metadata time. Requires Platform v3.1+ (v1 wire).
+    /// metadata time. Requires protocol version 14+ — the first version
+    /// whose contract grammar hosts `timeRange` indexes.
     ///
     /// The bare selector is unambiguous only while exactly one grid buckets
     /// `field`; when the contract declares several grids over it, use
@@ -608,13 +610,10 @@ pub(super) fn normalize_time_range_clauses_with_metadata_time(
     time_ms: u64,
 ) -> Result<Vec<ResolvedTimeRange>, drive_proof_verifier::Error> {
     let resolved_time_ranges = resolve_time_range_clauses_with_metadata_time(request, time_ms)?;
-    drive::query::validate_resolved_time_range_clause_shapes(
-        &request.where_clauses,
-        &resolved_time_ranges,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("invalid time range query shape: {}", e),
-    })?;
+    validate_resolved_time_range_clause_shapes(&request.where_clauses, &resolved_time_ranges)
+        .map_err(|e| drive_proof_verifier::Error::RequestError {
+            error: format!("invalid time range query shape: {}", e),
+        })?;
     Ok(resolved_time_ranges)
 }
 
@@ -639,16 +638,11 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
         grid,
     } in time_range_clauses
     {
-        let (clause, resolved) = drive::query::resolve_time_range_bucket_clause(
-            &field,
-            selector,
-            grid,
-            document_type,
-            time_ms,
-        )
-        .map_err(|e| drive_proof_verifier::Error::RequestError {
-            error: format!("failed to resolve time range clause: {}", e),
-        })?;
+        let (clause, resolved) =
+            resolve_time_range_bucket_clause(&field, selector, grid, document_type, time_ms)
+                .map_err(|e| drive_proof_verifier::Error::RequestError {
+                    error: format!("failed to resolve time range clause: {}", e),
+                })?;
         request.where_clauses.push(clause);
         resolved_time_ranges.push(resolved);
     }
@@ -663,7 +657,8 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
 /// V0 lacks `selects` / `group_by` / `having` / `offset` and the
 /// optional-limit semantics — callers that set those features get
 /// `Error::Config` with a clear "requires Platform v3.1+" message
-/// rather than a silently-truncated request.
+/// rather than a silently-truncated request. Time-range clauses are
+/// additionally gated on the v14 contract grammar — see the `1 =>` arm.
 impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
     type Error = Error;
 
@@ -702,8 +697,8 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             0 => {
                 if !time_range_clauses.is_empty() {
                     return Err(Error::Config(
-                        "time range (IN_TIME_RANGE) queries require Platform v3.1+ (the v1 \
-                         getDocuments wire); the v0 wire has no time-range operator"
+                        "time range (IN_TIME_RANGE) queries require protocol version 14+; the \
+                         v0 getDocuments wire has no time-range operator"
                             .to_string(),
                     ));
                 }
@@ -720,19 +715,42 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
                     &having,
                 )
             }
-            1 => encode_v1(
-                data_contract.id().to_vec(),
-                document_type_name,
-                where_clauses,
-                time_range_clauses,
-                order_by_clauses,
-                limit,
-                offset,
-                start,
-                select,
-                group_by,
-                having,
-            ),
+            1 => {
+                // The v1 wire predates time-range indexes: protocol
+                // versions 12 and 13 also serve it, but their contract
+                // grammar (document meta-schema generations 1 and 2)
+                // cannot host a `timeRange` index. Gate on the grammar
+                // generation — the same table the server's parser reads —
+                // rather than emitting an operator a pre-v14 server
+                // rejects as an unknown discriminant.
+                let grammar_generation = platform_version
+                    .dpp
+                    .contract_versions
+                    .document_type_versions
+                    .schema
+                    .document_type_schema;
+                if !time_range_clauses.is_empty() && grammar_generation < 3 {
+                    return Err(Error::Config(format!(
+                        "time range (IN_TIME_RANGE) queries require protocol version 14+ — the \
+                         first version whose contract grammar hosts `timeRange` indexes; this \
+                         network runs protocol version {}",
+                        platform_version.protocol_version
+                    )));
+                }
+                encode_v1(
+                    data_contract.id().to_vec(),
+                    document_type_name,
+                    where_clauses,
+                    time_range_clauses,
+                    order_by_clauses,
+                    limit,
+                    offset,
+                    start,
+                    select,
+                    group_by,
+                    having,
+                )
+            }
             n => Err(Error::Config(format!(
                 "GetDocumentsRequest wire encoder does not support feature_version={n} \
                  (drive_abci.query.document_query) on PlatformVersion v{}",
@@ -969,7 +987,7 @@ impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
     /// plain index returns a different — but validly proven — result.
     fn try_from(value: &'a DriveDocumentQuery<'a>) -> Result<Self, Self::Error> {
         if !value.resolved_time_ranges.is_empty() {
-            return Err(crate::error::Error::Config(
+            return Err(Error::Config(
                 "a drive query carrying time-range resolution provenance cannot be \
                  converted to a DocumentQuery: the resolved bucket equality would be \
                  demoted to a raw-timestamp predicate. Build the DocumentQuery with \
@@ -1368,4 +1386,92 @@ fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentField
     Ok(ProtoDocumentFieldValue {
         variant: Some(variant),
     })
+}
+
+#[cfg(test)]
+mod encode_version_gate_tests {
+    //! The `IN_TIME_RANGE` operator is emitted only for protocol versions
+    //! whose contract grammar hosts `timeRange` indexes (document
+    //! meta-schema generation 3, first pinned by protocol version 14).
+    //! Protocol versions 12 and 13 serve the same v1 getDocuments wire but
+    //! predate the grammar — encoding for them must refuse up front
+    //! instead of sending an operator the server rejects as an unknown
+    //! discriminant.
+
+    use super::*;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+    use dpp::prelude::{DataContract, Identifier};
+    use drive::query::TimeRangeSelector;
+
+    fn post_contract() -> Arc<DataContract> {
+        let schemas = platform_value!({
+            "post": {
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+                },
+                "required": ["hashtag"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("expected a factory")
+            .create_with_value_config(Identifier::new([7u8; 32]), 0, schemas, None, None)
+            .expect("the post contract is well-formed")
+            .data_contract_owned();
+        Arc::new(contract)
+    }
+
+    fn newest_time_range_query() -> DocumentQuery {
+        DocumentQuery::new(post_contract(), "post")
+            .expect("the fixture has this document type")
+            .with_time_range("$createdAt", TimeRangeSelector::Newest)
+    }
+
+    #[test]
+    fn a_time_range_query_refuses_to_encode_for_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let error = GetDocumentsRequest::try_from_platform_versioned(
+            newest_time_range_query(),
+            platform_version,
+        )
+        .expect_err("protocol version 13's contract grammar has no timeRange indexes");
+        assert!(
+            error.to_string().contains("protocol version 14"),
+            "the refusal must name the real version floor, got: {error}"
+        );
+    }
+
+    #[test]
+    fn a_time_range_query_encodes_the_operator_for_protocol_version_14() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+        let request = GetDocumentsRequest::try_from_platform_versioned(
+            newest_time_range_query(),
+            platform_version,
+        )
+        .expect("protocol version 14 hosts timeRange indexes");
+        let Some(V1(v1)) = request.version else {
+            panic!("protocol version 14 encodes on the v1 wire");
+        };
+        let operators: Vec<i32> = v1
+            .where_clauses
+            .iter()
+            .map(|clause| clause.operator)
+            .collect();
+        assert_eq!(
+            operators,
+            vec![ProtoWhereOperator::InTimeRange as i32],
+            "the pending selector must ride as exactly one IN_TIME_RANGE clause"
+        );
+    }
+
+    #[test]
+    fn a_query_without_time_range_clauses_still_encodes_for_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let query = DocumentQuery::new(post_contract(), "post")
+            .expect("the fixture has this document type");
+        GetDocumentsRequest::try_from_platform_versioned(query, platform_version)
+            .expect("the gate only refuses queries that carry a time-range selection");
+    }
 }

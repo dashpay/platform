@@ -37,11 +37,13 @@
 use super::super::drive_document_average_query::{
     AverageMode, DocumentAverageRequest, DocumentAverageResponse,
 };
-use super::super::drive_document_count_query::drive_dispatcher::validate_and_canonicalize_where_clauses;
 use super::super::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use super::super::drive_document_sum_query::{DocumentSumMode, SumMode};
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::query::{
+    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::version::PlatformVersion;
@@ -112,10 +114,7 @@ impl Drive {
         let where_clauses =
             validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
         let resolved_time_ranges = request.resolved_time_ranges;
-        crate::query::validate_resolved_time_range_clause_shapes(
-            &where_clauses,
-            &resolved_time_ranges,
-        )?;
+        validate_resolved_time_range_clause_shapes(&where_clauses, &resolved_time_ranges)?;
 
         // Convert AverageMode → SumMode (1:1 by construction); sum's
         // routing table is the single source of truth for the

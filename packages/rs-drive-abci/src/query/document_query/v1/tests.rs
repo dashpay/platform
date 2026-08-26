@@ -26,6 +26,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::platform_value::{platform_value, Value};
 use drive::query::WhereOperator;
+use drive::query::{resolve_time_range_bucket_clause, validate_resolved_time_range_clause_shapes};
 
 /// Build a `ProtoDocumentFieldValue` from a `dpp::platform_value::Value`
 /// for use inside this test module only. **Subset of the SDK's
@@ -4585,7 +4586,7 @@ mod time_range_proof_verification {
             operator: WhereOperator::Equal,
             value: Value::Text(hashtag.to_string()),
         }];
-        let (clause, resolution) = drive::query::resolve_time_range_bucket_clause(
+        let (clause, resolution) = resolve_time_range_bucket_clause(
             CREATED_AT,
             TimeRangeSelector::Newest,
             None,
@@ -4600,7 +4601,7 @@ mod time_range_proof_verification {
         where_clauses.push(clause);
         let resolutions = vec![resolution];
 
-        drive::query::validate_resolved_time_range_clause_shapes(&where_clauses, &resolutions)
+        validate_resolved_time_range_clause_shapes(&where_clauses, &resolutions)
             .expect("resolution produces exactly the one equality the guard admits");
 
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
@@ -4765,7 +4766,7 @@ mod time_range_proof_verification {
             operator: WhereOperator::Equal,
             value: Value::Text("ibiza".to_string()),
         }];
-        let (resolved_clause, resolution) = drive::query::resolve_time_range_bucket_clause(
+        let (resolved_clause, resolution) = resolve_time_range_bucket_clause(
             CREATED_AT,
             TimeRangeSelector::Newest,
             None,
@@ -5479,7 +5480,7 @@ mod time_range_proof_verification {
         let block_time_ms = state
             .last_committed_block_time_ms()
             .expect("the fixture committed a block");
-        let (clause, resolution) = drive::query::resolve_time_range_bucket_clause(
+        let (clause, resolution) = resolve_time_range_bucket_clause(
             CREATED_AT,
             TimeRangeSelector::Newest,
             None,

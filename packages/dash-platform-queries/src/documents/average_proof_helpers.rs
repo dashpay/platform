@@ -19,6 +19,7 @@
 //! [`DocumentAverage`]: drive_proof_verifier::DocumentAverage
 //! [`DocumentSplitAverages`]: drive_proof_verifier::DocumentSplitAverages
 
+use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -33,6 +34,7 @@ use drive::query::drive_document_sum_query::index_picker::{
 };
 use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
+use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
     verify_aggregate_count_and_sum_proof, verify_carrier_aggregate_count_and_sum_proof,
@@ -118,10 +120,20 @@ pub(super) fn verify_average_query(
     // ...and enforce the same provenance-vs-shape contract the server
     // dispatchers do, through the one shared normalization helper.
     let resolved_time_ranges =
-        super::document_query::normalize_time_range_clauses_with_metadata_time(
-            &mut request,
-            mtd.time_ms,
-        )?;
+        normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
+
+    // Canonicalize exactly as the server dispatcher does (the shared step
+    // in `drive::query::canonicalize`): the prover merged `[f > A, f < B]`
+    // pairs into one `between*` clause before its mode detection, so mode
+    // detection here must run over the same canonical shape or a valid
+    // proof is rejected.
+    request.where_clauses = validate_and_canonicalize_where_clauses(
+        std::mem::take(&mut request.where_clauses),
+        platform_version,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!("where-clause canonicalization failed: {e}"),
+    })?;
 
     let document_type = request
         .data_contract

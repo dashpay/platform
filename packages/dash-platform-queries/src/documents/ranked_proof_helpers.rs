@@ -19,6 +19,7 @@
 //!
 //! [`DocumentRankedEntries`]: drive_proof_verifier::DocumentRankedEntries
 
+use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -141,10 +142,7 @@ pub(super) fn verify_ranked_query(
     // requested window — and without this guard the verifier would
     // authenticate it even though an honest server rejects the request.
     let resolved_time_ranges =
-        super::document_query::normalize_time_range_clauses_with_metadata_time(
-            &mut request,
-            mtd.time_ms,
-        )?;
+        normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
     if !resolved_time_ranges.is_empty() {
         return Err(drive_proof_verifier::Error::RequestError {
             error: "a ranked query cannot carry a time-range (IN_TIME_RANGE) selection: \

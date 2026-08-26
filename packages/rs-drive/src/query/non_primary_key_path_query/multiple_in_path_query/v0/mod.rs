@@ -11,7 +11,7 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::conditions::WhereClause;
 use crate::query::ordering::OrderClause;
-use crate::query::{defaults, DriveDocumentQuery};
+use crate::query::{defaults, index_admissible_for_resolved_time_range, DriveDocumentQuery};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{Index, IndexProperty};
@@ -267,6 +267,13 @@ impl<'a> DriveDocumentQuery<'a> {
     pub(in crate::query) fn find_best_index_for_multiple_in_clauses(
         &self,
     ) -> Result<(&Index, Vec<&WhereClause>, usize), Error> {
+        // The execution lowering reaches this selection directly, without
+        // going through `find_best_index` — enforce the resolved-source
+        // shape contract here too, so a direct caller cannot ride an `In`
+        // or range on the bucketed source into per-value bucket keys.
+        // (`find_best_index` also runs this; the re-run is cheap.)
+        self.validate_resolved_source_shape()?;
+
         let equal_clauses = &self.internal_clauses.equal_clauses;
         let in_clauses = &self.internal_clauses.in_clauses;
         let range_field = self
@@ -303,10 +310,7 @@ impl<'a> DriveDocumentQuery<'a> {
             // `find_best_index`: a bucketed index only for a query whose
             // resolved equality names its transform source, never for a raw
             // query. See `index_admissible_for_resolved_time_range`.
-            if !crate::query::index_admissible_for_resolved_time_range(
-                index,
-                &self.resolved_time_ranges,
-            ) {
+            if !index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges) {
                 continue;
             }
             let mut positioned: Vec<(usize, &WhereClause)> = Vec::with_capacity(in_clauses.len());

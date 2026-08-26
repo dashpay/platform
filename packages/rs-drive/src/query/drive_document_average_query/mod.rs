@@ -30,8 +30,7 @@
 pub mod drive_dispatcher;
 
 #[cfg(feature = "server")]
-use crate::query::ResolvedTimeRange;
-use crate::query::{OrderClause, WhereClause};
+use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
 
 #[cfg(feature = "server")]
 use crate::config::DriveConfig;

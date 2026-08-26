@@ -207,14 +207,26 @@ impl DriveDocumentCountQuery<'_> {
                 // properties. For the widget contract there are no
                 // such middle properties on byBrandColor, but the
                 // builder handles the general case.
+                let intermediate_props = &index.properties[1..index.properties.len() - 1];
                 let mut intermediate_props_ok = true;
-                for prop in &index.properties[1..index.properties.len() - 1] {
+                for prop in intermediate_props {
                     if !prefix_fields.contains(prop.name.as_str()) {
                         intermediate_props_ok = false;
                         break;
                     }
                 }
-                if intermediate_props_ok {
+                // Strict-coverage check, mirroring sum's picker: every
+                // Equal/In prefix field must appear in the index's
+                // intermediate properties. Without this
+                // `intermediate_props.len() == prefix_fields.len()` guard,
+                // a query with extra prefix fields would silently pick an
+                // index that *doesn't* cover them — the carrier path-query
+                // builder iterates only index properties, so the uncovered
+                // clause would simply be dropped and the per-group counts
+                // would span all its values (an over-broad result that
+                // even verifies, since the verifier rebuilds the same
+                // path query from the same picker).
+                if intermediate_props_ok && intermediate_props.len() == prefix_fields.len() {
                     return Some(index);
                 }
                 continue;

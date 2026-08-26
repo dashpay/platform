@@ -515,6 +515,58 @@ pub struct Index {
     pub time_range: Option<TimeRangeTransform>,
 }
 
+/// Which grammar keywords a document meta-schema generation admits for
+/// indexes — the single source of the generation → admission mapping.
+/// Both consumers of [`Index::try_from_value_map`]'s admission flags read
+/// it: the schema parsers (`try_from_schema`'s per-generation modules)
+/// and the registration-cost re-parse. Deriving the flags anywhere else
+/// invites the two to drift, and then an index the validator parses is
+/// billed nothing (or a rejected one is billed).
+pub struct IndexGrammarAdmissions {
+    /// The `ranked*` keyword family (generation 3 and later).
+    pub ranked: bool,
+    /// The `timeRange` keyword (generation 3 and later).
+    pub time_range: bool,
+}
+
+impl IndexGrammarAdmissions {
+    /// The admissions for a `document_type_schema` generation. The two
+    /// flags currently move together; they stay separate fields because
+    /// they are separate grammar admissions — a future generation may
+    /// admit one without the other, and then only this mapping changes.
+    pub fn for_schema_generation(generation: u16) -> Self {
+        Self {
+            ranked: generation >= 3,
+            time_range: generation >= 3,
+        }
+    }
+}
+
+/// Whether two values of a bucketed timestamp property occupy a common
+/// index slot. The stored key for such a property is the bucket *start*,
+/// so two different timestamps conflict exactly when they share a
+/// containing bucket (a validated unique time-range index has overlap
+/// factor 1, so each timestamp has at most one). An epoch-sliver
+/// timestamp produces no index entries and so shares no slot; a
+/// non-timestamp value is stored under its raw key, so raw equality
+/// applies.
+fn bucketed_timestamps_conflict(
+    transform: &TimeRangeTransform,
+    value1: &Value,
+    value2: &Value,
+) -> bool {
+    match (value1.as_integer::<u64>(), value2.as_integer::<u64>()) {
+        (Some(timestamp1), Some(timestamp2)) => {
+            let buckets2 = transform.containing_buckets(timestamp2);
+            transform
+                .containing_buckets(timestamp1)
+                .iter()
+                .any(|bucket| buckets2.contains(bucket))
+        }
+        _ => value1 == value2,
+    }
+}
+
 impl Index {
     /// Check to see if two objects are conflicting
     pub fn objects_are_conflicting(&self, object1: &ValueMap, object2: &ValueMap) -> bool {
@@ -529,7 +581,12 @@ impl Index {
             let Some(value2) = Value::get_optional_from_map(object2, property.name.as_str()) else {
                 return false;
             };
-            value1 == value2
+            match self.time_range.as_ref() {
+                Some(transform) if property.name == transform.source => {
+                    bucketed_timestamps_conflict(transform, value1, value2)
+                }
+                _ => value1 == value2,
+            }
         })
     }
     /// The field names of the index
@@ -2311,6 +2368,76 @@ mod tests {
             Value::Text("name".to_string()),
             Value::Text("Alice".to_string()),
         )];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    /// A daily unique grid (`range == step`, the only shape a unique
+    /// time-range index may take): the bucketed property occupies its
+    /// bucket-start slot, so conflict follows the bucket, not the raw
+    /// timestamp.
+    fn make_unique_daily_index() -> Index {
+        let mut index = make_index("idx", vec![("$createdAt", true), ("author", true)], true);
+        index.time_range = Some(TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 86_400,
+            step_seconds: 86_400,
+            phase_seconds: 0,
+        });
+        index
+    }
+
+    fn created_at_author(timestamp_ms: u64, author: &str) -> ValueMap {
+        vec![
+            (
+                Value::Text("$createdAt".to_string()),
+                Value::U64(timestamp_ms),
+            ),
+            (
+                Value::Text("author".to_string()),
+                Value::Text(author.to_string()),
+            ),
+        ]
+    }
+
+    const DAY_MS: u64 = 86_400_000;
+
+    #[test]
+    fn test_objects_are_conflicting_time_range_same_bucket() {
+        let index = make_unique_daily_index();
+        // different timestamps, same daily bucket, same suffix → same slot
+        let obj1 = created_at_author(3 * DAY_MS + 1_000, "sam");
+        let obj2 = created_at_author(3 * DAY_MS + 2_000, "sam");
+        assert!(index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_time_range_adjacent_buckets() {
+        let index = make_unique_daily_index();
+        // last ms of day 3 vs first ms of day 4: adjacent slots, no conflict
+        let obj1 = created_at_author(4 * DAY_MS - 1, "sam");
+        let obj2 = created_at_author(4 * DAY_MS, "sam");
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_time_range_same_bucket_different_suffix() {
+        let index = make_unique_daily_index();
+        let obj1 = created_at_author(3 * DAY_MS + 1_000, "sam");
+        let obj2 = created_at_author(3 * DAY_MS + 2_000, "alice");
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_time_range_epoch_sliver_never_conflicts() {
+        let mut index = make_unique_daily_index();
+        // a one-hour phase leaves timestamps below the anchor with no
+        // index entries at all — no slot exists to share, even for
+        // identical timestamps
+        if let Some(transform) = index.time_range.as_mut() {
+            transform.phase_seconds = 3_600;
+        }
+        let obj1 = created_at_author(1_000, "sam");
+        let obj2 = created_at_author(1_000, "sam");
         assert!(!index.objects_are_conflicting(&obj1, &obj2));
     }
 

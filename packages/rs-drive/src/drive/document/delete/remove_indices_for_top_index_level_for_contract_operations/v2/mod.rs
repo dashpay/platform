@@ -193,16 +193,25 @@ impl Drive {
                     .unwrap_or(1),
             );
 
-            for index_key in index_keys {
+            let bucket_count = index_keys.len();
+            for (bucket, index_key) in index_keys.into_iter().enumerate() {
+                // The final bucket takes ownership of `index_path`; earlier
+                // buckets (only a time-range fan-out has more than one)
+                // clone it.
+                let own_index_path = if bucket + 1 == bucket_count {
+                    std::mem::take(&mut index_path)
+                } else {
+                    index_path.clone()
+                };
                 let mut index_path_info = if document_and_contract_info
                     .owned_document_info
                     .document_info
                     .is_document_size()
                 {
                     // This is a stateless operation
-                    PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path.clone()))
+                    PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(own_index_path))
                 } else {
-                    PathInfo::PathAsVec::<0>(index_path.clone())
+                    PathInfo::PathAsVec::<0>(own_index_path)
                 };
 
                 // we push the actual value of the index path

@@ -6,7 +6,9 @@ use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_d
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use crate::query::{
+    DriveDocumentQuery, InternalClauses, ResolvedTimeRange, WhereClause, WhereOperator,
+};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -396,15 +398,34 @@ impl Drive {
                             // from an `Option<TimestampMillis>`, so it is a
                             // `U64`; `I64` is accepted defensively because a
                             // non-system-timestamp source would arrive through
-                            // the document data map. Anything else cannot be a
-                            // millisecond timestamp, so there is no bucket to
-                            // probe and the index cannot be violated by it.
-                            let timestamp = match &clause.value {
-                                Value::U64(timestamp) => Some(*timestamp),
-                                Value::I64(timestamp) => u64::try_from(*timestamp).ok(),
-                                _ => None,
-                            };
-                            let timestamp = timestamp?;
+                            // the document data map. Anything else is
+                            // unreachable under a validated contract and must
+                            // fail loudly: silently skipping this index's
+                            // check would let the collision surface later as
+                            // a corrupted-index insert error, because the
+                            // write path stores a non-timestamp value under
+                            // its raw key rather than dropping it.
+                            let timestamp =
+                                match &clause.value {
+                                    Value::U64(timestamp) => *timestamp,
+                                    Value::I64(timestamp) => match u64::try_from(*timestamp) {
+                                        Ok(timestamp) => timestamp,
+                                        Err(_) => return Some(Err(Error::Drive(
+                                            DriveError::CorruptedCodeExecution(
+                                                "a unique time-range index's source value must \
+                                                 be a millisecond timestamp",
+                                            ),
+                                        ))),
+                                    },
+                                    _ => {
+                                        return Some(Err(Error::Drive(
+                                            DriveError::CorruptedCodeExecution(
+                                                "a unique time-range index's source value must be \
+                                             a millisecond timestamp",
+                                            ),
+                                        )))
+                                    }
+                                };
                             // A validated unique time-range index has overlap
                             // factor 1 (range == step), so any real timestamp
                             // yields exactly one containing bucket. An empty
@@ -416,7 +437,7 @@ impl Drive {
                             // for it.
                             let bucket_start = *transform.containing_buckets(timestamp).first()?;
                             clause.value = platform_value!(bucket_start);
-                            resolved_time_ranges.push(crate::query::ResolvedTimeRange {
+                            resolved_time_ranges.push(ResolvedTimeRange {
                                 field: transform.source.clone(),
                                 transform: transform.clone(),
                             });

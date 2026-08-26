@@ -55,6 +55,9 @@ use crate::query::drive_document_sum_query::index_picker::{
     find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
 };
 use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
+use crate::query::{
+    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::version::PlatformVersion;
@@ -72,7 +75,7 @@ impl Drive {
     ///   dispatcher that reads `(count, sum)` together.
     pub fn execute_document_average_request(
         &self,
-        request: DocumentAverageRequest,
+        mut request: DocumentAverageRequest,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
@@ -84,11 +87,18 @@ impl Drive {
         // that counts a document once per overlapping bucket. The guard only
         // inspects Equal clauses, so running it before range-pair
         // canonicalization is equivalent to running it after.
-        crate::query::validate_resolved_time_range_clause_shapes(
+        validate_resolved_time_range_clause_shapes(
             &request.where_clauses,
             &request.resolved_time_ranges,
         )?;
         if request.prove {
+            // The no-prove path canonicalizes inside the joint dispatcher;
+            // run the identical shared step (see
+            // [`crate::query::canonicalize`]) on the prove path so both
+            // accept the bounded pair form (`[f > A, f < B]`) as well as
+            // the pre-merged `between*` form.
+            request.where_clauses =
+                validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
             return self.execute_document_average_prove(request, transaction, platform_version);
         }
         self.execute_document_count_and_sum_request(request, transaction, platform_version)
@@ -409,6 +419,7 @@ impl Drive {
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
+    use crate::query::ResolvedTimeRange;
 
     // ── Dispatcher limit-policy regression tests ───────────────────
     //
@@ -2012,7 +2023,7 @@ mod tests {
             limit: None,
             prove: true,
             drive_config: &drive_config,
-            resolved_time_ranges: vec![crate::query::ResolvedTimeRange {
+            resolved_time_ranges: vec![ResolvedTimeRange {
                 field: "$createdAt".to_string(),
                 transform: dpp::data_contract::document_type::TimeRangeTransform {
                     source: "$createdAt".to_string(),

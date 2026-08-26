@@ -1,5 +1,6 @@
 use super::*;
 use crate::drive::Drive;
+use crate::query::ResolvedTimeRange;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -2263,6 +2264,89 @@ mod range_countable_picker_tests {
         );
     }
 
+    /// Carrier arm (two ranges on distinct fields): an extra Equal clause
+    /// on a field the index does not carry must disqualify the index —
+    /// the carrier path-query builder iterates only index properties, so
+    /// an admitted index would silently drop the clause and produce an
+    /// over-broad per-group count that still verifies (the verifier
+    /// rebuilds the same path query from the same picker). Mirrors sum's
+    /// strict-coverage guard.
+    #[test]
+    fn carrier_arm_rejects_index_missing_an_equality_field() {
+        let indexes = make_indexes(vec![make_index(
+            "byBrandColor",
+            &["brand", "color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("a".to_string()),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("f".to_string()),
+            },
+            WhereClause {
+                field: "material".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("wood".to_string()),
+            },
+        ];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+                &[],
+            )
+            .is_none(),
+            "an equality clause the index cannot cover must disqualify it"
+        );
+    }
+
+    /// Positive control for the strict-coverage guard: the identical
+    /// query shape against an index that carries the equality field as
+    /// its intermediate property is covered and picked.
+    #[test]
+    fn carrier_arm_picks_index_covering_the_equality_field() {
+        let indexes = make_indexes(vec![make_index(
+            "byBrandMaterialColor",
+            &["brand", "material", "color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("a".to_string()),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("f".to_string()),
+            },
+            WhereClause {
+                field: "material".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("wood".to_string()),
+            },
+        ];
+        let picked = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            &indexes,
+            &where_clauses,
+            &[],
+        );
+        assert_eq!(
+            picked.map(|index| index.name.as_str()),
+            Some("byBrandMaterialColor"),
+            "with the equality field covered, the carrier index is picked"
+        );
+    }
+
     /// An index without `range_countable: true` must not match even if
     /// the property structure aligns. The storage layout for these is
     /// plain NormalTree — no CountTree counts to walk.
@@ -3486,8 +3570,8 @@ mod time_range_picker_tests {
     /// `trending` grid produces: the source field plus the exact transform.
     /// Constructed directly (not read from the candidate map) so tests that
     /// remove the trending index can still present the resolution.
-    fn source_resolution() -> Vec<crate::query::ResolvedTimeRange> {
-        vec![crate::query::ResolvedTimeRange {
+    fn source_resolution() -> Vec<ResolvedTimeRange> {
+        vec![ResolvedTimeRange {
             field: SOURCE.to_string(),
             transform: TimeRangeTransform {
                 source: SOURCE.to_string(),

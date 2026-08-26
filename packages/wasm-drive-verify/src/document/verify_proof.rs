@@ -108,6 +108,12 @@ pub fn verify_document_proof(
         start_at: start_at_bytes,
         start_at_included,
         block_time_ms,
+        // KNOWN LIMITATION: this surface has no input for time-range
+        // (IN_TIME_RANGE) resolution provenance, so proofs the server
+        // produced for a time-range query cannot be verified here — with
+        // empty provenance every bucketed index is inadmissible and
+        // verification fails closed. Use the SDK's FromProof path (which
+        // resolves from the signed metadata time) for those proofs.
         resolved_time_ranges: vec![],
     };
 

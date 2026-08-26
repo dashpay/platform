@@ -266,14 +266,20 @@ impl TimeRangeTransform {
     ///   bucket — the bucket *start*, encoded exactly like the timestamp
     ///   itself. (A timestamp inside the sub-`step` epoch sliver before the
     ///   phase anchor yields no keys; no real timestamp reaches it.)
-    /// - A non-empty value that fails to decode keeps its raw key, exactly as
-    ///   a non-time-range index would store it.
+    /// - A non-empty value that is not an 8-byte encoded timestamp keeps its
+    ///   raw key, exactly as a non-time-range index would store it.
     pub fn entry_keys_for_raw(&self, raw: &[u8]) -> Vec<Vec<u8>> {
         use crate::data_contract::document_type::DocumentPropertyType;
         if raw.is_empty() {
             return vec![Vec::new()];
         }
-        match DocumentPropertyType::decode_date_timestamp(raw) {
+        // Gate on the exact encoded-timestamp width: `decode_date_timestamp`
+        // reads the first 8 bytes of any longer input, which would bucket a
+        // longer value by a truncated prefix instead of keeping its raw key.
+        let timestamp = (raw.len() == 8)
+            .then(|| DocumentPropertyType::decode_date_timestamp(raw))
+            .flatten();
+        match timestamp {
             Some(timestamp) => self
                 .containing_buckets(timestamp)
                 .into_iter()
@@ -414,8 +420,13 @@ mod tests {
                 DocumentPropertyType::encode_date_timestamp(2 * h),
             ]
         );
-        // an undecodable non-empty value keeps its raw key
+        // a non-timestamp non-empty value keeps its raw key: shorter than
+        // the 8-byte encoding…
         assert_eq!(t.entry_keys_for_raw(&[1, 2, 3]), vec![vec![1, 2, 3]]);
+        // …and longer too — it must NOT bucket by its first 8 bytes
+        let mut long = DocumentPropertyType::encode_date_timestamp(7 * h);
+        long.push(0xFF);
+        assert_eq!(t.entry_keys_for_raw(&long), vec![long.clone()]);
         // a timestamp inside the epoch sliver belongs to no range: no keys
         let t_phased = TimeRangeTransform {
             source: "$createdAt".to_string(),

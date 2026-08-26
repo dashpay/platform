@@ -125,7 +125,8 @@ export interface DocumentsQuery {
    * picks a single bucket of a timestamp field covered by a `timeRange`
    * index. The server resolves the bucket from the current block time and
    * the proof verifier re-derives it from the signed response metadata, so
-   * the result is provable. v1 / Platform v3.1+ only.
+   * the result is provable. Requires protocol version 14+ (the first
+   * version whose contract grammar hosts `timeRange` indexes).
    *
    * - `selector: "oldest"` → the oldest still-active range (a near-full
    *   trailing window of ~`range`; best for "trending over the last window").

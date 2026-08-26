@@ -163,7 +163,9 @@ pub(crate) fn time_range_index_keys<'a>(
     };
     match &document_top_field {
         DriveKeyInfo::KeySize(key_info) => {
-            let overlap = transform.overlap_factor().clamp(1, max_overlap_factor) as usize;
+            // Not `clamp(1, max)`: `Ord::clamp` asserts `min <= max`, so a
+            // future limits table carrying `Some(0)` would panic here.
+            let overlap = transform.overlap_factor().min(max_overlap_factor).max(1) as usize;
             (0..overlap)
                 .map(|ordinal| {
                     let mut key_info = key_info.clone();

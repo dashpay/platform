@@ -53,8 +53,9 @@ pub mod executors;
 #[cfg(test)]
 mod tests;
 
-#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg(feature = "server")]
 use crate::query::ResolvedTimeRange;
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::query::{WhereClause, WhereOperator};
 
 #[cfg(any(feature = "server", feature = "verify"))]

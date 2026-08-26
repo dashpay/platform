@@ -16,6 +16,7 @@
 //!
 //! [`DocumentHavingEntries`]: drive_proof_verifier::DocumentHavingEntries
 
+use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -111,10 +112,7 @@ pub(super) fn verify_having_query(
     // the requested window. Without this guard the verifier would
     // authenticate a request shape honest servers refuse.
     let resolved_time_ranges =
-        super::document_query::normalize_time_range_clauses_with_metadata_time(
-            &mut request,
-            mtd.time_ms,
-        )?;
+        normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
     if !resolved_time_ranges.is_empty() {
         return Err(drive_proof_verifier::Error::RequestError {
             error: "a HAVING query cannot carry a time-range (IN_TIME_RANGE) selection: its \

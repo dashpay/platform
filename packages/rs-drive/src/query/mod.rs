@@ -143,6 +143,10 @@ use crate::util::grove_operations::QueryType::StatefulQuery;
 
 // Module declarations that are conditional on either "server" or "verify" features
 #[cfg(any(feature = "server", feature = "verify"))]
+pub mod canonicalize;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use canonicalize::validate_and_canonicalize_where_clauses;
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
 mod defaults;
@@ -1937,43 +1941,12 @@ impl<'a> DriveDocumentQuery<'a> {
             ))));
         }
 
+        // One shared source-shape guard for every selection route — see its
+        // doc for the contract. Running it before routing keeps the single-
+        // and multiple-`In` routes rejecting the same shapes.
+        self.validate_resolved_source_shape()?;
+
         if self.internal_clauses.in_clauses.len() > 1 {
-            // The multiple-`In` selection filters its candidates through the
-            // same admissibility rule, but it returns early and so bypasses
-            // the residual source-shape guard at the bottom of this function.
-            // Enforce the resolved-field contract here instead: the resolved
-            // equality must be present, and the bucketed source must not also
-            // carry an `In`, a range, or an ordering.
-            if let Some(source) = self
-                .resolved_time_ranges
-                .first()
-                .map(|resolved| &resolved.field)
-            {
-                let has_equality_on_source =
-                    self.internal_clauses.equal_clauses.contains_key(source);
-                let in_or_range_on_source = self
-                    .internal_clauses
-                    .in_clauses
-                    .iter()
-                    .any(|clause| &clause.field == source)
-                    || self
-                        .internal_clauses
-                        .range_clause
-                        .as_ref()
-                        .is_some_and(|clause| &clause.field == source);
-                if !has_equality_on_source
-                    || in_or_range_on_source
-                    || self.order_by.contains_key(source)
-                {
-                    return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                        "the index on \"{}\" buckets it into time ranges: it can only be \
-                         queried through a time-range selection (IN_TIME_RANGE, which resolves \
-                         to an exact bucket equality), not with ranges, IN, or ordering on \
-                         that property",
-                        source
-                    ))));
-                }
-            }
             return Ok(self.find_best_index_for_multiple_in_clauses()?.0);
         }
 
@@ -2039,10 +2012,32 @@ impl<'a> DriveDocumentQuery<'a> {
                         self.document_type.indexes()
                     )))
                 }
-                None => Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                    "query must be for valid indexes, valid indexes are: {:?}",
-                    self.document_type.indexes()
-                ))),
+                None => {
+                    // A raw query never binds to a bucketed index; when one
+                    // exists, say so — the caller may be holding a
+                    // time-range proof on a surface that cannot supply
+                    // resolution provenance (e.g. the standalone wasm
+                    // verifiers), where this refusal is otherwise opaque.
+                    let has_bucketed_index = self
+                        .document_type
+                        .indexes()
+                        .values()
+                        .any(|index| index.time_range.is_some());
+                    if has_bucketed_index {
+                        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                            "query must be for valid indexes, valid indexes are: {:?}; note: \
+                             this document type's time-range (timeRange) indexes only serve \
+                             IN_TIME_RANGE selections carrying their resolution — a raw clause \
+                             on the bucketed field never binds to them",
+                            self.document_type.indexes()
+                        )))
+                    } else {
+                        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                            "query must be for valid indexes, valid indexes are: {:?}",
+                            self.document_type.indexes()
+                        )))
+                    }
+                }
             })?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
             return Err(Error::Query(QuerySyntaxError::QueryTooFarFromIndex(
@@ -2050,44 +2045,57 @@ impl<'a> DriveDocumentQuery<'a> {
             )));
         }
 
-        // Candidate filtering already guarantees a transform-carrying index is
-        // only reachable when the equality on its source came from
-        // IN_TIME_RANGE resolution. What it cannot rule out is a query that
-        // carries that resolved equality AND some other shape on the same
-        // source — a range, an IN, or an ordering — riding along: those walk
-        // overlapping bucket keys and return each document up to
-        // `overlap_factor` times with a perfectly valid proof. Reject them
-        // here rather than serve a provably wrong answer. The
-        // `!has_equality_on_source` arm is defensive: resolution always
-        // pushes the equality, so reaching it means the provenance and the
-        // clauses disagree. This runs identically on the server and in proof
-        // verification.
-        if let Some(transform) = &index.time_range {
-            let source = transform.source.as_str();
-            let has_equality_on_source = self.internal_clauses.equal_clauses.contains_key(source);
-            let range_or_in_on_source = self
-                .internal_clauses
-                .range_clause
-                .as_ref()
-                .map(|c| c.field == source)
-                .unwrap_or(false)
-                || self
-                    .internal_clauses
-                    .in_clauses
-                    .iter()
-                    .any(|c| c.field == source);
-            let orders_on_source = self.order_by.contains_key(source);
-            if !has_equality_on_source || range_or_in_on_source || orders_on_source {
-                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                    "the index on \"{}\" buckets it into time ranges: it can only be queried \
-                     through a time-range selection (IN_TIME_RANGE, which resolves to an exact \
-                     bucket equality), not with ranges, IN, or ordering on that property",
-                    source
-                ))));
-            }
-        }
-
+        // The residual source-shape contract already ran at the top of this
+        // function ([`Self::validate_resolved_source_shape`]) — with a
+        // resolution present, admissibility restricts candidates to the one
+        // index bucketing exactly the resolved field, so guarding by
+        // provenance there is equivalent to guarding by the selected index's
+        // transform here.
         Ok(index)
+    }
+
+    /// The residual source-shape contract for a query carrying a
+    /// time-range resolution: the resolved equality must be present on the
+    /// bucketed source, and the source must not ALSO carry an `In`, a
+    /// range, or an ordering — those walk overlapping bucket keys and
+    /// return each document up to `overlap_factor` times with a perfectly
+    /// valid proof. The `!has_equality_on_source` arm is defensive:
+    /// resolution always pushes the equality, so reaching it means the
+    /// provenance and the clauses disagree.
+    ///
+    /// Runs identically on the server and in proof verification, and on
+    /// every selection route: [`Self::find_best_index`] calls it before
+    /// routing, and [`Self::find_best_index_for_multiple_in_clauses`]
+    /// calls it itself because the multiple-`In` execution lowering picks
+    /// its index directly, without going through `find_best_index`.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub(crate) fn validate_resolved_source_shape(&self) -> Result<(), Error> {
+        let Some(source) = self
+            .resolved_time_ranges
+            .first()
+            .map(|resolved| resolved.field.as_str())
+        else {
+            return Ok(());
+        };
+        let has_equality_on_source = self.internal_clauses.equal_clauses.contains_key(source);
+        let range_or_in_on_source = self
+            .internal_clauses
+            .range_clause
+            .as_ref()
+            .is_some_and(|clause| clause.field == source)
+            || self
+                .internal_clauses
+                .in_clauses
+                .iter()
+                .any(|clause| clause.field == source);
+        if !has_equality_on_source || range_or_in_on_source || self.order_by.contains_key(source) {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "the index on \"{source}\" buckets it into time ranges: it can only be queried \
+                 through a time-range selection (IN_TIME_RANGE, which resolves to an exact \
+                 bucket equality), not with ranges, IN, or ordering on that property"
+            ))));
+        }
+        Ok(())
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
