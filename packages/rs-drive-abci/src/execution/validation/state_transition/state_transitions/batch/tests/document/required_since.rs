@@ -450,6 +450,271 @@ mod required_since_tests {
         );
     }
 
+    /// The protocol-upgrade boundary: a document written at protocol v13
+    /// (serialization format 2, no stamp) keeps working after the chain
+    /// upgrades to v14 and the contract gains a required `requiredSince`
+    /// property — it transfers with no stamp acquired (its bytes predate
+    /// every annotation), and replacing it re-stamps it at the current
+    /// contract version. This is the exact shape of mainnet data crossing
+    /// the v14 activation.
+    #[tokio::test]
+    async fn test_documents_created_at_v13_survive_the_v14_upgrade_and_required_field_update() {
+        let platform_version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+        let (receiver, receiver_signer, receiver_key) =
+            setup_identity(&mut platform, 450, dash_to_credits!(0.5));
+
+        // Contract v1 at protocol v13 — no requiredSince anywhere (the v13
+        // meta-schema does not admit the keyword)
+        let mut contract =
+            get_data_contract_fixture(Some(identity.id()), 0, platform_version_13.protocol_version)
+                .data_contract_owned();
+
+        let note_schema_v1 = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "canBeDeleted": true,
+            "transferable": 1,
+            "properties": {
+                "message": {"type": "string", "position": 0, "maxLength": 100_u32},
+            },
+            "required": ["message"],
+            "additionalProperties": false
+        });
+
+        contract
+            .set_document_schema(
+                "note",
+                note_schema_v1,
+                true,
+                &mut Vec::new(),
+                platform_version_13,
+            )
+            .expect("expected to add the note document type");
+
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version_13,
+            )
+            .expect("expected to apply contract");
+
+        let note_type_v1 = contract
+            .document_type_for_name("note")
+            .expect("expected the note document type");
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        // A document written at protocol v13: serialization format 2, no stamp
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = note_type_v1
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version_13,
+            )
+            .expect("expected a random document");
+        document.set("message", "written at v13".into());
+        let document_id = document.id();
+
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document.clone(),
+            note_type_v1,
+            entropy.0,
+            &key,
+            1,
+            0,
+            None,
+            &signer,
+            platform_version_13,
+            None,
+        )
+        .await
+        .expect("expected a creation transition");
+
+        let result = process_and_commit(&mut platform, &platform_state, &transition).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "creating a document at protocol v13 must succeed"
+        );
+
+        let stored = query_notes(&platform, &contract, platform_version_13);
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].contract_version(),
+            None,
+            "a document written before serialization format 3 carries no stamp"
+        );
+
+        // ------------------------------------------------------------------
+        // The chain upgrades to protocol v14
+        // ------------------------------------------------------------------
+        let mut upgraded_state = platform.state.load().as_ref().clone();
+        upgraded_state.set_current_protocol_version_in_consensus(14);
+        upgraded_state.set_next_epoch_protocol_version(14);
+        platform.state.store(std::sync::Arc::new(upgraded_state));
+        let platform_state = platform.state.load();
+        let platform_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+
+        // The contract update adding required `extra` now goes through
+        let note_schema_v2 = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "canBeDeleted": true,
+            "transferable": 1,
+            "properties": {
+                "message": {"type": "string", "position": 0, "maxLength": 100_u32},
+                "extra": {"type": "string", "position": 1, "maxLength": 50_u32, "requiredSince": 2},
+            },
+            "required": ["message", "extra"],
+            "additionalProperties": false
+        });
+
+        let mut updated_contract = contract.clone();
+        updated_contract.set_version(2);
+        updated_contract
+            .set_document_schema(
+                "note",
+                note_schema_v2,
+                true,
+                &mut Vec::new(),
+                platform_version_14,
+            )
+            .expect("expected to update the note document type");
+
+        let update_transition = DataContractUpdateTransition::new_from_data_contract(
+            updated_contract.clone(),
+            &identity.clone().into_partial_identity_info(),
+            key.id(),
+            2,
+            0,
+            &signer,
+            platform_version_14,
+            None,
+        )
+        .await
+        .expect("expected an update transition");
+
+        let result = process_and_commit_serialized(
+            &mut platform,
+            &platform_state,
+            update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized update"),
+        )
+        .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "the requiredSince update must be accepted after the upgrade"
+        );
+
+        let note_type_v2 = updated_contract
+            .document_type_for_name("note")
+            .expect("expected the updated note document type");
+
+        // The format-2 document transfers at v14: rewritten in format 3 but
+        // still unstamped — its bytes predate every annotation
+        let mut to_transfer = document.clone();
+        to_transfer.set_revision(Some(2));
+        let transition = BatchTransition::new_document_transfer_transition_from_document(
+            to_transfer,
+            note_type_v2,
+            receiver.id(),
+            &key,
+            3,
+            0,
+            None,
+            &signer,
+            platform_version_14,
+            None,
+        )
+        .await
+        .expect("expected a transfer transition");
+
+        let result = process_and_commit(&mut platform, &platform_state, &transition).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "a pre-upgrade document must stay transferable at v14"
+        );
+
+        let stored = query_notes(&platform, &updated_contract, platform_version_14);
+        let transferred = stored
+            .iter()
+            .find(|d| d.id() == document_id)
+            .expect("expected the transferred document");
+        assert_eq!(transferred.owner_id(), receiver.id());
+        assert_eq!(
+            transferred.contract_version(),
+            None,
+            "a transfer must not stamp a document whose bytes predate format 3"
+        );
+        assert!(!transferred.properties().contains_key("extra"));
+
+        // Replacing it re-supplies content and re-stamps — lazy migration
+        // across the upgrade boundary
+        let mut replacement = document.clone();
+        replacement.set_owner_id(receiver.id());
+        replacement.set_revision(Some(3));
+        replacement.set("message", "migrated after upgrade".into());
+        replacement.set("extra", "now present".into());
+
+        let transition = BatchTransition::new_document_replacement_transition_from_document(
+            replacement,
+            note_type_v2,
+            &receiver_key,
+            1,
+            0,
+            None,
+            &receiver_signer,
+            platform_version_14,
+            None,
+        )
+        .await
+        .expect("expected a replacement transition");
+
+        let result = process_and_commit(&mut platform, &platform_state, &transition).await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "replacing a pre-upgrade document with the new property must succeed"
+        );
+
+        let stored = query_notes(&platform, &updated_contract, platform_version_14);
+        let replaced = stored
+            .iter()
+            .find(|d| d.id() == document_id)
+            .expect("expected the replaced document");
+        assert_eq!(
+            replaced.contract_version(),
+            Some(2),
+            "the replace must stamp the pre-upgrade document at the current contract version"
+        );
+        assert_eq!(
+            replaced
+                .properties()
+                .get_str("extra")
+                .expect("expected the migrated property"),
+            "now present"
+        );
+    }
+
     async fn process_and_commit(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
