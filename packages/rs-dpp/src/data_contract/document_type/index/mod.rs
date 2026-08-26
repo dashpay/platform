@@ -522,11 +522,11 @@ pub struct Index {
 /// and the registration-cost re-parse. Deriving the flags anywhere else
 /// invites the two to drift, and then an index the validator parses is
 /// billed nothing (or a rejected one is billed).
-pub struct IndexGrammarAdmissions {
+pub(crate) struct IndexGrammarAdmissions {
     /// The `ranked*` keyword family (generation 3 and later).
-    pub ranked: bool,
+    pub(crate) ranked: bool,
     /// The `timeRange` keyword (generation 3 and later).
-    pub time_range: bool,
+    pub(crate) time_range: bool,
 }
 
 impl IndexGrammarAdmissions {
@@ -534,7 +534,7 @@ impl IndexGrammarAdmissions {
     /// flags currently move together; they stay separate fields because
     /// they are separate grammar admissions — a future generation may
     /// admit one without the other, and then only this mapping changes.
-    pub fn for_schema_generation(generation: u16) -> Self {
+    pub(crate) fn for_schema_generation(generation: u16) -> Self {
         Self {
             ranked: generation >= 3,
             time_range: generation >= 3,
