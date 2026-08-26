@@ -89,7 +89,6 @@ mod time_range_index_e2e_tests {
     use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
     use dpp::platform_value::{platform_value, Identifier, Value};
     use dpp::prelude::DataContract;
-    use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
@@ -99,6 +98,22 @@ mod time_range_index_e2e_tests {
     /// buckets by a factor of a thousand, so they are kept apart by name.
     const HOUR_SECONDS: u64 = 3_600;
     const HOUR_MS: u64 = 3_600_000;
+
+    /// Deterministic 32-byte fixture identifier derived from the document's
+    /// own fixture inputs. Identifiers here are plumbing, not test inputs:
+    /// fixed bytes keep a failing GroveDB fixture reproducible run-to-run and
+    /// avoid an OS-entropy dependency (and its unwrap) in
+    /// consensus-sensitive tests. `marker` separates namespaces (document id
+    /// vs owner) and same-timestamp siblings.
+    fn fixture_bytes(marker: u8, created_at: u64, tag: &str) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        bytes[0] = marker;
+        bytes[1..9].copy_from_slice(&created_at.to_be_bytes());
+        for (i, byte) in tag.bytes().take(23).enumerate() {
+            bytes[9 + i] = byte;
+        }
+        bytes
+    }
 
     /// A latest-protocol `post` document type with a `(timeRange($createdAt, range=6h,
     /// step=2h), hashtag)` countable index — i.e. trending hashtags over a
@@ -151,7 +166,7 @@ mod time_range_index_e2e_tests {
             "additionalProperties": false,
         });
         let schemas = platform_value!({ "post": document_schema });
-        let owner_id = generate_random_identifier_struct();
+        let owner_id = Identifier::from([201u8; 32]);
         factory
             .create_with_value_config(owner_id, 0, schemas, None, None)
             .expect("create contract")
@@ -276,9 +291,9 @@ mod time_range_index_e2e_tests {
             vec![6 * HOUR_MS, 4 * HOUR_MS, 2 * HOUR_MS]
         );
 
-        let owner_bytes = rand::random::<[u8; 32]>();
+        let owner_bytes = fixture_bytes(1, created_at, "ibiza");
         let document = Document::V0(DocumentV0 {
-            id: Identifier::from(rand::random::<[u8; 32]>()),
+            id: Identifier::from(fixture_bytes(2, created_at, "ibiza")),
             owner_id: Identifier::from(owner_bytes),
             properties: BTreeMap::from([("hashtag".to_string(), Value::Text("ibiza".to_string()))]),
             created_at: Some(created_at),
@@ -396,9 +411,9 @@ mod time_range_index_e2e_tests {
             vec![12 * HOUR_MS, 10 * HOUR_MS, 8 * HOUR_MS]
         );
 
-        let owner_bytes = rand::random::<[u8; 32]>();
+        let owner_bytes = fixture_bytes(1, first_created_at, "ibiza");
         let mut document = Document::V0(DocumentV0 {
-            id: Identifier::from(rand::random::<[u8; 32]>()),
+            id: Identifier::from(fixture_bytes(2, first_created_at, "ibiza")),
             owner_id: Identifier::from(owner_bytes),
             properties: BTreeMap::from([("hashtag".to_string(), Value::Text("ibiza".to_string()))]),
             created_at: Some(first_created_at),
@@ -597,7 +612,7 @@ mod time_range_index_e2e_tests {
             "additionalProperties": false,
         });
         let schemas = platform_value!({ "post": document_schema });
-        let owner_id = generate_random_identifier_struct();
+        let owner_id = Identifier::from([201u8; 32]);
         factory
             .create_with_value_config(owner_id, 0, schemas, None, None)
             .expect("create contract")
@@ -613,9 +628,9 @@ mod time_range_index_e2e_tests {
         platform_version: &PlatformVersion,
     ) {
         let document_type = contract.document_type_for_name("post").expect("post");
-        let owner_bytes = rand::random::<[u8; 32]>();
+        let owner_bytes = fixture_bytes(1, created_at, hashtag);
         let document = Document::V0(DocumentV0 {
-            id: Identifier::from(rand::random::<[u8; 32]>()),
+            id: Identifier::from(fixture_bytes(2, created_at, hashtag)),
             owner_id: Identifier::from(owner_bytes),
             properties: BTreeMap::from([("hashtag".to_string(), Value::Text(hashtag.to_string()))]),
             created_at: Some(created_at),
@@ -881,7 +896,7 @@ mod time_range_index_e2e_tests {
             "additionalProperties": false,
         });
         let schemas = platform_value!({ "report": document_schema });
-        let owner_id = generate_random_identifier_struct();
+        let owner_id = Identifier::from([201u8; 32]);
         factory
             .create_with_value_config(owner_id, 0, schemas, None, None)
             .expect("create contract")
@@ -971,9 +986,9 @@ mod time_range_index_e2e_tests {
             .expect("a post-origin timestamp has exactly one bucket");
         assert_eq!(bucket, 100 * DAY_MS);
 
-        let owner_bytes = rand::random::<[u8; 32]>();
+        let owner_bytes = fixture_bytes(1, created_at, "alice");
         let mut document = Document::V0(DocumentV0 {
-            id: Identifier::from(rand::random::<[u8; 32]>()),
+            id: Identifier::from(fixture_bytes(2, created_at, "alice")),
             owner_id: Identifier::from(owner_bytes),
             properties: BTreeMap::from([("author".to_string(), Value::Text("alice".to_string()))]),
             created_at: Some(created_at),
@@ -1044,9 +1059,9 @@ mod time_range_index_e2e_tests {
         // The vacated slot is genuinely free again: a second document may take
         // it, which only holds if the update actually removed the reference
         // rather than leaving a stale one behind.
-        let second_owner = rand::random::<[u8; 32]>();
+        let second_owner = fixture_bytes(3, created_at, "alice");
         let second = Document::V0(DocumentV0 {
-            id: Identifier::from(rand::random::<[u8; 32]>()),
+            id: Identifier::from(fixture_bytes(4, created_at, "alice")),
             owner_id: Identifier::from(second_owner),
             properties: BTreeMap::from([("author".to_string(), Value::Text("alice".to_string()))]),
             created_at: Some(created_at + HOUR_MS),
@@ -1179,7 +1194,7 @@ mod time_range_index_e2e_tests {
         });
         let schemas = platform_value!({ "post": document_schema });
         factory
-            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .create_with_value_config(Identifier::from([202u8; 32]), 0, schemas, None, None)
             .expect("a contract may bucket one timestamp with several grids")
             .data_contract_owned()
     }
@@ -1249,9 +1264,9 @@ mod time_range_index_e2e_tests {
             "the same numeric start on both grids is the point of this fixture"
         );
 
-        let owner_bytes = rand::random::<[u8; 32]>();
+        let owner_bytes = fixture_bytes(1, created_at, "ibiza");
         let document = Document::V0(DocumentV0 {
-            id: Identifier::from(rand::random::<[u8; 32]>()),
+            id: Identifier::from(fixture_bytes(2, created_at, "ibiza")),
             owner_id: Identifier::from(owner_bytes),
             properties: BTreeMap::from([("hashtag".to_string(), Value::Text("ibiza".to_string()))]),
             created_at: Some(created_at),

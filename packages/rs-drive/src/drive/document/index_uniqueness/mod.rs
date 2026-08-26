@@ -727,7 +727,6 @@ mod unique_time_range_index_tests {
     use dpp::identifier::Identifier;
     use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::DataContract;
-    use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::validation::SimpleConsensusValidationResult;
     use dpp::version::PlatformVersion;
 
@@ -745,6 +744,22 @@ mod unique_time_range_index_tests {
     /// bucket start is a millisecond timestamp.
     const DAY_SECONDS: u64 = 24 * 3_600;
     const DAY_MS: u64 = 24 * 3_600_000;
+
+    /// Deterministic 32-byte fixture identifier derived from the document's
+    /// own fixture inputs. Identifiers here are plumbing, not test inputs:
+    /// fixed bytes keep a failing GroveDB fixture reproducible run-to-run and
+    /// avoid an OS-entropy dependency (and its unwrap) in
+    /// consensus-sensitive tests. `marker` separates namespaces (document id
+    /// vs owner) and same-timestamp siblings.
+    fn fixture_bytes(marker: u8, created_at: u64, tag: &str) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        bytes[0] = marker;
+        bytes[1..9].copy_from_slice(&created_at.to_be_bytes());
+        for (i, byte) in tag.bytes().take(23).enumerate() {
+            bytes[9 + i] = byte;
+        }
+        bytes
+    }
     /// Start of the window every "same window" timestamp below lands in —
     /// a whole number of days, so it is a bucket start on the default
     /// (phase 0) daily grid.
@@ -804,7 +819,7 @@ mod unique_time_range_index_tests {
         });
         let schemas = platform_value!({ "report": document_schema });
         factory
-            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .create_with_value_config(Identifier::from([201u8; 32]), 0, schemas, None, None)
             .expect("create contract")
             .data_contract_owned()
     }
@@ -841,9 +856,9 @@ mod unique_time_range_index_tests {
         platform_version: &PlatformVersion,
     ) -> Identifier {
         let document_type = contract.document_type_for_name("report").expect("report");
-        let owner_bytes = rand::random::<[u8; 32]>();
+        let owner_bytes = fixture_bytes(1, created_at, author);
         let document = Document::V0(DocumentV0 {
-            id: Identifier::from(rand::random::<[u8; 32]>()),
+            id: Identifier::from(fixture_bytes(2, created_at, author)),
             owner_id: Identifier::from(owner_bytes),
             properties: BTreeMap::from([("author".to_string(), Value::Text(author.to_string()))]),
             created_at: Some(created_at),

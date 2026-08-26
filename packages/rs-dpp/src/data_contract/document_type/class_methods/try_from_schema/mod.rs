@@ -852,7 +852,6 @@ mod tests {
         .expect("a parse predating refersTo should ignore the keyword entirely");
     }
 
-
     // ================================================================
     //  requiredSince
     // ================================================================

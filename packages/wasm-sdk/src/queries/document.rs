@@ -1144,3 +1144,117 @@ fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Result<Map
     }
     Ok(map)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// This parser is the only boundary turning the public JavaScript
+    /// `{ field, selector, grid? }` shape into a typed time-range clause —
+    /// native and protobuf tests construct their queries after it, so a
+    /// parser that dropped the grid or mis-typed a member would not fail
+    /// them. Pin every branch here.
+    #[test]
+    fn parses_a_bare_selector_without_a_grid() {
+        let (field, selector, grid) =
+            parse_time_range_clause(&json!({ "field": "$createdAt", "selector": "newest" }))
+                .expect("the bare shape parses");
+        assert_eq!(field, "$createdAt");
+        assert_eq!(selector, TimeRangeSelector::Newest);
+        assert_eq!(grid, None, "no grid member means the field's sole grid");
+    }
+
+    #[test]
+    fn parses_a_grid_with_zero_phase_spelled_by_omission() {
+        let (_, selector, grid) = parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "oldest",
+            "grid": { "range": 21_600, "step": 7_200 },
+        }))
+        .expect("the grid shape parses");
+        assert_eq!(selector, TimeRangeSelector::Oldest);
+        assert_eq!(
+            grid,
+            Some(TimeRangeGridSpec {
+                range_seconds: 21_600,
+                step_seconds: 7_200,
+                phase_seconds: 0,
+            }),
+            "an omitted (or null) phase is the canonical zero"
+        );
+    }
+
+    #[test]
+    fn parses_a_grid_with_an_explicit_phase() {
+        let (_, _, grid) = parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": 86_400, "step": 86_400, "phase": 3_600 },
+        }))
+        .expect("the phased grid shape parses");
+        assert_eq!(
+            grid,
+            Some(TimeRangeGridSpec {
+                range_seconds: 86_400,
+                step_seconds: 86_400,
+                phase_seconds: 3_600,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_an_invalid_selector() {
+        parse_time_range_clause(&json!({ "field": "$createdAt", "selector": "latest" }))
+            .expect_err("only \"newest\" and \"oldest\" are selectors");
+    }
+
+    #[test]
+    fn rejects_a_missing_field() {
+        parse_time_range_clause(&json!({ "selector": "newest" }))
+            .expect_err("the field is required");
+    }
+
+    #[test]
+    fn rejects_a_malformed_grid() {
+        // not an object
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": [21_600, 7_200],
+        }))
+        .expect_err("a grid must be an object");
+        // missing step
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": 21_600 },
+        }))
+        .expect_err("range and step are both required");
+    }
+
+    #[test]
+    fn rejects_non_unsigned_grid_members() {
+        // negative — the contract's declared units are unsigned seconds
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": -21_600, "step": 7_200 },
+        }))
+        .expect_err("a negative range is not a contract-declared value");
+        // fractional — sub-second grids don't exist in the grammar
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": 21_600, "step": 7_200.5 },
+        }))
+        .expect_err("a fractional step is not a contract-declared value");
+        // fractional phase through the optional member
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": 21_600, "step": 7_200, "phase": 0.5 },
+        }))
+        .expect_err("a fractional phase is not a contract-declared value");
+    }
+}
