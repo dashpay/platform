@@ -6,7 +6,7 @@
 //! the set is user-curated and small, and the trait contract
 //! (`PlatformWalletPersistence::persist_tracked_masternodes`) is a
 //! whole-set write. `snapshot_json` is an opaque versioned document of
-//! PUBLIC material only (see the V006 migration doc); this module never
+//! PUBLIC material only (see the V013 migration doc); this module never
 //! interprets it beyond storing and returning it.
 
 use rusqlite::{params, Connection, Transaction};

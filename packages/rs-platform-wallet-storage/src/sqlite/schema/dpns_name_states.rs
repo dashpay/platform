@@ -435,7 +435,7 @@ mod tests {
         crate::sqlite::migrations::run(&mut conn).unwrap();
         for w in [&wallet_id, &other_wallet_id] {
             conn.execute(
-                "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+                "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
                 params![&w[..]],
             )
             .unwrap();
@@ -512,7 +512,7 @@ mod tests {
         // A wallet holding no such row at all answers None.
         let empty_wallet_id: WalletId = [0x77; 32];
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
             params![&empty_wallet_id[..]],
         )
         .unwrap();
@@ -560,7 +560,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
             params![&wallet_id[..]],
         )
         .unwrap();
@@ -634,7 +634,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
             params![&wallet_id[..]],
         )
         .unwrap();
@@ -688,7 +688,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
             params![&wallet_id[..]],
         )
         .unwrap();
@@ -756,7 +756,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
             params![&wallet_id[..]],
         )
         .unwrap();
