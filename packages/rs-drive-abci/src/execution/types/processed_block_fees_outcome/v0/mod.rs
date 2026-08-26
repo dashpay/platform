@@ -30,12 +30,13 @@ impl fmt::Display for ProcessedBlockFeesOutcome {
         )?;
         writeln!(
             f,
-            "    refunded_epochs_count: {}",
+            "    refunded_epochs_count: {},",
             match self.refunded_epochs_count {
                 Some(count) => count.to_string(),
                 None => "None".to_string(),
             }
         )?;
+        writeln!(f, "    credit_mints: {}", self.credit_mints)?;
         write!(f, "}}")
     }
 }
@@ -58,13 +59,14 @@ mod tests {
                 paid_epoch_index: 5,
             }),
             refunded_epochs_count: Some(2),
-            credit_mints: 0,
+            credit_mints: 5000,
         };
         let output = format!("{}", outcome);
         assert!(output.contains("ProcessedBlockFeesOutcome"));
         assert!(output.contains("fees_in_pools:"));
         assert!(output.contains("proposers_paid_count: 3"));
         assert!(output.contains("refunded_epochs_count: 2"));
+        assert!(output.contains("credit_mints: 5000"));
     }
 
     #[test]
@@ -80,6 +82,7 @@ mod tests {
         };
         let output = format!("{}", outcome);
         assert!(output.contains("payouts: None"));
+        assert!(output.contains("credit_mints: 0"));
         assert!(output.contains("refunded_epochs_count: None"));
     }
 }
