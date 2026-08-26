@@ -101,6 +101,10 @@ pub(super) fn verify_average_query(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<AverageEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    // First gate: a limit above the server's cap is refused on every
+    // server route with `InvalidLimit`, so no proof can belong to
+    // such a request — reject before any proof or provider machinery.
+    let capped_limit = super::aggregate_limit::check_within_server_cap(request.limit, "AVG")?;
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -234,18 +238,11 @@ pub(super) fn verify_average_query(
             ))
         }
         DocumentSumMode::RangeDistinctProof => {
-            let limit_u16 = if request.limit == 0 {
-                drive::config::DEFAULT_QUERY_LIMIT
-            } else {
-                u16::try_from(request.limit).map_err(|_| {
-                    drive_proof_verifier::Error::RequestError {
-                        error: format!(
-                            "limit {} exceeds u16::MAX for distinct AVG proof",
-                            request.limit
-                        ),
-                    }
-                })?
-            };
+            // `0` falls back to the compile-time
+            // `DEFAULT_QUERY_LIMIT` the server's dispatcher reads,
+            // matching SUM's distinct arm. Cap already enforced at
+            // the top of this function.
+            let limit_u16 = capped_limit.distinct_walk_limit();
             let left_to_right = request
                 .order_by_clauses
                 .first()
@@ -263,18 +260,10 @@ pub(super) fn verify_average_query(
             Ok((Some(entries), mtd.clone(), proof.clone()))
         }
         DocumentSumMode::RangeAggregateCarrierProof => {
-            let limit_u16 = if request.limit == 0 {
-                None
-            } else {
-                Some(u16::try_from(request.limit).map_err(|_| {
-                    drive_proof_verifier::Error::RequestError {
-                        error: format!(
-                            "limit {} exceeds u16::MAX for carrier-aggregate AVG proof",
-                            request.limit
-                        ),
-                    }
-                })?)
-            };
+            // `0` stays `None` (unbounded outer walk), mirroring the
+            // server's carrier arm. Cap already enforced at the top
+            // of this function.
+            let limit_u16 = capped_limit.carrier_walk_limit();
             let left_to_right = request
                 .order_by_clauses
                 .first()

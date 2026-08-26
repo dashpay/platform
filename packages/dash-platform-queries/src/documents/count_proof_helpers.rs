@@ -62,35 +62,6 @@ pub(super) fn assert_select_is_count(
     Ok(())
 }
 
-/// Translate the SDK's `u32`-with-`0`-sentinel limit into the
-/// `u16` the proof verifier wants to rebuild the prover's path
-/// query.
-///
-/// `0` falls back to [`drive::config::DEFAULT_QUERY_LIMIT`] — the
-/// same compile-time constant the server's prove-distinct
-/// dispatcher reads (NOT the operator-tunable
-/// `drive_config.default_query_limit`, which the SDK can't see).
-/// With both sides anchored to the shared constant the path-query
-/// bytes match byte-for-byte across operators, so merk-root
-/// recomputation succeeds regardless of any operator's tuning.
-///
-/// Non-zero values must fit in `u16` since the wire's
-/// `optional uint32` is wider than the verifier's path-query
-/// representation. We `try_from` rather than truncate so a caller
-/// passing `limit > u16::MAX` fails loudly at the SDK boundary
-/// rather than silently producing a mismatched path query.
-fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Error> {
-    if limit == 0 {
-        return Ok(drive::config::DEFAULT_QUERY_LIMIT);
-    }
-    u16::try_from(limit).map_err(|_| drive_proof_verifier::Error::RequestError {
-        error: format!(
-            "limit {} exceeds u16::MAX; the prove-distinct path query cannot represent it",
-            limit
-        ),
-    })
-}
-
 /// Verify a count-shape proof and return per-branch entries.
 ///
 /// Single source of truth for the count-proof dispatch. Picks
@@ -143,6 +114,10 @@ pub(super) fn verify_count_query(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<SplitCountEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    // First gate: a limit above the server's cap is refused on every
+    // server route with `InvalidLimit`, so no proof can belong to
+    // such a request — reject before any proof or provider machinery.
+    let capped_limit = super::aggregate_limit::check_within_server_cap(request.limit, "COUNT")?;
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -271,7 +246,13 @@ pub(super) fn verify_count_query(
             ))
         }
         DocumentCountMode::RangeDistinctProof => {
-            let limit_u16 = limit_to_u16_or_default(request.limit)?;
+            // `0` falls back to the compile-time
+            // `DEFAULT_QUERY_LIMIT` the server's prove-distinct
+            // dispatcher reads (NOT the operator-tunable runtime
+            // value, which the SDK can't see), so the path-query
+            // bytes match byte-for-byte across operators. Cap
+            // already enforced at the top of this function.
+            let limit_u16 = capped_limit.distinct_walk_limit();
             let left_to_right = request
                 .order_by_clauses
                 .first()
@@ -290,17 +271,21 @@ pub(super) fn verify_count_query(
         }
         DocumentCountMode::RangeAggregateCarrierProof => {
             // Carrier-ACOR (grovedb #663) — one verified `u64` per
-            // present In branch. `limit` cap on the per-branch
-            // walk follows the same `validate-don't-clamp`
-            // contract the distinct path uses; pass through what
-            // the caller asked for (with the `0` → default
-            // sentinel) so the path-query bytes match the
-            // server's exactly.
-            let limit_u16 = if request.limit == 0 {
-                None
-            } else {
-                Some(limit_to_u16_or_default(request.limit)?)
-            };
+            // outer branch. `limit` on the outer walk follows the
+            // same `validate-don't-clamp` contract the distinct
+            // path uses, but the COUNT dispatcher's rules are
+            // shape-dependent: the range-outer (G8) shape lowers an
+            // unset limit to the compile-time carrier cap and
+            // refuses explicit limits above it, while the In-outer
+            // (G7) shape keeps `None` and refuses every explicit
+            // limit. Mirror the server's own shape test.
+            let has_outer_range = request
+                .where_clauses
+                .iter()
+                .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
+                .count()
+                == 2;
+            let limit_u16 = capped_limit.count_carrier_walk_limit(has_outer_range)?;
             let left_to_right = request
                 .order_by_clauses
                 .first()
