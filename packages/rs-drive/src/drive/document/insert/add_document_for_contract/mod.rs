@@ -217,10 +217,7 @@ mod time_range_index_e2e_tests {
             .values()
             .find_map(|index| index.time_range.clone())
             .expect("the fixture declares a time-range index");
-        vec![ResolvedTimeRange {
-            field: transform.source.clone(),
-            transform,
-        }]
+        vec![ResolvedTimeRange { transform }]
     }
 
     /// A `$createdAt == created_at` query, optionally ANDed with
@@ -756,6 +753,134 @@ mod time_range_index_e2e_tests {
         );
     }
 
+    /// A contract whose only index buckets `$createdAt` alone — the shape
+    /// where a resolved bucket equality is the query's *last* clause with no
+    /// left-over index properties, so cursor pagination has nothing below the
+    /// transformed level except the document-id terminal.
+    fn build_single_property_trending_contract() -> DataContract {
+        let factory =
+            DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+        let index_map = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byBucket".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![platform_value!({"$createdAt": "asc"})]),
+            ),
+            (
+                Value::Text("timeRange".to_string()),
+                Value::Map(vec![
+                    (
+                        Value::Text("on".to_string()),
+                        Value::Text("$createdAt".to_string()),
+                    ),
+                    (
+                        Value::Text("range".to_string()),
+                        Value::U64(6 * HOUR_SECONDS),
+                    ),
+                    (
+                        Value::Text("step".to_string()),
+                        Value::U64(6 * HOUR_SECONDS),
+                    ),
+                ]),
+            ),
+        ];
+
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "hashtag": {"type": "string", "maxLength": 63, "position": 0},
+            },
+            "required": ["hashtag", "$createdAt"],
+            "indices": Value::Array(vec![Value::Map(index_map)]),
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "post": document_schema });
+        let owner_id = Identifier::from([202u8; 32]);
+        factory
+            .create_with_value_config(owner_id, 0, schemas, None, None)
+            .expect("create contract")
+            .data_contract_owned()
+    }
+
+    /// The transformed level stores bucket starts, so a cursor document's raw
+    /// timestamp must never be compared against this level's keys: an
+    /// included cursor created *inside* the selected bucket (07:10 in a
+    /// bucket starting at 06:00) orders after the bucket-start key, and
+    /// applying it at the transformed level suppresses the only key — a
+    /// validly-proven empty page while later document ids still exist in the
+    /// bucket. The cursor belongs to the document-id terminal instead.
+    #[test]
+    fn included_cursor_inside_the_bucket_continues_a_single_property_time_range_query() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = build_single_property_trending_contract();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+        let document_type = contract.document_type_for_name("post").expect("post");
+
+        // Three posts inside the [06:00, 12:00) bucket, none at its start.
+        let bucket = 6 * HOUR_MS;
+        let timestamps: [(u64, &str); 3] = [
+            (6 * HOUR_MS + 600_000, "early"),
+            (7 * HOUR_MS + 123_456, "mid"),
+            (8 * HOUR_MS, "late"),
+        ];
+        for (created_at, hashtag) in timestamps {
+            insert_post(&drive, &contract, created_at, hashtag, platform_version);
+        }
+
+        // The document-id terminal walks ids ascending; the cursor is the
+        // mid-bucket post, so the expected continuation is every id at or
+        // after it in that order.
+        let mut ids: Vec<[u8; 32]> = timestamps
+            .iter()
+            .map(|(created_at, hashtag)| fixture_bytes(2, *created_at, hashtag))
+            .collect();
+        ids.sort();
+        let cursor_id = fixture_bytes(2, 7 * HOUR_MS + 123_456, "mid");
+        let cursor_position = ids.iter().position(|id| *id == cursor_id).expect("cursor");
+
+        let mut query = build_created_at_query(
+            &contract,
+            document_type,
+            bucket,
+            None,
+            created_at_resolution(document_type),
+        );
+        query.start_at = Some(cursor_id);
+        query.start_at_included = true;
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query with an in-bucket cursor");
+        assert_eq!(
+            results.len(),
+            ids.len() - cursor_position,
+            "an included in-bucket cursor must return itself and every later id in the bucket"
+        );
+
+        query.start_at_included = false;
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query with an excluded in-bucket cursor");
+        assert_eq!(
+            results.len(),
+            ids.len() - cursor_position - 1,
+            "an excluded in-bucket cursor must return every id after it in the bucket"
+        );
+    }
+
     /// One index can bucket only one field (a transform's source must be its
     /// index's first property), so a query resolving two time ranges has no
     /// servable shape and is refused rather than routed to whichever index
@@ -767,7 +892,6 @@ mod time_range_index_e2e_tests {
         let query = build_created_at_query(&contract, document_type, 6 * HOUR_MS, Some("ibiza"), {
             let mut resolutions = created_at_resolution(document_type);
             let mut second = resolutions[0].clone();
-            second.field = "hashtag".to_string();
             second.transform.source = "hashtag".to_string();
             resolutions.push(second);
             resolutions
@@ -1209,10 +1333,7 @@ mod time_range_index_e2e_tests {
             .time_range
             .clone()
             .expect("the index carries a transform");
-        vec![ResolvedTimeRange {
-            field: transform.source.clone(),
-            transform,
-        }]
+        vec![ResolvedTimeRange { transform }]
     }
 
     /// Two grids over `$createdAt`: a document fans out into each grid's own
