@@ -166,9 +166,9 @@ struct PlatformWalletCreateParams: Sendable {
 /// intentional: the closure is an immutable C-entry wrapper, and the whole
 /// value is copied onto the dedicated queue.
 ///
-/// A manager left with `.live` but carrying a fake test handle is safe:
-/// the Rust registry lookup misses and the call returns an
-/// invalid-handle error — no crash.
+/// Tests with a fake manager handle must inject this table: handles come from
+/// a process-global registry, so an arbitrary non-zero test value is not
+/// guaranteed to miss a live Rust entry owned by another test.
 struct PlatformWalletNativeCreateCalls: @unchecked Sendable {
     /// Mirrors `platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height`,
     /// folding the two out-params into the return value (the 32-byte wallet
@@ -404,8 +404,9 @@ public class PlatformWalletManager: ObservableObject {
     private var shutdownTask: Task<PlatformWalletShutdownMetrics, Never>?
 
     /// Set the moment [`shutdown()`] decides to proceed, BEFORE it drains
-    /// in-flight creates: closes admission for new async `createWallet`
-    /// calls so the drain below can terminate.
+    /// in-flight creates: closes admission for every `createWallet` overload
+    /// so the drain below can terminate without a synchronous create entering
+    /// while the MainActor is reentrant at an `await`.
     private var shutdownRequested = false
 
     /// Async `createWallet` calls between admission and the end of their
@@ -803,6 +804,17 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: - Wallet creation
 
+    /// Reject wallet creation once shutdown has closed admission, including
+    /// during the drain window where the manager's handle is intentionally
+    /// still live for an already-admitted async create.
+    private func ensureWalletCreationAllowed() throws {
+        try ensureConfigured()
+        guard !shutdownRequested else {
+            throw PlatformWalletError.invalidHandle(
+                "manager shutdown is in progress; wallet creation rejected")
+        }
+    }
+
     /// Create a wallet from a BIP39 mnemonic phrase (English).
     ///
     /// Stores the returned wallet as the active [`wallet`] published
@@ -825,7 +837,7 @@ public class PlatformWalletManager: ObservableObject {
         createDefaultAccounts: Bool = true,
         birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
-        try ensureConfigured()
+        try ensureWalletCreationAllowed()
         var walletHandle: Handle = NULL_HANDLE
         var walletId: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
@@ -876,14 +888,10 @@ public class PlatformWalletManager: ObservableObject {
         createDefaultAccounts: Bool = true,
         birthHeight: UInt32? = nil
     ) async throws -> ManagedPlatformWallet {
-        try ensureConfigured()
-        // Admission: reject while a shutdown is draining. Checked on the
-        // MainActor with no suspension before the count increment, so
-        // `shutdown()`'s drain can never miss an admitted create.
-        guard !shutdownRequested else {
-            throw PlatformWalletError.invalidHandle(
-                "manager shutdown is in progress; createWallet rejected")
-        }
+        // Admission is checked on the MainActor with no suspension before
+        // the count increment, so `shutdown()`'s drain can never miss an
+        // admitted create.
+        try ensureWalletCreationAllowed()
         activeCreateCount += 1
         defer {
             activeCreateCount -= 1
@@ -979,7 +987,7 @@ public class PlatformWalletManager: ObservableObject {
         createDefaultAccounts: Bool = true,
         birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
-        try ensureConfigured()
+        try ensureWalletCreationAllowed()
         guard seed.count == 64 else {
             throw PlatformWalletError.invalidParameter(
                 "seed must be 64 bytes, got \(seed.count)"

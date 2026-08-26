@@ -10,7 +10,7 @@ import DashSDKFFI
 /// the shutdown drain (an admitted create completes before teardown takes
 /// the handle; new creates are rejected while the drain runs), and the
 /// FIFO ordering with teardown on the shared destroy queue — all without
-/// calling FFI.
+/// invoking a production create or teardown call.
 @MainActor
 final class PlatformWalletCreateWalletTests: XCTestCase {
 
@@ -59,11 +59,13 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
                     Data()
                 )
             }
-            // Distinct per-invocation wallet handle/id so concurrent creates
-            // stay distinguishable.
+            // `ManagedPlatformWallet.deinit` destroys its handle through the
+            // live FFI. Keep the fake handle at zero so it can never collide
+            // with a real process-global Rust registry entry; the distinct
+            // wallet ids are sufficient for the concurrency assertions.
             return (
                 PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil),
-                Handle(100 + index),
+                NULL_HANDLE,
                 Data(repeating: UInt8(index), count: 32)
             )
         }
@@ -138,6 +140,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         XCTAssertEqual(recorder.mainThreadFlags, [false], "the native create must run off the main thread")
         XCTAssertEqual(wallet.walletId, Data(repeating: 1, count: 32))
         XCTAssertTrue(manager.wallets[wallet.walletId] === wallet)
+        await manager.shutdown()
     }
 
     // MARK: - Error mapping
@@ -158,6 +161,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             XCTFail("unexpected error: \(error)")
         }
         XCTAssertTrue(manager.wallets.isEmpty)
+        await manager.shutdown()
     }
 
     // MARK: - Shutdown interplay
@@ -224,33 +228,84 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         XCTAssertEqual(log.events[2], "teardown:spv_stop")
     }
 
-    /// New creates arriving while a shutdown is draining are rejected up
-    /// front — before any native work.
-    func testCreateDuringShutdownDrainIsRejectedBeforeNativeCall() async throws {
+    /// New async and synchronous creates arriving while a shutdown is draining
+    /// are rejected up front — before any native work.
+    func testAllCreateOverloadsDuringShutdownDrainAreRejectedBeforeNativeWork() async throws {
         let gate = DispatchSemaphore(value: 0)
         let recorder = CreateRecorder(gate: gate)
-        let manager = makeManager(handle: 13, createRecorder: recorder)
+        // Use a value outside any realistic monotonic registry range so even a
+        // regression that reaches the live FFI can only produce a safe miss.
+        let manager = makeManager(handle: Handle.max, createRecorder: recorder)
 
         let firstCreate = Task { try await manager.createWallet(mnemonic: "a", network: .testnet) }
         while recorder.count == 0 {
             try await Task.sleep(for: .milliseconds(5))
         }
         let shutdownTask = Task { await manager.shutdown() }
-        try await Task.sleep(for: .milliseconds(20))
+
+        // Poll through the seed overload with deliberately invalid input. It
+        // cannot enter FFI before shutdown, and once shutdown closes admission
+        // the shared creation guard must take precedence over seed validation.
+        while true {
+            do {
+                _ = try manager.createWallet(seed: Data(), network: .testnet)
+                XCTFail("an empty seed must never create a wallet")
+                break
+            } catch PlatformWalletError.invalidParameter {
+                await Task.yield()
+            } catch PlatformWalletError.invalidHandle(let message) {
+                XCTAssertEqual(
+                    message,
+                    "manager shutdown is in progress; wallet creation rejected")
+                break
+            } catch {
+                XCTFail("unexpected error while waiting for shutdown admission to close: \(error)")
+                break
+            }
+        }
+
+        func assertSynchronousShutdownRejection(
+            _ operation: () throws -> ManagedPlatformWallet,
+            file: StaticString = #filePath,
+            line: UInt = #line
+        ) {
+            do {
+                _ = try operation()
+                XCTFail("expected rejection during the shutdown drain", file: file, line: line)
+            } catch PlatformWalletError.invalidHandle(let message) {
+                XCTAssertEqual(
+                    message,
+                    "manager shutdown is in progress; wallet creation rejected",
+                    file: file,
+                    line: line)
+            } catch {
+                XCTFail("unexpected error: \(error)", file: file, line: line)
+            }
+        }
+
+        // The explicit synchronous function type prevents async-overload
+        // selection in this async test context.
+        let createFromMnemonicSynchronously: () throws -> ManagedPlatformWallet = {
+            try manager.createWallet(mnemonic: "sync", network: .testnet)
+        }
+        assertSynchronousShutdownRejection(createFromMnemonicSynchronously)
 
         do {
             _ = try await manager.createWallet(mnemonic: "b", network: .testnet)
             XCTFail("expected rejection during the shutdown drain")
         } catch let error as PlatformWalletError {
-            guard case .invalidHandle = error else {
+            guard case .invalidHandle(let message) = error else {
                 return XCTFail("expected invalidHandle, got \(error)")
             }
+            XCTAssertEqual(
+                message,
+                "manager shutdown is in progress; wallet creation rejected")
         }
 
         gate.signal()
         _ = try await firstCreate.value
         _ = await shutdownTask.value
-        XCTAssertEqual(recorder.count, 1, "the rejected create must never reach the native call")
+        XCTAssertEqual(recorder.count, 1, "rejected creates must never reach native work")
     }
 
     // MARK: - Concurrent creates
@@ -271,5 +326,6 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         XCTAssertEqual(manager.wallets.count, 2)
         XCTAssertTrue(manager.wallets[w1.walletId] === w1)
         XCTAssertTrue(manager.wallets[w2.walletId] === w2)
+        await manager.shutdown()
     }
 }
