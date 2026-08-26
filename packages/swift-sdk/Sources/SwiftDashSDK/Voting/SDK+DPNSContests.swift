@@ -60,7 +60,10 @@ extension SDK {
   ///
   /// The Rust bridge lists current contests, then loads their vote states with
   /// bounded concurrency and an overall timeout. This async wrapper keeps that
-  /// blocking FFI operation off the caller's actor.
+  /// blocking FFI operation off the caller's actor. Cancellation is cooperative
+  /// at the FFI boundary: it prevents work that has not entered Rust, but once
+  /// the synchronous call starts this method waits for it to return (bounded by
+  /// the Rust timeout), frees any result, then throws `CancellationError`.
   ///
   /// - Parameter limit: Maximum contests to return. The FFI has no
   ///   start-after cursor on this query, so this is a hard ceiling, not a
@@ -71,12 +74,36 @@ extension SDK {
     guard let sdkHandle = handle else {
       throw SDKError.invalidState("SDK not initialized")
     }
-    return try await Task.detached(priority: .userInitiated) {
-      guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(sdkHandle, limit) else {
+
+    let task = Task.detached(priority: .userInitiated) { [self] in
+      try Task.checkCancellation()
+
+      // `SDK` owns `sdkHandle`; pin it until the synchronous FFI call has
+      // returned and any owned result has been copied and freed.
+      let contests: [DPNSContest]? = withExtendedLifetime(self) {
+        guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(
+          sdkHandle, limit
+        ) else { return nil }
+        return Self.consumeContestedNamesList(listPtr)
+      }
+
+      // The FFI call cannot be interrupted. Check only after consuming the
+      // result so cancellation cannot leak an allocated list.
+      try Task.checkCancellation()
+      guard let contests else {
         throw SDKError.internalError("Failed to fetch contested DPNS usernames")
       }
-      return Self.consumeContestedNamesList(listPtr)
-    }.value
+      return contests
+    }
+
+    return try await withTaskCancellationHandler {
+      let contests = try await task.value
+      // Cover cancellation after the worker's check but before this task resumes.
+      try Task.checkCancellation()
+      return contests
+    } onCancel: {
+      task.cancel()
+    }
   }
 
   /// The open contests **this identity is contending in** — the "how are my
