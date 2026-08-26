@@ -83,6 +83,7 @@ impl DriveDocumentRankedQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<RankedPage, Error> {
+        self.reject_offset_with_branches()?;
         if self.prefix_branches.len() > 1 {
             // ONE grovedb call for the whole union, pinned to one
             // committed state and merged with the shared comparator —
@@ -193,12 +194,14 @@ impl DriveDocumentRankedQuery<'_> {
     /// entries skipped to reach them, the primary's root hash, the
     /// sibling axes' root hashes, and a per-ancestor attestation chain
     /// up to the grovedb root — so the client reconstructs the platform
-    /// root hash from it. It also echoes `(axis, k, offset,
-    /// descending)`, which
-    /// [`grovedb::GroveDb::verify_indexed_axis_top_k_paginated`]
-    /// re-checks against what the client asked for; that is why `k` is
-    /// validated rather than clamped upstream (a clamped `k` would
-    /// produce a proof the client's own reconstruction rejects).
+    /// root hash from it. `(axis, k, offset, descending)` bind by
+    /// RECONSTRUCTION, not echo: the verifier rebuilds the same
+    /// `PathQuery` from the request and
+    /// [`grovedb::GroveDb::verify_path_query`] re-executes the proof
+    /// against that traversal, so a proof for a different ranking or a
+    /// different page fails to cover it; that is why `k` is validated
+    /// rather than clamped upstream (a clamped `k` would produce a page
+    /// the client's reconstruction did not ask for).
     ///
     /// The paginated primitive is used unconditionally, with
     /// `offset = 0` for offset-free requests, so there is exactly one
@@ -223,6 +226,7 @@ impl DriveDocumentRankedQuery<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        self.reject_offset_with_branches()?;
         // grovedb's `prove_query` — since the indexed-axis prover
         // retirement, the only proof surface — proves COMMITTED state
         // only: it takes one internal snapshot and threads it through

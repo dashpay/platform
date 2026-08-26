@@ -37,13 +37,14 @@
 //! rank `offset`); having-range addresses them by **value bound**
 //! (`aggregate ∈ [lo, hi]`). Three consequences:
 //!
-//! 1. **The bound is part of the proof contract.** The grovedb envelope
-//!    for a range read echoes the Merk query itself, and the verifier
-//!    re-builds that query from the request's bounds
-//!    ([`AxisRangeBounds::merk_query`]) — so prover and verifier must
-//!    share one bounds-to-query translation, exactly as they share the
-//!    grove path. Completeness comes from the Merk range proof: the
-//!    boundary commitments show no in-range group was omitted.
+//! 1. **The bound is part of the proof contract.** Prover and verifier
+//!    build the same `Bounded` axis `PathQuery` from the request's
+//!    inclusive bounds ([`AxisRangeBounds::inclusive_bounds_i128`]),
+//!    and grovedb re-executes the proof against that traversal — so the
+//!    two sides share one bounds-to-query translation, exactly as they
+//!    share the grove path. Completeness comes from the Merk range
+//!    proof: the boundary commitments show no in-range group was
+//!    omitted.
 //! 2. **No `OFFSET`, no `start_at` — and no full pagination.** The
 //!    range primitives take a limit but no skip, and a request carrying
 //!    either knob is rejected loudly. A page cut at `limit` can only be
@@ -109,8 +110,9 @@ mod tests;
 /// rationale as [`super::drive_document_ranked_query::MAX_RANKED_LIMIT`]:
 /// the proof commits one secondary entry per returned group, so proof
 /// bytes grow linearly in the limit, and the ceiling is a hard rejection
-/// rather than a clamp because the limit is echoed in the proof envelope
-/// and re-checked by the verifier.
+/// rather than a clamp because the limit is part of the traversal the
+/// verifier re-executes: a server-side clamp would truncate the walk
+/// and fail coverage under the client's own reconstruction.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub const MAX_HAVING_LIMIT: u16 = 100;
 

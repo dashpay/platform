@@ -130,14 +130,15 @@ impl DriveDocumentHavingQuery<'_> {
     /// The envelope commits the in-range secondary entries, the
     /// primary's root hash, the sibling axes' root hashes, and a
     /// per-ancestor attestation chain up to the grovedb root — so the
-    /// client reconstructs the platform root hash from it. The Merk
-    /// query (the encoded bounds and walk direction) and the limit are
-    /// echoed and re-checked by grovedb's verifier against the client's
-    /// own reconstruction via [`AxisRangeBounds::merk_query`] — which is
-    /// why the bounds are validated rather than clamped upstream, and
-    /// why completeness needs no extra machinery: a Merk range proof
-    /// over a sorted keyspace commits its boundaries, so an in-range
-    /// group the server omitted fails reconstruction.
+    /// client reconstructs the platform root hash from it. The bounds,
+    /// direction and limit bind by RECONSTRUCTION: the verifier rebuilds
+    /// the same `Bounded` axis `PathQuery` from the request
+    /// ([`AxisRangeBounds::inclusive_bounds_i128`]) and re-executes the
+    /// proof against it — which is why the bounds are validated rather
+    /// than clamped upstream, and why completeness needs no extra
+    /// machinery: a Merk range proof over a sorted keyspace commits its
+    /// boundaries, so an in-range group the server omitted fails
+    /// reconstruction.
     ///
     /// Verified by
     /// [`DriveDocumentHavingQuery::verify_having_range_proof`](crate::query::DriveDocumentHavingQuery::verify_having_range_proof).

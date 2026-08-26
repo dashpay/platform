@@ -14,34 +14,33 @@ use grovedb_query::AxisQuery;
 impl DriveDocumentHavingQuery<'_> {
     /// v0 of [`Self::verify_having_range_proof`].
     ///
-    /// Rebuilds the proved subtree path with
-    /// [`Self::indexed_property_name_tree_path`] and the secondary query
-    /// with
-    /// [`AxisRangeBounds::merk_query`](crate::query::drive_document_having_query::AxisRangeBounds::merk_query),
-    /// then hands the proof to the matching
-    /// `GroveDb::verify_indexed_*_query` — an associated function, no
+    /// Rebuilds the same `PathQuery` the prover built — the subtree
+    /// path via [`Self::indexed_property_name_tree_path`], the
+    /// `Bounded` traversal from the request's inclusive bounds
+    /// ([`AxisRangeBounds::inclusive_bounds_i128`](crate::query::drive_document_having_query::AxisRangeBounds::inclusive_bounds_i128)),
+    /// limit and direction — and hands the proof to
+    /// [`GroveDb::verify_path_query`], an associated function: no
     /// database handle, so this compiles and runs in a verifier-only
     /// build.
     ///
     /// Three things are checked before the entries are returned:
     ///
-    /// 1. **The envelope matches this query.** grovedb re-checks the
-    ///    proof against the reconstructed Merk query (the encoded bounds
-    ///    and walk direction) and the expected limit, so a proof
-    ///    generated for a different bound — or a different direction, or
-    ///    a different limit — is rejected rather than silently
-    ///    reinterpreted. Completeness rides on the same check: a Merk
-    ///    range proof commits its boundaries, so an in-range group the
-    ///    prover omitted fails reconstruction.
+    /// 1. **The proof covers this query's own traversal.** Binding is by
+    ///    RECONSTRUCTION, not echo comparison: the verifier re-executes
+    ///    the proof against the bounds, direction and limit it rebuilt
+    ///    from the request, so a proof for a different bound or
+    ///    direction fails to cover it. The limit binds as a CAP under
+    ///    re-execution — an exhausted-walk proof is a complete answer
+    ///    under any admitting cap (sound, and pinned by the
+    ///    limit-tamper test), while a proof truncated by a smaller limit
+    ///    fails a larger cap for missing coverage of the rest of the
+    ///    bound. Completeness rides on the Merk range proof itself: its
+    ///    boundary commitments show no in-range group was omitted.
     /// 2. **The result's axis shape matches the requested axis** — the
     ///    same belt-and-braces check the ranked verifier does.
     /// 3. **At most `limit` entries.** Fewer is normal — fewer groups
     ///    may match the bound — but more would mean the proof committed
     ///    a longer walk than the request authorized.
-    ///
-    /// No `platform_version` argument: the parent dispatcher already
-    /// consumed it to select this version, and verification derives
-    /// everything else from the proof bytes plus the query.
     #[inline(always)]
     pub(super) fn verify_having_range_proof_v0(
         &self,

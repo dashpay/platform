@@ -3375,6 +3375,44 @@ mod pinned_prefix {
         assert_eq!(page.entries.len(), 1);
     }
 
+    /// The offset x `IN` exclusion survives resolution: the grammar
+    /// rejects the combination, but `offset` is a public field and a
+    /// mode is publicly constructible, so every execution, proving and
+    /// verification boundary re-checks it — a resolved query mutated
+    /// into the forbidden shape is refused, not served as a page-broken
+    /// merge that reports `skipped: 0`.
+    #[test]
+    fn a_mutated_offset_cannot_combine_with_branches() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
+
+        let mut query = client_side_query(&contract, &in_pin(&[IDENTITY_X, IDENTITY_Y]), 2);
+        query.offset = 1;
+        let pv = platform_version();
+
+        let read = query
+            .execute_top_k_no_proof(&drive, None, pv)
+            .expect_err("a branched read with a mutated offset must be refused");
+        assert!(
+            matches!(&read, Error::Query(QuerySyntaxError::InvalidLimit(m)) if m.contains("cannot combine")),
+            "expected the offset x IN rejection on the read path, got {read:?}"
+        );
+        let prove = query
+            .execute_top_k_with_proof(&drive, None, pv)
+            .expect_err("a branched prove with a mutated offset must be refused");
+        assert!(
+            matches!(&prove, Error::Query(QuerySyntaxError::InvalidLimit(_))),
+            "expected the offset x IN rejection on the prove path, got {prove:?}"
+        );
+        let verify = query
+            .verify_ranked_top_k_proof(&[], pv)
+            .expect_err("verification with a mutated offset must be refused");
+        assert!(
+            matches!(&verify, Error::Query(QuerySyntaxError::InvalidLimit(_))),
+            "expected the offset x IN rejection on the verify path, got {verify:?}"
+        );
+    }
+
     /// The public encoder enforces the documented branch ceiling itself:
     /// its callers' grammar checks are not the only line of defense.
     #[test]

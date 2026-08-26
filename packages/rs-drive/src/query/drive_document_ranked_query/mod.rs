@@ -126,10 +126,9 @@ mod tests;
 /// is rejected with
 /// [`crate::error::query::QuerySyntaxError::InvalidLimit`] rather than
 /// silently truncated. Truncation would be especially treacherous here
-/// because `k` is echoed inside the proof envelope and re-checked by
-/// [`grovedb::GroveDb::verify_indexed_axis_top_k_paginated`] — a
-/// server-side clamp would produce a proof the client's own
-/// reconstruction rejects.
+/// because `k` is part of the traversal the client reconstructs for
+/// [`grovedb::GroveDb::verify_path_query`] — a server-side clamp would
+/// produce a page the client's reconstruction did not ask for.
 ///
 /// There is deliberately **no companion ceiling on `OFFSET`**; see the
 /// module docs and [`DriveDocumentRankedQuery::offset`].
@@ -376,6 +375,33 @@ impl DriveDocumentRankedQuery<'_> {
     /// bypassed by construction or mutation.
     pub fn prefix_branches(&self) -> &[Vec<Vec<u8>>] {
         &self.prefix_branches
+    }
+
+    /// Reject the one cross-field combination the request grammar
+    /// forbids but public construction can still express: a
+    /// multi-branch (`IN`) query carrying a non-zero `offset`.
+    /// Rank-skip is attested from ONE secondary's counted commitments;
+    /// applied independently per branch it would page each branch
+    /// separately, merge the independently skipped pages, and report
+    /// `skipped: 0` — and the verifier, reconstructing the same
+    /// malformed per-branch traversal, would not reject it. Enforced at
+    /// every execution, proving and verification boundary, because
+    /// `offset` is a public field and the mode-detection grammar check
+    /// can be bypassed by building a mode or mutating a resolved query
+    /// directly.
+    pub(crate) fn reject_offset_with_branches(&self) -> Result<(), crate::error::Error> {
+        if self.prefix_branches.len() > 1 && self.offset != 0 {
+            return Err(crate::error::Error::Query(
+                crate::error::query::QuerySyntaxError::InvalidLimit(
+                    "`OFFSET` cannot combine with an `IN` prefix pin: rank-skip is attested \
+                     from one secondary's counted commitments, and an `IN` merges several \
+                     secondaries with no counted structure over the union. Page one prefix \
+                     at a time (`==` pin + `OFFSET`), or drop the offset."
+                        .to_string(),
+                ),
+            ));
+        }
+        Ok(())
     }
 }
 

@@ -14,19 +14,24 @@ use grovedb_query::AxisQuery;
 impl DriveDocumentRankedQuery<'_> {
     /// v0 of [`Self::verify_ranked_top_k_proof`].
     ///
-    /// Rebuilds the proved subtree path with
-    /// [`Self::indexed_property_name_tree_path`] and hands the proof to
-    /// [`GroveDb::verify_indexed_axis_top_k_paginated`], which is an
-    /// associated function — no database handle is involved, so this
+    /// Rebuilds the same `PathQuery` the prover built — the subtree
+    /// path via [`Self::indexed_property_name_tree_path`], the
+    /// `RankedPage` traversal from `(axis, k, offset, descending)` —
+    /// and hands the proof to [`GroveDb::verify_path_query`], an
+    /// associated function: no database handle is involved, so this
     /// compiles and runs in a verifier-only build.
     ///
     /// Three things are checked before the page is returned:
     ///
-    /// 1. **The envelope's `(axis, k, offset, descending)` match this
-    ///    query.** grovedb does this itself: the values are echoed in
-    ///    the proof and compared against the arguments, so a proof
-    ///    generated for a different ranking — or a different page of the
-    ///    same ranking — is rejected rather than silently reinterpreted.
+    /// 1. **The proof covers this query's own traversal.** Binding is by
+    ///    RECONSTRUCTION, not echo comparison: the verifier re-executes
+    ///    the proof against the traversal it rebuilt from the request,
+    ///    so a proof generated for a different ranking — or a different
+    ///    page of the same ranking — fails to cover it rather than being
+    ///    silently reinterpreted. (Coverage semantics make one benign
+    ///    case verifiable that the retired exact-echo check refused: an
+    ///    exhausted-walk proof is a complete answer under any admitting
+    ///    cap — see the having surface's limit-tamper test for the pin.)
     /// 2. **The result's axis shape matches the requested axis** — a
     ///    `Count` request must not come back holding `Sum` entries. This
     ///    is belt-and-braces on top of (1) (the tag check already rules
@@ -54,6 +59,7 @@ impl DriveDocumentRankedQuery<'_> {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, RankedPage), Error> {
+        self.reject_offset_with_branches()?;
         if self.prefix_branches.len() > 1 {
             // `IN`-pinned request: the proof is one grovedb branched
             // envelope. The branch set (and its order) comes from
