@@ -11,14 +11,16 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_range;` declaration.
 
-use super::super::drive_document_ranked_query::{RankedEntry, RankedEntryValue};
-use super::{AxisRangeBounds, DriveDocumentHavingQuery};
+use super::super::drive_document_ranked_query::{RankedAxis, RankedEntry, RankedEntryValue};
+use super::DriveDocumentHavingQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::{PathQuery, TransactionArg};
+use grovedb::query_result_type::QueryResultType;
+use grovedb::{AxisKeys, PathQuery, PathQueryRun, TransactionArg};
 use grovedb_costs::CostContext;
+use grovedb_query::AxisQuery;
 
 impl DriveDocumentHavingQuery<'_> {
     /// Read the matching groups directly from the axis secondary: every
@@ -41,68 +43,73 @@ impl DriveDocumentHavingQuery<'_> {
     ) -> Result<Vec<RankedEntry>, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path()?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
+
+        // The same bounded axis PathQuery the prove path uses, with the
+        // keys-only projection: the matching pairs are read straight off
+        // the pinned secondary view, no primary values resolved.
+        let (lo, hi) = self.bounds.i128_bounds();
+        let path_query = PathQuery::new_axis(
+            path,
+            AxisQuery::bounded(
+                self.bounds.axis().into(),
+                lo,
+                hi,
+                self.limit,
+                self.descending,
+            )
+            .keys_only(),
+        );
 
         // Costs are destructured away rather than `.unwrap()`-ed, same
         // as the ranked executors: `CostContext::unwrap` is infallible
         // but reads like a panicking unwrap at the call site.
-        let entries = match self.bounds {
-            AxisRangeBounds::Count { lo, hi } => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_count_range_keys(
-                    path_refs.as_slice(),
-                    lo,
-                    hi,
-                    self.descending,
-                    self.limit,
-                    transaction,
-                    grove_version,
-                );
-                value
-                    .map_err(|e| Error::GroveDB(Box::new(e)))?
-                    .into_iter()
-                    .map(|(count, key)| RankedEntry {
-                        key,
-                        value: RankedEntryValue::Count(count),
-                    })
-                    .collect::<Vec<_>>()
-            }
-            AxisRangeBounds::Sum { lo, hi } => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_sum_range_keys(
-                    path_refs.as_slice(),
-                    lo,
-                    hi,
-                    self.descending,
-                    self.limit,
-                    transaction,
-                    grove_version,
-                );
-                value
-                    .map_err(|e| Error::GroveDB(Box::new(e)))?
-                    .into_iter()
-                    .map(|(sum, key)| RankedEntry {
-                        key,
-                        value: RankedEntryValue::Sum(sum),
-                    })
-                    .collect::<Vec<_>>()
-            }
-            AxisRangeBounds::Avg { lo, hi } => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_avg_range_keys(
-                    path_refs.as_slice(),
-                    lo,
-                    hi,
-                    self.descending,
-                    self.limit,
-                    transaction,
-                    grove_version,
-                );
-                value
-                    .map_err(|e| Error::GroveDB(Box::new(e)))?
-                    .into_iter()
-                    .map(|(avg, key)| RankedEntry {
-                        key,
-                        value: RankedEntryValue::AvgFixedPoint(avg),
-                    })
-                    .collect::<Vec<_>>()
+        let CostContext { value, cost: _ } = drive.grove.run_path_query(
+            &path_query,
+            true,
+            true,
+            true,
+            QueryResultType::QueryPathKeyElementTrioResultType,
+            transaction,
+            grove_version,
+        );
+        // `skipped` is the paginated traversal's field and is `None`
+        // for bounded ones — nothing to check here.
+        let PathQueryRun::AxisKeys { keys, skipped: _ } =
+            value.map_err(|e| Error::GroveDB(Box::new(e)))?
+        else {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                "having {:?} range read ran to a non-axis-keys result shape",
+                self.bounds.axis()
+            ))));
+        };
+
+        let entries = match (self.bounds.axis(), keys) {
+            (RankedAxis::Count, AxisKeys::Count(pairs)) => pairs
+                .into_iter()
+                .map(|(count, key)| RankedEntry {
+                    key,
+                    value: RankedEntryValue::Count(count),
+                })
+                .collect::<Vec<_>>(),
+            (RankedAxis::Sum, AxisKeys::Sum(pairs)) => pairs
+                .into_iter()
+                .map(|(sum, key)| RankedEntry {
+                    key,
+                    value: RankedEntryValue::Sum(sum),
+                })
+                .collect::<Vec<_>>(),
+            (RankedAxis::Avg, AxisKeys::Avg(pairs)) => pairs
+                .into_iter()
+                .map(|(avg, key)| RankedEntry {
+                    key,
+                    value: RankedEntryValue::AvgFixedPoint(avg),
+                })
+                .collect::<Vec<_>>(),
+            (axis, other) => {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                    "having {axis:?} range read returned {} pairs of a different axis shape",
+                    other.len()
+                ))));
             }
         };
 

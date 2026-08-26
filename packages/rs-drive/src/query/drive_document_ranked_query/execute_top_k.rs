@@ -15,8 +15,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::{IndexedTopKKeysPage, PathQuery, TransactionArg};
+use grovedb::query_result_type::QueryResultType;
+use grovedb::{AxisKeys, PathQuery, PathQueryRun, TransactionArg};
 use grovedb_costs::CostContext;
+use grovedb_query::AxisQuery;
 
 impl DriveDocumentRankedQuery<'_> {
     /// Read one page of the ranking directly from the axis secondary:
@@ -73,8 +75,20 @@ impl DriveDocumentRankedQuery<'_> {
     ) -> Result<RankedPage, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path()?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
-        let offset = self.offset as u64;
+
+        // The same axis PathQuery the prove path uses, with the
+        // keys-only projection: the ranking pairs are read straight off
+        // the pinned secondary view, no primary values resolved.
+        let path_query = PathQuery::new_axis(
+            path,
+            AxisQuery::top_k(
+                self.axis.into(),
+                self.k,
+                self.offset as u64,
+                self.descending,
+            )
+            .keys_only(),
+        );
 
         // The cost is dropped rather than `.unwrap()`-ed:
         // `CostContext::unwrap` is infallible (it drops the cost field)
@@ -84,73 +98,57 @@ impl DriveDocumentRankedQuery<'_> {
         // above it accumulates or charges the cost, and no credit is
         // debited for a read. grovedb computes the `OperationCost`
         // because its API always does, and it ends here.
-        let (entries, skipped) = match self.axis {
-            RankedAxis::Count => {
-                let CostContext { value, cost: _ } =
-                    drive.grove.indexed_count_top_k_paginated_keys(
-                        path_refs.as_slice(),
-                        self.k,
-                        offset,
-                        self.descending,
-                        transaction,
-                        grove_version,
-                    );
-                let IndexedTopKKeysPage { entries, skipped } =
-                    value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-                (
-                    entries
-                        .into_iter()
-                        .map(|(count, key)| RankedEntry {
-                            key,
-                            value: RankedEntryValue::Count(count),
-                        })
-                        .collect::<Vec<_>>(),
-                    skipped,
-                )
-            }
-            RankedAxis::Sum => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_sum_top_k_paginated_keys(
-                    path_refs.as_slice(),
-                    self.k,
-                    offset,
-                    self.descending,
-                    transaction,
-                    grove_version,
-                );
-                let IndexedTopKKeysPage { entries, skipped } =
-                    value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-                (
-                    entries
-                        .into_iter()
-                        .map(|(sum, key)| RankedEntry {
-                            key,
-                            value: RankedEntryValue::Sum(sum),
-                        })
-                        .collect::<Vec<_>>(),
-                    skipped,
-                )
-            }
-            RankedAxis::Avg => {
-                let CostContext { value, cost: _ } = drive.grove.indexed_avg_top_k_paginated_keys(
-                    path_refs.as_slice(),
-                    self.k,
-                    offset,
-                    self.descending,
-                    transaction,
-                    grove_version,
-                );
-                let IndexedTopKKeysPage { entries, skipped } =
-                    value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-                (
-                    entries
-                        .into_iter()
-                        .map(|(avg, key)| RankedEntry {
-                            key,
-                            value: RankedEntryValue::AvgFixedPoint(avg),
-                        })
-                        .collect::<Vec<_>>(),
-                    skipped,
-                )
+        let CostContext { value, cost: _ } = drive.grove.run_path_query(
+            &path_query,
+            true,
+            true,
+            true,
+            QueryResultType::QueryPathKeyElementTrioResultType,
+            transaction,
+            grove_version,
+        );
+        let PathQueryRun::AxisKeys { keys, skipped } =
+            value.map_err(|e| Error::GroveDB(Box::new(e)))?
+        else {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                "ranked {:?} read ran to a non-axis-keys result shape",
+                self.axis
+            ))));
+        };
+        let skipped = skipped.ok_or_else(|| {
+            Error::Drive(DriveError::CorruptedDriveState(format!(
+                "ranked {:?} read carried no skip count for a paginated walk",
+                self.axis
+            )))
+        })?;
+
+        let entries = match (self.axis, keys) {
+            (RankedAxis::Count, AxisKeys::Count(pairs)) => pairs
+                .into_iter()
+                .map(|(count, key)| RankedEntry {
+                    key,
+                    value: RankedEntryValue::Count(count),
+                })
+                .collect::<Vec<_>>(),
+            (RankedAxis::Sum, AxisKeys::Sum(pairs)) => pairs
+                .into_iter()
+                .map(|(sum, key)| RankedEntry {
+                    key,
+                    value: RankedEntryValue::Sum(sum),
+                })
+                .collect::<Vec<_>>(),
+            (RankedAxis::Avg, AxisKeys::Avg(pairs)) => pairs
+                .into_iter()
+                .map(|(avg, key)| RankedEntry {
+                    key,
+                    value: RankedEntryValue::AvgFixedPoint(avg),
+                })
+                .collect::<Vec<_>>(),
+            (axis, other) => {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                    "ranked {axis:?} read returned {} pairs of a different axis shape",
+                    other.len()
+                ))));
             }
         };
 
