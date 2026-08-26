@@ -37,13 +37,12 @@
 //! rank `offset`); having-range addresses them by **value bound**
 //! (`aggregate ∈ [lo, hi]`). Three consequences:
 //!
-//! 1. **The bound is part of the proof contract.** Both proof sides
-//!    build the same [`grovedb::PathQuery::new_axis_bounded`] from the
-//!    request's bounds ([`AxisRangeBounds::i128_bounds`]), and grovedb
-//!    lowers those bounds into the secondary's keyspace through one
-//!    shared function on both the prover and the verifier — so the two
-//!    sides cannot drift on which range a proof is about, exactly as
-//!    they share the grove path. Completeness comes from the Merk range
+//! 1. **The bound is part of the proof contract.** Prover and verifier
+//!    build the same `Bounded` axis `PathQuery` from the request's
+//!    inclusive bounds ([`AxisRangeBounds::inclusive_bounds_i128`]),
+//!    and grovedb re-executes the proof against that traversal — so the
+//!    two sides share one bounds-to-query translation, exactly as they
+//!    share the grove path. Completeness comes from the Merk range
 //!    proof: the boundary commitments show no in-range group was
 //!    omitted.
 //! 2. **No `OFFSET`, no `start_at` — and no full pagination.** The
@@ -67,26 +66,28 @@
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 #[cfg(any(feature = "server", feature = "verify"))]
-use dpp::platform_value::Value;
-#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::version::PlatformVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeMap;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use super::drive_document_ranked_query::index_picker::{
-    encode_equality_prefix_values, find_ranked_index_for_axis, no_covering_index_message,
+    encode_prefix_branches, find_ranked_index_for_axis, no_covering_index_message,
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 use super::drive_document_ranked_query::{
-    path::indexed_property_name_tree_path_for_index, RankedAxis,
+    path::indexed_property_name_tree_path_for_index, PrefixPin, RankedAxis,
 };
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::drive::DriveError;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::query::QuerySyntaxError;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::element::indexed::{encode_avg_sort_key, encode_count_sort_key, encode_sum_sort_key};
+#[cfg(any(feature = "server", feature = "verify"))]
+use grovedb::Query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod mode_detection;
@@ -109,8 +110,9 @@ mod tests;
 /// rationale as [`super::drive_document_ranked_query::MAX_RANKED_LIMIT`]:
 /// the proof commits one secondary entry per returned group, so proof
 /// bytes grow linearly in the limit, and the ceiling is a hard rejection
-/// rather than a clamp because the limit is echoed in the proof envelope
-/// and re-checked by the verifier.
+/// rather than a clamp because the limit is part of the traversal the
+/// verifier re-executes: a server-side clamp would truncate the walk
+/// and fail coverage under the client's own reconstruction.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub const MAX_HAVING_LIMIT: u16 = 100;
 
@@ -163,6 +165,18 @@ impl AxisRangeBounds {
         }
     }
 
+    /// The bounds as inclusive `i128` values in the axis's own domain —
+    /// the form `AxisTraversal::Bounded` carries in the unified
+    /// `PathQuery`. Count and sum widen losslessly; avg is already
+    /// `i128` fixed point.
+    pub fn inclusive_bounds_i128(&self) -> (i128, i128) {
+        match *self {
+            AxisRangeBounds::Count { lo, hi } => (lo as i128, hi as i128),
+            AxisRangeBounds::Sum { lo, hi } => (lo as i128, hi as i128),
+            AxisRangeBounds::Avg { lo, hi } => (lo, hi),
+        }
+    }
+
     /// The bounds as a byte range over the axis secondary's keyspace:
     /// `(inclusive_lower, exclusive_upper)`, with `None` for an upper
     /// bound at the axis's type maximum (no representable successor —
@@ -196,26 +210,23 @@ impl AxisRangeBounds {
         }
     }
 
-    /// The inclusive bounds widened to `i128` — the domain
-    /// [`grovedb::PathQuery::new_axis_bounded`] takes for every axis.
+    /// The Merk query over the axis secondary that reads exactly these
+    /// bounds, walking in the requested direction.
     ///
-    /// The prover/verifier-agreement artifact of the having surface is
-    /// grovedb's own bounded-axis lowering: both proof sides lower the
-    /// same `PathQuery` bounds into the secondary's keyspace through one
-    /// shared function inside grovedb, producing exactly the byte range
-    /// [`Self::secondary_key_bounds`] documents — inclusive at
-    /// `encode(lo)`, exclusive at `encode(hi + 1)`, open-ended at the
-    /// axis maximum. Platform no longer builds the Merk query itself, so
-    /// the two sides cannot drift on which range a proof is about.
-    ///
-    /// Widening is lossless: `u64` and `i64` both embed in `i128`, and
-    /// grovedb clamps back to each axis's own domain when lowering.
-    pub fn i128_bounds(&self) -> (i128, i128) {
-        match *self {
-            AxisRangeBounds::Count { lo, hi } => (lo as i128, hi as i128),
-            AxisRangeBounds::Sum { lo, hi } => (lo as i128, hi as i128),
-            AxisRangeBounds::Avg { lo, hi } => (lo, hi),
+    /// This is the **prover/verifier-agreement artifact** of the having
+    /// surface: grovedb's range-proof envelope is generated against this
+    /// query and verified against the verifier's own reconstruction of
+    /// it, so both sides must build it from the same bounds through this
+    /// one function — a divergence surfaces as a failed verification,
+    /// not a wrong answer.
+    pub fn merk_query(&self, descending: bool) -> Query {
+        let (lower, upper) = self.secondary_key_bounds();
+        let mut query = Query::new_with_direction(!descending);
+        match upper {
+            Some(upper) => query.insert_range(lower..upper),
+            None => query.insert_range_from(lower..),
         }
+        query
     }
 }
 
@@ -226,7 +237,7 @@ impl AxisRangeBounds {
 /// Produced by [`mode_detection::detect_having_mode`]. Parallels
 /// [`super::drive_document_ranked_query::DocumentRankedMode`].
 ///
-/// Not `Eq`: the equality pins carry [`Value`]s, whose float variant
+/// Not `Eq`: the prefix pins carry [`Value`]s, whose float variant
 /// keeps the type at `PartialEq`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -246,19 +257,21 @@ pub struct DocumentHavingMode {
     /// The field the aggregate applies to. Empty for `COUNT(*)`; the
     /// index's `summable` property for `SUM` / `AVG`.
     pub aggregate_field: String,
-    /// The equality `where` pins, `(property, value)` per clause —
-    /// exactly one per leading property of the covering compound index,
-    /// in request order (the resolver re-orders them into index order
-    /// when it encodes the path). Empty for the single-property form.
-    pub equality_pins: Vec<(String, Value)>,
+    /// The `where` prefix pins — one [`PrefixPin`] per clause, exactly
+    /// one per leading property of the covering compound index, in
+    /// request order (the resolver re-orders them into index order when
+    /// it encodes the path). A pin normally carries one value (an `==`
+    /// clause); at most one pin carries several (the single permitted
+    /// branching `IN`, whose elements fan the bound out across one
+    /// prefix branch each). Empty for the single-property form.
+    pub prefix_pins: Vec<PrefixPin>,
 }
 
 /// A resolved having-range query. Shared by the prover and the verifier —
 /// both build the grove path through
 /// [`DriveDocumentHavingQuery::indexed_property_name_tree_path`] and the
-/// same bounded axis `PathQuery` through
-/// [`AxisRangeBounds::i128_bounds`], so the two cannot drift on which
-/// subtree or which range the proof is about.
+/// secondary query through [`AxisRangeBounds::merk_query`], so the two
+/// cannot drift on which subtree or which range the proof is about.
 #[derive(Debug, Clone)]
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct DriveDocumentHavingQuery<'a> {
@@ -271,15 +284,18 @@ pub struct DriveDocumentHavingQuery<'a> {
     pub document_type_name: String,
     /// The covering ranked index. Its **last** property is the `GROUP
     /// BY` property and the final path segment; any leading properties
-    /// are pinned by [`Self::equality_prefix_values`].
+    /// are pinned by [`Self::prefix_branches`].
     pub index: &'a Index,
-    /// Encoded index-key bytes of each leading index property's pinned
-    /// value, in index-property order — empty for a single-property
-    /// index. Part of the prover/verifier agreement exactly as on the
-    /// ranked surface: the segments feed straight into the shared path
-    /// builder. Produced by
-    /// [`super::drive_document_ranked_query::index_picker::encode_equality_prefix_values`].
-    pub equality_prefix_values: Vec<Vec<u8>>,
+    /// The prefix **branches** — one inner `Vec<Vec<u8>>` of encoded
+    /// path segments per branch, in index-property order; always at
+    /// least one branch, several exactly when the request carried a
+    /// multi-element `IN` pin. Part of the prover/verifier agreement
+    /// exactly as on the ranked surface. Produced by
+    /// [`super::drive_document_ranked_query::index_picker::encode_prefix_branches`]
+    /// — crate-private so the resolver is the only public constructor
+    /// and the encoder's invariants hold on every externally obtainable
+    /// value.
+    pub(crate) prefix_branches: Vec<Vec<Vec<u8>>>,
     /// Inclusive bounds on the aggregate. Carry the axis; the index must
     /// declare the matching `ranked_*` flag.
     pub bounds: AxisRangeBounds,
@@ -301,17 +317,35 @@ pub struct DriveDocumentHavingQuery<'a> {
 
 #[cfg(any(feature = "server", feature = "verify"))]
 impl DriveDocumentHavingQuery<'_> {
-    /// Path of the terminal property-name tree the axis secondary hangs
-    /// off — identical to the ranked surface's path (including the
-    /// pinned-prefix segments of a compound index), because both read
-    /// the same indexed tree. See
+    /// The resolved prefix branches, in canonical order — one per `IN`
+    /// element (a single branch without an `IN`). Read-only: the field is
+    /// crate-private so the resolver's encoder invariants cannot be
+    /// bypassed by construction or mutation.
+    pub fn prefix_branches(&self) -> &[Vec<Vec<u8>>] {
+        &self.prefix_branches
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl DriveDocumentHavingQuery<'_> {
+    /// Path of one branch's terminal property-name tree — identical to
+    /// the ranked surface's path (including the pinned-prefix segments
+    /// of a compound index), because both read the same indexed
+    /// tree(s). See
     /// [`DriveDocumentRankedQuery::indexed_property_name_tree_path`](super::drive_document_ranked_query::DriveDocumentRankedQuery::indexed_property_name_tree_path).
-    pub fn indexed_property_name_tree_path(&self) -> Result<Vec<Vec<u8>>, Error> {
+    pub fn indexed_property_name_tree_path(&self, branch: usize) -> Result<Vec<Vec<u8>>, Error> {
+        let prefix_values =
+            self.prefix_branches
+                .get(branch)
+                .ok_or(Error::Drive(DriveError::NotSupported(
+                    "ranked and having-range queries addressed a prefix branch outside the \
+                 query's resolved branch set",
+                )))?;
         indexed_property_name_tree_path_for_index(
             &self.contract_id,
             &self.document_type_name,
             self.index,
-            &self.equality_prefix_values,
+            prefix_values,
         )
     }
 }
@@ -319,8 +353,9 @@ impl DriveDocumentHavingQuery<'_> {
 /// Resolve a validated [`DocumentHavingMode`] against a document type's
 /// indexes into the executable [`DriveDocumentHavingQuery`]: pick the
 /// covering index (shared with the ranked surface — both read the same
-/// indexed tree), encode the equality pins into prefix-value path
-/// segments, and assemble the query.
+/// indexed tree), encode the prefix pins into prefix **branches** (one
+/// branch for all-`==` pins, one branch per element of the single
+/// permitted `IN`), and assemble the query.
 ///
 /// The **one** resolution path for the having surface, mirroring
 /// [`super::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode`]:
@@ -342,9 +377,9 @@ pub fn resolve_having_query_for_mode<'a>(
 ) -> Result<DriveDocumentHavingQuery<'a>, Error> {
     let axis = mode.bounds.axis();
     let pin_fields: Vec<String> = mode
-        .equality_pins
+        .prefix_pins
         .iter()
-        .map(|(field, _)| field.clone())
+        .map(|pin| pin.field.clone())
         .collect();
     let index = find_ranked_index_for_axis(
         indexes,
@@ -359,19 +394,19 @@ pub fn resolve_having_query_for_mode<'a>(
                 "having-range",
                 axis,
                 &mode.group_by_property,
-                &mode.equality_pins,
+                &mode.prefix_pins,
                 &mode.aggregate_field,
             ),
         ))
     })?;
-    let equality_prefix_values =
-        encode_equality_prefix_values(document_type, index, &mode.equality_pins, platform_version)?;
+    let prefix_branches =
+        encode_prefix_branches(document_type, index, &mode.prefix_pins, platform_version)?;
     Ok(DriveDocumentHavingQuery {
         document_type,
         contract_id,
         document_type_name,
         index,
-        equality_prefix_values,
+        prefix_branches,
         bounds: mode.bounds,
         descending: mode.descending,
         limit: mode.limit,

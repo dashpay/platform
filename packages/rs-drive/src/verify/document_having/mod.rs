@@ -10,9 +10,9 @@
 //!
 //! Only one verifier exists here, for the same reason as on the ranked
 //! surface: every having-range request — any of the three axes, either
-//! direction, any contiguous bound — resolves to one bounded-axis
-//! `PathQuery` proved through grovedb's unified `prove_query`, differing
-//! only in the axis, bounds, direction and limit the query carries.
+//! direction, any contiguous bound — resolves to one `Bounded` axis
+//! traversal proved through grovedb's unified `prove_query`, against
+//! the same `PathQuery` the verifier reconstructs from the request.
 
 /// Indexed-axis range proof verification — returns the groups the proof
 /// commits to as falling inside the bound, in axis order.

@@ -12,9 +12,9 @@
 //! single proof shape. Where the count surface has five verifiers because
 //! five different grovedb primitives can answer a count, every ranked
 //! request — either direction, at any offset, on any of the three axes —
-//! resolves to one top-k axis `PathQuery` proved through grovedb's
-//! unified `prove_query`, differing only in the `(axis, k, descending,
-//! offset)` tuple the query carries.
+//! resolves to one `RankedPage` axis traversal proved through grovedb's
+//! unified `prove_query`, against the same `PathQuery` the verifier
+//! reconstructs from the request.
 
 /// Indexed-axis top-k proof verification — returns the ranked groups the
 /// proof commits to, in ranking order.

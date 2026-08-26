@@ -2805,8 +2805,8 @@ mod ranked_tests {
     }
 
     /// `limit` is **required** on the ranked path — it is the `k` the
-    /// proof envelope echoes, so there is no server default a verifying
-    /// client could reproduce. What this pins is that drive's
+    /// verifier rebuilds its `PathQuery` around, so there is no server
+    /// default a verifying client could reproduce. What this pins is that drive's
     /// `Error::Query` reaches the caller as a query error on the
     /// validation result, rather than being swallowed into an internal
     /// error by the dispatcher's `Err(e) => Err(e.into())` arm.
@@ -3427,7 +3427,7 @@ mod having_range_tests {
             QueryError::Query(QuerySyntaxError::InvalidParameter(message)) => {
                 assert!(
                     message.contains("exactly one `group_by` property")
-                        && message.contains("equality `where` clause"),
+                        && message.contains("pin every leading index property"),
                     "the rejection must steer to the pinned-prefix form, got: {message}"
                 );
             }
@@ -3477,6 +3477,88 @@ mod having_range_tests {
                 &document,
                 platform_version,
             );
+        }
+    }
+
+    /// The `IN`-pinned form end to end on the wire: `WHERE identityId
+    /// IN [X, Y] GROUP BY class HAVING AVG(grade) > 80 LIMIT 10` fans
+    /// out across both identities' secondaries and answers one merged
+    /// `ResultData.ranked` page whose entries carry `in_key`; the
+    /// proved variant returns the unified branched `PathQuery` envelope as its Proof
+    /// payload. Merge/proof semantics are pinned in rs-drive's suites;
+    /// this pins the wire encoding, routing, and `in_key` mapping.
+    #[test]
+    fn in_pinned_having_is_served_end_to_end() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_grades_compound(&platform, version);
+        let identity_x = [1u8; 32];
+        let identity_y = [2u8; 32];
+        insert_grade_docs(
+            &platform,
+            &contract,
+            21_000,
+            &[
+                (identity_x, "art", 90),
+                (identity_x, "math", 60),
+                (identity_y, "science", 95),
+            ],
+            version,
+        );
+
+        let mut request = having_request(
+            &contract,
+            "grade",
+            select(v1_select::Function::Avg, "grade"),
+            hc(
+                having_aggregate::Function::Avg,
+                "grade",
+                having_clause::Operator::GreaterThan,
+                Value::U64(80),
+            ),
+            Vec::new(),
+            Some(10),
+            false,
+        );
+        request.group_by = vec!["class".to_string()];
+        request.where_clauses = vec![wc(
+            "identityId",
+            ProtoWhereOperator::In,
+            Value::Array(vec![
+                Value::Bytes(identity_y.to_vec()),
+                Value::Bytes(identity_x.to_vec()),
+            ]),
+        )];
+
+        let page = ranked_page(&platform, &state, request.clone(), version);
+        assert_eq!(
+            group_keys(&page.entries),
+            vec!["art", "science"],
+            "merged ascending: X's art (90) then Y's science (95); X's math \
+             (60) misses the bound"
+        );
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|e| e.in_key.clone())
+                .collect::<Vec<_>>(),
+            vec![Some(identity_x.to_vec()), Some(identity_y.to_vec())],
+            "merged entries carry their branch's in_key on the wire"
+        );
+
+        // The proved variant answers with a Proof payload (the unified
+        // branched `PathQuery` envelope — verified client-side, pinned
+        // in rs-drive's tamper suite).
+        request.prove = true;
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("query should succeed");
+        assert!(result.errors.is_empty(), "got {:?}", result.errors);
+        match result.data {
+            Some(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
+                ..
+            }) => assert!(!proof.grovedb_proof.is_empty()),
+            other => panic!("expected a Proof response, got {:?}", other),
         }
     }
 
@@ -3831,7 +3913,7 @@ mod having_trust_boundary {
         DocumentHavingRequest, DocumentHavingResponse,
     };
     use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
-    use drive::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+    use drive::query::drive_document_having_query::resolve_having_query_for_mode;
     use drive::query::having::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
     };
@@ -3999,30 +4081,21 @@ mod having_trust_boundary {
             platform_version(),
         )
         .expect("the case is well-formed");
-        let index = find_ranked_index_for_axis(
+        resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name("grade")
+                .expect("grade doctype exists"),
+            "grade".to_string(),
             contract
                 .document_types()
                 .get("grade")
                 .expect("grade doctype exists")
                 .indexes(),
-            &mode.group_by_property,
-            &[],
-            mode.bounds.axis(),
-            &mode.aggregate_field,
+            &mode,
+            PlatformVersion::latest(),
         )
-        .expect("the fixture declares the avg axis");
-        DriveDocumentHavingQuery {
-            document_type: contract
-                .document_type_for_name("grade")
-                .expect("grade doctype exists"),
-            contract_id: contract.id_ref().to_buffer(),
-            document_type_name: "grade".to_string(),
-            index,
-            bounds: mode.bounds,
-            equality_prefix_values: Vec::new(),
-            descending: mode.descending,
-            limit: mode.limit,
-        }
+        .expect("the fixture declares the avg axis")
     }
 
     /// Prove the having request against the live Drive and return

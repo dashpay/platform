@@ -39,10 +39,7 @@ use dpp::state_transition::batch_transition::document_delete_transition::Documen
 use dpp::state_transition::batch_transition::BatchTransitionV1;
 use dpp::state_transition::StateTransition;
 use drive::drive::RootTree;
-use drive::grovedb::element::IndexAxis;
-use drive::grovedb::operations::proof::indexed_axis::AxisEntries;
-use drive::grovedb::query_result_type::QueryResultType;
-use drive::grovedb::{Element, PathQuery, PathQueryRun};
+use drive::grovedb::Element;
 
 /// The group that gets emptied.
 const G: &str = "beta";
@@ -78,7 +75,19 @@ fn ranked_count_groups(
     path: &[Vec<u8>],
     platform_version: &PlatformVersion,
 ) -> Vec<(u64, String)> {
-    let path_query = PathQuery::new_axis_top_k(path.to_vec(), IndexAxis::Count, 100, 0, true);
+    use drive::grovedb::query_result_type::QueryResultType;
+    use drive::grovedb::{AxisKeys, PathQuery, PathQueryRun};
+
+    let path_query = PathQuery::new_axis(
+        path.to_vec(),
+        drive::grovedb_query::AxisQuery::top_k(
+            drive::grovedb_query::IndexAxis::Count,
+            100,
+            0,
+            true,
+        )
+        .keys_only(),
+    );
     let run = platform
         .drive
         .grove
@@ -87,22 +96,21 @@ fn ranked_count_groups(
             true,
             true,
             true,
-            QueryResultType::QueryPathKeyElementTrioResultType,
+            QueryResultType::QueryKeyElementPairResultType,
             None,
             &platform_version.drive.grove_version,
         )
         .unwrap()
         .expect("the ranked count read must succeed");
-    let PathQueryRun::AxisEntries {
-        entries: AxisEntries::Count(entries),
+    let PathQueryRun::AxisKeys {
+        keys: AxisKeys::Count(pairs),
         ..
     } = run
     else {
-        panic!("expected count axis entries");
+        panic!("expected a keys-only count page, got {run:?}");
     };
-    entries
+    pairs
         .into_iter()
-        .map(|entry| entry.key_pair())
         .map(|(count, key)| {
             (
                 count,

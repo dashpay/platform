@@ -222,9 +222,9 @@ where
                                     // in the state the app hash is computed over. A rollback
                                     // failure means the proposal can no longer match the
                                     // block — fail it rather than continue on leaked state.
-                                    transaction.rollback_to_savepoint().map_err(|e| {
-                                        drive::grovedb::error::Error::StorageError(e)
-                                    })?;
+                                    transaction
+                                        .rollback_to_savepoint()
+                                        .map_err(drive::grovedb::error::Error::StorageError)?;
                                 }
                                 StateTransitionExecutionResult::SuccessfulExecution { .. }
                                 | StateTransitionExecutionResult::PaidConsensusError { .. } => {

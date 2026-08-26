@@ -12,10 +12,10 @@
 //! `(axis, k, descending, offset)` tuple by construction rather than by
 //! two copies of a grammar agreeing.
 //!
-//! Unlike the count helper there is no per-shape dispatch: the ranked
-//! surface has exactly one proof primitive (grovedb's unified
-//! `prove_query` over `PathQuery::new_axis_top_k`), and all of a
-//! request's variation is carried *inside* the query struct.
+//! Unlike the count helper there is no per-shape dispatch: every
+//! ranked request proves as one `RankedPage` axis traversal through
+//! grovedb's unified `prove_query`, and all of a request's variation is
+//! carried *inside* the query struct.
 //!
 //! [`DocumentRankedEntries`]: drive_proof_verifier::DocumentRankedEntries
 
@@ -89,8 +89,10 @@ pub(super) fn assert_ranked_shape(
              `.with_select(<COUNT(*)|SUM(f)|AVG(f)>)`, `.with_group_by(<property>)`, \
              `.order_by_selected_aggregate(<Descending|Ascending>)` and `.with_limit(n)`, \
              optionally `.with_offset(m)`, with no having and no start_at; where clauses, \
-             when present, must be equality pins on the covering compound index's leading \
-             properties."
+             when present, pin the covering compound index's leading properties — one \
+             equality pin per property, of which at most one may instead be an `IN` of \
+             2..=10 elements (merged entries then carry `in_key`; a non-zero offset and a \
+             null pin on another property are rejected with `IN`)."
         ),
     })
 }
@@ -186,7 +188,8 @@ pub(super) fn verify_ranked_query(
             "document type `{}` cannot serve this ranked query: {e}. Ranked indexes are \
              opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
              (compound-index) ranking additionally needs every leading index property \
-             pinned by an equality where clause.",
+             pinned by a where clause — equality pins, of which at most one may be an \
+             `IN` of 2..=10 elements.",
             request.document_type_name,
         ),
     })?;
