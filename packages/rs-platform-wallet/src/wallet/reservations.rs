@@ -16,8 +16,6 @@
 //! `Built` row first); those call the broadcaster directly and then
 //! [`release_reservation_after_rejected_broadcast`].
 
-use std::time::Duration;
-
 use dashcore::{Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::account::AccountType;
@@ -52,71 +50,31 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 /// for `last_processed_height` to lag a few blocks behind the true tip.
 pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 
-/// The ORPHAN BACKSTOP for a broadcast input fence
-/// ([`WalletGeneration::pin_in_broadcast`](crate::wallet::core::WalletGeneration::pin_in_broadcast)'s
-/// pending-spend phase): how long an outpoint the wallet has *never observed
-/// spent* stays fenced after its dispatch returned.
-///
-/// This is **not** the mechanism that makes the fence safe, and it carries no
-/// evidence about the dispatched transaction. The fence is released by
-/// [`WalletGeneration::observe_spent`](crate::wallet::core::WalletGeneration::observe_spent)
-/// when the wallet actually observes the outpoint spent — by the dispatch's own
-/// transaction or by a competing one. This constant only stops a fence whose
-/// transaction is never observed at all from stranding those inputs for the
-/// life of the process.
-///
-/// # Why a wall clock, and why `Instant`
-///
-/// Every height-anchored form of this bound is unsound, and the reason is not
-/// where the anchor is sampled (`dashpay/platform#4309`, rounds 2-4 all moved
-/// the sample and all failed). It is that `last_processed_height` is not a
-/// clock at all during catch-up: the wallet can advance it by thousands of
-/// blocks in seconds, and those blocks were **mined before the transaction was
-/// submitted**. Elapsed height is therefore evidence about the chain's past,
-/// never about whether a transaction submitted *now* has been seen or dropped —
-/// so no `installed_height + N` bound, however carefully sampled or however
-/// atomically installed, can survive an ordinary historical sync.
-///
-/// [`Instant`] is the only clock in this crate with no chain input whatsoever.
-/// It is monotonic, cannot be moved by catch-up, by a re-org, by a peer feeding
-/// historical headers, or by a system clock adjustment. That is exactly the
-/// "expiry clock that historical catch-up cannot fast-forward" the fix requires,
-/// and it is *readable from a synchronous `Drop`* — which is what lets the
-/// bound be stamped at the instant the pending-spend phase begins, on every exit
-/// path including cancellation and unwind, with no manager lock, no height
-/// sample and therefore no sample-to-install window to make atomic.
-///
-/// # Why a fence past dispatch is needed at all
-///
-/// `SpvBroadcaster` injects the dispatched transaction into dash-spv's local
-/// mempool pipeline, so on that path the wallet marks the inputs spent within
-/// milliseconds of dispatch returning and they leave the selectable set on
-/// their own. `DapiBroadcaster::broadcast` does no such injection — it awaits
-/// `sdk.execute` and returns — so on the DAPI path an accepted response *and*
-/// an ambiguous `MaybeSent` both return with the inputs still selectable here
-/// while the transaction is in flight. Ending the fence at dispatch return
-/// therefore reopens the sweep + re-select race on that path
-/// (`dashpay/platform#4309`): key-wallet's `ReservationSet` TTL is stamped at
-/// *build* time, so a handle that sat between `finalize` and broadcast can be
-/// swept the instant the next selection runs. On BOTH paths the release is now
-/// the same observation, so the DAPI path is no longer the odd one out — it
-/// simply reaches the observation later, when SPV relays the transaction back
-/// or a block carries it.
-///
-/// # Why one hour
-///
-/// The real-time analogue of the bound this replaces: key-wallet's
-/// `RESERVATION_TTL_BLOCKS` is 24 blocks, ~1 h at the 2.5-minute mainnet block
-/// target. Keeping the same magnitude means the residual exposure of an
-/// *unobserved* transaction is the one key-wallet's reservation TTL already
-/// accepts, and no larger — only the clock changed, not the budget. It is also
-/// long enough that the observation path wins in every healthy flow (an
-/// accepted transaction is relayed back in seconds), and short enough that a
-/// genuinely dropped transaction's inputs come back inside one session rather
-/// than only at process exit — the fence is in-memory and never persisted, so a
-/// bound much longer than a session would make process restart the real
-/// recovery path.
-pub(crate) const IN_BROADCAST_FENCE_ORPHAN_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+// THERE IS DELIBERATELY NO TIMEOUT CONSTANT FOR THE BROADCAST INPUT FENCE.
+//
+// An `IN_BROADCAST_FENCE_ORPHAN_TIMEOUT` used to live here: one hour on a
+// monotonic `Instant`, after which the pending-spend phase of
+// `WalletGeneration::pin_in_broadcast` released an outpoint the wallet had
+// never observed spent. It was the fifth bound this fence was given and the
+// fifth to be unsound (`dashpay/platform#4309` — three height-anchored forms in
+// rounds 2-4, the monotonic one in rounds 5-6, all removed in round 7).
+//
+// The monotonic clock did fix what the height-anchored bounds got wrong —
+// catch-up cannot fast-forward it. It did not fix the actual defect, which is
+// that ELAPSED TIME IS NOT EVIDENCE. A signed transaction does not become
+// invalid by getting older, and waiting does not prove no peer retained it: a
+// withholding DAPI endpoint can accept the transaction while keeping it off the
+// network, and a backgrounded mobile wallet can outlast any deadline worth
+// setting. When the deadline lapsed and catch-up had also swept key-wallet's
+// reservation, the next build pruned the fence and signed a CONFLICTING
+// transaction over inputs the original might still spend.
+//
+// So the fence now ends on evidence only — `WalletGeneration::observe_spent`,
+// or a definitive pre-send failure. Anything added here later must be a
+// LIVENESS path that says something about the pending transaction itself
+// (persist it and query or rebroadcast it; take an explicit caller-driven
+// abandon), never a duration that runs out. See the `in_broadcast` field docs
+// on `WalletGeneration` for the full contract.
 
 /// Whether a reservation stamped at `registered_height` is too old to act on at
 /// `current_height` (see [`RESERVATION_MAX_AGE_BLOCKS`]). The registration

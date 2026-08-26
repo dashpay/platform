@@ -96,25 +96,29 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// both broadcaster paths — SPV within milliseconds via its local mempool
     /// pipeline, DAPI when the transaction is relayed back or lands in a block.
     ///
-    /// An orphan backstop
-    /// ([`IN_BROADCAST_FENCE_ORPHAN_TIMEOUT`](crate::wallet::reservations::IN_BROADCAST_FENCE_ORPHAN_TIMEOUT))
-    /// stops a transaction that is never observed at all — evicted for fee,
-    /// conflicted away — from holding its inputs for the life of the process.
-    /// It is measured on a monotonic [`Instant`](std::time::Instant), which no
-    /// amount of chain catch-up can fast-forward, and it is a liveness valve
-    /// rather than a safety argument.
+    /// There is NO backstop timeout behind that, and deliberately so. A
+    /// one-hour monotonic deadline used to sit here as a liveness valve; a
+    /// clock catch-up cannot fast-forward is still not evidence about this
+    /// transaction, and once it lapsed the next build could sign a conflicting
+    /// spend of inputs the original might still take (`dashpay/platform#4309`,
+    /// review round 7). A transaction the wallet never observes at all — evicted
+    /// for fee, conflicted away unseen — therefore holds its inputs for the rest
+    /// of the process. That is the correct trade: those are exactly the inputs a
+    /// possibly-live signed transaction spends. See the
+    /// [`in_broadcast`](super::WalletGeneration) field docs for the invariant
+    /// and for the two liveness shapes that may shorten the wait without
+    /// weakening it.
     ///
     /// # Why there is no post-await manager guard any more
     ///
     /// Round 4 of this review added one: the fence's height had to be sampled
     /// and installed inside a single manager read guard, or a writer queued
     /// behind it could advance the clock in between and the fence would land
-    /// already lapsed. With no height to sample there is nothing for a height
-    /// writer to interleave with — the backstop deadline is read from
-    /// `Instant::now()` inside the same `in_broadcast` critical section that
-    /// installs it. So the settle needs no manager lock at all, and this method
-    /// now touches the wallet-manager lock exactly once, before the send, which
-    /// also removes a lock acquisition from every dispatch.
+    /// already lapsed. With no clock to sample at all there is nothing for a
+    /// height writer to interleave with — the settle sets a flag inside the
+    /// `in_broadcast` critical section. So it needs no manager lock, and this
+    /// method now touches the wallet-manager lock exactly once, before the
+    /// send, which also removes a lock acquisition from every dispatch.
     ///
     /// A wallet no longer in the manager skips the pin (there is no
     /// registered generation to fence builds on — they cannot fund from a
@@ -1017,7 +1021,7 @@ mod tests {
             "no quantity of elapsed height may retire the fence",
         );
 
-        // The ONLY things that can: an observed spend, or the orphan backstop.
+        // The ONLY thing that can: an observed spend.
         core.generation().observe_spent([fenced]);
         let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
         let after = after.unwrap_or_else(|error| {
@@ -1084,7 +1088,7 @@ mod tests {
     /// A COMPETING spend releases the fence too. The outpoint has left this
     /// wallet's selectable set whoever spent it, so there is no re-selection
     /// left that could race anything on the wire — continuing to fence would
-    /// only delay the backstop.
+    /// hold the input for good and protect nothing.
     #[tokio::test]
     async fn observing_a_competing_spend_releases_the_fence() {
         let (core, signer, outputs) = funded_core_wallet(
@@ -1223,15 +1227,27 @@ mod tests {
         );
     }
 
-    /// The ORPHAN BACKSTOP, and its catch-up immunity in one test.
+    /// `dashpay/platform#4309`, REVIEW ROUND 7 — THE END-TO-END REGRESSION.
     ///
-    /// A transaction that is never observed — evicted for fee, conflicted away
-    /// — must not hold its inputs for the life of the process. The backstop is
-    /// the release valve, and it runs on a monotonic clock: the enormous chain
-    /// advance below does not move it one bit, and only elapsing the real
-    /// deadline frees the input.
+    /// The pending-spend phase used to expire one hour after the dispatch
+    /// settled, on a monotonic clock. The clock was the right kind — catch-up
+    /// cannot move it — but a deadline of ANY kind is the wrong instrument: the
+    /// signed transaction stays valid, and an hour passing proves nothing about
+    /// whether a peer retained it. A DAPI endpoint that accepts the transaction
+    /// while withholding it from the network, or an app backgrounded past the
+    /// deadline, was enough. With key-wallet's reservation also swept by
+    /// catch-up, the next build then re-selected the input and SIGNED A
+    /// CONFLICTING TRANSACTION over a spend that might still land.
+    ///
+    /// This drives that exact sequence through the real send path: accept the
+    /// transaction (`AlwaysOk`, and this manager runs no mempool pipeline — the
+    /// `DapiBroadcaster` shape, so nothing observes the spend), run catch-up far
+    /// past key-wallet's reservation TTL, bring due every timeout the fence might
+    /// carry, and build again. On the deadline-bearing revision that second build
+    /// SUCCEEDED and returned a second signed transaction spending the same
+    /// input. It must now be refused, and released only by the observed spend.
     #[tokio::test]
-    async fn the_orphan_backstop_is_the_only_timeout_and_catch_up_cannot_move_it() {
+    async fn an_elapsed_deadline_cannot_retire_the_fence_a_spend_still_needs() {
         let (core, signer, outputs) = funded_core_wallet(
             StandardAccountType::BIP44Account,
             Arc::new(AlwaysOkBroadcaster),
@@ -1249,21 +1265,37 @@ mod tests {
             .await
             .is_ok());
 
-        // Catch-up cannot fast-forward the backstop.
+        // Catch-up runs far past key-wallet's reservation TTL, so the funding
+        // reservation is swept and the input is selectable again as far as
+        // key-wallet is concerned. The fence is the only thing still holding it.
         advance_processed_height(&core, stamped + 17_000).await;
         expect_mid_broadcast(
             try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
-            "the backstop is not measured in blocks, so catch-up must not consume it",
+            "chain progress must not retire the fence",
         );
 
-        // Elapsing the real (monotonic) deadline does.
+        // Now let every elapsed-time release the fence might carry come due —
+        // the hour of wall clock the old backstop waited out.
         assert!(
-            core.generation().test_elapse_orphan_backstop(&fenced),
-            "an unobserved dispatch must carry a backstop deadline"
+            core.generation().test_elapse_time_based_release(&fenced),
+            "the accepted dispatch must be in the pending-spend phase"
         );
+
+        assert_eq!(
+            expect_mid_broadcast(
+                try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
+                "an elapsed deadline must not hand back an input whose transaction \
+                 may still be on the wire — the old backstop let this build sign a \
+                 conflicting spend of it",
+            ),
+            fenced,
+        );
+
+        // The one release that carries evidence.
+        core.generation().observe_spent([fenced]);
         let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
         let after = after.unwrap_or_else(|error| {
-            panic!("the orphan backstop must eventually free the input, got {error:?}")
+            panic!("an observed spend must release the fence, got {error:?}")
         });
         core.abandon_transaction(&after).await;
     }
@@ -1276,8 +1308,8 @@ mod tests {
     /// the request while awaiting its response, SPV may have dispatched to
     /// peers while awaiting an echo or IS-lock. So the fence must survive it —
     /// and, unlike in earlier revisions, it needs no special case to do so:
-    /// `Drop` reads the same monotonic clock the normal path does, so a
-    /// cancelled dispatch settles exactly like a returning one.
+    /// `Drop` sets the same flag the normal path does, so a cancelled dispatch
+    /// settles exactly like a returning one.
     ///
     /// Catch-up runs far past any bound a previous revision would have
     /// installed before the abort.
@@ -1328,11 +1360,23 @@ mod tests {
             fenced,
         );
 
-        // Still a fence and not a permanent hold: the backstop applies here too.
-        assert!(core.generation().test_elapse_orphan_backstop(&fenced));
+        // A cancelled dispatch's fence is released the same way every other one
+        // is — by evidence, and by nothing that merely elapses. Letting any
+        // timeout it might carry come due changes nothing.
+        assert!(
+            core.generation().test_elapse_time_based_release(&fenced),
+            "the cancelled dispatch must have settled into the pending phase"
+        );
+        expect_mid_broadcast(
+            try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
+            "cancellation says nothing about what reached the network, so no \
+             elapsed deadline may hand the input back",
+        );
+
+        core.generation().observe_spent([fenced]);
         let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
         let after = after.unwrap_or_else(|error| {
-            panic!("a cancelled dispatch's fence must still lapse, got {error:?}")
+            panic!("an observed spend must release a cancelled dispatch's fence, got {error:?}")
         });
         core.abandon_transaction(&after).await;
     }
