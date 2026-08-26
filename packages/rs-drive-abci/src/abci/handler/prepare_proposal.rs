@@ -1,6 +1,7 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
+use drive::grovedb::error::Error as GroveDBError;
 use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0Setters,
@@ -141,7 +142,7 @@ where
         );
         if let Some(tx) = transaction_guard.as_ref() {
             tx.rollback_to_savepoint()
-                .map_err(|e| drive::grovedb::error::Error::StorageError(e))?;
+                .map_err(GroveDBError::StorageError)?;
             tx.set_savepoint();
         }
         transaction_guard
