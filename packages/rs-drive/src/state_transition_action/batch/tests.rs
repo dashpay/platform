@@ -8,10 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
-use dpp::document::{Document, DocumentV0};
+use dpp::document::{Document, DocumentV0, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
@@ -28,15 +28,15 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 };
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
     DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0,
-    DocumentCreateTransitionActionV0,
+    DocumentCreateTransitionActionV0, DocumentFromCreateTransitionAction,
 };
 use crate::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::{
     DocumentDeleteTransitionActionAccessorsV0, DocumentDeleteTransitionActionV0,
 };
 use crate::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{
-    DocumentReplaceTransitionAction, DocumentReplaceTransitionActionAccessorsV0,
-    DocumentReplaceTransitionActionV0,
+    DocumentFromReplaceTransitionAction, DocumentReplaceTransitionAction,
+    DocumentReplaceTransitionActionAccessorsV0, DocumentReplaceTransitionActionV0,
 };
 use crate::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::{
     DocumentTransferTransitionAction, DocumentTransferTransitionActionAccessorsV0,
@@ -2899,4 +2899,143 @@ fn test_batched_transition_from_bump_action() {
     let bump = make_bump_action();
     let batched: BatchedTransitionAction = bump.into();
     assert!(batched.as_bump_identity_nonce_action().is_ok());
+}
+
+// ============================================================
+// 10. Contract-version stamp on create/replace conversions
+// ============================================================
+//
+// The document built from a create or replace action carries a
+// contract-version stamp from generation 1 of the conversion (protocol
+// v14, document serialization format 3) and no stamp under generation 0.
+// These tests go through the version-dispatched entry points so they fail
+// on a wrong Drive version-table selection, a missing stamp in one
+// conversion path, or a stamp that isn't the fetched contract's version.
+
+/// Contract version deliberately different from the fixture default (1) so a
+/// hardcoded stamp can't pass by accident.
+const STAMP_TEST_CONTRACT_VERSION: u32 = 7;
+
+fn stamp_test_contract_info(protocol_version: u32) -> Arc<DataContractFetchInfo> {
+    let mut info = DataContractFetchInfo::dpns_contract_fixture(protocol_version);
+    info.contract.set_version(STAMP_TEST_CONTRACT_VERSION);
+    Arc::new(info)
+}
+
+fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAction {
+    let base = DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+        id: Identifier::from([0xAA; 32]),
+        identity_contract_nonce: 1,
+        document_type_name: "domain".to_string(),
+        data_contract: stamp_test_contract_info(protocol_version),
+        token_cost: None,
+        gas_fees_paid_by: GasFeesPaidBy::default(),
+    });
+    DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
+        base,
+        block_info: BlockInfo::default(),
+        data: BTreeMap::from([("key".to_string(), Value::Text("value".to_string()))]),
+        prefunded_voting_balance: None,
+        current_store_contest_info: None,
+        should_store_contest_info: None,
+    })
+}
+
+fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransitionAction {
+    let base = DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+        id: Identifier::from([0xAA; 32]),
+        identity_contract_nonce: 1,
+        document_type_name: "domain".to_string(),
+        data_contract: stamp_test_contract_info(protocol_version),
+        token_cost: None,
+        gas_fees_paid_by: GasFeesPaidBy::default(),
+    });
+    DocumentReplaceTransitionAction::V0(DocumentReplaceTransitionActionV0 {
+        base,
+        revision: 2,
+        created_at: Some(1000),
+        updated_at: Some(2000),
+        transferred_at: Some(3000),
+        created_at_block_height: Some(10),
+        updated_at_block_height: Some(20),
+        transferred_at_block_height: Some(30),
+        created_at_core_block_height: Some(100),
+        updated_at_core_block_height: Some(200),
+        transferred_at_core_block_height: Some(300),
+        data: BTreeMap::from([("field".to_string(), Value::U64(42))]),
+        changed_data_fields: BTreeSet::from(["field".to_string()]),
+        creator_id: Some(Identifier::from([0xCC; 32])),
+    })
+}
+
+#[test]
+fn should_not_stamp_contract_version_on_create_conversion_before_format_3() {
+    let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+    let owner_id = Identifier::from([0xDD; 32]);
+
+    let action = stamp_test_create_action(platform_version.protocol_version);
+    let borrowed = Document::try_from_create_transition_action(&action, owner_id, platform_version)
+        .expect("borrowed create conversion");
+    assert_eq!(borrowed.contract_version(), None);
+
+    let owned =
+        Document::try_from_owned_create_transition_action(action, owner_id, platform_version)
+            .expect("owned create conversion");
+    assert_eq!(owned.contract_version(), None);
+}
+
+#[test]
+fn should_stamp_fetched_contract_version_on_create_conversion() {
+    let platform_version = PlatformVersion::latest();
+    let owner_id = Identifier::from([0xDD; 32]);
+
+    let action = stamp_test_create_action(platform_version.protocol_version);
+    let borrowed = Document::try_from_create_transition_action(&action, owner_id, platform_version)
+        .expect("borrowed create conversion");
+    assert_eq!(
+        borrowed.contract_version(),
+        Some(STAMP_TEST_CONTRACT_VERSION)
+    );
+
+    let owned =
+        Document::try_from_owned_create_transition_action(action, owner_id, platform_version)
+            .expect("owned create conversion");
+    assert_eq!(owned.contract_version(), Some(STAMP_TEST_CONTRACT_VERSION));
+}
+
+#[test]
+fn should_not_stamp_contract_version_on_replace_conversion_before_format_3() {
+    let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+    let owner_id = Identifier::from([0xDD; 32]);
+
+    let action = stamp_test_replace_action(platform_version.protocol_version);
+    let borrowed =
+        Document::try_from_replace_transition_action(&action, owner_id, platform_version)
+            .expect("borrowed replace conversion");
+    assert_eq!(borrowed.contract_version(), None);
+
+    let owned =
+        Document::try_from_owned_replace_transition_action(action, owner_id, platform_version)
+            .expect("owned replace conversion");
+    assert_eq!(owned.contract_version(), None);
+}
+
+#[test]
+fn should_stamp_fetched_contract_version_on_replace_conversion() {
+    let platform_version = PlatformVersion::latest();
+    let owner_id = Identifier::from([0xDD; 32]);
+
+    let action = stamp_test_replace_action(platform_version.protocol_version);
+    let borrowed =
+        Document::try_from_replace_transition_action(&action, owner_id, platform_version)
+            .expect("borrowed replace conversion");
+    assert_eq!(
+        borrowed.contract_version(),
+        Some(STAMP_TEST_CONTRACT_VERSION)
+    );
+
+    let owned =
+        Document::try_from_owned_replace_transition_action(action, owner_id, platform_version)
+            .expect("owned replace conversion");
+    assert_eq!(owned.contract_version(), Some(STAMP_TEST_CONTRACT_VERSION));
 }

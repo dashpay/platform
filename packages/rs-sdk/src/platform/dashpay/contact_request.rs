@@ -524,6 +524,7 @@ impl Sdk {
 
         // Create the document from the result
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: result.id,
             owner_id: result.owner_id,
             properties: result.properties,

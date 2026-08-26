@@ -5,6 +5,7 @@ use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::time::Duration;
 
 use crate::sdk::SDKWrapper;
 use crate::types::{
@@ -15,6 +16,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::identifier::Identifier;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use serde_json::json; // Still used by other functions
+
+/// A list query fans out to the vote state of every current contest. Keep one
+/// slow or unreachable DAPI node from pinning an FFI caller indefinitely.
+const DPNS_ACTIVE_CONTESTS_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Get all contested DPNS usernames where an identity is a contender
 ///
@@ -637,9 +642,19 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
 
     let limit_opt = if limit > 0 { Some(limit) } else { None };
 
-    let result = sdk_wrapper
-        .runtime
-        .block_on(async { sdk.get_contested_non_resolved_usernames(limit_opt).await });
+    let result = sdk_wrapper.runtime.block_on(async {
+        tokio::time::timeout(
+            DPNS_ACTIVE_CONTESTS_TIMEOUT,
+            sdk.get_contested_non_resolved_usernames(limit_opt),
+        )
+        .await
+        .map_err(|_| {
+            dash_sdk::Error::TimeoutReached(
+                DPNS_ACTIVE_CONTESTS_TIMEOUT,
+                "fetching active DPNS contests".to_string(),
+            )
+        })?
+    });
 
     match result {
         Ok(names_with_contest_info) => {
