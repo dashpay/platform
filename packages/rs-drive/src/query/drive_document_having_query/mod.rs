@@ -37,13 +37,15 @@
 //! rank `offset`); having-range addresses them by **value bound**
 //! (`aggregate ∈ [lo, hi]`). Three consequences:
 //!
-//! 1. **The bound is part of the proof contract.** The grovedb envelope
-//!    for a range read echoes the Merk query itself, and the verifier
-//!    re-builds that query from the request's bounds
-//!    ([`AxisRangeBounds::merk_query`]) — so prover and verifier must
-//!    share one bounds-to-query translation, exactly as they share the
-//!    grove path. Completeness comes from the Merk range proof: the
-//!    boundary commitments show no in-range group was omitted.
+//! 1. **The bound is part of the proof contract.** Both proof sides
+//!    build the same [`grovedb::PathQuery::new_axis_bounded`] from the
+//!    request's bounds ([`AxisRangeBounds::i128_bounds`]), and grovedb
+//!    lowers those bounds into the secondary's keyspace through one
+//!    shared function on both the prover and the verifier — so the two
+//!    sides cannot drift on which range a proof is about, exactly as
+//!    they share the grove path. Completeness comes from the Merk range
+//!    proof: the boundary commitments show no in-range group was
+//!    omitted.
 //! 2. **No `OFFSET`, no `start_at` — and no full pagination.** The
 //!    range primitives take a limit but no skip, and a request carrying
 //!    either knob is rejected loudly. A page cut at `limit` can only be
@@ -85,8 +87,6 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::element::indexed::{encode_avg_sort_key, encode_count_sort_key, encode_sum_sort_key};
-#[cfg(any(feature = "server", feature = "verify"))]
-use grovedb::Query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod mode_detection;
@@ -196,23 +196,26 @@ impl AxisRangeBounds {
         }
     }
 
-    /// The Merk query over the axis secondary that reads exactly these
-    /// bounds, walking in the requested direction.
+    /// The inclusive bounds widened to `i128` — the domain
+    /// [`grovedb::PathQuery::new_axis_bounded`] takes for every axis.
     ///
-    /// This is the **prover/verifier-agreement artifact** of the having
-    /// surface: grovedb's range-proof envelope is generated against this
-    /// query and verified against the verifier's own reconstruction of
-    /// it, so both sides must build it from the same bounds through this
-    /// one function — a divergence surfaces as a failed verification,
-    /// not a wrong answer.
-    pub fn merk_query(&self, descending: bool) -> Query {
-        let (lower, upper) = self.secondary_key_bounds();
-        let mut query = Query::new_with_direction(!descending);
-        match upper {
-            Some(upper) => query.insert_range(lower..upper),
-            None => query.insert_range_from(lower..),
+    /// The prover/verifier-agreement artifact of the having surface is
+    /// grovedb's own bounded-axis lowering: both proof sides lower the
+    /// same `PathQuery` bounds into the secondary's keyspace through one
+    /// shared function inside grovedb, producing exactly the byte range
+    /// [`Self::secondary_key_bounds`] documents — inclusive at
+    /// `encode(lo)`, exclusive at `encode(hi + 1)`, open-ended at the
+    /// axis maximum. Platform no longer builds the Merk query itself, so
+    /// the two sides cannot drift on which range a proof is about.
+    ///
+    /// Widening is lossless: `u64` and `i64` both embed in `i128`, and
+    /// grovedb clamps back to each axis's own domain when lowering.
+    pub fn i128_bounds(&self) -> (i128, i128) {
+        match *self {
+            AxisRangeBounds::Count { lo, hi } => (lo as i128, hi as i128),
+            AxisRangeBounds::Sum { lo, hi } => (lo as i128, hi as i128),
+            AxisRangeBounds::Avg { lo, hi } => (lo, hi),
         }
-        query
     }
 }
 
@@ -253,8 +256,9 @@ pub struct DocumentHavingMode {
 /// A resolved having-range query. Shared by the prover and the verifier —
 /// both build the grove path through
 /// [`DriveDocumentHavingQuery::indexed_property_name_tree_path`] and the
-/// secondary query through [`AxisRangeBounds::merk_query`], so the two
-/// cannot drift on which subtree or which range the proof is about.
+/// same bounded axis `PathQuery` through
+/// [`AxisRangeBounds::i128_bounds`], so the two cannot drift on which
+/// subtree or which range the proof is about.
 #[derive(Debug, Clone)]
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct DriveDocumentHavingQuery<'a> {

@@ -15,7 +15,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
-use grovedb::{IndexedTopKKeysPage, TransactionArg};
+use grovedb::{IndexedTopKKeysPage, PathQuery, TransactionArg};
 use grovedb_costs::CostContext;
 
 impl DriveDocumentRankedQuery<'_> {
@@ -170,21 +170,25 @@ impl DriveDocumentRankedQuery<'_> {
         Ok(RankedPage { skipped, entries })
     }
 
-    /// Generate the grovedb indexed-axis paginated top-k proof for this
-    /// query.
+    /// Generate the axis-ordered top-k proof for this query, through the
+    /// unified `PathQuery` surface (grovedb's only public proof surface
+    /// for indexed-axis reads): the query is
+    /// [`PathQuery::new_axis_top_k`] and the envelope is a GroveDBProof
+    /// V1 carrying an axis descent into the queried secondary.
     ///
     /// The envelope commits the walked secondary entries, the number of
     /// entries skipped to reach them, the primary's root hash, the
-    /// sibling axes' root hashes, and a per-ancestor attestation chain
-    /// up to the grovedb root — so the client reconstructs the platform
-    /// root hash from it. It also echoes `(axis, k, offset,
-    /// descending)`, which
-    /// [`grovedb::GroveDb::verify_indexed_axis_top_k_paginated`]
-    /// re-checks against what the client asked for; that is why `k` is
+    /// sibling axes' root hashes, and the ordinary layer chain up to the
+    /// grovedb root — so the client reconstructs the platform root hash
+    /// from it. `(axis, k, offset, descending)` are **not echoed** in the
+    /// envelope: the verifier takes the client's own reconstruction of
+    /// the same `PathQuery` as input, so a proof generated for a
+    /// different ranking — or a different page — fails verification
+    /// rather than being silently reinterpreted. That is why `k` is
     /// validated rather than clamped upstream (a clamped `k` would
-    /// produce a proof the client's own reconstruction rejects).
+    /// produce a proof the client's own query rejects).
     ///
-    /// The paginated primitive is used unconditionally, with
+    /// The paginated traversal is used unconditionally, with
     /// `offset = 0` for offset-free requests, so there is exactly one
     /// proof shape on this surface: a client never has to guess which of
     /// two envelope formats a server produced.
@@ -204,23 +208,27 @@ impl DriveDocumentRankedQuery<'_> {
     pub fn execute_top_k_with_proof(
         &self,
         drive: &Drive,
-        transaction: TransactionArg,
+        _transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path()?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
-
-        // Same destructure-don't-unwrap rationale as the no-proof arm.
-        let CostContext { value, cost: _ } = drive.grove.prove_indexed_axis_top_k_paginated(
-            path_refs.as_slice(),
+        let path_query = PathQuery::new_axis_top_k(
+            path,
             self.axis.into(),
             self.k,
             self.offset as u64,
             self.descending,
-            transaction,
-            grove_version,
         );
+
+        // The unified prover proves committed state — it takes no
+        // transaction. The parameter is kept for signature stability with
+        // the no-proof executor; the query dispatch passes `None` on this
+        // surface anyway (queries answer from committed state).
+        //
+        // Same destructure-don't-unwrap rationale as the no-proof arm.
+        let CostContext { value, cost: _ } =
+            drive.grove.prove_query(&path_query, None, grove_version);
         value.map_err(|e| Error::GroveDB(Box::new(e)))
     }
 }
