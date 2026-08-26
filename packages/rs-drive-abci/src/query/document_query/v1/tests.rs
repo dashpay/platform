@@ -3425,7 +3425,7 @@ mod having_range_tests {
             QueryError::Query(QuerySyntaxError::InvalidParameter(message)) => {
                 assert!(
                     message.contains("exactly one `group_by` property")
-                        && message.contains("equality `where` clause"),
+                        && message.contains("pin every leading index property"),
                     "the rejection must steer to the pinned-prefix form, got: {message}"
                 );
             }

@@ -81,13 +81,15 @@ pub fn detect_having_mode_v0(
     // covering index's LAST property, whose distinct values are the
     // secondary's group keys. A compound ranked index filters each
     // prefix's groups separately — its leading properties are pinned by
-    // equality `where` clauses, never grouped over.
+    // `where` clauses (`==`, at most one of them a bounded `IN`), never
+    // grouped over.
     if group_by.len() != 1 {
         return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
             "having-range queries require exactly one `group_by` property (the covering \
              ranked index's trailing property); got {}. A compound ranked index bounds \
-             each prefix's groups separately — pin every leading index property with an \
-             equality `where` clause and `group_by` the trailing property.",
+             each prefix's groups separately — pin every leading index property with a \
+             `where` clause (`==`, or a bounded `IN` on at most one of them) and \
+             `group_by` the trailing property.",
             group_by.len()
         ))));
     }

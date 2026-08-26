@@ -191,14 +191,16 @@ pub fn detect_ranked_mode_v0(
     // Zero group_by would ask to rank a single global aggregate against
     // itself. Two or more is rejected because a compound ranked index
     // ranks per prefix, not across a compound grouping: its leading
-    // properties are pinned by equality `where` clauses, and only the
-    // trailing property is grouped over.
+    // properties are pinned by `where` clauses (`==`, at most one of
+    // them a bounded `IN`), and only the trailing property is grouped
+    // over.
     if group_by.len() != 1 {
         return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
             "ranked queries require exactly one `group_by` property (the covering ranked \
              index's trailing property); got {}. A compound ranked index ranks each \
-             prefix's groups separately — pin every leading index property with an \
-             equality `where` clause and `group_by` the trailing property.",
+             prefix's groups separately — pin every leading index property with a \
+             `where` clause (`==`, or a bounded `IN` on at most one of them) and \
+             `group_by` the trailing property.",
             group_by.len()
         ))));
     }

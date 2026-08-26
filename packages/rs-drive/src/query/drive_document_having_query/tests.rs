@@ -336,7 +336,7 @@ mod grammar {
         let message = format!("{error}");
         assert!(
             message.contains("exactly one `group_by` property")
-                && message.contains("equality `where` clause"),
+                && message.contains("pin every leading index property"),
             "the rejection must steer to the pinned-prefix form, got: {error}"
         );
     }

@@ -1188,7 +1188,8 @@ impl Index {
         // `identityId` value — each ordering that identity's `class` groups
         // by the group aggregate. There is deliberately no global
         // cross-prefix ordering; the query surfaces require every leading
-        // property to be pinned by an equality `where` clause.
+        // property to be pinned by a `where` clause (`==`, at most one of
+        // them a bounded `IN` whose branches are merged client-visibly).
         //
         // One compound shape stays structurally impossible and is rejected
         // per document type (all indexes are needed to see it): a compound
