@@ -1098,7 +1098,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // re-acquires that (non-reentrant) lock internally.
         self.drain_pending_contact_crypto(provider).await;
 
-        let (payment_address, used_flip_changeset, tx, fee, funding_accounts) = {
+        let (payment_address, used_flip_changeset, tx, fee, funding_accounts, in_broadcast_pin) = {
             let mut wm = self.wallet_manager.write().await;
 
             // Resolve the external account's xpub so we can derive addresses.
@@ -1341,12 +1341,40 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 return Err(PlatformWalletError::InputMidBroadcast { outpoint });
             }
 
+            // …and FENCE THIS SELECTION IN TURN, before the write guard drops.
+            //
+            // The check above is only half of the contract. It stops this build
+            // from consuming an input another dispatch has fenced; without the
+            // pin, the transaction this build just signed carries no fence of
+            // its own, and everything below — the durability store, and the
+            // `broadcaster.broadcast(&tx)` await — runs unfenced. The
+            // broadcaster can suspend before submission; catch-up can advance
+            // `last_processed_height` past key-wallet's 24-block reservation
+            // TTL in that gap; a competing build then sweeps and re-reserves
+            // this very input, finds no fence on it, passes its own copy of the
+            // check above, and completes — after which THIS future resumes and
+            // puts its already-signed transaction on the wire against an input
+            // reassigned to another payment (`dashpay/platform#4309`, review
+            // round 7).
+            //
+            // So the pin is installed under the guard that just proved the
+            // reservation is ours, making check-and-pin one atomic step, and it
+            // outlives the guard exactly the way the finalized-handle dispatch's
+            // does (`CoreWallet::dispatch_unexpired`). It is settled on every
+            // exit below: released on a definitive pre-send failure (the
+            // durability abort, a rejected broadcast), and left as a
+            // pending-spend fence on every other outcome — accepted, ambiguous,
+            // or this future being cancelled/unwound mid-broadcast, which
+            // `InBroadcastPin::drop` covers without any code here.
+            let in_broadcast_pin = info.generation.pin_in_broadcast(&tx);
+
             (
                 payment_address,
                 used_flip_changeset,
                 tx,
                 fee,
                 offered_accounts,
+                in_broadcast_pin,
             )
         };
 
@@ -1361,11 +1389,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // leaves a one-address gap that the pool's gap window absorbs on
         // retry — bounded, because a signed transaction exists here, unlike
         // the unbounded build-failure case rolled back above.
-        self.persister.store(used_flip_changeset).map_err(|e| {
-            PlatformWalletError::Persistence(format!(
+        if let Err(e) = self.persister.store(used_flip_changeset) {
+            // A definitive PRE-SEND failure: the broadcaster below was never
+            // reached, so the transaction provably is not on the wire and its
+            // inputs are safe to reselect immediately. Release the fence in the
+            // same breath as the abort — carrying it past this point would hold
+            // the inputs against every later build with no transaction to
+            // protect, and (with no deadline behind it) nothing would ever
+            // clear it.
+            in_broadcast_pin.settle_released();
+            return Err(PlatformWalletError::Persistence(format!(
                 "failed to persist payment-address used flip: {e}"
-            ))
-        })?;
+            )));
+        }
 
         // --- 3. Broadcast the transaction, releasing the build's UTXO
         // reservation if the broadcast is definitively rejected pre-send. ---
@@ -1374,8 +1410,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // came from a BIP32 or contact-receiving account would otherwise leave
         // those reserved until the TTL backstop, and an immediate retry would
         // fail with a spurious insufficient-funds.
+        // The pin installed under the build guard is held across this await —
+        // that is the whole point of it — and settled on the way out. Only a
+        // definitive rejection releases the inputs; every other outcome leaves
+        // the pending-spend fence standing until the wallet observes the spend
+        // (`dashpay/platform#4309`). A cancellation or unwind inside `broadcast`
+        // reaches neither arm and settles as pending through
+        // `InBroadcastPin::drop`, which is the conservative direction.
         let broadcast_result = match self.broadcaster.broadcast(&tx).await {
             Err(e) if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) => {
+                // Provably nothing on the wire: free the fence alongside the
+                // reservation, so the instructed immediate retry can reselect.
+                in_broadcast_pin.settle_released();
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
@@ -1388,7 +1434,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .await;
                 Err(e)
             }
-            other => other,
+            other => {
+                // Accepted, or an ambiguous `MaybeSent`. The transaction may be
+                // on the network, and this manager may be running the DAPI
+                // broadcaster, which injects nothing locally — so the inputs are
+                // still selectable here and must stay fenced until an observed
+                // spend says otherwise.
+                in_broadcast_pin.settle_pending_spend();
+                other
+            }
         };
         let txid = match broadcast_result {
             Ok(txid) => txid,
@@ -6655,6 +6709,142 @@ mod tests {
             transaction: &dashcore::Transaction,
         ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
             Ok(transaction.txid())
+        }
+    }
+
+    /// `dashpay/platform#4309`, REVIEW ROUND 7 — THE CONTACT-PAYMENT BUILD'S
+    /// OWN FENCE.
+    ///
+    /// The build's conflict check stopped it from CONSUMING an input another
+    /// dispatch had fenced. It did not fence the selection it had just made, so
+    /// the stretch after the manager write guard drops — the durability store
+    /// and `broadcaster.broadcast(&tx)` — ran with no pin at all. This test
+    /// drives the resulting race end to end:
+    ///
+    /// 1. A contact payment builds, signs, releases the guard, and SUSPENDS
+    ///    inside the broadcaster before submission.
+    /// 2. Catch-up advances the wallet's height far past key-wallet's 24-block
+    ///    reservation TTL, so the parked build's reservation is swept and its
+    ///    input is selectable again.
+    /// 3. A competing contact payment builds. There is exactly one spendable
+    ///    UTXO, so it selects the same input the parked transaction already
+    ///    spends.
+    ///
+    /// Before the fix step 3 SUCCEEDED — it found no fence (the parked build
+    /// never installed one), passed its own conflict check, and returned a
+    /// second signed transaction against the same input, which the resuming
+    /// original then raced on the wire. It must now be refused.
+    #[tokio::test]
+    async fn a_suspended_contact_payment_fences_its_inputs_against_a_competing_build() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        // ONE spendable UTXO, so the competing build can only select the very
+        // outpoint the parked transaction already spends.
+        fund_bip44_account_0(&manager, wallet_id, 0xD1, 1_000_000).await;
+        let funded = dashcore::OutPoint {
+            txid: <dashcore::Txid as dashcore::hashes::Hash>::from_slice(&[0xD1; 32])
+                .expect("txid"),
+            vout: 0,
+        };
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        let stamped = synced_height(&manager, wallet_id).await;
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let gated = with_gated_broadcaster(iw, Arc::clone(&entered), Arc::clone(&release));
+        let accepting = with_accepting_broadcaster(iw);
+
+        let parked = async {
+            gated
+                .dashpay()
+                .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+                .await
+        };
+
+        let competitor = async {
+            // Parked inside `broadcast`: signed, guard dropped, nothing
+            // submitted — the exact window the fence has to cover.
+            entered.wait().await;
+
+            // Ordinary historical catch-up, well past key-wallet's reservation
+            // TTL. The parked build's reservation is swept; nothing but the
+            // fence is holding its input now.
+            set_synced_height(&manager, wallet_id, stamped + 17_000).await;
+
+            let racing = accepting
+                .dashpay()
+                .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+                .await;
+            release.wait().await;
+            racing
+        };
+
+        let (sent, racing) = tokio::join!(parked, competitor);
+
+        match racing {
+            Err(PlatformWalletError::InputMidBroadcast { outpoint }) => assert_eq!(
+                outpoint, funded,
+                "the refusal must name the input the parked transaction spends"
+            ),
+            other => panic!(
+                "a competing build must be refused while the original is mid-broadcast — \
+                 unfenced, it returned a second signed transaction spending the same \
+                 input, got {other:?}"
+            ),
+        }
+
+        assert!(
+            sent.is_ok(),
+            "the parked payment itself must complete normally, got {sent:?}"
+        );
+    }
+
+    /// Broadcaster stub that PARKS inside `broadcast` — the production
+    /// suspension the in-broadcast fence exists to cover. It signals `entered`
+    /// once it has the transaction (guard already dropped, nothing submitted)
+    /// and waits on `release` before returning.
+    struct GatedBroadcaster {
+        entered: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for GatedBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            self.entered.wait().await;
+            self.release.wait().await;
+            Ok(transaction.txid())
+        }
+    }
+
+    fn with_gated_broadcaster(
+        real: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+        entered: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+    ) -> crate::wallet::identity::IdentityWallet<GatedBroadcaster> {
+        crate::wallet::identity::IdentityWallet {
+            sdk: Arc::clone(&real.sdk),
+            wallet_manager: Arc::clone(&real.wallet_manager),
+            wallet_id: real.wallet_id,
+            asset_locks: Arc::clone(&real.asset_locks),
+            persister: real.persister.clone(),
+            broadcaster: Arc::new(GatedBroadcaster { entered, release }),
+            sdk_writer: Arc::clone(&real.sdk_writer),
+            dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
+            dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
         }
     }
 

@@ -126,6 +126,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// reservation token, and the accounts that contributed inputs — the
     /// caller's release path needs every one of them, since a pooled build
     /// reserves in each contributing account's own set under the one token.
+    ///
+    /// # This form hands the transaction back UNSENT
+    ///
+    /// It is the build-only entry point: the caller broadcasts through some
+    /// other surface, or not at all. So the in-broadcast fence
+    /// [`build_asset_lock_transaction_fenced`](Self::build_asset_lock_transaction_fenced)
+    /// installs is released again before returning — there is no dispatch here
+    /// to keep it alive, and a fence with no settler behind it would hold these
+    /// inputs against every later build for the life of the process. The
+    /// reservation is left held exactly as before. The internal funded pipeline
+    /// ([`Self::broadcast_funded_asset_lock_with_funding`]) takes the fenced
+    /// form instead and carries the pin through to its own broadcast.
     #[allow(clippy::type_complexity)]
     pub async fn build_asset_lock_transaction_with_funding<S: ExtendedPubKeySigner>(
         &self,
@@ -141,6 +153,64 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             DerivationPath,
             Option<key_wallet::ReservationToken>,
             Vec<AccountType>,
+        ),
+        PlatformWalletError,
+    > {
+        let (transaction, path, token, accounts, pin) = self
+            .build_asset_lock_transaction_fenced(
+                amount,
+                funding_sources,
+                source_index,
+                funding_type,
+                identity_index,
+                signer,
+            )
+            .await?;
+        pin.settle_released();
+        Ok((transaction, path, token, accounts))
+    }
+
+    /// [`build_asset_lock_transaction_with_funding`](Self::build_asset_lock_transaction_with_funding)
+    /// that additionally returns the selection's IN-BROADCAST PIN, installed
+    /// atomically with the reservation while the wallet-manager write guard was
+    /// still held.
+    ///
+    /// The conflict check this build runs (below) stops it from consuming an
+    /// input another dispatch has fenced. On its own that is only half of the
+    /// contract: the transaction it just built carries no fence of its own, so
+    /// everything the caller does afterwards — the pool durability gate, the
+    /// tracking write, and the broadcast await itself — runs unfenced. The
+    /// broadcaster can suspend before submission, catch-up can advance
+    /// `last_processed_height` past key-wallet's 24-block reservation TTL in
+    /// that gap, and a competing build can then sweep and re-reserve this very
+    /// input, find no fence, pass its own copy of the check, and complete —
+    /// after which this build's already-signed asset lock still goes to the wire
+    /// against an input reassigned to another payment (`dashpay/platform#4309`,
+    /// review round 7).
+    ///
+    /// The returned pin closes that. The CALLER OWNS ITS SETTLEMENT and must
+    /// account for every exit: [`InBroadcastPin::settle_released`] on a
+    /// definitive pre-send failure (an abort before the broadcaster is reached,
+    /// or a definitive rejection), and
+    /// [`InBroadcastPin::settle_pending_spend`] — or simply dropping it — on
+    /// every other outcome, which leaves the pending-spend fence standing until
+    /// the wallet observes the spend.
+    #[allow(clippy::type_complexity)]
+    pub(crate) async fn build_asset_lock_transaction_fenced<S: ExtendedPubKeySigner>(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_sources: &[AccountTypePreference],
+        source_index: u32,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<
+        (
+            Transaction,
+            DerivationPath,
+            Option<key_wallet::ReservationToken>,
+            Vec<AccountType>,
+            crate::wallet::core::InBroadcastPin,
         ),
         PlatformWalletError,
     > {
@@ -279,11 +349,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         };
 
+        // FENCE THIS SELECTION IN TURN, before the write guard drops — the
+        // other half of the conflict check above. Installed here rather than
+        // beside that check so the two credit-key error paths in between cannot
+        // return past a live pin: with the pending-spend phase carrying no
+        // deadline, a pin dropped on an abort would fence these inputs against
+        // every later build with no transaction to protect and nothing able to
+        // clear it.
+        //
+        // Nothing between the check and this line touches reservations or the
+        // fence map, and the wallet-manager WRITE guard has been held across
+        // both, so check-and-pin is still one atomic step against the TTL sweep
+        // and against `last_processed_height` advancement — the two mutations
+        // that could otherwise interleave. See the method docs for the race
+        // this closes.
+        let in_broadcast_pin = info.generation.pin_in_broadcast(&result.transaction);
+
         Ok((
             result.transaction,
             path,
             result.reservation_token,
             result.funding_accounts,
+            in_broadcast_pin,
         ))
     }
 
@@ -849,8 +936,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    accounts that actually contributed inputs — a pooled build
         //    reserves in each of their own sets under the one token, so every
         //    release below has to reach all of them.
-        let (tx, path, reservation_token, funding_accounts) = self
-            .build_asset_lock_transaction_with_funding(
+        //    `in_broadcast_pin` fences those inputs from the moment they were
+        //    reserved — installed under the build's own write guard, so no
+        //    competing build can sweep and re-reserve them across the durability
+        //    gate and the broadcast await below (`dashpay/platform#4309`). Every
+        //    exit from here on settles it: released on the aborts that never
+        //    reach the broadcaster and on a definitive rejection, left pending
+        //    otherwise.
+        let (tx, path, reservation_token, funding_accounts, in_broadcast_pin) = self
+            .build_asset_lock_transaction_fenced(
                 amount,
                 funding_sources,
                 source_index,
@@ -888,6 +982,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         {
             if locked_amount_duffs < minimum {
                 drop(build_persist_guard);
+                // Nothing reached the broadcaster, so the fence has no
+                // transaction to protect: release it alongside the reservation.
+                in_broadcast_pin.settle_released();
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
@@ -932,8 +1029,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // above: drop the serialization guard, owner-release across
                 // every contributor, THEN surface the durability error —
                 // otherwise an immediate retry cannot reselect the BIP44 /
-                // BIP32 / DashPay inputs until the TTL sweep frees them.
+                // BIP32 / DashPay inputs until the TTL sweep frees them. The
+                // fence goes with the reservation for the same reason: the
+                // broadcaster was never reached, so it protects nothing, and
+                // leaving it would block the retry the release exists to enable.
                 drop(build_persist_guard);
+                in_broadcast_pin.settle_released();
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
@@ -984,7 +1085,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    transaction — so at no point is the row resumable while its
         //    inputs are re-spendable. A `MaybeSent` failure keeps both the
         //    reservation and the resumable row.
-        if let Err(e) = self.broadcaster.broadcast(&tx).await {
+        //
+        //    The in-broadcast fence is held ACROSS this await — that is what it
+        //    is for — and settled on the way out. It follows the reservation
+        //    exactly: freed only where the reservation is freed (a definitive
+        //    rejection whose `Built` row was actually removed), and otherwise
+        //    left as a pending-spend fence until the wallet observes the spend.
+        //    A cancellation or unwind inside `broadcast` reaches neither arm and
+        //    settles as pending through `InBroadcastPin::drop`.
+        let broadcast_outcome = self.broadcaster.broadcast(&tx).await;
+        if let Err(e) = broadcast_outcome {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
                 let cs_untrack = self.untrack_asset_lock(&out_point).await;
                 // Release only when the Built row was actually removed. If
@@ -997,6 +1107,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 let removed_built_row = cs_untrack.removed.contains(&out_point);
                 self.queue_asset_lock_changeset(cs_untrack);
                 if removed_built_row {
+                    // Provably nothing on the wire and the row is gone: free the
+                    // fence with the reservation so the rebuild can reselect.
+                    in_broadcast_pin.settle_released();
                     crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                         &self.wallet_manager,
                         &self.wallet_id,
@@ -1005,10 +1118,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         reservation_token,
                     )
                     .await;
+                } else {
+                    // The untrack guard fired: a concurrent `resume_asset_lock`
+                    // advanced the row past `Built`, which is positive evidence
+                    // the transaction reached the network after all. The
+                    // reservation stays held, and so must the fence.
+                    in_broadcast_pin.settle_pending_spend();
                 }
+            } else {
+                // Ambiguous `MaybeSent`: the transaction may be on the network.
+                in_broadcast_pin.settle_pending_spend();
             }
             return Err(e.into());
         }
+        // Accepted. On the DAPI broadcaster nothing was injected locally, so the
+        // inputs are still selectable here until the spend is observed.
+        in_broadcast_pin.settle_pending_spend();
 
         // 4. Transition to Broadcast and queue the changeset.
         let cs_broadcast = self
@@ -1160,6 +1285,161 @@ mod tests {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(transaction.txid())
         }
+    }
+
+    /// Broadcaster that PARKS inside `broadcast` — the production suspension
+    /// the in-broadcast fence exists to cover. Signals `entered` once it has
+    /// the transaction (manager guard already dropped, nothing submitted) and
+    /// waits on `release` before returning.
+    struct GatedBroadcaster {
+        entered: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for GatedBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            self.entered.wait().await;
+            self.release.wait().await;
+            Ok(transaction.txid())
+        }
+    }
+
+    /// Run ordinary historical catch-up on the fixture wallet: advance both
+    /// height clocks well past key-wallet's 24-block reservation TTL, so a
+    /// reservation stamped before the call is swept by the next selection.
+    async fn catch_up_past_the_reservation_ttl(
+        wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        height: u32,
+    ) {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let mut wm = wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+        info.core_wallet.update_last_processed_height(height);
+        info.core_wallet.update_synced_height(height);
+    }
+
+    /// The fixture's single spendable BIP-44 outpoint.
+    async fn the_only_funded_outpoint(
+        wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+    ) -> OutPoint {
+        let wm = wallet_manager.read().await;
+        let (_, info) = wm.get_wallet_and_info(&wallet_id).expect("wallet present");
+        let utxos = &info
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .expect("BIP-44 managed account 0")
+            .utxos;
+        assert_eq!(
+            utxos.len(),
+            1,
+            "the race needs exactly one selectable UTXO, so both builds must \
+             contend for the same input"
+        );
+        *utxos.keys().next().expect("one utxo")
+    }
+
+    /// `dashpay/platform#4309`, REVIEW ROUND 7 — THE ASSET-LOCK BUILD'S OWN
+    /// FENCE.
+    ///
+    /// The build's conflict check stopped it from CONSUMING an input another
+    /// dispatch had fenced. It did not fence the selection it had just made, so
+    /// everything between the check and the direct `broadcaster.broadcast(&tx)`
+    /// — the pool durability gate, the `Built` tracking write, and the await
+    /// itself — ran with no pin on those inputs.
+    ///
+    /// 1. A funded asset lock builds, signs, releases the manager guard, and
+    ///    SUSPENDS inside the broadcaster before submission.
+    /// 2. Catch-up advances the wallet far past key-wallet's 24-block
+    ///    reservation TTL, so the parked build's reservation is swept.
+    /// 3. A competing asset-lock build runs. There is exactly one spendable
+    ///    UTXO, so it selects the same input the parked lock already spends.
+    ///
+    /// Before the fix step 3 SUCCEEDED and returned a second signed asset lock
+    /// against that input. It must now be refused with `InputMidBroadcast`.
+    ///
+    /// The two builds run through two `AssetLockManager`s over ONE shared
+    /// wallet manager. That is not a workaround for the per-manager
+    /// build→persist serialization guard: production drops that guard before
+    /// the broadcast (it orders pool snapshots, nothing else), so a single
+    /// manager leaves exactly the same window open. Two managers just make the
+    /// second build's broadcaster independent of the parked one. The fence
+    /// lives on the shared wallet generation, which is what both see.
+    #[tokio::test]
+    async fn a_suspended_asset_lock_fences_its_inputs_against_a_competing_build() {
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let funded = the_only_funded_outpoint(&wallet_manager, wallet_id).await;
+
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let (parked_manager, _p1) = asset_lock_manager_over(
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(GatedBroadcaster {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            }),
+        );
+        let (competing_manager, _p2) = asset_lock_manager_over(
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(CountingOkBroadcaster::default()),
+        );
+
+        let parked = async {
+            parked_manager
+                .broadcast_funded_asset_lock(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                )
+                .await
+        };
+
+        let competitor = async {
+            // Parked inside `broadcast`: signed, guard dropped, nothing
+            // submitted — the window the fence has to cover.
+            entered.wait().await;
+            catch_up_past_the_reservation_ttl(&wallet_manager, wallet_id, 17_000).await;
+
+            let racing = competing_manager
+                .broadcast_funded_asset_lock(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                )
+                .await;
+            release.wait().await;
+            racing
+        };
+
+        let (sent, racing) = tokio::join!(parked, competitor);
+
+        match racing {
+            Err(PlatformWalletError::InputMidBroadcast { outpoint }) => assert_eq!(
+                outpoint, funded,
+                "the refusal must name the input the parked lock spends"
+            ),
+            other => panic!(
+                "a competing asset-lock build must be refused while the original is \
+                 mid-broadcast — unfenced, it returned a second signed lock spending \
+                 the same input, got {other:?}"
+            ),
+        }
+
+        assert!(
+            sent.is_ok(),
+            "the parked asset lock itself must complete normally, got {sent:?}"
+        );
     }
 
     /// Builds an `AssetLockManager` over the CoinJoin-funded fixture
