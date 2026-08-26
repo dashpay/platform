@@ -1,7 +1,6 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
-use drive::grovedb::error::Error as GroveDBError;
 use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0Setters,
@@ -14,6 +13,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
+use drive::grovedb::error::Error as GroveDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
