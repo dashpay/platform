@@ -22,6 +22,7 @@ pub mod v2;
 #[cfg(feature = "validation")]
 pub(crate) mod validator;
 
+use crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
@@ -59,22 +60,19 @@ pub const CONTRACT_VERSION_STAMP_MAX_SIZE: u16 = 5;
 pub(crate) fn validate_required_since_within_contract_version(
     document_types: &std::collections::BTreeMap<String, DocumentType>,
     contract_version: u32,
-) -> Result<(), crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError>
-{
+) -> Result<(), DataContractInvalidRequiredFieldsUpdateError> {
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
     for (document_type_name, document_type) in document_types {
         for (property_name, property) in document_type.as_ref().properties() {
             if let Some(required_since) = property.required_since {
                 if required_since > contract_version {
-                    return Err(
-                        crate::consensus::basic::data_contract::DataContractInvalidRequiredFieldsUpdateError::new(
-                            document_type_name.clone(),
-                            format!(
-                                "property '{property_name}' carries requiredSince {required_since} which exceeds the contract version {contract_version}"
-                            ),
+                    return Err(DataContractInvalidRequiredFieldsUpdateError::new(
+                        document_type_name.clone(),
+                        format!(
+                            "property '{property_name}' carries requiredSince {required_since} which exceeds the contract version {contract_version}"
                         ),
-                    );
+                    ));
                 }
             }
         }

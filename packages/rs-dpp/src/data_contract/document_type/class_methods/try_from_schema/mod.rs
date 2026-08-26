@@ -432,6 +432,7 @@ mod tests {
     use super::*;
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::validate_required_since_within_contract_version;
     use platform_value::string_encoding::Encoding;
     use serde_json::json;
 
@@ -984,20 +985,10 @@ mod tests {
         document_types.insert("msg".to_string(), document_type);
 
         assert!(
-            crate::data_contract::document_type::validate_required_since_within_contract_version(
-                &document_types,
-                1
-            )
-            .is_err(),
+            validate_required_since_within_contract_version(&document_types, 1).is_err(),
             "requiredSince 2 must be rejected on a version 1 contract even through $ref"
         );
-        assert!(
-            crate::data_contract::document_type::validate_required_since_within_contract_version(
-                &document_types,
-                2
-            )
-            .is_ok()
-        );
+        assert!(validate_required_since_within_contract_version(&document_types, 2).is_ok());
     }
 
     #[test]
