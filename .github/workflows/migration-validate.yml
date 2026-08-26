@@ -31,7 +31,8 @@ jobs:
 
       - name: Rust smoke build
         run: |
-          rustup target list --installed | grep aarch64-apple-ios
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          rustup show
           rm -rf "$RUNNER_TEMP/migration-smoke"
           cargo new "$RUNNER_TEMP/migration-smoke" --bin
           cargo build --manifest-path "$RUNNER_TEMP/migration-smoke/Cargo.toml" -q
