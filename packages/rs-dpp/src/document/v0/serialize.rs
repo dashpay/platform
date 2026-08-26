@@ -216,7 +216,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if property.required && !property.transient {
+                        if property.always_required() && !property.transient {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -229,24 +229,24 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required || property.transient {
+                        if !property.always_required() || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
                         let value = if property.property_type.is_integer() {
                             DocumentPropertyType::I64
-                                .encode_value_ref_with_size(value, property.required)
+                                .encode_value_ref_with_size(value, property.always_required())
                         } else {
                             property
                                 .property_type
-                                .encode_value_ref_with_size(value, property.required)
+                                .encode_value_ref_with_size(value, property.always_required())
                         }?;
 
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required && !property.transient {
+                } else if property.always_required() && !property.transient {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -440,7 +440,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if property.required && !property.transient {
+                        if property.always_required() && !property.transient {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -453,18 +453,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required || property.transient {
+                        if !property.always_required() || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
                         let value = property
                             .property_type
-                            .encode_value_ref_with_size(value, property.required)?;
+                            .encode_value_ref_with_size(value, property.always_required())?;
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required && !property.transient {
+                } else if property.always_required() && !property.transient {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -668,7 +668,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if property.required && !property.transient {
+                        if property.always_required() && !property.transient {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -681,18 +681,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required || property.transient {
+                        if !property.always_required() || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
                         let value = property
                             .property_type
-                            .encode_value_ref_with_size(value, property.required)?;
+                            .encode_value_ref_with_size(value, property.always_required())?;
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required && !property.transient {
+                } else if property.always_required() && !property.transient {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -700,6 +700,236 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                     ))
                 } else {
                     // dbg!("we pushed {} with 0", field_name);
+                    // We don't have something that wasn't required
+                    buffer.push(0);
+                    Ok(())
+                }
+            })?;
+
+        Ok(buffer)
+    }
+
+    /// Serializes the document.
+    ///
+    /// Serialize v3 is v2 plus the contract version stamp: a varint right
+    /// after the format prefix recording the data contract version the bytes
+    /// conform to (0 = unstamped, for pre-format-3 documents that are
+    /// re-serialized). A property whose `requiredSince` exceeds the stamp is
+    /// encoded with a presence flag exactly like an optional property, so
+    /// documents written before the property became required stay valid.
+    fn serialize_v3(&self, document_type: DocumentTypeRef) -> Result<Vec<u8>, ProtocolError> {
+        let mut buffer: Vec<u8> = 3u64.encode_var_vec(); //version 3
+
+        // the contract version stamp; 0 means unstamped
+        buffer.extend((self.contract_version.unwrap_or_default() as u64).encode_var_vec());
+
+        // $id
+        buffer.extend(self.id.as_slice());
+
+        // $ownerId
+        buffer.extend(self.owner_id.as_slice());
+
+        if document_type.trade_mode() != TradeMode::None
+            || document_type.documents_transferable().is_transferable()
+        {
+            if let Some(creator_id) = self.creator_id {
+                buffer.push(1);
+                buffer.extend(creator_id.as_slice());
+            } else {
+                buffer.push(0);
+            }
+        }
+
+        // $revision
+        if let Some(revision) = self.revision {
+            buffer.extend(revision.encode_var_vec())
+        } else if document_type.requires_revision() {
+            buffer.extend((1 as Revision).encode_var_vec())
+        }
+
+        let mut bitwise_exists_flag: u16 = 0;
+
+        let mut time_fields_data_buffer = vec![];
+
+        // $createdAt
+        if let Some(created_at) = &self.created_at {
+            bitwise_exists_flag |= 1;
+            time_fields_data_buffer.extend(created_at.to_be_bytes());
+        } else if document_type.required_fields().contains(CREATED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "created at field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $updatedAt
+        if let Some(updated_at) = &self.updated_at {
+            bitwise_exists_flag |= 2;
+            time_fields_data_buffer.extend(updated_at.to_be_bytes());
+        } else if document_type.required_fields().contains(UPDATED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "updated at field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $transferredAt
+        if let Some(transferred_at) = &self.transferred_at {
+            bitwise_exists_flag |= 4;
+            time_fields_data_buffer.extend(transferred_at.to_be_bytes());
+        } else if document_type.required_fields().contains(TRANSFERRED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred at field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $createdAtBlockHeight
+        if let Some(created_at_block_height) = &self.created_at_block_height {
+            bitwise_exists_flag |= 8;
+            time_fields_data_buffer.extend(created_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "created_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $updatedAtBlockHeight
+        if let Some(updated_at_block_height) = &self.updated_at_block_height {
+            bitwise_exists_flag |= 16;
+            time_fields_data_buffer.extend(updated_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "updated_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $transferredAtBlockHeight
+        if let Some(transferred_at_block_height) = &self.transferred_at_block_height {
+            bitwise_exists_flag |= 32;
+            time_fields_data_buffer.extend(transferred_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $createdAtCoreBlockHeight
+        if let Some(created_at_core_block_height) = &self.created_at_core_block_height {
+            bitwise_exists_flag |= 64;
+            time_fields_data_buffer.extend(created_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "created_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $updatedAtCoreBlockHeight
+        if let Some(updated_at_core_block_height) = &self.updated_at_core_block_height {
+            bitwise_exists_flag |= 128;
+            time_fields_data_buffer.extend(updated_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "updated_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $transferredAtCoreBlockHeight
+        if let Some(transferred_at_core_block_height) = &self.transferred_at_core_block_height {
+            bitwise_exists_flag |= 256;
+            time_fields_data_buffer.extend(transferred_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        buffer.extend(bitwise_exists_flag.to_be_bytes().as_slice());
+        buffer.append(&mut time_fields_data_buffer);
+
+        // Now we serialize the price which might not be necessary unless called for by the document type
+
+        if document_type.trade_mode().seller_sets_price() {
+            if let Some(price) = self.properties.get(PRICE) {
+                buffer.push(1);
+                let price_as_u64: u64 = price.to_integer().map_err(ProtocolError::ValueError)?;
+                buffer.append(&mut price_as_u64.to_be_bytes().to_vec());
+            } else {
+                buffer.push(0);
+            }
+        }
+
+        // User defined properties: requiredness is evaluated at this
+        // document's stamp, so a property that became required after the
+        // stamp keeps the presence-flagged layout it was written with
+        document_type
+            .properties()
+            .iter()
+            .try_for_each(|(field_name, property)| {
+                let required = property.required_at(self.contract_version);
+                if let Some(value) = self.properties.get(field_name) {
+                    if value.is_null() {
+                        if required && !property.transient {
+                            Err(ProtocolError::DataContractError(
+                                DataContractError::MissingRequiredKey(
+                                    "a required field is not present".to_string(),
+                                ),
+                            ))
+                        } else {
+                            // We don't have something that wasn't required
+                            buffer.push(0);
+                            Ok(())
+                        }
+                    } else {
+                        if !required || property.transient {
+                            buffer.push(1);
+                        }
+                        let value = property
+                            .property_type
+                            .encode_value_ref_with_size(value, required)?;
+                        buffer.extend(value.as_slice());
+                        Ok(())
+                    }
+                } else if required && !property.transient {
+                    Err(ProtocolError::DataContractError(
+                        DataContractError::MissingRequiredKey(format!(
+                            "a required field {field_name} is not present"
+                        )),
+                    ))
+                } else {
                     // We don't have something that wasn't required
                     buffer.push(0);
                     Ok(())
@@ -884,7 +1114,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .iter()
             .filter_map(|(key, property)| {
                 if finished_buffer {
-                    return if property.required && !property.transient {
+                    return if property.always_required() && !property.transient {
                         Some(Err(DataContractError::CorruptedSerialization(
                             "required field after finished buffer".to_string(),
                         )))
@@ -895,12 +1125,15 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
 
                 // In version 0 all integers are encoded as I64 (in theory)
                 let read_value = if property.property_type.is_integer() {
-                    DocumentPropertyType::I64
-                        .read_optionally_from(&mut buf, property.required & !property.transient)
+                    DocumentPropertyType::I64.read_optionally_from(
+                        &mut buf,
+                        property.always_required() & !property.transient,
+                    )
                 } else {
-                    property
-                        .property_type
-                        .read_optionally_from(&mut buf, property.required & !property.transient)
+                    property.property_type.read_optionally_from(
+                        &mut buf,
+                        property.always_required() & !property.transient,
+                    )
                 };
 
                 match read_value {
@@ -918,6 +1151,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         }
 
         Ok(DocumentV0 {
+            contract_version: None,
             id: Identifier::new(id),
             properties,
             owner_id: Identifier::new(owner_id),
@@ -1108,7 +1342,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .iter()
             .filter_map(|(key, property)| {
                 if finished_buffer {
-                    return if property.required && !property.transient {
+                    return if property.always_required() && !property.transient {
                         Some(Err(DataContractError::CorruptedSerialization(
                             "required field after finished buffer".to_string(),
                         )))
@@ -1116,9 +1350,10 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                         None
                     };
                 }
-                let read_value = property
-                    .property_type
-                    .read_optionally_from(&mut buf, property.required & !property.transient);
+                let read_value = property.property_type.read_optionally_from(
+                    &mut buf,
+                    property.always_required() & !property.transient,
+                );
 
                 match read_value {
                     Ok(read_value) => {
@@ -1135,6 +1370,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         }
 
         Ok(DocumentV0 {
+            contract_version: None,
             id: Identifier::new(id),
             properties,
             owner_id: Identifier::new(owner_id),
@@ -1350,7 +1586,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .iter()
             .filter_map(|(key, property)| {
                 if finished_buffer {
-                    return if property.required && !property.transient {
+                    return if property.always_required() && !property.transient {
                         Some(Err(DataContractError::CorruptedSerialization(
                             "required field after finished buffer".to_string(),
                         )))
@@ -1358,9 +1594,10 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                         None
                     };
                 }
-                let read_value = property
-                    .property_type
-                    .read_optionally_from(&mut buf, property.required & !property.transient);
+                let read_value = property.property_type.read_optionally_from(
+                    &mut buf,
+                    property.always_required() & !property.transient,
+                );
 
                 match read_value {
                     Ok(read_value) => {
@@ -1377,6 +1614,287 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         }
 
         Ok(DocumentV0 {
+            contract_version: None,
+            id: Identifier::new(id),
+            properties,
+            owner_id: Identifier::new(owner_id),
+            revision,
+            created_at,
+            updated_at,
+            transferred_at,
+            created_at_block_height,
+            updated_at_block_height,
+            transferred_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
+            transferred_at_core_block_height,
+            creator_id,
+        })
+    }
+
+    /// Reads a serialized document and creates a Document from it.
+    /// Version 3 is version 2 plus the contract version stamp, which selects
+    /// each `requiredSince` property's byte layout: raw when the stamp has
+    /// reached the property's `requiredSince`, presence-flagged otherwise.
+    fn from_bytes_v3(
+        serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Self, DataContractError> {
+        let mut buf = BufReader::new(serialized_document);
+        if serialized_document.len() < 65 {
+            return Err(DataContractError::DecodingDocumentError(
+                DecodingError::new(
+                    "serialized document is too small, must have contract version, id and owner id"
+                        .to_string(),
+                ),
+            ));
+        }
+
+        // the contract version stamp; 0 means unstamped
+        let stamp: u64 = buf.read_varint().map_err(|_| {
+            DataContractError::DecodingDocumentError(DecodingError::new(
+                "error reading contract version stamp from serialized document".to_string(),
+            ))
+        })?;
+        if stamp > u32::MAX as u64 {
+            return Err(DataContractError::CorruptedSerialization(
+                "contract version stamp does not fit in a u32".to_string(),
+            ));
+        }
+        let contract_version = if stamp == 0 { None } else { Some(stamp as u32) };
+
+        // $id
+        let mut id = [0; 32];
+        buf.read_exact(&mut id).map_err(|_| {
+            DataContractError::DecodingDocumentError(DecodingError::new(
+                "error reading from serialized document for id".to_string(),
+            ))
+        })?;
+
+        // $ownerId
+        let mut owner_id = [0; 32];
+        buf.read_exact(&mut owner_id).map_err(|_| {
+            DataContractError::DecodingDocumentError(DecodingError::new(
+                "error reading from serialized document for owner id".to_string(),
+            ))
+        })?;
+
+        // $creatorId
+        let creator_id: Option<Identifier> = if document_type.trade_mode() != TradeMode::None
+            || document_type.documents_transferable().is_transferable()
+        {
+            let has_creator_id = buf.read_u8().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading has creator id bool from serialized document".to_string(),
+                )
+            })?;
+            if has_creator_id > 0 {
+                // $creatorId
+                let mut known_owner_id = [0; 32];
+                buf.read_exact(&mut known_owner_id).map_err(|_| {
+                    DataContractError::DecodingDocumentError(DecodingError::new(
+                        "error reading from serialized document for creator id".to_string(),
+                    ))
+                })?;
+                Some(known_owner_id.into())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // $revision
+        // if the document type is mutable then we should deserialize the revision
+        let revision: Option<Revision> = if document_type.requires_revision() {
+            let revision = buf.read_varint().map_err(|_| {
+                DataContractError::DecodingDocumentError(DecodingError::new(
+                    "error reading revision from serialized document for revision".to_string(),
+                ))
+            })?;
+            Some(revision)
+        } else {
+            None
+        };
+
+        let timestamp_flags = buf.read_u16::<BigEndian>().map_err(|_| {
+            DataContractError::CorruptedSerialization(
+                "error reading timestamp flags from serialized document".to_string(),
+            )
+        })?;
+
+        let created_at = if timestamp_flags & 1 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading created_at timestamp from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let updated_at = if timestamp_flags & 2 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading updated_at timestamp from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let transferred_at = if timestamp_flags & 4 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading transferred_at timestamp from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let created_at_block_height = if timestamp_flags & 8 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading created_at_block_height from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let updated_at_block_height = if timestamp_flags & 16 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading updated_at_block_height from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let transferred_at_block_height = if timestamp_flags & 32 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading transferred_at_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let created_at_core_block_height = if timestamp_flags & 64 > 0 {
+            Some(buf.read_u32::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading created_at_core_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let updated_at_core_block_height = if timestamp_flags & 128 > 0 {
+            Some(buf.read_u32::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading updated_at_core_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let transferred_at_core_block_height = if timestamp_flags & 256 > 0 {
+            Some(buf.read_u32::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading updated_at_core_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        // Now we deserialize the price which might not be necessary unless called for by the document type
+
+        let price = if document_type.trade_mode().seller_sets_price() {
+            let has_price = buf.read_u8().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading has price bool from serialized document".to_string(),
+                )
+            })?;
+            if has_price > 0 {
+                let price = buf.read_u64::<BigEndian>().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading price u64 from serialized document".to_string(),
+                    )
+                })?;
+                Some(price)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let mut finished_buffer = false;
+
+        let mut properties = document_type
+            .properties()
+            .iter()
+            .filter_map(|(key, property)| {
+                let required = property.required_at(contract_version);
+                if finished_buffer {
+                    return if required && !property.transient {
+                        Some(Err(DataContractError::CorruptedSerialization(
+                            "required field after finished buffer".to_string(),
+                        )))
+                    } else {
+                        None
+                    };
+                }
+                let read_value = property
+                    .property_type
+                    .read_optionally_from(&mut buf, required & !property.transient);
+
+                match read_value {
+                    Ok(read_value) => {
+                        finished_buffer |= read_value.1;
+                        read_value.0.map(|read_value| Ok((key.clone(), read_value)))
+                    }
+                    Err(e) => Some(Err(e)),
+                }
+            })
+            .collect::<Result<BTreeMap<String, Value>, DataContractError>>()?;
+
+        if let Some(price) = price {
+            properties.insert(PRICE.to_string(), price.into());
+        }
+
+        // Every property the document was serialized with must have been
+        // consumed. Trailing bytes mean the document was written under a
+        // newer contract version than the document type used to read it — a
+        // stale reader would otherwise silently drop the fields it does not
+        // know about. The stamp makes this detectable: callers should
+        // refetch the contract and retry.
+        let mut trailing_probe = [0u8; 1];
+        let trailing = buf.read(&mut trailing_probe).map_err(|_| {
+            DataContractError::CorruptedSerialization(
+                "error probing for trailing bytes in serialized document".to_string(),
+            )
+        })?;
+        if trailing > 0 {
+            return Err(DataContractError::CorruptedSerialization(format!(
+                "serialized document has trailing bytes: it was serialized under contract version {} with properties this document type does not know; refetch the contract",
+                stamp
+            )));
+        }
+
+        Ok(DocumentV0 {
+            contract_version,
             id: Identifier::new(id),
             properties,
             owner_id: Identifier::new(owner_id),
@@ -1428,9 +1946,13 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
                 // Document types now have properties that are known to be things like u8, i32 etc.
                 1 => self.serialize_v1(document_type),
                 2 => self.serialize_v2(document_type),
+                // Version 3 coincides with protocol version 14: it stamps the
+                // document with the contract version its bytes conform to,
+                // enabling `requiredSince` properties.
+                3 => self.serialize_v3(document_type),
                 version => Err(ProtocolError::UnknownVersionMismatch {
                     method: "DocumentV0::serialize".to_string(),
-                    known_versions: vec![0, 1, 2],
+                    known_versions: vec![0, 1, 2, 3],
                     received: version,
                 }),
             }
@@ -1458,9 +1980,10 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
             0 => self.serialize_v0(document_type),
             1 => self.serialize_v1(document_type),
             2 => self.serialize_v2(document_type),
+            3 => self.serialize_v3(document_type),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentV0::serialize".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             }),
         }
@@ -1510,9 +2033,11 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
                 .map_err(ProtocolError::DataContractError),
             2 => DocumentV0::from_bytes_v2(serialized_document, document_type, platform_version)
                 .map_err(ProtocolError::DataContractError),
+            3 => DocumentV0::from_bytes_v3(serialized_document, document_type, platform_version)
+                .map_err(ProtocolError::DataContractError),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_bytes (deserialization)".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             }),
         }
@@ -1585,9 +2110,21 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
                     )),
                 }
             }
+            3 => {
+                match DocumentV0::from_bytes_v3(
+                    serialized_document,
+                    document_type,
+                    platform_version,
+                ) {
+                    Ok(document) => Ok(ConsensusValidationResult::new_with_data(document)),
+                    Err(err) => Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(BasicError::ContractError(err)),
+                    )),
+                }
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_bytes (deserialization)".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             }),
         }
@@ -2147,6 +2684,7 @@ mod tests {
 
     fn doc_with_ids() -> DocumentV0 {
         DocumentV0 {
+            contract_version: None,
             id: Identifier::new([1u8; 32]),
             owner_id: Identifier::new([2u8; 32]),
             properties: BTreeMap::new(),
@@ -2605,5 +3143,673 @@ mod tests {
         assert_eq!(deserialized.revision, Some(1));
         assert_eq!(deserialized.created_at, Some(1750244879636));
         assert_eq!(deserialized.updated_at, Some(1750244879636));
+    }
+
+    // ================================================================
+    //  Format 3: the contract-version stamp and requiredSince layouts
+    // ================================================================
+
+    /// A document type exercising every schema-reachable property type in
+    /// both required and optional positions. Not represented because no
+    /// document schema can produce them (`try_from_value_map` dispatches on
+    /// `"type"` only): `Date` (no `"date"` arm; only array item types and
+    /// system fields use it via `try_from_name`) and u128/i128 (integer
+    /// bound inference is i64-limited).
+    fn kitchen_sink_document_type() -> crate::data_contract::document_type::DocumentType {
+        use crate::data_contract::config::DataContractConfig;
+        use crate::data_contract::document_type::DocumentType;
+        use platform_value::platform_value;
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::latest();
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "u8v":  {"type": "integer", "position": 0, "minimum": 0, "maximum": 255},
+                "u16v": {"type": "integer", "position": 1, "minimum": 0, "maximum": 65535},
+                "u32v": {"type": "integer", "position": 2, "minimum": 0, "maximum": 4294967295_u64},
+                "i8v":  {"type": "integer", "position": 3, "minimum": -128, "maximum": 127},
+                "i16v": {"type": "integer", "position": 4, "minimum": -32768, "maximum": 32767},
+                "i32v": {"type": "integer", "position": 5, "minimum": -2147483648_i64, "maximum": 2147483647_i64},
+                "i64v": {"type": "integer", "position": 6},
+                "f64v": {"type": "number", "position": 7},
+                "strv": {"type": "string", "position": 8, "maxLength": 60_u32},
+                "bytv": {"type": "array", "position": 9, "byteArray": true, "minItems": 0, "maxItems": 32},
+                "idv":  {"type": "array", "position": 10, "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier"},
+                "boolv": {"type": "boolean", "position": 11},
+                "u8o":  {"type": "integer", "position": 12, "minimum": 0, "maximum": 255},
+                "u16o": {"type": "integer", "position": 13, "minimum": 0, "maximum": 65535},
+                "u32o": {"type": "integer", "position": 14, "minimum": 0, "maximum": 4294967295_u64},
+                "i8o":  {"type": "integer", "position": 15, "minimum": -128, "maximum": 127},
+                "i16o": {"type": "integer", "position": 16, "minimum": -32768, "maximum": 32767},
+                "i32o": {"type": "integer", "position": 17, "minimum": -2147483648_i64, "maximum": 2147483647_i64},
+                "i64o": {"type": "integer", "position": 18},
+                "f64o": {"type": "number", "position": 19},
+                "stro": {"type": "string", "position": 20, "maxLength": 60_u32},
+                "byto": {"type": "array", "position": 21, "byteArray": true, "minItems": 0, "maxItems": 32},
+                "ido":  {"type": "array", "position": 22, "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier"},
+                "boolo": {"type": "boolean", "position": 23},
+            },
+            "required": ["u8v", "u16v", "u32v", "i8v", "i16v", "i32v", "i64v", "f64v", "strv", "bytv", "idv", "boolv"],
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            platform_value::Identifier::new([2; 32]),
+            1,
+            config.version(),
+            "sink",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create kitchen-sink document type")
+    }
+
+    fn kitchen_sink_required_properties() -> BTreeMap<String, Value> {
+        let mut properties = BTreeMap::new();
+        properties.insert("u8v".to_string(), Value::U8(200));
+        properties.insert("u16v".to_string(), Value::U16(60000));
+        properties.insert("u32v".to_string(), Value::U32(4000000000));
+        properties.insert("i8v".to_string(), Value::I8(-100));
+        properties.insert("i16v".to_string(), Value::I16(-30000));
+        properties.insert("i32v".to_string(), Value::I32(-2000000000));
+        properties.insert("i64v".to_string(), Value::I64(-9000000000000000000));
+        properties.insert("f64v".to_string(), Value::Float(1.5));
+        properties.insert("strv".to_string(), Value::Text("hello".to_string()));
+        properties.insert("bytv".to_string(), Value::Bytes(vec![1, 2, 3]));
+        properties.insert("idv".to_string(), Value::Identifier([7; 32]));
+        properties.insert("boolv".to_string(), Value::Bool(true));
+        properties
+    }
+
+    #[test]
+    fn serialize_v3_round_trips_every_property_type() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = kitchen_sink_document_type();
+
+        // Every optional present alongside every required
+        let mut properties = kitchen_sink_required_properties();
+        properties.insert("u8o".to_string(), Value::U8(1));
+        properties.insert("u16o".to_string(), Value::U16(2));
+        properties.insert("u32o".to_string(), Value::U32(3));
+        properties.insert("i8o".to_string(), Value::I8(-1));
+        properties.insert("i16o".to_string(), Value::I16(-2));
+        properties.insert("i32o".to_string(), Value::I32(-3));
+        properties.insert("i64o".to_string(), Value::I64(-4));
+        properties.insert("f64o".to_string(), Value::Float(-2.75));
+        properties.insert("stro".to_string(), Value::Text(String::new()));
+        properties.insert("byto".to_string(), Value::Bytes(Vec::new()));
+        properties.insert("ido".to_string(), Value::Identifier([9; 32]));
+        properties.insert("boolo".to_string(), Value::Bool(false));
+
+        let document = stamped_document(None, properties, document_type.as_ref());
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected to serialize all property types");
+        let deserialized =
+            DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+                .expect("expected to deserialize all property types");
+        assert_eq!(document, deserialized);
+
+        // Determinism: same document, same bytes
+        let serialized_again = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected to serialize again");
+        assert_eq!(serialized, serialized_again);
+
+        // Every optional absent (the flag-0 arm of each type), stamped
+        let document = stamped_document(
+            Some(1),
+            kitchen_sink_required_properties(),
+            document_type.as_ref(),
+        );
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected to serialize with absent optionals");
+        let deserialized =
+            DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
+                .expect("expected to deserialize with absent optionals");
+        assert_eq!(document, deserialized);
+    }
+
+    #[test]
+    fn serialize_v3_missing_plain_required_property_errors() {
+        let document_type = kitchen_sink_document_type();
+        let mut properties = kitchen_sink_required_properties();
+        properties.remove("u16v");
+
+        let document = stamped_document(None, properties, document_type.as_ref());
+        assert!(
+            document.serialize_v3(document_type.as_ref()).is_err(),
+            "serializing without a required property must error"
+        );
+    }
+
+    #[test]
+    fn from_bytes_v3_never_panics_on_truncated_input() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = kitchen_sink_document_type();
+
+        let mut properties = kitchen_sink_required_properties();
+        properties.insert("stro".to_string(), Value::Text("tail".to_string()));
+        let document = stamped_document(Some(1), properties, document_type.as_ref());
+        let serialized = document
+            .serialize_v3(document_type.as_ref())
+            .expect("expected to serialize");
+
+        // Every strict prefix must produce a Result, never a panic. (Some
+        // prefixes legitimately succeed: format 3 tolerates EOF at property
+        // boundaries so appended properties stay readable by old data.)
+        for length in 0..serialized.len() {
+            let _ = DocumentV0::from_bytes(
+                &serialized[..length],
+                document_type.as_ref(),
+                platform_version,
+            );
+        }
+    }
+
+    /// A document type with:
+    ///   - `a`: required at every version
+    ///   - `b`: required since contract version 2
+    ///   - `c`: plain optional
+    fn required_since_document_type() -> crate::data_contract::document_type::DocumentType {
+        use crate::data_contract::config::DataContractConfig;
+        use crate::data_contract::document_type::DocumentType;
+        use platform_value::platform_value;
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::latest();
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                "b": {"type": "string", "position": 1, "maxLength": 60_u32, "requiredSince": 2},
+                "c": {"type": "string", "position": 2, "maxLength": 60_u32},
+            },
+            "required": ["a", "b"],
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            platform_value::Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create document type")
+    }
+
+    fn stamped_document(
+        contract_version: Option<u32>,
+        properties: BTreeMap<String, Value>,
+        document_type: DocumentTypeRef,
+    ) -> DocumentV0 {
+        DocumentV0 {
+            contract_version,
+            id: Identifier::new([3; 32]),
+            owner_id: Identifier::new([4; 32]),
+            properties,
+            revision: document_type.initial_revision(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn serialize_v3_round_trips_document_stamped_at_required_since() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = required_since_document_type();
+        let document_type_ref = document_type.as_ref();
+
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+        properties.insert("b".to_string(), Value::Text("beta".to_string()));
+
+        let document = stamped_document(Some(2), properties, document_type_ref);
+
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("stamped document with the required-since field should serialize");
+
+        let (version, _) = u64::decode_var(&serialized).expect("expected varint");
+        assert_eq!(version, 3, "serialization version prefix should be 3");
+
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+
+        assert_eq!(deserialized.contract_version, Some(2));
+        assert_eq!(deserialized, document);
+    }
+
+    #[test]
+    fn serialize_v3_grandfathered_document_may_omit_required_since_field() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = required_since_document_type();
+        let document_type_ref = document_type.as_ref();
+
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+        // Stamped at version 1, before `b` became required at version 2
+        let document = stamped_document(Some(1), properties, document_type_ref);
+
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("grandfathered document without the required-since field should serialize");
+
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+
+        assert_eq!(deserialized.contract_version, Some(1));
+        assert!(!deserialized.properties.contains_key("b"));
+        assert_eq!(deserialized, document);
+    }
+
+    #[test]
+    fn serialize_v3_unstamped_document_treats_required_since_fields_as_optional() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = required_since_document_type();
+        let document_type_ref = document_type.as_ref();
+
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+        // No stamp: a pre-format-3 document being re-serialized (e.g. on
+        // transfer). Every requiredSince annotation postdates its bytes.
+        let document = stamped_document(None, properties, document_type_ref);
+
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("unstamped document without the required-since field should serialize");
+
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+
+        assert_eq!(deserialized.contract_version, None);
+        assert_eq!(deserialized, document);
+    }
+
+    #[test]
+    fn serialize_v3_stamped_at_required_since_missing_field_errors() {
+        let document_type = required_since_document_type();
+        let document_type_ref = document_type.as_ref();
+
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+        // Stamped at version 2, where `b` is required — but `b` is absent
+        let document = stamped_document(Some(2), properties, document_type_ref);
+
+        let result = document.serialize_v3(document_type_ref);
+        assert!(
+            matches!(
+                result,
+                Err(ProtocolError::DataContractError(
+                    DataContractError::MissingRequiredKey(_)
+                ))
+            ),
+            "a document stamped at requiredSince must contain the field, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn format_2_bytes_stay_readable_under_a_required_since_schema() {
+        use crate::data_contract::config::DataContractConfig;
+        use crate::data_contract::document_type::DocumentType;
+        use platform_value::platform_value;
+
+        let platform_version = PlatformVersion::latest();
+
+        // The schema as it was at contract version 1, before `b` (required
+        // since version 2) and `c` (optional) were appended
+        let old_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+            },
+            "required": ["a"],
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        let old_document_type = DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test",
+            old_schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create old document type");
+
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+        // A pre-stamp document serialized in format 2 under the old schema
+        // (as every document written before protocol v14 was, at the
+        // latest): its buffer ends before `b` and `c`, which must read back
+        // as absent under the updated schema, not as errors
+        let document = stamped_document(None, properties, old_document_type.as_ref());
+
+        let serialized = document
+            .serialize_v2(old_document_type.as_ref())
+            .expect("format 2 serialization should succeed");
+
+        let (version, _) = u64::decode_var(&serialized).expect("expected varint");
+        assert_eq!(version, 2);
+
+        let new_document_type = required_since_document_type();
+        let deserialized =
+            DocumentV0::from_bytes(&serialized, new_document_type.as_ref(), platform_version)
+                .expect("format 2 bytes must stay readable under a requiredSince schema");
+
+        assert_eq!(deserialized.contract_version, None);
+        assert!(!deserialized.properties.contains_key("b"));
+        assert!(!deserialized.properties.contains_key("c"));
+        assert_eq!(deserialized, document);
+    }
+
+    #[test]
+    fn stale_document_type_rejects_document_stamped_under_newer_contract() {
+        use crate::data_contract::config::DataContractConfig;
+        use crate::data_contract::document_type::DocumentType;
+        use platform_value::platform_value;
+
+        let platform_version = PlatformVersion::latest();
+
+        // The reader's stale view: the schema as of contract version 1,
+        // before `b` and `c` were appended
+        let stale_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+            },
+            "required": ["a"],
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        let stale_document_type = DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test",
+            stale_schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create stale document type");
+
+        // A document written under contract version 2, where `b` exists and
+        // is required
+        let current_document_type = required_since_document_type();
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+        properties.insert("b".to_string(), Value::Text("beta".to_string()));
+        let document = stamped_document(Some(2), properties, current_document_type.as_ref());
+
+        let serialized = document
+            .serialize_v3(current_document_type.as_ref())
+            .expect("expected serialization");
+
+        // A stale reader must hard-error on the trailing bytes instead of
+        // silently dropping the field it does not know about
+        let result =
+            DocumentV0::from_bytes(&serialized, stale_document_type.as_ref(), platform_version);
+        assert!(
+            matches!(
+                &result,
+                Err(ProtocolError::DataContractError(
+                    DataContractError::CorruptedSerialization(message)
+                )) if message.contains("trailing bytes")
+            ),
+            "a stale document type must reject a newer-stamped document, got {result:?}"
+        );
+    }
+
+    /// A document type whose `requiredSince` annotations sit on properties of
+    /// every distinct byte layout — variable and fixed byte arrays, an
+    /// identifier, integers, a float, a bool, and a nested object — at two
+    /// different annotation versions, so a stamp can fall before, between,
+    /// and after them:
+    ///   - `a`: string, required at every version
+    ///   - `bytv2`, `fixv2`, `objv2`: required since contract version 2
+    ///   - `idv3`, `intv3`, `fltv3`, `boolv3`: required since contract version 3
+    fn multi_type_required_since_document_type() -> crate::data_contract::document_type::DocumentType
+    {
+        use crate::data_contract::config::DataContractConfig;
+        use crate::data_contract::document_type::DocumentType;
+        use platform_value::platform_value;
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::latest();
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a":      {"type": "string", "position": 0, "maxLength": 60_u32},
+                "bytv2":  {"type": "array", "position": 1, "byteArray": true, "minItems": 0, "maxItems": 32, "requiredSince": 2},
+                "fixv2":  {"type": "array", "position": 2, "byteArray": true, "minItems": 8, "maxItems": 8, "requiredSince": 2},
+                "objv2":  {
+                    "type": "object",
+                    "position": 3,
+                    "properties": {
+                        "inner": {"type": "string", "position": 0, "maxLength": 10_u32},
+                    },
+                    "required": ["inner"],
+                    "additionalProperties": false,
+                    "requiredSince": 2,
+                },
+                "idv3":   {"type": "array", "position": 4, "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType": "application/x.dash.dpp.identifier", "requiredSince": 3},
+                "intv3":  {"type": "integer", "position": 5, "requiredSince": 3},
+                "fltv3":  {"type": "number", "position": 6, "requiredSince": 3},
+                "boolv3": {"type": "boolean", "position": 7, "requiredSince": 3},
+            },
+            "required": ["a", "bytv2", "fixv2", "objv2", "idv3", "intv3", "fltv3", "boolv3"],
+            "additionalProperties": false,
+        });
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        DocumentType::try_from_schema(
+            platform_value::Identifier::new([5; 32]),
+            3,
+            config.version(),
+            "multi",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("failed to create multi-type document type")
+    }
+
+    fn multi_type_properties_since_v2() -> BTreeMap<String, Value> {
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+        properties.insert("bytv2".to_string(), Value::Bytes(vec![1, 2, 3]));
+        properties.insert("fixv2".to_string(), Value::Bytes(vec![9; 8]));
+        properties.insert(
+            "objv2".to_string(),
+            Value::Map(vec![(
+                Value::Text("inner".to_string()),
+                Value::Text("in".to_string()),
+            )]),
+        );
+        properties
+    }
+
+    fn multi_type_properties_since_v3() -> BTreeMap<String, Value> {
+        let mut properties = multi_type_properties_since_v2();
+        properties.insert("idv3".to_string(), Value::Identifier([7; 32]));
+        properties.insert("intv3".to_string(), Value::I64(-42));
+        properties.insert("fltv3".to_string(), Value::Float(1.5));
+        properties.insert("boolv3".to_string(), Value::Bool(true));
+        properties
+    }
+
+    #[test]
+    fn serialize_v3_round_trips_annotated_non_string_types_at_every_stamp() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = multi_type_required_since_document_type();
+        let document_type_ref = document_type.as_ref();
+
+        let mut base = BTreeMap::new();
+        base.insert("a".to_string(), Value::Text("alpha".to_string()));
+
+        // Unstamped and stamped-at-1: every annotation postdates the bytes,
+        // so all annotated properties may be absent
+        for stamp in [None, Some(1)] {
+            let document = stamped_document(stamp, base.clone(), document_type_ref);
+            let serialized = document
+                .serialize_v3(document_type_ref)
+                .expect("document predating every annotation should serialize");
+            let deserialized =
+                DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+                    .expect("expected deserialization to succeed");
+            assert_eq!(deserialized, document, "stamp {stamp:?}");
+        }
+
+        // Stamped between the two annotation versions: the version-2 group is
+        // required (raw layout), the version-3 group still optional and absent
+        let document =
+            stamped_document(Some(2), multi_type_properties_since_v2(), document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("document stamped between annotations should serialize");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+        assert_eq!(deserialized, document);
+
+        // Same stamp with the version-3 group present: still optional, so it
+        // rides the presence-flagged layout and must round-trip
+        let document =
+            stamped_document(Some(2), multi_type_properties_since_v3(), document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("optional-but-present annotated fields should serialize");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+        assert_eq!(deserialized, document);
+
+        // Stamped at the newest annotation: everything required, raw layouts
+        let document =
+            stamped_document(Some(3), multi_type_properties_since_v3(), document_type_ref);
+        let serialized = document
+            .serialize_v3(document_type_ref)
+            .expect("document stamped at the newest annotation should serialize");
+        let deserialized = DocumentV0::from_bytes(&serialized, document_type_ref, platform_version)
+            .expect("expected deserialization to succeed");
+        assert_eq!(deserialized, document);
+
+        // A stamp at the newest annotation with one of its fields missing
+        // errors for non-string types just like for strings
+        let mut missing = multi_type_properties_since_v3();
+        missing.remove("idv3");
+        let document = stamped_document(Some(3), missing, document_type_ref);
+        assert!(
+            matches!(
+                document.serialize_v3(document_type_ref),
+                Err(ProtocolError::DataContractError(
+                    DataContractError::MissingRequiredKey(_)
+                ))
+            ),
+            "a stamped-at-annotation document missing an annotated identifier must error"
+        );
+    }
+
+    #[test]
+    fn serialize_v3_layouts_diverge_between_stamps_across_property_types() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = multi_type_required_since_document_type();
+        let document_type_ref = document_type.as_ref();
+
+        // Identical content, different stamps: at stamp 2 the version-3 group
+        // is presence-flagged, at stamp 3 it serializes raw — the bytes must
+        // differ beyond the stamp varint itself, and each layout must decode
+        // only under its own stamp
+        let at_2 = stamped_document(Some(2), multi_type_properties_since_v3(), document_type_ref)
+            .serialize_v3(document_type_ref)
+            .expect("stamp-2 document should serialize");
+        let at_3 = stamped_document(Some(3), multi_type_properties_since_v3(), document_type_ref)
+            .serialize_v3(document_type_ref)
+            .expect("stamp-3 document should serialize");
+
+        // Four version-3 properties drop one presence byte each when the
+        // stamp makes them required; the stamp varint is one byte in both
+        assert_eq!(
+            at_2.len(),
+            at_3.len() + 4,
+            "the presence-flagged layout must carry one extra byte per annotated property"
+        );
+
+        let from_2 = DocumentV0::from_bytes(&at_2, document_type_ref, platform_version)
+            .expect("stamp-2 bytes should decode");
+        let from_3 = DocumentV0::from_bytes(&at_3, document_type_ref, platform_version)
+            .expect("stamp-3 bytes should decode");
+        assert_eq!(from_2.properties, from_3.properties);
+        assert_eq!(from_2.contract_version, Some(2));
+        assert_eq!(from_3.contract_version, Some(3));
+    }
+
+    #[test]
+    fn stamp_survives_the_wire_for_documents_stamped_past_required_since() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = required_since_document_type();
+        let document_type_ref = document_type.as_ref();
+
+        // The same content stamped before and at the requiredSince boundary
+        // must produce different byte layouts (flagged vs raw), and each must
+        // round-trip through the layout its own stamp selects
+        let mut properties = BTreeMap::new();
+        properties.insert("a".to_string(), Value::Text("alpha".to_string()));
+        properties.insert("b".to_string(), Value::Text("beta".to_string()));
+
+        let stamped_before = stamped_document(Some(1), properties.clone(), document_type_ref);
+        let stamped_at = stamped_document(Some(2), properties, document_type_ref);
+
+        let serialized_before = stamped_before
+            .serialize_v3(document_type_ref)
+            .expect("expected serialization");
+        let serialized_at = stamped_at
+            .serialize_v3(document_type_ref)
+            .expect("expected serialization");
+
+        // The flagged layout carries one extra presence byte for `b`, and the
+        // two stamps differ in the prefix varint
+        assert_ne!(serialized_before, serialized_at);
+
+        let before_back =
+            DocumentV0::from_bytes(&serialized_before, document_type_ref, platform_version)
+                .expect("expected deserialization");
+        let at_back = DocumentV0::from_bytes(&serialized_at, document_type_ref, platform_version)
+            .expect("expected deserialization");
+
+        assert_eq!(before_back, stamped_before);
+        assert_eq!(at_back, stamped_at);
     }
 }

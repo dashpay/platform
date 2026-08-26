@@ -495,6 +495,7 @@ mod tests {
         properties.insert("color".to_string(), Value::Text(color.to_string()));
         properties.insert("amount".to_string(), Value::U64(amount));
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from([(i + 1) as u8; 32]),
             owner_id: Identifier::from([0u8; 32]),
             properties,
@@ -2096,6 +2097,7 @@ mod tests {
             let mut properties = std::collections::BTreeMap::new();
             properties.insert("amount".to_string(), Value::U64(*amount));
             let document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::from([(i + 1) as u8; 32]),
                 owner_id: Identifier::from([0u8; 32]),
                 properties,

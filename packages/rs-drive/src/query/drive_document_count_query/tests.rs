@@ -69,6 +69,7 @@ fn insert_person_doc(
     properties.insert("age".to_string(), Value::U64(age));
 
     let document: Document = DocumentV0 {
+        contract_version: None,
         id: Identifier::from(id),
         owner_id: Identifier::from([0u8; 32]),
         properties,
@@ -1262,6 +1263,7 @@ fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
         properties.insert("brand".to_string(), Value::Text(brand.to_string()));
         properties.insert("color".to_string(), Value::Text(color.to_string()));
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from([(i + 1) as u8; 32]),
             owner_id: Identifier::from([0u8; 32]),
             properties,
@@ -1536,6 +1538,7 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
         let mut properties = StdBTreeMap::new();
         properties.insert("color".to_string(), Value::Text(color.to_string()));
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from([(i + 1) as u8; 32]),
             owner_id: Identifier::from([0u8; 32]),
             properties,
@@ -2767,6 +2770,7 @@ mod range_countable_point_lookup_tests {
             properties.insert("color".to_string(), Value::Text(c.to_string()));
         }
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from(id),
             owner_id: Identifier::from([0u8; 32]),
             properties,
@@ -2815,6 +2819,7 @@ mod range_countable_point_lookup_tests {
         let mut properties = StdBTreeMap::new();
         properties.insert("category".to_string(), Value::Text(category.to_string()));
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from(id),
             owner_id: Identifier::from([0u8; 32]),
             properties,

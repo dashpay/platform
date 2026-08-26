@@ -1130,6 +1130,7 @@ mod ported_v0_count_tests {
         properties.insert("age".to_string(), Value::U64(age));
 
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from(id),
             owner_id: Identifier::from([0u8; 32]),
             properties,

@@ -39,6 +39,34 @@ pub struct DocumentProperty {
     pub property_type: DocumentPropertyType,
     pub required: bool,
     pub transient: bool,
+    /// The contract version this property is required from (`requiredSince`).
+    /// `None` for plain-required properties (required at every version) and
+    /// for optional properties. Only ever `Some` when `required` is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required_since: Option<u32>,
+}
+
+impl DocumentProperty {
+    /// Whether this property is required for a document whose bytes conform to
+    /// `contract_version` (the document's stamp). `None` means the document
+    /// was serialized before format 3, which predates every `requiredSince`
+    /// annotation, so only unconditionally required properties count.
+    pub fn required_at(&self, contract_version: Option<u32>) -> bool {
+        self.required
+            && match self.required_since {
+                None => true,
+                Some(since) => contract_version.is_some_and(|version| version >= since),
+            }
+    }
+
+    /// Whether this property is required regardless of any document's
+    /// contract-version stamp: `required` without a `requiredSince` gate.
+    /// This is the requiredness the pre-stamp serialization formats (0–2)
+    /// encode, and it equals `required_at(None)` — an unstamped document
+    /// predates every `requiredSince` annotation.
+    pub fn always_required(&self) -> bool {
+        self.required && self.required_since.is_none()
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
@@ -2825,6 +2853,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -2833,6 +2862,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -5121,6 +5151,7 @@ mod tests {
                 }),
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         inner_fields.insert(
@@ -5129,6 +5160,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5179,6 +5211,7 @@ mod tests {
                 }),
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5198,6 +5231,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         inner_fields.insert(
@@ -5206,6 +5240,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5638,6 +5673,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -5672,6 +5708,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -5680,6 +5717,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -5697,6 +5735,7 @@ mod tests {
                 property_type: DocumentPropertyType::U16,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -5705,6 +5744,7 @@ mod tests {
                 property_type: DocumentPropertyType::Boolean,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -5996,6 +6036,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -6004,6 +6045,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6063,6 +6105,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -6071,6 +6114,7 @@ mod tests {
                 property_type: DocumentPropertyType::U64,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6156,6 +6200,7 @@ mod tests {
                 property_type: DocumentPropertyType::U8,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         sub_fields.insert(
@@ -6164,6 +6209,7 @@ mod tests {
                 property_type: DocumentPropertyType::Boolean,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -6429,6 +6475,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6457,6 +6504,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         // Second field is required
@@ -6466,6 +6514,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6581,6 +6630,7 @@ mod tests {
                 }),
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6598,6 +6648,7 @@ mod tests {
                 property_type: DocumentPropertyType::U32,
                 required: false,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -6903,6 +6954,7 @@ mod tests {
                 property_type: DocumentPropertyType::U8,
                 required: true,
                 transient: false,
+                required_since: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -7165,6 +7217,7 @@ mod tests {
             ),
             required: false,
             transient: false,
+            required_since: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
