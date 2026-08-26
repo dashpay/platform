@@ -4550,6 +4550,28 @@ mod time_range_proof_verification {
         (signed, mtd, provider)
     }
 
+    /// Re-sign the handler's proof over *altered* metadata with the fixture
+    /// quorum key. The signature then verifies, so a rejection can only come
+    /// from the proof path itself: the verifier resolves the selector from
+    /// the altered time into the NEXT bucket, reconstructs that bucket's
+    /// path query, and the GroveDB proof over the original bucket cannot
+    /// satisfy it. Without the re-signing, the negative tests could pass at
+    /// signature verification and never reach that property.
+    fn resign_over(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        proof: &Proof,
+        mtd: &ResponseMetadata,
+        platform_version: &PlatformVersion,
+    ) -> Proof {
+        signed_proof(
+            proof.grovedb_proof.clone(),
+            &root_hash(&platform.drive, platform_version),
+            mtd,
+            &quorum_secret_key(),
+            QUORUM_HASH,
+        )
+    }
+
     /// The bucket start the transform puts `time_ms` in, computed straight
     /// off the contract's declared window rather than off the constants
     /// above — so a fixture edit that moves the grid cannot leave the
@@ -4990,15 +5012,17 @@ mod time_range_proof_verification {
         tampered
     }
 
-    fn assert_proof_or_signature_rejection(error: ProofVerifierError) {
+    /// The rejection must come from proof reconstruction (GroveDB/Drive) —
+    /// the caller re-signed the altered metadata, so `InvalidSignature`
+    /// would mean the deeper property (resolve-later-bucket → mismatched
+    /// proof path) was never exercised.
+    fn assert_proof_path_rejection(error: ProofVerifierError) {
         assert!(
             matches!(
                 error,
-                ProofVerifierError::InvalidSignature { .. }
-                    | ProofVerifierError::GroveDBError { .. }
-                    | ProofVerifierError::DriveError { .. }
+                ProofVerifierError::GroveDBError { .. } | ProofVerifierError::DriveError { .. }
             ),
-            "the rejection must be the proof or the signature binding, got: {error:?}"
+            "the rejection must come from the proof path, got: {error:?}"
         );
     }
 
@@ -5042,16 +5066,25 @@ mod time_range_proof_verification {
         let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
         let tampered = one_step_later(&contract, BUCKETED_INDEX, &mtd);
 
+        // Re-sign the altered metadata so the signature is valid —
+        // verification must then resolve the selector one step later,
+        // reconstruct the NEXT bucket's path query, and reject the
+        // original bucket's GroveDB proof. (Verification reconstructs the
+        // proof path BEFORE checking the signature, so an unsigned
+        // alteration would hit the same rejection without proving the
+        // signature binds anything; the binding itself is pinned by the
+        // trust-boundary tests above.)
+        let resigned = resign_over(&platform, &proof, &tampered, version);
         let query = sdk_query(&contract, "ibiza", SelectProjection::count_star());
         let error = <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
             query,
-            signed_response(proof, &tampered),
+            signed_response(resigned, &tampered),
             Network::Testnet,
             version,
             &provider,
         )
-        .expect_err("an altered signed time must not yield a verified count");
-        assert_proof_or_signature_rejection(error);
+        .expect_err("a validly re-signed later time must not verify the stale bucket's proof");
+        assert_proof_path_rejection(error);
     }
 
     #[test]
@@ -5096,17 +5129,18 @@ mod time_range_proof_verification {
         };
         let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
         let tampered = one_step_later(&contract, SUMMABLE_INDEX, &mtd);
+        let resigned = resign_over(&platform, &proof, &tampered, version);
 
         let query = sdk_query(&contract, "ibiza", SelectProjection::sum("likes"));
         let error = <DocumentSum as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
             query,
-            signed_response(proof, &tampered),
+            signed_response(resigned, &tampered),
             Network::Testnet,
             version,
             &provider,
         )
-        .expect_err("an altered signed time must not yield a verified sum");
-        assert_proof_or_signature_rejection(error);
+        .expect_err("a validly re-signed later time must not verify the stale bucket's proof");
+        assert_proof_path_rejection(error);
     }
 
     #[test]
@@ -5152,18 +5186,19 @@ mod time_range_proof_verification {
         };
         let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
         let tampered = one_step_later(&contract, SUMMABLE_INDEX, &mtd);
+        let resigned = resign_over(&platform, &proof, &tampered, version);
 
         let query = sdk_query(&contract, "ibiza", SelectProjection::avg("likes"));
         let error =
             <DocumentAverage as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
                 query,
-                signed_response(proof, &tampered),
+                signed_response(resigned, &tampered),
                 Network::Testnet,
                 version,
                 &provider,
             )
-            .expect_err("an altered signed time must not yield a verified average");
-        assert_proof_or_signature_rejection(error);
+            .expect_err("a validly re-signed later time must not verify the stale bucket's proof");
+        assert_proof_path_rejection(error);
     }
     // ----- multiple grids over one timestamp ------------------------------
 
