@@ -67,13 +67,40 @@ pub(crate) struct ScrubOnDrop<T: ScrubbableSecret>(pub(crate) T);
 /// Adding an impl is therefore an explicit audit step, not an accident of
 /// generic inference. The trait is crate-private, so no downstream crate can
 /// widen it at all.
-pub(crate) trait ScrubbableSecret {}
+///
+/// # Safety
+///
+/// The trait is `unsafe` because [`ScrubOnDrop`]'s `Drop` implementation
+/// dereferences the bound into raw `write_volatile` writes over the whole
+/// representation of `T`. An implementor must therefore guarantee that its
+/// entire in-memory representation is plain data that may be overwritten
+/// bytewise:
+///
+/// - no owned indirections (heap pointers, `Box`/`Vec`/`String`, file
+///   descriptors, handles) — byte-scrubbing one leaks or corrupts the owned
+///   resource;
+/// - no drop glue that must observe the live value (`needs_drop::<T>()` is
+///   `false`) — the guard defensively skips the scrub otherwise, so an
+///   implementor with `Drop` silently gets no scrubbing;
+/// - no validity invariant violated by the all-zero bit pattern, since the
+///   value is left zeroed until its storage is released.
+///
+/// Implementing this trait is an explicit statement that byte-zeroing a
+/// value of the type destroys the secret and nothing else (#4313 review
+/// finding keys.rs:76).
+pub(crate) unsafe trait ScrubbableSecret {}
 
 // The complete audited set. `SpendingKey` is a `Copy` 32-byte array wrapper;
 // `SpendAuthorizingKey` is a `Copy` scalar wrapper. Neither has a `Zeroize`
 // impl nor a scrubbing `Drop`, which is why the guard exists at all.
-impl ScrubbableSecret for SpendingKey {}
-impl ScrubbableSecret for SpendAuthorizingKey {}
+//
+// SAFETY: both are `Copy`, fixed-size, pointer-free plain-data wrappers with
+// no drop glue (asserted by `orchard_secret_types_have_no_drop_glue`), and
+// neither carries a validity invariant that the all-zero bit pattern breaks:
+// the zeroed value is never read back, only dropped. Byte-zeroing them
+// therefore destroys the spend authority and releases nothing else.
+unsafe impl ScrubbableSecret for SpendingKey {}
+unsafe impl ScrubbableSecret for SpendAuthorizingKey {}
 
 impl<T: ScrubbableSecret> Drop for ScrubOnDrop<T> {
     fn drop(&mut self) {

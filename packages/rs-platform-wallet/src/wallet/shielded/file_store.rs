@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 use rusqlite::{Connection, OptionalExtension};
@@ -29,6 +29,20 @@ use crate::wallet::platform_wallet::WalletId;
 /// Error type for [`FileBackedShieldedStore`].
 #[derive(Debug)]
 pub struct FileShieldedStoreError(pub String);
+
+/// One raw `shielded_pending_spends` row as read from SQLite, before the key
+/// widths and nullifier blob are validated: `(wallet_id, account_index,
+/// activity_id, anchor, nullifiers, st_bytes, attempts, identity_index)`.
+type PendingSpendRow = (
+    Vec<u8>,
+    u32,
+    Vec<u8>,
+    Vec<u8>,
+    Vec<u8>,
+    Vec<u8>,
+    u32,
+    Option<u32>,
+);
 
 impl fmt::Display for FileShieldedStoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -74,6 +88,10 @@ pub struct FileBackedShieldedStore {
     /// two-connection setup safe. `Mutex` for the same `Sync`-shim
     /// reason as `tree`.
     pending_conn: Mutex<rusqlite::Connection>,
+    /// Test-only injection point for a failing [`ShieldedStore::purge_wallet`]
+    /// — see [`fail_purge_wallet_for_tests`](Self::fail_purge_wallet_for_tests).
+    #[cfg(test)]
+    fail_purge_wallet: std::sync::atomic::AtomicBool,
 }
 
 impl FileBackedShieldedStore {
@@ -181,6 +199,8 @@ impl FileBackedShieldedStore {
             max_checkpoints,
             subwallets: BTreeMap::new(),
             pending_conn: Mutex::new(pending_conn),
+            #[cfg(test)]
+            fail_purge_wallet: std::sync::atomic::AtomicBool::new(false),
         };
         store.rehydrate_pending_spends()?;
         Ok(store)
@@ -270,6 +290,69 @@ impl FileBackedShieldedStore {
         )
     }
 
+    /// Lock the durable pending/lifecycle connection, mapping mutex
+    /// poisoning into the store's typed error instead of panicking.
+    ///
+    /// Every caller here already returns [`FileShieldedStoreError`], and the
+    /// commitment-tree mutex has always mapped `PoisonError` this way. The
+    /// pending-connection sites used to `.expect(...)`, which meant that a
+    /// panic caught anywhere while this lock was held turned every later
+    /// claim, purge, migration, or admission call into a second panic rather
+    /// than a `ShieldedStore::Error` — and through `block_on_worker` that
+    /// secondary panic is re-raised into the host and can abort the process
+    /// (#4313 review finding file_store.rs:1175).
+    ///
+    /// A poisoned lock is reported, not recovered: the interrupted writer may
+    /// have left a claim-recovery row half-written, so failing closed is the
+    /// safe direction — callers surface a retryable store error and the row
+    /// stays on disk for the next open to rehydrate.
+    fn lock_pending_conn(&self) -> Result<MutexGuard<'_, Connection>, FileShieldedStoreError> {
+        self.pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError(format!("pending_conn mutex poisoned: {e}")))
+    }
+
+    /// Make [`ShieldedStore::purge_wallet`] fail, and ONLY it, until
+    /// [`allow_purge_wallet_for_tests`](Self::allow_purge_wallet_for_tests)
+    /// lifts it.
+    ///
+    /// The purge is the one fallible step that runs AFTER a removal's commit
+    /// point, so its failure branch is unreachable while the store is healthy
+    /// and cannot be produced by the pre-commit admission drain either. A
+    /// blunter seam (`PRAGMA query_only`) fails the admission write too, which
+    /// aborts the removal BEFORE the commit point and exercises the opposite
+    /// contract — hence the targeted flag.
+    #[cfg(test)]
+    pub(crate) fn fail_purge_wallet_for_tests(&self) {
+        self.fail_purge_wallet
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Undo [`fail_purge_wallet_for_tests`](Self::fail_purge_wallet_for_tests).
+    #[cfg(test)]
+    pub(crate) fn allow_purge_wallet_for_tests(&self) {
+        self.fail_purge_wallet
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Whether a durable pending row exists for `id` / `activity_id`, read
+    /// straight from SQLite rather than from the in-memory mirror.
+    #[cfg(test)]
+    pub(crate) fn has_pending_row_for_tests(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<bool, FileShieldedStoreError> {
+        let conn = self.lock_pending_conn()?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM shielded_pending_spends WHERE wallet_id = ?1",
+                rusqlite::params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .map_err(|e| FileShieldedStoreError(format!("count pending rows: {e}")))?;
+        Ok(count > 0)
+    }
+
     /// Reload every persisted [`PendingRedrive`] into the in-memory
     /// per-subwallet state, re-arming both the redrive record and the
     /// note reservations its nullifiers carry — an unconfirmed
@@ -277,28 +360,37 @@ impl FileBackedShieldedStore {
     /// alive) across restarts. Corrupt rows are dropped with a warning
     /// rather than failing the open.
     fn rehydrate_pending_spends(&mut self) -> Result<(), FileShieldedStoreError> {
-        let conn = self.pending_conn.lock().expect("pending_conn mutex");
-        let mut stmt = conn
-            .prepare(
-                "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
-                 attempts, identity_index FROM shielded_pending_spends",
-            )
-            .map_err(|e| FileShieldedStoreError(format!("prepare rehydrate: {e}")))?;
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, Vec<u8>>(0)?,
-                    row.get::<_, u32>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                    row.get::<_, Vec<u8>>(3)?,
-                    row.get::<_, Vec<u8>>(4)?,
-                    row.get::<_, Vec<u8>>(5)?,
-                    row.get::<_, u32>(6)?,
-                    row.get::<_, Option<u32>>(7)?,
-                ))
-            })
-            .map_err(|e| FileShieldedStoreError(format!("query rehydrate: {e}")))?;
-        for row in rows {
+        // The rows are read out under the lock and the guard is dropped before
+        // `self.subwallets` is touched. `lock_pending_conn` borrows all of
+        // `self` (it is a method, where the old inline `self.pending_conn.lock()`
+        // borrowed just the field), so holding the guard across the hydration
+        // loop below would conflict with the `&mut self.subwallets` it needs.
+        let raw_rows: Vec<PendingSpendRow> = {
+            let conn = self.lock_pending_conn()?;
+            let mut stmt = conn
+                .prepare(
+                    "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
+                     attempts, identity_index FROM shielded_pending_spends",
+                )
+                .map_err(|e| FileShieldedStoreError(format!("prepare rehydrate: {e}")))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, Vec<u8>>(0)?,
+                        row.get::<_, u32>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                        row.get::<_, Vec<u8>>(5)?,
+                        row.get::<_, u32>(6)?,
+                        row.get::<_, Option<u32>>(7)?,
+                    ))
+                })
+                .map_err(|e| FileShieldedStoreError(format!("query rehydrate: {e}")))?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| FileShieldedStoreError(format!("read rehydrate row: {e}")))?
+        };
+        for row in raw_rows {
             let (
                 wallet_id,
                 account_index,
@@ -308,7 +400,7 @@ impl FileBackedShieldedStore {
                 st_bytes,
                 attempts,
                 identity_index,
-            ) = row.map_err(|e| FileShieldedStoreError(format!("read rehydrate row: {e}")))?;
+            ) = row;
             let (Ok(wallet_id), Ok(activity_id), Ok(anchor)) = (
                 <[u8; 32]>::try_from(wallet_id.as_slice()),
                 <[u8; 32]>::try_from(activity_id.as_slice()),
@@ -550,7 +642,7 @@ impl FileBackedShieldedStore {
         id: SubwalletId,
         activity_id: &[u8; 32],
     ) -> Result<(), FileShieldedStoreError> {
-        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let conn = self.lock_pending_conn()?;
         conn.execute(
             "DELETE FROM shielded_pending_spends \
              WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
@@ -573,7 +665,7 @@ impl FileBackedShieldedStore {
         id: SubwalletId,
         nullifier: &[u8; 32],
     ) -> Result<(), FileShieldedStoreError> {
-        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let conn = self.lock_pending_conn()?;
         let mut stmt = conn
             .prepare(
                 "SELECT activity_id, nullifiers FROM shielded_pending_spends \
@@ -710,7 +802,7 @@ impl ShieldedStore for FileBackedShieldedStore {
 
     fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error> {
         {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let conn = self.lock_pending_conn()?;
             let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
             conn.execute(
                 "INSERT OR REPLACE INTO shielded_pending_spends \
@@ -759,7 +851,7 @@ impl ShieldedStore for FileBackedShieldedStore {
             return Ok(0);
         };
         {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let conn = self.lock_pending_conn()?;
             conn.execute(
                 "UPDATE shielded_pending_spends SET attempts = ?4 \
                  WHERE wallet_id = ?1 AND account_index = ?2 AND activity_id = ?3",
@@ -942,6 +1034,15 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        #[cfg(test)]
+        if self
+            .fail_purge_wallet
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(FileShieldedStoreError(
+                "purge pending spends for wallet: injected test failure".to_string(),
+            ));
+        }
         // The redrive table IS durable (unlike the rest of subwallet
         // state), so purging the in-memory map alone would leave this
         // wallet's rows to rehydrate stale reservations / rebroadcast
@@ -950,7 +1051,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         // store was touched (fail-atomic) rather than a memory purge
         // the caller can't distinguish from a no-op.
         {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let conn = self.lock_pending_conn()?;
             conn.execute(
                 "DELETE FROM shielded_pending_spends WHERE wallet_id = ?1",
                 rusqlite::params![wallet_id.as_slice()],
@@ -969,7 +1070,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         // delete this subwallet's before the in-memory drop, same
         // SQL-before-memory fail-atomic ordering as `purge_wallet`.
         {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let conn = self.lock_pending_conn()?;
             conn.execute(
                 "DELETE FROM shielded_pending_spends \
                  WHERE wallet_id = ?1 AND account_index = ?2",
@@ -988,7 +1089,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         // purge; SQL first for the same fail-atomic reason as
         // `purge_wallet`.
         {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let conn = self.lock_pending_conn()?;
             conn.execute("DELETE FROM shielded_pending_spends", [])
                 .map_err(|e| FileShieldedStoreError(format!("purge all pending spends: {e}")))?;
         }
@@ -1073,7 +1174,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         now_ms: u64,
         lease_ms: u64,
     ) -> Result<bool, Self::Error> {
-        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let mut conn = self.lock_pending_conn()?;
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(|e| FileShieldedStoreError(format!("begin claim admission: {e}")))?;
@@ -1121,7 +1222,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         // renewal either lands before the barrier or loses to it — never
         // half-applies. UPDATE ... WHERE expires_at > now deliberately refuses
         // to resurrect a lapsed lease; see the trait docs.
-        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let mut conn = self.lock_pending_conn()?;
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(|e| FileShieldedStoreError(format!("begin claim lease renewal: {e}")))?;
@@ -1172,7 +1273,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         // true rather than probable — and what lets the pending row come back
         // with it (#4313 review finding r3767229122).
         let (reservation, pending) = {
-            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let mut conn = self.lock_pending_conn()?;
             let tx = conn
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
                 .map_err(|e| FileShieldedStoreError(format!("begin claim-key reservation: {e}")))?;
@@ -1281,7 +1382,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         lease_ms: u64,
     ) -> Result<bool, Self::Error> {
         {
-            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let mut conn = self.lock_pending_conn()?;
             let tx = conn
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
                 .map_err(|e| FileShieldedStoreError(format!("begin armed claim write: {e}")))?;
@@ -1376,7 +1477,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         // next claimant of this invitation for a full lease period for no
         // reason, and releasing the key first would let a second claimant in
         // while this one still holds the lease.
-        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let mut conn = self.lock_pending_conn()?;
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(|e| FileShieldedStoreError(format!("begin claim lease release: {e}")))?;
@@ -1402,7 +1503,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         now_ms: u64,
         barrier_ms: u64,
     ) -> Result<usize, Self::Error> {
-        let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let mut conn = self.lock_pending_conn()?;
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(|e| FileShieldedStoreError(format!("begin destructive admission: {e}")))?;
@@ -1435,7 +1536,7 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn end_destructive_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
-        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let conn = self.lock_pending_conn()?;
         conn.execute(
             "DELETE FROM shielded_lifecycle_admission WHERE token = ?1 AND destructive = 1",
             rusqlite::params![token.0.as_slice()],

@@ -64,7 +64,7 @@ use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// Number of Orchard actions in a `Shield` (Type 15) bundle.
 ///
@@ -1724,8 +1724,15 @@ where
 /// oracle, so it cannot seed the scan start today; repeated attempts are
 /// bounded by the scan's coordinator-owned resume checkpoint instead).
 ///
-/// Returns the new identity's id and the proof-verified [`Identity`]; the caller
-/// registers that identity in its local `IdentityManager`.
+/// Returns the new identity's id, the proof-verified [`Identity`], and the
+/// claim's retained recovery record. The caller registers that identity in its
+/// local `IdentityManager` and, once that registration is DURABLE, passes the
+/// record to [`acknowledge_one_time_claim_registration`] — which is what
+/// finally drops it. Until then the record survives the native return, so a
+/// caller that dies, cannot find its wallet entry, or fails to persist the
+/// identity leaves a retry able to recover the exact identity id rather than
+/// hitting the terminal [`PlatformWalletError::ShieldedInviteAlreadyClaimed`]
+/// (#4313 review finding 325ce9fa8f84).
 #[allow(clippy::too_many_arguments)]
 pub async fn identity_create_from_one_time_key<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -1752,7 +1759,7 @@ pub async fn identity_create_from_one_time_key<S, P, IS>(
     send_to_address_on_creation_failure: PlatformAddress,
     identity_signer: &IS,
     prover: &P,
-) -> Result<(Identifier, Identity), PlatformWalletError>
+) -> Result<OneTimeClaimOutcome, PlatformWalletError>
 where
     S: ShieldedStore,
     P: OrchardProver,
@@ -1974,7 +1981,12 @@ where
     .await;
 
     release_claim_admission(store, admission).await;
-    claim_result
+    let (identity_id, identity, recovery_record) = claim_result?;
+    Ok(OneTimeClaimOutcome {
+        identity_id,
+        identity,
+        recovery_record,
+    })
 }
 
 /// Drive `body` to completion while re-stamping the claim lease `admission` on
@@ -2034,8 +2046,14 @@ where
                     Ok(true) => {}
                     // A transition may already be on the wire; aborting cannot
                     // un-send it and would only lose the outcome
-                    // classification. Carry on, loudly.
-                    Ok(false) => warn!(
+                    // classification. Carry on, loudly — and note that this is
+                    // NOT what protects the claim: the body re-proves ownership
+                    // synchronously immediately before every chargeable step
+                    // (`assert_claim_lease_before_chargeable_step`), so a claim
+                    // that reaches this arm has either not broadcast yet — and
+                    // will refuse to — or is already past the point where
+                    // stopping helps (#4313 review finding f58ed9d910d8).
+                    Ok(false) => error!(
                         "one-time claim lease lapsed or was displaced mid-claim; a \
                          concurrent wallet removal may purge this claim's recovery record"
                     ),
@@ -2045,6 +2063,90 @@ where
                     ),
                 }
             }
+        }
+    }
+}
+
+/// Re-prove, synchronously and immediately before a CHARGEABLE or otherwise
+/// irreversible step, that this claim still owns its purge-protection lease.
+///
+/// # Why the heartbeat is not enough
+///
+/// [`under_renewed_claim_lease`] logs a failed renewal and lets the claim run
+/// on. Once a transition has been armed that no longer preserves the recovery
+/// invariant: [`ShieldedStore::renew_claim_admission`] deliberately refuses to
+/// resurrect an expired lease, and destructive admission reaps expired leases
+/// before counting live claims. A forward wall-clock adjustment, a run of
+/// SQLite errors, or a long executor suspension can therefore leave a live
+/// claim non-renewable — and a concurrent `clear` or `unregister_wallet` then
+/// counts zero claims and deletes the pending row while the transition is on
+/// the wire. For a padded single-note bundle that row is the ONLY handle to
+/// the randomized identity id, so losing it strands the identity permanently
+/// (#4313 review finding f58ed9d910d8).
+///
+/// # The gate
+///
+/// So ownership is proven positively at the last instant before it matters,
+/// rather than assumed from a heartbeat that is allowed to fail. A renewal
+/// that returns `Ok(true)` both proves the lease is live and re-stamps it (and
+/// the claim-key reservation riding the same token), so the broadcast that
+/// follows runs at the START of a full lease window rather than at whatever
+/// remained of one a long proof build had already spent.
+///
+/// Everything else fails CLOSED and retryably:
+///
+/// - `Ok(false)` — the lease is definitively gone (expired or displaced);
+/// - `Err(_)` — renewal can no longer PROVE ownership, which for this purpose
+///   is the same thing. Treating a store error as "probably still ours" is
+///   exactly the repeated-SQLite-error case the finding calls out.
+///
+/// Refusing here is clean: the caller has not broadcast, so nothing is
+/// consumed, nothing is charged, and no proof is burned. The armed record
+/// stays on disk with its notes unspent, so the retry resumes it and
+/// re-broadcasts the byte-identical transition. If instead the record IS
+/// purged in the meantime, that too is harmless — nothing was ever on the
+/// wire, so a fresh claim simply rebuilds.
+async fn assert_claim_lease_before_chargeable_step<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    admission: super::store::AdmissionToken,
+    step: &str,
+) -> Result<(), PlatformWalletError> {
+    let renewed = store.write().await.renew_claim_admission(
+        admission,
+        super::store::admission_now_ms(),
+        super::store::CLAIM_LEASE_MS,
+    );
+    match renewed {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            error!(
+                step,
+                "one-time claim: the purge-protection lease is gone; refusing to proceed to a \
+                 chargeable step without it"
+            );
+            Err(PlatformWalletError::ShieldedLifecycleBusy {
+                reason: format!(
+                    "this claim's purge-protection lease lapsed or was displaced before {step}; \
+                     without it a concurrent wallet clear or removal could delete the recovery \
+                     record while the transition was in flight, so nothing was broadcast — retry \
+                     the claim"
+                ),
+            })
+        }
+        Err(e) => {
+            error!(
+                step,
+                error = %e,
+                "one-time claim: could not prove the purge-protection lease is still held; \
+                 refusing to proceed to a chargeable step"
+            );
+            Err(PlatformWalletError::ShieldedLifecycleBusy {
+                reason: format!(
+                    "this claim's purge-protection lease could not be verified before {step} \
+                     ({e}); proceeding without proof of ownership risks losing the recovery \
+                     record mid-flight, so nothing was broadcast — retry the claim"
+                ),
+            })
         }
     }
 }
@@ -2106,7 +2208,7 @@ async fn one_time_claim_admitted<S, P, IS>(
     send_to_address_on_creation_failure: PlatformAddress,
     identity_signer: &IS,
     prover: &P,
-) -> Result<(Identifier, Identity), PlatformWalletError>
+) -> Result<(Identifier, Identity, Option<OneTimeClaimRecoveryRecord>), PlatformWalletError>
 where
     S: ShieldedStore,
     P: OrchardProver,
@@ -2147,6 +2249,7 @@ where
             store,
             claim_records_id,
             &record,
+            admission,
             master_key_hash,
             submitted_public_keys.clone(),
             denomination,
@@ -2155,9 +2258,20 @@ where
         .await
         {
             OneTimeClaimResume::Resolved(result) => {
-                finalize_one_time_claim_record(store, claim_records_id, claim_record_key, &result)
-                    .await;
-                return result;
+                // Same retention contract as the fresh-build tail below: a
+                // successful resume keeps its record until the caller
+                // acknowledges durable local registration
+                // (#4313 review finding 325ce9fa8f84). This branch had the
+                // identical premature-clear ordering.
+                let retained = finalize_one_time_claim_record(
+                    store,
+                    claim_records_id,
+                    claim_record_key,
+                    &result,
+                )
+                .await;
+                let (identity_id, identity) = result?;
+                return Ok((identity_id, identity, retained));
             }
             // The stored transition is unusable (corrupt, or definitively
             // rejected while its notes are provably unspent) — the record has
@@ -2263,14 +2377,17 @@ where
     // broadcast path reconciles via the `NullifierAlreadySpent` verdict, so a
     // transient query failure only costs a harmless rebuild.
     if nullifier_spent_status(sdk, &selected_nullifiers).await == NullifierSpentStatus::Spent {
-        return recover_executed_one_time_claim(
+        // No record was armed on this path — nothing was built or broadcast —
+        // so there is none to retain or acknowledge.
+        let (identity_id, identity) = recover_executed_one_time_claim(
             sdk,
             master_key_hash,
             expected_identity_id,
             false,
             "the selected note's nullifier is already spent on chain (pre-broadcast preflight)",
         )
-        .await;
+        .await?;
+        return Ok((identity_id, identity, None));
     }
 
     // Witness the selected notes against a Platform-recorded anchor from the
@@ -2339,6 +2456,17 @@ where
     // body — see `under_renewed_claim_lease`. It used to wrap only this
     // broadcast, which left the resume path (returning above) covered by the
     // initial lease alone (#4313 review finding 8de8d05a).
+    //
+    // But the heartbeat only LOGS a failed renewal, so it cannot be what
+    // authorizes the broadcast. Prove ownership synchronously here instead: the
+    // record above is armed and the transition is about to become chargeable
+    // and irreversible, and from this point on the record is the only handle
+    // that can recover a padded single-note claim's identity. If the lease
+    // cannot be re-proven, abort — nothing has been broadcast, the notes are
+    // unspent, and the retry resumes this very record
+    // (#4313 review finding f58ed9d910d8).
+    assert_claim_lease_before_chargeable_step(store, admission, "the claim broadcast").await?;
+
     let result = broadcast_and_confirm_one_time_claim(
         sdk,
         st,
@@ -2350,8 +2478,15 @@ where
         denomination,
     )
     .await;
-    finalize_one_time_claim_record(store, claim_records_id, claim_record_key, &result).await;
-    result
+    // On success the record is RETAINED and handed to the caller, which drops
+    // it only once the identity is durably registered locally. Clearing it here
+    // — as this used to — lost the padded identity id whenever the process died,
+    // the wallet-manager entry was missing, or `persister.store` failed, between
+    // this line and the JNI return (#4313 review finding 325ce9fa8f84).
+    let retained =
+        finalize_one_time_claim_record(store, claim_records_id, claim_record_key, &result).await;
+    let (identity_id, identity) = result?;
+    Ok((identity_id, identity, retained))
 }
 
 /// Broadcast an assembled one-time-key claim transition and drive it to a
@@ -2812,23 +2947,122 @@ async fn clear_one_time_claim_record<S: ShieldedStore>(
     }
 }
 
-/// Clear the pending-claim record when `result` settles the claim: a recovered
-/// or confirmed identity (`Ok`) and the terminal `ShieldedInviteAlreadyClaimed`
-/// both mean no future retry needs the record. Every other error keeps it —
+/// Settle the pending-claim record for a claim that has reached an outcome.
+///
+/// # A success does NOT clear the record
+///
+/// It used to. That dropped the row the moment the transition resolved, which
+/// is BEFORE control returns through `PlatformWallet::identity_create_from_one_time_key`,
+/// where the identity is added to the local manager and handed to the host
+/// persister. A process death in that gap — or a missing wallet-manager entry,
+/// or a `persister.store` failure — lost the exact padded identity ID before
+/// the JNI caller ever received it. The retry then re-scans, finds the notes
+/// spent, and `recover_executed_one_time_claim` has no `expected_identity_id`
+/// to bind against (a single-spend bundle's id embeds a randomly generated
+/// dummy nullifier), so it returns the TERMINAL
+/// [`PlatformWalletError::ShieldedInviteAlreadyClaimed`] and the identity is
+/// stranded forever (#4313 review finding 325ce9fa8f84).
+///
+/// So the record — the only durable copy of that id — is RETAINED across the
+/// native return and the host persistence handoff, and is dropped only by
+/// [`acknowledge_one_time_claim_registration`], once local registration has
+/// been durably acknowledged. A retry that arrives before that acknowledgement
+/// finds the record, sees the notes already spent, and recovers the identity by
+/// its declared id instead of failing terminally — which is exactly the
+/// reconciliation state the finding asks for, expressed in the machinery that
+/// already exists rather than a second one beside it.
+///
+/// Retaining is cheap and self-healing: the record is one row keyed by the
+/// invitation, the resume path is idempotent, and the acknowledgement clears it
+/// on the very next successful pass.
+///
+/// # What IS cleared here
+///
+/// Only the terminal [`PlatformWalletError::ShieldedInviteAlreadyClaimed`]: it
+/// means the invitation produced no identity this wallet can claim, so no
+/// future retry can get anything from the record. Every other error keeps it —
 /// `ShieldedBroadcastUnconfirmed` (and unproven failures) are exactly the
 /// outcomes whose retry must find the declared id again.
+///
+/// Returns the retained record's coordinates when the caller is expected to
+/// acknowledge it, i.e. on success.
 async fn finalize_one_time_claim_record<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     key: [u8; 32],
     result: &Result<(Identifier, Identity), PlatformWalletError>,
-) {
-    if matches!(
-        result,
-        Ok(_) | Err(PlatformWalletError::ShieldedInviteAlreadyClaimed { .. })
-    ) {
-        clear_one_time_claim_record(store, id, key).await;
+) -> Option<OneTimeClaimRecoveryRecord> {
+    match result {
+        Ok(_) => Some(OneTimeClaimRecoveryRecord {
+            claim_records_id: id,
+            claim_record_key: key,
+        }),
+        Err(PlatformWalletError::ShieldedInviteAlreadyClaimed { .. }) => {
+            clear_one_time_claim_record(store, id, key).await;
+            None
+        }
+        Err(_) => None,
     }
+}
+
+/// The retained recovery record of a SUCCESSFUL one-time-key claim: the durable
+/// row that still holds the claim's transition, and with it the exact identity
+/// id a padded single-note bundle cannot otherwise reproduce.
+///
+/// Handed back to the caller by [`identity_create_from_one_time_key`] so the
+/// row outlives the native return and the host persistence handoff. The caller
+/// registers the identity locally and, ONLY once that registration is durably
+/// acknowledged, passes this to [`acknowledge_one_time_claim_registration`]
+/// (#4313 review finding 325ce9fa8f84).
+///
+/// Dropping this value without acknowledging is safe and is the intended
+/// behaviour on a registration failure: the record simply survives, and the
+/// next claim of the same invitation resumes it and recovers the identity.
+#[derive(Debug, Clone, Copy)]
+pub struct OneTimeClaimRecoveryRecord {
+    claim_records_id: SubwalletId,
+    claim_record_key: [u8; 32],
+}
+
+/// A successful one-time-key claim: the created identity, plus the recovery
+/// record that must be acknowledged once the identity is durably registered
+/// locally. See [`OneTimeClaimRecoveryRecord`].
+#[derive(Debug)]
+pub struct OneTimeClaimOutcome {
+    /// The new identity's id.
+    pub identity_id: Identifier,
+    /// The proof-verified identity, for local registration.
+    pub identity: Identity,
+    /// The retained recovery record, or `None` when this claim armed no record
+    /// (the pre-broadcast preflight recovered an already-executed claim without
+    /// ever building one).
+    pub recovery_record: Option<OneTimeClaimRecoveryRecord>,
+}
+
+/// Drop a successful claim's retained recovery record, now that its identity is
+/// durably registered in the caller's local state.
+///
+/// This is the acknowledgement half of the retention introduced for
+/// #4313 review finding 325ce9fa8f84: until it runs, a retry of the same
+/// invitation resumes the record and recovers the identity by its declared id
+/// rather than failing terminally.
+///
+/// Call it ONLY after local registration is durable — after the identity is in
+/// the manager AND its changeset reached the host persister. Calling it early
+/// re-opens the exact window the retention closes; not calling it at all costs
+/// one stale row that the next claim of this invitation resolves.
+///
+/// Best-effort by construction: a failure to clear leaves a settled record that
+/// the next attempt re-resolves to the same identity.
+pub async fn acknowledge_one_time_claim_registration<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    record: OneTimeClaimRecoveryRecord,
+) {
+    debug!(
+        claim_record_key = %hex::encode(record.claim_record_key),
+        "one-time claim: identity durably registered; releasing the retained recovery record"
+    );
+    clear_one_time_claim_record(store, record.claim_records_id, record.claim_record_key).await;
 }
 
 /// Describe the first way a resume attempt's arguments disagree with the
@@ -2979,6 +3213,7 @@ async fn resume_one_time_claim<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     claim_records_id: SubwalletId,
     record: &PendingRedrive,
+    admission: super::store::AdmissionToken,
     master_key_hash: Option<[u8; 20]>,
     submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
     denomination: u64,
@@ -3084,6 +3319,19 @@ async fn resume_one_time_claim<S: ShieldedStore>(
     // same broadcast/confirm classification as a fresh claim. Byte-identical
     // re-broadcast is fund-safe (identical nullifiers cannot double-spend) and
     // preserves the recorded id.
+    //
+    // Same chargeable-step gate as the fresh-build path: a re-broadcast is a
+    // resubmission that can execute and be charged for, so it may not proceed
+    // on a lease the heartbeat can no longer prove
+    // (#4313 review finding f58ed9d910d8). Aborting here is clean — the stored
+    // record and its unspent notes are untouched, and the next retry resumes
+    // exactly this record again.
+    if let Err(e) =
+        assert_claim_lease_before_chargeable_step(store, admission, "the claim re-broadcast").await
+    {
+        return OneTimeClaimResume::Resolved(Err(e));
+    }
+
     let result = broadcast_and_confirm_one_time_claim(
         sdk,
         st,
@@ -4724,6 +4972,7 @@ mod redrive_tests {
 #[cfg(test)]
 mod nullifier_status_and_claim_record_tests {
     use super::*;
+    use crate::wallet::shielded::file_store::FileBackedShieldedStore;
     use crate::wallet::shielded::store::InMemoryShieldedStore;
     use dash_sdk::query_types::ShieldedNullifierStatus;
 
@@ -4854,6 +5103,193 @@ mod nullifier_status_and_claim_record_tests {
             .is_none());
     }
 
+    /// A SUCCESSFUL claim must RETAIN its recovery record until the caller
+    /// acknowledges durable local registration (#4313 review finding
+    /// 325ce9fa8f84).
+    ///
+    /// It used to clear on success, which dropped the row before control
+    /// returned through `PlatformWallet::identity_create_from_one_time_key` —
+    /// where the identity is added to the manager and handed to the persister.
+    /// A process death in that gap, a missing wallet-manager entry, or a
+    /// `persister.store` failure therefore lost the exact padded identity ID
+    /// before the JNI caller ever received it, and the retry could only return
+    /// the terminal `ShieldedInviteAlreadyClaimed`.
+    #[tokio::test]
+    async fn a_successful_claim_retains_its_record_until_registration_is_acknowledged() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x7Bu8; 32], ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        let key = [0xB6u8; 32];
+
+        store
+            .write()
+            .await
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id: key,
+                    anchor: [9u8; 32],
+                    nullifiers: vec![[3u8; 32]],
+                    st_bytes: vec![1, 2, 3],
+                    attempts: 0,
+                    identity_index: Some(4),
+                },
+            )
+            .expect("arm must succeed");
+
+        let success: Result<(Identifier, Identity), PlatformWalletError> = Ok((
+            Identifier::new([0xEE; 32]),
+            Identity::default_versioned(dpp::version::PlatformVersion::latest())
+                .expect("default identity"),
+        ));
+
+        // The claim resolves. This is the instant the native call returns to
+        // the host — and the row must still be there.
+        let receipt = finalize_one_time_claim_record(&store, id, key, &success).await;
+        assert!(
+            receipt.is_some(),
+            "a successful claim must hand back a record for the caller to acknowledge"
+        );
+        assert!(
+            find_one_time_claim_record(&store, id, key)
+                .await
+                .expect("lookup must succeed")
+                .is_some(),
+            "the recovery record must survive the native return — it is the only durable copy of \
+             a padded single-note claim's identity id"
+        );
+
+        // Registration succeeded and is durable: only NOW is it released.
+        acknowledge_one_time_claim_registration(&store, receipt.expect("receipt")).await;
+        assert!(
+            find_one_time_claim_record(&store, id, key)
+                .await
+                .expect("lookup must succeed")
+                .is_none(),
+            "the acknowledgement is what finally drops the record"
+        );
+    }
+
+    /// The half that makes the retention worth having: a claim killed between
+    /// its transition succeeding and the host durably registering the identity
+    /// must be RECOVERABLE, not terminal (#4313 review finding 325ce9fa8f84).
+    ///
+    /// The claim resolves, the record is retained, and then the process dies
+    /// before acknowledging — modelled by dropping the receipt and reopening
+    /// the store from disk, which is exactly what a relaunch does. The retry
+    /// then finds the record, and with it the DECLARED identity id that a
+    /// padded single-note bundle cannot re-derive. That id is what
+    /// `recover_executed_one_time_claim` needs; without it, the retry's
+    /// `expected_identity_id` is `None` and the spent-note path returns the
+    /// terminal `ShieldedInviteAlreadyClaimed` before the master-key lookup is
+    /// ever attempted.
+    #[tokio::test]
+    async fn a_claim_killed_before_acknowledgement_is_recoverable_after_a_restart() {
+        use dpp::serialization::PlatformSerializable;
+
+        let path = std::env::temp_dir().join(format!(
+            "shielded_claim_ack_{}_{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let wallet_id = [0x9Cu8; 32];
+        let id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        let key = [0xC7u8; 32];
+
+        // A claim whose transition carries a padded, non-re-derivable id: the
+        // single-spend case, where the record is the only handle to it.
+        let declared_id = Identifier::new([0x2B; 32]);
+        let st_bytes = {
+            use dpp::state_transition::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+            use dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+
+            let transition: IdentityCreateFromShieldedPoolTransition =
+                IdentityCreateFromShieldedPoolTransitionV0 {
+                    public_keys: Vec::new(),
+                    denomination: 10_000_000_000,
+                    actions: Vec::new(),
+                    anchor: [0x07; 32],
+                    proof: vec![0x08; 8],
+                    binding_signature: [0x09; 64],
+                    send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress::P2pkh(
+                        [0u8; 20],
+                    ),
+                    identity_id: declared_id,
+                }
+                .into();
+            StateTransition::IdentityCreateFromShieldedPool(transition)
+                .serialize_to_bytes()
+                .expect("serialize")
+        };
+
+        {
+            let store: Arc<RwLock<FileBackedShieldedStore>> = Arc::new(RwLock::new(
+                FileBackedShieldedStore::open_path(&path, 100).expect("store opens"),
+            ));
+            store
+                .write()
+                .await
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: key,
+                        anchor: [0x0A; 32],
+                        nullifiers: vec![[0x0F; 32]],
+                        st_bytes,
+                        attempts: 0,
+                        identity_index: Some(4),
+                    },
+                )
+                .expect("arm must succeed");
+
+            let success: Result<(Identifier, Identity), PlatformWalletError> = Ok((
+                declared_id,
+                Identity::default_versioned(dpp::version::PlatformVersion::latest())
+                    .expect("default identity"),
+            ));
+            let receipt = finalize_one_time_claim_record(&store, id, key, &success).await;
+            assert!(receipt.is_some(), "success yields a receipt");
+            // The process dies HERE: the receipt is dropped without ever being
+            // acknowledged, so the identity never reached the host's durable
+            // state.
+            let _dropped_without_acknowledging = receipt;
+        }
+
+        // Relaunch: a fresh store over the same file, as `open_path` does on
+        // every app start.
+        let reopened = FileBackedShieldedStore::open_path(&path, 100).expect("store reopens");
+        let rehydrated = reopened.pending_redrives(id).expect("records readable");
+        assert_eq!(
+            rehydrated.len(),
+            1,
+            "RED before the fix: the success path cleared the row, so the relaunch found nothing \
+             and the retry could only report the invitation as already claimed"
+        );
+
+        // And the row still carries the declared id — the value the retry needs
+        // and cannot otherwise reconstruct.
+        let recovered_id = {
+            use dpp::serialization::PlatformDeserializable;
+            use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+            match StateTransition::deserialize_from_bytes(&rehydrated[0].st_bytes)
+                .expect("stored transition deserializes")
+            {
+                StateTransition::IdentityCreateFromShieldedPool(t) => t.identity_id(),
+                other => panic!("unexpected stored transition {}", other.name()),
+            }
+        };
+        assert_eq!(
+            recovered_id, declared_id,
+            "the retained record is what lets the retry bind a recovered identity to this claim \
+             instead of returning terminal ShieldedInviteAlreadyClaimed"
+        );
+
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// A corrupt stored transition must not wedge the claim: the resume path
     /// drops the record (so the fresh build proceeds) without touching the
     /// network (the mock SDK has no expectations — any fetch would error).
@@ -4878,9 +5314,20 @@ mod nullifier_status_and_claim_record_tests {
             .arm_redrive(id, record.clone())
             .expect("arm must succeed");
 
-        let outcome =
-            resume_one_time_claim(&sdk, &store, id, &record, None, BTreeMap::new(), 100_000, 0)
-                .await;
+        let outcome = resume_one_time_claim(
+            &sdk,
+            &store,
+            id,
+            &record,
+            // The corrupt record is rejected long before the
+            // pre-broadcast lease gate, so any token reaches the assertion.
+            crate::wallet::shielded::store::AdmissionToken::generate().expect("token"),
+            None,
+            BTreeMap::new(),
+            100_000,
+            0,
+        )
+        .await;
         assert!(matches!(outcome, OneTimeClaimResume::RecordUnusable));
         assert!(find_one_time_claim_record(&store, id, key)
             .await
@@ -6408,6 +6855,9 @@ mod one_time_claim_evidence_tests {
             &store,
             claim_records_id,
             &record,
+            // The binding mismatch is refused before the pre-broadcast
+            // lease gate is ever reached.
+            crate::wallet::shielded::store::AdmissionToken::generate().expect("token"),
             Some(OTHER_MASTER_HASH),
             keys_map(&[other_master_key()]),
             DENOMINATION,
@@ -6550,6 +7000,8 @@ mod one_time_claim_evidence_tests {
             &store,
             claim_records_id,
             &record,
+            // As above: refused on the slot mismatch, before the gate.
+            crate::wallet::shielded::store::AdmissionToken::generate().expect("token"),
             Some(OUR_MASTER_HASH),
             keys_map(&[our_master_key()]),
             DENOMINATION,
@@ -6596,6 +7048,84 @@ mod one_time_claim_evidence_tests {
             "the persisted slot must survive a process restart"
         );
         drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// END TO END for #4313 review finding f58ed9d910d8: a resume whose
+    /// purge-protection lease is gone must refuse RETRYABLY and must not
+    /// re-broadcast.
+    ///
+    /// A re-broadcast is a chargeable resubmission, and continuing it without a
+    /// provable lease is what lets a concurrent clear or wallet removal count
+    /// zero live claims and delete the recovery record while the transition is
+    /// in flight. The SDK is a bare mock with no expectations registered, so a
+    /// re-broadcast would surface as a broadcast-shaped error rather than as
+    /// `ShieldedLifecycleBusy`.
+    ///
+    /// The record must SURVIVE: refusing is only safe because the retry can
+    /// still resume it.
+    #[tokio::test]
+    async fn a_resume_without_a_provable_lease_refuses_instead_of_rebroadcasting() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let path = temp_store_path("resume_lease_gate");
+        let store = Arc::new(RwLock::new(
+            FileBackedShieldedStore::open_path(&path, 100).expect("store opens"),
+        ));
+        let claim_records_id = SubwalletId::new([0x78; 32], ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+
+        let (_, st_bytes) = stored_claim_transition(&[our_master_key()], DENOMINATION);
+        let record = stored_claim_record(st_bytes);
+        store
+            .write()
+            .await
+            .arm_redrive(claim_records_id, record.clone())
+            .expect("record arms");
+
+        // A token that owns no lease — the state a reaped or displaced claim is
+        // left in. Every binding below MATCHES the stored transition, so the
+        // mismatch gate cannot be what refuses this.
+        let orphaned = crate::wallet::shielded::store::AdmissionToken([0x7F; 16]);
+        let outcome = resume_one_time_claim(
+            &sdk,
+            &store,
+            claim_records_id,
+            &record,
+            orphaned,
+            Some(OUR_MASTER_HASH),
+            keys_map(&[our_master_key()]),
+            DENOMINATION,
+            IDENTITY_INDEX,
+        )
+        .await;
+
+        match outcome {
+            OneTimeClaimResume::Resolved(Err(PlatformWalletError::ShieldedLifecycleBusy {
+                reason,
+            })) => assert!(
+                reason.contains("lease"),
+                "the refusal must name the lost lease, got: {reason}"
+            ),
+            other => panic!(
+                "a resume without a provable lease must refuse retryably, got {}",
+                match other {
+                    OneTimeClaimResume::RecordUnusable => "RecordUnusable".to_string(),
+                    OneTimeClaimResume::Resolved(r) => format!("Resolved({r:?})"),
+                }
+            ),
+        }
+
+        let surviving = store
+            .read()
+            .await
+            .pending_redrives(claim_records_id)
+            .expect("records readable");
+        assert_eq!(
+            surviving.len(),
+            1,
+            "refusing is only safe because the record survives for the retry"
+        );
+
+        drop(store);
         let _ = std::fs::remove_file(&path);
     }
 }
@@ -6744,6 +7274,132 @@ mod claim_lease_heartbeat_tests {
         assert!(
             !contended.is_acquired(),
             "the heartbeat must carry the claim-key reservation past its original expiry"
+        );
+    }
+
+    /// A live lease authorizes the chargeable step, and re-stamps itself while
+    /// doing so — the broadcast that follows therefore runs at the start of a
+    /// full lease window rather than at whatever a long proof build left of one.
+    #[tokio::test(start_paused = true)]
+    async fn a_live_lease_authorizes_the_chargeable_step_and_is_restamped() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x51; 32];
+        let holder = AdmissionToken([0x51; 16]);
+        let rival = AdmissionToken([0x52; 16]);
+        let t0 = admission_now_ms();
+        assert!(store
+            .write()
+            .await
+            .begin_claim_admission(wallet_id, holder, t0, SHORT_LEASE_MS)
+            .expect("lease"));
+
+        assert_claim_lease_before_chargeable_step(&store, holder, "the claim broadcast")
+            .await
+            .expect("a live lease must authorize the broadcast");
+
+        // Re-stamped: past the ORIGINAL expiry the lease is still counted, so a
+        // destructive pass still sees a live claim.
+        let live = store
+            .write()
+            .await
+            .begin_destructive_admission(
+                Some(wallet_id),
+                rival,
+                t0 + SHORT_LEASE_MS + 1,
+                CLAIM_LEASE_MS,
+            )
+            .expect("destructive admission");
+        assert_eq!(
+            live, 1,
+            "the gate must re-stamp the lease it proves, so the broadcast runs inside a fresh \
+             protection window"
+        );
+    }
+
+    /// THE BUG (#4313 review finding f58ed9d910d8): the heartbeat only LOGGED a
+    /// failed renewal and let the claim run on. Once the lease is gone,
+    /// `renew_claim_admission` refuses to resurrect it and destructive
+    /// admission reaps it before counting live claims — so a concurrent clear
+    /// or wallet removal counts zero claims and deletes the pending row while
+    /// the transition is on the wire. For a padded single-note bundle that row
+    /// is the only handle to the randomized identity id.
+    ///
+    /// So a chargeable step must refuse, retryably, when the lease is gone.
+    #[tokio::test(start_paused = true)]
+    async fn a_lapsed_lease_refuses_the_chargeable_step() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x53; 32];
+        let holder = AdmissionToken([0x53; 16]);
+        let t0 = admission_now_ms();
+        assert!(store
+            .write()
+            .await
+            .begin_claim_admission(wallet_id, holder, t0, SHORT_LEASE_MS)
+            .expect("lease"));
+
+        // The lease is displaced exactly as a purge's reap would displace it.
+        store
+            .write()
+            .await
+            .end_claim_admission(holder)
+            .expect("release the lease");
+
+        let refused =
+            assert_claim_lease_before_chargeable_step(&store, holder, "the claim broadcast").await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedLifecycleBusy { .. })
+            ),
+            "a chargeable step must refuse — RETRYABLY — without a lease it can prove; got \
+             {refused:?}"
+        );
+    }
+
+    /// The same refusal for a lease that merely EXPIRED on the wall clock,
+    /// which is the case a forward clock adjustment or a long executor
+    /// suspension produces: `renew_claim_admission` will not resurrect it, so
+    /// ownership can no longer be proven and the claim must not broadcast.
+    #[tokio::test]
+    async fn an_expired_lease_cannot_be_resurrected_to_authorize_a_broadcast() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id: WalletId = [0x54; 32];
+        let holder = AdmissionToken([0x54; 16]);
+        let t0 = admission_now_ms();
+        // A zero-length lease: `expires_at == t0`, already expired against any
+        // `now >= t0` the gate reads. Expressing the expiry through the STAMP
+        // rather than by advancing time is what makes this deterministic —
+        // `admission_now_ms` is wall-clock, which a paused runtime never moves,
+        // so a short-but-nonzero lease races the gate.
+        assert!(store
+            .write()
+            .await
+            .begin_claim_admission(wallet_id, holder, t0, 0)
+            .expect("lease"));
+
+        // `renew_claim_admission`'s `expires_at > now` predicate deliberately
+        // refuses to resurrect it — the store-level behaviour this gate is
+        // built on, and the reason a lapsed claim cannot renew its way back
+        // into ownership.
+        let renewed = store
+            .write()
+            .await
+            .renew_claim_admission(holder, admission_now_ms(), CLAIM_LEASE_MS)
+            .expect("renew must not error");
+        assert!(
+            !renewed,
+            "precondition: an expired lease is deliberately not resurrectable"
+        );
+
+        let refused =
+            assert_claim_lease_before_chargeable_step(&store, holder, "the claim re-broadcast")
+                .await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedLifecycleBusy { .. })
+            ),
+            "an expired lease must not authorize a re-broadcast; got {refused:?}"
         );
     }
 }
