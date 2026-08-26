@@ -657,10 +657,19 @@ impl TimeRangeGridSpec {
 #[cfg(any(feature = "server", feature = "verify"))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedTimeRange {
-    /// The bucketed source field the resolved equality is on.
-    pub field: String,
-    /// The grid the bucket start was computed from.
+    /// The grid the bucket start was computed from. The transform carries its
+    /// own source field, so the provenance cannot name a field the grid does
+    /// not bucket — [`Self::field`] reads it from here.
     pub transform: TimeRangeTransform,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl ResolvedTimeRange {
+    /// The bucketed source field the resolved equality is on — always the
+    /// transform's own source.
+    pub fn field(&self) -> &str {
+        &self.transform.source
+    }
 }
 
 /// Resolves a time-range selection on `field` into a concrete equality
@@ -755,7 +764,6 @@ pub fn resolve_time_range_bucket_clause(
             value: Value::U64(bucket_start),
         },
         ResolvedTimeRange {
-            field: field.to_string(),
             transform: transform.clone(),
         },
     ))
@@ -794,19 +802,16 @@ pub fn index_admissible_for_resolved_time_range(
 ) -> bool {
     match resolved_time_ranges {
         [] => index.time_range.is_none(),
-        // Both halves of the provenance must agree with the candidate: the
-        // transform (which grid the bucket start was computed from) AND the
-        // field (which clause the shape guard validated). The two are
-        // independently settable by a direct Rust caller, and a mismatched
-        // pair — a real transform attached to some other field — would let
-        // the shape guard validate the wrong clause while a caller-supplied
-        // raw equality on the transform's source rode into the bucketed
-        // index as if it were a resolved bucket start. The resolver always
-        // produces `field == transform.source`; this makes fabricated
-        // provenance that doesn't inadmissible everywhere.
-        [resolved] => index.time_range.as_ref().is_some_and(|transform| {
-            transform.source == resolved.field && *transform == resolved.transform
-        }),
+        // The provenance's transform must equal the candidate's — grid AND
+        // source field, since the transform carries its own source. The
+        // provenance cannot name a field its grid does not bucket
+        // ([`ResolvedTimeRange::field`] is derived from the transform), so a
+        // fabricated field/transform pair is unrepresentable rather than
+        // guarded against.
+        [resolved] => index
+            .time_range
+            .as_ref()
+            .is_some_and(|transform| *transform == resolved.transform),
         _ => false,
     }
 }
@@ -830,9 +835,9 @@ pub fn validate_resolved_time_range_clause_shapes(
     where_clauses: &[WhereClause],
     resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Result<(), Error> {
-    for field in resolved_time_ranges.iter().map(|resolved| &resolved.field) {
+    for field in resolved_time_ranges.iter().map(|resolved| resolved.field()) {
         let mut equalities = 0usize;
-        for clause in where_clauses.iter().filter(|c| &c.field == field) {
+        for clause in where_clauses.iter().filter(|c| c.field == field) {
             if clause.operator == WhereOperator::Equal {
                 equalities += 1;
             } else {
@@ -2008,7 +2013,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         "a time-range query on \"{}\" requires an index that buckets it with \
                          the resolved grid AND covers the query's other where and order-by \
                          fields; valid indexes are: {:?}",
-                        resolved.field,
+                        resolved.field(),
                         self.document_type.indexes()
                     )))
                 }
@@ -2073,7 +2078,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let Some(source) = self
             .resolved_time_ranges
             .first()
-            .map(|resolved| resolved.field.as_str())
+            .map(|resolved| resolved.field())
         else {
             return Ok(());
         };
@@ -3210,7 +3215,6 @@ mod tests {
         use dpp::data_contract::document_type::TimeRangeTransform;
 
         let resolved = vec![ResolvedTimeRange {
-            field: "$createdAt".to_string(),
             transform: TimeRangeTransform {
                 source: "$createdAt".to_string(),
                 range_seconds: 21_600,

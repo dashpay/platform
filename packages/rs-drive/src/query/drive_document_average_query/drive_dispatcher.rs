@@ -2024,7 +2024,6 @@ mod tests {
             prove: true,
             drive_config: &drive_config,
             resolved_time_ranges: vec![ResolvedTimeRange {
-                field: "$createdAt".to_string(),
                 transform: dpp::data_contract::document_type::TimeRangeTransform {
                     source: "$createdAt".to_string(),
                     range_seconds: 21_600,

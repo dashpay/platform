@@ -3572,7 +3572,6 @@ mod time_range_picker_tests {
     /// remove the trending index can still present the resolution.
     fn source_resolution() -> Vec<ResolvedTimeRange> {
         vec![ResolvedTimeRange {
-            field: SOURCE.to_string(),
             transform: TimeRangeTransform {
                 source: SOURCE.to_string(),
                 range_seconds: 6 * HOUR_SECONDS,
@@ -3681,22 +3680,20 @@ mod time_range_picker_tests {
         );
     }
 
-    /// Provenance is a `(field, transform)` pair and admissibility must bind
-    /// them together: a fabricated entry carrying the real transform under a
-    /// *different* field would let the shape guard validate the wrong clause
-    /// while a caller-supplied raw equality on the transform's source rode
-    /// into the bucketed index as if it were a resolved bucket start. The
-    /// resolver always produces `field == transform.source`; anything else
-    /// must be inadmissible.
+    /// Provenance names its field through the transform itself
+    /// ([`ResolvedTimeRange::field`] is derived from `transform.source`), so
+    /// the fabricated field/transform mismatch this test used to construct is
+    /// unrepresentable. What remains fabricatable is a resolution whose grid
+    /// no index declares — it must admit nothing.
     #[test]
-    fn provenance_with_a_field_not_matching_its_transform_source_admits_nothing() {
+    fn provenance_with_a_grid_no_index_declares_admits_nothing() {
         let indexes = indexes();
         let where_clauses = vec![
             equal(SOURCE, Value::U64(6 * HOUR_MS)),
             equal("hashtag", Value::Text("ibiza".to_string())),
         ];
         let mut mismatched = source_resolution();
-        mismatched[0].field = "hashtag".to_string();
+        mismatched[0].transform.step_seconds /= 2;
         assert!(
             DriveDocumentCountQuery::find_countable_index_for_where_clauses(
                 &indexes,
@@ -3704,8 +3701,8 @@ mod time_range_picker_tests {
                 &mismatched,
             )
             .is_none(),
-            "a transform attached to a field other than its source must not \
-             admit the bucketed index (nor, being a resolution, the plain one)"
+            "a resolution carrying a grid no index declares must not admit \
+             the bucketed index (nor, being a resolution, the plain one)"
         );
     }
 }

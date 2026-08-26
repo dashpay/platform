@@ -614,7 +614,7 @@ mod tests {
                 .expect("a metadata time inside an active range resolves");
 
         assert_eq!(resolutions.len(), 1);
-        assert_eq!(resolutions[0].field, CREATED_AT);
+        assert_eq!(resolutions[0].field(), CREATED_AT);
         assert_eq!(
             resolutions[0].transform.range_seconds, RANGE_SECONDS,
             "the provenance must carry the exact grid the resolution used"

@@ -438,7 +438,6 @@ impl Drive {
                             let bucket_start = *transform.containing_buckets(timestamp).first()?;
                             clause.value = platform_value!(bucket_start);
                             resolved_time_ranges.push(ResolvedTimeRange {
-                                field: transform.source.clone(),
                                 transform: transform.clone(),
                             });
                         }
