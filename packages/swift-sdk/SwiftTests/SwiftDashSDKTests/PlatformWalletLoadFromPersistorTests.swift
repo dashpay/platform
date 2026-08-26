@@ -9,9 +9,11 @@ import XCTest
 /// under test: off-main execution, bulk error mapping, per-wallet
 /// skip-and-continue parity with the sync overload, and participation in
 /// the shutdown drain (an admitted load completes before teardown takes
-/// the handle; new loads are rejected while the drain runs) — all without
-/// calling FFI. The keychain unlock epilogue is exercised only as far as
-/// its watch-only fast path (test wallets have no stored mnemonic).
+/// the handle; new loads are rejected while the drain runs), and the
+/// synchronous-overload admission gate — all without invoking a production
+/// load or teardown call. The keychain unlock epilogue is exercised only
+/// as far as its watch-only fast path (test wallets have no stored
+/// mnemonic, so the verify FFI is never reached).
 @MainActor
 final class PlatformWalletLoadFromPersistorTests: XCTestCase {
     /// Thread-recording, optionally gated native-load table.
@@ -59,11 +61,15 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
                             NULL_HANDLE
                         )
                     }
-                    // Distinct non-null wallet handle per id byte.
+                    // `ManagedPlatformWallet.deinit` destroys its handle
+                    // through the live FFI. Keep the fake handle at zero so
+                    // it can never collide with a real process-global Rust
+                    // registry entry; the distinct wallet ids are sufficient
+                    // to tell results apart.
                     return (
                         PlatformWalletFFIResult(
                             code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil),
-                        Handle(200 + UInt64(walletId.first ?? 0))
+                        NULL_HANDLE
                     )
                 }
             )
@@ -219,5 +225,76 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
         _ = try await firstLoad.value
         _ = await shutdownTask.value
         XCTAssertEqual(recorder.bulkCount, 1, "the rejected load must never reach the native call")
+    }
+
+    /// The SYNCHRONOUS overload must be rejected while an async load is in
+    /// flight: it would run a second Rust loader on the MainActor
+    /// concurrently with the admitted one on the destroy queue, racing
+    /// load.rs's two-step hydration. Rejected before any native work.
+    func testSyncLoadIsRejectedWhileAsyncLoadIsInFlight() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let recorder = LoadRecorder(walletIds: [id(5)], gate: gate)
+        // A deliberately high fake manager handle: if the admission gate
+        // ever regressed, the sync overload's LIVE bulk FFI would run
+        // against it — a value this large can never alias a real
+        // registry entry allocated during this test process.
+        let manager = makeManager(handle: 0x7FFF_FFF1, recorder: recorder)
+
+        let asyncLoad = Task { try await manager.loadFromPersistor() }
+        while recorder.bulkCount == 0 {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        // Explicitly non-async closure type forces the SYNC overload —
+        // this async test body would otherwise resolve to the async one
+        // (SE-0296).
+        let syncLoad: () throws -> [ManagedPlatformWallet] = { try manager.loadFromPersistor() }
+        do {
+            _ = try syncLoad()
+            XCTFail("expected the sync overload to be rejected during an async load")
+        } catch let error as PlatformWalletError {
+            guard case .invalidHandle = error else {
+                return XCTFail("expected invalidHandle, got \(error)")
+            }
+        }
+
+        gate.signal()
+        _ = try await asyncLoad.value
+        XCTAssertEqual(
+            recorder.bulkCount, 1,
+            "only the admitted async load may reach the native call")
+    }
+
+    /// The SYNCHRONOUS overload must also be rejected during the shutdown
+    /// drain window, where the handle is intentionally still live for the
+    /// admitted async op while the MainActor is reentrant at the drain's
+    /// await.
+    func testSyncLoadIsRejectedDuringShutdownDrain() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let recorder = LoadRecorder(walletIds: [id(6)], gate: gate)
+        let manager = makeManager(handle: 0x7FFF_FFF2, recorder: recorder)
+
+        let asyncLoad = Task { try await manager.loadFromPersistor() }
+        while recorder.bulkCount == 0 {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let shutdownTask = Task { await manager.shutdown() }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.handle, 0x7FFF_FFF2, "drain must hold the handle live")
+
+        let syncLoad: () throws -> [ManagedPlatformWallet] = { try manager.loadFromPersistor() }
+        do {
+            _ = try syncLoad()
+            XCTFail("expected the sync overload to be rejected during the drain")
+        } catch let error as PlatformWalletError {
+            guard case .invalidHandle = error else {
+                return XCTFail("expected invalidHandle, got \(error)")
+            }
+        }
+
+        gate.signal()
+        _ = try await asyncLoad.value
+        _ = await shutdownTask.value
+        XCTAssertEqual(recorder.bulkCount, 1)
     }
 }

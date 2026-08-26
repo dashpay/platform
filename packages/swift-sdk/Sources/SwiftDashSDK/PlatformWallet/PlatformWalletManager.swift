@@ -880,14 +880,33 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: - Wallet creation
 
-    /// Reject wallet creation once shutdown has closed admission, including
-    /// during the drain window where the manager's handle is intentionally
-    /// still live for an already-admitted async create.
-    private func ensureWalletCreationAllowed() throws {
+    /// Admission gate for the SYNCHRONOUS native entrypoints (`createWallet`,
+    /// `createWalletFromSeed`, `loadFromPersistor`). Rejects:
+    ///
+    /// - once shutdown has closed admission — including the drain window,
+    ///   where the manager's handle is intentionally still live for an
+    ///   already-admitted async op while the MainActor is reentrant at the
+    ///   drain's `await`;
+    /// - while an async native op is in flight: the synchronous overloads
+    ///   run their FFI on the calling thread, so admitting one would run a
+    ///   second native op CONCURRENTLY with the admitted op on the destroy
+    ///   queue. For load that is a real race — Rust's loader inserts into
+    ///   `wallet_manager` and `self.wallets` in two steps, and a parallel
+    ///   loader that sees the first insert skips the wallet before the
+    ///   second lands (load.rs treats "already present" as "fully
+    ///   hydrated", which only holds for sequential loaders).
+    ///
+    /// Async entrypoints use [`admitNativeOp`] instead (they serialize on
+    /// the destroy queue, so async-with-async is safe).
+    private func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {
             throw PlatformWalletError.invalidHandle(
-                "manager shutdown is in progress; wallet creation rejected")
+                "manager shutdown is in progress; \(name) rejected")
+        }
+        guard activeNativeOpCount == 0 else {
+            throw PlatformWalletError.invalidHandle(
+                "an async native operation is in flight; synchronous \(name) rejected")
         }
     }
 
@@ -913,7 +932,7 @@ public class PlatformWalletManager: ObservableObject {
         createDefaultAccounts: Bool = true,
         birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
-        try ensureWalletCreationAllowed()
+        try ensureSyncNativeOpAllowed("createWallet")
         var walletHandle: Handle = NULL_HANDLE
         var walletId: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
@@ -1056,7 +1075,7 @@ public class PlatformWalletManager: ObservableObject {
         createDefaultAccounts: Bool = true,
         birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
-        try ensureWalletCreationAllowed()
+        try ensureSyncNativeOpAllowed("createWalletFromSeed")
         guard seed.count == 64 else {
             throw PlatformWalletError.invalidParameter(
                 "seed must be 64 bytes, got \(seed.count)"
@@ -1118,7 +1137,11 @@ public class PlatformWalletManager: ObservableObject {
     /// `createWallet` flow.
     @discardableResult
     public func loadFromPersistor() throws -> [ManagedPlatformWallet] {
-        try ensureConfigured()
+        // Same synchronous-admission gate as the sync creates: rejected
+        // during the shutdown drain AND while an async native op is in
+        // flight — a second Rust loader running concurrently with the one
+        // on the destroy queue races load.rs's two-step hydration.
+        try ensureSyncNativeOpAllowed("loadFromPersistor")
 
         try platform_wallet_manager_load_from_persistor(handle).check()
 
@@ -1289,6 +1312,15 @@ public class PlatformWalletManager: ObservableObject {
         }
         try outcome.bulkResult.get()
 
+        // Own every returned wallet handle IMMEDIATELY, before anything can
+        // throw: if the defensive guard below fires, dropping the wrappers
+        // releases the Rust-side aliases through their deinit instead of
+        // leaking raw handles in the global registry. Nothing is published
+        // until the guard has passed.
+        let restored = outcome.loaded.map { entry in
+            ManagedPlatformWallet(handle: entry.walletHandle, walletId: entry.walletId)
+        }
+
         // Defense in depth only — the shutdown drain waits for this op, so
         // the handle cannot have been torn down (see the async create's
         // matching guard).
@@ -1298,14 +1330,8 @@ public class PlatformWalletManager: ObservableObject {
                 "manager was shut down while loadFromPersistor ran off-main")
         }
 
-        var restored: [ManagedPlatformWallet] = []
-        restored.reserveCapacity(outcome.loaded.count)
-        for entry in outcome.loaded {
-            let managedWallet = ManagedPlatformWallet(
-                handle: entry.walletHandle,
-                walletId: entry.walletId)
-            restored.append(managedWallet)
-            self.wallets[entry.walletId] = managedWallet
+        for managedWallet in restored {
+            self.wallets[managedWallet.walletId] = managedWallet
         }
         if let skipError = outcome.lastSkipError {
             self.lastError = skipError

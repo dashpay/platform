@@ -244,20 +244,24 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         let shutdownTask = Task { await manager.shutdown() }
 
         // Poll through the seed overload with deliberately invalid input. It
-        // cannot enter FFI before shutdown, and once shutdown closes admission
-        // the shared creation guard must take precedence over seed validation.
+        // can never enter FFI: while the gated async create is in flight the
+        // unified synchronous-admission gate rejects it (in-flight branch),
+        // and once shutdown closes admission the shutdown branch takes over.
+        // Both take precedence over seed validation, so `invalidParameter`
+        // must never surface here.
         while true {
             do {
                 _ = try manager.createWallet(seed: Data(), network: .testnet)
                 XCTFail("an empty seed must never create a wallet")
                 break
-            } catch PlatformWalletError.invalidParameter {
-                await Task.yield()
             } catch PlatformWalletError.invalidHandle(let message) {
+                if message == "manager shutdown is in progress; createWalletFromSeed rejected" {
+                    break
+                }
                 XCTAssertEqual(
                     message,
-                    "manager shutdown is in progress; wallet creation rejected")
-                break
+                    "an async native operation is in flight; synchronous createWalletFromSeed rejected")
+                await Task.yield()
             } catch {
                 XCTFail("unexpected error while waiting for shutdown admission to close: \(error)")
                 break
@@ -275,7 +279,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             } catch PlatformWalletError.invalidHandle(let message) {
                 XCTAssertEqual(
                     message,
-                    "manager shutdown is in progress; wallet creation rejected",
+                    "manager shutdown is in progress; createWallet rejected",
                     file: file,
                     line: line)
             } catch {
@@ -299,7 +303,7 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             }
             XCTAssertEqual(
                 message,
-                "manager shutdown is in progress; wallet creation rejected")
+                "manager shutdown is in progress; createWallet rejected")
         }
 
         gate.signal()
@@ -326,6 +330,43 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         XCTAssertEqual(manager.wallets.count, 2)
         XCTAssertTrue(manager.wallets[w1.walletId] === w1)
         XCTAssertTrue(manager.wallets[w2.walletId] === w2)
+        await manager.shutdown()
+    }
+
+    /// A SYNCHRONOUS create arriving while an async native op is in flight
+    /// (no shutdown involved) is rejected up front: it would run its FFI on
+    /// the MainActor concurrently with the admitted op on the destroy queue.
+    func testSyncCreateIsRejectedWhileAsyncCreateIsInFlight() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let recorder = CreateRecorder(gate: gate)
+        // Outside any realistic monotonic registry range so even a
+        // regression that reaches the live FFI can only produce a safe miss.
+        let manager = makeManager(handle: Handle.max - 1, createRecorder: recorder)
+
+        let asyncCreate = Task { try await manager.createWallet(mnemonic: "a", network: .testnet) }
+        while recorder.count == 0 {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        // Explicitly non-async closure type forces the SYNC overload
+        // (SE-0296 would otherwise pick the async one in this test body).
+        let syncCreate: () throws -> ManagedPlatformWallet = {
+            try manager.createWallet(mnemonic: "b", network: .testnet)
+        }
+        do {
+            _ = try syncCreate()
+            XCTFail("expected the sync overload to be rejected during an async create")
+        } catch let error as PlatformWalletError {
+            guard case .invalidHandle = error else {
+                return XCTFail("expected invalidHandle, got \(error)")
+            }
+        }
+
+        gate.signal()
+        _ = try await asyncCreate.value
+        XCTAssertEqual(
+            recorder.count, 1,
+            "only the admitted async create may reach the native call")
         await manager.shutdown()
     }
 }
