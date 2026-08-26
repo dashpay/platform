@@ -43,8 +43,9 @@
 //! The index must opt in with `rankedCountable` / `rankedSummable` /
 //! `rankedAverageable` (meta-schema v3, **protocol version 14+**). The
 //! index may be single-property (`group_by` its property, no `where`)
-//! or compound (`group_by` its trailing property, equality-pin every
-//! leading one). Against a protocol-version-13
+//! or compound (`group_by` its trailing property, pin every leading one
+//! — equality pins, at most one of them an `IN`, as above). Against a
+//! protocol-version-13
 //! node the request is refused — v13's query table has no ranked path
 //! and rejects the ordering as `Unsupported`. That is the intended
 //! activation gate, not a bug: a v13 node and a v14 node must disagree
