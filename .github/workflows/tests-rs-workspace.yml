@@ -25,7 +25,7 @@ jobs:
     # runners; pairing it with `self-hosted` keeps the job off GitHub-hosted
     # runners entirely, so untrusted code never reaches a hosted Linux VM by
     # way of a label collision.
-    runs-on: [self-hosted, rust-ci]
+    runs-on: [migration-validate]
     # Fork PRs must not execute on any persistent runner, macOS or Linux.
     if: >-
       github.event_name != 'pull_request'
