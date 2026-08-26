@@ -2,6 +2,7 @@ use crate::block::block_info::BlockInfo;
 use crate::prelude::DataContract;
 use platform_version::version::PlatformVersion;
 
+mod common;
 mod v0;
 mod v1;
 use crate::validation::SimpleConsensusValidationResult;
