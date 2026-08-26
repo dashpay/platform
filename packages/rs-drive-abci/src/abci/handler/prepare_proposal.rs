@@ -13,7 +13,6 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
-use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
@@ -142,7 +141,7 @@ where
         );
         if let Some(tx) = transaction_guard.as_ref() {
             tx.rollback_to_savepoint()
-                .map_err(|e| drive::grovedb::error::Error::StorageError(RocksDBError(e)))?;
+                .map_err(|e| drive::grovedb::error::Error::StorageError(e))?;
             tx.set_savepoint();
         }
         transaction_guard

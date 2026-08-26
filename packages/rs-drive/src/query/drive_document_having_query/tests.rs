@@ -557,10 +557,27 @@ mod bounds {
     }
 
     #[test]
-    fn merk_query_direction_follows_descending() {
-        let bounds = AxisRangeBounds::Count { lo: 101, hi: 200 };
-        assert!(bounds.merk_query(false).left_to_right);
-        assert!(!bounds.merk_query(true).left_to_right);
+    fn i128_bounds_widen_every_axis_losslessly() {
+        assert_eq!(
+            AxisRangeBounds::Count {
+                lo: 101,
+                hi: u64::MAX
+            }
+            .i128_bounds(),
+            (101, u64::MAX as i128)
+        );
+        assert_eq!(
+            AxisRangeBounds::Sum {
+                lo: i64::MIN,
+                hi: -5
+            }
+            .i128_bounds(),
+            (i64::MIN as i128, -5)
+        );
+        assert_eq!(
+            AxisRangeBounds::Avg { lo: -5, hi: 5 }.i128_bounds(),
+            (-5, 5)
+        );
     }
 }
 
@@ -1049,24 +1066,19 @@ mod execution {
         let (drive, contract) = setup_restaurants();
 
         // Empty secondary (no documents at all): the unproven read
-        // returns the empty list, but grovedb's range prover — unlike
-        // the ranked surface's paginated prover — has no absence-proof
-        // shape for a completely empty tree and refuses. drive-abci
-        // maps this exact failure class onto an `InvalidArgument`
-        // telling the caller to retry unproved
-        // (`empty_ranking_proof_rejection`); at the drive level it
-        // surfaces as the grovedb error asserted here. If a future
-        // grovedb pin makes empty range proofs work, this arm should
-        // flip to a round-trip assertion.
+        // returns the empty list, and the unified bounded-axis prover
+        // proves it — an empty secondary is carried as empty proof
+        // bytes that the verifier resolves to a NULL_HASH secondary
+        // root, so the parent binding only passes when the element
+        // genuinely commits an empty secondary. (The old standalone
+        // range prover refused this state outright with "Cannot create
+        // proof for empty tree", which is why drive-abci still keeps
+        // `empty_ranking_proof_rejection` as a backstop for that error
+        // class.)
         let case = HavingCase::count(HavingOperator::GreaterThan, Value::U64(100), 10);
         let entries = entries_of(run(&drive, &contract, &case, false).expect("read succeeds"));
         assert!(entries.is_empty());
-        let error = run(&drive, &contract, &case, true)
-            .expect_err("proving against an empty secondary is refused by grovedb");
-        assert!(
-            format!("{error}").contains("Cannot create proof for empty tree"),
-            "the failure must be the recognized empty-tree class, got: {error}"
-        );
+        assert_proof_round_trips(&drive, &contract, &case, &entries);
 
         // Populated secondary, bound above every count: a genuine
         // absence proof, which works — the tree has content to anchor
@@ -1095,6 +1107,14 @@ mod execution {
     /// verify under both — correctly, because the range boundaries
     /// prove both claims — so the distinguishing group is the point of
     /// the fixture.
+    ///
+    /// The unified verifier is query-as-input rather than echo-checked:
+    /// the invariant it holds is "a proof can never make the client
+    /// believe a wrong answer to the client's own query", not "a proof
+    /// only verifies under the exact request it was built for". A
+    /// tampered query whose answer the proof also correctly attests
+    /// (the limit case at the end) therefore verifies — to that
+    /// query's own correct answer.
     #[test]
     fn a_proof_does_not_verify_under_different_bounds() {
         let (drive, contract) = setup_restaurants();
@@ -1139,18 +1159,27 @@ mod execution {
             "a proof of `> 2` must not verify as `> 1`"
         );
 
-        // Nor under a different direction or limit.
+        // Nor under a different direction.
         tampered_query = client_side_query(&contract, &over_two);
         tampered_query.descending = true;
         assert!(tampered_query
             .verify_having_range_proof(&proof, platform_version())
             .is_err());
 
+        // A different limit is NOT an echo check under the unified
+        // query-as-input verifier: the same bytes verify under any limit
+        // they can correctly answer. Here exactly one group matches
+        // `> 2`, so limit 5 and limit 10 have the same answer and the
+        // proof verifies to it — the sound outcome, since the entries
+        // ARE the right answer to the limit-5 question. What can never
+        // happen is an over-long answer: the verifier's own shape check
+        // caps entries at the query's limit.
         tampered_query = client_side_query(&contract, &over_two);
         tampered_query.limit = 5;
-        assert!(tampered_query
+        let (_, entries) = tampered_query
             .verify_having_range_proof(&proof, platform_version())
-            .is_err());
+            .expect("a proof whose answer also answers the smaller limit verifies under it");
+        assert_eq!(keys_of(&entries), vec!["beta"]);
     }
 
     /// A `having` on an axis no index declares is refused with the

@@ -13,9 +13,9 @@
 //! two copies of a grammar agreeing.
 //!
 //! Unlike the count helper there is no per-shape dispatch: the ranked
-//! surface has exactly one proof primitive
-//! (`prove_indexed_axis_top_k_paginated`), and all of a request's
-//! variation is carried *inside* the query struct.
+//! surface has exactly one proof primitive (grovedb's unified
+//! `prove_query` over `PathQuery::new_axis_top_k`), and all of a
+//! request's variation is carried *inside* the query struct.
 //!
 //! [`DocumentRankedEntries`]: drive_proof_verifier::DocumentRankedEntries
 

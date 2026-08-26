@@ -117,10 +117,10 @@ mod tests;
 /// is rejected with
 /// [`crate::error::query::QuerySyntaxError::InvalidLimit`] rather than
 /// silently truncated. Truncation would be especially treacherous here
-/// because `k` is echoed inside the proof envelope and re-checked by
-/// [`grovedb::GroveDb::verify_indexed_axis_top_k_paginated`] — a
-/// server-side clamp would produce a proof the client's own
-/// reconstruction rejects.
+/// because the proof is verified against the client's own
+/// reconstruction of the same axis `PathQuery` (with the client's `k`)
+/// by [`grovedb::GroveDb::verify_path_query`] — a server-side clamp
+/// would produce a proof the client's own query rejects.
 ///
 /// There is deliberately **no companion ceiling on `OFFSET`**; see the
 /// module docs and [`DriveDocumentRankedQuery::offset`].

@@ -72,7 +72,10 @@ use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
-use grovedb::Element;
+use grovedb::element::IndexAxis;
+use grovedb::query_result_type::QueryResultType;
+use grovedb::{AxisKeys, Element, PathQuery, PathQueryRun};
+use grovedb_query::AxisQuery;
 
 /// The one index property every doctype in the fixture ranks by.
 const GROUP_PROPERTY: &str = "restaurantId";
@@ -271,49 +274,57 @@ fn group_keys<T>(entries: &[(T, Vec<u8>)]) -> Vec<String> {
         .collect()
 }
 
-fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i128, Vec<u8>)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    drive
+/// Run a keys-only top-k axis read through the unified PathQuery
+/// surface — the same route the ranked no-proof executor takes.
+fn run_top_k_keys(
+    drive: &Drive,
+    path: &[Vec<u8>],
+    axis: IndexAxis,
+    k: u16,
+    descending: bool,
+) -> AxisKeys {
+    let path_query = PathQuery::new_axis(
+        path.to_vec(),
+        AxisQuery::top_k(axis, k, 0, descending).keys_only(),
+    );
+    match drive
         .grove
-        .indexed_avg_top_k_keys(
-            path_refs.as_slice(),
-            k,
-            descending,
+        .run_path_query(
+            &path_query,
+            true,
+            true,
+            true,
+            QueryResultType::QueryPathKeyElementTrioResultType,
             None,
             &platform_version().drive.grove_version,
         )
         .unwrap()
-        .expect("indexed_avg_top_k_keys must succeed")
+        .expect("top-k axis read must succeed")
+    {
+        PathQueryRun::AxisKeys { keys, .. } => keys,
+        other => panic!("expected AxisKeys, got {other:?}"),
+    }
+}
+
+fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i128, Vec<u8>)> {
+    match run_top_k_keys(drive, path, IndexAxis::Avg, k, descending) {
+        AxisKeys::Avg(pairs) => pairs,
+        other => panic!("expected avg pairs, got {other:?}"),
+    }
 }
 
 fn count_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(u64, Vec<u8>)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    drive
-        .grove
-        .indexed_count_top_k_keys(
-            path_refs.as_slice(),
-            k,
-            descending,
-            None,
-            &platform_version().drive.grove_version,
-        )
-        .unwrap()
-        .expect("indexed_count_top_k_keys must succeed")
+    match run_top_k_keys(drive, path, IndexAxis::Count, k, descending) {
+        AxisKeys::Count(pairs) => pairs,
+        other => panic!("expected count pairs, got {other:?}"),
+    }
 }
 
 fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i64, Vec<u8>)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    drive
-        .grove
-        .indexed_sum_top_k_keys(
-            path_refs.as_slice(),
-            k,
-            descending,
-            None,
-            &platform_version().drive.grove_version,
-        )
-        .unwrap()
-        .expect("indexed_sum_top_k_keys must succeed")
+    match run_top_k_keys(drive, path, IndexAxis::Sum, k, descending) {
+        AxisKeys::Sum(pairs) => pairs,
+        other => panic!("expected sum pairs, got {other:?}"),
+    }
 }
 
 // ---------------------------------------------------------------------------
