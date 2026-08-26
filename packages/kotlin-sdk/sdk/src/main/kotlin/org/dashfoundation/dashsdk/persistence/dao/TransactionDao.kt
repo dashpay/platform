@@ -63,6 +63,16 @@ interface TransactionDao {
     @Upsert
     suspend fun upsert(transaction: TransactionEntity)
 
+    /**
+     * TXO-reconcile repair: credit a missed own-output back into the
+     * transaction's stored net amount. A record born blind to one of its
+     * own outputs (the CoinJoin-funded-send change-drop) persists
+     * `netAmount` short by exactly that output's value, so the repair is
+     * a plain add. Returns the number of rows updated (0 = no such tx).
+     */
+    @Query("UPDATE transactions SET netAmount = netAmount + :delta WHERE txid = :txid")
+    suspend fun addToNetAmount(txid: ByteArray, delta: Long): Int
+
     @Upsert
     suspend fun upsertInvolvement(involvement: TransactionAccountInvolvementEntity)
 

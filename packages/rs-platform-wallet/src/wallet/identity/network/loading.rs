@@ -527,7 +527,7 @@ mod tests {
     };
     use super::{derive_load_probe_hash, ResolvedLoadKeyHashSource};
     use key_wallet::bip32::ExtendedPrivKey;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
@@ -545,7 +545,7 @@ mod tests {
     /// never touches — it walks the master xpriv, not the per-account
     /// collection, so no accounts are needed.
     fn mnemonic_wallet(network: Network) -> Wallet {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid English test mnemonic");
         Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::None)
             .expect("from_mnemonic should build a Mnemonic wallet")
@@ -554,7 +554,7 @@ mod tests {
     /// The BIP-32 master node for [`TEST_MNEMONIC`] on `network` — the
     /// same node `derive_extended_private_key` reconstructs internally.
     fn master_for(network: Network) -> ExtendedPrivKey {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid English test mnemonic");
         let seed = mnemonic.to_seed("");
         ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")

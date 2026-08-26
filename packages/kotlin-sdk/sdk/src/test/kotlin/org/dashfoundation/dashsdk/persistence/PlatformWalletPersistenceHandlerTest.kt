@@ -4,6 +4,10 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
@@ -5038,6 +5042,63 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(row.isSweptTombstone)
     }
 
+    // ── TXO-store reconcile (the job-flower change-drop repair) ───────
+
+    private val changeTxid = ByteArray(32) { 7 }
+    private val reconcileTip = 1_536_950
+
+    private fun engineUtxoJson(
+        txidHex: String,
+        vout: Int,
+        amount: Long,
+        address: String = "yStxXHHzhAx58JhaPBNhn3xsH93UwBM2nd",
+        height: Int = 1_534_921,
+    ): String =
+        """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,"txid":"$txidHex","vout":$vout,""" +
+            """"amount":$amount,"address":"$address","scriptHex":"76a914000088ac",""" +
+            """"height":$height,"isLocked":false}],"errors":[]}"""
+
+    private fun ByteArray.toHexLower() = joinToString("") { "%02x".format(it) }
+
+    @Test
+    fun reconcileHealsMissingChangeTxoAndRepairsNetAmount() = runTest {
+        // A send record born blind to its own change output: netAmount
+        // persisted as the full input value (the job-flower 6cef55ab…
+        // shape) and NO txos row for the change.
+        db.transactionDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.TransactionEntity(
+                txid = changeTxid,
+                transactionData = byteArrayOf(1, 2, 3),
+                netAmount = -1_000_010_000L,
+            ),
+        )
+
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 1, amount = 989_009_773L),
+            tipHeight = reconcileTip,
+        )
+
+        assertEquals(1, report.inserted)
+        assertEquals(989_009_773L, report.insertedDuffs)
+        assertEquals(1, report.netAmountSuspects)
+
+        val row = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 1))
+        assertNotNull(row)
+        assertFalse(row!!.isSpent)
+        assertEquals(989_009_773L, row.amount)
+        assertTrue(row.isConfirmed)
+
+        // The stored netAmount is NOT mutated: the record may already carry
+        // the corrected net (a corrective callback racing this sweep), and
+        // blind addition double-credits. The suspicion is logged; the event
+        // pipeline owns net correctness.
+        assertEquals(
+            -1_000_010_000L,
+            db.transactionDao().getByTxid(changeTxid)!!.netAmount,
+        )
+    }
+
     @Test
     fun aRepointedTombstoneIsRestampedToTheLaterSweep() = runTest {
         // A chained sweep that re-points a still-unfunded claim to a new
@@ -5433,5 +5494,623 @@ class PlatformWalletPersistenceHandlerTest {
 
         chainLockHeightRound(handler, 600)
         assertEquals(600, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
+    }
+
+    @Test
+    fun reconcileIsIdempotentAndNeverDoubleCredits() = runTest {
+        db.transactionDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.TransactionEntity(
+                txid = changeTxid,
+                transactionData = byteArrayOf(1),
+                netAmount = -1_000_010_000L,
+            ),
+        )
+        val json = engineUtxoJson(changeTxid.toHexLower(), vout = 1, amount = 989_009_773L)
+
+        handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
+        val second = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
+
+        assertEquals(0, second.inserted)
+        assertEquals(0, second.netAmountSuspects)
+        assertEquals(
+            -1_000_010_000L,
+            db.transactionDao().getByTxid(changeTxid)!!.netAmount,
+        )
+    }
+
+    @Test
+    fun reconcileSkipsImmatureOutputsAndPreservesSpentRows() = runTest {
+        // Immature: inside the 100-conf gate (flags on the engine snapshot
+        // can't carry coinbase/IS-lock, so fresh rows wait for a later
+        // sweep) — nothing inserted.
+        val fresh = handler.reconcileFromInventory(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 0, amount = 5L, height = reconcileTip - 3),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(0, fresh.inserted)
+        assertEquals(1, fresh.skippedImmature)
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 0)))
+
+        // A row the mirror already holds — even marked spent while the
+        // engine still lists it — is left untouched: reconcile is
+        // insert-only and never flips spend state.
+        assertEquals(
+            0,
+            handler.onWalletChangesetUtxoAdded(
+                walletId, changeTxid, 2, 42L, "yTestAddr", byteArrayOf(0x51), 1_500_000,
+                false, true, false, false,
+            ),
+        )
+        val seeded = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 2))!!
+        db.txoDao().upsert(seeded.copy(isSpent = true))
+
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 2, amount = 42L, height = 1_500_000),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(0, report.inserted)
+        assertTrue(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 2))!!.isSpent)
+    }
+
+    /** Engine inventory JSON with both halves: unspent rows and spent outpoints. */
+    private fun engineInventoryJson(unspent: List<Triple<String, Int, Long>>, spent: List<Pair<String, Int>>): String {
+        val utxoRows = unspent.joinToString(",") { (txid, vout, amount) ->
+            """{"typeTag":0,"standardTag":0,"index":0,"txid":"$txid","vout":$vout,""" +
+                """"amount":$amount,"address":"yStxXHHzhAx58JhaPBNhn3xsH93UwBM2nd",""" +
+                """"scriptHex":"76a914000088ac","height":1400000,"isLocked":false}"""
+        }
+        val spentRows = spent.joinToString(",") { (txid, vout) ->
+            """{"txid":"$txid","vout":$vout}"""
+        }
+        return """{"utxos":[$utxoRows],"spent":[$spentRows],"errors":[]}"""
+    }
+
+    @Test
+    fun reconcileLogsButNeverFlipsLostSpendRows() = runTest {
+        // A store row still marked unspent for a coin the engine records as
+        // spent (dashpay/platform#4425). The engine's spent set includes
+        // MEMPOOL spends and carries no context, so persisting the flip
+        // would settle an unconfirmed spend — counted and logged only.
+        handler.onWalletChangesetUtxoAdded(
+            walletId, changeTxid, 3, 500_000L, "yTestAddr", byteArrayOf(0x51), 1_400_000,
+            false, true, false, false,
+        )
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineInventoryJson(unspent = emptyList(), spent = listOf(changeTxid.toHexLower() to 3)),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(1, report.wouldFlipSpent)
+        assertEquals(500_000L, report.wouldFlipSpentDuffs)
+        assertEquals(0, report.wouldRemove)
+        val row = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 3))!!
+        assertFalse("the row must stay unspent — the flip is log-only", row.isSpent)
+        assertNull(row.spendingTxid)
+    }
+
+    @Test
+    fun reconcileDoesNotCountSweptRefusalsAsHeals() = runTest {
+        // The engine offers a UTXO whose parent transaction the store holds
+        // globally swept: the shared insert discipline refuses the row, and
+        // the reconcile must not count a heal that did not happen — nor
+        // flag its netAmount.
+        db.transactionDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.TransactionEntity(
+                txid = changeTxid,
+                transactionData = byteArrayOf(1, 2, 3),
+                netAmount = -1_000_010_000L,
+                isGloballySwept = true,
+            ),
+        )
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 1, amount = 989_009_773L),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(0, report.inserted)
+        assertEquals(0L, report.insertedDuffs)
+        assertEquals(0, report.netAmountSuspects)
+        assertEquals(1, report.skippedSwept)
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 1)))
+        assertEquals(
+            -1_000_010_000L,
+            db.transactionDao().getByTxid(changeTxid)!!.netAmount,
+        )
+    }
+
+    @Test
+    fun reconcileLogsButNeverRemovesEngineUnknownRows() = runTest {
+        // A store row for a coin the engine has in NEITHER inventory —
+        // residue of a swept/abandoned transaction (pre-rust-dashcore#971
+        // stores). Counted and logged, NEVER removed.
+        handler.onWalletChangesetUtxoAdded(
+            walletId, changeTxid, 4, 250_000L, "yTestAddr", byteArrayOf(0x51), 1_400_000,
+            false, true, false, false,
+        )
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineInventoryJson(unspent = emptyList(), spent = emptyList()),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(1, report.wouldRemove)
+        assertEquals(250_000L, report.wouldRemoveDuffs)
+        assertEquals(0, report.wouldFlipSpent)
+        val row = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 4))!!
+        assertFalse(row.isSpent)
+        assertEquals(250_000L, row.amount)
+    }
+
+    @Test
+    fun reconcileReversePassIsSilentOnConsistentStore() = runTest {
+        // Rows the engine also holds unspent — including a YOUNG coin the
+        // insert pass would skip as immature — are consistent, not
+        // divergence. Every reverse-pass counter must be zero.
+        handler.onWalletChangesetUtxoAdded(
+            walletId, changeTxid, 5, 42L, "yTestAddr", byteArrayOf(0x51), reconcileTip - 3,
+            false, true, false, false,
+        )
+        val json =
+            """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,""" +
+                """"txid":"${changeTxid.toHexLower()}","vout":5,"amount":42,""" +
+                """"address":"yTestAddr","scriptHex":"51",""" +
+                """"height":${reconcileTip - 3},"isLocked":false}],"spent":[],"errors":[]}"""
+        val report = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
+        assertEquals(0, report.wouldFlipSpent)
+        assertEquals(0, report.wouldRemove)
+        assertEquals(1, report.skippedImmature)
+        assertFalse(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 5))!!.isSpent)
+    }
+
+    @Test
+    fun reconcileExcludesWatchOnlyContactRowsFromReversePass() = runTest {
+        // Watch-only DIP-15 contact rows are never in the engine's
+        // inventories; flagging them would be a false positive on every
+        // wallet with contact payments.
+        db.walletDao().upsert(WalletEntity(walletId, networkRaw = Network.TESTNET.ffiValue))
+        val foreignAccountId = db.accountDao().insert(
+            org.dashfoundation.dashsdk.persistence.entities.AccountEntity(
+                walletId = walletId,
+                accountType = PlatformWalletPersistenceHandler.ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL,
+                accountIndex = 0,
+                accountTypeName = "DashpayExternalAccount",
+            ),
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, changeTxid, 6, 1_230_000L, "yContactAddr", byteArrayOf(0x51), 1_400_000,
+            false, true, false, false,
+        )
+        val seeded = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 6))!!
+        db.txoDao().upsert(seeded.copy(accountId = foreignAccountId))
+
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineInventoryJson(unspent = emptyList(), spent = emptyList()),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(1, report.skippedForeign)
+        assertEquals(0, report.wouldRemove)
+        assertFalse(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 6))!!.isSpent)
+    }
+
+    @Test
+    fun reconcileResolvesContactOwnershipThroughCoreAddressId() = runTest {
+        // Production changeset writes leave txos.accountId null and route
+        // ownership through coreAddressId -> core_addresses.accountId. The
+        // exclusion must resolve that path, or every contact row gets
+        // classified as divergence.
+        db.walletDao().upsert(WalletEntity(walletId, networkRaw = Network.TESTNET.ffiValue))
+        val foreignAccountId = db.accountDao().insert(
+            org.dashfoundation.dashsdk.persistence.entities.AccountEntity(
+                walletId = walletId,
+                accountType = PlatformWalletPersistenceHandler.ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL,
+                accountIndex = 1,
+                accountTypeName = "DashpayExternalAccount",
+            ),
+        )
+        db.coreAddressDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity(
+                address = "yContactRouted",
+                publicKey = ByteArray(33),
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/9'/1'/15'/0'/x/y/0",
+                isUsed = true,
+                accountId = foreignAccountId,
+            ),
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, changeTxid, 8, 990_000L, "yContactRouted", byteArrayOf(0x51), 1_400_000,
+            false, true, false, false,
+        )
+        val seeded = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 8))!!
+        assertNull("production shape: accountId is null", seeded.accountId)
+
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineInventoryJson(unspent = emptyList(), spent = emptyList()),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(1, report.skippedForeign)
+        assertEquals(0, report.wouldRemove)
+    }
+
+    @Test
+    fun reconcileInsertPassNeverHealsContactAccountCoins() = runTest {
+        // The engine's UTXO inventory export includes the watch-only DIP-15
+        // external accounts' coins — it tracks them to show payments TO
+        // contacts, but they are the CONTACT's money. With the foreign
+        // exclusion living only on the reverse pass, a fresh restore's
+        // post-backfill reconcile healed every contact-payment coin into the
+        // store as an ownerless row (12 rows / 5,692,493 duffs on the
+        // 2026-08-25 large-wallet validation run) while the reverse pass
+        // counted the very same rows as foreign — and the mirror-reload path
+        // hands such rows back to the engine on the next launch. The insert
+        // pass must skip any engine UTXO whose address resolves to an
+        // external account, and count it as foreign, not healed.
+        db.walletDao().upsert(WalletEntity(walletId, networkRaw = Network.TESTNET.ffiValue))
+        val foreignAccountId = db.accountDao().insert(
+            org.dashfoundation.dashsdk.persistence.entities.AccountEntity(
+                walletId = walletId,
+                accountType = PlatformWalletPersistenceHandler.ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL,
+                accountIndex = 2,
+                accountTypeName = "DashpayExternalAccount",
+            ),
+        )
+        db.coreAddressDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity(
+                address = "yContactPaid",
+                publicKey = ByteArray(33),
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/9'/1'/15'/0'/x/y/1",
+                isUsed = true,
+                accountId = foreignAccountId,
+            ),
+        )
+
+        val json =
+            """{"utxos":[{"typeTag":0,"standardTag":0,"index":0,""" +
+                """"txid":"${changeTxid.toHexLower()}","vout":9,"amount":10000,""" +
+                """"address":"yContactPaid","scriptHex":"51",""" +
+                """"height":1400000,"isLocked":false}],"spent":[],"errors":[]}"""
+        val report = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
+
+        assertEquals(0, report.inserted)
+        assertEquals(0L, report.insertedDuffs)
+        assertEquals(1, report.skippedForeign)
+        assertNull(
+            "the contact's coin must not enter the store",
+            db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 9)),
+        )
+    }
+
+    @Test
+    fun reconcileStampsResolvedAccountOnHealedRows() = runTest {
+        // The blocking scenario from review: persistence lost BOTH the TXO
+        // and its address row. The heal must resolve the owning Room account
+        // from the inventory's account tuple and stamp it on the inserted
+        // row — a healed row with neither accountId nor a resolvable address
+        // is skipped by the restore loader at the next mirror-reload,
+        // recreating the fund loss the heal repaired.
+        db.walletDao().upsert(WalletEntity(walletId, networkRaw = Network.TESTNET.ffiValue))
+        // Production shape: onPersistAccountRegistration stores the FFI's
+        // 32-zero-byte identity ids verbatim (the entity ctor default of an
+        // EMPTY array never occurs on persisted rows).
+        val bip44Id = db.accountDao().insert(
+            org.dashfoundation.dashsdk.persistence.entities.AccountEntity(
+                walletId = walletId,
+                accountType = 0,
+                accountIndex = 0,
+                accountTypeName = "standardBip44",
+                userIdentityId = ByteArray(32),
+                friendIdentityId = ByteArray(32),
+            ),
+        )
+        // Deliberately NO core_addresses row for this address.
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 11, amount = 70_000L, address = "yOrphanAddr"),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(1, report.inserted)
+        assertEquals(0, report.healedUnowned)
+        assertEquals(
+            "the healed row must carry the account resolved from the inventory tuple",
+            bip44Id, db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 11))!!.accountId,
+        )
+    }
+
+    @Test
+    fun reconcileCountsHealsWhoseAccountCannotBeResolved() = runTest {
+        // No matching Room account row at all (a store damaged past the
+        // account registrations): the heal proceeds — the address projection
+        // may still attribute it — but the unresolved owner is surfaced.
+        db.walletDao().upsert(WalletEntity(walletId, networkRaw = Network.TESTNET.ffiValue))
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineUtxoJson(changeTxid.toHexLower(), vout = 12, amount = 5_000L),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(1, report.inserted)
+        assertEquals(1, report.healedUnowned)
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 12))!!.accountId)
+    }
+
+    @Test
+    fun reconcileForeignSkipKeysOffTheInventoryTagWithoutAddressRow() = runTest {
+        // The tag is the authoritative foreign check: a contact's coin must
+        // be skipped even when its address row never survived persistence
+        // (the case the address-based fallback cannot see).
+        val json =
+            """{"utxos":[{"typeTag":13,"standardTag":0,"index":0,""" +
+                """"userIdentityId":"${"11".repeat(32)}","friendIdentityId":"${"22".repeat(32)}",""" +
+                """"txid":"${changeTxid.toHexLower()}","vout":13,"amount":10000,""" +
+                """"address":"yContactNoRow","scriptHex":"51",""" +
+                """"height":1400000,"isLocked":false}],"spent":[],"errors":[]}"""
+        val report = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
+
+        assertEquals(0, report.inserted)
+        assertEquals(1, report.skippedForeign)
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 13)))
+    }
+
+    @Test
+    fun reconcileNeverUnmarksSpentRowsEvenWhenEngineDisagrees() = runTest {
+        // A row marked spent while the engine lists the coin unspent: either
+        // a lost release event (pre-rust-dashcore#971) or a live spend the
+        // store wrote before the engine settled. Un-marking a coin
+        // mid-payment would let the wallet double-spend it, so this is
+        // counted and logged but NEVER changed.
+        handler.onWalletChangesetUtxoAdded(
+            walletId, changeTxid, 7, 77_000L, "yTestAddr", byteArrayOf(0x51), 1_400_000,
+            false, true, false, false,
+        )
+        val seeded = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 7))!!
+        db.txoDao().upsert(seeded.copy(isSpent = true))
+
+        val report = handler.reconcileFromInventory(
+            walletId,
+            engineInventoryJson(
+                unspent = listOf(Triple(changeTxid.toHexLower(), 7, 77_000L)),
+                spent = emptyList(),
+            ),
+            tipHeight = reconcileTip,
+        )
+        assertEquals(1, report.stuckSpent)
+        assertEquals(77_000L, report.stuckSpentDuffs)
+        assertTrue(
+            "the row must stay spent — un-marking is never done by reconciliation",
+            db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 7))!!.isSpent,
+        )
+    }
+
+    // ── Paged reconcile transport ─────────────────────────────────────
+
+    @Test
+    fun reconcileWalksEveryPageOfTheEngineInventory() = runTest {
+        // The engine inventory is chain-controlled in size, so the sweep
+        // reads it a page at a time. Every page must be applied — a sweep
+        // that healed only the first one would leave most of a damaged
+        // mirror unrepaired, and silently.
+        val engine = FakeEngine(
+            engineInventoryJson(
+                unspent = (0 until 5).map { Triple(changeTxid.toHexLower(), 20 + it, 1_000L) },
+                spent = emptyList(),
+            ),
+        )
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            pageSize = 2,
+            engineUtxoPage = engine::page,
+            classifyOutpoints = engine::classify,
+        )
+
+        assertEquals("3 pages for 5 rows at 2 per page", 3, engine.pages)
+        assertEquals(5, report.engineUtxos)
+        assertEquals(5, report.inserted)
+        assertEquals(5_000L, report.insertedDuffs)
+        for (vout in 20 until 25) {
+            assertNotNull(
+                "the row at vout=$vout must be healed whichever page carried it",
+                db.txoDao().getByOutpoint(makeOutpoint(changeTxid, vout)),
+            )
+        }
+    }
+
+    @Test
+    fun reconcileStopsAtAFailedPageAndKeepsWhatItAlreadyHealed() = runTest {
+        // A transport that dies mid-sweep must not discard the pages that
+        // already landed — the pass is insert-only and idempotent, so they
+        // are already correct — and must not report a clean run either.
+        val engine = FakeEngine(
+            engineInventoryJson(
+                unspent = (0 until 4).map { Triple(changeTxid.toHexLower(), 30 + it, 500L) },
+                spent = emptyList(),
+            ),
+        )
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            pageSize = 2,
+            engineUtxoPage = { cursor, limit ->
+                if (cursor == null) engine.page(cursor, limit) else null
+            },
+            classifyOutpoints = engine::classify,
+        )
+
+        assertEquals(1, report.transportFailures)
+        assertEquals("only the page that arrived", 2, report.inserted)
+        assertNotNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 30)))
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 32)))
+    }
+
+    @Test
+    fun reconcileClassifiesStoreRowsInBoundedBatches() = runTest {
+        // The reverse direction is inverted: the STORE is paged and the
+        // engine is asked about one page at a time, so neither side builds
+        // a set over a whole inventory. Every batch must still be answered
+        // and counted.
+        for (vout in 40 until 43) {
+            handler.onWalletChangesetUtxoAdded(
+                walletId, changeTxid, vout, 100L, "yTestAddr", byteArrayOf(0x51), 1_400_000,
+                false, true, false, false,
+            )
+        }
+        val engine = FakeEngine(engineInventoryJson(unspent = emptyList(), spent = emptyList()))
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            pageSize = 1,
+            engineUtxoPage = engine::page,
+            classifyOutpoints = engine::classify,
+        )
+
+        assertEquals("one classification batch per store page", 3, engine.batches)
+        assertEquals("every store row reached the classifier", 3, engine.classified)
+        assertEquals(3, report.wouldRemove)
+        assertEquals(300L, report.wouldRemoveDuffs)
+    }
+
+    @Test
+    fun reconcileStopsWhenAClassificationBatchFails() = runTest {
+        // No verdicts, no classification: the reverse pass stops rather
+        // than guessing at rows it could not ask the engine about.
+        for (vout in 50 until 53) {
+            handler.onWalletChangesetUtxoAdded(
+                walletId, changeTxid, vout, 100L, "yTestAddr", byteArrayOf(0x51), 1_400_000,
+                false, true, false, false,
+            )
+        }
+        val engine = FakeEngine(engineInventoryJson(unspent = emptyList(), spent = emptyList()))
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            pageSize = 1,
+            engineUtxoPage = engine::page,
+            classifyOutpoints = { null },
+        )
+
+        assertEquals(1, report.transportFailures)
+        assertEquals(0, report.wouldRemove)
+    }
+
+    /**
+     * Drive the paged reconcile from one whole-inventory JSON blob — the
+     * shape these tests describe an engine in, and the shape the native
+     * side used to hand over in a single unbounded call.
+     *
+     * The blob is served the way the transport now serves it: sliced into
+     * bounded pages behind an opaque cursor, with a separate positional
+     * classifier for the outpoints the store asks about. [pageSize]
+     * defaults to 2, so a test describing more than a couple of rows walks
+     * the real cursor loop rather than a single page.
+     */
+    private suspend fun PlatformWalletPersistenceHandler.reconcileFromInventory(
+        walletId: ByteArray,
+        inventoryJson: String,
+        tipHeight: Int,
+        minConfirmations: Int = 100,
+        pageSize: Int = 2,
+    ): PlatformWalletPersistenceHandler.TxoReconcileReport {
+        val engine = FakeEngine(inventoryJson)
+        return reconcileTxos(
+            walletId = walletId,
+            tipHeight = tipHeight,
+            minConfirmations = minConfirmations,
+            pageSize = pageSize,
+            engineUtxoPage = engine::page,
+            classifyOutpoints = engine::classify,
+        )
+    }
+
+    /**
+     * A stand-in for the engine's paged inventory transport, built from the
+     * whole-inventory JSON a test writes out. Pages come back behind an
+     * opaque ordinal cursor — the real cursor is opaque too, the handler
+     * only ever hands back what it was given — and classification answers
+     * positionally out of the same two inventories: 1 unspent, 2 spent, 0
+     * neither.
+     */
+    private class FakeEngine(inventoryJson: String) {
+        private val utxos: List<kotlinx.serialization.json.JsonObject>
+        private val errors: List<kotlinx.serialization.json.JsonElement>
+        private val unspentKeys: Set<String>
+        private val spentKeys: Set<String>
+
+        /** Inventory pages served, classification batches answered, and
+         *  outpoints classified across those batches. */
+        var pages = 0
+            private set
+        var batches = 0
+            private set
+        var classified = 0
+            private set
+
+        init {
+            val root = kotlinx.serialization.json.Json
+                .parseToJsonElement(inventoryJson).jsonObject
+            utxos = root["utxos"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
+            errors = root["errors"]?.jsonArray?.toList() ?: emptyList()
+            unspentKeys = utxos.map {
+                key(
+                    it["txid"]!!.jsonPrimitive.content,
+                    it["vout"]!!.jsonPrimitive.int,
+                )
+            }.toSet()
+            spentKeys = (root["spent"]?.jsonArray?.toList() ?: emptyList()).map {
+                key(
+                    it.jsonObject["txid"]!!.jsonPrimitive.content,
+                    it.jsonObject["vout"]!!.jsonPrimitive.int,
+                )
+            }.toSet()
+        }
+
+        fun page(cursor: String?, limit: Int): String {
+            pages++
+            val start = cursor?.toInt() ?: 0
+            val slice = utxos.drop(start).take(limit)
+            val next = start + slice.size
+            val hasMore = next < utxos.size
+            // Account read failures belong to the sweep, not to a page: the
+            // native side reports each faulted account once, so the fake
+            // puts them all on the first page.
+            val faults = if (start == 0) errors.joinToString(",") { it.toString() } else ""
+            return """{"utxos":[${slice.joinToString(",") { it.toString() }}],""" +
+                """"errors":[$faults],""" +
+                """"cursor":${if (hasMore) "\"$next\"" else "null"},"hasMore":$hasMore}"""
+        }
+
+        fun classify(outpoints: ByteArray): ByteArray {
+            batches++
+            val count = outpoints.size / OUTPOINT_SIZE
+            classified += count
+            val verdicts = ByteArray(count)
+            for (i in 0 until count) {
+                val base = i * OUTPOINT_SIZE
+                val txidHex = outpoints.copyOfRange(base, base + 32)
+                    .joinToString("") { "%02x".format(it) }
+                var vout = 0
+                for (b in 3 downTo 0) {
+                    vout = (vout shl 8) or (outpoints[base + 32 + b].toInt() and 0xFF)
+                }
+                val k = key(txidHex, vout)
+                verdicts[i] = when {
+                    k in unspentKeys -> 1
+                    k in spentKeys -> 2
+                    else -> 0
+                }
+            }
+            return verdicts
+        }
+
+        private fun key(txidHex: String, vout: Int) = "$txidHex:$vout"
+
+        private companion object {
+            /** txid (32 bytes, wire order) + vout (4 bytes, little-endian). */
+            const val OUTPOINT_SIZE = 36
+        }
     }
 }
