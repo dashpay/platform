@@ -1,5 +1,10 @@
-//! Document serialization format 0: the original format — every integer
-//! encoded as i64. Shipped consensus code: this file must never change.
+//! Document serialization format 0: the original wire format, the default
+//! from protocol version 1 through 8. Every integer is encoded as an i64
+//! (8 bytes big-endian) regardless of its schema type — the schema's integer
+//! bounds were not yet reflected in the encoding. Reads have a fallback:
+//! bytes prefixed 0 that fail to decode as all-i64 are retried as format 1,
+//! because protocol versions 1–8 wrote the 0 prefix for either layout.
+//! Shipped consensus code: this file must never change.
 
 use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;

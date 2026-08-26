@@ -121,11 +121,18 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
                 .document_serialization_version
                 .default_current_version
             {
+                // Version 0 is the original format, the default for protocol
+                // versions 1 through 8. Every integer is encoded as an i64
+                // regardless of its schema type.
                 0 => self.serialize_v0(document_type),
                 // Version 1 coincides with protocol version 9, which contains tokens, new document types,
                 // and most importantly different integer types.
                 // Document types now have properties that are known to be things like u8, i32 etc.
                 1 => self.serialize_v1(document_type),
+                // Version 2 coincides with protocol version 10: it adds the
+                // $creatorId field for document types that support transfers
+                // or trading, so the original creator survives ownership
+                // changes.
                 2 => self.serialize_v2(document_type),
                 // Version 3 coincides with protocol version 14: it stamps the
                 // document with the contract version its bytes conform to,

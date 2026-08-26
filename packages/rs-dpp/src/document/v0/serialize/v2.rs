@@ -1,6 +1,8 @@
-//! Document serialization format 2: format 1 plus the `$creatorId` field
-//! for transferable/tradable document types. Shipped consensus code: this
-//! file must never change.
+//! Document serialization format 2: the default from protocol version 10.
+//! Format 1 plus the `$creatorId` field (presence flag + 32 bytes) after
+//! `$ownerId`, written only for document types that support transfers or
+//! trading — introduced so the original creator survives ownership changes.
+//! Shipped consensus code: this file must never change.
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;

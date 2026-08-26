@@ -1,6 +1,12 @@
-//! Document serialization format 3: format 2 plus the contract-version
-//! stamp, which selects each `requiredSince` property's byte layout
-//! (protocol v14+).
+//! Document serialization format 3: the default from protocol version 14.
+//! Format 2 plus the contract-version stamp — a varint right after the
+//! format prefix recording the data contract version the bytes conform to
+//! (0 = unstamped: a pre-format-3 document re-serialized in the new
+//! envelope). Introduced so contract updates can add required properties
+//! via `requiredSince`: the stamp selects each annotated property's byte
+//! layout (raw once the stamp reaches the annotation, presence-flagged
+//! before it), letting the latest contract alone decode every stored
+//! document.
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;

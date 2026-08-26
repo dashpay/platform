@@ -1,5 +1,9 @@
-//! Document serialization format 1: integers at their native sizes.
-//! Shipped consensus code: this file must never change.
+//! Document serialization format 1: the default at protocol version 9,
+//! which introduced tokens and new document types — and, most importantly
+//! for the wire format, schema-typed integers. Integers are encoded at
+//! their native size (u8 = 1 byte, u16 = 2 bytes, …) instead of format 0's
+//! uniform i64. Otherwise identical to format 0. Shipped consensus code:
+//! this file must never change.
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
