@@ -197,6 +197,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         let stub_document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::from([0u8; 32]),
             owner_id: *identity_id,
             properties,
@@ -358,6 +359,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         let updated_document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: existing_doc_id,
             owner_id: *identity_id,
             properties,
@@ -744,6 +746,7 @@ fn single_profile_query(
             operator: WhereOperator::Equal,
             value: platform_value!(identity_id),
         }],
+        time_range_clauses: vec![],
         group_by: vec![],
         having: vec![],
         order_by_clauses: vec![],
@@ -777,6 +780,7 @@ fn contact_profiles_chunk_query(
             operator: WhereOperator::In,
             value: in_values,
         }],
+        time_range_clauses: vec![],
         group_by: vec![],
         having: vec![],
         order_by_clauses: vec![OrderClause {

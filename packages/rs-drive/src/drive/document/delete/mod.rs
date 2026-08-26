@@ -1047,7 +1047,9 @@ mod tests {
 
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
-        assert_eq!(fee_result.processing_fee, 71994700);
+        // estimated_size v1 adds the contract-version stamp varint to the
+        // worst-case document size
+        assert_eq!(fee_result.processing_fee, 72064200);
     }
 
     #[test]

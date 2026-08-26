@@ -20039,6 +20039,7 @@ $root.org = (function() {
                          * @property {number} BETWEEN_EXCLUDE_RIGHT=8 BETWEEN_EXCLUDE_RIGHT value
                          * @property {number} IN=9 IN value
                          * @property {number} STARTS_WITH=10 STARTS_WITH value
+                         * @property {number} IN_TIME_RANGE=11 IN_TIME_RANGE value
                          */
                         GetDocumentsRequest.WhereOperator = (function() {
                             var valuesById = {}, values = Object.create(valuesById);
@@ -20053,6 +20054,7 @@ $root.org = (function() {
                             values[valuesById[8] = "BETWEEN_EXCLUDE_RIGHT"] = 8;
                             values[valuesById[9] = "IN"] = 9;
                             values[valuesById[10] = "STARTS_WITH"] = 10;
+                            values[valuesById[11] = "IN_TIME_RANGE"] = 11;
                             return values;
                         })();
 
@@ -20870,6 +20872,7 @@ $root.org = (function() {
                                     case 8:
                                     case 9:
                                     case 10:
+                                    case 11:
                                         break;
                                     }
                                 if (message.value != null && message.hasOwnProperty("value")) {
@@ -20938,6 +20941,10 @@ $root.org = (function() {
                                 case "STARTS_WITH":
                                 case 10:
                                     message.operator = 10;
+                                    break;
+                                case "IN_TIME_RANGE":
+                                case 11:
+                                    message.operator = 11;
                                     break;
                                 }
                                 if (object.value != null) {

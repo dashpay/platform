@@ -24389,7 +24389,8 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator = {
   BETWEEN_EXCLUDE_LEFT: 7,
   BETWEEN_EXCLUDE_RIGHT: 8,
   IN: 9,
-  STARTS_WITH: 10
+  STARTS_WITH: 10,
+  IN_TIME_RANGE: 11
 };
 
 

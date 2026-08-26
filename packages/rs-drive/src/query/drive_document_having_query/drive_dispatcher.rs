@@ -5,10 +5,11 @@
 use super::super::drive_document_ranked_query::{RankedEntry, RankedPaginationInputs};
 use super::mode_detection::detect_having_mode;
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::SelectProjection;
-use crate::query::{OrderClause, WhereClause};
+use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -49,6 +50,16 @@ pub struct DocumentHavingRequest<'a> {
     /// at most one may instead be a bounded `IN` (one branch per
     /// element, merged; entries then carry `in_key`).
     pub where_clauses: &'a [WhereClause],
+    /// The fields among `where_clauses` whose equality clause was produced by
+    /// `IN_TIME_RANGE` resolution (see
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]).
+    /// Must be empty: HAVING's equality prefixes pin plain ranked indexes
+    /// (its picker excludes transformed ones), so a resolved bucket-start
+    /// equality would authenticate raw-timestamp matches at the bucket
+    /// boundary instead of window membership. Carried (and rejected) here
+    /// for the same reason the ranked request carries it: drive owns the
+    /// rejection regardless of which upstream path built the request.
+    pub resolved_time_ranges: &'a [ResolvedTimeRange],
     /// Request `limit`. **Required**; `1 ..= MAX_HAVING_LIMIT`.
     pub limit: Option<u32>,
     /// Request `offset`. Must be `None` — the range walk has no skip.
@@ -106,6 +117,20 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentHavingResponse, Error> {
+        // Before mode detection reads `where_clauses`: a resolved bucket
+        // equality is indistinguishable from a hand-written equality pin, and
+        // the pinned-prefix form would accept it against a plain ranked index
+        // over raw timestamps — a validly-proven answer to a different
+        // question. See `DocumentHavingRequest::resolved_time_ranges`.
+        if !request.resolved_time_ranges.is_empty() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "a HAVING query cannot carry a time-range (IN_TIME_RANGE) selection: its \
+                 equality prefixes pin plain ranked indexes, so a resolved bucket-start \
+                 equality would match raw timestamps at the bucket boundary instead of the \
+                 selected window"
+                    .to_string(),
+            )));
+        }
         let mode = detect_having_mode(
             &request.select,
             request.group_by,

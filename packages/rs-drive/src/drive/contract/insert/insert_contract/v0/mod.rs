@@ -15,7 +15,6 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
 use crate::drive::votes::paths::{
@@ -25,7 +24,7 @@ use crate::error::contract::DataContractError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 impl Drive {
     /// Insert a contract.
@@ -361,14 +360,18 @@ impl Drive {
                 )?,
             }
 
-            let mut index_cache: HashSet<&[u8]> = HashSet::new();
             let document_type_ref = document_type.as_ref();
             let index_structure = document_type_ref.index_structure();
-            // for each type we should insert the indices that are top level
-            for index in document_type.as_ref().top_level_indices() {
-                // toDo: change this to be a reference by index
-                let index_bytes = index.name.as_bytes();
-                if !index_cache.contains(index_bytes) {
+            // For each type we should insert the indices that are top level.
+            // The index structure's root sub-levels are exactly the distinct
+            // top-level trees: one per plain first property, plus one per
+            // (property, grid) pair for time-range-transformed first
+            // properties, whose keys are already grid-qualified
+            // (`TimeRangeTransform::storage_key`). Iterating the map also
+            // dedupes indexes sharing a first level for free.
+            for (level_key, level) in index_structure.sub_levels() {
+                let index_bytes = level_key.as_bytes();
+                {
                     // The property-name tree variant (the tree at
                     // `@/contract/0x01/<doctype>/<prop>`) is selected from
                     // the index's `(range_countable, range_summable)`
@@ -407,10 +410,7 @@ impl Drive {
                     // top-level property-name tree IS the terminal one. A
                     // compound index's terminal level lives deeper and is
                     // materialized lazily by the document index walker.
-                    let index_info = index_structure
-                        .sub_levels()
-                        .get(index.name.as_str())
-                        .and_then(|level| level.has_index_with_type());
+                    let index_info = level.has_index_with_type();
                     let (tree_type, ranked_axes) =
                         property_name_tree_type_and_ranked_axes(index_info)?;
                     match tree_type {
@@ -472,7 +472,6 @@ impl Drive {
                             &platform_version.drive,
                         )?,
                     }
-                    index_cache.insert(index_bytes);
                 }
             }
         }

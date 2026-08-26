@@ -2739,6 +2739,7 @@ export namespace GetDocumentsRequest {
     BETWEEN_EXCLUDE_RIGHT: 8;
     IN: 9;
     STARTS_WITH: 10;
+    IN_TIME_RANGE: 11;
   }
 
   export const WhereOperator: WhereOperatorMap;

@@ -55,10 +55,10 @@ itertools = { version = "0.13", optional = true }
 grovedb = { git = "https://github.com/dashpay/grovedb", rev = "6c882c3ee7d2c331f1feda2eb4223add9a6f0e45", optional = true, default-features = false }
 grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "6c882c3ee7d2c331f1feda2eb4223add9a6f0e45", optional = true }
 grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "6c882c3ee7d2c331f1feda2eb4223add9a6f0e45" }
+grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "6c882c3ee7d2c331f1feda2eb4223add9a6f0e45" }
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "6c882c3ee7d2c331f1feda2eb4223add9a6f0e45", optional = true }
 grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "6c882c3ee7d2c331f1feda2eb4223add9a6f0e45" }
 grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "6c882c3ee7d2c331f1feda2eb4223add9a6f0e45" }
-grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "6c882c3ee7d2c331f1feda2eb4223add9a6f0e45" }
 
 [dev-dependencies]
 criterion = "0.5"

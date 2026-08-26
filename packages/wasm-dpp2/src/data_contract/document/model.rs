@@ -235,6 +235,7 @@ impl DocumentWasm {
         )?;
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: doc_id,
             owner_id,
             properties,

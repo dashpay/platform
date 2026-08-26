@@ -96,6 +96,7 @@ mod tests {
 
     fn make_document_with_known_ids() -> DocumentV0 {
         DocumentV0 {
+            contract_version: None,
             id: Identifier::new([0xAA; 32]),
             owner_id: Identifier::new([0xBB; 32]),
             properties: BTreeMap::new(),
@@ -399,6 +400,7 @@ mod tests {
 
     fn minimal_doc() -> DocumentV0 {
         DocumentV0 {
+            contract_version: None,
             id: Identifier::new([1u8; 32]),
             owner_id: Identifier::new([2u8; 32]),
             properties: BTreeMap::new(),

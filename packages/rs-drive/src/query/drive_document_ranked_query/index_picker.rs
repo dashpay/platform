@@ -35,7 +35,8 @@ use std::collections::BTreeMap;
 ///   property is exactly `aggregate_field`. Both axes are derived from
 ///   the same running sum the index maintains (`Avg` is that sum over the
 ///   group's count), so summing a *different* field than the one the
-///   index accumulates would silently answer about the wrong property.
+///   index accumulates would silently answer about the wrong property;
+/// - it carries no time-range transform.
 ///
 /// With no pins this degenerates to the original single-property rule.
 /// A partial pin (some but not all leading properties) matches nothing —
@@ -82,6 +83,14 @@ pub fn find_ranked_index_for_axis<'b>(
                 .iter()
                 .all(|property| equality_pin_fields.iter().any(|f| f == &property.name))
         {
+            return false;
+        }
+        // Ranking over bucket keys is an undesigned surface: a document is
+        // stored once per bucket that contains it, so it would contribute to
+        // `overlap_factor` groups at once, and a ranked query carries no
+        // where clauses that could pin a single bucket. Exclude bucketed
+        // indexes until the semantics are deliberately designed.
+        if index.time_range.is_some() {
             return false;
         }
         match axis {

@@ -90,6 +90,7 @@ rocksdb = { git = "https://github.com/QuantumExplorer/rust-rocksdb.git", rev = "
 blake3 = "1.5"
 
 [dev-dependencies]
+dash-platform-queries = { path = "../dash-platform-queries" }
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }

@@ -699,6 +699,7 @@ fn test_index(name: &str, properties: &[&str], summable: Option<&str>) -> Index 
         ranked_countable: false,
         ranked_summable: false,
         ranked_averageable: false,
+        time_range: None,
     }
 }
 
@@ -970,6 +971,7 @@ fn run(
             offset: case.offset,
             has_start_at: false,
             prove,
+            resolved_time_ranges: &[],
         },
         None,
         platform_version(),
@@ -2258,6 +2260,7 @@ mod pinned_prefix {
                 offset: None,
                 has_start_at: false,
                 prove,
+                resolved_time_ranges: &[],
             },
             None,
             platform_version(),
@@ -2477,6 +2480,7 @@ mod pinned_prefix {
             offset: None,
             has_start_at: false,
             prove,
+            resolved_time_ranges: &[],
         };
 
         let page = match drive

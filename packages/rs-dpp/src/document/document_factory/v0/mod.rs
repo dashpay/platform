@@ -574,6 +574,7 @@ mod test {
             platform_value::Value::Array(vec![]),
         );
         let document_v0 = DocumentV0 {
+            contract_version: None,
             id: document_id,
             owner_id,
             properties,

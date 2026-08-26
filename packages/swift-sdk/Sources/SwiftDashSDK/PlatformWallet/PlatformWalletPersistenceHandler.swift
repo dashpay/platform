@@ -94,6 +94,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `markUtxoSpent`, …) assume they are already on the queue.
     private let backgroundContext: ModelContext
 
+    /// Context dedicated to tracked-masternode whole-set writes. Those writes
+    /// are not part of a wallet changeset and must become durable before their
+    /// synchronous FFI callback reports success. Keeping them off
+    /// `backgroundContext` prevents an unrelated changeset rollback from
+    /// discarding a successful track/untrack/rename operation.
+    private let trackedMasternodeContext: ModelContext
+
     /// Serial queue that owns `backgroundContext` and any other
     /// non-Sendable handler state (`loadAllocations`). All public
     /// entry points — both the FFI callback shims and the
@@ -144,6 +151,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         self.network = network
         self.backgroundContext = ModelContext(modelContainer)
         self.backgroundContext.autosaveEnabled = true
+        self.trackedMasternodeContext = ModelContext(modelContainer)
+        self.trackedMasternodeContext.autosaveEnabled = false
     }
 
     /// Synchronously run `body` on `serialQueue`.
@@ -6111,16 +6120,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Replace the stored tracked-masternode set for `networkRaw` with
     /// `rows` (whole-set semantics, mirroring the Rust trait contract).
     ///
-    /// Registry writes arrive OUTSIDE Rust `store()` rounds, so this
-    /// method saves immediately — unless a changeset round is open on the
-    /// shared context, in which case the round's `endChangeset` commits
-    /// (or rolls back) these rows together with the round. A rolled-back
-    /// registry write is re-issued by the next registry mutation (the
-    /// Rust side always writes the whole set).
+    /// Registry writes arrive OUTSIDE Rust `store()` rounds and use their own
+    /// context, so this method always saves before returning success. An
+    /// unrelated wallet changeset can therefore neither absorb nor roll back
+    /// a tracked-node mutation.
     func persistTrackedMasternodes(networkRaw: UInt32, rows: [TrackedMasternodeRow]) -> Bool {
         onQueue {
             do {
-                let existing = try backgroundContext.fetch(
+                let existing = try trackedMasternodeContext.fetch(
                     FetchDescriptor<PersistentTrackedMasternode>(
                         predicate: #Predicate { $0.networkRaw == networkRaw }
                     )
@@ -6135,7 +6142,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         found.addedAt = row.addedAt
                         found.snapshotJSON = row.snapshotJSON
                     } else {
-                        backgroundContext.insert(PersistentTrackedMasternode(
+                        trackedMasternodeContext.insert(PersistentTrackedMasternode(
                             networkRaw: networkRaw,
                             proTxHash: row.proTxHash,
                             label: row.label,
@@ -6145,14 +6152,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     }
                 }
                 for removed in stale.values {
-                    backgroundContext.delete(removed)
+                    trackedMasternodeContext.delete(removed)
                 }
-                if !inChangeset {
-                    try backgroundContext.save()
-                }
+                try trackedMasternodeContext.save()
                 return true
             } catch {
                 print("⚠️ persistTrackedMasternodes: \(error)")
+                // A failed save leaves pending inserts/deletes registered on
+                // the context. Discard them before returning failure so a
+                // later load or successful mutation cannot expose/commit a
+                // registry state Rust has already rolled back.
+                trackedMasternodeContext.rollback()
                 return false
             }
         }
@@ -6173,7 +6183,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 descriptor.sortBy = [
                     SortDescriptor(\.addedAt, order: .forward)
                 ]
-                rows = try backgroundContext.fetch(descriptor)
+                rows = try trackedMasternodeContext.fetch(descriptor)
             } catch {
                 print("⚠️ loadTrackedMasternodes: \(error)")
                 return (nil, 0, true)

@@ -109,19 +109,40 @@ export default class ConfigFileJsonRepository {
    * @returns {ConfigFile}
    */
   read(options = {}) {
-    const { skipValidation = false } = options;
+    return this.#buildConfigFile(this.#readRawConfigFile(), options);
+  }
+
+  /**
+   * The bytes on disk, parsed, and nothing more.
+   *
+   * Separate from building a ConfigFile so a caller that has to decide
+   * something about the file before migrating it can decide and migrate from
+   * the same snapshot. Reading twice leaves a window in which the file can be
+   * replaced between the decision and the work it authorised.
+   *
+   * @returns {Object}
+   */
+  #readRawConfigFile() {
     if (!fs.existsSync(this.configFilePath)) {
       throw new ConfigFileNotFoundError(this.configFilePath);
     }
 
     const configFileJSON = fs.readFileSync(this.configFilePath, 'utf8');
 
-    let configFileData;
     try {
-      configFileData = JSON.parse(configFileJSON);
+      return JSON.parse(configFileJSON);
     } catch (e) {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
+  }
+
+  /**
+   * @param {Object} configFileData - already read and parsed
+   * @param {Object} [options={}]
+   * @returns {ConfigFile}
+   */
+  #buildConfigFile(configFileData, options = {}) {
+    const { skipValidation = false } = options;
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
