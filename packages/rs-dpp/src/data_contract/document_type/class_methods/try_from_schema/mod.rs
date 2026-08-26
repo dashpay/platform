@@ -1,4 +1,5 @@
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
@@ -316,72 +317,6 @@ fn insert_values_nested(
     );
 
     Ok(())
-}
-
-/// Parses the `requiredSince` keyword: the contract version from which the
-/// property is required. Only meaningful on top-level required properties —
-/// the document wire format encodes a required property without a presence
-/// flag, so requiredness that varies by contract version must be resolvable
-/// per property from the current schema alone (see the per-document contract
-/// version stamp in document serialization format 3).
-///
-/// Versioned on `apply_required_since` in the platform version's document
-/// type schema versions. `None` selects the behavior of the versions that
-/// predate the keyword: it is ignored entirely, so their parses stay
-/// byte-for-byte identical to what they always produced.
-fn apply_required_since(
-    inner_properties: &BTreeMap<String, &Value>,
-    is_required: bool,
-    is_top_level: bool,
-    platform_version: &PlatformVersion,
-) -> Result<Option<u32>, DataContractError> {
-    match platform_version
-        .dpp
-        .contract_versions
-        .document_type_versions
-        .schema
-        .apply_required_since
-    {
-        None => Ok(None),
-        Some(0) => apply_required_since_v0(inner_properties, is_required, is_top_level),
-        Some(version) => Err(DataContractError::Unsupported(format!(
-            "apply_required_since version {version} is not supported"
-        ))),
-    }
-}
-
-fn apply_required_since_v0(
-    inner_properties: &BTreeMap<String, &Value>,
-    is_required: bool,
-    is_top_level: bool,
-) -> Result<Option<u32>, DataContractError> {
-    let Some(required_since_value) = inner_properties.get(property_names::REQUIRED_SINCE) else {
-        return Ok(None);
-    };
-
-    if !is_top_level {
-        return Err(DataContractError::InvalidContractStructure(
-            "requiredSince is only allowed on top-level properties".to_string(),
-        ));
-    }
-
-    if !is_required {
-        return Err(DataContractError::InvalidContractStructure(
-            "requiredSince is only allowed on properties listed in required".to_string(),
-        ));
-    }
-
-    let required_since: u32 = required_since_value
-        .to_integer()
-        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-
-    if required_since == 0 {
-        return Err(DataContractError::InvalidContractStructure(
-            "requiredSince must be a contract version of at least 1".to_string(),
-        ));
-    }
-
-    Ok(Some(required_since))
 }
 
 /// Folds a `refersTo` declaration into the property type: an identifier property

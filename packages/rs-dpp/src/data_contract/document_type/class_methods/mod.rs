@@ -6,6 +6,7 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 
+pub(crate) mod apply_required_since;
 mod create_document_types_from_document_schemas;
 mod should_use_creator_id;
 mod system_properties;
