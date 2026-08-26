@@ -1,7 +1,7 @@
 //! FFI for tracked (wallet-independent) masternodes: track / untrack /
 //! rename, list, refresh, capabilities, and withdraw with a host-supplied
 //! key. Thin marshalling over `platform_wallet::masternode::tracked`; the
-//! records reuse [`MasternodeEntryFFI`] (`source == 1`) so hosts render
+//! records reuse [`MasternodeEntryV2FFI`] (`source == 1`) so hosts render
 //! wallet and tracked masternodes with the same code.
 
 use std::ffi::{c_char, CStr};
@@ -11,7 +11,7 @@ use platform_wallet::masternode::{
     capabilities_for_roles, LocatorSecret, MasternodeKeyRole, MasternodeRecord,
 };
 
-use crate::core_wallet_types::{masternode_entry_ffi, MasternodeEntryFFI};
+use crate::core_wallet_types::{masternode_entry_v2_ffi, MasternodeEntryV2FFI};
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::block_on_worker;
@@ -37,12 +37,12 @@ unsafe fn optional_string(ptr: *const c_char) -> Result<Option<String>, Platform
 unsafe fn write_records(
     records: Vec<MasternodeRecord>,
     network: dashcore::Network,
-    out_entries: *mut *const MasternodeEntryFFI,
+    out_entries: *mut *const MasternodeEntryV2FFI,
     out_count: *mut usize,
 ) {
-    let entries: Vec<MasternodeEntryFFI> = records
+    let entries: Vec<MasternodeEntryV2FFI> = records
         .iter()
-        .map(|record| masternode_entry_ffi(record, network))
+        .map(|record| masternode_entry_v2_ffi(record, network))
         .collect();
     let count = entries.len();
     if count == 0 {
@@ -59,7 +59,7 @@ unsafe fn write_records(
 /// the current masternode list when available — local, no network; call
 /// [`platform_wallet_manager_refresh_tracked_masternode`] afterwards for the
 /// Platform / registration details. Returns the new record as a one-entry
-/// array (free with `platform_wallet_manager_free_masternodes`).
+/// array (free with `platform_wallet_manager_free_masternodes_v2`).
 ///
 /// Whether the row survives a restart depends on the configured persister —
 /// see `PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_MASTERNODES`.
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn platform_wallet_manager_track_masternode(
     manager_handle: Handle,
     pro_tx_hash: *const u8,
     label: *const c_char,
-    out_entry: *mut *const MasternodeEntryFFI,
+    out_entry: *mut *const MasternodeEntryV2FFI,
     out_count: *mut usize,
 ) -> PlatformWalletFFIResult {
     check_ptr!(pro_tx_hash);
@@ -153,18 +153,18 @@ pub unsafe extern "C" fn platform_wallet_manager_set_tracked_masternode_label(
     PlatformWalletFFIResult::ok()
 }
 
-/// Every tracked masternode as a [`MasternodeEntryFFI`] (`source == 1`,
+/// Every tracked masternode as a [`MasternodeEntryV2FFI`] (`source == 1`,
 /// `label` set when named), with its status resolved against the CURRENT
 /// masternode list (Active / Inactive / Retired, `Unknown` while the list
 /// is unavailable). Sorted by when they were tracked. Free with
-/// [`crate::wallet::platform_wallet_manager_free_masternodes`].
+/// [`crate::wallet::platform_wallet_manager_free_masternodes_v2`].
 ///
 /// # Safety
 /// `out_entries` / `out_count` must be writable.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_list_tracked_masternodes(
     manager_handle: Handle,
-    out_entries: *mut *const MasternodeEntryFFI,
+    out_entries: *mut *const MasternodeEntryV2FFI,
     out_count: *mut usize,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_entries);
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn platform_wallet_manager_list_tracked_masternodes(
 /// keys). Blocks on the network round-trips. Partial results are kept and
 /// persisted even when a step fails (the error is still returned). On
 /// success returns the refreshed record as a one-entry array (free with
-/// `platform_wallet_manager_free_masternodes`).
+/// `platform_wallet_manager_free_masternodes_v2`).
 ///
 /// # Safety
 /// `pro_tx_hash` must point at 32 readable bytes; `out_entry` / `out_count`
@@ -197,7 +197,7 @@ pub unsafe extern "C" fn platform_wallet_manager_list_tracked_masternodes(
 pub unsafe extern "C" fn platform_wallet_manager_refresh_tracked_masternode(
     manager_handle: Handle,
     pro_tx_hash: *const u8,
-    out_entry: *mut *const MasternodeEntryFFI,
+    out_entry: *mut *const MasternodeEntryV2FFI,
     out_count: *mut usize,
 ) -> PlatformWalletFFIResult {
     check_ptr!(pro_tx_hash);
@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn unknown_handles_are_invalid_handles() {
         let hash = [0u8; 32];
-        let mut entries: *const MasternodeEntryFFI = std::ptr::null();
+        let mut entries: *const MasternodeEntryV2FFI = std::ptr::null();
         let mut count = 5usize;
         let mut r = unsafe {
             platform_wallet_manager_track_masternode(
