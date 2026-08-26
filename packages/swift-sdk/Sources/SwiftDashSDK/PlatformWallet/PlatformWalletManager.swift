@@ -881,7 +881,7 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Wallet creation
 
     /// Admission gate for the SYNCHRONOUS native entrypoints (`createWallet`,
-    /// `createWalletFromSeed`, `loadFromPersistor`). Rejects:
+    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`). Rejects:
     ///
     /// - once shutdown has closed admission — including the drain window,
     ///   where the manager's handle is intentionally still live for an
@@ -1208,14 +1208,20 @@ public class PlatformWalletManager: ObservableObject {
     }
 
     /// What the off-main half of the async [`loadFromPersistor()`] hands
-    /// back to the MainActor epilogue: raw wallet handles (the
-    /// `ManagedPlatformWallet` wrappers are built on the MainActor), plus
-    /// the last per-wallet skip error for `lastError` parity with the sync
-    /// overload.
+    /// back to the MainActor epilogue: one entry per restorable wallet id,
+    /// in the persistence handler's id order — either the raw wallet handle
+    /// (the owning `ManagedPlatformWallet` wrapper is built on the
+    /// MainActor) or the copied lookup error. Keeping the ORDERED sequence
+    /// lets the epilogue replay publication, unlock and `lastError`
+    /// assignment in exactly the sync overload's per-wallet interleaving.
     private struct OffMainLoadOutcome: @unchecked Sendable {
+        enum Lookup {
+            case restored(walletId: Data, walletHandle: Handle)
+            case skipped(PlatformWalletError)
+        }
+
         let bulkResult: Result<Void, PlatformWalletError>
-        let loaded: [(walletId: Data, walletHandle: Handle)]
-        let lastSkipError: PlatformWalletError?
+        let lookups: [Lookup]
     }
 
     /// The blocking body of the async [`loadFromPersistor()`] overload:
@@ -1242,37 +1248,37 @@ public class PlatformWalletManager: ObservableObject {
             )
             return OffMainLoadOutcome(
                 bulkResult: .failure(PlatformWalletError(code: bulk.code, message: bulk.message)),
-                loaded: [],
-                lastSkipError: nil)
+                lookups: [])
         }
 
-        var loaded: [(walletId: Data, walletHandle: Handle)] = []
-        var lastSkipError: PlatformWalletError?
+        var lookups: [OffMainLoadOutcome.Lookup] = []
         let walletIds = calls.restorableWalletIds(handler)
-        loaded.reserveCapacity(walletIds.count)
+        lookups.reserveCapacity(walletIds.count)
         for walletId in walletIds where walletId.count == 32 {
             let lookup = calls.getWallet(handle, walletId)
             let lookupResult = PlatformWalletResult(lookup.result)
             guard lookupResult.isSuccess else {
                 // Log-and-skip parity with the sync overload: one wallet
                 // failing (usually SwiftData drift vs. Rust recompute)
-                // doesn't fail the whole restore.
-                lastSkipError = PlatformWalletError(
+                // doesn't fail the whole restore. Recorded IN SEQUENCE so
+                // the epilogue's `lastError` replay matches the sync
+                // overload's per-wallet ordering.
+                lookups.append(.skipped(PlatformWalletError(
                     code: lookupResult.code,
-                    message: lookupResult.message)
+                    message: lookupResult.message)))
                 continue
             }
-            loaded.append((walletId, lookup.walletHandle))
+            lookups.append(.restored(walletId: walletId, walletHandle: lookup.walletHandle))
         }
 
+        let restoredCount = lookups.reduce(into: 0) { count, entry in
+            if case .restored = entry { count += 1 }
+        }
         let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
         Self.log.info(
-            "native load finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public) wallets=\(loaded.count, privacy: .public)"
+            "native load finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public) wallets=\(restoredCount, privacy: .public)"
         )
-        return OffMainLoadOutcome(
-            bulkResult: .success(()),
-            loaded: loaded,
-            lastSkipError: lastSkipError)
+        return OffMainLoadOutcome(bulkResult: .success(()), lookups: lookups)
     }
 
     /// Off-main variant of [`loadFromPersistor()`]: identical semantics
@@ -1316,9 +1322,18 @@ public class PlatformWalletManager: ObservableObject {
         // throw: if the defensive guard below fires, dropping the wrappers
         // releases the Rust-side aliases through their deinit instead of
         // leaking raw handles in the global registry. Nothing is published
-        // until the guard has passed.
-        let restored = outcome.loaded.map { entry in
-            ManagedPlatformWallet(handle: entry.walletHandle, walletId: entry.walletId)
+        // until the guard has passed. The sequence order is preserved.
+        enum OwnedLookup {
+            case wallet(ManagedPlatformWallet)
+            case skipped(PlatformWalletError)
+        }
+        let owned: [OwnedLookup] = outcome.lookups.map { entry in
+            switch entry {
+            case .restored(let walletId, let walletHandle):
+                return .wallet(ManagedPlatformWallet(handle: walletHandle, walletId: walletId))
+            case .skipped(let error):
+                return .skipped(error)
+            }
         }
 
         // Defense in depth only — the shutdown drain waits for this op, so
@@ -1330,21 +1345,29 @@ public class PlatformWalletManager: ObservableObject {
                 "manager was shut down while loadFromPersistor ran off-main")
         }
 
-        for managedWallet in restored {
-            self.wallets[managedWallet.walletId] = managedWallet
+        // Replay in sequence, exactly like the sync overload's per-wallet
+        // loop: a skipped lookup assigns its error to `lastError` in place,
+        // a restored wallet is published and then unlocked before the next
+        // entry — so `lastError` ends up reflecting the SAME (latest-in-
+        // order) failure either overload would leave behind. The unlock
+        // share is accumulated separately: it is the remaining MainActor
+        // cost of the load and the data for deciding whether it ever moves
+        // off-main.
+        var restored: [ManagedPlatformWallet] = []
+        var unlockSeconds: TimeInterval = 0
+        for entry in owned {
+            switch entry {
+            case .skipped(let error):
+                self.lastError = error
+            case .wallet(let managedWallet):
+                restored.append(managedWallet)
+                self.wallets[managedWallet.walletId] = managedWallet
+                let unlockStarted = CFAbsoluteTimeGetCurrent()
+                unlockRestoredWalletLoggingOutcome(managedWallet)
+                unlockSeconds += CFAbsoluteTimeGetCurrent() - unlockStarted
+            }
         }
-        if let skipError = outcome.lastSkipError {
-            self.lastError = skipError
-        }
-
-        // Same best-effort per-wallet unlock as the sync overload, timed
-        // as a block: this is the remaining MainActor share of the load
-        // and the data for deciding whether it moves off-main next.
-        let unlockStarted = CFAbsoluteTimeGetCurrent()
-        for managedWallet in restored {
-            unlockRestoredWalletLoggingOutcome(managedWallet)
-        }
-        let unlockMs = Int((CFAbsoluteTimeGetCurrent() - unlockStarted) * 1000)
+        let unlockMs = Int(unlockSeconds * 1000)
         Self.log.info(
             "load unlock loop finished in \(unlockMs, privacy: .public)ms wallets=\(restored.count, privacy: .public)"
         )
@@ -1901,7 +1924,12 @@ public class PlatformWalletManager: ObservableObject {
     /// Deleting an already-removed wallet succeeds unless an
     /// operation fails.
     public func deleteWallet(walletId: Data) throws {
-        try ensureConfigured()
+        // Same synchronous-admission gate as the sync creates and load: a
+        // deletion interleaved with an in-flight async restore could remove
+        // the native registration between the restore's snapshot read and
+        // its publication (or wipe SwiftData/Keychain that the loader then
+        // re-inserts), violating this method's full-wipe semantics.
+        try ensureSyncNativeOpAllowed("deleteWallet")
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be 32 bytes, got \(walletId.count)"

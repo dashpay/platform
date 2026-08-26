@@ -22,7 +22,7 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
         private let gate: DispatchSemaphore?
         private let bulkFailingCode: PlatformWalletFFIResultCode?
         private let walletIds: [Data]
-        private let failingLookupIds: Set<Data>
+        private let failingLookups: [Data: PlatformWalletFFIResultCode]
         private var bulkInvocations: [(handle: Handle, ranOnMainThread: Bool)] = []
         private var lookupIds: [Data] = []
 
@@ -30,12 +30,12 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
             walletIds: [Data] = [],
             gate: DispatchSemaphore? = nil,
             bulkFailingCode: PlatformWalletFFIResultCode? = nil,
-            failingLookupIds: Set<Data> = []
+            failingLookups: [Data: PlatformWalletFFIResultCode] = [:]
         ) {
             self.walletIds = walletIds
             self.gate = gate
             self.bulkFailingCode = bulkFailingCode
-            self.failingLookupIds = failingLookupIds
+            self.failingLookups = failingLookups
         }
 
         func makeCalls() -> PlatformWalletNativeLoadCalls {
@@ -54,10 +54,9 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
                 restorableWalletIds: { [self] _ in walletIds },
                 getWallet: { [self] _, walletId in
                     lock.withLock { lookupIds.append(walletId) }
-                    if failingLookupIds.contains(walletId) {
+                    if let failingCode = failingLookups[walletId] {
                         return (
-                            PlatformWalletFFIResult(
-                                code: PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND, message: nil),
+                            PlatformWalletFFIResult(code: failingCode, message: nil),
                             NULL_HANDLE
                         )
                     }
@@ -122,7 +121,9 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
     func testLoadRunsOffMainPublishesWalletsAndSkipsFailedLookups() async throws {
         let good = id(1)
         let bad = id(2)
-        let recorder = LoadRecorder(walletIds: [good, bad], failingLookupIds: [bad])
+        let recorder = LoadRecorder(
+            walletIds: [good, bad],
+            failingLookups: [bad: PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND])
         let manager = makeManager(handle: 42, recorder: recorder)
 
         let restored = try await manager.loadFromPersistor()
@@ -136,6 +137,30 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
         XCTAssertTrue(manager.wallets[good] === restored.first)
         XCTAssertNil(manager.wallets[bad], "a failed lookup must be skipped, not published")
         XCTAssertNotNil(manager.lastError, "the skip must surface through lastError (sync parity)")
+    }
+
+    /// `lastError` parity with the sync overload: failures are replayed in
+    /// wallet-id order, so the LATEST failure in sequence wins — not
+    /// whichever phase (lookup vs unlock) happened to run last.
+    func testLastErrorReflectsTheLatestFailureInSequenceOrder() async throws {
+        let earlyBad = id(1)
+        let good = id(2)
+        let lateBad = id(3)
+        let recorder = LoadRecorder(
+            walletIds: [earlyBad, good, lateBad],
+            failingLookups: [
+                earlyBad: PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND,
+                lateBad: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_OPERATION,
+            ])
+        let manager = makeManager(handle: 42, recorder: recorder)
+
+        let restored = try await manager.loadFromPersistor()
+
+        XCTAssertEqual(restored.map(\.walletId), [good])
+        guard case .some(.walletOperation) = manager.lastError as? PlatformWalletError else {
+            return XCTFail(
+                "lastError must hold the LATER failure in id order, got \(String(describing: manager.lastError))")
+        }
     }
 
     func testShortWalletIdsNeverReachTheLookup() async throws {
@@ -296,5 +321,37 @@ final class PlatformWalletLoadFromPersistorTests: XCTestCase {
         _ = try await asyncLoad.value
         _ = await shutdownTask.value
         XCTAssertEqual(recorder.bulkCount, 1)
+    }
+
+    /// `deleteWallet` is a synchronous native op too (native removal +
+    /// Keychain + SwiftData wipe): interleaved with an in-flight async
+    /// restore it could remove the native registration between the
+    /// restore's snapshot read and its publication, or wipe data the
+    /// loader then re-inserts. The shared admission gate rejects it before
+    /// ANY of its work runs.
+    func testDeleteWalletIsRejectedWhileAsyncLoadIsInFlight() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let recorder = LoadRecorder(walletIds: [id(7)], gate: gate)
+        let manager = makeManager(handle: 0x7FFF_FFF3, recorder: recorder)
+
+        let asyncLoad = Task { try await manager.loadFromPersistor() }
+        while recorder.bulkCount == 0 {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        do {
+            try manager.deleteWallet(walletId: id(7))
+            XCTFail("expected deleteWallet to be rejected during an async load")
+        } catch let error as PlatformWalletError {
+            guard case .invalidHandle = error else {
+                return XCTFail("expected invalidHandle, got \(error)")
+            }
+        }
+
+        gate.signal()
+        let restored = try await asyncLoad.value
+        XCTAssertEqual(
+            restored.map(\.walletId), [id(7)],
+            "the admitted restore must complete untouched by the rejected deletion")
     }
 }
