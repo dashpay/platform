@@ -1,0 +1,18 @@
+[package]
+name = "platform-query-wire"
+description = "Shared wire-request decoders mapping Dash Platform query protos onto drive query types, used by drive-abci and client-side proof verifiers"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+license = "MIT"
+
+[dependencies]
+dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
+  "platform",
+  "client",
+] }
+dpp = { path = "../rs-dpp", default-features = false }
+drive = { path = "../rs-drive", default-features = false, features = [
+  "verify",
+] }
+thiserror = "2.0.17"
