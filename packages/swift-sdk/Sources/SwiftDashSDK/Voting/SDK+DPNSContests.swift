@@ -58,22 +58,25 @@ extension SDK {
   /// Every DPNS username contest that is still open, with its contenders,
   /// tallies and end time.
   ///
-  /// One round trip. Reads the FFI's `DashSDKContestedNamesList` structure
-  /// directly, so contender tallies arrive as integers.
+  /// The Rust bridge lists current contests, then loads their vote states with
+  /// bounded concurrency and an overall timeout. This async wrapper keeps that
+  /// blocking FFI operation off the caller's actor.
   ///
   /// - Parameter limit: Maximum contests to return. The FFI has no
   ///   start-after cursor on this query, so this is a hard ceiling, not a
   ///   page size — raise it rather than trying to page.
   /// - Returns: Contests sorted by normalized label. Empty when nothing is
   ///   contested.
-  public func dpnsActiveContests(limit: UInt32 = 200) throws -> [DPNSContest] {
-    guard let handle = handle else {
+  public func dpnsActiveContests(limit: UInt32 = 200) async throws -> [DPNSContest] {
+    guard let sdkHandle = handle else {
       throw SDKError.invalidState("SDK not initialized")
     }
-    guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(handle, limit) else {
-      throw SDKError.internalError("Failed to fetch contested DPNS usernames")
-    }
-    return Self.consumeContestedNamesList(listPtr)
+    return try await Task.detached(priority: .userInitiated) {
+      guard let listPtr = dash_sdk_dpns_get_contested_non_resolved_usernames(sdkHandle, limit) else {
+        throw SDKError.internalError("Failed to fetch contested DPNS usernames")
+      }
+      return Self.consumeContestedNamesList(listPtr)
+    }.value
   }
 
   /// The open contests **this identity is contending in** — the "how are my
@@ -105,7 +108,7 @@ extension SDK {
   /// the null-label handling to drift.
   ///
   /// Takes ownership: the list is freed before returning, on every path.
-  private static func consumeContestedNamesList(
+  nonisolated private static func consumeContestedNamesList(
     _ listPtr: UnsafeMutablePointer<DashSDKContestedNamesList>
   ) -> [DPNSContest] {
     defer { dash_sdk_contested_names_list_free(listPtr) }
