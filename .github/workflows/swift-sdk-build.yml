@@ -72,9 +72,9 @@ jobs:
           PROTOC_DIR="$HOME/.local/protoc-${VERSION}"
           mkdir -p "$PROTOC_DIR"
           curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
-            -o /tmp/protoc.zip \
+            -o "$RUNNER_TEMP/protoc.zip" \
             "https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-${OS}.zip"
-          unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
+          unzip -o "$RUNNER_TEMP/protoc.zip" -d "$PROTOC_DIR"
 
       - name: Save cached Protobuf (protoc)
         if: steps.cache-protoc.outputs.cache-hit != 'true'
