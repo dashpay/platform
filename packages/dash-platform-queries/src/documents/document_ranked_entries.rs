@@ -18,13 +18,19 @@
 //!
 //! Exactly one aggregate `select`, exactly one `group_by` property,
 //! exactly one `ORDER BY` clause naming that select's aggregate, and a
-//! `LIMIT` — plus an optional `OFFSET`. `where` clauses are equality
-//! pins on a covering compound ranked index's leading properties (one
-//! per leading property, selecting which prefix's own ranking the walk
-//! reads) — absent for a single-property index. No `having`, no
-//! `start_at`: each of those is rejected rather than ignored, on both
-//! sides, because a ranked walk cannot honour them and silently
-//! answering a different question is worse than an error.
+//! `LIMIT` — plus an optional `OFFSET`. `where` clauses are pins on a
+//! covering compound ranked index's leading properties (one per leading
+//! property, selecting which prefix's own ranking the walk reads) —
+//! absent for a single-property index. Each pin is an equality, except
+//! that **at most one** may be an `IN` of 2..=10 distinct elements: one
+//! walk per element, merged by `(aggregate, encoded pin, group key)`,
+//! with each merged entry carrying the encoded branch segment in
+//! `in_key` (unset on single-branch responses; a single-element `IN`
+//! normalizes to the equality pin). A non-zero `OFFSET` cannot combine
+//! with the `IN`, nor can a `null` pin on another property. No
+//! `having`, no `start_at`: each of those is rejected rather than
+//! ignored, on both sides, because a ranked walk cannot honour them and
+//! silently answering a different question is worse than an error.
 //!
 //! [`DocumentQuery::order_by_selected_aggregate`] builds the ordering
 //! clause, deriving the ordered field from the `select` through

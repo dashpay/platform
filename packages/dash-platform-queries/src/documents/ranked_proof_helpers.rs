@@ -88,8 +88,10 @@ pub(super) fn assert_ranked_shape(
              `.with_select(<COUNT(*)|SUM(f)|AVG(f)>)`, `.with_group_by(<property>)`, \
              `.order_by_selected_aggregate(<Descending|Ascending>)` and `.with_limit(n)`, \
              optionally `.with_offset(m)`, with no having and no start_at; where clauses, \
-             when present, must be equality pins on the covering compound index's leading \
-             properties."
+             when present, pin the covering compound index's leading properties — one \
+             equality pin per property, of which at most one may instead be an `IN` of \
+             2..=10 elements (merged entries then carry `in_key`; a non-zero offset and a \
+             null pin on another property are rejected with `IN`)."
         ),
     })
 }
@@ -159,7 +161,8 @@ pub(super) fn verify_ranked_query(
             "document type `{}` cannot serve this ranked query: {e}. Ranked indexes are \
              opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
              (compound-index) ranking additionally needs every leading index property \
-             pinned by an equality where clause.",
+             pinned by a where clause — equality pins, of which at most one may be an \
+             `IN` of 2..=10 elements.",
             request.document_type_name,
         ),
     })?;

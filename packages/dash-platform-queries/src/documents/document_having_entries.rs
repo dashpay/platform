@@ -22,10 +22,16 @@
 //! a contiguous-range operator (`=`, `>`, `>=`, `<`, `<=`, `BETWEEN*` —
 //! `!=` and `IN` are rejected), and a `LIMIT`. `ORDER BY` is optional:
 //! omitted means ascending by the aggregate; naming the selected
-//! aggregate sets the direction. `where` clauses are equality pins on a
-//! covering compound ranked index's leading properties (one per leading
+//! aggregate sets the direction. `where` clauses are pins on a covering
+//! compound ranked index's leading properties (one per leading
 //! property, selecting which prefix's groups the bound reads) — absent
-//! for a single-property index. No `offset`, no `start_at`.
+//! for a single-property index. Each pin is an equality, except that
+//! **at most one** may be an `IN` of 2..=10 distinct elements: the
+//! bound fans out across one prefix branch per element and merges,
+//! entries carrying the encoded branch segment in `in_key` (unset on
+//! single-branch responses; a single-element `IN` normalizes to the
+//! equality pin; a `null` pin on another property cannot combine with
+//! the `IN`). No `offset`, no `start_at`.
 //!
 //! ## Contract prerequisites
 //!
@@ -33,7 +39,8 @@
 //! `rankedCountable` / `rankedSummable` / `rankedAverageable`
 //! (meta-schema v3, **protocol version 14+**). The index may be
 //! single-property (`group_by` its property, no `where`) or compound
-//! (`group_by` its trailing property, equality-pin every leading one).
+//! (`group_by` its trailing property, pin every leading one — equality
+//! pins, at most one of them an `IN`).
 //! Against a pre-v14 node the request is refused with "HAVING clause
 //! is not yet implemented" — the intended activation gate.
 //!

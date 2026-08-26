@@ -52,13 +52,13 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "f7e9d1b903a0348d3de856244abf5774f201fb0d", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "f7e9d1b903a0348d3de856244abf5774f201fb0d", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "f7e9d1b903a0348d3de856244abf5774f201fb0d" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "f7e9d1b903a0348d3de856244abf5774f201fb0d", optional = true }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "f7e9d1b903a0348d3de856244abf5774f201fb0d" }
-grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "f7e9d1b903a0348d3de856244abf5774f201fb0d" }
-grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "f7e9d1b903a0348d3de856244abf5774f201fb0d" }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "0b85d7e94ec792cac22bfde2f1819318499ba05e", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "0b85d7e94ec792cac22bfde2f1819318499ba05e", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "0b85d7e94ec792cac22bfde2f1819318499ba05e" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "0b85d7e94ec792cac22bfde2f1819318499ba05e", optional = true }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "0b85d7e94ec792cac22bfde2f1819318499ba05e" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "0b85d7e94ec792cac22bfde2f1819318499ba05e" }
+grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "0b85d7e94ec792cac22bfde2f1819318499ba05e" }
 
 [dev-dependencies]
 criterion = "0.5"
