@@ -12,10 +12,10 @@
 //! `(axis, k, descending, offset)` tuple by construction rather than by
 //! two copies of a grammar agreeing.
 //!
-//! Unlike the count helper there is no per-shape dispatch: the ranked
-//! surface has exactly one proof primitive
-//! (`prove_indexed_axis_top_k_paginated`), and all of a request's
-//! variation is carried *inside* the query struct.
+//! Unlike the count helper there is no per-shape dispatch: every
+//! ranked request proves as one `RankedPage` axis traversal through
+//! grovedb's unified `prove_query`, and all of a request's variation is
+//! carried *inside* the query struct.
 //!
 //! [`DocumentRankedEntries`]: drive_proof_verifier::DocumentRankedEntries
 

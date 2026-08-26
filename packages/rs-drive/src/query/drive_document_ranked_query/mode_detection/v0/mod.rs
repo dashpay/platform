@@ -320,16 +320,16 @@ pub fn detect_ranked_mode_v0(
 
     // ---- LIMIT: required, 1 ..= MAX_RANKED_LIMIT ---------------------
     //
-    // Required rather than defaulted: `k` is echoed inside the proof
-    // envelope and re-checked by the verifier, so a server-chosen
+    // Required rather than defaulted: `k` is part of the traversal the
+    // verifier re-executes the proof against, so a server-chosen
     // default would be a number the client never agreed to and could
     // not reproduce when rebuilding the query to verify.
     let limit = pagination.limit.ok_or_else(|| {
         Error::Query(QuerySyntaxError::InvalidLimit(format!(
             "ranked queries require an explicit `limit` (1 ..= {MAX_RANKED_LIMIT}): it is \
-             the number of groups the walk returns, and it is echoed in the proof envelope \
-             and re-checked by the verifier, so there is no server-side default a client \
-             could reproduce. Write `ORDER BY {expected_order_key} DESC LIMIT 1` for the \
+             the number of groups the walk returns, and the verifier re-executes the \
+             proof against the traversal it rebuilds from the request, so there is no \
+             server-side default a client could reproduce. Write `ORDER BY {expected_order_key} DESC LIMIT 1` for the \
              single best-ranked group."
         )))
     })?;
@@ -343,8 +343,8 @@ pub fn detect_ranked_mode_v0(
             "`LIMIT {limit}` exceeds the ranked-query ceiling of {MAX_RANKED_LIMIT}; the \
              proof commits one secondary entry per returned group, so its size grows \
              linearly in the limit. Narrow the request — the ceiling is a hard limit, not \
-             a clamp, because `k` is echoed in the proof envelope and re-checked by the \
-             verifier. Deep results are reached with `OFFSET`, whose skip work is bounded by \
+             a clamp, because `k` is part of the traversal the client rebuilds to \
+             verify — a clamped page is one the client's reconstruction did not ask for. Deep results are reached with `OFFSET`, whose skip work is bounded by \
              tree depth and does not grow with the offset."
         ))));
     }

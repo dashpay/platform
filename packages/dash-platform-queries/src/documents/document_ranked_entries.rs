@@ -501,9 +501,9 @@ mod tests {
     }
 
     /// The ranking's `n` rides `limit`, and an out-of-range one is
-    /// rejected rather than clamped: `k` is echoed inside the proof
-    /// envelope and re-checked by the verifier, so a silent clamp would
-    /// produce a proof the client's own reconstruction rejects.
+    /// rejected rather than clamped: `k` is part of the traversal the
+    /// client rebuilds to verify, so a silent clamp would produce a
+    /// page the client's reconstruction did not ask for.
     #[test]
     fn assert_ranked_shape_rejects_an_out_of_range_limit() {
         // `0` is `DocumentQuery`'s "unset" sentinel, and a ranking with

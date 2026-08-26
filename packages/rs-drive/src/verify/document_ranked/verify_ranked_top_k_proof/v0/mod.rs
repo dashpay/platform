@@ -65,10 +65,11 @@ impl DriveDocumentRankedQuery<'_> {
             // envelope. The branch set (and its order) comes from
             // *this* query's own resolution; grovedb binds each branch
             // tail to its branch key through the branching-level
-            // multi-key proof, reconstructs one root hash, and echoes
-            // `(axis, k, offset, direction)`. The page is then
-            // re-derived by the shared merge — the client never trusts
-            // a server-side merge.
+            // multi-key proof, reconstructs one root hash, and
+            // re-executes each branch's page against the traversal
+            // rebuilt from THIS query — coverage, not echo comparison.
+            // The page is then re-derived by the shared merge — the
+            // client never trusts a server-side merge.
             let paths = (0..self.prefix_branches.len())
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;

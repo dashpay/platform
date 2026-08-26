@@ -151,10 +151,13 @@ impl DocumentHavingEntries {
 /// (which does the merk-level verification). Both sides derive the
 /// proved subtree from the same
 /// `DriveDocumentHavingQuery::indexed_property_name_tree_path` and the
-/// secondary query from the same `AxisRangeBounds::merk_query`, so
-/// prover and verifier cannot drift on *which bound over which tree* is
-/// being checked, and grovedb re-checks the echoed query and limit — a
-/// proof of one bound does not verify as another.
+/// bounded traversal from the same
+/// `AxisRangeBounds::inclusive_bounds_i128`, so prover and verifier
+/// cannot drift on *which bound over which tree* is being checked, and
+/// grovedb re-executes the proof against that reconstruction — a proof
+/// of one bound does not cover another (the limit binds as a cap: an
+/// exhausted proof verifies under any admitting cap, a truncated one
+/// fails a larger cap for missing coverage).
 ///
 /// ## The root hash is the whole point
 ///

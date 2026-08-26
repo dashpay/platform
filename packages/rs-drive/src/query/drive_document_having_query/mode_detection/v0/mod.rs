@@ -254,16 +254,16 @@ pub fn detect_having_mode_v0(
     // ---- LIMIT: required, 1 ..= MAX_HAVING_LIMIT ---------------------
     //
     // Required rather than defaulted for the same reason as ranked: the
-    // limit is echoed inside the proof envelope and re-checked by the
-    // verifier, so there is no server default a client could reproduce.
+    // limit is part of the traversal the verifier re-executes the proof
+    // against, so there is no server default a client could reproduce.
     // Required *especially* here, because a threshold can match
     // unboundedly many groups.
     let limit = pagination.limit.ok_or_else(|| {
         Error::Query(QuerySyntaxError::InvalidLimit(format!(
             "having-range queries require an explicit `limit` (1 ..= {MAX_HAVING_LIMIT}): \
              a bound can match any number of groups, the walk stops at `limit`, and the \
-             limit is echoed in the proof envelope and re-checked by the verifier, so \
-             there is no server-side default a client could reproduce."
+             verifier re-executes the proof under the limit it rebuilds from the request, \
+             so there is no server-side default a client could reproduce."
         )))
     })?;
     if limit == 0 {
@@ -275,9 +275,10 @@ pub fn detect_having_mode_v0(
         return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
             "`LIMIT {limit}` exceeds the having-range ceiling of {MAX_HAVING_LIMIT}; the \
              proof commits one secondary entry per returned group, so its size grows \
-             linearly in the limit. The ceiling is a hard limit, not a clamp, because the \
-             limit is echoed in the proof envelope and re-checked by the verifier. Narrow \
-             the bound to shrink the result set."
+             linearly in the limit. The ceiling is a hard limit, not a clamp, because \
+             the limit is part of the traversal the client rebuilds to verify — a clamped \
+             walk is one the client's reconstruction did not ask for. Narrow the bound to \
+             shrink the result set."
         ))));
     }
     // Bounded by MAX_HAVING_LIMIT (a u16) immediately above.

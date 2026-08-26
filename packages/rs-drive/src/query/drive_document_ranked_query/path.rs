@@ -1,10 +1,10 @@
 //! The grove path a ranked read / proof / verification is issued against.
 //!
-//! This is the **prover/verifier-agreement boundary** for the ranked
-//! surface. Unlike the count and sum surfaces there is no `PathQuery` to
-//! agree on — grovedb's indexed-axis envelope carries the query shape
-//! itself and re-checks `(axis, k, descending)` at verification time — so
-//! the entire shared contract is these path segments. Prover and verifier
+//! This is one half of the **prover/verifier-agreement boundary** for
+//! the ranked surface: both sides build the same axis `PathQuery` —
+//! these path segments plus the traversal (`axis, k, offset,
+//! descending`) — and grovedb re-executes the proof against that
+//! reconstruction at verification time. Prover and verifier
 //! both call [`DriveDocumentRankedQuery::indexed_property_name_tree_path`];
 //! a divergence here surfaces as a failed root-hash reconstruction, not a
 //! wrong answer, but it is still the one place the two sides must not

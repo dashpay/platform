@@ -300,9 +300,9 @@ pub(crate) fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<Ranked
 /// proved subtree from the same
 /// `DriveDocumentRankedQuery::indexed_property_name_tree_path`, so
 /// prover and verifier cannot drift on *which* ranking is being
-/// checked, and grovedb re-checks the `(axis, k, descending)` triple
-/// echoed in the envelope — a proof of one ranking does not verify as
-/// another.
+/// checked, and grovedb re-executes the proof against the
+/// `(axis, k, offset, descending)` traversal rebuilt from the request —
+/// a proof of one ranking does not cover another.
 ///
 /// ## The root hash is the whole point
 ///
