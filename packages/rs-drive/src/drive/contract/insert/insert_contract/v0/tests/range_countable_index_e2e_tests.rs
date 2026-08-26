@@ -567,6 +567,7 @@ fn range_count_executor_sums_and_splits_correctly() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("range_countable index should be picked");
 
@@ -647,6 +648,7 @@ fn range_count_executor_sums_and_splits_correctly() {
     let after_index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &after_clauses,
+        &[],
     )
     .expect("range_countable index should be picked");
     let after_query = DriveDocumentCountQuery {
@@ -747,6 +749,7 @@ fn range_count_executor_between_is_inclusive_on_both_bounds() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("range_countable index should be picked");
 
@@ -844,6 +847,7 @@ fn aggregate_count_proof_verifies_and_returns_correct_count() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("range_countable index should be picked");
 
@@ -998,6 +1002,7 @@ fn range_count_with_in_on_prefix_returns_per_brand_color_entries() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("range_countable index should be picked");
 
@@ -1151,6 +1156,7 @@ fn range_count_executor_accepts_starts_with_in_all_four_modes() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("picker accepts StartsWith");
     let query = DriveDocumentCountQuery {
@@ -1296,6 +1302,7 @@ fn range_count_executor_accepts_empty_starts_with_prefix_via_sentinel() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("picker accepts StartsWith with any value");
     let query = DriveDocumentCountQuery {
@@ -1418,6 +1425,7 @@ fn assert_aggregate_count_proof_returns(
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("range_countable index should be picked");
 
@@ -1715,6 +1723,7 @@ fn aggregate_count_proof_verifies_on_compound_index_with_equal_prefix() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("compound range_countable index should be picked");
 
@@ -1879,6 +1888,7 @@ fn aggregate_count_proof_counts_cars_in_parking_lots_greater_than_b() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("byLot range_countable index should be picked");
     let query = DriveDocumentCountQuery {
@@ -2135,6 +2145,7 @@ fn range_count_executor_returns_per_lot_counts_for_lots_greater_than_b() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("byLot range_countable index should be picked");
 
@@ -2309,6 +2320,7 @@ fn distinct_count_proof_returns_per_lot_counts_for_lots_greater_than_b() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("byLot range_countable index should be picked");
 
@@ -2654,6 +2666,7 @@ fn distinct_count_proof_honors_request_limit() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("byLot picked");
     let query = DriveDocumentCountQuery {
@@ -2812,6 +2825,7 @@ fn distinct_count_proof_descending_returns_last_limit_keys() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("byLot picked");
     let query = DriveDocumentCountQuery {
@@ -2936,6 +2950,7 @@ fn distinct_count_proof_rejects_limit_above_max_query_limit() {
         limit: Some(too_large),
         prove: true,
         drive_config: &drive_config,
+        resolved_time_ranges: vec![],
     };
     let result = drive.execute_document_count_request(request, None, pv);
 
@@ -3081,6 +3096,7 @@ fn distinct_count_proof_with_in_on_prefix_returns_per_brand_color_entries() {
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("byBrandColor picked");
     let query = DriveDocumentCountQuery {

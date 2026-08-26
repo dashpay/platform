@@ -18,7 +18,6 @@ use crate::platform_types::state_transitions_processing_result::{
 use dpp::util::hash::hash_single;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use drive::grovedb_storage::Error::RocksDBError;
 use std::time::Instant;
 
 use super::super::StateTransitionAwareError;
@@ -233,7 +232,7 @@ where
                                     // failure means the proposal can no longer match the
                                     // block — fail it rather than continue on leaked state.
                                     transaction.rollback_to_savepoint().map_err(|e| {
-                                        drive::grovedb::error::Error::StorageError(RocksDBError(e))
+                                        drive::grovedb::error::Error::StorageError(e)
                                     })?;
                                     // The rollback discarded this transition's writes; drop
                                     // its mints with them, or the block would record a

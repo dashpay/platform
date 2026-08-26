@@ -3264,6 +3264,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
         let sum_response = drive
             .execute_document_sum_request(sum_request, None, platform_version)
@@ -3501,6 +3502,7 @@ mod tests {
             limit: None,
             prove: false,
             drive_config: &drive_config,
+            resolved_time_ranges: vec![],
         };
         let sum_response = drive
             .execute_document_sum_request(sum_request, None, platform_version)
