@@ -23,7 +23,15 @@ cd "$SCRIPT_DIR" || exit 1
 # touches a developer's keychain configuration; the previous default and
 # search list are restored on exit.
 if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
-  PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
+  # A freshly provisioned runner account that has never logged into a GUI
+  # session has no default keychain and may have an empty search list. That
+  # is a valid prior state: snapshot it as empty and restore to empty on
+  # exit instead of failing before the CI keychain is even created.
+  if PREV_DEFAULT_KEYCHAIN_OUTPUT="$(security default-keychain -d user 2>/dev/null)"; then
+    PREV_DEFAULT_KEYCHAIN="$(printf '%s\n' "$PREV_DEFAULT_KEYCHAIN_OUTPUT" | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
+  else
+    PREV_DEFAULT_KEYCHAIN=""
+  fi
   PREV_USER_KEYCHAINS_OUTPUT="$(security list-keychains -d user)"
   PREV_USER_KEYCHAINS=()
   while IFS= read -r keychain_path; do
@@ -32,10 +40,6 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
       PREV_USER_KEYCHAINS+=("$keychain_path")
     fi
   done <<< "$PREV_USER_KEYCHAINS_OUTPUT"
-  if [ "${#PREV_USER_KEYCHAINS[@]}" -eq 0 ]; then
-    echo "No user keychain search list is configured" >&2
-    exit 1
-  fi
 
   CI_KEYCHAIN_DIR="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/dash-ci-keychain.XXXXXX")"
   CI_KEYCHAIN="$CI_KEYCHAIN_DIR/tests.keychain-db"
@@ -48,14 +52,25 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
     cleanup_status=0
     trap - EXIT
 
-    if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
+    if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ] && [ -n "${PREV_DEFAULT_KEYCHAIN:-}" ]; then
+      # With no previous default keychain there is nothing to restore:
+      # deleting the CI keychain below returns the account to its prior
+      # no-default state.
       if ! security default-keychain -d user -s "$PREV_DEFAULT_KEYCHAIN"; then
         cleanup_status=1
       fi
     fi
     if [ "${CI_SEARCH_LIST_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
-      if ! security list-keychains -d user -s "${PREV_USER_KEYCHAINS[@]}"; then
-        cleanup_status=1
+      # "${PREV_USER_KEYCHAINS[@]}" on an empty array is an error under
+      # `set -u` on macOS bash 3.2, so restore an empty list explicitly.
+      if [ "${#PREV_USER_KEYCHAINS[@]}" -gt 0 ]; then
+        if ! security list-keychains -d user -s "${PREV_USER_KEYCHAINS[@]}"; then
+          cleanup_status=1
+        fi
+      else
+        if ! security list-keychains -d user -s; then
+          cleanup_status=1
+        fi
       fi
     fi
     if [ "${CI_KEYCHAIN_MAY_EXIST:-0}" -eq 1 ]; then
@@ -88,7 +103,11 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   security unlock-keychain -p "$CI_KEYCHAIN_PASSWORD" "$CI_KEYCHAIN"
   security set-keychain-settings -u -t 7200 "$CI_KEYCHAIN"
   CI_SEARCH_LIST_MAY_HAVE_CHANGED=1
-  security list-keychains -d user -s "$CI_KEYCHAIN" "${PREV_USER_KEYCHAINS[@]}"
+  if [ "${#PREV_USER_KEYCHAINS[@]}" -gt 0 ]; then
+    security list-keychains -d user -s "$CI_KEYCHAIN" "${PREV_USER_KEYCHAINS[@]}"
+  else
+    security list-keychains -d user -s "$CI_KEYCHAIN"
+  fi
   CI_DEFAULT_MAY_HAVE_CHANGED=1
   security default-keychain -d user -s "$CI_KEYCHAIN"
 
