@@ -2785,9 +2785,10 @@ mod tests {
 
             // Once the withdrawal blocks are a day in the past the reference is the 6100
             // Dash they left behind (10100 - 80 * 50), so the daily maximum is 15% = 915
-            // Dash. The 1500 Dash pooled in the withdrawal phase unlocked 25 hours later
-            // (cleaned up at the 26th hourly block, after pooling), so from the 27th hourly
-            // block withdrawals pooled again, at most 4 (200 Dash) per block while they fit:
+            // Dash and the 1500 Dash locked in the withdrawal phase stops counting the same
+            // block (outflows the day-old base already reflects are not subtracted again;
+            // the entries themselves are cleaned up an hour later). From that block
+            // withdrawals pooled again, at most 4 (200 Dash) per block while they fit:
             // 200, 400, 600, 800 Dash locked, then only two more fit in the 115 Dash left
             // (900 Dash locked), and those locks outlive this phase.
             let locked_amount = outcome

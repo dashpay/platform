@@ -1,27 +1,43 @@
 use crate::drive::identity::withdrawals::calculate_current_withdrawal_limit::WithdrawalLimitInfo;
 use crate::drive::identity::withdrawals::paths::{
-    get_withdrawal_credit_inflows_sum_tree_path_vec, get_withdrawal_root_path,
-    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    get_withdrawal_credit_inflows_sum_tree_path_vec, get_withdrawal_transactions_sum_tree_path_vec,
 };
 use crate::drive::identity::withdrawals::DAY_AND_A_HOUR_IN_MS;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::util::grove_operations::DirectQueryType;
 use dpp::block::block_info::BlockInfo;
 use dpp::withdrawal::daily_withdrawal_limit::daily_withdrawal_limit;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, QueryItem, TransactionArg};
 use platform_version::version::PlatformVersion;
 
+/// The error messages `sum_expiry_keyed_entries_at_or_after` uses for one tree's entries.
+struct ExpiryKeyedEntryErrors {
+    not_a_sum_item: &'static str,
+    negative: &'static str,
+    overflow: &'static str,
+}
+
+const CREDIT_INFLOW_ERRORS: ExpiryKeyedEntryErrors = ExpiryKeyedEntryErrors {
+    not_a_sum_item: "credit inflow entry is not a sum item",
+    negative: "credit inflow entry is negative",
+    overflow: "credit inflow entries overflow",
+};
+
+const WITHDRAWAL_RESERVATION_ERRORS: ExpiryKeyedEntryErrors = ExpiryKeyedEntryErrors {
+    not_a_sum_item: "withdrawal reservation entry is not a sum item",
+    negative: "withdrawal reservation entry is negative",
+    overflow: "withdrawal reservation entries overflow",
+};
+
 impl Drive {
-    /// Calculates the current withdrawal limit from the total credits Platform held a day ago,
-    /// the credit inflows of the last 25 hours and the amount already withdrawn in the last
-    /// 24 hours.
+    /// Calculates the current withdrawal limit from the total credits Platform held a day ago
+    /// and the credit inflows and withdrawal reservations recorded since that snapshot.
     ///
-    /// Version 1 differs from version 0 in the daily maximum:
+    /// Version 1 differs from version 0 in the daily maximum and the counted reservations:
     ///
-    /// * its base is not the current total credits but the total credits recorded at the latest
+    /// * the base is not the current total credits but the total credits recorded at the latest
     ///   block at least 24 hours before `block_info` (see
     ///   `fetch_total_credits_in_platform_a_day_ago`), so a sudden jump in the total credits
     ///   does not raise the limit for a day. While no such entry exists (the history is younger
@@ -35,47 +51,55 @@ impl Drive {
     ///   guaranteed share of the day-old total — and only unexpired ones, so an entry the
     ///   bounded cleanup has not deleted yet cannot outlive its 25 hours here. The sum stays
     ///   capped by `max_daily_withdrawal_amount`, the unlock capacity Core mines per day,
-    ///   which is a constraint on gross outflow that inflows cannot lift.
+    ///   which is a constraint on gross outflow that inflows cannot lift;
+    /// * the withdrawal reservations are bounded the same way: one pooled at or before the
+    ///   snapshot describes an outflow the base already reflects (the history is recorded
+    ///   after state transitions executed), so subtracting it again would deny budget the
+    ///   guarantee does not require — a deposit-withdraw cycle would stay debited for the
+    ///   hour its reservation outlives the snapshot instead of cancelling exactly.
     ///
-    /// The formula stays `daily_maximum - withdrawal_amount_in_last_day`, floored at zero.
+    /// The formula stays `daily_maximum - withdrawals_amount`, floored at zero, with both
+    /// sides counted over the interval after the snapshot.
     pub(super) fn calculate_current_withdrawal_limit_v1(
         &self,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<WithdrawalLimitInfo, Error> {
-        let mut drive_operations = vec![];
-
         let recorded_a_day_ago = self.fetch_total_credits_in_platform_a_day_ago(
             block_info.time_ms,
             transaction,
             platform_version,
         )?;
 
-        // Inflow entries are keyed by their expiration, 25 hours after the mint, so an inflow
-        // counts while its key is at or past two bounds: the block time (unexpired — matching
-        // the strict cutoff of the cleanup, whose bounded batch may lag behind), and just past
-        // the base snapshot plus 25 hours (minted after the snapshot: anything at or before it
-        // is already inside the base, and counting it twice would let the pool level drop
-        // below the guaranteed share of the day-old total).
-        let unexpired = block_info.time_ms;
-        let credit_inflows_since_the_snapshot = match &recorded_a_day_ago {
-            Some(recorded) => self.sum_credit_inflows_expiring_at_or_after(
-                unexpired.max(
+        // Entries of both trees are keyed by their expiration, 25 hours after the recording
+        // block, so an entry counts while its key is at or past two bounds: the block time
+        // (unexpired — matching the strict cutoff of the cleanup, whose bounded batch may lag
+        // behind), and just past the base snapshot plus 25 hours (recorded after the
+        // snapshot). An inflow at or before the snapshot is already inside the base — adding
+        // it again would let the pool level drop below the guaranteed share of the day-old
+        // total — and a reservation at or before it describes an outflow the base already
+        // reflects, so subtracting it again would deny budget the guarantee does not require.
+        let counted_from = {
+            let unexpired = block_info.time_ms;
+            match &recorded_a_day_ago {
+                Some(recorded) => unexpired.max(
                     recorded
                         .time_ms
                         .saturating_add(DAY_AND_A_HOUR_IN_MS)
                         .saturating_add(1),
                 ),
-                transaction,
-                platform_version,
-            )?,
-            None => self.sum_credit_inflows_expiring_at_or_after(
-                unexpired,
-                transaction,
-                platform_version,
-            )?,
+                None => unexpired,
+            }
         };
+
+        let credit_inflows_since_the_snapshot = self.sum_expiry_keyed_entries_at_or_after(
+            get_withdrawal_credit_inflows_sum_tree_path_vec(),
+            counted_from,
+            CREDIT_INFLOW_ERRORS,
+            transaction,
+            platform_version,
+        )?;
 
         let total_credits_a_day_ago = recorded_a_day_ago.map(|recorded| recorded.total_credits);
 
@@ -88,39 +112,34 @@ impl Drive {
             }
         };
 
-        let withdrawal_amount_in_last_day: u64 = self
-            .grove_get_sum_tree_total_value(
-                (&get_withdrawal_root_path()).into(),
-                &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?
-            .try_into()
-            .map_err(|_| {
-                Error::Drive(DriveError::CriticalCorruptedState(
-                    "Withdrawal amount in last day is negative",
-                ))
-            })?;
+        let withdrawals_since_the_snapshot = self.sum_expiry_keyed_entries_at_or_after(
+            get_withdrawal_transactions_sum_tree_path_vec(),
+            counted_from,
+            WITHDRAWAL_RESERVATION_ERRORS,
+            transaction,
+            platform_version,
+        )?;
 
         Ok(WithdrawalLimitInfo {
             daily_maximum,
-            withdrawals_amount: withdrawal_amount_in_last_day,
+            withdrawals_amount: withdrawals_since_the_snapshot,
         })
     }
 
-    /// Sums the credit inflow entries whose expiration key is at or after `from_time_ms`. The
-    /// tree only ever holds the mint blocks of one 25-hour window plus whatever the bounded
-    /// cleanup has not deleted yet, so walking the range stays small.
-    fn sum_credit_inflows_expiring_at_or_after(
+    /// Sums the sum-item entries of `path` whose expiration key is at or after
+    /// `from_time_ms`. Each tree only ever holds the recording blocks of one 25-hour window
+    /// plus whatever the bounded cleanup has not deleted yet, so walking the range stays
+    /// small; `what` names the entries in errors.
+    fn sum_expiry_keyed_entries_at_or_after(
         &self,
+        path: Vec<Vec<u8>>,
         from_time_ms: u64,
+        what: ExpiryKeyedEntryErrors,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
         let path_query = PathQuery::new_unsized(
-            get_withdrawal_credit_inflows_sum_tree_path_vec(),
+            path,
             Query::new_single_query_item(QueryItem::RangeFrom(
                 from_time_ms.to_be_bytes().to_vec()..,
             )),
@@ -138,16 +157,14 @@ impl Drive {
         for element in results.to_elements() {
             let Element::SumItem(amount, _) = element else {
                 return Err(Error::Drive(DriveError::CorruptedElementType(
-                    "credit inflow entry is not a sum item",
+                    what.not_a_sum_item,
                 )));
             };
-            let amount: u64 = amount.try_into().map_err(|_| {
-                Error::Drive(DriveError::CriticalCorruptedState(
-                    "credit inflow entry is negative",
-                ))
-            })?;
+            let amount: u64 = amount
+                .try_into()
+                .map_err(|_| Error::Drive(DriveError::CriticalCorruptedState(what.negative)))?;
             total = total.checked_add(amount).ok_or(Error::Drive(
-                DriveError::CriticalCorruptedState("credit inflows overflow"),
+                DriveError::CriticalCorruptedState(what.overflow),
             ))?;
         }
 
@@ -527,5 +544,113 @@ mod tests {
             limit(t1 + 25 * hour + 1).daily_maximum,
             dash_to_credits!(3000)
         );
+    }
+
+    /// A reservation whose outflow the day-old base already reflects must not be subtracted
+    /// again: once the post-withdrawal total is the snapshot, both the deposit's inflow and
+    /// the withdrawal's reservation drop out together and the cycle has cancelled exactly.
+    /// Before the fix the reservation kept debiting `available()` for the hour it outlived
+    /// the snapshot.
+    #[test]
+    fn a_reservation_inside_the_day_old_base_should_not_be_subtracted_again() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .system_limits
+            .daily_withdrawal_limit_percent = Some(15);
+        let transaction = drive.grove.start_transaction();
+
+        let hour = DAY_IN_MS / 24;
+        let t0 = 10 * DAY_IN_MS;
+        let block = |time_ms: u64| BlockInfo {
+            time_ms,
+            ..Default::default()
+        };
+        let limit = |time_ms: u64| {
+            drive
+                .calculate_current_withdrawal_limit(
+                    &block(time_ms),
+                    Some(&transaction),
+                    &platform_version,
+                )
+                .expect("expected the limit")
+        };
+
+        drive
+            .add_to_system_credits(
+                dash_to_credits!(20000),
+                Some(&transaction),
+                &platform_version,
+            )
+            .expect("expected to add credits");
+        drive
+            .record_total_credits_history(&block(t0), 64, Some(&transaction), &platform_version)
+            .expect("expected to record");
+
+        // An hour later 500 Dash is deposited, and an hour after that withdrawn again:
+        // the withdrawal executes (the total returns to 20,000) and is pooled, reserving
+        // 500 Dash until t2 + 25h.
+        let t1 = t0 + hour;
+        drive
+            .add_to_system_credits(dash_to_credits!(500), Some(&transaction), &platform_version)
+            .expect("expected to add the deposit");
+        drive
+            .record_credit_inflow(
+                dash_to_credits!(500),
+                &block(t1),
+                Some(&transaction),
+                &platform_version,
+            )
+            .expect("expected to record the inflow");
+        drive
+            .record_total_credits_history(&block(t1), 64, Some(&transaction), &platform_version)
+            .expect("expected to record");
+
+        let t2 = t0 + 2 * hour;
+        drive
+            .remove_from_system_credits(
+                dash_to_credits!(500),
+                Some(&transaction),
+                &platform_version,
+            )
+            .expect("expected to remove the withdrawn credits");
+        let mut drive_operations = vec![];
+        drive
+            .add_enqueue_untied_withdrawal_transaction_operations(
+                vec![(1, vec![0u8; 32])],
+                dash_to_credits!(500),
+                &mut drive_operations,
+                &platform_version,
+            )
+            .expect("expected to enqueue the withdrawal");
+        drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &block(t2),
+                Some(&transaction),
+                &platform_version,
+                None,
+            )
+            .expect("expected to apply the pooling operations");
+        drive
+            .record_total_credits_history(&block(t2), 64, Some(&transaction), &platform_version)
+            .expect("expected to record");
+
+        // A millisecond before the withdrawal block becomes the snapshot the base is the
+        // 20,500 Dash recorded at the deposit: its inflow is inside that base and the
+        // reservation counts against it.
+        let info = limit(t2 + DAY_IN_MS - 1);
+        assert_eq!(info.daily_maximum, dash_to_credits!(3075));
+        assert_eq!(info.withdrawals_amount, dash_to_credits!(500));
+        assert_eq!(info.available(), dash_to_credits!(2575));
+
+        // The moment the post-withdrawal 20,000 Dash is the snapshot, the reservation's
+        // outflow is inside the base too and both sides of the cycle drop out together:
+        // the full 15% of 20,000 is available again, an hour before the reservation expires.
+        let info = limit(t2 + DAY_IN_MS);
+        assert_eq!(info.daily_maximum, dash_to_credits!(3000));
+        assert_eq!(info.withdrawals_amount, 0);
+        assert_eq!(info.available(), dash_to_credits!(3000));
     }
 }
