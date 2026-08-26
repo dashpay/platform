@@ -1065,8 +1065,11 @@ impl Drive {
             // post-demotion tree types and zero-contribution wrappers the
             // insert walkers use — then store the reference. The insertion
             // cache prevents duplicate empty-tree operations when several
-            // indexes share the first property (and therefore, by the
-            // cross-index validation, the identical transform and buckets).
+            // indexes produce the same qualified path. Indexes sharing a
+            // first property need NOT share a transform (grids fork into
+            // sibling subtrees via their grid-qualified level keys), which
+            // is exactly why the cache keys on the full qualified path
+            // rather than the property name.
             let mut path: Vec<Vec<u8>> = base_index_path.to_vec();
             let mut qualified_path = path.clone();
             qualified_path.push(entry_key.clone());

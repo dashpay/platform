@@ -464,9 +464,12 @@ fn time_range_update_moves_between_buckets_and_suffix_changes() {
 ///   unpinned search falls back to for a time-range query that orders by
 ///   a property the bucketed index does not carry.
 ///
-/// Both plain indexes start with `hashtag` rather than `$createdAt`:
-/// indexes sharing a first property must agree on its `timeRange`
-/// transform, so a raw index can never lead with a bucketed field.
+/// Both plain indexes start with `hashtag` rather than `$createdAt` so
+/// their `$createdAt` entries hold raw timestamps at a non-leading
+/// position — the competing-coverage shape these tests need. (A plain
+/// index MAY lead with a bucketed field: grids fork into sibling
+/// subtrees via grid-qualified level keys, so no cross-index agreement
+/// rule exists; safety comes from provenance-pinned index selection.)
 fn build_competing_index_trending_contract() -> DataContract {
     let factory =
         DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
