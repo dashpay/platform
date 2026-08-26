@@ -8,18 +8,19 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl DataContract {
-    /// Generation 1 (protocol version 14, `requiredSince`). Differences from
-    /// generation 0:
-    /// - the new contract version is passed into per-document-type update
-    ///   validation, whose own generation 1 admits required-set additions
-    ///   annotated with `requiredSince` equal to that version (shared
-    ///   behavior — the per-type dispatcher resolves the generation from the
-    ///   platform version, so generation 0 of this method never observes
-    ///   it);
-    /// - document types introduced by the update — which have no old
-    ///   counterpart for the per-type pass to see — get their `requiredSince`
-    ///   annotations validated here: each must name exactly the version this
-    ///   update creates.
+    /// Generation 1 (protocol version 14, `requiredSince`): generation 0
+    /// plus validation of `requiredSince` annotations on document types
+    /// introduced by the update, which have no old counterpart for the
+    /// per-type pass to see. (Required-set changes on *existing* document
+    /// types are judged inside the shared per-type dispatcher, which
+    /// resolves its own generation from the platform version, so this
+    /// method needs no logic of its own for them.)
+    ///
+    /// Delegating to generation 0 is safe because that generation is
+    /// shipped and therefore frozen. The checks are independent and
+    /// short-circuiting, so appending the extra one changes only which
+    /// error is reported when an update violates several rules at once —
+    /// never whether it is rejected.
     #[inline(always)]
     pub(super) fn validate_update_v1(
         &self,
@@ -27,48 +28,12 @@ impl DataContract {
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let result = self.validate_update_ownership_and_version(new_data_contract);
+        let result = self.validate_update_v0(new_data_contract, block_info, platform_version)?;
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let result = self.validate_update_config(new_data_contract, platform_version)?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        let result =
-            self.validate_update_existing_document_types(new_data_contract, platform_version)?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        let result = self.validate_update_new_document_types_required_since(new_data_contract);
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        let result = self.validate_update_schema_defs(new_data_contract, platform_version)?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        let result = self.validate_update_groups(new_data_contract);
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        let result = self.validate_update_tokens(new_data_contract, block_info);
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        let result = self.validate_update_keywords(new_data_contract);
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        Ok(self.validate_update_description(new_data_contract))
+        Ok(self.validate_update_new_document_types_required_since(new_data_contract))
     }
 
     /// Document types introduced by this update have no old counterpart,
