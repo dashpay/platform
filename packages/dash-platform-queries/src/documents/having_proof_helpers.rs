@@ -72,8 +72,10 @@ pub(super) fn assert_having_shape(
              `.with_having(<one clause bounding the selected aggregate with a range \
              operator>)` and `.with_limit(n)`, optionally \
              `.order_by_selected_aggregate(<direction>)`, with no offset and no start_at; \
-             where clauses, when present, must be equality pins on the covering compound \
-             index's leading properties."
+             where clauses, when present, pin the covering compound index's leading \
+             properties — one equality pin per property, of which at most one may instead \
+             be an `IN` of 2..=10 elements (merged entries then carry `in_key`; a null pin \
+             on another property is rejected with `IN`)."
         ),
     })
 }
@@ -153,7 +155,8 @@ pub(super) fn verify_having_query(
             "document type `{}` cannot serve this having-range query: {e}. Ranked indexes \
              are opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
              (compound-index) bound additionally needs every leading index property pinned \
-             by an equality where clause.",
+             by a where clause — equality pins, of which at most one may be an `IN` of \
+             2..=10 elements.",
             request.document_type_name,
         ),
     })?;

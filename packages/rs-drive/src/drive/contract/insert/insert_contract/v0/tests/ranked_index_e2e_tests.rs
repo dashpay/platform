@@ -72,10 +72,7 @@ use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
-use grovedb::element::IndexAxis;
-use grovedb::query_result_type::QueryResultType;
-use grovedb::{AxisKeys, Element, PathQuery, PathQueryRun};
-use grovedb_query::AxisQuery;
+use grovedb::Element;
 
 /// The one index property every doctype in the fixture ranks by.
 const GROUP_PROPERTY: &str = "restaurantId";
@@ -274,18 +271,16 @@ fn group_keys<T>(entries: &[(T, Vec<u8>)]) -> Vec<String> {
         .collect()
 }
 
-/// Run a keys-only top-k axis read through the unified PathQuery
-/// surface — the same route the ranked no-proof executor takes.
-fn run_top_k_keys(
+fn axis_top_k_keys(
     drive: &Drive,
     path: &[Vec<u8>],
-    axis: IndexAxis,
+    axis: grovedb_query::IndexAxis,
     k: u16,
     descending: bool,
-) -> AxisKeys {
-    let path_query = PathQuery::new_axis(
+) -> grovedb::AxisKeys {
+    let path_query = grovedb::PathQuery::new_axis(
         path.to_vec(),
-        AxisQuery::top_k(axis, k, 0, descending).keys_only(),
+        grovedb_query::AxisQuery::top_k(axis, k, 0, descending).keys_only(),
     );
     match drive
         .grove
@@ -294,36 +289,36 @@ fn run_top_k_keys(
             true,
             true,
             true,
-            QueryResultType::QueryPathKeyElementTrioResultType,
+            grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
             None,
             &platform_version().drive.grove_version,
         )
         .unwrap()
-        .expect("top-k axis read must succeed")
+        .expect("the keys-only axis read must succeed")
     {
-        PathQueryRun::AxisKeys { keys, .. } => keys,
-        other => panic!("expected AxisKeys, got {other:?}"),
+        grovedb::PathQueryRun::AxisKeys { keys, .. } => keys,
+        other => panic!("expected a keys-only axis page, got {other:?}"),
     }
 }
 
 fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i128, Vec<u8>)> {
-    match run_top_k_keys(drive, path, IndexAxis::Avg, k, descending) {
-        AxisKeys::Avg(pairs) => pairs,
-        other => panic!("expected avg pairs, got {other:?}"),
+    match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Avg, k, descending) {
+        grovedb::AxisKeys::Avg(pairs) => pairs,
+        other => panic!("expected avg keys, got {other:?}"),
     }
 }
 
 fn count_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(u64, Vec<u8>)> {
-    match run_top_k_keys(drive, path, IndexAxis::Count, k, descending) {
-        AxisKeys::Count(pairs) => pairs,
-        other => panic!("expected count pairs, got {other:?}"),
+    match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Count, k, descending) {
+        grovedb::AxisKeys::Count(pairs) => pairs,
+        other => panic!("expected count keys, got {other:?}"),
     }
 }
 
 fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i64, Vec<u8>)> {
-    match run_top_k_keys(drive, path, IndexAxis::Sum, k, descending) {
-        AxisKeys::Sum(pairs) => pairs,
-        other => panic!("expected sum pairs, got {other:?}"),
+    match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Sum, k, descending) {
+        grovedb::AxisKeys::Sum(pairs) => pairs,
+        other => panic!("expected sum keys, got {other:?}"),
     }
 }
 
@@ -1514,11 +1509,11 @@ fn ranked_avg_page(
                     ascending: false,
                 }],
                 where_clauses: &[],
+                resolved_time_ranges: &[],
                 limit: Some(limit),
                 offset: Some(offset),
                 has_start_at: false,
                 prove: false,
-                resolved_time_ranges: &[],
             },
             None,
             platform_version(),
@@ -1561,11 +1556,11 @@ fn verified_ranked_avg_page(
                     ascending: false,
                 }],
                 where_clauses: &[],
+                resolved_time_ranges: &[],
                 limit: Some(limit),
                 offset: Some(offset),
                 has_start_at: false,
                 prove: true,
-                resolved_time_ranges: &[],
             },
             None,
             platform_version(),
@@ -1588,7 +1583,7 @@ fn verified_ranked_avg_page(
         document_type_name: "review".to_string(),
         index: find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade")
             .expect("the fixture declares rankedAverageable on grade"),
-        equality_prefix_values: vec![],
+        prefix_branches: vec![vec![]],
         axis: RankedAxis::Avg,
         descending: true,
         k: limit as u16,
