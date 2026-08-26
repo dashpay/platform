@@ -4,7 +4,8 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
-    DocumentPropertyType, DocumentType, DocumentTypeRef, Index, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
+    DocumentPropertyType, DocumentType, DocumentTypeRef, Index, CONTRACT_VERSION_STAMP_MAX_SIZE,
+    DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -443,10 +444,12 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     }
 
     /// Generation 0 plus the document serialization format 3
-    /// contract-version stamp varint (worst case 5 bytes for a u32).
-    /// Selected together with format 3 by the version table.
+    /// contract-version stamp varint. Selected together with format 3 by
+    /// the version table.
     fn estimated_size_v1(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        Ok(self.estimated_size_v0(platform_version)?.saturating_add(5))
+        Ok(self
+            .estimated_size_v0(platform_version)?
+            .saturating_add(CONTRACT_VERSION_STAMP_MAX_SIZE))
     }
 
     fn max_size_v0(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {

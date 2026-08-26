@@ -39,6 +39,9 @@ pub const DEFAULT_FLOAT_SIZE: usize = 8;
 pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
 pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
+/// Worst-case byte length of the contract-version stamp written by document
+/// serialization format 3: a u32 varint.
+pub const CONTRACT_VERSION_STAMP_MAX_SIZE: u16 = 5;
 
 /// A `requiredSince` annotation may never exceed the version of the contract
 /// carrying it — requiredness cannot be pre-scheduled at a future version.
