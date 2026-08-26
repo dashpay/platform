@@ -16,6 +16,8 @@ pub mod restricted_creation;
 pub mod schema;
 
 mod token_costs;
+mod validate_required_since_within_contract_version;
+pub(crate) use validate_required_since_within_contract_version::validate_required_since_within_contract_version;
 pub mod v0;
 pub mod v1;
 pub mod v2;
@@ -39,6 +41,9 @@ pub const DEFAULT_FLOAT_SIZE: usize = 8;
 pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
 pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
+/// Worst-case byte length of the contract-version stamp written by document
+/// serialization format 3: a u32 varint.
+pub const CONTRACT_VERSION_STAMP_MAX_SIZE: u16 = 5;
 
 pub(crate) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
@@ -62,6 +67,7 @@ pub(crate) mod property_names {
     pub const PROPERTIES: &str = "properties";
     pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
+    pub const REQUIRED_SINCE: &str = "requiredSince";
     pub const TRANSIENT: &str = "transient";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";

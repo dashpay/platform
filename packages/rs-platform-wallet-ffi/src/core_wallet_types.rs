@@ -916,7 +916,14 @@ fn transaction_type_to_u8(
 /// [`MasternodeRecord`], built by [`masternode_entry_ffi`] and
 /// returned by `platform_wallet_manager_list_masternodes`. Inline
 /// fixed-size hashes with `has_*` gates (mirroring `TransactionRecordFFI`)
-/// keep heap ownership to the three C strings.
+/// keep heap ownership to the C strings.
+///
+/// # ABI stability
+///
+/// This is the original, frozen layout returned by the unversioned
+/// `platform_wallet_manager_list_masternodes` entry point. Do not add, remove,
+/// or reorder fields. New projections belong in a versioned wrapper such as
+/// [`MasternodeEntryV2FFI`].
 #[repr(C)]
 pub struct MasternodeEntryFFI {
     /// proTxHash (32 wire bytes) — group key; also the registration txid.
@@ -994,12 +1001,6 @@ pub struct MasternodeEntryFFI {
     pub platform_in_wallet: bool,
     pub platform_account_type: u8,
     pub platform_key_index: u32,
-    /// Where this record came from: 0 = one of the wallet's own masternodes
-    /// (aggregated from its provider transactions), 1 = tracked by the user
-    /// independently of every wallet.
-    pub source: u8,
-    /// User label of a tracked masternode, or null.
-    pub label: *mut c_char,
     /// Whether the platform-node ownership check was actually *possible* for
     /// this query: `true` when the wallet's derived platform-node index had
     /// entries to compare against, `false` when it was empty/unavailable (no
@@ -1009,6 +1010,20 @@ pub struct MasternodeEntryFFI {
     /// key rotation to an external node) from "couldn't check yet", so it
     /// never leaves stale ownership set. See `MasternodeSync`.
     pub platform_ownership_checked: bool,
+}
+
+/// Version 2 masternode projection. The frozen V1 entry remains the first
+/// field, preserving one canonical definition for all established fields;
+/// V2 adds record provenance and the optional tracked-node label.
+#[repr(C)]
+pub struct MasternodeEntryV2FFI {
+    pub v1: MasternodeEntryFFI,
+    /// Where this record came from: 0 = one of the wallet's own masternodes
+    /// (aggregated from its provider transactions), 1 = tracked by the user
+    /// independently of every wallet.
+    pub source: u8,
+    /// User label of a tracked masternode, or null.
+    pub label: *mut c_char,
 }
 
 /// Encode a hash160 as a network-specific base58 P2PKH address string
@@ -1138,14 +1153,26 @@ pub(crate) fn masternode_entry_ffi(
         platform_in_wallet,
         platform_account_type,
         platform_key_index,
+        platform_ownership_checked: mn.platform_ownership_checked,
+    }
+}
+
+/// Flatten one record into the additive V2 C-ABI entry.
+pub(crate) fn masternode_entry_v2_ffi(
+    mn: &MasternodeRecord,
+    network: dashcore::Network,
+) -> MasternodeEntryV2FFI {
+    use std::ffi::CString;
+
+    MasternodeEntryV2FFI {
+        v1: masternode_entry_ffi(mn, network),
         source: mn.source.as_u8(),
         label: mn
             .label
             .clone()
-            .and_then(|l| CString::new(l).ok())
+            .and_then(|label| CString::new(label).ok())
             .map(CString::into_raw)
             .unwrap_or(std::ptr::null_mut()),
-        platform_ownership_checked: mn.platform_ownership_checked,
     }
 }
 
@@ -1490,5 +1517,98 @@ mod tests {
         // Release the entry's heap C strings through the public free routine.
         let entries = Box::into_raw(vec![entry].into_boxed_slice()) as *mut MasternodeEntryFFI;
         unsafe { crate::wallet::platform_wallet_manager_free_masternodes(entries, 1) };
+    }
+
+    /// Pin the original array element layout used by already-built C/Swift
+    /// consumers. A field addition or reorder here is an ABI break even when
+    /// all Rust callers are recompiled together.
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn masternode_entry_v1_layout_is_frozen() {
+        assert_eq!(std::mem::size_of::<MasternodeEntryFFI>(), 296);
+        assert_eq!(std::mem::align_of::<MasternodeEntryFFI>(), 8);
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, service_address),
+            144
+        );
+        assert_eq!(std::mem::offset_of!(MasternodeEntryFFI, owner_address), 160);
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, operator_public_key),
+            176
+        );
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, payout_address),
+            248
+        );
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, platform_key_index),
+            284
+        );
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, platform_ownership_checked),
+            288
+        );
+        assert_eq!(std::mem::offset_of!(MasternodeEntryV2FFI, v1), 0);
+    }
+
+    #[test]
+    fn masternode_entry_v2_carries_additive_fields_and_frees_them() {
+        let mut mn = MasternodeRecord::default();
+        mn.source = platform_wallet::masternode::MasternodeSource::Tracked;
+        mn.label = Some("tracked label".to_string());
+        let entry = masternode_entry_v2_ffi(&mn, dashcore::Network::Testnet);
+        assert_eq!(entry.source, 1);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(entry.label) }
+                .to_str()
+                .unwrap(),
+            "tracked label"
+        );
+        let entries = Box::into_raw(vec![entry].into_boxed_slice()) as *mut MasternodeEntryV2FFI;
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes_v2(entries, 1) };
+    }
+
+    #[test]
+    fn masternode_v1_and_v2_arrays_preserve_second_element_stride() {
+        let mut first = MasternodeRecord::default();
+        first.pro_tx_hash = [1; 32];
+        first.service_address = Some("1.1.1.1:9999".to_string());
+        first.source = platform_wallet::masternode::MasternodeSource::Tracked;
+        first.label = Some("first".to_string());
+        let mut second = MasternodeRecord::default();
+        second.pro_tx_hash = [2; 32];
+        second.service_address = Some("2.2.2.2:9999".to_string());
+        second.source = platform_wallet::masternode::MasternodeSource::Tracked;
+        second.label = Some("second".to_string());
+
+        let v1 = vec![
+            masternode_entry_ffi(&first, dashcore::Network::Testnet),
+            masternode_entry_ffi(&second, dashcore::Network::Testnet),
+        ];
+        let v1 = Box::into_raw(v1.into_boxed_slice()) as *mut MasternodeEntryFFI;
+        let v1_slice = unsafe { std::slice::from_raw_parts(v1, 2) };
+        assert_eq!(v1_slice[1].pro_tx_hash, [2; 32]);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(v1_slice[1].service_address) }
+                .to_str()
+                .unwrap(),
+            "2.2.2.2:9999"
+        );
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes(v1, 2) };
+
+        let v2 = vec![
+            masternode_entry_v2_ffi(&first, dashcore::Network::Testnet),
+            masternode_entry_v2_ffi(&second, dashcore::Network::Testnet),
+        ];
+        let v2 = Box::into_raw(v2.into_boxed_slice()) as *mut MasternodeEntryV2FFI;
+        let v2_slice = unsafe { std::slice::from_raw_parts(v2, 2) };
+        assert_eq!(v2_slice[1].v1.pro_tx_hash, [2; 32]);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(v2_slice[1].label) }
+                .to_str()
+                .unwrap(),
+            "second"
+        );
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes_v2(v2, 2) };
     }
 }

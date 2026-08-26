@@ -376,6 +376,7 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version: None,
                 id,
                 properties,
                 owner_id,

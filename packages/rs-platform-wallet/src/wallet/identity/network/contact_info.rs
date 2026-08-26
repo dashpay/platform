@@ -726,6 +726,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         properties.insert("privateData".to_string(), Value::Bytes(private_data));
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: doc_id.unwrap_or_else(|| Identifier::from([0u8; 32])),
             owner_id: *identity_id,
             properties,

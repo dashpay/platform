@@ -745,6 +745,7 @@ fn parse_document_properties(
             &mut document_properties,
             &required_fields,
             &transient_fields,
+            true,
             property_key,
             property_value,
             root_schema,

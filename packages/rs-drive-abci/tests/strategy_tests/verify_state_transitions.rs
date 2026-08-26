@@ -3,7 +3,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -541,15 +541,28 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         //     )
                                         //     .expect("expected to get document")
                                         // );
-                                        assert_eq!(
-                                            document,
+                                        let mut expected_document =
                                             Document::try_from_create_transition_action(
                                                 creation_action,
                                                 batch_transition.owner_id(),
                                                 platform_version,
                                             )
-                                            .expect("expected to get document")
-                                        );
+                                            .expect("expected to get document");
+                                        // The contract-version stamp records the
+                                        // contract version at execution time inside
+                                        // the block, but this harness rebuilds the
+                                        // action against post-block state — so a
+                                        // same-block contract update makes the
+                                        // rebuilt stamp postdate the stored one.
+                                        // Align only in that direction; a stored
+                                        // stamp must never exceed the rebuilt one.
+                                        if document.contract_version()
+                                            < expected_document.contract_version()
+                                        {
+                                            expected_document
+                                                .set_contract_version(document.contract_version());
+                                        }
+                                        assert_eq!(document, expected_document);
                                     } else {
                                         //there is the possibility that the state transition was not executed because it already existed,
                                         // we can discount that for now in tests
@@ -560,15 +573,24 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     if *was_executed {
                                         // it's also possible we deleted something we replaced
                                         if let Some(document) = document {
-                                            assert_eq!(
-                                                document,
+                                            let mut expected_document =
                                                 Document::try_from_replace_transition_action(
                                                     replace_action,
                                                     batch_transition.owner_id(),
                                                     platform_version,
                                                 )
-                                                .expect("expected to get document")
-                                            );
+                                                .expect("expected to get document");
+                                            // Same post-block rebuild skew as the
+                                            // create arm: align the stamp only when
+                                            // the rebuilt one postdates the stored one
+                                            if document.contract_version()
+                                                < expected_document.contract_version()
+                                            {
+                                                expected_document.set_contract_version(
+                                                    document.contract_version(),
+                                                );
+                                            }
+                                            assert_eq!(document, expected_document);
                                         }
                                     } else {
                                         //there is the possibility that the state transition was not executed and the state is equal to the previous
