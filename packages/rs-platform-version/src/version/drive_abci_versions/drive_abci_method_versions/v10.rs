@@ -14,8 +14,10 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 
 /// Drive ABCI method versions 10. Introduced in protocol v14: turns on
 /// `record_total_credits_history_for_withdrawals` (`Some(0)`), the per-block record of the total
-/// credits in Platform that the day-lagged daily withdrawal limit reads. Everything else matches
-/// `DRIVE_ABCI_METHOD_VERSIONS_V9`.
+/// credits in Platform that the day-lagged daily withdrawal limit reads, and bumps
+/// `cleanup_expired_locks_of_withdrawal_amounts` to 1 so the per-block cleanup also prunes the
+/// expired entries of the credit inflows sum tree the net daily withdrawal limit reads.
+/// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V9`.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
         init_chain: 0,
@@ -91,7 +93,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         update_broadcasted_withdrawal_statuses: 0,
         rebroadcast_expired_withdrawal_documents: 1,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
-        cleanup_expired_locks_of_withdrawal_amounts: 0,
+        cleanup_expired_locks_of_withdrawal_amounts: 1, // changed in v14: also prunes expired entries of the credit inflows sum tree
         record_total_credits_history_for_withdrawals: Some(0), // changed in v14: per-block total credits history for the day-lagged daily withdrawal limit
     },
     voting: DriveAbciVotingMethodVersions {

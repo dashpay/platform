@@ -363,7 +363,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 588840);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 769840);
 
         platform
             .drive
@@ -382,7 +382,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 149993606160); // about 0.5 Dash starting balance + 1 Dash asset lock top up
+        assert_eq!(identity_balance, 149988619160); // about 0.5 Dash starting balance + 1 Dash asset lock top up
     }
 
     #[test]
