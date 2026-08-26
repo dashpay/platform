@@ -1,0 +1,65 @@
+name: Migration Validate (mac-runner-1b)
+
+on:
+  push:
+    branches:
+      - ci/migration-validate-mac-runner
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate new runner environment
+    runs-on: [migration-validate]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Runner identity
+        run: |
+          whoami
+          id
+          echo "HOME=$HOME"
+          test "$(whoami)" = "githubrunner"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust smoke build
+        run: |
+          rustup target list --installed | grep aarch64-apple-ios
+          rm -rf "$RUNNER_TEMP/migration-smoke"
+          cargo new "$RUNNER_TEMP/migration-smoke" --bin
+          cargo build --manifest-path "$RUNNER_TEMP/migration-smoke/Cargo.toml" -q
+          "$RUNNER_TEMP/migration-smoke/target/debug/migration-smoke"
+          rm -rf "$RUNNER_TEMP/migration-smoke"
+
+      - name: Toolchain visibility
+        run: |
+          xcodebuild -version
+          cmake --version | head -1
+          cbindgen --version
+          git --version
+
+      - name: Restore protoc cache (connectivity check)
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.local/protoc-32.0/bin
+            ~/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+          restore-keys: |
+            protoc/32.0/${{ runner.os }}/
+
+      - name: Simulator boot smoke
+        run: |
+          UDID=$(xcrun simctl create migration-ci-test "iPhone 16" com.apple.CoreSimulator.SimRuntime.iOS-18-6)
+          echo "created $UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl shutdown "$UDID"
+          xcrun simctl delete "$UDID"
