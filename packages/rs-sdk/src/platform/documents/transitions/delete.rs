@@ -179,6 +179,7 @@ impl DocumentDeleteTransitionBuilder {
 
         // Create a minimal document for deletion
         let document = Document::V0(dpp::document::DocumentV0 {
+            contract_version: None,
             id: self.document_id,
             owner_id: self.owner_id,
             properties: Default::default(),

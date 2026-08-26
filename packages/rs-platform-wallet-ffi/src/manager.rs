@@ -8,8 +8,10 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, PersistenceCallbacks, PersistenceCallbacksExtension, PersistenceCapabilitiesFFI,
-    PersistenceExtensionCallbacks, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    FFIPersister, FreeTrackedMasternodesFn, LoadTrackedMasternodesFn, PersistDpnsNameStatesFn,
+    PersistTrackedMasternodesFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -187,9 +189,9 @@ unsafe fn persistence_extension_callbacks(
     /// Read one size-gated `Option<fn>` field: present only when the
     /// caller's `struct_size` proves the complete field exists.
     macro_rules! gated {
-        ($field:ident) => {{
+        ($field:ident, $callback:ty) => {{
             let end = std::mem::offset_of!(PersistenceCallbacksExtension, $field)
-                + std::mem::size_of_val(&(*extension).$field);
+                + std::mem::size_of::<Option<$callback>>();
             if supplied_size < end {
                 None
             } else {
@@ -199,10 +201,16 @@ unsafe fn persistence_extension_callbacks(
     }
 
     PersistenceExtensionCallbacks {
-        dpns_name_states: gated!(on_persist_dpns_name_states_fn),
-        persist_tracked_masternodes: gated!(on_persist_tracked_masternodes_fn),
-        load_tracked_masternodes: gated!(on_load_tracked_masternodes_fn),
-        load_tracked_masternodes_free: gated!(on_load_tracked_masternodes_free_fn),
+        dpns_name_states: gated!(on_persist_dpns_name_states_fn, PersistDpnsNameStatesFn),
+        persist_tracked_masternodes: gated!(
+            on_persist_tracked_masternodes_fn,
+            PersistTrackedMasternodesFn
+        ),
+        load_tracked_masternodes: gated!(on_load_tracked_masternodes_fn, LoadTrackedMasternodesFn),
+        load_tracked_masternodes_free: gated!(
+            on_load_tracked_masternodes_free_fn,
+            FreeTrackedMasternodesFn
+        ),
     }
 }
 
@@ -863,6 +871,16 @@ mod tests {
         0
     }
 
+    /// Exact allocation shape used by a host compiled before the tracked
+    /// callback trio was appended to `PersistenceCallbacksExtension`.
+    #[repr(C)]
+    struct DpnsOnlyPersistenceCallbacksExtension {
+        struct_size: usize,
+        version: u32,
+        reserved: u32,
+        on_persist_dpns_name_states_fn: Option<PersistDpnsNameStatesFn>,
+    }
+
     fn persistence_callbacks() -> PersistenceCallbacks {
         PersistenceCallbacks {
             on_changeset_begin_fn: Some(begin_changeset),
@@ -1195,16 +1213,24 @@ mod tests {
     /// yields the dpns callback and nothing else — additive size gating.
     #[test]
     fn dpns_only_sized_extension_reads_only_the_dpns_field() {
-        let dpns_only_size = std::mem::offset_of!(
-            PersistenceCallbacksExtension,
-            on_persist_tracked_masternodes_fn
-        );
-        let ext = PersistenceCallbacksExtension {
-            struct_size: dpns_only_size,
+        let ext = DpnsOnlyPersistenceCallbacksExtension {
+            struct_size: std::mem::size_of::<DpnsOnlyPersistenceCallbacksExtension>(),
+            version: PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+            reserved: 0,
             on_persist_dpns_name_states_fn: Some(persist_dpns_name_states),
-            ..Default::default()
         };
-        let read = unsafe { persistence_extension_callbacks(&ext) };
+        assert_eq!(
+            ext.struct_size,
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_tracked_masternodes_fn
+            )
+        );
+        let read = unsafe {
+            persistence_extension_callbacks(
+                (&ext as *const DpnsOnlyPersistenceCallbacksExtension).cast(),
+            )
+        };
         assert!(read.dpns_name_states.is_some());
         assert!(read.persist_tracked_masternodes.is_none());
         assert!(read.load_tracked_masternodes.is_none());

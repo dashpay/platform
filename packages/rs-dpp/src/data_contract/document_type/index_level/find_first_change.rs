@@ -159,4 +159,40 @@ impl IndexLevel {
 
         None
     }
+
+    /// Time-range counterpart of [`Self::find_first_countability_change`].
+    /// Recursively finds the first index path where the `time_range`
+    /// transform differs between two `IndexLevel` trees. The transform
+    /// dictates how many index entries each document produces and under
+    /// which bucket keys, so changing it after creation would leave already
+    /// stored documents indexed under stale buckets — it is immutable.
+    ///
+    /// Returns `None` if the transform is the same everywhere.
+    #[cfg(feature = "validation")]
+    pub(super) fn find_first_time_range_change(&self, new: &IndexLevel) -> Option<String> {
+        if self.time_range() != new.time_range() {
+            let fmt = |t: Option<&super::TimeRangeTransform>| match t {
+                Some(t) => format!(
+                    "Some(on: {:?}, range: {}s, step: {}s, phase: {}s)",
+                    t.source, t.range_seconds, t.step_seconds, t.phase_seconds
+                ),
+                None => "None".to_string(),
+            };
+            return Some(format!(
+                "(timeRange: {} -> {})",
+                fmt(self.time_range()),
+                fmt(new.time_range()),
+            ));
+        }
+
+        for (key, old_sub) in &self.sub_index_levels {
+            if let Some(new_sub) = new.sub_index_levels.get(key) {
+                if let Some(inner_path) = old_sub.find_first_time_range_change(new_sub) {
+                    return Some(format!("{} -> {}", key, inner_path));
+                }
+            }
+        }
+
+        None
+    }
 }

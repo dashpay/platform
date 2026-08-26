@@ -95,7 +95,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             },
             masternode_vote_state_transition_balance_pre_check: 0,
             contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                basic_structure: Some(1),
+                basic_structure: Some(2), // changed: rejects `requiredSince` other than 1 on a newly created contract — the annotation must name the version the change arrives with, and a fresh contract is version 1
                 advanced_structure: Some(1),
                 identity_signatures: None,
                 nonce: Some(0),

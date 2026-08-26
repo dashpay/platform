@@ -8,12 +8,16 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
-use crate::drive::document::index_level_tree_types::index_level_tree_types_with_continuation_demotion;
+use crate::drive::document::index_level_tree_types::{
+    index_level_tree_types_with_continuation_demotion, time_range_index_keys,
+};
 use crate::drive::document::unique_event_id;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::drive::Drive;
-use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
+use crate::util::object_size_info::{
+    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathInfo,
+};
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -108,13 +112,23 @@ impl Drive {
             let mut index_path: Vec<Vec<u8>> = contract_document_type_path.clone();
             index_path.push(Vec::from(name.as_bytes()));
 
+            // The level key is the path segment; the document value is read
+            // from the *source property* — they differ on a time-range
+            // level, whose key is grid-qualified
+            // (`TimeRangeTransform::storage_key`) while the timestamp lives
+            // under the bare property name. Mirrors the insert walker.
+            let property_name = sub_level
+                .time_range()
+                .map(|transform| transform.source.as_str())
+                .unwrap_or(name.as_str());
+
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
             let document_top_field = document_and_contract_info
                 .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
-                    name,
+                    property_name,
                     document_type,
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
@@ -127,7 +141,11 @@ impl Drive {
                 let document_top_field_estimated_size = document_and_contract_info
                     .owned_document_info
                     .document_info
-                    .get_estimated_size_for_document_type(name, document_type, platform_version)?;
+                    .get_estimated_size_for_document_type(
+                        property_name,
+                        document_type,
+                        platform_version,
+                    )?;
 
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
@@ -155,36 +173,67 @@ impl Drive {
             let any_fields_null = document_top_field.is_empty();
             let all_fields_null = document_top_field.is_empty();
 
-            let mut index_path_info = if document_and_contract_info
-                .owned_document_info
-                .document_info
-                .is_document_size()
-            {
-                // This is a stateless operation
-                PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
-            } else {
-                PathInfo::PathAsVec::<0>(index_path)
-            };
+            // Mirror the insert side's time-range fan-out: a time-range
+            // first-property node removes one index entry per overlapping
+            // range bucket the document's timestamp fell into. The keys are
+            // recomputed deterministically through the same shared helper the
+            // insert walker uses, so they match exactly what insert wrote —
+            // including the null case (single null entry) and the pre-origin
+            // case (no entries on either side).
+            let index_keys: Vec<DriveKeyInfo> = time_range_index_keys(
+                sub_level.time_range(),
+                document_top_field,
+                // A validated contract cannot exceed this; the clamp only
+                // bounds estimation work for unvalidated transforms. The
+                // `unwrap_or(1)` arm is a protocol version without
+                // time-range indexes, where no transform can exist.
+                platform_version
+                    .system_limits
+                    .max_time_range_overlap_factor
+                    .unwrap_or(1),
+            );
 
-            // we push the actual value of the index path
-            index_path_info.push(document_top_field)?;
-            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
+            let bucket_count = index_keys.len();
+            for (bucket, index_key) in index_keys.into_iter().enumerate() {
+                // The final bucket takes ownership of `index_path`; earlier
+                // buckets (only a time-range fan-out has more than one)
+                // clone it.
+                let own_index_path = if bucket + 1 == bucket_count {
+                    std::mem::take(&mut index_path)
+                } else {
+                    index_path.clone()
+                };
+                let mut index_path_info = if document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .is_document_size()
+                {
+                    // This is a stateless operation
+                    PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(own_index_path))
+                } else {
+                    PathInfo::PathAsVec::<0>(own_index_path)
+                };
 
-            self.remove_indices_for_index_level_for_contract_operations(
-                document_and_contract_info,
-                index_path_info,
-                sub_level,
-                any_fields_null,
-                all_fields_null,
-                value_tree_type,
-                &storage_flags,
-                previous_batch_operations,
-                estimated_costs_only_with_layer_info,
-                event_id,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
+                // we push the actual value of the index path
+                index_path_info.push(index_key)?;
+                // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
+
+                self.remove_indices_for_index_level_for_contract_operations(
+                    document_and_contract_info,
+                    index_path_info,
+                    sub_level,
+                    any_fields_null,
+                    all_fields_null,
+                    value_tree_type,
+                    &storage_flags,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    event_id,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+            }
         }
         Ok(())
     }
