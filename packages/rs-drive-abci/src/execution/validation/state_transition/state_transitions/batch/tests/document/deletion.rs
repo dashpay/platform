@@ -17,6 +17,20 @@ mod deletion_tests {
         .await;
     }
 
+    /// PROTOCOL_VERSION_13: fee predating every v14 change on this path —
+    /// both the contract-version stamp (this PR) and the dashpay
+    /// payment-address contract changes (#4380), which is why it differs
+    /// from the pre-stamp v14 baseline by more than the stamp bytes. Pinned
+    /// so v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_protocol_version_13(
+    ) {
+        run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
+            13, 1678920,
+        )
+        .await;
+    }
+
     /// PROTOCOL_VERSION_11: pre-B7 fee — the transformer's local execution
     /// context was dropped, so the user wasn't charged for the per-transition
     /// grovedb reads `try_from_borrowed_*_with_contract_lookup` performs.

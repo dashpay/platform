@@ -3965,6 +3965,19 @@ mod token_burn_tests {
         .await;
     }
 
+    /// PROTOCOL_VERSION_13: pre-stamp fee — genesis system documents are not
+    /// stamped before document serialization format 3 (v14), so v13 costs
+    /// must be exactly what they were before the `requiredSince` changes.
+    /// Pinned so v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads_protocol_version_13(
+    ) {
+        run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+            13, 4_367_880,
+        )
+        .await;
+    }
+
     /// PROTOCOL_VERSION_11: pre-B7 fee — the transformer's local execution
     /// context was dropped, so the three group-action drive reads
     /// (fetch_action_is_closed +

@@ -339,6 +339,17 @@ mod replacement_tests {
         .await;
     }
 
+    /// PROTOCOL_VERSION_13: fee predating every v14 change on this path —
+    /// both the contract-version stamp (this PR) and the dashpay
+    /// payment-address contract changes (#4380), which is why it differs
+    /// from the pre-stamp v14 baseline by more than the stamp bytes. Pinned
+    /// so v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_protocol_version_13() {
+        run_document_replace_on_document_type_that_is_mutable_at_protocol_version(13, 1411320)
+            .await;
+    }
+
     /// PROTOCOL_VERSION_11: pre-B7 happy-path fee — transformer's local
     /// execution context was dropped, so per-transition grovedb reads
     /// were not billed. Pinned so v11 chain history stays bit-for-bit
@@ -1043,6 +1054,16 @@ mod replacement_tests {
         .await;
     }
 
+    /// PROTOCOL_VERSION_13: pre-stamp fee — document serialization format 3
+    /// (the contract-version stamp) activates at v14, so v13 costs must be
+    /// exactly what they were before the `requiredSince` changes. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_protocol_version_13() {
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(13, 460920)
+            .await;
+    }
+
     /// PROTOCOL_VERSION_11: pre-fix bump-only fee (no charge for the fetch
     /// + validation work). Pinned so v11 chain history stays bit-for-bit
     /// reproducible.
@@ -1295,6 +1316,20 @@ mod replacement_tests {
         run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
             457680, // v14: stamped documents (see happy-path baseline note)
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: pre-stamp fee — document serialization format 3
+    /// (the contract-version stamp) activates at v14, so v13 costs must be
+    /// exactly what they were before the `requiredSince` changes. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_protocol_version_13(
+    ) {
+        run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
+            13,
+            457660,
         )
         .await;
     }

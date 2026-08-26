@@ -32,6 +32,15 @@ mod token_selling_tests {
         .await;
     }
 
+    /// PROTOCOL_VERSION_13: pre-stamp buyer balance — genesis system documents
+    /// are not stamped before document serialization format 3 (v14), so v13
+    /// costs must be exactly what they were before the `requiredSince`
+    /// changes. Pinned so v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_successful_direct_purchase_single_price_protocol_version_13() {
+        run_successful_direct_purchase_single_price_at_protocol_version(13, 699_868_073_580).await;
+    }
+
     /// PROTOCOL_VERSION_11: pre-B4/B7 buyer balance — query_documents +
     /// transformer-phase reads were dropped, so the buyer paid 7,900
     /// credits less in fees. Pinned so v11 chain history stays
