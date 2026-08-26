@@ -1,0 +1,17 @@
+name: Migration CI (mac-runner-1b)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rs-workspace:
+    uses: ./.github/workflows/tests-rs-workspace.yml
+    secrets: inherit
+
+  rs-wallet:
+    uses: ./.github/workflows/tests-rs-wallet.yml
+    secrets: inherit
+
+  swift-sdk:
+    uses: ./.github/workflows/swift-sdk-build.yml
+    secrets: inherit
