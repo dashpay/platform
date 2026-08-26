@@ -880,6 +880,123 @@ fn newest_sent_per_recipient(
     newest
 }
 
+/// Ingest one identity's collapsed **received** contact requests into local
+/// state, returning whether every write reached disk.
+///
+/// A `false` return means a persist failed and the loop stopped there, so an
+/// unknown number of the requests handed in were never ingested and their
+/// account builds were never enqueued. Two things must follow from it, and
+/// they are the caller's to do: leave the received high-water cursor
+/// unadvanced (so the next sweep re-fetches this range) and mark the identity
+/// in the [`ContactSyncReport`] (so the pass cannot report itself complete).
+/// Stopping rather than continuing past the failure is deliberate — ingesting
+/// later requests would let the cursor's max cover a request that never
+/// persisted if the caller ever advanced it.
+///
+/// Split out of the sweep so the persist-failure branches are reachable in a
+/// test without standing up a Platform that answers document queries.
+fn ingest_received_requests(
+    managed: &mut crate::wallet::identity::ManagedIdentity,
+    persister: &crate::wallet::persister::WalletPersister,
+    identity_id: Identifier,
+    newest_by_sender: std::collections::BTreeMap<Identifier, ContactRequest>,
+    rotated_contacts: &mut Vec<Identifier>,
+    all_requests: &mut Vec<ContactRequest>,
+) -> bool {
+    for (sender_id, contact_request) in newest_by_sender {
+        // Ignore (per-sender mute, local-only): an ignored sender's requests
+        // are ALL suppressed from the main pending list — including rotated
+        // (bumped accountReference) ones. Checked FIRST and per-sender, unlike
+        // the old per-(sender, accountReference) reject: if you ignored the
+        // person you ignored them. `unignore_sender` rewinds the cursor so
+        // this skip stops firing on the next sweep.
+        if managed.is_sender_ignored(&sender_id) {
+            tracing::debug!(
+                sender = %sender_id,
+                recipient = %identity_id,
+                account_reference = contact_request.account_reference,
+                "Skipping ignored sender's contact request"
+            );
+            continue;
+        }
+        // Do NOT skip just because the sender is in `sent_contact_requests` —
+        // that is the reciprocal we need to let through to auto-establish.
+        // True dedup is (sender, accountReference): the SAME reference as the
+        // tracked incoming/established state is a re-ingest of a known doc; a
+        // DIFFERENT reference from a known sender is a rotation request
+        // (receive side) and must get through.
+        let tracked_reference = managed
+            .dashpay()
+            .incoming_contact_requests()
+            .get(&sender_id)
+            .map(|r| r.account_reference)
+            .or_else(|| {
+                managed
+                    .dashpay()
+                    .established_contacts()
+                    .get(&sender_id)
+                    .map(|c| c.incoming_request.account_reference)
+            });
+        if tracked_reference == Some(contact_request.account_reference) {
+            continue;
+        }
+
+        if tracked_reference.is_some() {
+            // Rotation: supersede the tracked request. When an established
+            // contact was re-keyed, queue the stale external account for
+            // teardown so the build sweep re-registers from the new xpub.
+            match managed.apply_rotated_incoming_request(contact_request.clone(), persister) {
+                Ok(true) => rotated_contacts.push(sender_id),
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::error!(
+                        recipient = %identity_id, error = %e,
+                        "received-request rotation persist failed; leaving received cursor for retry"
+                    );
+                    return false;
+                }
+            }
+            all_requests.push(contact_request);
+            continue;
+        }
+
+        if let Err(e) = managed.add_incoming_contact_request(contact_request.clone(), persister) {
+            tracing::error!(
+                recipient = %identity_id, error = %e,
+                "received-request ingest persist failed; leaving received cursor for retry"
+            );
+            return false;
+        }
+        all_requests.push(contact_request);
+    }
+    true
+}
+
+/// Ingest one identity's collapsed **sent** contact requests into local state,
+/// returning whether every write reached disk. The sent-side counterpart of
+/// [`ingest_received_requests`], with the same contract on a `false` return:
+/// the sent cursor stays unadvanced and the identity is marked in the report.
+///
+/// `add_sent_contact_request` carries its own duplicate / metadata-loss guard,
+/// so re-ingesting the same range on the next sweep is safe.
+fn ingest_sent_requests(
+    managed: &mut crate::wallet::identity::ManagedIdentity,
+    persister: &crate::wallet::persister::WalletPersister,
+    identity_id: Identifier,
+    newest_by_recipient: std::collections::BTreeMap<Identifier, ContactRequest>,
+) -> bool {
+    for (_recipient_id, contact_request) in newest_by_recipient {
+        if let Err(e) = managed.add_sent_contact_request(contact_request, persister) {
+            tracing::error!(
+                owner = %identity_id, error = %e,
+                "sent-request ingest persist failed; leaving sent cursor for retry"
+            );
+            return false;
+        }
+    }
+    true
+}
+
 /// Snapshot-aware removal of drained queue entries. Removes from `queue`
 /// only those entries still **value-equal** to a snapshot in `drained` —
 /// the full entries snapshotted before the lock-free drain. An entry a
@@ -1113,34 +1230,59 @@ pub struct ContactSyncReport {
     pub requests: Vec<ContactRequest>,
     /// Identities the pass tried to fetch for.
     pub identities_attempted: usize,
-    /// Identities nothing was ingested for — the received-side fetch failed,
-    /// or their local state was gone when the write guard was taken. Their
+    /// Identities whose **received-side fetch** did not come back. Purely a
+    /// statement about reaching Platform — a local fault is NOT recorded here
+    /// (see [`Self::unpersisted_identities`]), because this list is what
+    /// [`Self::is_fully_degraded`] reads to call an outage, and a local
+    /// failure on a pass Platform answered in full is not an outage. Their
     /// high-water cursors are deliberately left unadvanced, so the next sweep
     /// re-fetches exactly the range this one missed.
     pub failed_identities: Vec<Identifier>,
     /// Identities whose received side ingested but whose **sent**-side fetch
     /// failed. Their incoming requests are real; what is missing is the
     /// reciprocal reconciliation that establishes contacts, and the sent
-    /// cursor stays unadvanced so the next sweep retries it.
+    /// cursor stays unadvanced so the next sweep retries it. Remote, like
+    /// [`Self::failed_identities`].
     pub degraded_identities: Vec<Identifier>,
+    /// Identities whose fetches were answered but whose **local ingest** did
+    /// not land: a persister `store()` failure part-way through either
+    /// direction, or the wallet / managed identity being gone by the time the
+    /// write guard was taken.
+    ///
+    /// Kept apart from the two remote lists on purpose. The failure is real
+    /// and definitionally leaves the pass incomplete — the ingest loop
+    /// `break`s, abandoning every remaining fetched request of that direction,
+    /// and holds that direction's cursor back for retry — so it must stop the
+    /// pass being recorded as a completed sync. But it says nothing about
+    /// Platform's reachability, so it must not be able to turn a pass that
+    /// reached everybody into [`Self::is_fully_degraded`] and, through
+    /// [`DashPayView::sync_contact_requests`], a
+    /// [`PlatformWalletError::ContactSyncUnreachable`].
+    pub unpersisted_identities: Vec<Identifier>,
 }
 
 impl ContactSyncReport {
-    /// Every identity's fetches, both directions, were answered.
+    /// Every identity's fetches, both directions, were answered **and**
+    /// everything they returned reached local state.
     ///
     /// The only state in which the pass may be recorded as a completed one. A
     /// wallet with no identities is complete by this rule — there was nothing
     /// to fetch, which is an answer rather than a degradation.
     pub fn is_complete(&self) -> bool {
-        self.failed_identities.is_empty() && self.degraded_identities.is_empty()
+        self.failed_identities.is_empty()
+            && self.degraded_identities.is_empty()
+            && self.unpersisted_identities.is_empty()
     }
 
-    /// Not one identity's contact documents could be read.
+    /// Not one identity's contact documents could be **read from Platform**.
     ///
     /// The signature of an unreachable Platform rather than of an empty
     /// wallet, and the ending that must never be mistaken for a clean pass. A
     /// wallet with no identities is NOT fully degraded: nothing was attempted,
-    /// so nothing failed.
+    /// so nothing failed. Neither is a wallet whose fetches all succeeded and
+    /// whose local writes all failed — that is a local fault, and reporting it
+    /// as an outage would send a host retrying the network for a disk it
+    /// cannot write.
     pub fn is_fully_degraded(&self) -> bool {
         self.identities_attempted > 0 && self.failed_identities.len() == self.identities_attempted
     }
@@ -1315,16 +1457,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let candidates = {
                 let mut wm = self.wallet_manager.write().await;
                 let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) else {
-                    // Fetched, but there is no longer anywhere to put it. Same
-                    // outcome for this identity as a failed fetch — nothing
-                    // ingested — so it is reported the same way.
-                    report.failed_identities.push(identity_id);
+                    // Fetched, but there is no longer anywhere to put it —
+                    // nothing of this identity's is ingested. A LOCAL fault,
+                    // not a remote one: Platform answered. Recorded so the
+                    // pass cannot be called complete, and recorded in the
+                    // local bucket so it cannot be mistaken for an outage.
+                    report.unpersisted_identities.push(identity_id);
                     continue;
                 };
                 let managed = match info.identity_manager.managed_identity_mut(&identity_id) {
                     Some(m) => m,
                     None => {
-                        report.failed_identities.push(identity_id);
+                        report.unpersisted_identities.push(identity_id);
                         continue;
                     }
                 };
@@ -1336,9 +1480,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // failure would let the cursor advance past a request that
                 // never persisted, so the next `$createdAt >` sweep would skip
                 // it. On failure we stop ingesting that direction and leave its
-                // cursor unadvanced so the next sweep re-fetches and retries.
-                let mut received_persist_ok = true;
-                let mut sent_persist_ok = true;
+                // cursor unadvanced so the next sweep re-fetches and retries —
+                // and, since the rest of that direction is then abandoned
+                // un-ingested, the identity is marked below so the pass cannot
+                // report itself complete.
 
                 // (1) Ingest received requests.
                 //
@@ -1357,84 +1502,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 });
                 let newest_by_sender = newest_received_per_sender(parsed_received);
 
-                for (sender_id, contact_request) in newest_by_sender {
-                    // Ignore (per-sender mute, local-only): an ignored
-                    // sender's requests are ALL suppressed from the main
-                    // pending list — including rotated (bumped
-                    // accountReference) ones. Checked FIRST and per-sender,
-                    // unlike the old per-(sender, accountReference) reject:
-                    // if you ignored the person you ignored them.
-                    // `unignore_sender` rewinds the cursor so this skip stops
-                    // firing on the next sweep.
-                    if managed.is_sender_ignored(&sender_id) {
-                        tracing::debug!(
-                            sender = %sender_id,
-                            recipient = %identity_id,
-                            account_reference = contact_request.account_reference,
-                            "Skipping ignored sender's contact request"
-                        );
-                        continue;
-                    }
-                    // Do NOT skip just because the sender is in
-                    // `sent_contact_requests` — that is the reciprocal we
-                    // need to let through to auto-establish. True dedup is
-                    // (sender, accountReference): the SAME reference as the
-                    // tracked incoming/established state is a re-ingest of a
-                    // known doc; a DIFFERENT reference from a known sender
-                    // is a rotation request (receive side) and must get
-                    // through.
-                    let tracked_reference = managed
-                        .dashpay()
-                        .incoming_contact_requests()
-                        .get(&sender_id)
-                        .map(|r| r.account_reference)
-                        .or_else(|| {
-                            managed
-                                .dashpay()
-                                .established_contacts()
-                                .get(&sender_id)
-                                .map(|c| c.incoming_request.account_reference)
-                        });
-                    if tracked_reference == Some(contact_request.account_reference) {
-                        continue;
-                    }
-
-                    if tracked_reference.is_some() {
-                        // Rotation: supersede the tracked request. When an
-                        // established contact was re-keyed, queue the stale
-                        // external account for teardown so the build sweep
-                        // below re-registers it from the new xpub.
-                        match managed.apply_rotated_incoming_request(
-                            contact_request.clone(),
-                            &self.persister,
-                        ) {
-                            Ok(true) => rotated_contacts.push(sender_id),
-                            Ok(false) => {}
-                            Err(e) => {
-                                tracing::error!(
-                                    recipient = %identity_id, error = %e,
-                                    "received-request rotation persist failed; leaving received cursor for retry"
-                                );
-                                received_persist_ok = false;
-                                break;
-                            }
-                        }
-                        all_requests.push(contact_request);
-                        continue;
-                    }
-
-                    if let Err(e) = managed
-                        .add_incoming_contact_request(contact_request.clone(), &self.persister)
-                    {
-                        tracing::error!(
-                            recipient = %identity_id, error = %e,
-                            "received-request ingest persist failed; leaving received cursor for retry"
-                        );
-                        received_persist_ok = false;
-                        break;
-                    }
-                    all_requests.push(contact_request);
-                }
+                let received_persist_ok = ingest_received_requests(
+                    managed,
+                    &self.persister,
+                    identity_id,
+                    newest_by_sender,
+                    &mut rotated_contacts,
+                    &mut all_requests,
+                );
 
                 // (2) Ingest our own sent requests. `add_sent_contact_request`
                 //     guards itself against duplicates / metadata loss.
@@ -1454,18 +1529,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     Self::parse_sent_contact_request_doc(doc, identity_id, recipient_id)
                 });
                 let newest_by_recipient = newest_sent_per_recipient(parsed_sent);
-                for (_recipient_id, contact_request) in newest_by_recipient {
-                    if let Err(e) =
-                        managed.add_sent_contact_request(contact_request, &self.persister)
-                    {
-                        tracing::error!(
-                            owner = %identity_id, error = %e,
-                            "sent-request ingest persist failed; leaving sent cursor for retry"
-                        );
-                        sent_persist_ok = false;
-                        break;
-                    }
-                }
+
+                let sent_persist_ok = ingest_sent_requests(
+                    managed,
+                    &self.persister,
+                    identity_id,
+                    newest_by_recipient,
+                );
 
                 // (2a') Rotation self-heal across restart: an external account
                 //       rebuilt from the persisted (tombstone-less) registration
@@ -1544,6 +1614,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
                 if sent_ok && sent_persist_ok {
                     managed.advance_high_water_sent(hw_sent, max_sent);
+                }
+
+                // A held-back cursor and a report that says "complete" cannot
+                // both be right. Either `break` above abandoned the rest of
+                // that direction's fetched requests un-ingested — their
+                // account builds never enqueued — so the pass is incomplete by
+                // the same rule the cursor logic already applies to itself.
+                // Left unrecorded, `is_complete()` stayed true, startup called
+                // `record_sync_ran()`, and the launch could reach `Ready`
+                // promising DIP-15 addresses that were never registered: the
+                // headline defect of this change, reached through the local
+                // door instead of the fetch door.
+                if !received_persist_ok || !sent_persist_ok {
+                    report.unpersisted_identities.push(identity_id);
                 }
 
                 // (3) Collect account-building candidates: every established
@@ -3986,6 +4070,47 @@ mod contact_sync_report_tests {
             "the received side was read; this is not a total failure"
         );
     }
+
+    /// Platform answered every identity; the disk did not take what came back.
+    /// The ingest `break`s, abandoning the rest of that direction's fetched
+    /// requests un-ingested and holding its cursor back for retry — so the
+    /// pass is incomplete by the same rule the cursor logic applies to itself.
+    /// Reported as complete, startup called `record_sync_ran()` and the launch
+    /// could reach `Ready` promising DIP-15 addresses that were never
+    /// registered.
+    #[test]
+    fn a_local_persist_failure_makes_the_pass_incomplete() {
+        let report = ContactSyncReport {
+            identities_attempted: 2,
+            unpersisted_identities: vec![id(1)],
+            ..Default::default()
+        };
+
+        assert!(
+            !report.is_complete(),
+            "a direction whose ingest did not reach disk is not a completed sync"
+        );
+    }
+
+    /// The other side of that coin: a local fault is NOT an outage. Every
+    /// fetch was answered, so nothing here says Platform is unreachable, and
+    /// `sync_contact_requests` must not turn a disk problem into
+    /// `ContactSyncUnreachable` — which reads to a host as "retry the
+    /// network" for a condition retrying the network cannot fix.
+    #[test]
+    fn a_local_persist_failure_is_not_an_outage() {
+        let report = ContactSyncReport {
+            identities_attempted: 2,
+            unpersisted_identities: vec![id(1), id(2)],
+            ..Default::default()
+        };
+
+        assert!(
+            !report.is_fully_degraded(),
+            "every received fetch was answered; this is a local fault, not an outage"
+        );
+        assert!(!report.is_complete());
+    }
 }
 
 #[cfg(test)]
@@ -4007,6 +4132,38 @@ mod sweep_tests {
 
     fn noop_persister() -> WalletPersister {
         WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+    }
+
+    /// A host persister whose `store()` always fails — disk full, DB error,
+    /// host bug. The condition the ingest `break`s on.
+    struct FailingPersistence;
+
+    impl crate::changeset::PlatformWalletPersistence for FailingPersistence {
+        fn store(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            Err(crate::changeset::PersistenceError::backend("disk full"))
+        }
+
+        fn flush(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    fn failing_persister() -> WalletPersister {
+        WalletPersister::new([0u8; 32], Arc::new(FailingPersistence))
     }
 
     fn build_test_wallet() -> Wallet {
@@ -4069,6 +4226,172 @@ mod sweep_tests {
             .expect("setup persists");
         assert_eq!(managed.dashpay().established_contacts().len(), 1);
         (wallet, info)
+    }
+
+    // -----------------------------------------------------------------------
+    // The ingest persist-failure branches.
+    //
+    // A `false` return is the whole signal: it is what holds that direction's
+    // high-water cursor back AND what marks the identity in the
+    // `ContactSyncReport`, so the pass cannot report itself complete after
+    // abandoning fetched requests un-ingested. Before this change the boolean
+    // reached only the cursor, and the report stayed silent.
+    // -----------------------------------------------------------------------
+
+    /// A fresh identity with nothing tracked, ready for a first ingest.
+    fn info_with_bare_identity(our: u8) -> PlatformWalletInfo {
+        let wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        info.identity_manager
+            .add_identity(test_identity(our), 0, [0u8; 32], &noop_persister())
+            .expect("add identity");
+        info
+    }
+
+    fn one_received(
+        sender: u8,
+        recipient: u8,
+        reference: u32,
+    ) -> BTreeMap<Identifier, ContactRequest> {
+        newest_received_per_sender([test_request(sender, recipient, reference)])
+    }
+
+    /// The control: a persister that takes the write ingests the request and
+    /// reports success. Without this the failure tests below would also pass
+    /// against a function that always returned `false`.
+    #[test]
+    fn a_received_ingest_that_persists_reports_success() {
+        let our = 1u8;
+        let our_id = Identifier::from([our; 32]);
+        let mut info = info_with_bare_identity(our);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+
+        let mut rotated = Vec::new();
+        let mut all_requests = Vec::new();
+        let ok = ingest_received_requests(
+            managed,
+            &noop_persister(),
+            our_id,
+            one_received(2, our, 0),
+            &mut rotated,
+            &mut all_requests,
+        );
+
+        assert!(
+            ok,
+            "a persister that succeeds must report a complete ingest"
+        );
+        assert_eq!(all_requests.len(), 1);
+        assert_eq!(managed.dashpay().incoming_contact_requests().len(), 1);
+    }
+
+    /// The first-ingest persist failure (`add_incoming_contact_request`).
+    /// The request is not tracked and must not be reported as newly
+    /// discovered — a caller that took it as real would act on a request that
+    /// no longer exists anywhere after a restart.
+    #[test]
+    fn a_received_ingest_persist_failure_reports_the_pass_incomplete() {
+        let our = 1u8;
+        let our_id = Identifier::from([our; 32]);
+        let mut info = info_with_bare_identity(our);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+
+        let mut rotated = Vec::new();
+        let mut all_requests = Vec::new();
+        let ok = ingest_received_requests(
+            managed,
+            &failing_persister(),
+            our_id,
+            one_received(2, our, 0),
+            &mut rotated,
+            &mut all_requests,
+        );
+
+        assert!(
+            !ok,
+            "a persist failure must be reported so the cursor is held AND the pass is \
+             marked incomplete"
+        );
+        assert!(
+            all_requests.is_empty(),
+            "a request that never persisted must not be reported as newly discovered"
+        );
+    }
+
+    /// The rotation persist failure (`apply_rotated_incoming_request`) — the
+    /// second of the three branches, reached only when the sender is already
+    /// tracked under a different `accountReference`.
+    #[test]
+    fn a_received_rotation_persist_failure_reports_the_pass_incomplete() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        // Established at reference 0 by the fixture; the sweep now sees the
+        // sender's rotated doc at reference 7.
+        let (_wallet, mut info) = info_with_established_contact(our, contact);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+
+        let mut rotated = Vec::new();
+        let mut all_requests = Vec::new();
+        let ok = ingest_received_requests(
+            managed,
+            &failing_persister(),
+            our_id,
+            one_received(contact, our, 7),
+            &mut rotated,
+            &mut all_requests,
+        );
+
+        assert!(
+            !ok,
+            "a rotation whose persist failed leaves the pass incomplete"
+        );
+        assert!(
+            rotated.is_empty(),
+            "an unpersisted rotation must not tear down the external account"
+        );
+    }
+
+    /// The sent-side persist failure (`add_sent_contact_request`) — the third
+    /// branch. Its own direction's cursor is the one held back, and the
+    /// identity is marked degraded rather than failed, but the pass is no more
+    /// complete than in the received case.
+    #[test]
+    fn a_sent_ingest_persist_failure_reports_the_pass_incomplete() {
+        let our = 1u8;
+        let our_id = Identifier::from([our; 32]);
+        let mut info = info_with_bare_identity(our);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+
+        let newest = newest_sent_per_recipient([test_request(our, 2, 0)]);
+        assert!(!ingest_sent_requests(
+            managed,
+            &failing_persister(),
+            our_id,
+            newest
+        ));
+
+        // Control on the same fixture: the write succeeds, so the ingest
+        // reports success.
+        let newest = newest_sent_per_recipient([test_request(our, 3, 0)]);
+        assert!(ingest_sent_requests(
+            managed,
+            &noop_persister(),
+            our_id,
+            newest
+        ));
     }
 
     /// **Test 3 (restore-from-seed shape):** an established contact with

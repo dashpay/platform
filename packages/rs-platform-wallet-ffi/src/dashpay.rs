@@ -598,6 +598,20 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 /// The wallet seed is never made resident; every signature is produced
 /// inside the signer's atomic derive-and-sign step.
 ///
+/// # Seed binding
+///
+/// The send begins by draining any deferred contact-crypto build for this
+/// contact, which derives and registers contact accounts from whatever seed
+/// the resolver resolves. That drain runs behind the same gate as
+/// `platform_wallet_drain_pending_contact_crypto`: whenever there is drainable
+/// work, the resolver is checked against this wallet's persisted BIP44
+/// account-0 xpub first. A resolver mapped to a different wallet fails the
+/// call with `ErrorInvalidParameter`, derives NOTHING, and leaves the queue
+/// intact. Without the gate the wrong-seed contact account would be written
+/// permanently (`register_contact_account` keys its existence check on the
+/// contact pair, not the xpub) and the payment would then fail anyway on the
+/// funding signatures — corruption first, error second.
+///
 /// # Safety
 /// - `core_signer_handle` must be a valid, non-destroyed
 ///   `*mut MnemonicResolverHandle`. Ownership is retained by the caller —
@@ -664,7 +678,22 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
         })
     });
     let result = unwrap_option_or_return!(option);
-    let (txid, _entry, fee_duffs) = unwrap_result_or_return!(result);
+    // The send opens with the SEED-VERIFIED contact-crypto drain, so a
+    // resolver mapped to a different wallet is refused here instead of
+    // registering a wrong-seed contact account and only then failing on the
+    // funding signatures. Reported with the same code the standalone verify
+    // and the drain entry point use, so a host recognizes the wrong-seed
+    // condition identically however it arrives.
+    let (txid, _entry, fee_duffs) = match result {
+        Ok(v) => v,
+        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e.to_string(),
+            );
+        }
+        Err(e) => return e.into(),
+    };
     // Exact network fee of the broadcast transaction — Σ(selected input
     // values) − Σ(output values), computed by the transaction builder
     // itself since rust-dashcore#872, so a sub-dust change remainder

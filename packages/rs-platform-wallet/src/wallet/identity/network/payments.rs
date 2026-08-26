@@ -1054,7 +1054,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///   sweep and completed only by a later `drain_pending_contact_crypto`;
     ///   draining here (with a signer present) builds the account on demand so
     ///   the very first send after establishing a contact succeeds instead of
-    ///   failing the external-account lookup below.
+    ///   failing the external-account lookup below. The drain runs behind the
+    ///   seed-binding gate
+    ///   ([`DashPayView::drain_pending_contact_crypto_verified`]), so a
+    ///   provider that does not resolve this wallet's seed fails the payment
+    ///   with [`PlatformWalletError::SeedMismatch`] before anything is
+    ///   registered.
     ///
     /// # Returns
     ///
@@ -1096,7 +1101,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // lookup below. Idempotent and a cheap no-op when the queue is empty.
         // Run BEFORE acquiring the wallet-manager write guard — the drain
         // re-acquires that (non-reentrant) lock internally.
-        self.drain_pending_contact_crypto(provider).await;
+        //
+        // Through the SEED-VERIFIED primitive, not the raw drain. This runs
+        // the same `RegisterReceiving` / `RegisterExternal` ops the unlock and
+        // FFI drains run, and it runs them before any funding input is signed
+        // — so a `provider` resolving the wrong seed (a mis-mapped
+        // Keychain/Keystore slot) would register a contact account derived
+        // from the wrong seed and only THEN fail the send on bad signatures.
+        // `register_contact_account` keys its existence check on `(index, us,
+        // them)` rather than on the xpub, so the wrong account is never
+        // revisited and the wallet permanently watches addresses nobody pays
+        // to. A payment through a wrong-seed provider cannot succeed anyway,
+        // so the refusal fails the send with the typed `SeedMismatch` instead
+        // of being allowed to write first and fail second.
+        self.drain_pending_contact_crypto_verified(provider, None)
+            .await?;
 
         let (payment_address, used_flip_changeset, tx, fee, funding_accounts) = {
             let mut wm = self.wallet_manager.write().await;

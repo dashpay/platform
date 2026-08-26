@@ -639,17 +639,18 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                 );
             }
             // Reached Platform for some identities and not others (or for none
-            // at all). The requests it did fetch are real and already
-            // persisted, but the identities it missed have contact requests
-            // nobody has looked at, whose account builds were therefore never
-            // enqueued — so the queue being empty below proves nothing. Not
-            // recording the pass keeps `status()` off `Ready`, which is the
-            // promise that every contact's DIP-15 addresses exist before Core
-            // SPV starts.
+            // at all), or reached them all and could not write what came back.
+            // The requests it did fetch AND persist are real, but the
+            // identities it missed have contact requests nobody has looked at,
+            // whose account builds were therefore never enqueued — so the
+            // queue being empty below proves nothing. Not recording the pass
+            // keeps `status()` off `Ready`, which is the promise that every
+            // contact's DIP-15 addresses exist before Core SPV starts.
             //
-            // The failures retry themselves: a fetch that errored leaves that
-            // direction's high-water cursor unadvanced, so the next sweep
-            // re-requests exactly the range this pass missed.
+            // The failures retry themselves whichever door they came through:
+            // a fetch that errored and an ingest that could not persist BOTH
+            // leave that direction's high-water cursor unadvanced, so the next
+            // sweep re-requests exactly the range this pass missed.
             Some(Ok(report)) => {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
@@ -657,6 +658,7 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                     identities = report.identities_attempted,
                     failed = report.failed_identities.len(),
                     degraded = report.degraded_identities.len(),
+                    unpersisted = report.unpersisted_identities.len(),
                     "startup: contact-request pass was degraded; not recording it as a \
                      completed sync"
                 );
