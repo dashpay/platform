@@ -1538,6 +1538,7 @@ mod tests {
 
     fn cursor_document(field: &str, value: Value) -> dpp::document::Document {
         DocumentV0 {
+            contract_version: None,
             id: Identifier::from([3u8; 32]),
             owner_id: Identifier::from([4u8; 32]),
             properties: BTreeMap::from([(field.to_string(), value)]),

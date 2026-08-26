@@ -164,9 +164,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .estimated_size
         {
             0 => self.estimated_size_v0(platform_version),
+            1 => self.estimated_size_v1(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "estimated_size".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

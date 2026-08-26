@@ -4,8 +4,13 @@ import crypto from 'crypto';
 import Docker from 'dockerode';
 import { asValue } from 'awilix';
 import createDIContainer from '../../../src/createDIContainer.js';
+import Config from '../../../src/config/Config.js';
+import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
+import ConfigFileJsonRepository from '../../../src/config/configFile/ConfigFileJsonRepository.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
+import isCertificatePairInstalled from '../../../src/ssl/letsencrypt/isCertificatePairInstalled.js';
+import renewCertificate from '../../../src/helper/renewCertificate.js';
 
 /**
  * Obtain a certificate from a real ACME server.
@@ -147,7 +152,11 @@ describe('Pebble candidate network selection', () => {
 });
 
 describe('Let\'s Encrypt certificate against a local ACME server', function main() {
-  this.timeout(5 * 60 * 1000);
+  // `lego renew` sleeps a random delay of up to about eight minutes when the
+  // authority's renewalInfo endpoint says renewal is not yet due, which the
+  // renewal case below always hits: the certificate it renews was issued
+  // moments earlier. The budget covers that sleep rather than racing it.
+  this.timeout(15 * 60 * 1000);
 
   const docker = new Docker();
   const networkName = `dashmate-acme-test-${crypto.randomBytes(4).toString('hex')}`;
@@ -373,5 +382,199 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     // Rewriting an unchanged configuration is what made read-only commands
     // clobber concurrent edits, and a renewal check runs unattended.
     expect(config.isChanged()).to.be.false();
+  });
+
+  /**
+   * Nothing prompts for a contact address any more, so every fresh setup and
+   * every migration from another provider issues without one. If contactless
+   * issuance does not work, the feature does not work - which is why this is a
+   * gate rather than a nice-to-have.
+   *
+   * The client half is already measured: lego does not require --email and
+   * substitutes noemail@example.com as a local directory name. What is proved
+   * here is the CA half - that registration without a contact is accepted and
+   * the certificate that comes back is the same certificate.
+   */
+  describe('issuance without a contact address', () => {
+    /**
+     * @param {string} name
+     * @param {string|null} email
+     * @return {Config}
+     */
+    function createConfig(name, email) {
+      const created = new Config(name, getBaseConfigFactory(homeDir)().getOptions());
+
+      created.set('externalIp', legoIp);
+      created.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', email);
+      created.set(
+        'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+        `https://${PEBBLE_HOSTNAME}:${PEBBLE_ACME_PORT}/dir`,
+      );
+
+      return created;
+    }
+
+    /**
+     * @param {Config} target
+     * @return {{certificate: crypto.X509Certificate, paired: boolean, accounts: string[]}}
+     */
+    function inspect(target) {
+      const dir = homeDir.joinPath(target.getName(), 'platform', 'gateway', 'ssl');
+      const legoDir = homeDir.joinPath(target.getName(), 'platform', 'gateway', 'lego');
+      const bundlePath = path.join(dir, 'bundle.crt');
+      const keyPath = path.join(dir, 'private.key');
+
+      return {
+        certificate: new crypto.X509Certificate(fs.readFileSync(bundlePath)),
+        paired: isCertificatePairInstalled(
+          path.join(legoDir, 'certificates', `${legoIp}.crt`),
+          path.join(legoDir, 'certificates', `${legoIp}.key`),
+          bundlePath,
+          keyPath,
+        ),
+        accounts: fs.readdirSync(path.join(legoDir, 'accounts'), { recursive: true })
+          .map((entry) => entry.toString()),
+      };
+    }
+
+    let contactless;
+    let withContact;
+
+    // The renewal below refuses to run unless the provider says letsencrypt, so
+    // a test that leaves it changed - including one that fails part way through
+    // - would take the renewal down with it and hide which of the two broke.
+    afterEach(() => {
+      if (contactless) {
+        contactless.set('platform.gateway.ssl.provider', 'letsencrypt');
+      }
+    });
+
+    before(async () => {
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+
+      contactless = createConfig('contactless', null);
+      withContact = createConfig('withcontact', 'operator@example.org');
+
+      await obtainLetsEncryptCertificateTask(contactless).run({ force: true });
+      await obtainLetsEncryptCertificateTask(withContact).run({ force: true });
+    });
+
+    it('should produce the same certificate with and without a contact address', () => {
+      const a = inspect(contactless);
+      const b = inspect(withContact);
+
+      // Same identifier, same validity window length, same subject alternative
+      // name. A contact address buys nothing from the authority.
+      expect(a.certificate.subjectAltName).to.equal(`IP Address:${legoIp}`);
+      expect(b.certificate.subjectAltName).to.equal(a.certificate.subjectAltName);
+
+      const window = (certificate) => new Date(certificate.validTo).getTime()
+        - new Date(certificate.validFrom).getTime();
+
+      expect(window(a.certificate)).to.equal(window(b.certificate));
+
+      // Both have to be installed as a matching pair, or the gateway cannot
+      // serve either of them.
+      expect(a.paired).to.be.true();
+      expect(b.paired).to.be.true();
+    });
+
+    it('should record the provider for a node that has no contact address', () => {
+      expect(contactless.get('platform.gateway.ssl.enabled')).to.be.true();
+      expect(contactless.get('platform.gateway.ssl.provider')).to.equal('letsencrypt');
+      expect(contactless.get('platform.gateway.ssl.providerConfigs.letsencrypt.email')).to.be.null();
+    });
+
+    // The account directory lego uses is named after the contact address, so a
+    // contactless node's account lives somewhere else entirely. `lego renew`
+    // needs the account that issued, which makes this the half of contactless
+    // operation that issuance alone does not prove.
+    it('should keep the two accounts apart on disk', () => {
+      expect(inspect(contactless).accounts.some((entry) => entry.includes('noemail@example.com')))
+        .to.be.true();
+      expect(inspect(withContact).accounts.some((entry) => entry.includes('operator@example.org')))
+        .to.be.true();
+    });
+
+    // A node that already has an address on file must keep using the account
+    // that address names. Nothing may quietly move it: a new account means a
+    // new account key and a reset failed-authorization budget, spent against
+    // the per-address registration limit.
+    //
+    // Issued rather than renewed, so this does not pay lego's renewal delay
+    // twice. The renewal path is covered below, and the property under test -
+    // which account directory the address resolves to - is the same either way.
+    it('should reissue for a node with a contact address against its original account', async () => {
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+      const accountsBefore = inspect(withContact).accounts;
+      const serialBefore = inspect(withContact).certificate.serialNumber;
+
+      await obtainLetsEncryptCertificateTask(withContact).run({ force: true });
+
+      const after = inspect(withContact);
+
+      expect(after.certificate.serialNumber).to.not.equal(serialBefore);
+      expect(after.accounts).to.deep.equal(accountsBefore);
+      expect(withContact.get('platform.gateway.ssl.providerConfigs.letsencrypt.email'))
+        .to.equal('operator@example.org');
+    });
+
+    // The window between installing the pair and saving the provider. Left as
+    // a warning this never repairs itself - the helper keeps renewing the old
+    // provider while the installed six-day certificate runs out - so it has to
+    // block, and the block has to name a repair that needs no new certificate.
+    it('should detect a switch interrupted before the provider was saved', () => {
+      const checkGatewayCertificate = container.resolve('checkGatewayCertificate');
+
+      expect(checkGatewayCertificate(contactless).status).to.equal('CHECKS_PASSED');
+
+      // Exactly what a kill between the two steps leaves behind: the pair lego
+      // produced is installed for the gateway, the setting still names the
+      // provider it was switched away from.
+      contactless.set('platform.gateway.ssl.provider', 'zerossl');
+
+      const verdict = checkGatewayCertificate(contactless);
+
+      expect(verdict.status).to.equal('INVALID');
+      expect(verdict.reasons.map(({ code }) => code)).to.deep.equal(['SWITCH_INCOMPLETE']);
+    });
+
+    // Renewal is where a missing account would surface, and it runs unattended
+    // inside the helper - the one place a failure goes unnoticed for months.
+    it('should renew a contactless certificate through the helper entry point', async () => {
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+      const before = inspect(contactless).certificate.serialNumber;
+
+      const configFile = new ConfigFile(
+        [contactless],
+        '4.2.0',
+        'abcdef12',
+        contactless.getName(),
+        null,
+      );
+      const configFileRepository = new ConfigFileJsonRepository(
+        (data) => data,
+        homeDir,
+        () => null,
+      );
+      configFileRepository.write(configFile);
+
+      const { renewed } = await renewCertificate({
+        configName: contactless.getName(),
+        provider: 'letsencrypt',
+        // Well past the certificate's own six-day life, so renewal is due.
+        expirationDays: 60,
+        obtainCertificateTask: obtainLetsEncryptCertificateTask,
+        configFileRepository,
+        writeConfigTemplates: () => {},
+      });
+
+      expect(renewed).to.be.true();
+
+      const after = inspect(contactless);
+      expect(after.certificate.serialNumber).to.not.equal(before);
+      expect(after.certificate.subjectAltName).to.equal(`IP Address:${legoIp}`);
+      expect(after.paired).to.be.true();
+    });
   });
 });

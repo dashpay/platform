@@ -58,6 +58,14 @@ export default function scheduleRenewalJob({
 
         completion = 'stop';
       } else {
+        // A signal is sufficient and nothing here needs to restart the
+        // container. PID 1 in the gateway container is Envoy's hot-restarter,
+        // not Envoy: its SIGHUP handler forks and re-execs Envoy with an
+        // incremented restart epoch against the same envoy.yaml. The new
+        // process parses that file from scratch and opens the certificate by
+        // name, so the renewed certificate takes effect while the old process
+        // drains. A container restart would achieve the same thing and cost an
+        // outage.
         await dockerCompose.execCommand(renewal.config, 'gateway', 'kill -SIGHUP 1');
 
         // eslint-disable-next-line no-console

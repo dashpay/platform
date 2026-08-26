@@ -333,9 +333,25 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_mutable() {
         run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1432760,
+            // v14: replaced documents carry the contract-version stamp
+            1433220,
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_13: fee predating every v14 change on this path —
+    /// both the contract-version stamp and the dashpay payment-address
+    /// contract (#4380), whose v2 schema is gated behind
+    /// `SYSTEM_DATA_CONTRACT_VERSIONS_V3` (v14 only; v13 genesis stores
+    /// dashpay v1, so its smaller node shifts the byte-billed contracts-
+    /// subtree reads). That gate is why this value is below the pre-stamp
+    /// v14 baseline by more than the stamp bytes — and this pin is what
+    /// fails if the gate ever leaks into v13. Pinned so v13 chain history
+    /// stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_protocol_version_13() {
+        run_document_replace_on_document_type_that_is_mutable_at_protocol_version(13, 1411320)
+            .await;
     }
 
     /// PROTOCOL_VERSION_11: pre-B7 happy-path fee — transformer's local
@@ -1037,9 +1053,19 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable() {
         run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            460920,
+            460940, // v14: stamped documents (see happy-path baseline note)
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_13: pre-stamp fee — document serialization format 3
+    /// (the contract-version stamp) activates at v14, so v13 costs must be
+    /// exactly what they were before the `requiredSince` changes. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_protocol_version_13() {
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(13, 460920)
+            .await;
     }
 
     /// PROTOCOL_VERSION_11: pre-fix bump-only fee (no charge for the fetch
@@ -1293,6 +1319,20 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable() {
         run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
+            457680, // v14: stamped documents (see happy-path baseline note)
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: pre-stamp fee — document serialization format 3
+    /// (the contract-version stamp) activates at v14, so v13 costs must be
+    /// exactly what they were before the `requiredSince` changes. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_protocol_version_13(
+    ) {
+        run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
+            13,
             457660,
         )
         .await;

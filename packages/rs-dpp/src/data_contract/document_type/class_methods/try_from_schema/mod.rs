@@ -1,4 +1,5 @@
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
@@ -128,6 +129,7 @@ fn insert_values(
         vec![(prefix, property_key, property_value)];
 
     while let Some((prefix, property_key, property_value)) = to_visit.pop() {
+        let is_top_level = prefix.is_none();
         let prefixed_property_key = match prefix {
             None => property_key,
             Some(prefix) => [prefix, property_key].join(".").to_owned(),
@@ -143,6 +145,12 @@ fn insert_values(
 
         let is_required = known_required.contains(&prefixed_property_key);
         let is_transient = known_transient.contains(&prefixed_property_key);
+        let required_since = apply_required_since(
+            &inner_properties,
+            is_required,
+            is_top_level,
+            platform_version,
+        )?;
 
         match DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())? {
             DocumentPropertyType::Object(_) => {
@@ -179,6 +187,7 @@ fn insert_values(
                         property_type,
                         required: is_required,
                         transient: is_transient,
+                        required_since,
                     },
                 );
             }
@@ -194,6 +203,7 @@ fn insert_values_nested(
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
     known_transient: &BTreeSet<String>,
+    is_top_level: bool,
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
@@ -211,6 +221,13 @@ fn insert_values_nested(
     let is_required = known_required.contains(&property_key);
 
     let is_transient = known_transient.contains(&property_key);
+
+    let required_since = apply_required_since(
+        &inner_properties,
+        is_required,
+        is_top_level,
+        platform_version,
+    )?;
 
     let property_type =
         match DocumentPropertyType::try_from_value_map(&inner_properties, &config.into())? {
@@ -271,6 +288,7 @@ fn insert_values_nested(
                             &mut nested_properties,
                             &stripped_required,
                             &stripped_transient,
+                            false,
                             object_property_string,
                             object_property_value,
                             root_schema,
@@ -294,6 +312,7 @@ fn insert_values_nested(
             property_type,
             required: is_required,
             transient: is_transient,
+            required_since,
         },
     );
 
@@ -413,6 +432,7 @@ mod tests {
     use super::*;
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::validate_required_since_within_contract_version;
     use platform_value::string_encoding::Encoding;
     use serde_json::json;
 
@@ -803,5 +823,198 @@ mod tests {
             platform_version,
         )
         .expect("a parse predating refersTo should ignore the keyword entirely");
+    }
+
+    // ================================================================
+    //  requiredSince
+    // ================================================================
+
+    #[test]
+    fn should_parse_required_since_on_top_level_required_property() {
+        let document_type = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60},
+                "b": {"type": "string", "position": 1, "maxLength": 60, "requiredSince": 3},
+            },
+            "required": ["a", "b"],
+            "additionalProperties": false
+        }))
+        .expect("should parse");
+
+        let properties = document_type.as_ref().flattened_properties().clone();
+        assert_eq!(properties.get("a").unwrap().required_since, None);
+        assert_eq!(properties.get("b").unwrap().required_since, Some(3));
+        assert!(properties.get("b").unwrap().required);
+    }
+
+    #[test]
+    fn should_reject_required_since_on_optional_property() {
+        let result = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60, "requiredSince": 2},
+            },
+            "required": [],
+            "additionalProperties": false
+        }));
+
+        assert!(
+            result.is_err(),
+            "requiredSince on a property not listed in required must be rejected"
+        );
+    }
+
+    #[test]
+    fn should_reject_required_since_on_nested_property() {
+        let result = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "outer": {
+                    "type": "object",
+                    "position": 0,
+                    "properties": {
+                        "inner": {"type": "string", "position": 0, "maxLength": 60, "requiredSince": 2},
+                    },
+                    "required": ["inner"],
+                    "additionalProperties": false
+                },
+            },
+            "required": [],
+            "additionalProperties": false
+        }));
+
+        assert!(
+            result.is_err(),
+            "requiredSince on a nested property must be rejected"
+        );
+    }
+
+    #[test]
+    fn should_reject_required_since_above_u32_max() {
+        // The meta-schema caps the value at u32::MAX too; this pins the
+        // parser-side rejection so it does not depend on meta-schema
+        // coverage (parses without full validation skip the meta-schema)
+        let result = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60, "requiredSince": 4_294_967_296_u64},
+            },
+            "required": ["a"],
+            "additionalProperties": false
+        }));
+
+        assert!(
+            result.is_err(),
+            "requiredSince above u32::MAX must be rejected"
+        );
+    }
+
+    #[test]
+    fn should_reject_required_since_of_zero() {
+        let result = try_document_type_from_schema(json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60, "requiredSince": 0},
+            },
+            "required": ["a"],
+            "additionalProperties": false
+        }));
+
+        assert!(
+            result.is_err(),
+            "requiredSince of 0 must be rejected (contract versions start at 1)"
+        );
+    }
+
+    #[test]
+    fn should_parse_required_since_reached_through_a_ref() {
+        // A `$ref`'d property resolves to its `$defs` entry before keywords
+        // are read, so an annotation hidden behind a reference is parsed
+        // exactly like a direct one — any validation that only scans raw
+        // property JSON would miss it, which is why the
+        // `requiredSince <= contract version` invariant is enforced on
+        // parsed properties (validate_required_since_within_contract_version)
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+
+        let schema_defs: BTreeMap<String, Value> = [(
+            "annotated".to_string(),
+            platform_value::to_value(json!({
+                "type": "string", "maxLength": 60, "requiredSince": 2
+            }))
+            .expect("defs should convert"),
+        )]
+        .into_iter()
+        .collect();
+
+        let schema = platform_value::to_value(json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "string", "position": 0, "maxLength": 60},
+                "b": {"$ref": "#/$defs/annotated", "position": 1},
+            },
+            "required": ["a", "b"],
+            "additionalProperties": false
+        }))
+        .expect("schema should convert");
+
+        let document_type = DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            schema,
+            Some(&schema_defs),
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("should parse");
+
+        let properties = document_type.as_ref().flattened_properties().clone();
+        assert_eq!(properties.get("b").unwrap().required_since, Some(2));
+
+        // The parsed-property invariant check sees the annotation the raw
+        // JSON hides: version 1 (too old for requiredSince 2) rejects,
+        // version 2 accepts
+        let mut document_types = BTreeMap::new();
+        document_types.insert("msg".to_string(), document_type);
+
+        assert!(
+            validate_required_since_within_contract_version(&document_types, 1).is_err(),
+            "requiredSince 2 must be rejected on a version 1 contract even through $ref"
+        );
+        assert!(validate_required_since_within_contract_version(&document_types, 2).is_ok());
+    }
+
+    #[test]
+    fn should_ignore_required_since_on_platform_versions_predating_it() {
+        // Platform versions whose tables carry `apply_required_since: None`
+        // predate the keyword: even if it appears in a schema they parse
+        // (only possible without full validation — their meta-schemas reject
+        // it), they must ignore it and keep producing the plain required
+        // property they always produced.
+        let platform_version = PlatformVersion::get(13).expect("platform version 13 should exist");
+
+        let document_type = try_document_type_from_schema_on_version(
+            json!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 60, "requiredSince": 3},
+                },
+                "required": ["a"],
+                "additionalProperties": false
+            }),
+            platform_version,
+        )
+        .expect("a parse predating requiredSince should ignore the keyword entirely");
+
+        let properties = document_type.as_ref().flattened_properties().clone();
+        assert_eq!(properties.get("a").unwrap().required_since, None);
+        assert!(properties.get("a").unwrap().required);
     }
 }

@@ -123,12 +123,12 @@ extension PlatformWalletManager {
             return []
         }
 
-        var outEntries: UnsafePointer<MasternodeEntryFFI>?
+        var outEntries: UnsafePointer<MasternodeEntryV2FFI>?
         var outCount: UInt = 0
 
         let ffiResult = walletId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
             let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            return platform_wallet_manager_list_masternodes(
+            return platform_wallet_manager_list_masternodes_v2(
                 handle,
                 base,
                 &outEntries,
@@ -147,7 +147,7 @@ extension PlatformWalletManager {
         }
 
         defer {
-            platform_wallet_manager_free_masternodes(
+            platform_wallet_manager_free_masternodes_v2(
                 UnsafeMutablePointer(mutating: entries),
                 outCount
             )
@@ -156,16 +156,17 @@ extension PlatformWalletManager {
         return Self.masternodeModels(from: entries, count: Int(outCount))
     }
 
-    /// Decode a Rust-owned `MasternodeEntryFFI` array into value models —
+    /// Decode a Rust-owned `MasternodeEntryV2FFI` array into value models —
     /// shared by the wallet list, the tracked list, and the tracked
     /// track/refresh calls. `nonisolated` so detached marshalling tasks can
     /// run it off the main actor.
     nonisolated static func masternodeModels(
-        from entries: UnsafePointer<MasternodeEntryFFI>,
+        from entries: UnsafePointer<MasternodeEntryV2FFI>,
         count: Int
     ) -> [PlatformMasternode] {
         (0..<count).map { i in
-            var entry = entries[i]
+            let entryV2 = entries[i]
+            var entry = entryV2.v1
             let proTx = withUnsafeBytes(of: &entry.pro_tx_hash) { Data($0) }
             let collateralTxid = entry.has_collateral
                 ? withUnsafeBytes(of: &entry.collateral_txid) { Data($0) }
@@ -211,8 +212,8 @@ extension PlatformWalletManager {
                 platformAccountType: entry.platform_account_type,
                 platformKeyIndex: entry.platform_key_index,
                 platformOwnershipChecked: entry.platform_ownership_checked,
-                source: MasternodeSource(rawValue: entry.source) ?? .wallet,
-                label: entry.label.map { String(cString: $0) }
+                source: MasternodeSource(rawValue: entryV2.source) ?? .wallet,
+                label: entryV2.label.map { String(cString: $0) }
             )
         }
     }

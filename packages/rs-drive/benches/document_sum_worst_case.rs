@@ -312,6 +312,7 @@ fn insert_tip_document(
     properties.insert("sentAt".to_string(), Value::U64(sent_at));
 
     let document: Document = DocumentV0 {
+        contract_version: None,
         id: Identifier::from(document_id(row)),
         owner_id: Identifier::from([7u8; 32]),
         properties,
