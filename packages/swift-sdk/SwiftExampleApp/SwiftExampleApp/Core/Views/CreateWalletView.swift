@@ -351,7 +351,12 @@ struct CreateWalletView: View {
                 // metadata must be written under EACH freshly-created
                 // network's id, and `isImported` stamped on each id's
                 // row.
-                try await MainActor.run {
+                // An async MainActor closure (not `MainActor.run`, whose
+                // closure is synchronous): the loop below awaits the
+                // async `createWallet` overload, so each network's
+                // blocking native create runs on the SDK's dedicated
+                // queue instead of freezing the main thread.
+                let createOnMain: @MainActor () async throws -> Void = {
                     // Per-network results for networks the wallet was
                     // FRESHLY created on this pass — each carries the
                     // scoped `walletId` Rust returned, which is the
@@ -384,7 +389,7 @@ struct CreateWalletView: View {
                     for net in selectedNetworks {
                         do {
                             let mgr = try walletManagerStore.backgroundManager(for: net)
-                            let managed = try mgr.createWallet(
+                            let managed = try await mgr.createWallet(
                                 mnemonic: mnemonicPhrase,
                                 network: net,
                                 name: walletLabel,
@@ -519,6 +524,7 @@ struct CreateWalletView: View {
 
                     dismiss()
                 }
+                try await createOnMain()
 
                 print("=== WALLET CREATION SUCCESS - networks: \(selectedNetworks.map { $0.displayName }) ===")
             } catch {

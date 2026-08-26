@@ -7,8 +7,10 @@ import DashSDKFFI
 /// Tests inject the native create call (and the teardown table, for the
 /// shutdown-interplay cases), so the production `performCreateWallet`
 /// orchestration stays under test: off-main execution, result mapping,
-/// the shutdown-race epilogue, and the FIFO ordering with teardown on the
-/// shared destroy queue — all without calling FFI.
+/// the shutdown drain (an admitted create completes before teardown takes
+/// the handle; new creates are rejected while the drain runs), and the
+/// FIFO ordering with teardown on the shared destroy queue — all without
+/// calling FFI.
 @MainActor
 final class PlatformWalletCreateWalletTests: XCTestCase {
 
@@ -19,11 +21,19 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         private let lock = NSLock()
         private let gate: DispatchSemaphore?
         private let failingCode: PlatformWalletFFIResultCode?
+        private let eventLog: EventLog?
         private var invocations: [(handle: Handle, mnemonic: String, ranOnMainThread: Bool)] = []
+        private var inFlight = 0
+        private var maxInFlightSeen = 0
 
-        init(gate: DispatchSemaphore? = nil, failingCode: PlatformWalletFFIResultCode? = nil) {
+        init(
+            gate: DispatchSemaphore? = nil,
+            failingCode: PlatformWalletFFIResultCode? = nil,
+            eventLog: EventLog? = nil
+        ) {
             self.gate = gate
             self.failingCode = failingCode
+            self.eventLog = eventLog
         }
 
         func record(
@@ -32,9 +42,16 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         ) -> (result: PlatformWalletFFIResult, walletHandle: Handle, walletId: Data) {
             lock.withLock {
                 invocations.append((handle, params.mnemonic, Thread.isMainThread))
+                inFlight += 1
+                maxInFlightSeen = max(maxInFlightSeen, inFlight)
             }
+            eventLog?.append("create:begin")
             gate?.wait()
             let index = lock.withLock { invocations.count }
+            defer {
+                eventLog?.append("create:end")
+                lock.withLock { inFlight -= 1 }
+            }
             if let failingCode {
                 return (
                     PlatformWalletFFIResult(code: failingCode, message: nil),
@@ -54,6 +71,9 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         var count: Int { lock.withLock { invocations.count } }
         var handles: [Handle] { lock.withLock { invocations.map(\.handle) } }
         var mainThreadFlags: [Bool] { lock.withLock { invocations.map(\.ranOnMainThread) } }
+        /// Peak number of native creates running at once — 1 proves the
+        /// shared queue actually serialized concurrent callers.
+        var maxInFlight: Int { lock.withLock { maxInFlightSeen } }
     }
 
     private nonisolated static func makeCreateCalls(
@@ -159,13 +179,15 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         XCTAssertEqual(recorder.count, 0, "the native create must never be reached after shutdown")
     }
 
-    /// A shutdown DURING the off-main create window: the epilogue must not
-    /// publish into the torn-down manager, and the shared-queue FIFO must
-    /// run the native teardown only after the in-flight create returned.
-    func testShutdownDuringCreateWindowDiscardsWalletAndTearsDownAfterCreate() async throws {
+    /// A shutdown DURING the off-main create window must WAIT: the admitted
+    /// create completes its full transaction (native create + publish) and
+    /// only then does the teardown take the handle and run — an admitted
+    /// create is never failed retroactively after its FFI persisted wallet
+    /// data (the caller would roll back its mnemonic and orphan the rows).
+    func testShutdownDuringCreateWindowWaitsForCreateThenTearsDown() async throws {
         let gate = DispatchSemaphore(value: 0)
-        let recorder = CreateRecorder(gate: gate)
         let log = EventLog()
+        let recorder = CreateRecorder(gate: gate, eventLog: log)
         let manager = makeManager(handle: 11, createRecorder: recorder, teardownLog: log)
 
         let createTask = Task { try await manager.createWallet(mnemonic: "m", network: .testnet) }
@@ -176,30 +198,59 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(5))
         }
 
-        // Start the shutdown; its main-actor prologue takes the handle
-        // immediately, while its teardown block queues behind the gated
-        // create on the shared queue.
+        // Start the shutdown; it must drain the in-flight create BEFORE
+        // taking the handle — so the handle stays live while the gate holds.
         let shutdownTask = Task { await manager.shutdown() }
-        while manager.handle != NULL_HANDLE {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(
+            manager.handle, 11,
+            "shutdown must not take the handle while an admitted create is in flight")
 
         gate.signal()
-        _ = await shutdownTask.value
+        let wallet = try await createTask.value
+        let metrics = await shutdownTask.value
+
+        XCTAssertTrue(
+            manager.wallets[wallet.walletId] === wallet,
+            "the drained create must have completed its publish")
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
+        XCTAssertEqual(metrics.steps.count, 6)
+        // The full ordering is in the shared event log: the create ended
+        // before the first teardown step began.
+        XCTAssertEqual(
+            log.events.prefix(2), ["create:begin", "create:end"],
+            "unexpected event order: \(log.events)")
+        XCTAssertEqual(log.events.count, 8)
+        XCTAssertEqual(log.events[2], "teardown:spv_stop")
+    }
+
+    /// New creates arriving while a shutdown is draining are rejected up
+    /// front — before any native work.
+    func testCreateDuringShutdownDrainIsRejectedBeforeNativeCall() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        let recorder = CreateRecorder(gate: gate)
+        let manager = makeManager(handle: 13, createRecorder: recorder)
+
+        let firstCreate = Task { try await manager.createWallet(mnemonic: "a", network: .testnet) }
+        while recorder.count == 0 {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let shutdownTask = Task { await manager.shutdown() }
+        try await Task.sleep(for: .milliseconds(20))
 
         do {
-            _ = try await createTask.value
-            XCTFail("expected invalidHandle from the epilogue")
+            _ = try await manager.createWallet(mnemonic: "b", network: .testnet)
+            XCTFail("expected rejection during the shutdown drain")
         } catch let error as PlatformWalletError {
             guard case .invalidHandle = error else {
                 return XCTFail("expected invalidHandle, got \(error)")
             }
         }
-        XCTAssertTrue(manager.wallets.isEmpty, "a shutdown-raced create must not publish")
-        XCTAssertEqual(
-            log.events.first, "teardown:spv_stop",
-            "teardown must have queued AFTER the gated create released the shared queue")
-        XCTAssertEqual(log.events.count, 6)
+
+        gate.signal()
+        _ = try await firstCreate.value
+        _ = await shutdownTask.value
+        XCTAssertEqual(recorder.count, 1, "the rejected create must never reach the native call")
     }
 
     // MARK: - Concurrent creates
@@ -213,6 +264,9 @@ final class PlatformWalletCreateWalletTests: XCTestCase {
         let (w1, w2) = try await (first, second)
 
         XCTAssertEqual(recorder.count, 2)
+        XCTAssertEqual(
+            recorder.maxInFlight, 1,
+            "the shared serial queue must never run two native creates at once")
         XCTAssertNotEqual(w1.walletId, w2.walletId)
         XCTAssertEqual(manager.wallets.count, 2)
         XCTAssertTrue(manager.wallets[w1.walletId] === w1)

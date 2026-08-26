@@ -403,6 +403,21 @@ public class PlatformWalletManager: ObservableObject {
     /// an uncached no-op because the manager can still be configured later.
     private var shutdownTask: Task<PlatformWalletShutdownMetrics, Never>?
 
+    /// Set the moment [`shutdown()`] decides to proceed, BEFORE it drains
+    /// in-flight creates: closes admission for new async `createWallet`
+    /// calls so the drain below can terminate.
+    private var shutdownRequested = false
+
+    /// Async `createWallet` calls between admission and the end of their
+    /// MainActor epilogue. [`shutdown()`] waits for this to reach zero
+    /// before taking the handle: an admitted create must complete its FULL
+    /// transaction (FFI + publish) or fail on its own terms — never be
+    /// failed retroactively by a concurrent teardown after the native
+    /// create already persisted wallet data (the caller would roll back its
+    /// mnemonic and orphan the persisted rows).
+    private var activeCreateCount = 0
+    private var createDrainContinuations: [CheckedContinuation<Void, Never>] = []
+
     /// Test seam for the individual native calls. Production keeps `.live`;
     /// tests replace the function table while still running the production
     /// teardown orchestration end-to-end.
@@ -506,17 +521,33 @@ public class PlatformWalletManager: ObservableObject {
     /// for the host to log.
     @discardableResult
     public func shutdown() async -> PlatformWalletShutdownMetrics {
-        if let task = shutdownTask {
-            return await task.value
-        }
-        guard handle != NULL_HANDLE else {
-            // Never configured (or a test double without a handle): nothing
-            // to tear down. Do not cache this no-op: a manager may still be
-            // configured later, and that live handle must then be torn down.
-            return PlatformWalletShutdownMetrics(
-                steps: [],
-                totalMilliseconds: 0,
-                ranOffMainThread: false)
+        // Drain loop: close admission for new async creates, then wait for
+        // every already-admitted create to finish its FULL transaction
+        // (native create + MainActor epilogue). Draining before take-once
+        // means a create whose FFI already persisted wallet data can never
+        // be failed retroactively by this teardown — the caller would roll
+        // back its mnemonic and orphan the persisted rows. Each await can
+        // interleave with other MainActor work, so every idempotency /
+        // no-op condition is re-checked after resuming.
+        while true {
+            if let task = shutdownTask {
+                return await task.value
+            }
+            guard handle != NULL_HANDLE else {
+                // Never configured (or a test double without a handle):
+                // nothing to tear down. Do not cache this no-op: a manager
+                // may still be configured later, and that live handle must
+                // then be torn down.
+                return PlatformWalletShutdownMetrics(
+                    steps: [],
+                    totalMilliseconds: 0,
+                    ranOffMainThread: false)
+            }
+            shutdownRequested = true
+            if activeCreateCount == 0 { break }
+            await withCheckedContinuation { continuation in
+                createDrainContinuations.append(continuation)
+            }
         }
 
         // Take-once: from this point every FFI entry gated on
@@ -832,9 +863,11 @@ public class PlatformWalletManager: ObservableObject {
     /// variant; sync contexts keep the sync one.
     ///
     /// Throws `PlatformWalletError.invalidHandle` when the manager is shut
-    /// down — before the call (via `ensureConfigured`) or concurrently while
-    /// the create ran off-main (the created wallet is then discarded; its
-    /// wrapper handle destroy is a registry no-op after manager teardown).
+    /// down or a shutdown is already in progress — always BEFORE any native
+    /// work: an admitted create is guaranteed to run its full transaction
+    /// (native create + publish); [`shutdown()`] drains admitted creates
+    /// before taking the handle, so a create whose FFI persisted wallet
+    /// data can never be failed retroactively by a concurrent teardown.
     @discardableResult
     public func createWallet(
         mnemonic: String,
@@ -844,6 +877,23 @@ public class PlatformWalletManager: ObservableObject {
         birthHeight: UInt32? = nil
     ) async throws -> ManagedPlatformWallet {
         try ensureConfigured()
+        // Admission: reject while a shutdown is draining. Checked on the
+        // MainActor with no suspension before the count increment, so
+        // `shutdown()`'s drain can never miss an admitted create.
+        guard !shutdownRequested else {
+            throw PlatformWalletError.invalidHandle(
+                "manager shutdown is in progress; createWallet rejected")
+        }
+        activeCreateCount += 1
+        defer {
+            activeCreateCount -= 1
+            if activeCreateCount == 0, !createDrainContinuations.isEmpty {
+                let waiters = createDrainContinuations
+                createDrainContinuations.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+        }
+
         let h = handle
         let params = PlatformWalletCreateParams(
             mnemonic: mnemonic,
@@ -869,12 +919,14 @@ public class PlatformWalletManager: ObservableObject {
             }
         let w = try created.get()
 
-        // A concurrent shutdown may have taken the handle while the create
-        // ran off-main. The manager is terminal then (reconfiguration after
-        // shutdown is rejected, so a non-null handle here is still the
-        // snapshotted one): do not publish into it — dropping `w` lets its
-        // deinit release the wrapper handle.
+        // Defense in depth only: `shutdown()` drains admitted creates
+        // before taking the handle, so this cannot fire from the production
+        // shutdown path. It guards the invariant that the manager never
+        // publishes a wallet after its handle was torn down (dropping `w`
+        // lets its deinit release the wrapper handle — a registry no-op
+        // after manager teardown).
         guard handle != NULL_HANDLE else {
+            assertionFailure("shutdown took the handle under an admitted create despite the drain")
             throw PlatformWalletError.invalidHandle(
                 "manager was shut down while createWallet ran off-main")
         }
