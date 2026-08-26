@@ -8,7 +8,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::withdrawal::daily_withdrawal_limit::daily_withdrawal_limit;
-use grovedb::query_result_type::QueryResultType;
+use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, PathQuery, Query, QueryItem, TransactionArg};
 use platform_version::version::PlatformVersion;
 
@@ -157,7 +157,12 @@ impl Drive {
         )?;
 
         let mut total: u64 = 0;
-        for element in results.to_elements() {
+        for result in results.into_iterator() {
+            let QueryResultElement::ElementResultItem(element) = result else {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "element query returned a non-element result",
+                )));
+            };
             let Element::SumItem(amount, _) = element else {
                 return Err(Error::Drive(DriveError::CorruptedElementType(
                     what.not_a_sum_item,
