@@ -17,9 +17,11 @@
 use super::mode_detection::detect_ranked_mode;
 use super::{RankedPage, RankedPaginationInputs};
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::SelectProjection;
+use crate::query::ResolvedTimeRange;
 use crate::query::{OrderClause, WhereClause};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -64,6 +66,16 @@ pub struct DocumentRankedRequest<'a> {
     /// equality pins on the covering compound index's leading
     /// properties for the pinned-prefix form.
     pub where_clauses: &'a [WhereClause],
+    /// The fields among `where_clauses` whose equality clause was produced by
+    /// `IN_TIME_RANGE` resolution (see
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]).
+    /// Must be empty: `where_clauses` must be empty, so there is nothing to
+    /// have resolved, and ranking over bucket keys is undesigned — a document
+    /// belongs to `overlap_factor` buckets at once, so it would contribute to
+    /// that many groups. Carried (and rejected) here for the same reason
+    /// `where_clauses` is: drive owns the rejection regardless of which
+    /// upstream path built the request.
+    pub resolved_time_ranges: &'a [ResolvedTimeRange],
     /// Request `limit` — the ranking's `k`. **Required**; there is no
     /// server default a verifying client could reproduce.
     pub limit: Option<u32>,
@@ -128,6 +140,19 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentRankedResponse, Error> {
+        // Unreachable behind the empty-`where_clauses` rule `detect_ranked_mode`
+        // enforces below — a resolved equality is a where clause — but stated
+        // here so the ranked surface's exclusion of bucketed indexes is a
+        // rejection rather than a silent fallback to another index.
+        if !request.resolved_time_ranges.is_empty() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "a ranked query cannot carry a time-range (IN_TIME_RANGE) selection: ranking \
+                 groups by an index's only property, and a document belongs to every bucket \
+                 that contains its timestamp, so it would be ranked into several groups at once"
+                    .to_string(),
+            )));
+        }
+
         let mode = detect_ranked_mode(
             &request.select,
             request.group_by,

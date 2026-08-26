@@ -1602,6 +1602,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
                 document_type,
                 SUM_PROPERTY_NAME,
                 &case.structured,
+                &[],
                 platform_version,
             )
             .expect("point-lookup path query builds"),
@@ -1610,6 +1611,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
                 document_type,
                 SUM_PROPERTY_NAME,
                 &case.structured,
+                &[],
                 platform_version,
             )
             .expect("aggregate-range path query builds"),
@@ -1621,6 +1623,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
                 document_type,
                 SUM_PROPERTY_NAME,
                 &case.structured,
+                &[],
                 limit,
                 left_to_right,
                 platform_version,
@@ -1914,6 +1917,7 @@ fn sum_request<'a>(
         limit,
         prove,
         drive_config: &fixture.drive_config,
+        resolved_time_ranges: vec![],
     }
 }
 

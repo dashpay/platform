@@ -5,31 +5,33 @@ use crate::query::{
 };
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
-use grovedb::operations::proof::indexed_axis::AxisEntries;
-use grovedb::GroveDb;
+use grovedb::operations::proof::{indexed_axis::AxisEntries, VerifiedPathQuery};
+use grovedb::{GroveDb, PathQuery};
 
 impl DriveDocumentRankedQuery<'_> {
     /// v0 of [`Self::verify_ranked_top_k_proof`].
     ///
-    /// Rebuilds the proved subtree path with
-    /// [`Self::indexed_property_name_tree_path`] and hands the proof to
-    /// [`GroveDb::verify_indexed_axis_top_k_paginated`], which is an
-    /// associated function — no database handle is involved, so this
-    /// compiles and runs in a verifier-only build.
+    /// Rebuilds the same [`PathQuery::new_axis_top_k`] the prover used —
+    /// path via [`Self::indexed_property_name_tree_path`], the axis /
+    /// `k` / offset / direction from this query — and hands the proof to
+    /// [`GroveDb::verify_path_query`], which is an associated function —
+    /// no database handle is involved, so this compiles and runs in a
+    /// verifier-only build.
     ///
     /// Three things are checked before the page is returned:
     ///
-    /// 1. **The envelope's `(axis, k, offset, descending)` match this
-    ///    query.** grovedb does this itself: the values are echoed in
-    ///    the proof and compared against the arguments, so a proof
-    ///    generated for a different ranking — or a different page of the
-    ///    same ranking — is rejected rather than silently reinterpreted.
+    /// 1. **The proof answers this query.** The unified verifier is
+    ///    query-as-input: nothing is echoed in the envelope; the proof is
+    ///    verified against the verifier's own reconstruction of the
+    ///    `PathQuery`, so a proof generated for a different ranking — or
+    ///    a different page of the same ranking — fails verification
+    ///    rather than being silently reinterpreted.
     /// 2. **The result's axis shape matches the requested axis** — a
     ///    `Count` request must not come back holding `Sum` entries. This
-    ///    is belt-and-braces on top of (1) (the tag check already rules
-    ///    it out) and exists so a future decoder change that decouples
-    ///    the tag from the decoded variant surfaces as an error here
-    ///    instead of a mis-typed number reaching the caller.
+    ///    is belt-and-braces on top of (1) (the query's axis already
+    ///    rules it out) and exists so a future decoder change that
+    ///    decouples the query from the decoded variant surfaces as an
+    ///    error here instead of a mis-typed number reaching the caller.
     /// 3. **At most `k` entries.** Fewer is normal — the index may hold
     ///    fewer groups than were asked for — but more would mean the
     ///    proof committed a longer walk than the request authorized.
@@ -52,20 +54,41 @@ impl DriveDocumentRankedQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, RankedPage), Error> {
         let path = self.indexed_property_name_tree_path()?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
-
-        let result = GroveDb::verify_indexed_axis_top_k_paginated(
-            proof,
-            path_refs.as_slice(),
+        let path_query = PathQuery::new_axis_top_k(
+            path,
             self.axis.into(),
             self.k,
             self.offset as u64,
             self.descending,
-            &platform_version.drive.grove_version,
-        )
-        .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        );
 
-        let entries = match (self.axis, result.entries) {
+        let verified =
+            GroveDb::verify_path_query(proof, &path_query, &platform_version.drive.grove_version)
+                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+
+        let VerifiedPathQuery::AxisEntries {
+            root_hash,
+            entries,
+            skipped,
+        } = verified
+        else {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                "ranked top-k proof for the {:?} axis verified to a non-axis result shape",
+                self.axis
+            ))));
+        };
+
+        // A paginated (top-k) traversal always attests its skip count;
+        // `None` is the bounded traversal's shape and cannot answer this
+        // query.
+        let skipped = skipped.ok_or_else(|| {
+            Error::Drive(DriveError::CorruptedDriveState(format!(
+                "ranked top-k proof for the {:?} axis carried no attested skip count",
+                self.axis
+            )))
+        })?;
+
+        let entries = match (self.axis, entries) {
             (RankedAxis::Count, AxisEntries::Count(entries)) => entries
                 .into_iter()
                 .map(|entry| entry.key_pair())
@@ -108,12 +131,6 @@ impl DriveDocumentRankedQuery<'_> {
             ))));
         }
 
-        Ok((
-            result.root_hash,
-            RankedPage {
-                skipped: result.skipped,
-                entries,
-            },
-        ))
+        Ok((root_hash, RankedPage { skipped, entries }))
     }
 }

@@ -19,6 +19,7 @@
 //! [`DocumentSum`]: drive_proof_verifier::DocumentSum
 //! [`DocumentSplitSums`]: drive_proof_verifier::DocumentSplitSums
 
+use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -33,6 +34,7 @@ use drive::query::drive_document_sum_query::index_picker::{
 };
 use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
+use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
     verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_distinct_sum_proof,
@@ -89,11 +91,43 @@ pub(super) fn assert_select_is_sum(
 ///   that should be unreachable here (`prove = true`); reject as
 ///   `RequestError` if they bubble through.
 pub(super) fn verify_sum_query(
-    request: DocumentQuery,
+    mut request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<SumEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    let proof = response
+        .proof()
+        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+    let mtd = response
+        .metadata()
+        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+    let contract_id = request.data_contract.id().to_buffer();
+    let sum_property = request.select.field.clone();
+
+    // Resolve any pending time-range (`IN_TIME_RANGE`) selections into
+    // concrete bucket-equality clauses using the quorum-signed metadata
+    // block time — BEFORE mode detection and covering-index selection
+    // below, which read `request.where_clauses`; the prover routed on
+    // the resolved shape.
+    // ...and enforce the same provenance-vs-shape contract the server
+    // dispatchers do, through the one shared normalization helper.
+    let resolved_time_ranges =
+        normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
+
+    // Canonicalize exactly as the server dispatcher does (the shared step
+    // in `drive::query::canonicalize`): the prover merged `[f > A, f < B]`
+    // pairs into one `between*` clause before its mode detection, so mode
+    // detection here must run over the same canonical shape or a valid
+    // proof is rejected.
+    request.where_clauses = validate_and_canonicalize_where_clauses(
+        std::mem::take(&mut request.where_clauses),
+        platform_version,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!("where-clause canonicalization failed: {e}"),
+    })?;
+
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -103,14 +137,6 @@ pub(super) fn verify_sum_query(
                 request.document_type_name, e
             ),
         })?;
-    let proof = response
-        .proof()
-        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-    let mtd = response
-        .metadata()
-        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
-    let contract_id = request.data_contract.id().to_buffer();
-    let sum_property = request.select.field.clone();
 
     // Resolve the SQL-shape `SumMode` the request implies. Same
     // decision tree as `validate_and_route` in the abci handler —
@@ -171,6 +197,7 @@ pub(super) fn verify_sum_query(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
+            &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove range SUM requires a `rangeSummable: true` index whose last \
@@ -183,6 +210,7 @@ pub(super) fn verify_sum_query(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
+            &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove SUM requires a `summable: \"<prop>\"` index whose properties \

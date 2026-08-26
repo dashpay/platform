@@ -6,6 +6,8 @@
 
 use super::super::conditions::WhereClause;
 use super::DriveDocumentCountQuery;
+use crate::query::index_admissible_for_resolved_time_range;
+use crate::query::ResolvedTimeRange;
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -33,9 +35,16 @@ impl DriveDocumentCountQuery<'_> {
     /// clauses), the dispatcher reads the document-type primary-key tree's
     /// CountTree directly — that path doesn't use this picker because no
     /// index is involved.
+    ///
+    /// `resolved_time_ranges` names the fields whose equality clause was
+    /// produced by `IN_TIME_RANGE` resolution (see
+    /// [`crate::query::resolve_time_range_bucket_clause`]); it gates which
+    /// indexes are candidates at all — see
+    /// [`index_admissible_for_resolved_time_range`].
     pub fn find_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
+        resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
         if Self::has_unsupported_operator(where_clauses) {
             return None;
@@ -56,6 +65,14 @@ impl DriveDocumentCountQuery<'_> {
         }
 
         for index in indexes.values() {
+            // A time-range index holds one entry per bucket containing the
+            // document, keyed by bucket start: counting over it multi-counts
+            // every document unless the query pins a single bucket, and only
+            // a resolution-produced equality does that. Conversely a raw
+            // clause must never bind to bucket keys.
+            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+                continue;
+            }
             if !index.countable.is_countable() {
                 continue;
             }
@@ -93,9 +110,18 @@ impl DriveDocumentCountQuery<'_> {
     /// walks the current model doesn't support). Pure point-lookup queries
     /// (no range operator) should fall back to
     /// [`Self::find_countable_index_for_where_clauses`].
+    ///
+    /// `resolved_time_ranges` gates the candidate set exactly as in
+    /// [`Self::find_countable_index_for_where_clauses`]. A resolved field
+    /// never arrives as a range clause — resolution always produces an
+    /// equality — so with a non-empty list the only bucketed index this can
+    /// return is one whose resolved equality is a prefix property and whose
+    /// range terminator is a different property. That is the intended shape:
+    /// a range over one property within a single time bucket.
     pub fn find_range_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
+        resolved_time_ranges: &[ResolvedTimeRange],
     ) -> Option<&'b Index> {
         let range_clauses: Vec<&WhereClause> = where_clauses
             .iter()
@@ -147,6 +173,13 @@ impl DriveDocumentCountQuery<'_> {
             .collect();
 
         for index in indexes.values() {
+            // Same admissibility rule as the point-lookup picker: bucketed
+            // indexes store one entry per containing bucket, so only a query
+            // pinned to a single bucket by a resolution-produced equality may
+            // walk them, and raw clauses may never bind to bucket keys.
+            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+                continue;
+            }
             if !index.range_countable || !index.countable.is_countable() {
                 continue;
             }
@@ -174,14 +207,26 @@ impl DriveDocumentCountQuery<'_> {
                 // properties. For the widget contract there are no
                 // such middle properties on byBrandColor, but the
                 // builder handles the general case.
+                let intermediate_props = &index.properties[1..index.properties.len() - 1];
                 let mut intermediate_props_ok = true;
-                for prop in &index.properties[1..index.properties.len() - 1] {
+                for prop in intermediate_props {
                     if !prefix_fields.contains(prop.name.as_str()) {
                         intermediate_props_ok = false;
                         break;
                     }
                 }
-                if intermediate_props_ok {
+                // Strict-coverage check, mirroring sum's picker: every
+                // Equal/In prefix field must appear in the index's
+                // intermediate properties. Without this
+                // `intermediate_props.len() == prefix_fields.len()` guard,
+                // a query with extra prefix fields would silently pick an
+                // index that *doesn't* cover them — the carrier path-query
+                // builder iterates only index properties, so the uncovered
+                // clause would simply be dropped and the per-group counts
+                // would span all its values (an over-broad result that
+                // even verifies, since the verifier rebuilds the same
+                // path query from the same picker).
+                if intermediate_props_ok && intermediate_props.len() == prefix_fields.len() {
                     return Some(index);
                 }
                 continue;

@@ -13,12 +13,13 @@
 //! two copies of a grammar agreeing.
 //!
 //! Unlike the count helper there is no per-shape dispatch: the ranked
-//! surface has exactly one proof primitive
-//! (`prove_indexed_axis_top_k_paginated`), and all of a request's
-//! variation is carried *inside* the query struct.
+//! surface has exactly one proof primitive (grovedb's unified
+//! `prove_query` over `PathQuery::new_axis_top_k`), and all of a
+//! request's variation is carried *inside* the query struct.
 //!
 //! [`DocumentRankedEntries`]: drive_proof_verifier::DocumentRankedEntries
 
+use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -116,11 +117,43 @@ pub(super) fn assert_ranked_shape(
 /// metadata before returning. There is no path through this helper
 /// that yields entries without that check having run.
 pub(super) fn verify_ranked_query(
-    request: DocumentQuery,
+    mut request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<RankedPage>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    let proof = response
+        .proof()
+        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+    let mtd = response
+        .metadata()
+        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+    // Resolve any pending time-range (`IN_TIME_RANGE`) selections through
+    // the shared normalization helper, then reject the request outright if
+    // anything resolved — mirroring the server, whose
+    // `execute_document_ranked_request` refuses non-empty provenance. The
+    // rejection is load-bearing, not a shape formality: ranked mode accepts
+    // equality pins on compound ranked indexes, and the ranked picker
+    // excludes transformed indexes, so a resolved bucket-start equality
+    // would pin a *plain* ranked index on the same timestamp field. A
+    // malicious node could then return a valid proof over that subtree —
+    // documents whose raw timestamp equals the bucket boundary, not the
+    // requested window — and without this guard the verifier would
+    // authenticate it even though an honest server rejects the request.
+    let resolved_time_ranges =
+        normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
+    if !resolved_time_ranges.is_empty() {
+        return Err(drive_proof_verifier::Error::RequestError {
+            error: "a ranked query cannot carry a time-range (IN_TIME_RANGE) selection: \
+                    ranking groups by an index's own property, a document belongs to every \
+                    bucket containing its timestamp, and the resolved bucket-start equality \
+                    could only pin a plain index over raw timestamps — the server rejects \
+                    this request and the verifier must not authenticate a proof for it"
+                .to_string(),
+        });
+    }
+
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -130,12 +163,6 @@ pub(super) fn verify_ranked_query(
                 request.document_type_name, e
             ),
         })?;
-    let proof = response
-        .proof()
-        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-    let mtd = response
-        .metadata()
-        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
     let mode = assert_ranked_shape(&request, platform_version)?;
 

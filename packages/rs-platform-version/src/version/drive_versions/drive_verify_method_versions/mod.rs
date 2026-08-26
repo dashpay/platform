@@ -76,8 +76,8 @@ pub struct DriveVerifyDocumentSumMethodVersions {
 /// Versions for the indexed-axis prove-path verifiers: the ranked
 /// (top-k) verifier and the boolean-`HAVING` range verifier. Both are
 /// implemented on the respective drive query types and delegate to
-/// grovedb's indexed-axis proof verification
-/// (`verify_indexed_axis_top_k_paginated` / `verify_indexed_axis_query`).
+/// grovedb's unified `verify_path_query` over the query's axis
+/// `PathQuery` (`new_axis_top_k` / `new_axis_bounded`).
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyDocumentRankedMethodVersions {
     pub verify_ranked_top_k_proof: FeatureVersion,

@@ -31,6 +31,7 @@ mod conversions;
 mod dispatch;
 mod routing;
 
+use drive::query::ResolvedTimeRange;
 use routing::{reject_offset_off_the_ranked_path, validate_and_route};
 // Re-exported so `tests.rs` (a `use super::*` consumer) keeps seeing
 // the routing probe under its old name.
@@ -55,12 +56,19 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV1;
 use dapi_grpc::platform::v0::get_documents_response::GetDocumentsResponseV1;
+use dpp::check_validation_result_with_data;
+use dpp::data_contract::accessors::v0::DataContractV0Getters as _;
+use dpp::prelude::Identifier as ContractIdentifier;
+use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::DataContractFetchInfo;
 use drive::error::query::QuerySyntaxError;
-use drive::query::{CountMode, SelectProjection};
+use drive::query::{resolve_time_range_bucket_clause, CountMode, SelectProjection};
+use std::sync::Arc;
 
 /// Build a `QuerySyntaxError::Unsupported` carrying a stable
 /// "<feature> is not yet implemented" message. The wording is
@@ -74,6 +82,12 @@ pub(super) fn not_yet_implemented(feature: &str) -> QueryError {
         feature
     )))
 }
+
+/// The contract fetched once per request — by time-range resolution when
+/// the request carries an `IN_TIME_RANGE` clause — and handed to the
+/// aggregate dispatchers so they never fetch a second time.
+pub(in crate::query::document_query::v1) type PrefetchedContract =
+    Option<(ContractIdentifier, Arc<DataContractFetchInfo>)>;
 
 /// Outcome of `validate_and_route` — names the path the v1 request
 /// will dispatch to.
@@ -137,6 +151,64 @@ enum RoutingDecision {
 }
 
 impl<C> Platform<C> {
+    /// Parse the wire contract id and fetch the contract (through drive's
+    /// cache) with the uniform error mapping every v1 document route uses.
+    /// One fetch per request: time-range resolution and the aggregate
+    /// dispatch arms both consume this instead of carrying their own
+    /// copies of the parse → fetch → not-found sequence. The document-type
+    /// lookup stays at each consumer — it borrows from the returned `Arc`.
+    ///
+    /// Outer `Err` is an internal error; inner `Err` is the validation
+    /// error to hand back to the wire caller
+    /// (`check_validation_result_with_data!` unwraps the nesting).
+    #[allow(clippy::type_complexity)]
+    fn fetch_contract_for_document_query_v1(
+        &self,
+        data_contract_id: Vec<u8>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Result<(ContractIdentifier, Arc<DataContractFetchInfo>), QueryError>, Error> {
+        let contract_id: ContractIdentifier = match data_contract_id.try_into() {
+            Ok(id) => id,
+            Err(_) => {
+                return Ok(Err(QueryError::InvalidArgument(
+                    "id must be a valid identifier (32 bytes long)".to_string(),
+                )))
+            }
+        };
+        let (_, contract_fetch_info) = self.drive.get_contract_with_fetch_info_and_fee(
+            contract_id.to_buffer(),
+            None,
+            true,
+            None,
+            platform_version,
+        )?;
+        let Some(contract_fetch_info) = contract_fetch_info else {
+            return Ok(Err(QueryError::Query(
+                QuerySyntaxError::DataContractNotFound("contract not found for a document query"),
+            )));
+        };
+        Ok(Ok((contract_id, contract_fetch_info)))
+    }
+
+    /// The contract an aggregate dispatch arm executes against: the
+    /// time-range resolution's fetch when it ran, one fetch now
+    /// otherwise. Called by each aggregate dispatcher AFTER its cheap
+    /// shape guards, so their rejections keep precedence over
+    /// contract-lookup errors. Same nested-`Result` contract as
+    /// [`Self::fetch_contract_for_document_query_v1`].
+    #[allow(clippy::type_complexity)]
+    pub(in crate::query::document_query::v1) fn contract_for_aggregate_dispatch(
+        &self,
+        prefetched: PrefetchedContract,
+        data_contract_id: Vec<u8>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Result<(ContractIdentifier, Arc<DataContractFetchInfo>), QueryError>, Error> {
+        match prefetched {
+            Some(pair) => Ok(Ok(pair)),
+            None => self.fetch_contract_for_document_query_v1(data_contract_id, platform_version),
+        }
+    }
+
     pub(super) fn query_documents_v1(
         &self,
         request_v1: GetDocumentsRequestV1,
@@ -182,10 +254,98 @@ impl<C> Platform<C> {
         // `InvalidArgument` rather than being masked by the blanket
         // "not yet implemented", since malformed input is malformed
         // regardless of which capability would have handled it.
-        let where_clauses = match conversions::where_clauses_from_proto(proto_where_clauses) {
+        //
+        // Time-range (IN_TIME_RANGE) clauses are partitioned out first. They
+        // are resolved to concrete equality clauses on the bucketed source
+        // field using the authoritative committed block time, so the rest of
+        // the v1 pipeline (routing, executors, proofs) treats them as
+        // ordinary equality lookups. The verifier re-derives the same bucket
+        // from the quorum-signed response metadata time, so the proof
+        // matches.
+        // The `.any()` pre-check skips the two-Vec partition on the
+        // overwhelmingly common clause set with no time-range operator.
+        let (time_range_proto, normal_proto): (Vec<_>, Vec<_>) = if proto_where_clauses
+            .iter()
+            .any(conversions::is_time_range_clause)
+        {
+            proto_where_clauses
+                .into_iter()
+                .partition(conversions::is_time_range_clause)
+        } else {
+            (Vec::new(), proto_where_clauses)
+        };
+
+        let mut where_clauses = match conversions::where_clauses_from_proto(normal_proto) {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
+        let mut resolved_time_ranges: Vec<ResolvedTimeRange> = Vec::new();
+        // The contract fetched for time-range resolution, handed to the
+        // aggregate dispatchers below so a request fetches at most once.
+        let mut prefetched_contract: PrefetchedContract = None;
+
+        if !time_range_proto.is_empty() {
+            // LOAD-BEARING TIME SOURCE: the verifier re-derives the bucket
+            // from the response metadata's `time_ms`, which
+            // `response_metadata_v0` stamps from the state selected by
+            // `CheckpointUsed`. Reading `platform_state` here matches that
+            // only because every v1 document dispatch serves from
+            // `GroveDBToUse::Current`. If any document route ever serves
+            // from a checkpoint, this resolution must read the SAME state
+            // the response metadata will be built from, or every time-range
+            // proof will fail client-side verification.
+            let block_time_ms =
+                match platform_state.last_committed_block_time_ms() {
+                    Some(t) => t,
+                    None => return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                        QuerySyntaxError::Unsupported(
+                            "a time range (IN_TIME_RANGE) query requires a committed block time"
+                                .to_string(),
+                        ),
+                    ))),
+                };
+            let (contract_id, contract_fetch_info) = check_validation_result_with_data!(self
+                .fetch_contract_for_document_query_v1(
+                    data_contract_id.clone(),
+                    platform_version
+                )?);
+            let contract_ref = &contract_fetch_info.contract;
+            let doc_type = check_validation_result_with_data!(contract_ref
+                .document_type_for_name(document_type.as_str())
+                .map_err(|_| QueryError::InvalidArgument(format!(
+                    "document type {} not found for contract {}",
+                    document_type, contract_id
+                ))));
+            for proto_wc in time_range_proto {
+                let (field, selector, grid) =
+                    match conversions::time_range_clause_from_proto(proto_wc) {
+                        Ok(parsed) => parsed,
+                        Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+                    };
+                match resolve_time_range_bucket_clause(
+                    &field,
+                    selector,
+                    grid,
+                    doc_type,
+                    block_time_ms,
+                ) {
+                    Ok((clause, resolved)) => {
+                        where_clauses.push(clause);
+                        // The resolved clause is an ordinary equality; only
+                        // this list tells the executors that it must be
+                        // matched against bucket starts of the resolved
+                        // grid rather than raw timestamps (or another
+                        // grid's starts), so it travels with the request.
+                        resolved_time_ranges.push(resolved);
+                    }
+                    Err(drive::error::Error::Query(qe)) => {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)))
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            prefetched_contract = Some((contract_id, contract_fetch_info));
+        }
         let order_by_clauses = match conversions::order_clauses_from_proto(proto_order_by) {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
@@ -238,10 +398,15 @@ impl<C> Platform<C> {
         }
 
         match routing {
+            // The documents route forwards the raw id into the shared
+            // `query_documents_typed` helper (v0 dispatches into it too),
+            // which owns its contract fetch; the aggregate arms below
+            // consume the request's single fetch instead.
             RoutingDecision::Documents => self.dispatch_documents_v1(
                 data_contract_id,
                 document_type,
                 where_clauses,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 start,
@@ -250,9 +415,11 @@ impl<C> Platform<C> {
                 platform_version,
             ),
             RoutingDecision::Count(mode) => self.dispatch_count_v1(
+                prefetched_contract,
                 data_contract_id,
                 document_type,
                 where_clauses,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 start,
@@ -262,9 +429,11 @@ impl<C> Platform<C> {
                 platform_version,
             ),
             RoutingDecision::Sum { sum_property, mode } => self.dispatch_sum_v1(
+                prefetched_contract,
                 data_contract_id,
                 document_type,
                 where_clauses,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 start,
@@ -275,9 +444,11 @@ impl<C> Platform<C> {
                 platform_version,
             ),
             RoutingDecision::Average { sum_property, mode } => self.dispatch_average_v1(
+                prefetched_contract,
                 data_contract_id,
                 document_type,
                 where_clauses,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 start,
@@ -288,12 +459,14 @@ impl<C> Platform<C> {
                 platform_version,
             ),
             RoutingDecision::Ranked => self.dispatch_ranked_v1(
+                prefetched_contract,
                 data_contract_id,
                 document_type,
                 select,
                 group_by,
                 having_clauses,
                 where_clauses,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 offset,
@@ -303,12 +476,14 @@ impl<C> Platform<C> {
                 platform_version,
             ),
             RoutingDecision::HavingRange => self.dispatch_having_v1(
+                prefetched_contract,
                 data_contract_id,
                 document_type,
                 select,
                 group_by,
                 having_clauses,
                 where_clauses,
+                resolved_time_ranges,
                 order_by_clauses,
                 limit,
                 offset,

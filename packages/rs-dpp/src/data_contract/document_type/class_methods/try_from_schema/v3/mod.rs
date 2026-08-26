@@ -15,9 +15,10 @@
 //! index-key length ceilings, and the constants they are derived from.
 
 use crate::data_contract::config::DataContractConfig;
-// Only the ranked key-length rule below names these, and it is validation-only.
+// Only the ranked key-length rule below names `Index`, and it is validation-only.
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -255,10 +256,14 @@ fn try_from_schema_generation_3(
             // generation is far past that boundary.
             admit_count_indexes: true,
             meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
-            // RANKED: the constants that make this generation 3.
-            admit_ranked: true,
+            // RANKED / TIME RANGE: the keyword admissions that make this
+            // generation 3, read from the shared generation → admission
+            // mapping so the registration-cost re-parse can never drift
+            // from what this parser accepts.
+            admit_ranked: IndexGrammarAdmissions::for_schema_generation(3).ranked,
             ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
             ranked_index_structure_check: validate_no_ranked_prefix_overlap,
+            admit_time_range: IndexGrammarAdmissions::for_schema_generation(3).time_range,
         },
         platform_version,
     )?;

@@ -515,6 +515,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_group_size: 256,
         max_token_redemption_cycles: 128,
         max_shielded_transition_actions: 16,
+        max_time_range_overlap_factor: None,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

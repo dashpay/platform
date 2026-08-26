@@ -39,7 +39,10 @@ use dpp::state_transition::batch_transition::document_delete_transition::Documen
 use dpp::state_transition::batch_transition::BatchTransitionV1;
 use dpp::state_transition::StateTransition;
 use drive::drive::RootTree;
-use drive::grovedb::Element;
+use drive::grovedb::element::IndexAxis;
+use drive::grovedb::operations::proof::indexed_axis::AxisEntries;
+use drive::grovedb::query_result_type::QueryResultType;
+use drive::grovedb::{Element, PathQuery, PathQueryRun};
 
 /// The group that gets emptied.
 const G: &str = "beta";
@@ -75,19 +78,29 @@ fn ranked_count_groups(
     path: &[Vec<u8>],
     platform_version: &PlatformVersion,
 ) -> Vec<(u64, String)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    platform
+    let path_query = PathQuery::new_axis_top_k(path.to_vec(), IndexAxis::Count, 100, 0, true);
+    let run = platform
         .drive
         .grove
-        .indexed_count_top_k(
-            path_refs.as_slice(),
-            100,
+        .run_path_query(
+            &path_query,
             true,
+            true,
+            true,
+            QueryResultType::QueryPathKeyElementTrioResultType,
             None,
             &platform_version.drive.grove_version,
         )
         .unwrap()
-        .expect("the ranked count read must succeed")
+        .expect("the ranked count read must succeed");
+    let PathQueryRun::AxisEntries {
+        entries: AxisEntries::Count(entries),
+        ..
+    } = run
+    else {
+        panic!("expected count axis entries");
+    };
+    entries
         .into_iter()
         .map(|entry| entry.key_pair())
         .map(|(count, key)| {
