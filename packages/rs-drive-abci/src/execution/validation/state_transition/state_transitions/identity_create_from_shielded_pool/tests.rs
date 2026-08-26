@@ -934,6 +934,7 @@ fn executed_transition_result_proof_roundtrips() {
             &block_info,
             &transaction,
             None,
+            &mut 0,
             platform_version,
             &fee_versions,
         )

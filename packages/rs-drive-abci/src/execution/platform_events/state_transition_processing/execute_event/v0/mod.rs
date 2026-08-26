@@ -784,6 +784,7 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 Some(&mut address_balances),
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )
@@ -829,6 +830,7 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 Some(&mut address_balances),
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )
@@ -871,6 +873,7 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 Some(&mut address_balances),
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )

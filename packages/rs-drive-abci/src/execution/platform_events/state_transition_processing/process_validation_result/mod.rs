@@ -129,6 +129,7 @@ mod tests {
                 validation_result,
                 &BlockInfo::default(),
                 &transaction,
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )
@@ -139,6 +140,7 @@ mod tests {
                 validation_result,
                 &BlockInfo::default(),
                 &transaction,
+                &mut 0,
                 platform_version,
                 &fee_versions,
             )
