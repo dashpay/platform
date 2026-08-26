@@ -1437,9 +1437,13 @@ mod encode_version_gate_tests {
             platform_version,
         )
         .expect_err("protocol version 13's contract grammar has no timeRange indexes");
+        let message = match error {
+            Error::Config(message) => message,
+            other => panic!("expected Error::Config, got {other:?}"),
+        };
         assert!(
-            error.to_string().contains("protocol version 14"),
-            "the refusal must name the real version floor, got: {error}"
+            message.contains("protocol version 14"),
+            "the refusal must name the real version floor, got: {message}"
         );
     }
 
