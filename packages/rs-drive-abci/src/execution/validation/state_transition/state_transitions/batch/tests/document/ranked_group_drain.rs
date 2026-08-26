@@ -75,21 +75,42 @@ fn ranked_count_groups(
     path: &[Vec<u8>],
     platform_version: &PlatformVersion,
 ) -> Vec<(u64, String)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    platform
+    use drive::grovedb::query_result_type::QueryResultType;
+    use drive::grovedb::{AxisKeys, PathQuery, PathQueryRun};
+
+    let path_query = PathQuery::new_axis(
+        path.to_vec(),
+        drive::grovedb_query::AxisQuery::top_k(
+            drive::grovedb_query::IndexAxis::Count,
+            100,
+            0,
+            true,
+        )
+        .keys_only(),
+    );
+    let run = platform
         .drive
         .grove
-        .indexed_count_top_k(
-            path_refs.as_slice(),
-            100,
+        .run_path_query(
+            &path_query,
             true,
+            true,
+            true,
+            QueryResultType::QueryKeyElementPairResultType,
             None,
             &platform_version.drive.grove_version,
         )
         .unwrap()
-        .expect("the ranked count read must succeed")
+        .expect("the ranked count read must succeed");
+    let PathQueryRun::AxisKeys {
+        keys: AxisKeys::Count(pairs),
+        ..
+    } = run
+    else {
+        panic!("expected a keys-only count page, got {run:?}");
+    };
+    pairs
         .into_iter()
-        .map(|entry| entry.key_pair())
         .map(|(count, key)| {
             (
                 count,

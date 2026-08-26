@@ -492,7 +492,12 @@ impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
                     .to_string(),
             ));
         }
-        let q: DocumentQuery = self.into();
+        // Fallible: a drive query carrying time-range resolution provenance
+        // has no faithful `DocumentQuery` form (the resolved bucket equality
+        // would demote to a raw-timestamp predicate) and is refused — build
+        // a `DocumentQuery` with `with_time_range` / `with_time_range_grid`
+        // for time-range selections instead.
+        let q: DocumentQuery = self.try_into()?;
         Ok(q)
     }
 }

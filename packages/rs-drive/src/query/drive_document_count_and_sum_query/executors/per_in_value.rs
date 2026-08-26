@@ -22,6 +22,7 @@ use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use crate::query::{WhereClause, WhereOperator};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -48,6 +49,7 @@ impl Drive {
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: &[ResolvedTimeRange],
         sum_property: String,
         left_to_right: bool,
         limit: u16,
@@ -122,6 +124,7 @@ impl Drive {
                 document_type.indexes(),
                 &clauses_for_value,
                 &sum_property,
+                resolved_time_ranges,
             )
             .filter(|idx| idx.countable.is_countable())
             .ok_or_else(|| {

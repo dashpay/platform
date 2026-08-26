@@ -455,7 +455,9 @@ mod tests {
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
                 ),
-            processing_fee: 73253660,
+            // estimated_size v1 adds the contract-version stamp varint to
+            // the worst-case document size
+            processing_fee: 73323060,
             ..Default::default()
         };
 

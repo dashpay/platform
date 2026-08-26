@@ -109,7 +109,7 @@ extension PlatformWalletManager {
     /// render both with one code path.
     public func trackedMasternodes() -> [PlatformMasternode] {
         guard isConfigured, handle != NULL_HANDLE else { return [] }
-        var outEntries: UnsafePointer<MasternodeEntryFFI>?
+        var outEntries: UnsafePointer<MasternodeEntryV2FFI>?
         var outCount: UInt = 0
         let ffiResult = platform_wallet_manager_list_tracked_masternodes(
             handle, &outEntries, &outCount)
@@ -120,7 +120,7 @@ extension PlatformWalletManager {
         }
         guard let entries = outEntries, outCount > 0 else { return [] }
         defer {
-            platform_wallet_manager_free_masternodes(
+            platform_wallet_manager_free_masternodes_v2(
                 UnsafeMutablePointer(mutating: entries), outCount)
         }
         return Self.masternodeModels(from: entries, count: Int(outCount))
@@ -140,7 +140,7 @@ extension PlatformWalletManager {
         }
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { () -> PlatformMasternode in
-            var outEntries: UnsafePointer<MasternodeEntryFFI>?
+            var outEntries: UnsafePointer<MasternodeEntryV2FFI>?
             var outCount: UInt = 0
             let ffiResult = proTxHash.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
                 platform_wallet_manager_refresh_tracked_masternode(
@@ -157,7 +157,7 @@ extension PlatformWalletManager {
                 throw PlatformWalletError.notFound("refresh returned no record")
             }
             defer {
-                platform_wallet_manager_free_masternodes(
+                platform_wallet_manager_free_masternodes_v2(
                     UnsafeMutablePointer(mutating: entries), outCount)
             }
             guard let record = Self.masternodeModels(from: entries, count: Int(outCount)).first
@@ -224,7 +224,7 @@ extension PlatformWalletManager {
         _ call: (
             Handle,
             UnsafePointer<UInt8>?,
-            UnsafeMutablePointer<UnsafePointer<MasternodeEntryFFI>?>,
+            UnsafeMutablePointer<UnsafePointer<MasternodeEntryV2FFI>?>,
             UnsafeMutablePointer<UInt>
         ) -> PlatformWalletFFIResult
     ) throws -> PlatformMasternode {
@@ -232,7 +232,7 @@ extension PlatformWalletManager {
             throw PlatformWalletError.invalidParameter(
                 "Manager not configured, or proTxHash not 32 bytes")
         }
-        var outEntries: UnsafePointer<MasternodeEntryFFI>?
+        var outEntries: UnsafePointer<MasternodeEntryV2FFI>?
         var outCount: UInt = 0
         let ffiResult = proTxHash.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
             call(
@@ -249,7 +249,7 @@ extension PlatformWalletManager {
             throw PlatformWalletError.notFound("no record returned")
         }
         defer {
-            platform_wallet_manager_free_masternodes(
+            platform_wallet_manager_free_masternodes_v2(
                 UnsafeMutablePointer(mutating: entries), outCount)
         }
         guard let record = Self.masternodeModels(from: entries, count: Int(outCount)).first else {

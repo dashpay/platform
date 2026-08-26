@@ -192,6 +192,13 @@ pub(super) struct ParserGeneration {
     pub ranked_index_key_length_check: RankedIndexKeyLengthCheck,
     /// See [`RankedIndexStructureCheck`].
     pub ranked_index_structure_check: RankedIndexStructureCheck,
+
+    // ---- TIME RANGE: the other generation-3 addition ----
+    /// Whether the index grammar admits the `timeRange` keyword. Forwarded to
+    /// [`Index::try_from_value_map`] exactly like `admit_ranked`: when `false`
+    /// the key falls through to the unknown-key arm and is rejected as any
+    /// pre-generation-3 node rejected it.
+    pub admit_time_range: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -487,6 +494,7 @@ pub(super) fn parse_document_type_core(
         schema_map,
         &flags,
         &properties.flattened_document_properties,
+        &properties.required_fields,
         validation_operations,
     )?;
 
@@ -745,6 +753,7 @@ fn parse_document_properties(
             &mut document_properties,
             &required_fields,
             &transient_fields,
+            true,
             property_key,
             property_value,
             root_schema,
@@ -777,6 +786,7 @@ fn parse_indices(
     schema_map: &[(Value, Value)],
     flags: &DocumentTypeFlags,
     flattened_document_properties: &IndexMap<String, DocumentProperty>,
+    required_fields: &BTreeSet<String>,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
 ) -> Result<(BTreeMap<String, Index>, IndexLevel), ProtocolError> {
     // Initialize indices
@@ -815,6 +825,7 @@ fn parse_indices(
                             .map_err(consensus_or_protocol_value_error)?
                             .as_slice(),
                         ctx.generation.admit_ranked,
+                        ctx.generation.admit_time_range,
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -843,6 +854,95 @@ fn parse_indices(
                                 )
                                 .into(),
                             )));
+                        }
+
+                        // TIME RANGE: the source must be a millisecond
+                        // timestamp — a system timestamp ($createdAt /
+                        // $updatedAt / $transferredAt) or a user `Date`
+                        // property. Structural checks (first-property,
+                        // range % step, the uniqueness rules — unique only
+                        // over non-overlapping windows on `$createdAt` —
+                        // and non-contested) already happened in `Index`
+                        // parsing; the checks here need the document schema
+                        // or the platform version, so they live here. A
+                        // generation without the `timeRange` grammar never
+                        // parses a transform, so this is a no-op there.
+                        if let Some(transform) = &index.time_range {
+                            // The overlap factor is the number of index
+                            // entries a single document produces on this
+                            // index — its write amplification — so its cap
+                            // is a versioned system limit rather than a
+                            // structural constant: retuning it is a
+                            // protocol-version decision, not a code edit.
+                            // `None` means a protocol version predating
+                            // time-range indexes, which cannot reach here
+                            // because the keyword does not parse there.
+                            if let Some(max_overlap_factor) = ctx
+                                .platform_version
+                                .system_limits
+                                .max_time_range_overlap_factor
+                            {
+                                let overlap = transform.overlap_factor();
+                                if overlap > max_overlap_factor {
+                                    return Err(consensus_or_protocol_data_contract_error(
+                                        DataContractError::InvalidContractStructure(format!(
+                                            "timeRange overlap factor (range / step = {}) \
+                                             exceeds the maximum of {}; a smaller window or a \
+                                             larger step is required to bound per-document \
+                                             index entries",
+                                            overlap, max_overlap_factor
+                                        )),
+                                    ));
+                                }
+                            }
+                            let source = transform.source.as_str();
+                            let is_system_timestamp = matches!(
+                                source,
+                                property_names::CREATED_AT
+                                    | property_names::UPDATED_AT
+                                    | property_names::TRANSFERRED_AT
+                            );
+                            // A system timestamp is only ever populated when
+                            // the schema *requires* it. Without this check a
+                            // contract could declare `timeRange.on:
+                            // "$createdAt"` on a doctype that never sets
+                            // $createdAt: every document would take the null
+                            // branch, the index would hold nothing but null
+                            // entries, and — the transform being immutable —
+                            // the owner could never fix it.
+                            if is_system_timestamp && !required_fields.contains(source) {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "timeRange.on (\"{}\") names a system timestamp the \
+                                         document type does not require; add it to the \
+                                         document type's required fields so documents actually \
+                                         carry it",
+                                        source
+                                    )),
+                                ));
+                            }
+                            // Only the system timestamps can be a source. A
+                            // user property cannot: the document-schema
+                            // grammar has no type that parses to
+                            // `DocumentPropertyType::Date` (`type: "string"`
+                            // with `format: "date-time"` stays `String`, and
+                            // the meta-schema's `type` enum has no `"date"`),
+                            // so accepting `Date`-typed user properties here
+                            // would be a dead branch advertising a source no
+                            // valid contract can declare. Lift this together
+                            // with a reachable millisecond-timestamp property
+                            // representation, not before.
+                            if !is_system_timestamp {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "timeRange.on (\"{}\") must name one of the system \
+                                         timestamps ($createdAt, $updatedAt or $transferredAt); \
+                                         user-defined properties are not supported as a \
+                                         time-range source",
+                                        source
+                                    )),
+                                ));
+                            }
                         }
 
                         validation_operations.extend(std::iter::once(
@@ -975,6 +1075,14 @@ fn parse_indices(
     // grammar rejects the `ranked*` keywords pass the no-op, so the shared
     // core never branches on a version.
     (ctx.generation.ranked_index_structure_check)(&indices)?;
+
+    // TIME RANGE: indices that share a first property may bucket it with
+    // different grids (or not at all) — each grid forks into its own index
+    // level, keyed by the property name qualified with the grid parameters
+    // (`TimeRangeTransform::storage_key`), so a bucketed level never shares
+    // a keyspace with a plain level or with another grid's level. No
+    // cross-index agreement rule is needed; identical grids simply share
+    // one level.
 
     let index_structure =
         IndexLevel::try_from_indices(indices.values(), ctx.name, ctx.platform_version)?;

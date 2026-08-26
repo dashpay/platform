@@ -13,6 +13,7 @@
 //! [`DocumentCount`]: drive_proof_verifier::DocumentCount
 //! [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
 
+use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -22,6 +23,7 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
     data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
 };
+use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{
     CountMode, DocumentCountMode, DriveDocumentCountQuery, SelectFunction, WhereOperator,
 };
@@ -138,11 +140,41 @@ fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Erro
 /// [`DocumentCount`]: drive_proof_verifier::DocumentCount
 /// [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
 pub(super) fn verify_count_query(
-    request: DocumentQuery,
+    mut request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<SplitCountEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    let proof = response
+        .proof()
+        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+    let mtd = response
+        .metadata()
+        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+    // Resolve any pending time-range (`IN_TIME_RANGE`) selections into
+    // concrete bucket-equality clauses using the quorum-signed metadata
+    // block time — BEFORE mode detection and covering-index selection
+    // below, which read `request.where_clauses`; the prover routed on
+    // the resolved shape.
+    // ...and enforce the same provenance-vs-shape contract the server
+    // dispatchers do, through the one shared normalization helper.
+    let resolved_time_ranges =
+        normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
+
+    // Canonicalize exactly as the server dispatcher does (the shared step
+    // in `drive::query::canonicalize`): the prover merged `[f > A, f < B]`
+    // pairs into one `between*` clause before its mode detection, so mode
+    // detection here must run over the same canonical shape or a valid
+    // proof is rejected.
+    request.where_clauses = validate_and_canonicalize_where_clauses(
+        std::mem::take(&mut request.where_clauses),
+        platform_version,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!("where-clause canonicalization failed: {e}"),
+    })?;
+
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -152,12 +184,6 @@ pub(super) fn verify_count_query(
                 request.document_type_name, e
             ),
         })?;
-    let proof = response
-        .proof()
-        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-    let mtd = response
-        .metadata()
-        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
     // Resolve the SQL-shape `CountMode` the request implies. Same
     // decision tree as `validate_and_route` in the abci handler —
@@ -224,6 +250,7 @@ pub(super) fn verify_count_query(
         DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
             document_type.indexes(),
             &request.where_clauses,
+            &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "range count requires a `range_countable: true` index whose last \
@@ -234,6 +261,7 @@ pub(super) fn verify_count_query(
         DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             &request.where_clauses,
+            &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove count requires a `countable: true` index whose properties \
@@ -405,4 +433,302 @@ fn single_empty_key_entry(count: u64) -> Vec<SplitCountEntry> {
         key: Vec::new(),
         count: Some(count),
     }]
+}
+
+#[cfg(test)]
+mod tests {
+    //! Offline tests for the client half of a time-range
+    //! (`IN_TIME_RANGE`) query: where the bucket comes from, what
+    //! provenance the resolution hands back, and how the count
+    //! surface behaves when a response cannot be verified. Nothing
+    //! here touches a proof — this crate builds drive with `verify`
+    //! only, so no Drive exists to prove against. The prove→verify
+    //! round trips (overlapping-window counts, a tampered signed
+    //! time, the documents route) live in rs-drive-abci's
+    //! `time_range_proof_verification`, where a populated platform
+    //! does.
+    //!
+    //! The property under test throughout is that the bucket is a
+    //! function of the **quorum-signed** metadata time and of the
+    //! contract's declared window, and of nothing else the client
+    //! could pick: a client-local clock would let a node answer with
+    //! whatever bucket it liked and still verify.
+
+    use super::*;
+    use crate::documents::document_query::resolve_time_range_clauses_with_metadata_time;
+    use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
+        count_results, result_data, CountResults, ResultData,
+    };
+    use dapi_grpc::platform::v0::get_documents_response::{
+        get_documents_response_v1, GetDocumentsResponseV1, Version as ResponseVersion,
+    };
+    use dash_context_provider::ContextProviderError;
+    use dpp::data_contract::{DataContractFactory, TokenConfiguration};
+    use dpp::platform_value::platform_value;
+    use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use drive::query::{SelectProjection, TimeRangeSelector, WhereClause};
+    use std::sync::Arc;
+
+    const DOCUMENT_TYPE: &str = "post";
+    const CREATED_AT: &str = "$createdAt";
+    const BUCKETED_INDEX: &str = "trending";
+    /// Six-hour windows sliding every two hours — overlap factor 3, the
+    /// shape a trending leaderboard actually declares.
+    const RANGE_SECONDS: u64 = 6 * 3_600;
+    const STEP_SECONDS: u64 = 2 * 3_600;
+    const STEP_MS: u64 = STEP_SECONDS * 1_000;
+    /// An exact multiple of the two-hour step, so on the `phase: 0` grid it
+    /// is itself a bucket start.
+    const BUCKET_START_MS: u64 = 1_755_000_000_000;
+    /// A one-hour phase — strictly less than the step, as validation
+    /// requires — for the epoch-sliver refusal test.
+    const PHASE_SECONDS: u64 = 3_600;
+    const PHASE_MS: u64 = PHASE_SECONDS * 1_000;
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    /// Never consulted by these tests — every one of them fails (or is
+    /// asserted) before a proof reaches the tenderdash binding. It exists
+    /// because [`verify_count_query`] takes a provider by reference.
+    struct UnusedProvider;
+
+    impl ContextProvider for UnusedProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Ok([0u8; 48])
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// A contract whose `post` doctype carries a `countable` bucketed index
+    /// over `(timeRange($createdAt), hashtag)`. `phase_seconds` is a
+    /// parameter because the epoch-sliver refusal is one of the behaviours
+    /// under test.
+    fn trending_contract(phase_seconds: u64) -> Arc<DataContract> {
+        let schemas = platform_value!({
+            "post": {
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+                },
+                "indices": [
+                    {
+                        "name": "trending",
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "timeRange": {
+                            "on": "$createdAt",
+                            "range": RANGE_SECONDS,
+                            "step": STEP_SECONDS,
+                            "phase": phase_seconds,
+                        },
+                    },
+                ],
+                "required": ["$createdAt", "hashtag"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = DataContractFactory::new(platform_version().protocol_version)
+            .expect("expected a factory")
+            .create_with_value_config(Identifier::new([7u8; 32]), 0, schemas, None, None)
+            .expect("the trending contract is well-formed")
+            .data_contract_owned();
+        Arc::new(contract)
+    }
+
+    /// The bucket start the contract's own transform puts `time_ms` in —
+    /// the expectation is derived from the declared window rather than
+    /// restated as a literal, so a fixture edit cannot leave it behind.
+    fn expected_bucket(contract: &DataContract, time_ms: u64) -> u64 {
+        contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists")
+            .indexes()
+            .get(BUCKETED_INDEX)
+            .expect("the bucketed index survives contract creation")
+            .time_range
+            .as_ref()
+            .expect("the bucketed index carries its transform")
+            .newest_active_start(time_ms)
+            .expect("the metadata time is inside an active range")
+    }
+
+    fn newest_bucket_query(contract: Arc<DataContract>) -> DocumentQuery {
+        DocumentQuery::new(contract, DOCUMENT_TYPE)
+            .expect("the fixture has this document type")
+            .with_time_range(CREATED_AT, TimeRangeSelector::Newest)
+    }
+
+    fn resolved_equality(request: &DocumentQuery) -> &WhereClause {
+        let matching: Vec<_> = request
+            .where_clauses
+            .iter()
+            .filter(|clause| clause.field == CREATED_AT)
+            .collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "resolution must push exactly one clause on the bucketed field"
+        );
+        matching[0]
+    }
+
+    /// The whole contract of the resolution step: the pending selector is
+    /// consumed, an ordinary equality on the bucketed field appears in its
+    /// place, and the field name comes back as provenance — which is the
+    /// only thing that will later keep index selection on the bucketed
+    /// index, since the pushed clause is indistinguishable from a
+    /// hand-written raw-timestamp lookup.
+    #[test]
+    fn the_newest_selector_resolves_to_the_bucket_containing_the_metadata_time() {
+        let contract = trending_contract(0);
+        let mut request = newest_bucket_query(Arc::clone(&contract));
+        let metadata_time_ms = BUCKET_START_MS + 3_600_000;
+
+        let resolutions =
+            resolve_time_range_clauses_with_metadata_time(&mut request, metadata_time_ms)
+                .expect("a metadata time inside an active range resolves");
+
+        assert_eq!(resolutions.len(), 1);
+        assert_eq!(resolutions[0].field(), CREATED_AT);
+        assert_eq!(
+            resolutions[0].transform.range_seconds, RANGE_SECONDS,
+            "the provenance must carry the exact grid the resolution used"
+        );
+        assert_eq!(resolutions[0].transform.step_seconds, STEP_SECONDS);
+        assert!(
+            request.time_range_clauses.is_empty(),
+            "the pending selector must be drained, not left to be encoded twice"
+        );
+        let clause = resolved_equality(&request);
+        assert_eq!(clause.operator, WhereOperator::Equal);
+        assert_eq!(
+            clause.value,
+            dpp::platform_value::Value::U64(expected_bucket(&contract, metadata_time_ms))
+        );
+        assert_eq!(
+            clause.value,
+            dpp::platform_value::Value::U64(BUCKET_START_MS),
+            "one hour past a bucket start is still inside that bucket"
+        );
+    }
+
+    /// The same query against a metadata time one full step later resolves
+    /// one bucket later — pinning that the bucket is derived from the signed
+    /// time rather than from anything the client holds. If the resolution
+    /// ever started reading a local clock this assertion is what breaks.
+    #[test]
+    fn a_metadata_time_one_step_later_resolves_to_the_next_bucket() {
+        let contract = trending_contract(0);
+        let earlier_time_ms = BUCKET_START_MS + 3_600_000;
+
+        let mut earlier = newest_bucket_query(Arc::clone(&contract));
+        resolve_time_range_clauses_with_metadata_time(&mut earlier, earlier_time_ms)
+            .expect("a metadata time inside an active range resolves");
+
+        let mut later = newest_bucket_query(Arc::clone(&contract));
+        resolve_time_range_clauses_with_metadata_time(&mut later, earlier_time_ms + STEP_MS)
+            .expect("a metadata time inside an active range resolves");
+
+        let earlier_bucket = resolved_equality(&earlier)
+            .value
+            .to_integer::<u64>()
+            .expect("a bucket start is a millisecond timestamp");
+        let later_bucket = resolved_equality(&later)
+            .value
+            .to_integer::<u64>()
+            .expect("a bucket start is a millisecond timestamp");
+        assert_eq!(
+            later_bucket,
+            earlier_bucket + STEP_MS,
+            "one step of signed time must move the resolution exactly one bucket"
+        );
+    }
+
+    /// A metadata time inside the epoch sliver before the grid's phase
+    /// anchor belongs to no range at all. No real block time reaches it, but
+    /// the client must refuse rather than invent a bucket, mirroring the
+    /// server, which refuses the same request at resolution time — so the
+    /// two sides cannot disagree about whether the query was answerable.
+    #[test]
+    fn a_metadata_time_in_the_epoch_sliver_refuses_to_resolve() {
+        let contract = trending_contract(PHASE_SECONDS);
+        let mut request = newest_bucket_query(contract);
+
+        let error = resolve_time_range_clauses_with_metadata_time(&mut request, PHASE_MS - 1)
+            .expect_err("a time predating every range has no honest bucket");
+
+        match error {
+            drive_proof_verifier::Error::RequestError { error } => assert!(
+                error.contains("phase"),
+                "expected the epoch-sliver refusal, got: {error}"
+            ),
+            other => panic!("expected a request error, got: {other:?}"),
+        }
+    }
+
+    /// A node that answers a `prove = true` time-range count with data
+    /// instead of a proof must be rejected as an unproven response, not
+    /// mistaken for a query the client failed to reconstruct: the proof
+    /// check is the first gate in [`verify_count_query`], ahead of the
+    /// time-range resolution and the provenance-shape guard. Callers
+    /// therefore get `NoProofInResult` — "this node did not prove it" —
+    /// rather than a resolution error that would send them looking at their
+    /// own query.
+    #[test]
+    fn a_count_response_carrying_no_proof_is_rejected_as_unproven() {
+        let contract = trending_contract(0);
+        let request = newest_bucket_query(contract)
+            .with_select(SelectProjection::count_star())
+            .with_where(WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: dpp::platform_value::Value::Text("ibiza".to_string()),
+            });
+
+        let response = GetDocumentsResponse {
+            version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Data(ResultData {
+                    variant: Some(result_data::Variant::Counts(CountResults {
+                        variant: Some(count_results::Variant::AggregateCount(2)),
+                    })),
+                })),
+                metadata: Some(ResponseMetadata {
+                    time_ms: BUCKET_START_MS + 3_600_000,
+                    ..Default::default()
+                }),
+            })),
+        };
+
+        let error = verify_count_query(request, response, platform_version(), &UnusedProvider)
+            .expect_err("an unproven response must not be accepted");
+        assert!(
+            matches!(error, drive_proof_verifier::Error::NoProofInResult),
+            "expected NoProofInResult, got: {error:?}"
+        );
+    }
 }

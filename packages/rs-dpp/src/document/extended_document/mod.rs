@@ -63,6 +63,7 @@ mod json_convertible_tests {
         let data_contract_id = data_contract.id();
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::new([0xa1; 32]),
             owner_id: Identifier::new([0xb2; 32]),
             properties: BTreeMap::new(),
