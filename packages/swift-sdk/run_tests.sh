@@ -46,6 +46,7 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   CI_KEYCHAIN_MAY_EXIST=0
   CI_DEFAULT_MAY_HAVE_CHANGED=0
   CI_SEARCH_LIST_MAY_HAVE_CHANGED=0
+  CI_SIM_CREATED_UDID=""
 
   cleanup_ci_keychain() {
     original_status=$?
@@ -80,6 +81,12 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
     fi
     if [ -d "${CI_KEYCHAIN_DIR:-}" ]; then
       if ! rmdir "$CI_KEYCHAIN_DIR"; then
+        cleanup_status=1
+      fi
+    fi
+    if [ -n "${CI_SIM_CREATED_UDID:-}" ]; then
+      xcrun simctl shutdown "$CI_SIM_CREATED_UDID" >/dev/null 2>&1 || true
+      if ! xcrun simctl delete "$CI_SIM_CREATED_UDID"; then
         cleanup_status=1
       fi
     fi
@@ -147,6 +154,30 @@ SIM_NAME="${SIM_NAME:-}"
 if [ -z "$SIM_NAME" ]; then
   SIM_NAME="$(xcrun simctl list devices available \
     | grep -oE 'iPhone [0-9][^(]*' | head -1 | sed 's/ *$//')"
+fi
+# A freshly provisioned runner account starts with an empty CoreSimulator
+# device set, which also breaks `generic/platform=iOS Simulator` destination
+# resolution in the verification build. In CI, create a device from the
+# newest available iPhone device type and iOS runtime; it is deleted by the
+# keychain cleanup trap on exit.
+if [ -z "$SIM_NAME" ] && [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
+  CI_SIM_RUNTIME="$(xcrun simctl list runtimes available \
+    | grep -oE 'com\.apple\.CoreSimulator\.SimRuntime\.iOS[0-9-]*' | tail -1)"
+  if [ -n "$CI_SIM_RUNTIME" ]; then
+    # The devicetype listing has no compatibility info and no useful order,
+    # so try candidates (newest-listed first) until the runtime accepts one.
+    CI_SIM_CANDIDATE_NAME="dash-ci-simulator-${GITHUB_RUN_ID:-$$}"
+    while IFS= read -r ci_sim_devtype; do
+      [ -n "$ci_sim_devtype" ] || continue
+      if CI_SIM_CREATED_UDID="$(xcrun simctl create "$CI_SIM_CANDIDATE_NAME" "$ci_sim_devtype" "$CI_SIM_RUNTIME" 2>/dev/null)"; then
+        SIM_NAME="$CI_SIM_CANDIDATE_NAME"
+        echo "Created CI simulator $SIM_NAME ($CI_SIM_CREATED_UDID) from $ci_sim_devtype / $CI_SIM_RUNTIME"
+        break
+      fi
+      CI_SIM_CREATED_UDID=""
+    done <<< "$(xcrun simctl list devicetypes \
+      | grep -oE 'com\.apple\.CoreSimulator\.SimDeviceType\.iPhone-[0-9][0-9A-Za-z-]*' | tail -r)"
+  fi
 fi
 if [ -z "$SIM_NAME" ]; then
   echo "No available iPhone simulator found for the simulator test run" >&2
