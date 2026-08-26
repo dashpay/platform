@@ -201,6 +201,53 @@ struct PlatformWalletNativeCreateCalls: @unchecked Sendable {
     )
 }
 
+/// Test seam for the native calls of the async `loadFromPersistor()`
+/// overload; same contract as [`PlatformWalletNativeCreateCalls`].
+struct PlatformWalletNativeLoadCalls: @unchecked Sendable {
+    /// Mirrors `platform_wallet_manager_load_from_persistor`.
+    typealias BulkLoad = @Sendable (Handle) -> PlatformWalletFFIResult
+    /// The SwiftData id fetch between the bulk load and the per-wallet
+    /// lookups. Part of the seam (not pure FFI) so unit tests can drive
+    /// the lookup loop without constructing a ModelContainer.
+    typealias ListRestorableIds = @Sendable (PlatformWalletPersistenceHandler?) -> [Data]
+    /// Mirrors `platform_wallet_manager_get_wallet` for one 32-byte id,
+    /// folding the out-param into the return value.
+    typealias GetWallet = @Sendable (Handle, Data)
+        -> (result: PlatformWalletFFIResult, walletHandle: Handle)
+
+    let loadFromPersistor: BulkLoad
+    let restorableWalletIds: ListRestorableIds
+    let getWallet: GetWallet
+
+    static let live = PlatformWalletNativeLoadCalls(
+        loadFromPersistor: { managerHandle in
+            platform_wallet_manager_load_from_persistor(managerHandle)
+        },
+        restorableWalletIds: { handler in
+            handler?.restorableWalletIds() ?? []
+        },
+        getWallet: { managerHandle, walletId in
+            var walletHandle: Handle = NULL_HANDLE
+            let result: PlatformWalletFFIResult = walletId.withUnsafeBytes { idPtr in
+                // C signature is `const uint8_t (*wallet_id)[32]`, imported
+                // as `UnsafePointer<FFIByteTuple32>?` — rebind the raw
+                // 32-byte buffer to that tuple shape (same dance as the
+                // sync overload).
+                guard let base = idPtr.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
+                    return PlatformWalletFFIResult(
+                        code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NULL_POINTER,
+                        message: nil)
+                }
+                return platform_wallet_manager_get_wallet(
+                    managerHandle,
+                    base,
+                    &walletHandle)
+            }
+            return (result, walletHandle)
+        }
+    )
+}
+
 /// The one thing SwiftUI needs for all wallet operations.
 ///
 /// Owns the Rust-side `PlatformWalletManager` handle which drives:
@@ -404,20 +451,45 @@ public class PlatformWalletManager: ObservableObject {
     private var shutdownTask: Task<PlatformWalletShutdownMetrics, Never>?
 
     /// Set the moment [`shutdown()`] decides to proceed, BEFORE it drains
-    /// in-flight creates: closes admission for every `createWallet` overload
-    /// so the drain below can terminate without a synchronous create entering
-    /// while the MainActor is reentrant at an `await`.
+    /// in-flight native ops: closes admission for EVERY native entrypoint —
+    /// the async ones (`createWallet`, `loadFromPersistor`) and their
+    /// synchronous overloads — so the drain below can terminate without a
+    /// synchronous op entering while the MainActor is reentrant at an
+    /// `await`.
     private var shutdownRequested = false
 
-    /// Async `createWallet` calls between admission and the end of their
-    /// MainActor epilogue. [`shutdown()`] waits for this to reach zero
-    /// before taking the handle: an admitted create must complete its FULL
-    /// transaction (FFI + publish) or fail on its own terms — never be
-    /// failed retroactively by a concurrent teardown after the native
-    /// create already persisted wallet data (the caller would roll back its
-    /// mnemonic and orphan the persisted rows).
-    private var activeCreateCount = 0
-    private var createDrainContinuations: [CheckedContinuation<Void, Never>] = []
+    /// Async native entrypoints (`createWallet`, `loadFromPersistor`)
+    /// between admission and the end of their MainActor epilogue.
+    /// [`shutdown()`] waits for this to reach zero before taking the
+    /// handle: an admitted op must complete its FULL transaction (FFI +
+    /// publish) or fail on its own terms — never be failed retroactively
+    /// by a concurrent teardown after the native side already persisted
+    /// data (for create, the caller would roll back its mnemonic and
+    /// orphan the persisted rows).
+    private var activeNativeOpCount = 0
+    private var nativeOpDrainContinuations: [CheckedContinuation<Void, Never>] = []
+
+    /// Admission + bookkeeping shared by the async native entrypoints:
+    /// rejects while a shutdown drain runs, otherwise counts the op in.
+    /// MainActor-atomic (no suspension between check and increment), so the
+    /// drain can never miss an admitted op. Balance with
+    /// [`finishNativeOp()`] on every exit path.
+    private func admitNativeOp(_ name: String) throws {
+        guard !shutdownRequested else {
+            throw PlatformWalletError.invalidHandle(
+                "manager shutdown is in progress; \(name) rejected")
+        }
+        activeNativeOpCount += 1
+    }
+
+    private func finishNativeOp() {
+        activeNativeOpCount -= 1
+        if activeNativeOpCount == 0, !nativeOpDrainContinuations.isEmpty {
+            let waiters = nativeOpDrainContinuations
+            nativeOpDrainContinuations.removeAll()
+            waiters.forEach { $0.resume() }
+        }
+    }
 
     /// Test seam for the individual native calls. Production keeps `.live`;
     /// tests replace the function table while still running the production
@@ -428,6 +500,10 @@ public class PlatformWalletManager: ObservableObject {
     /// `createWallet(mnemonic:)` overload; same contract as
     /// [`nativeTeardownCalls`].
     internal var nativeCreateCalls = PlatformWalletNativeCreateCalls.live
+
+    /// Test seam for the native calls of the async `loadFromPersistor()`
+    /// overload; same contract as [`nativeTeardownCalls`].
+    internal var nativeLoadCalls = PlatformWalletNativeLoadCalls.live
 
     /// Dedicated serial queue for the blocking native teardown AND the
     /// blocking native create (async `createWallet(mnemonic:)` overload).
@@ -545,9 +621,9 @@ public class PlatformWalletManager: ObservableObject {
                     ranOffMainThread: false)
             }
             shutdownRequested = true
-            if activeCreateCount == 0 { break }
+            if activeNativeOpCount == 0 { break }
             await withCheckedContinuation { continuation in
-                createDrainContinuations.append(continuation)
+                nativeOpDrainContinuations.append(continuation)
             }
         }
 
@@ -891,16 +967,9 @@ public class PlatformWalletManager: ObservableObject {
         // Admission is checked on the MainActor with no suspension before
         // the count increment, so `shutdown()`'s drain can never miss an
         // admitted create.
-        try ensureWalletCreationAllowed()
-        activeCreateCount += 1
-        defer {
-            activeCreateCount -= 1
-            if activeCreateCount == 0, !createDrainContinuations.isEmpty {
-                let waiters = createDrainContinuations
-                createDrainContinuations.removeAll()
-                waiters.forEach { $0.resume() }
-            }
-        }
+        try ensureConfigured()
+        try admitNativeOp("createWallet")
+        defer { finishNativeOp() }
 
         let h = handle
         let params = PlatformWalletCreateParams(
@@ -1088,46 +1157,9 @@ public class PlatformWalletManager: ObservableObject {
                 self.wallets[walletId] = managedWallet
 
                 // Seedless unlock of the just-restored external-signable
-                // (watch-only) wallet: verify the Keychain-resolved seed binds
-                // to this wallet and drain any deferred contact-crypto.
-                // Best-effort, per wallet: a wallet with no stored mnemonic
-                // (genuine watch-only) stays watch-only, and any unlock error
-                // (e.g. a mis-mapped Keychain slot) is logged-and-continued so
-                // one wallet can't fail the whole restore.
-                do {
-                    let unlocked = try unlockWalletFromKeychain(managedWallet)
-                    // NSLog (not print) so the unlock outcome is observable
-                    // off-Xcode — it pairs with the resolver audit line in
-                    // MnemonicResolver.resolve for "what touched the seed".
-                    NSLog(
-                        "🔓 wallet unlock %@: %@",
-                        String(walletId.toHexString().prefix(8)),
-                        unlocked ? "seed verified" : "no mnemonic — stays watch-only"
-                    )
-                } catch let error as PlatformWalletError {
-                    // Distinguish a wrong-seed binding (Rust `SeedMismatch` →
-                    // `ErrorInvalidParameter` → `.invalidParameter`) from a
-                    // transient failure. The verify FFI is the only `.check()` on
-                    // this path and `walletId` is already 32 bytes here, so
-                    // `.invalidParameter` ≡ the seed-binding rejection — a
-                    // security-relevant Keychain slot mis-mapping, not a hiccup.
-                    // Either way the wallet stays external-signable (cannot sign),
-                    // so no wrong-seed signing can occur.
-                    if case .invalidParameter = error {
-                        print(
-                            "🚫 wallet unlock REJECTED \(walletId.toHexString().prefix(8)): "
-                                + "seed does not bind (mis-mapped Keychain slot?) — stays watch-only"
-                        )
-                    } else {
-                        // Transient (resolver/Keychain unavailable, …) — not
-                        // retried this pass; a later signer-present action re-tries.
-                        print("⚠️ wallet unlock failed \(walletId.toHexString().prefix(8)) (transient): \(error)")
-                    }
-                    self.lastError = error
-                } catch {
-                    print("❌ wallet unlock failed \(walletId.toHexString().prefix(8)): \(error)")
-                    self.lastError = error
-                }
+                // (watch-only) wallet — shared with the async overload's
+                // epilogue; see `unlockRestoredWalletLoggingOutcome`.
+                unlockRestoredWalletLoggingOutcome(managedWallet)
             } catch {
                 // Log and skip — one wallet failing doesn't fail the
                 // whole restore. Usually means wallet_id / xpub
@@ -1150,6 +1182,193 @@ public class PlatformWalletManager: ObservableObject {
         catchUpStuckAssetLocks(wallets: restored)
 
         return restored
+    }
+
+    /// What the off-main half of the async [`loadFromPersistor()`] hands
+    /// back to the MainActor epilogue: raw wallet handles (the
+    /// `ManagedPlatformWallet` wrappers are built on the MainActor), plus
+    /// the last per-wallet skip error for `lastError` parity with the sync
+    /// overload.
+    private struct OffMainLoadOutcome: @unchecked Sendable {
+        let bulkResult: Result<Void, PlatformWalletError>
+        let loaded: [(walletId: Data, walletHandle: Handle)]
+        let lastSkipError: PlatformWalletError?
+    }
+
+    /// The blocking body of the async [`loadFromPersistor()`] overload:
+    /// bulk restore FFI (fires the persistence callbacks synchronously on
+    /// this queue — the handler is thread-safe by design, the same
+    /// callbacks fire from Rust sync threads in steady state), the
+    /// SwiftData id fetch (the handler serializes on its own queue and
+    /// background context), and the per-wallet handle lookups. Maps FFI
+    /// results on the queue so no Rust-owned message string crosses the
+    /// continuation. Mirrors `performCreateWallet`'s timing log.
+    private nonisolated static func performLoadFromPersistor(
+        _ handle: Handle,
+        handler: PlatformWalletPersistenceHandler?,
+        calls: PlatformWalletNativeLoadCalls
+    ) -> OffMainLoadOutcome {
+        let started = CFAbsoluteTimeGetCurrent()
+        let offMain = !Thread.isMainThread
+
+        let bulk = PlatformWalletResult(calls.loadFromPersistor(handle))
+        guard bulk.isSuccess else {
+            let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+            Self.log.error(
+                "native load failed in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public): \(String(describing: bulk.code), privacy: .public): \(bulk.message ?? "<no detail from Rust>", privacy: .public)"
+            )
+            return OffMainLoadOutcome(
+                bulkResult: .failure(PlatformWalletError(code: bulk.code, message: bulk.message)),
+                loaded: [],
+                lastSkipError: nil)
+        }
+
+        var loaded: [(walletId: Data, walletHandle: Handle)] = []
+        var lastSkipError: PlatformWalletError?
+        let walletIds = calls.restorableWalletIds(handler)
+        loaded.reserveCapacity(walletIds.count)
+        for walletId in walletIds where walletId.count == 32 {
+            let lookup = calls.getWallet(handle, walletId)
+            let lookupResult = PlatformWalletResult(lookup.result)
+            guard lookupResult.isSuccess else {
+                // Log-and-skip parity with the sync overload: one wallet
+                // failing (usually SwiftData drift vs. Rust recompute)
+                // doesn't fail the whole restore.
+                lastSkipError = PlatformWalletError(
+                    code: lookupResult.code,
+                    message: lookupResult.message)
+                continue
+            }
+            loaded.append((walletId, lookup.walletHandle))
+        }
+
+        let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+        Self.log.info(
+            "native load finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public) wallets=\(loaded.count, privacy: .public)"
+        )
+        return OffMainLoadOutcome(
+            bulkResult: .success(()),
+            loaded: loaded,
+            lastSkipError: lastSkipError)
+    }
+
+    /// Off-main variant of [`loadFromPersistor()`]: identical semantics
+    /// (bulk restore, per-wallet handle lookup, publish, best-effort
+    /// keychain unlock, asset-lock catch-up), but the blocking native work
+    /// — the bulk restore's persister reads and Rust wallet
+    /// reconstruction plus the per-wallet lookups, measured at roughly
+    /// 400ms per persisted wallet — runs on [`destroyQueue`] instead of
+    /// the main thread. In an `async` context overload resolution prefers
+    /// this variant; sync contexts keep the sync one.
+    ///
+    /// The per-wallet keychain unlock stays in the MainActor epilogue
+    /// (it is actor-isolated and marker-cached) and is timed separately —
+    /// its measured share decides whether it ever moves too.
+    ///
+    /// Participates in [`shutdown()`]'s admission/drain exactly like the
+    /// async `createWallet`: rejected up front while a shutdown drains,
+    /// and once admitted the teardown waits for the full transaction.
+    @discardableResult
+    public func loadFromPersistor() async throws -> [ManagedPlatformWallet] {
+        try ensureConfigured()
+        try admitNativeOp("loadFromPersistor")
+        defer { finishNativeOp() }
+
+        let h = handle
+        let handler = persistenceHandler
+        let calls = nativeLoadCalls
+
+        // Direct continuation for the same FIFO reason as the async
+        // create: an admitted load is enqueued on the shared queue before
+        // any later shutdown's teardown block.
+        let outcome: OffMainLoadOutcome = await withCheckedContinuation { continuation in
+            Self.destroyQueue.async {
+                continuation.resume(
+                    returning: Self.performLoadFromPersistor(h, handler: handler, calls: calls))
+            }
+        }
+        try outcome.bulkResult.get()
+
+        // Defense in depth only — the shutdown drain waits for this op, so
+        // the handle cannot have been torn down (see the async create's
+        // matching guard).
+        guard handle != NULL_HANDLE else {
+            assertionFailure("shutdown took the handle under an admitted load despite the drain")
+            throw PlatformWalletError.invalidHandle(
+                "manager was shut down while loadFromPersistor ran off-main")
+        }
+
+        var restored: [ManagedPlatformWallet] = []
+        restored.reserveCapacity(outcome.loaded.count)
+        for entry in outcome.loaded {
+            let managedWallet = ManagedPlatformWallet(
+                handle: entry.walletHandle,
+                walletId: entry.walletId)
+            restored.append(managedWallet)
+            self.wallets[entry.walletId] = managedWallet
+        }
+        if let skipError = outcome.lastSkipError {
+            self.lastError = skipError
+        }
+
+        // Same best-effort per-wallet unlock as the sync overload, timed
+        // as a block: this is the remaining MainActor share of the load
+        // and the data for deciding whether it moves off-main next.
+        let unlockStarted = CFAbsoluteTimeGetCurrent()
+        for managedWallet in restored {
+            unlockRestoredWalletLoggingOutcome(managedWallet)
+        }
+        let unlockMs = Int((CFAbsoluteTimeGetCurrent() - unlockStarted) * 1000)
+        Self.log.info(
+            "load unlock loop finished in \(unlockMs, privacy: .public)ms wallets=\(restored.count, privacy: .public)"
+        )
+
+        catchUpStuckAssetLocks(wallets: restored)
+        return restored
+    }
+
+    /// The per-wallet unlock body shared by both `loadFromPersistor`
+    /// overloads: verify the Keychain-resolved seed binds to the restored
+    /// wallet and drain any deferred contact-crypto. Best-effort, per
+    /// wallet — a wallet with no stored mnemonic (genuine watch-only)
+    /// stays watch-only, and any unlock error is logged-and-continued
+    /// (feeding `lastError`) so one wallet can't fail the whole restore.
+    private func unlockRestoredWalletLoggingOutcome(_ managedWallet: ManagedPlatformWallet) {
+        let walletId = managedWallet.walletId
+        do {
+            let unlocked = try unlockWalletFromKeychain(managedWallet)
+            // NSLog (not print) so the unlock outcome is observable
+            // off-Xcode — it pairs with the resolver audit line in
+            // MnemonicResolver.resolve for "what touched the seed".
+            NSLog(
+                "🔓 wallet unlock %@: %@",
+                String(walletId.toHexString().prefix(8)),
+                unlocked ? "seed verified" : "no mnemonic — stays watch-only"
+            )
+        } catch let error as PlatformWalletError {
+            // Distinguish a wrong-seed binding (Rust `SeedMismatch` →
+            // `ErrorInvalidParameter` → `.invalidParameter`) from a
+            // transient failure. The verify FFI is the only `.check()` on
+            // this path and `walletId` is already 32 bytes here, so
+            // `.invalidParameter` ≡ the seed-binding rejection — a
+            // security-relevant Keychain slot mis-mapping, not a hiccup.
+            // Either way the wallet stays external-signable (cannot sign),
+            // so no wrong-seed signing can occur.
+            if case .invalidParameter = error {
+                print(
+                    "🚫 wallet unlock REJECTED \(walletId.toHexString().prefix(8)): "
+                        + "seed does not bind (mis-mapped Keychain slot?) — stays watch-only"
+                )
+            } else {
+                // Transient (resolver/Keychain unavailable, …) — not
+                // retried this pass; a later signer-present action re-tries.
+                print("⚠️ wallet unlock failed \(walletId.toHexString().prefix(8)) (transient): \(error)")
+            }
+            self.lastError = error
+        } catch {
+            print("❌ wallet unlock failed \(walletId.toHexString().prefix(8)): \(error)")
+            self.lastError = error
+        }
     }
 
     // MARK: - Keychain seed unlock
