@@ -14,6 +14,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -1276,59 +1278,82 @@ class PlatformWalletPersistenceHandler(
          *  mid-payment would let the wallet double-spend it. */
         val stuckSpent: Int = 0,
         val stuckSpentDuffs: Long = 0,
+        /** Transport reads that failed mid-sweep — an engine inventory page
+         *  or an outpoint-classification batch that came back empty. The
+         *  pass stops at the first one; whatever it already applied stands
+         *  (insert-only, idempotent) and the rest waits for the next
+         *  cadence tick. A persistently non-zero value means the sweep
+         *  never finishes, so the report's other counters are a partial
+         *  view. */
+        val transportFailures: Int = 0,
     )
 
     /**
      * Reconcile the Room `txos` mirror against the engine's live UTXO
-     * inventory ([engineUtxosJson] — the
-     * `WalletManagerNative.walletManagerAllUtxosJson` payload). The
-     * mirror is write-behind with no other feedback loop: a changeset
-     * that fails to deliver an owned output leaves a permanent hole, and
-     * because the engine is REBUILT from this mirror on restart
-     * (buildUtxoRestoreData), the hole graduates to a fund-loss on the
-     * next launch. Observed in the field as the job-flower 106.43→86.33
-     * restart drop: rescan nondeterministically drops the change outputs
-     * of sends funded from CoinJoin-account outputs.
+     * inventory, healing rows a changeset failed to deliver. The mirror is
+     * write-behind with no other feedback loop: a changeset that fails to
+     * deliver an owned output leaves a permanent hole, and because the
+     * engine is REBUILT from this mirror on restart (buildUtxoRestoreData),
+     * the hole graduates to a fund-loss on the next launch. Observed in the
+     * field as the job-flower 106.43→86.33 restart drop: rescan
+     * nondeterministically drops the change outputs of sends funded from
+     * CoinJoin-account outputs.
      *
-     * Insert-only by design: rows the engine holds and the mirror lacks
-     * are added; rows the mirror holds and the engine lacks are LEFT
-     * ALONE (the mirror may legitimately be ahead — a live spend marks
-     * rows spent here before the engine's map settles — and it also
-     * carries watch-only contact outputs the engine's own accounts never
-     * report). Spent-state repair is deliberately out of scope.
+     * Both directions are BOUNDED, and deliberately so. A wallet's UTXO
+     * count is chain-controlled — anyone who knows a watched address can
+     * keep sending dust to it — so a pass that materialized the whole
+     * inventory would hand a remote party control over how much this
+     * process allocates on every SYNCED transition and every cadence tick.
+     * Instead:
+     *
+     *  * [engineUtxoPage] hands back one bounded page of the engine's
+     *    inventory at a time (`cursor` null to start, then the `cursor` the
+     *    previous page returned while its `hasMore` is true), and each page
+     *    is applied in its own Room transaction. A sweep is therefore many
+     *    small commits rather than one giant one; that is the point, and it
+     *    is safe because the pass is insert-only and idempotent.
+     *  * The reverse direction pages the STORE's own rows and asks
+     *    [classifyOutpoints] about one page at a time (0 unknown, 1
+     *    unspent, 2 spent), instead of pulling both engine inventories over
+     *    and holding them as sets.
+     *
+     * Insert-only by design: rows the engine holds and the mirror lacks are
+     * added; rows the mirror holds and the engine lacks are LEFT ALONE (the
+     * mirror may legitimately be ahead — a live spend marks rows spent here
+     * before the engine's map settles — and it also carries watch-only
+     * contact outputs the engine's own accounts never report). Spent-state
+     * repair is deliberately out of scope; the reverse pass only classifies
+     * and logs.
      *
      * [minConfirmations] (default 100): the engine snapshot cannot carry
      * `isCoinbase`/`isInstantLocked`, so inserted rows get
-     * `isConfirmed=true` and both flags false — inert for any output at
-     * or beyond coinbase maturity, which the gate guarantees. Fresher
-     * holes age into a later sweep.
+     * `isConfirmed=true` and both flags false — inert for any output at or
+     * beyond coinbase maturity, which the gate guarantees. Fresher holes
+     * age into a later sweep.
      *
-     * Repairs `netAmount` alongside: a record born blind to one of its
-     * own outputs persisted `netAmount` short by exactly that output's
-     * value (verified against the job-flower dataset: -10.00010000
-     * stored vs -0.11000227 true for tx 6cef55ab…). The bump applies
-     * only when the transaction row pre-exists with real bytes — a stub
-     * row created by this very insert has nothing to repair.
+     * `netAmount` is reported, never repaired: a record born blind to one
+     * of its own outputs persisted a net short by exactly that output's
+     * value, but the record may equally have been corrected already by a
+     * callback racing this sweep, and blind addition double-credits.
      *
      * Must NOT be called from the handler's own [dispatcher] (it takes
-     * [callbackExclusion] and runs a Room transaction).
+     * [callbackExclusion] and runs Room transactions).
      */
     suspend fun reconcileTxos(
         walletId: ByteArray,
-        engineUtxosJson: String,
         tipHeight: Int,
         minConfirmations: Int = 100,
+        pageSize: Int = TXO_RECONCILE_PAGE_SIZE,
+        engineUtxoPage: suspend (cursor: String?, limit: Int) -> String?,
+        classifyOutpoints: suspend (outpoints: ByteArray) -> ByteArray?,
     ): TxoReconcileReport {
-        val root = kotlinx.serialization.json.Json
-            .parseToJsonElement(engineUtxosJson).jsonObject
-        val utxos = root["utxos"]?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
-        val spent = root["spent"]?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
-        val accountErrors = root["errors"]?.jsonArray?.size ?: 0
+        var engineUtxos = 0
         var inserted = 0
         var insertedDuffs = 0L
         var netAmountSuspects = 0
         var skippedImmature = 0
         var skippedNoAddress = 0
+        var accountErrors = 0
         var wouldFlipSpent = 0
         var wouldFlipSpentDuffs = 0L
         var skippedSwept = 0
@@ -1338,183 +1363,261 @@ class PlatformWalletPersistenceHandler(
         var healedUnowned = 0
         var stuckSpent = 0
         var stuckSpentDuffs = 0L
-        // Outpoint keys of BOTH engine inventories, for the reverse pass.
-        // The unspent side deliberately includes immature outputs the
-        // insert pass skips: a young coin present in both stores is
-        // consistent, not divergent.
-        val engineUnspentKeys = HashSet<String>()
-        for (element in utxos) {
-            val row = element.jsonObject
-            val txidHex = row["txid"]?.jsonPrimitive?.content.orEmpty()
-            val vout = row["vout"]?.jsonPrimitive?.int ?: continue
-            engineUnspentKeys.add("$txidHex:$vout")
-        }
-        val engineSpentKeys = HashSet<String>()
-        for (element in spent) {
-            val row = element.jsonObject
-            val txidHex = row["txid"]?.jsonPrimitive?.content.orEmpty()
-            val vout = row["vout"]?.jsonPrimitive?.int ?: continue
-            engineSpentKeys.add("$txidHex:$vout")
-        }
-        callbackExclusion.withLock {
-            database.withTransaction {
-                // Watch-only DIP-15 contact (external) accounts, resolved up
-                // front because BOTH passes need the exclusion. The engine's
-                // UTXO inventory export includes these accounts' coins — it
-                // tracks them to show payments TO contacts — but they are the
-                // CONTACT's money and must never be healed into the store as
-                // ours. Before this check lived on the insert pass, a fresh
-                // restore's post-backfill reconcile healed every
-                // contact-payment coin into the store (12 rows / 0.05692493
-                // tDASH on the large-wallet validation run of 2026-08-25)
-                // while the reverse pass — the only place the exclusion
-                // existed — dutifully counted the same rows as foreign.
-                val foreignAccountIds = database.accountDao()
-                    .observeByWallet(walletId).first()
-                    .filter { it.accountType == ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL }
-                    .map { it.id }
-                    .toSet()
-                // Engine-side entries carry only an address; ownership
-                // resolves through core_addresses.accountId (the same second
-                // path rowIsForeign uses for store rows). An unresolvable
-                // address is NOT provably foreign — those proceed, keeping
-                // this pass's provable-only discipline symmetric: it neither
-                // mutates nor suppresses on guesswork.
-                suspend fun addressIsForeign(address: String): Boolean {
-                    val owner = database.coreAddressDao().getByAddress(address)?.accountId
-                    return owner != null && owner in foreignAccountIds
-                }
-                for (element in utxos) {
-                    val row = element.jsonObject
-                    val height = row["height"]?.jsonPrimitive?.int ?: 0
-                    if (height <= 0 || tipHeight - height + 1 < minConfirmations) {
-                        skippedImmature++
-                        continue
-                    }
-                    val address = row["address"]?.jsonPrimitive?.content.orEmpty()
-                    if (address.isEmpty()) {
-                        skippedNoAddress++
-                        continue
-                    }
-                    // The inventory tags every UTXO with its owning account
-                    // tuple. The tag is the authoritative foreign check — a
-                    // watch-only external account's coin is the CONTACT's
-                    // money whether or not its address row survived
-                    // persistence. The address-based check stays as a
-                    // fallback for inventories predating the tagged export.
-                    val typeTag = row["typeTag"]?.jsonPrimitive?.int ?: -1
-                    if (typeTag == ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL || addressIsForeign(address)) {
-                        skippedForeign++
-                        continue
-                    }
-                    val txid = row["txid"]?.jsonPrimitive?.content.orEmpty().hexToByteArray()
-                    val vout = row["vout"]?.jsonPrimitive?.int ?: continue
-                    if (txid.size != 32) continue
-                    if (database.txoDao().getByOutpoint(makeOutpoint(txid, vout)) != null) {
-                        continue
-                    }
-                    val amount = row["amount"]?.jsonPrimitive?.long ?: 0L
-                    val scriptPubKey =
-                        row["scriptHex"]?.jsonPrimitive?.content.orEmpty().hexToByteArray()
-                    val isLocked = row["isLocked"]?.jsonPrimitive?.boolean ?: false
-                    // Resolve the Room account from the tuple and stamp it on
-                    // the healed row. Ownership must not depend on the address
-                    // projection: the two things persistence loses together
-                    // are the TXO and its address row, and a healed row with
-                    // neither link is skipped by the restore loader at the
-                    // next mirror-reload — recreating the fund loss the heal
-                    // repaired.
-                    val ownerAccountId = if (typeTag >= 0) {
-                        fetchAccount(
-                            database, walletId, typeTag,
-                            row["index"]?.jsonPrimitive?.int ?: 0,
-                            row["standardTag"]?.jsonPrimitive?.int ?: 0,
-                            row["registrationIndex"]?.jsonPrimitive?.int ?: 0,
-                            row["keyClass"]?.jsonPrimitive?.int ?: 0,
-                            row["userIdentityId"]?.jsonPrimitive?.content?.hexToByteArray()
-                                ?: ByteArray(32),
-                            row["friendIdentityId"]?.jsonPrimitive?.content?.hexToByteArray()
-                                ?: ByteArray(32),
-                        )?.id
-                    } else {
-                        null
-                    }
-                    if (ownerAccountId == null) {
-                        // Heal anyway — the address projection may still
-                        // attribute it — but surface the unresolved owner:
-                        // if the address row is also gone, this row will not
-                        // survive the next mirror-reload.
-                        healedUnowned++
-                        Log.w(
-                            TAG,
-                            "txos reconcile: healing TXO with UNRESOLVED account " +
-                                "(typeTag=$typeTag index=${row["index"]?.jsonPrimitive?.int} " +
-                                "address=$address) — ownership rides on the address " +
-                                "projection alone",
-                        )
-                    }
-                    val wrote = upsertUtxoRow(
-                        database, walletId, txid, vout, amount, address, scriptPubKey,
-                        height,
-                        isCoinbase = false,
-                        isConfirmed = true,
-                        isInstantLocked = false,
-                        isLocked = isLocked,
-                        resolvedAccountId = ownerAccountId,
-                    )
-                    if (!wrote) {
-                        // The shared insert discipline refused (globally-swept
-                        // parent). Counting it as healed — or repairing a
-                        // netAmount for it — would falsify the report.
-                        skippedSwept++
-                        continue
-                    }
-                    inserted++
-                    insertedDuffs += amount
-                    // netAmount is NOT mutated here. The record's net may
-                    // already be correct (a corrective record callback can
-                    // land while its TXO delivery races this sweep), and
-                    // adding the healed amount to an already-corrected net
-                    // double-credits. The event pipeline owns net
-                    // correctness; this pass only reports the suspicion.
-                    val priorTx = database.transactionDao().getByTxid(txid)
-                    if (priorTx != null && priorTx.transactionData.isNotEmpty()) {
-                        netAmountSuspects++
-                        Log.w(
-                            TAG,
-                            "txos reconcile: healed TXO ${txid.toHex()}:$vout " +
-                                "($amount duffs) has a pre-existing record whose " +
-                                "netAmount may be short by that amount — LOG-ONLY, " +
-                                "storedNet=${priorTx.netAmount}",
-                        )
-                    }
-                }
+        var transportFailures = 0
+        val limit = pageSize.coerceAtLeast(1)
 
-                // ── Reverse pass: classify store rows the engine disagrees
-                // with (the widened scope from the #4425 / pre-#971 review).
-                // Watch-only DIP-15 contact rows are excluded via the same
-                // `foreignAccountIds` the insert pass resolved above.
-                // Production changeset writes leave txos.accountId null and
-                // route ownership through coreAddressId -> core_addresses
-                // .accountId, so the exclusion must resolve BOTH paths — an
-                // accountId-only check silently classifies every contact row.
-                suspend fun rowIsForeign(row: org.dashfoundation.dashsdk.persistence.entities.TxoEntity): Boolean {
-                    if (row.accountId != null) return row.accountId in foreignAccountIds
-                    val addr = row.coreAddressId ?: return false
-                    val owner = database.coreAddressDao().getByAddress(addr)?.accountId
-                    return owner != null && owner in foreignAccountIds
+        // Watch-only DIP-15 contact (external) accounts, resolved once up
+        // front because BOTH passes need the exclusion and the account set
+        // does not move under a sweep. The engine's UTXO inventory export
+        // includes these accounts' coins — it tracks them to show payments
+        // TO contacts — but they are the CONTACT's money and must never be
+        // healed into the store as ours. Before this check lived on the
+        // insert pass, a fresh restore's post-backfill reconcile healed
+        // every contact-payment coin into the store (12 rows / 0.05692493
+        // tDASH on the large-wallet validation run of 2026-08-25) while the
+        // reverse pass — the only place the exclusion existed — dutifully
+        // counted the same rows as foreign.
+        val foreignAccountIds = database.accountDao()
+            .observeByWallet(walletId).first()
+            .filter { it.accountType == ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL }
+            .map { it.id }
+            .toSet()
+
+        // ── Insert pass: one engine page at a time, one Room transaction
+        // each. The page is fetched OUTSIDE the exclusion lock — the fetch
+        // is a native call into the engine, and the lock exists to keep
+        // changeset callbacks out of our writes, not out of the engine.
+        var cursor: String? = null
+        while (true) {
+            val pageJson = engineUtxoPage(cursor, limit)
+            if (pageJson == null) {
+                // The transport died mid-sweep. Everything already applied
+                // stands (insert-only, idempotent); the rest waits for the
+                // next cadence tick.
+                transportFailures++
+                break
+            }
+            val page = kotlinx.serialization.json.Json
+                .parseToJsonElement(pageJson).jsonObject
+            val utxos = page["utxos"]?.jsonArray
+                ?: kotlinx.serialization.json.JsonArray(emptyList())
+            accountErrors += page["errors"]?.jsonArray?.size ?: 0
+            engineUtxos += utxos.size
+            val nextCursor = page["cursor"]?.jsonPrimitive?.contentOrNull
+            val hasMore = page["hasMore"]?.jsonPrimitive?.booleanOrNull ?: false
+
+            if (utxos.isNotEmpty()) {
+                callbackExclusion.withLock {
+                    database.withTransaction {
+                        // Engine-side entries carry only an address;
+                        // ownership resolves through core_addresses
+                        // .accountId (the same second path rowIsForeign uses
+                        // for store rows). An unresolvable address is NOT
+                        // provably foreign — those proceed, keeping this
+                        // pass's provable-only discipline symmetric: it
+                        // neither mutates nor suppresses on guesswork.
+                        suspend fun addressIsForeign(address: String): Boolean {
+                            val owner =
+                                database.coreAddressDao().getByAddress(address)?.accountId
+                            return owner != null && owner in foreignAccountIds
+                        }
+                        for (element in utxos) {
+                            val row = element.jsonObject
+                            val height = row["height"]?.jsonPrimitive?.int ?: 0
+                            if (height <= 0 || tipHeight - height + 1 < minConfirmations) {
+                                skippedImmature++
+                                continue
+                            }
+                            val address = row["address"]?.jsonPrimitive?.content.orEmpty()
+                            if (address.isEmpty()) {
+                                skippedNoAddress++
+                                continue
+                            }
+                            // The inventory tags every UTXO with its owning
+                            // account tuple. The tag is the authoritative
+                            // foreign check — a watch-only external
+                            // account's coin is the CONTACT's money whether
+                            // or not its address row survived persistence.
+                            // The address-based check stays as a fallback
+                            // for inventories predating the tagged export.
+                            val typeTag = row["typeTag"]?.jsonPrimitive?.int ?: -1
+                            if (typeTag == ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL ||
+                                addressIsForeign(address)
+                            ) {
+                                skippedForeign++
+                                continue
+                            }
+                            val txid =
+                                row["txid"]?.jsonPrimitive?.content.orEmpty().hexToByteArray()
+                            val vout = row["vout"]?.jsonPrimitive?.int ?: continue
+                            if (txid.size != 32) continue
+                            if (database.txoDao()
+                                    .getByOutpoint(makeOutpoint(txid, vout)) != null
+                            ) {
+                                continue
+                            }
+                            val amount = row["amount"]?.jsonPrimitive?.long ?: 0L
+                            val scriptPubKey =
+                                row["scriptHex"]?.jsonPrimitive?.content.orEmpty()
+                                    .hexToByteArray()
+                            val isLocked = row["isLocked"]?.jsonPrimitive?.boolean ?: false
+                            // Resolve the Room account from the tuple and
+                            // stamp it on the healed row. Ownership must not
+                            // depend on the address projection: the two
+                            // things persistence loses together are the TXO
+                            // and its address row, and a healed row with
+                            // neither link is skipped by the restore loader
+                            // at the next mirror-reload — recreating the
+                            // fund loss the heal repaired.
+                            val ownerAccountId = if (typeTag >= 0) {
+                                fetchAccount(
+                                    database, walletId, typeTag,
+                                    row["index"]?.jsonPrimitive?.int ?: 0,
+                                    row["standardTag"]?.jsonPrimitive?.int ?: 0,
+                                    row["registrationIndex"]?.jsonPrimitive?.int ?: 0,
+                                    row["keyClass"]?.jsonPrimitive?.int ?: 0,
+                                    row["userIdentityId"]?.jsonPrimitive?.content
+                                        ?.hexToByteArray() ?: ByteArray(32),
+                                    row["friendIdentityId"]?.jsonPrimitive?.content
+                                        ?.hexToByteArray() ?: ByteArray(32),
+                                )?.id
+                            } else {
+                                null
+                            }
+                            if (ownerAccountId == null) {
+                                // Heal anyway — the address projection may
+                                // still attribute it — but surface the
+                                // unresolved owner: if the address row is
+                                // also gone, this row will not survive the
+                                // next mirror-reload.
+                                healedUnowned++
+                                Log.w(
+                                    TAG,
+                                    "txos reconcile: healing TXO with UNRESOLVED account " +
+                                        "(typeTag=$typeTag " +
+                                        "index=${row["index"]?.jsonPrimitive?.int} " +
+                                        "address=$address) — ownership rides on the " +
+                                        "address projection alone",
+                                )
+                            }
+                            val wrote = upsertUtxoRow(
+                                database, walletId, txid, vout, amount, address, scriptPubKey,
+                                height,
+                                isCoinbase = false,
+                                isConfirmed = true,
+                                isInstantLocked = false,
+                                isLocked = isLocked,
+                                resolvedAccountId = ownerAccountId,
+                            )
+                            if (!wrote) {
+                                // The shared insert discipline refused
+                                // (globally-swept parent). Counting it as
+                                // healed — or flagging a netAmount for it —
+                                // would falsify the report.
+                                skippedSwept++
+                                continue
+                            }
+                            inserted++
+                            insertedDuffs += amount
+                            // netAmount is NOT mutated here. The record's
+                            // net may already be correct (a corrective
+                            // record callback can land while its TXO
+                            // delivery races this sweep), and adding the
+                            // healed amount to an already-corrected net
+                            // double-credits. The event pipeline owns net
+                            // correctness; this pass only reports the
+                            // suspicion.
+                            val priorTx = database.transactionDao().getByTxid(txid)
+                            if (priorTx != null && priorTx.transactionData.isNotEmpty()) {
+                                netAmountSuspects++
+                                Log.w(
+                                    TAG,
+                                    "txos reconcile: healed TXO ${txid.toHex()}:$vout " +
+                                        "($amount duffs) has a pre-existing record whose " +
+                                        "netAmount may be short by that amount — LOG-ONLY, " +
+                                        "storedNet=${priorTx.netAmount}",
+                                )
+                            }
+                        }
+                    }
                 }
-                @Suppress("NAME_SHADOWING")
-                val storeRows = database.txoDao().observeByWallet(walletId).first()
-                // Case 3 (log-only): rows marked spent for coins the engine
-                // still lists unspent. Either lost-release residue
-                // (pre-#971) or a live spend racing the engine — never
-                // un-marked, only reported.
-                for (row in storeRows) {
-                    if (!row.isSpent) continue
-                    if (rowIsForeign(row)) continue
-                    val key = "${row.txid?.toHex() ?: continue}:${row.vout}"
-                    if (key in engineUnspentKeys) {
+            }
+            if (!hasMore || nextCursor == null) break
+            cursor = nextCursor
+        }
+
+        // ── Reverse pass: classify store rows the engine disagrees with
+        // (the widened scope from the #4425 / pre-#971 review). Inverted
+        // relative to the insert pass — it pages the STORE and asks the
+        // engine about each page — so that neither side has to hold a set
+        // over a whole inventory.
+        //
+        // Read-only by construction: it writes nothing, so it runs outside
+        // both the exclusion lock and any transaction. A row a concurrent
+        // callback moves under it is at worst a stale log line, and every
+        // verdict here is log-only anyway.
+        //
+        // Watch-only DIP-15 contact rows are excluded via the same
+        // `foreignAccountIds` the insert pass resolved above. Production
+        // changeset writes leave txos.accountId null and route ownership
+        // through coreAddressId -> core_addresses.accountId, so the
+        // exclusion must resolve BOTH paths — an accountId-only check
+        // silently classifies every contact row.
+        suspend fun rowIsForeign(
+            row: org.dashfoundation.dashsdk.persistence.entities.TxoEntity,
+        ): Boolean {
+            if (row.accountId != null) return row.accountId in foreignAccountIds
+            val addr = row.coreAddressId ?: return false
+            val owner = database.coreAddressDao().getByAddress(addr)?.accountId
+            return owner != null && owner in foreignAccountIds
+        }
+        // An empty BLOB sorts before every real outpoint, so this starts at
+        // the first row.
+        var after = ByteArray(0)
+        while (true) {
+            val storeRows = database.txoDao().pageByWallet(walletId, after, limit)
+            if (storeRows.isEmpty()) break
+            after = storeRows.last().outpoint
+
+            // Rows worth asking the engine about. A row still mid-insert
+            // (no txid yet) is not classifiable, and a foreign row's
+            // absence from the engine is expected rather than divergence —
+            // counted, as before, only when it is unspent.
+            val classifiable =
+                ArrayList<org.dashfoundation.dashsdk.persistence.entities.TxoEntity>(
+                    storeRows.size,
+                )
+            for (row in storeRows) {
+                if (row.txid == null || row.outpoint.size != OUTPOINT_BYTES) continue
+                if (rowIsForeign(row)) {
+                    if (!row.isSpent) skippedForeign++
+                    continue
+                }
+                classifiable.add(row)
+            }
+            if (classifiable.isEmpty()) continue
+
+            val blob = ByteArray(classifiable.size * OUTPOINT_BYTES)
+            for ((i, row) in classifiable.withIndex()) {
+                System.arraycopy(row.outpoint, 0, blob, i * OUTPOINT_BYTES, OUTPOINT_BYTES)
+            }
+            val verdicts = classifyOutpoints(blob)
+            if (verdicts == null || verdicts.size != classifiable.size) {
+                // No verdicts, no classification. Log-only either way, so
+                // the sweep stops rather than guessing.
+                transportFailures++
+                break
+            }
+            for ((i, row) in classifiable.withIndex()) {
+                val verdict = verdicts[i]
+                val key = "${row.txid?.toHex()}:${row.vout}"
+                if (row.isSpent) {
+                    // Rows marked spent for coins the engine still lists
+                    // unspent. Either lost-release residue (pre-#971) or a
+                    // live spend racing the engine — never un-marked, only
+                    // reported: un-marking a coin mid-payment would let the
+                    // wallet double-spend it.
+                    if (verdict == OUTPOINT_CLASS_UNSPENT) {
                         stuckSpent++
                         stuckSpentDuffs += row.amount
                         Log.w(
@@ -1524,59 +1627,53 @@ class PlatformWalletPersistenceHandler(
                                 "(lost release, or a live spend racing the engine)",
                         )
                     }
+                    continue
                 }
-                val storeUnspent = storeRows.filter { !it.isSpent }
-                for (row in storeUnspent) {
-                    if (rowIsForeign(row)) {
-                        skippedForeign++
-                        continue
+                when (verdict) {
+                    OUTPOINT_CLASS_UNSPENT -> {}
+                    OUTPOINT_CLASS_SPENT -> {
+                        // Lost spend update (#4425) — PROBABLY. The engine's
+                        // spent set records every input of every recorded
+                        // transaction, INCLUDING mempool spends, and carries
+                        // no context; flipping the store on it would persist
+                        // an unconfirmed spend as settled, contradicting
+                        // this handler's own in-block gating (see
+                        // onWalletChangesetUtxoSpent). LOG-ONLY until the
+                        // engine exports spends with their confirmation
+                        // context.
+                        wouldFlipSpent++
+                        wouldFlipSpentDuffs += row.amount
+                        Log.w(
+                            TAG,
+                            "txos reconcile: store row unspent but the engine " +
+                                "records a spend (context unknown, possibly " +
+                                "mempool) outpoint=$key amount=${row.amount} — " +
+                                "LOG-ONLY, not flipped",
+                        )
                     }
-                    val key = "${row.txid?.toHex() ?: continue}:${row.vout}"
-                    when {
-                        key in engineUnspentKeys -> {}
-                        key in engineSpentKeys -> {
-                            // Lost spend update (#4425) — PROBABLY. The
-                            // engine's spent set records every input of every
-                            // recorded transaction, INCLUDING mempool spends,
-                            // and carries no context; flipping the store on
-                            // it would persist an unconfirmed spend as
-                            // settled, contradicting this handler's own
-                            // in-block gating (see onWalletChangesetUtxoSpent).
-                            // LOG-ONLY until the engine exports spends with
-                            // their confirmation context.
-                            wouldFlipSpent++
-                            wouldFlipSpentDuffs += row.amount
-                            Log.w(
-                                TAG,
-                                "txos reconcile: store row unspent but the engine " +
-                                    "records a spend (context unknown, possibly " +
-                                    "mempool) outpoint=$key amount=${row.amount} — " +
-                                    "LOG-ONLY, not flipped",
-                            )
-                        }
-                        else -> {
-                            // In NEITHER engine inventory: swept/abandoned
-                            // residue (pre-#971 stores) — or an engine gap.
-                            // Deliberately LOG-ONLY: removal by reconciliation
-                            // is the one direction where a bug destroys
-                            // user-visible data, so it stays observable-first.
-                            wouldRemove++
-                            wouldRemoveDuffs += row.amount
-                            Log.w(
-                                TAG,
-                                "txos reconcile: store row in neither engine " +
-                                    "inventory outpoint=$key amount=${row.amount} — " +
-                                    "ambiguous (swept/abandoned residue, or a " +
-                                    "finalized spend whose engine record was " +
-                                    "dropped) — LOG-ONLY, not removed",
-                            )
-                        }
+                    else -> {
+                        // In NEITHER engine inventory: swept/abandoned
+                        // residue (pre-#971 stores) — or an engine gap.
+                        // Deliberately LOG-ONLY: removal by reconciliation
+                        // is the one direction where a bug destroys
+                        // user-visible data, so it stays observable-first.
+                        wouldRemove++
+                        wouldRemoveDuffs += row.amount
+                        Log.w(
+                            TAG,
+                            "txos reconcile: store row in neither engine " +
+                                "inventory outpoint=$key amount=${row.amount} — " +
+                                "ambiguous (swept/abandoned residue, or a " +
+                                "finalized spend whose engine record was " +
+                                "dropped) — LOG-ONLY, not removed",
+                        )
                     }
                 }
             }
         }
+
         val report = TxoReconcileReport(
-            engineUtxos = utxos.size,
+            engineUtxos = engineUtxos,
             inserted = inserted,
             insertedDuffs = insertedDuffs,
             netAmountSuspects = netAmountSuspects,
@@ -1592,9 +1689,10 @@ class PlatformWalletPersistenceHandler(
             skippedForeign = skippedForeign,
             stuckSpent = stuckSpent,
             stuckSpentDuffs = stuckSpentDuffs,
+            transportFailures = transportFailures,
         )
         if (inserted > 0 || accountErrors > 0 || wouldFlipSpent > 0 || wouldRemove > 0 ||
-            stuckSpent > 0 || skippedSwept > 0
+            stuckSpent > 0 || skippedSwept > 0 || transportFailures > 0
         ) {
             Log.w(
                 TAG,
@@ -1607,11 +1705,12 @@ class PlatformWalletPersistenceHandler(
                     "stuckSpent=$stuckSpent ($stuckSpentDuffs duffs, log-only), " +
                     "engine=${report.engineUtxos} " +
                     "skipped immature=$skippedImmature noAddress=$skippedNoAddress " +
-                    "foreign=$skippedForeign accountErrors=$accountErrors — a non-zero " +
+                    "foreign=$skippedForeign accountErrors=$accountErrors " +
+                    "transportFailures=$transportFailures — a non-zero " +
                     "heal after a completed sync means a changeset dropped an owned output",
             )
         } else {
-            Log.i(TAG, "txos reconcile: mirror consistent (${utxos.size} engine UTXOs)")
+            Log.i(TAG, "txos reconcile: mirror consistent ($engineUtxos engine UTXOs)")
         }
         return report
     }
@@ -4227,6 +4326,28 @@ class PlatformWalletPersistenceHandler(
         /** `AccountTypeTagFFI::DashpayExternalAccount` — watch-only DIP-15
          *  contact accounts the engine's inventories never report. */
         internal const val ACCOUNT_TYPE_TAG_DASHPAY_EXTERNAL = 13
+
+        /** Bytes of a `txos.outpoint` key: 32-byte txid (wire order) plus
+         *  the vout as a little-endian `Int`. Also the wire format of the
+         *  reconcile's outpoint-classification batch. */
+        internal const val OUTPOINT_BYTES = 36
+
+        /**
+         * Rows per page in both directions of [reconcileTxos] — engine
+         * UTXOs coming in, store rows going out for classification.
+         *
+         * The number itself is not delicate; that there IS one is the
+         * point. Inventory size is chain-controlled, so an unpaged sweep
+         * would let anyone who knows a watched address decide how much a
+         * phone allocates at every SYNCED transition and cadence tick.
+         */
+        const val TXO_RECONCILE_PAGE_SIZE = 512
+
+        /** [reconcileTxos] classification verdicts, mirroring
+         *  `platform_wallet::manager::accessors::OUTPOINT_CLASS_*`. */
+        internal const val OUTPOINT_CLASS_UNKNOWN: Byte = 0
+        internal const val OUTPOINT_CLASS_UNSPENT: Byte = 1
+        internal const val OUTPOINT_CLASS_SPENT: Byte = 2
 
         internal const val PERSISTENCE_CAPABILITIES_VERSION: Int = 1
         internal const val CAPABILITY_ATOMIC_CHANGESETS: Long = 0x01

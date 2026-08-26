@@ -1,5 +1,6 @@
 //! Read-only accessors on [`PlatformWalletManager`].
 
+use std::ops::Bound;
 use std::sync::Arc;
 
 use dashcore::{OutPoint, Txid};
@@ -206,6 +207,17 @@ pub struct AccountAddressInfoSnapshot {
     /// implicitly by the owning account variant.
     pub public_key_bytes: Vec<u8>,
 }
+
+/// [`PlatformWalletManager::classify_outpoints_blocking`] verdicts. The
+/// engine has no record of this outpoint on any account — for a store row
+/// still marked unspent, that is residue of a swept or abandoned
+/// transaction, not proof the coin is gone.
+pub const OUTPOINT_CLASS_UNKNOWN: u8 = 0;
+/// The engine holds this outpoint as a live UTXO.
+pub const OUTPOINT_CLASS_UNSPENT: u8 = 1;
+/// Some recorded transaction spends this outpoint. Says nothing about
+/// confirmation: the engine's spent set includes mempool spends.
+pub const OUTPOINT_CLASS_SPENT: u8 = 2;
 
 /// Snapshot of one UTXO row inside an account.
 #[derive(Debug, Clone)]
@@ -829,6 +841,128 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .collect()
     }
 
+    /// One outpoint-ordered page of an account's UTXO inventory — the
+    /// bounded form of [`Self::account_utxos_blocking`], for callers that
+    /// must not hold a whole wallet's inventory at once.
+    ///
+    /// A wallet's UTXO count is chain-controlled: anyone who knows a
+    /// watched address can keep sending dust to it, so the full-inventory
+    /// read has no upper bound a mobile process can rely on. Pages solve
+    /// that: `after` is the last outpoint of the previous page (`None`
+    /// starts at the beginning), `limit` caps the rows returned, and the
+    /// returned flag says whether more rows follow. Because the account's
+    /// UTXOs live in a `BTreeMap` keyed by outpoint, a page is a partial
+    /// select over the keys — no intermediate copy of the rows the caller
+    /// skipped.
+    ///
+    /// `limit == 0` means "no limit", matching
+    /// [`Self::account_transactions_blocking`]; a paging caller should
+    /// always pass a real cap.
+    ///
+    /// The order is `OutPoint`'s own — deterministic, but neither
+    /// chronological nor the display order of a txid. Callers only need it
+    /// to be stable, which it is for as long as the account's UTXO set
+    /// does not change. A concurrent change between pages can drop a row
+    /// out of the sweep or repeat one; both are benign for the reconcile
+    /// this serves (insert-only, idempotent, and re-run on a cadence).
+    pub fn account_utxos_page_blocking(
+        &self,
+        wallet_id: &WalletId,
+        target: &AccountType,
+        after: Option<OutPoint>,
+        limit: usize,
+    ) -> (Vec<AccountUtxoSnapshot>, bool) {
+        let wm = self.wallet_manager.blocking_read();
+        let Some(info) = wm.get_wallet_info(wallet_id) else {
+            return (Vec::new(), false);
+        };
+        let accounts = info.core_wallet.accounts.all_accounts();
+        let Some(account) = accounts
+            .iter()
+            .find(|a| &a.managed_account_type().to_account_type() == target)
+        else {
+            return (Vec::new(), false);
+        };
+        // Keys-only accounts (identity / asset-lock / provider) never
+        // carry UTXOs by construction — an empty page, never a partial one.
+        let Some(funds) = account.as_funds() else {
+            return (Vec::new(), false);
+        };
+        let cursor = match after {
+            Some(outpoint) => (Bound::Excluded(outpoint), Bound::Unbounded),
+            None => (Bound::Unbounded, Bound::Unbounded),
+        };
+        let mut iter = funds.utxos.range(cursor);
+        let take = if limit == 0 { usize::MAX } else { limit };
+        let mut rows: Vec<AccountUtxoSnapshot> = Vec::new();
+        for (_, utxo) in iter.by_ref().take(take) {
+            rows.push(AccountUtxoSnapshot {
+                outpoint: utxo.outpoint,
+                value_duffs: utxo.txout.value,
+                script_pubkey: utxo.txout.script_pubkey.as_bytes().to_vec(),
+                height: utxo.height,
+                is_locked: utxo.is_locked,
+            });
+        }
+        // One probe past the page rather than an over-fetch-and-truncate:
+        // `range` is lazy, so this costs a single tree step.
+        let has_more = iter.next().is_some();
+        (rows, has_more)
+    }
+
+    /// Classify each of `outpoints` against the wallet's live engine
+    /// state: `0` unknown, `1` unspent, `2` spent. The reverse half of the
+    /// store-reconcile transport — a persistence mirror pages its own rows
+    /// and asks about them in batches, instead of pulling both engine
+    /// inventories over and holding them as sets.
+    ///
+    /// The answer is per outpoint, looked up in each account's UTXO map
+    /// and spent set, so the cost is the batch size times the account
+    /// count — never the size of either inventory. Every account is
+    /// consulted under ONE read lock.
+    ///
+    /// Unspent wins a tie: an outpoint the engine still holds as a UTXO is
+    /// unspent whatever else references it. `2` means only that some
+    /// recorded transaction spends it — the spend may be in the mempool,
+    /// which is why callers must not treat it as settled.
+    ///
+    /// The returned vector is positional and always the same length as
+    /// `outpoints`; an unknown wallet classifies everything as `0`.
+    pub fn classify_outpoints_blocking(
+        &self,
+        wallet_id: &WalletId,
+        outpoints: &[OutPoint],
+    ) -> Vec<u8> {
+        let mut classes = vec![OUTPOINT_CLASS_UNKNOWN; outpoints.len()];
+        if outpoints.is_empty() {
+            return classes;
+        }
+        let wm = self.wallet_manager.blocking_read();
+        let Some(info) = wm.get_wallet_info(wallet_id) else {
+            return classes;
+        };
+        let accounts = info.core_wallet.accounts.all_accounts();
+        for account in accounts.iter() {
+            let Some(funds) = account.as_funds() else {
+                continue;
+            };
+            let spent = funds.spent_outpoints();
+            for (slot, outpoint) in classes.iter_mut().zip(outpoints.iter()) {
+                if *slot == OUTPOINT_CLASS_UNSPENT {
+                    // Already settled by an earlier account, and unspent is
+                    // the strongest answer there is.
+                    continue;
+                }
+                if funds.utxos.contains_key(outpoint) {
+                    *slot = OUTPOINT_CLASS_UNSPENT;
+                } else if spent.contains(outpoint) {
+                    *slot = OUTPOINT_CLASS_SPENT;
+                }
+            }
+        }
+        classes
+    }
+
     /// The outpoints this account knows were spent by recorded
     /// transactions — the second half of the store-reconcile inventory
     /// ([`Self::account_utxos_blocking`] is the unspent half). Lets a
@@ -1203,6 +1337,183 @@ fn tx_record_snapshot(rec: &TransactionRecord) -> AccountTransactionSnapshot {
         value_delta_duffs: rec.net_amount,
         fee_duffs: rec.fee.unwrap_or(0),
         is_coinbase: rec.transaction.is_coin_base(),
+    }
+}
+
+#[cfg(test)]
+mod utxo_inventory_transport_tests {
+    use std::sync::Arc;
+
+    use dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
+    use key_wallet::account::AccountType;
+    use key_wallet::account::StandardAccountType;
+    use key_wallet::utxo::Utxo;
+
+    use crate::manager::accessors::{OUTPOINT_CLASS_UNKNOWN, OUTPOINT_CLASS_UNSPENT};
+    use crate::test_support::{test_platform_wallet_manager, NoopTestPersister};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    fn outpoint(byte: u8, vout: u32) -> OutPoint {
+        OutPoint {
+            txid: <Txid as dashcore::hashes::Hash>::from_byte_array([byte; 32]),
+            vout,
+        }
+    }
+
+    /// Put `count` UTXOs on the wallet's BIP44 account. The engine normally
+    /// fills this map from block processing; a test only needs the map's
+    /// contents, and the accessors read nothing else.
+    async fn seed_utxos(
+        manager: &Arc<PlatformWalletManager<NoopTestPersister>>,
+        wallet_id: &WalletId,
+        outpoints: &[OutPoint],
+    ) {
+        let mut wm = manager.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(wallet_id).expect("known wallet");
+        let mut accounts = info.core_wallet.accounts.all_accounts_mut();
+        let account = accounts
+            .iter_mut()
+            .find(|a| a.managed_account_type().to_account_type() == bip44())
+            .expect("BIP44 account");
+        // `Utxo` carries an address; the accessors never read it, so any
+        // address the account already derived will do.
+        let address = account
+            .managed_account_type()
+            .address_pools()
+            .first()
+            .and_then(|pool| {
+                pool.addresses
+                    .values()
+                    .next()
+                    .map(|info| info.address.clone())
+            })
+            .expect("a derived address");
+        let funds = account.as_funds_mut().expect("funds account");
+        for op in outpoints {
+            funds.utxos.insert(
+                *op,
+                Utxo::new(
+                    *op,
+                    TxOut {
+                        value: 1_000,
+                        script_pubkey: ScriptBuf::new(),
+                    },
+                    address.clone(),
+                    100,
+                    false,
+                ),
+            );
+        }
+    }
+
+    fn bip44() -> AccountType {
+        AccountType::Standard {
+            standard_account_type: StandardAccountType::BIP44Account,
+            index: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn utxo_pages_cover_the_account_exactly_once_and_stop() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        // Five outpoints across two txids, so the page boundary lands inside
+        // a txid as well as between them.
+        let seeded: Vec<OutPoint> = vec![
+            outpoint(1, 0),
+            outpoint(1, 1),
+            outpoint(1, 2),
+            outpoint(2, 0),
+            outpoint(2, 1),
+        ];
+        seed_utxos(&manager, &wallet_id, &seeded).await;
+
+        tokio::task::spawn_blocking(move || {
+            let target = bip44();
+            let mut seen: Vec<OutPoint> = Vec::new();
+            let mut after: Option<OutPoint> = None;
+            let mut pages = 0;
+            loop {
+                let (rows, has_more) =
+                    manager.account_utxos_page_blocking(&wallet_id, &target, after, 2);
+                pages += 1;
+                assert!(rows.len() <= 2, "a page must never exceed its limit");
+                if let Some(last) = rows.last() {
+                    after = Some(last.outpoint);
+                }
+                seen.extend(rows.iter().map(|r| r.outpoint));
+                if !has_more {
+                    break;
+                }
+                assert!(pages < 10, "paging must terminate");
+            }
+            assert_eq!(3, pages, "5 rows at 2 per page");
+            assert_eq!(5, seen.len(), "every UTXO is delivered");
+            let mut unique = seen.clone();
+            unique.sort();
+            unique.dedup();
+            assert_eq!(5, unique.len(), "and none of them twice");
+            let mut sorted = seen.clone();
+            sorted.sort();
+            assert_eq!(sorted, seen, "pages walk the outpoint order");
+
+            // The unpaged accessor is the same inventory — the page cursor
+            // is a transport detail, not a different view.
+            let whole = manager.account_utxos_blocking(&wallet_id, &target);
+            assert_eq!(whole.len(), seen.len());
+
+            // An exhausted cursor is an empty terminal page, not a loop.
+            let (rows, has_more) =
+                manager.account_utxos_page_blocking(&wallet_id, &target, seen.last().copied(), 2);
+            assert!(rows.is_empty());
+            assert!(!has_more);
+
+            // A keys-only account has no UTXOs, and says so without
+            // claiming another page.
+            let (rows, has_more) = manager.account_utxos_page_blocking(
+                &wallet_id,
+                &AccountType::IdentityRegistration,
+                None,
+                2,
+            );
+            assert!(rows.is_empty());
+            assert!(!has_more);
+        })
+        .await
+        .expect("blocking accessor task");
+    }
+
+    #[tokio::test]
+    async fn classification_is_positional_and_covers_unknown_outpoints() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let held = outpoint(3, 7);
+        seed_utxos(&manager, &wallet_id, &[held]).await;
+
+        tokio::task::spawn_blocking(move || {
+            let asked = vec![outpoint(9, 0), held, outpoint(9, 1)];
+            let classes = manager.classify_outpoints_blocking(&wallet_id, &asked);
+            assert_eq!(
+                vec![
+                    OUTPOINT_CLASS_UNKNOWN,
+                    OUTPOINT_CLASS_UNSPENT,
+                    OUTPOINT_CLASS_UNKNOWN
+                ],
+                classes,
+                "verdicts line up with the outpoints that were asked about",
+            );
+
+            // The length contract holds at both edges: an empty batch, and
+            // an unknown wallet, still answer positionally.
+            assert!(manager
+                .classify_outpoints_blocking(&wallet_id, &[])
+                .is_empty());
+            assert_eq!(
+                vec![OUTPOINT_CLASS_UNKNOWN; 3],
+                manager.classify_outpoints_blocking(&[0xFF; 32], &asked),
+            );
+        })
+        .await
+        .expect("blocking accessor task");
     }
 }
 

@@ -4,6 +4,10 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
@@ -5069,7 +5073,7 @@ class PlatformWalletPersistenceHandlerTest {
             ),
         )
 
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineUtxoJson(changeTxid.toHexLower(), vout = 1, amount = 989_009_773L),
             tipHeight = reconcileTip,
@@ -5503,8 +5507,8 @@ class PlatformWalletPersistenceHandlerTest {
         )
         val json = engineUtxoJson(changeTxid.toHexLower(), vout = 1, amount = 989_009_773L)
 
-        handler.reconcileTxos(walletId, json, tipHeight = reconcileTip)
-        val second = handler.reconcileTxos(walletId, json, tipHeight = reconcileTip)
+        handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
+        val second = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
 
         assertEquals(0, second.inserted)
         assertEquals(0, second.netAmountSuspects)
@@ -5519,7 +5523,7 @@ class PlatformWalletPersistenceHandlerTest {
         // Immature: inside the 100-conf gate (flags on the engine snapshot
         // can't carry coinbase/IS-lock, so fresh rows wait for a later
         // sweep) — nothing inserted.
-        val fresh = handler.reconcileTxos(
+        val fresh = handler.reconcileFromInventory(
             walletId,
             engineUtxoJson(changeTxid.toHexLower(), vout = 0, amount = 5L, height = reconcileTip - 3),
             tipHeight = reconcileTip,
@@ -5541,7 +5545,7 @@ class PlatformWalletPersistenceHandlerTest {
         val seeded = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 2))!!
         db.txoDao().upsert(seeded.copy(isSpent = true))
 
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineUtxoJson(changeTxid.toHexLower(), vout = 2, amount = 42L, height = 1_500_000),
             tipHeight = reconcileTip,
@@ -5573,7 +5577,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId, changeTxid, 3, 500_000L, "yTestAddr", byteArrayOf(0x51), 1_400_000,
             false, true, false, false,
         )
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineInventoryJson(unspent = emptyList(), spent = listOf(changeTxid.toHexLower() to 3)),
             tipHeight = reconcileTip,
@@ -5600,7 +5604,7 @@ class PlatformWalletPersistenceHandlerTest {
                 isGloballySwept = true,
             ),
         )
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineUtxoJson(changeTxid.toHexLower(), vout = 1, amount = 989_009_773L),
             tipHeight = reconcileTip,
@@ -5625,7 +5629,7 @@ class PlatformWalletPersistenceHandlerTest {
             walletId, changeTxid, 4, 250_000L, "yTestAddr", byteArrayOf(0x51), 1_400_000,
             false, true, false, false,
         )
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineInventoryJson(unspent = emptyList(), spent = emptyList()),
             tipHeight = reconcileTip,
@@ -5652,7 +5656,7 @@ class PlatformWalletPersistenceHandlerTest {
                 """"txid":"${changeTxid.toHexLower()}","vout":5,"amount":42,""" +
                 """"address":"yTestAddr","scriptHex":"51",""" +
                 """"height":${reconcileTip - 3},"isLocked":false}],"spent":[],"errors":[]}"""
-        val report = handler.reconcileTxos(walletId, json, tipHeight = reconcileTip)
+        val report = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
         assertEquals(0, report.wouldFlipSpent)
         assertEquals(0, report.wouldRemove)
         assertEquals(1, report.skippedImmature)
@@ -5680,7 +5684,7 @@ class PlatformWalletPersistenceHandlerTest {
         val seeded = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 6))!!
         db.txoDao().upsert(seeded.copy(accountId = foreignAccountId))
 
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineInventoryJson(unspent = emptyList(), spent = emptyList()),
             tipHeight = reconcileTip,
@@ -5723,7 +5727,7 @@ class PlatformWalletPersistenceHandlerTest {
         val seeded = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 8))!!
         assertNull("production shape: accountId is null", seeded.accountId)
 
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineInventoryJson(unspent = emptyList(), spent = emptyList()),
             tipHeight = reconcileTip,
@@ -5771,7 +5775,7 @@ class PlatformWalletPersistenceHandlerTest {
                 """"txid":"${changeTxid.toHexLower()}","vout":9,"amount":10000,""" +
                 """"address":"yContactPaid","scriptHex":"51",""" +
                 """"height":1400000,"isLocked":false}],"spent":[],"errors":[]}"""
-        val report = handler.reconcileTxos(walletId, json, tipHeight = reconcileTip)
+        val report = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
 
         assertEquals(0, report.inserted)
         assertEquals(0L, report.insertedDuffs)
@@ -5805,7 +5809,7 @@ class PlatformWalletPersistenceHandlerTest {
             ),
         )
         // Deliberately NO core_addresses row for this address.
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineUtxoJson(changeTxid.toHexLower(), vout = 11, amount = 70_000L, address = "yOrphanAddr"),
             tipHeight = reconcileTip,
@@ -5824,7 +5828,7 @@ class PlatformWalletPersistenceHandlerTest {
         // account registrations): the heal proceeds — the address projection
         // may still attribute it — but the unresolved owner is surfaced.
         db.walletDao().upsert(WalletEntity(walletId, networkRaw = Network.TESTNET.ffiValue))
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineUtxoJson(changeTxid.toHexLower(), vout = 12, amount = 5_000L),
             tipHeight = reconcileTip,
@@ -5845,7 +5849,7 @@ class PlatformWalletPersistenceHandlerTest {
                 """"txid":"${changeTxid.toHexLower()}","vout":13,"amount":10000,""" +
                 """"address":"yContactNoRow","scriptHex":"51",""" +
                 """"height":1400000,"isLocked":false}],"spent":[],"errors":[]}"""
-        val report = handler.reconcileTxos(walletId, json, tipHeight = reconcileTip)
+        val report = handler.reconcileFromInventory(walletId, json, tipHeight = reconcileTip)
 
         assertEquals(0, report.inserted)
         assertEquals(1, report.skippedForeign)
@@ -5866,7 +5870,7 @@ class PlatformWalletPersistenceHandlerTest {
         val seeded = db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 7))!!
         db.txoDao().upsert(seeded.copy(isSpent = true))
 
-        val report = handler.reconcileTxos(
+        val report = handler.reconcileFromInventory(
             walletId,
             engineInventoryJson(
                 unspent = listOf(Triple(changeTxid.toHexLower(), 7, 77_000L)),
@@ -5880,5 +5884,233 @@ class PlatformWalletPersistenceHandlerTest {
             "the row must stay spent — un-marking is never done by reconciliation",
             db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 7))!!.isSpent,
         )
+    }
+
+    // ── Paged reconcile transport ─────────────────────────────────────
+
+    @Test
+    fun reconcileWalksEveryPageOfTheEngineInventory() = runTest {
+        // The engine inventory is chain-controlled in size, so the sweep
+        // reads it a page at a time. Every page must be applied — a sweep
+        // that healed only the first one would leave most of a damaged
+        // mirror unrepaired, and silently.
+        val engine = FakeEngine(
+            engineInventoryJson(
+                unspent = (0 until 5).map { Triple(changeTxid.toHexLower(), 20 + it, 1_000L) },
+                spent = emptyList(),
+            ),
+        )
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            pageSize = 2,
+            engineUtxoPage = engine::page,
+            classifyOutpoints = engine::classify,
+        )
+
+        assertEquals("3 pages for 5 rows at 2 per page", 3, engine.pages)
+        assertEquals(5, report.engineUtxos)
+        assertEquals(5, report.inserted)
+        assertEquals(5_000L, report.insertedDuffs)
+        for (vout in 20 until 25) {
+            assertNotNull(
+                "the row at vout=$vout must be healed whichever page carried it",
+                db.txoDao().getByOutpoint(makeOutpoint(changeTxid, vout)),
+            )
+        }
+    }
+
+    @Test
+    fun reconcileStopsAtAFailedPageAndKeepsWhatItAlreadyHealed() = runTest {
+        // A transport that dies mid-sweep must not discard the pages that
+        // already landed — the pass is insert-only and idempotent, so they
+        // are already correct — and must not report a clean run either.
+        val engine = FakeEngine(
+            engineInventoryJson(
+                unspent = (0 until 4).map { Triple(changeTxid.toHexLower(), 30 + it, 500L) },
+                spent = emptyList(),
+            ),
+        )
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            pageSize = 2,
+            engineUtxoPage = { cursor, limit ->
+                if (cursor == null) engine.page(cursor, limit) else null
+            },
+            classifyOutpoints = engine::classify,
+        )
+
+        assertEquals(1, report.transportFailures)
+        assertEquals("only the page that arrived", 2, report.inserted)
+        assertNotNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 30)))
+        assertNull(db.txoDao().getByOutpoint(makeOutpoint(changeTxid, 32)))
+    }
+
+    @Test
+    fun reconcileClassifiesStoreRowsInBoundedBatches() = runTest {
+        // The reverse direction is inverted: the STORE is paged and the
+        // engine is asked about one page at a time, so neither side builds
+        // a set over a whole inventory. Every batch must still be answered
+        // and counted.
+        for (vout in 40 until 43) {
+            handler.onWalletChangesetUtxoAdded(
+                walletId, changeTxid, vout, 100L, "yTestAddr", byteArrayOf(0x51), 1_400_000,
+                false, true, false, false,
+            )
+        }
+        val engine = FakeEngine(engineInventoryJson(unspent = emptyList(), spent = emptyList()))
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            pageSize = 1,
+            engineUtxoPage = engine::page,
+            classifyOutpoints = engine::classify,
+        )
+
+        assertEquals("one classification batch per store page", 3, engine.batches)
+        assertEquals("every store row reached the classifier", 3, engine.classified)
+        assertEquals(3, report.wouldRemove)
+        assertEquals(300L, report.wouldRemoveDuffs)
+    }
+
+    @Test
+    fun reconcileStopsWhenAClassificationBatchFails() = runTest {
+        // No verdicts, no classification: the reverse pass stops rather
+        // than guessing at rows it could not ask the engine about.
+        for (vout in 50 until 53) {
+            handler.onWalletChangesetUtxoAdded(
+                walletId, changeTxid, vout, 100L, "yTestAddr", byteArrayOf(0x51), 1_400_000,
+                false, true, false, false,
+            )
+        }
+        val engine = FakeEngine(engineInventoryJson(unspent = emptyList(), spent = emptyList()))
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            pageSize = 1,
+            engineUtxoPage = engine::page,
+            classifyOutpoints = { null },
+        )
+
+        assertEquals(1, report.transportFailures)
+        assertEquals(0, report.wouldRemove)
+    }
+
+    /**
+     * Drive the paged reconcile from one whole-inventory JSON blob — the
+     * shape these tests describe an engine in, and the shape the native
+     * side used to hand over in a single unbounded call.
+     *
+     * The blob is served the way the transport now serves it: sliced into
+     * bounded pages behind an opaque cursor, with a separate positional
+     * classifier for the outpoints the store asks about. [pageSize]
+     * defaults to 2, so a test describing more than a couple of rows walks
+     * the real cursor loop rather than a single page.
+     */
+    private suspend fun PlatformWalletPersistenceHandler.reconcileFromInventory(
+        walletId: ByteArray,
+        inventoryJson: String,
+        tipHeight: Int,
+        minConfirmations: Int = 100,
+        pageSize: Int = 2,
+    ): PlatformWalletPersistenceHandler.TxoReconcileReport {
+        val engine = FakeEngine(inventoryJson)
+        return reconcileTxos(
+            walletId = walletId,
+            tipHeight = tipHeight,
+            minConfirmations = minConfirmations,
+            pageSize = pageSize,
+            engineUtxoPage = engine::page,
+            classifyOutpoints = engine::classify,
+        )
+    }
+
+    /**
+     * A stand-in for the engine's paged inventory transport, built from the
+     * whole-inventory JSON a test writes out. Pages come back behind an
+     * opaque ordinal cursor — the real cursor is opaque too, the handler
+     * only ever hands back what it was given — and classification answers
+     * positionally out of the same two inventories: 1 unspent, 2 spent, 0
+     * neither.
+     */
+    private class FakeEngine(inventoryJson: String) {
+        private val utxos: List<kotlinx.serialization.json.JsonObject>
+        private val errors: List<kotlinx.serialization.json.JsonElement>
+        private val unspentKeys: Set<String>
+        private val spentKeys: Set<String>
+
+        /** Inventory pages served, classification batches answered, and
+         *  outpoints classified across those batches. */
+        var pages = 0
+            private set
+        var batches = 0
+            private set
+        var classified = 0
+            private set
+
+        init {
+            val root = kotlinx.serialization.json.Json
+                .parseToJsonElement(inventoryJson).jsonObject
+            utxos = root["utxos"]?.jsonArray?.map { it.jsonObject } ?: emptyList()
+            errors = root["errors"]?.jsonArray?.toList() ?: emptyList()
+            unspentKeys = utxos.map {
+                key(
+                    it["txid"]!!.jsonPrimitive.content,
+                    it["vout"]!!.jsonPrimitive.int,
+                )
+            }.toSet()
+            spentKeys = (root["spent"]?.jsonArray?.toList() ?: emptyList()).map {
+                key(
+                    it.jsonObject["txid"]!!.jsonPrimitive.content,
+                    it.jsonObject["vout"]!!.jsonPrimitive.int,
+                )
+            }.toSet()
+        }
+
+        fun page(cursor: String?, limit: Int): String {
+            pages++
+            val start = cursor?.toInt() ?: 0
+            val slice = utxos.drop(start).take(limit)
+            val next = start + slice.size
+            val hasMore = next < utxos.size
+            // Account read failures belong to the sweep, not to a page: the
+            // native side reports each faulted account once, so the fake
+            // puts them all on the first page.
+            val faults = if (start == 0) errors.joinToString(",") { it.toString() } else ""
+            return """{"utxos":[${slice.joinToString(",") { it.toString() }}],""" +
+                """"errors":[$faults],""" +
+                """"cursor":${if (hasMore) "\"$next\"" else "null"},"hasMore":$hasMore}"""
+        }
+
+        fun classify(outpoints: ByteArray): ByteArray {
+            batches++
+            val count = outpoints.size / OUTPOINT_SIZE
+            classified += count
+            val verdicts = ByteArray(count)
+            for (i in 0 until count) {
+                val base = i * OUTPOINT_SIZE
+                val txidHex = outpoints.copyOfRange(base, base + 32)
+                    .joinToString("") { "%02x".format(it) }
+                var vout = 0
+                for (b in 3 downTo 0) {
+                    vout = (vout shl 8) or (outpoints[base + 32 + b].toInt() and 0xFF)
+                }
+                val k = key(txidHex, vout)
+                verdicts[i] = when {
+                    k in unspentKeys -> 1
+                    k in spentKeys -> 2
+                    else -> 0
+                }
+            }
+            return verdicts
+        }
+
+        private fun key(txidHex: String, vout: Int) = "$txidHex:$vout"
+
+        private companion object {
+            /** txid (32 bytes, wire order) + vout (4 bytes, little-endian). */
+            const val OUTPOINT_SIZE = 36
+        }
     }
 }

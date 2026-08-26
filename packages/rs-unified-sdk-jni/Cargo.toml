@@ -18,7 +18,7 @@ platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 key-wallet-ffi = { workspace = true }
 dash-network = { workspace = true, features = ["ffi"] }
 # Address encoding for the reconcile sweep's engine-UTXO export
-# (walletManagerAllUtxosJson) — already in the graph via
+# (walletManagerUtxosPageJson) — already in the graph via
 # platform-wallet-ffi, so this adds no new build cost.
 dashcore = { workspace = true }
 log = "0.4"

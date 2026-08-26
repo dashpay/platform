@@ -20,6 +20,23 @@ interface TxoDao {
     @Query("SELECT * FROM txos WHERE walletId = :walletId")
     fun observeByWallet(walletId: ByteArray): Flow<List<TxoEntity>>
 
+    /**
+     * One outpoint-ordered page of a wallet's TXOs, for a pass that must
+     * not hold the whole table at once (the store reconcile's reverse
+     * half). Pass an empty [after] to start — an empty BLOB sorts before
+     * every real 36-byte outpoint — then the previous page's last
+     * `outpoint` to continue.
+     *
+     * `outpoint` is the primary key, so the order is an index walk and the
+     * cursor is exact: no row can be visited twice or skipped because
+     * another one was inserted or deleted mid-sweep.
+     */
+    @Query(
+        "SELECT * FROM txos WHERE walletId = :walletId AND outpoint > :after " +
+            "ORDER BY outpoint LIMIT :limit",
+    )
+    suspend fun pageByWallet(walletId: ByteArray, after: ByteArray, limit: Int): List<TxoEntity>
+
     /** WalletMemoryExplorer: `txo.walletId == walletId && txo.isSpent == false`. */
     @Query("SELECT * FROM txos WHERE walletId = :walletId AND isSpent = 0")
     fun observeUnspentByWallet(walletId: ByteArray): Flow<List<TxoEntity>>

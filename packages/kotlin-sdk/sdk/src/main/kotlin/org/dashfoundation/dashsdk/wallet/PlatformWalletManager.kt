@@ -1226,33 +1226,65 @@ class PlatformWalletManager(
 
     /**
      * Reconcile the Room `txos` mirror against the engine's live UTXO
-     * inventory, healing rows a changeset failed to deliver (and their
-     * transactions' `netAmount`). The mirror is write-behind with no
-     * other feedback loop, and the engine is REBUILT from it on restart —
-     * an unhealed hole becomes a fund-loss on the next launch (the
-     * job-flower 106.43→86.33 restart drop: rescan nondeterministically
-     * drops the change outputs of sends funded from CoinJoin-account
-     * outputs). Insert-only; never flips spent state or deletes.
+     * inventory, healing rows a changeset failed to deliver. The mirror is
+     * write-behind with no other feedback loop, and the engine is REBUILT
+     * from it on restart — an unhealed hole becomes a fund-loss on the next
+     * launch (the job-flower 106.43→86.33 restart drop: rescan
+     * nondeterministically drops the change outputs of sends funded from
+     * CoinJoin-account outputs). Insert-only; never flips spent state or
+     * deletes.
+     *
+     * Both directions of the sweep are paged, so neither this process nor
+     * the engine ever holds a whole wallet's inventory: UTXO counts are
+     * chain-controlled, and a periodic full-inventory read would let anyone
+     * who knows a watched address decide how much a phone allocates. See
+     * [PlatformWalletPersistenceHandler.reconcileTxos].
      *
      * Call it after the L1 scan settles and again on a slow cadence;
      * [tipHeight] is the synced chain height — only outputs at least
-     * [minConfirmations] deep are healed (immature holes age into the
-     * next sweep; see [PlatformWalletPersistenceHandler.reconcileTxos]
-     * for why). Returns null when the engine inventory read failed.
+     * [minConfirmations] deep are healed (immature holes age into the next
+     * sweep). Returns null when the engine inventory read failed at the
+     * FIRST page: there is nothing to reconcile against, so there is no
+     * report to make. A page or classification batch failing later
+     * truncates the sweep instead, which the report's
+     * `transportFailures` records.
      */
     suspend fun reconcileTxoStore(
         walletId: ByteArray,
         tipHeight: Int,
         minConfirmations: Int = 100,
     ): PlatformWalletPersistenceHandler.TxoReconcileReport? {
-        val json = withContext(Dispatchers.IO) {
+        suspend fun page(cursor: String?, limit: Int): String? = withContext(Dispatchers.IO) {
             mapNativeErrors {
-                WalletManagerNative.walletManagerAllUtxosJson(
-                    managerHandle, walletId, network.ffiValue,
+                WalletManagerNative.walletManagerUtxosPageJson(
+                    managerHandle, walletId, network.ffiValue, cursor, limit,
                 )
             }
-        } ?: return null
-        return persistenceHandler.reconcileTxos(walletId, json, tipHeight, minConfirmations)
+        }
+        val pageSize = PlatformWalletPersistenceHandler.TXO_RECONCILE_PAGE_SIZE
+        // Read the first page before entering the reconcile so a dead
+        // transport still means "no report", the contract callers had
+        // before the sweep was paged. The handler asks for the null cursor
+        // exactly once, so this page is spent, not re-read.
+        val firstPage = page(null, pageSize) ?: return null
+        return persistenceHandler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = tipHeight,
+            minConfirmations = minConfirmations,
+            pageSize = pageSize,
+            engineUtxoPage = { cursor, limit ->
+                if (cursor == null) firstPage else page(cursor, limit)
+            },
+            classifyOutpoints = { outpoints ->
+                withContext(Dispatchers.IO) {
+                    mapNativeErrors {
+                        WalletManagerNative.walletManagerClassifyOutpoints(
+                            managerHandle, walletId, outpoints,
+                        )
+                    }
+                }
+            },
+        )
     }
 
     /**

@@ -3152,29 +3152,119 @@ fn core_selection_strategy(
     }
 }
 
-/// `platform_wallet_account_utxos` swept across every account — the
-/// engine-side UTXO inventory `PlatformWalletManager.reconcileTxoStore`
+/// Default page size for `walletManagerUtxosPageJson` when the caller
+/// passes a non-positive `limit`, and the hard cap it clamps to. The
+/// point of the paged transport is that neither side ever holds a whole
+/// wallet's inventory, so the cap is enforced here rather than trusted
+/// from the host.
+const UTXO_PAGE_DEFAULT: usize = 512;
+const UTXO_PAGE_MAX: usize = 4096;
+
+/// The account tuple, packed into one comparable key. Accounts are swept
+/// in the order of this key rather than in the order
+/// `get_account_balances` happens to return them: the sweep is resumable
+/// across calls, so it needs an order that a concurrently registered or
+/// removed account cannot shift underneath it. A new account sorting
+/// before the cursor is missed by THIS sweep and picked up by the next;
+/// one sorting after it is included. Neither can make the sweep skip or
+/// repeat data it has already paged — which an ordinal cursor would.
+fn account_sort_key(acc: &platform_wallet_ffi::AccountBalanceEntryFFI) -> [u8; 78] {
+    let mut key = [0u8; 78];
+    key[0] = acc.type_tag as u8;
+    key[1] = acc.standard_tag as u8;
+    key[2..6].copy_from_slice(&acc.index.to_be_bytes());
+    key[6..10].copy_from_slice(&acc.registration_index.to_be_bytes());
+    key[10..14].copy_from_slice(&acc.key_class.to_be_bytes());
+    key[14..46].copy_from_slice(&acc.user_identity_id);
+    key[46..78].copy_from_slice(&acc.friend_identity_id);
+    key
+}
+
+/// Where a paged inventory sweep left off: the account it was inside and
+/// the last outpoint it emitted from that account.
+struct UtxoPageCursor {
+    account_key: [u8; 78],
+    txid: [u8; 32],
+    vout: u32,
+}
+
+/// Parse `<accountKeyHex>:<txidHex>:<vout>`. The cursor is opaque to the
+/// host — it only ever hands back what a previous page returned — so an
+/// unparseable one restarts the sweep rather than failing it.
+fn parse_utxo_page_cursor(raw: &str) -> Option<UtxoPageCursor> {
+    let mut parts = raw.split(':');
+    let key_hex = parts.next()?;
+    let txid_hex = parts.next()?;
+    let vout: u32 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let key_bytes = hex_bytes(key_hex)?;
+    let txid_bytes = hex_bytes(txid_hex)?;
+    let mut cursor = UtxoPageCursor {
+        account_key: [0u8; 78],
+        txid: [0u8; 32],
+        vout,
+    };
+    if key_bytes.len() != cursor.account_key.len() || txid_bytes.len() != cursor.txid.len() {
+        return None;
+    }
+    cursor.account_key.copy_from_slice(&key_bytes);
+    cursor.txid.copy_from_slice(&txid_bytes);
+    Some(cursor)
+}
+
+/// Lower-hex → bytes; `None` on odd length or a non-hex digit.
+fn hex_bytes(hex: &str) -> Option<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return None;
+    }
+    let raw = hex.as_bytes();
+    let mut out = Vec::with_capacity(raw.len() / 2);
+    for pair in raw.chunks(2) {
+        let hi = (pair[0] as char).to_digit(16)?;
+        let lo = (pair[1] as char).to_digit(16)?;
+        out.push(((hi << 4) | lo) as u8);
+    }
+    Some(out)
+}
+
+/// One bounded page of the engine's UTXO inventory across every account of
+/// one wallet — the source of truth `PlatformWalletManager.reconcileTxoStore`
 /// diffs against the Room `txos` mirror (dropped change outputs of
 /// CoinJoin-funded sends leave the mirror short; the engine reloads from
 /// that mirror on restart, so an un-reconciled hole becomes a fund-loss).
-/// Returns a JSON object `{"utxos":[...],"errors":[...]}` — one `utxos`
-/// row per output the engine currently holds, tagged with its owning
-/// account. Accounts are enumerated with the same `get_account_balances`
-/// sweep the DashPay tab uses; keys-only accounts return no UTXOs and
-/// contribute nothing. `network` follows `Network.ffiValue` (0 mainnet,
-/// 2 devnet, 3 regtest, else testnet) and selects the address encoding;
-/// an output whose script has no address form carries an empty `address`
-/// for the caller to skip. A per-account read failure lands in `errors`
-/// instead of failing the sweep — the reconciler must still see every
-/// account that DID read, so one faulted account cannot mask the others'
-/// repair.
+///
+/// Paged rather than swept whole because inventory size is
+/// chain-controlled: anyone who knows a watched address can keep sending
+/// dust outputs to it, and a periodic full-inventory read would let them
+/// decide how much a phone allocates at every SYNCED transition and every
+/// 30-minute pass. Here nothing bigger than one page is ever formatted,
+/// copied across JNI, or parsed.
+///
+/// Returns a JSON object
+/// `{"utxos":[...],"errors":[...],"cursor":<string|null>,"hasMore":<bool>}`.
+/// Each `utxos` row is one output the engine currently holds, tagged with
+/// its owning account. `cursor` is opaque: hand it back verbatim on the
+/// next call (`null`/absent starts from the beginning) and keep going while
+/// `hasMore` is true. `limit` caps the rows in one page — non-positive
+/// means the default, and anything larger than the cap is clamped.
+///
+/// `network` follows `Network.ffiValue` (0 mainnet, 2 devnet, 3 regtest,
+/// else testnet) and selects the address encoding; an output whose script
+/// has no address form carries an empty `address` for the caller to skip.
+/// A per-account read failure lands in `errors` instead of failing the
+/// page — the reconciler must still see every account that DID read, so
+/// one faulted account cannot mask the others' repair.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerAllUtxosJson(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerUtxosPageJson(
     mut env: JNIEnv,
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
     network: jni::sys::jint,
+    cursor: JString,
+    limit: jni::sys::jint,
 ) -> jni::sys::jstring {
     guard(&mut env, ptr::null_mut(), |env| {
         let Some(wid) = read_id32(env, &wallet_id) else {
@@ -3186,6 +3276,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             3 => dashcore::Network::Regtest,
             _ => dashcore::Network::Testnet,
         };
+        let page_limit = if limit <= 0 {
+            UTXO_PAGE_DEFAULT
+        } else {
+            (limit as usize).min(UTXO_PAGE_MAX)
+        };
+        let resume = if cursor.is_null() {
+            None
+        } else {
+            match env.get_string(&cursor) {
+                Ok(s) => parse_utxo_page_cursor(&String::from(s)),
+                Err(_) => None,
+            }
+        };
+
         let mut entries: *const platform_wallet_ffi::AccountBalanceEntryFFI = ptr::null();
         let mut count: usize = 0;
         let result = unsafe {
@@ -3200,11 +3304,32 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             return ptr::null_mut();
         }
         let mut rows: Vec<String> = Vec::new();
-        let mut spent_rows: Vec<String> = Vec::new();
         let mut errors: Vec<String> = Vec::new();
+        let mut next_cursor: Option<String> = None;
+        let mut has_more = false;
         if !entries.is_null() && count > 0 {
             let accounts = unsafe { std::slice::from_raw_parts(entries, count) };
-            for acc in accounts {
+            let keys: Vec<[u8; 78]> = accounts.iter().map(account_sort_key).collect();
+            let mut order: Vec<usize> = (0..accounts.len()).collect();
+            order.sort_by(|a, b| keys[*a].cmp(&keys[*b]));
+            let mut remaining = page_limit;
+            for &i in &order {
+                let acc = &accounts[i];
+                let key = keys[i];
+                // Resume: accounts before the cursor's are already swept,
+                // the cursor's own continues after its last outpoint, and
+                // every later account starts from the beginning.
+                let after = match &resume {
+                    Some(c) if key < c.account_key => continue,
+                    Some(c) if key == c.account_key => Some((c.txid, c.vout)),
+                    _ => None,
+                };
+                if remaining == 0 {
+                    // The page filled on an earlier account and this one is
+                    // still unswept — resume from the cursor already set.
+                    has_more = true;
+                    break;
+                }
                 let spec = platform_wallet_ffi::AccountSpecFFI {
                     type_tag: acc.type_tag as u8,
                     standard_tag: acc.standard_tag as u8,
@@ -3218,13 +3343,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 };
                 let mut utxos: *const platform_wallet_ffi::AccountUtxoEntryFFI = ptr::null();
                 let mut utxo_count: usize = 0;
+                let mut account_has_more = false;
+                // The cursor txid has to outlive the call — a pointer taken
+                // from a temporary inside the argument list would dangle.
+                let after_txid: Option<[u8; 32]> = after.map(|(txid, _)| txid);
                 let res = unsafe {
-                    platform_wallet_ffi::platform_wallet_account_utxos(
+                    platform_wallet_ffi::platform_wallet_account_utxos_page(
                         manager_handle as Handle,
                         wid.as_ptr(),
                         &spec,
+                        after_txid.as_ref().map_or(ptr::null(), |t| t.as_ptr()),
+                        after.map_or(0, |(_, vout)| vout),
+                        remaining,
                         &mut utxos,
                         &mut utxo_count,
+                        &mut account_has_more,
                     )
                 };
                 if let Some(msg) = pwffi_error_message(res) {
@@ -3236,120 +3369,77 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                     ));
                     continue;
                 }
-                if utxos.is_null() || utxo_count == 0 {
-                    continue;
-                }
-                let items = unsafe { std::slice::from_raw_parts(utxos, utxo_count) };
-                for u in items {
-                    let script: &[u8] = if u.script_pubkey.is_null() || u.script_pubkey_len == 0 {
-                        &[]
-                    } else {
-                        unsafe {
-                            std::slice::from_raw_parts(u.script_pubkey, u.script_pubkey_len)
+                if !utxos.is_null() && utxo_count > 0 {
+                    let items = unsafe { std::slice::from_raw_parts(utxos, utxo_count) };
+                    for u in items {
+                        let script: &[u8] = if u.script_pubkey.is_null() || u.script_pubkey_len == 0
+                        {
+                            &[]
+                        } else {
+                            unsafe {
+                                std::slice::from_raw_parts(u.script_pubkey, u.script_pubkey_len)
+                            }
+                        };
+                        let script_buf = dashcore::ScriptBuf::from(script.to_vec());
+                        let address = dashcore::Address::from_script(&script_buf, net)
+                            .map(|a| a.to_string())
+                            .unwrap_or_default();
+                        // The DashPay identity halves of the account tuple are
+                        // emitted only when set (all-zero on every non-DashPay
+                        // account) — the reconcile needs the COMPLETE tuple to
+                        // resolve the owning Room account and stamp it on healed
+                        // rows, so ownership survives even when the address
+                        // projection is absent.
+                        let mut identity_suffix = String::new();
+                        if acc.user_identity_id != [0u8; 32] || acc.friend_identity_id != [0u8; 32]
+                        {
+                            identity_suffix = format!(
+                                ",\"userIdentityId\":\"{}\",\"friendIdentityId\":\"{}\"",
+                                hex_lower(&acc.user_identity_id),
+                                hex_lower(&acc.friend_identity_id),
+                            );
                         }
-                    };
-                    let script_buf = dashcore::ScriptBuf::from(script.to_vec());
-                    let address = dashcore::Address::from_script(&script_buf, net)
-                        .map(|a| a.to_string())
-                        .unwrap_or_default();
-                    // The DashPay identity halves of the account tuple are
-                    // emitted only when set (all-zero on every non-DashPay
-                    // account) — the reconcile needs the COMPLETE tuple to
-                    // resolve the owning Room account and stamp it on healed
-                    // rows, so ownership survives even when the address
-                    // projection is absent.
-                    let mut identity_suffix = String::new();
-                    if acc.user_identity_id != [0u8; 32] || acc.friend_identity_id != [0u8; 32] {
-                        identity_suffix = format!(
-                            ",\"userIdentityId\":\"{}\",\"friendIdentityId\":\"{}\"",
-                            hex_lower(&acc.user_identity_id),
-                            hex_lower(&acc.friend_identity_id),
-                        );
+                        rows.push(format!(
+                            "{{\"typeTag\":{},\"standardTag\":{},\"index\":{},\
+                             \"registrationIndex\":{},\"keyClass\":{},\
+                             \"txid\":\"{}\",\"vout\":{},\"amount\":{},\
+                             \"address\":{},\"scriptHex\":\"{}\",\
+                             \"height\":{},\"isLocked\":{}{}}}",
+                            acc.type_tag as u8,
+                            acc.standard_tag as u8,
+                            acc.index,
+                            acc.registration_index,
+                            acc.key_class,
+                            hex_lower(&u.outpoint_txid),
+                            u.outpoint_vout,
+                            u.value_duffs,
+                            json_escape(&address),
+                            hex_lower(script),
+                            u.height,
+                            u.is_locked,
+                            identity_suffix,
+                        ));
+                        next_cursor = Some(format!(
+                            "{}:{}:{}",
+                            hex_lower(&key),
+                            hex_lower(&u.outpoint_txid),
+                            u.outpoint_vout,
+                        ));
                     }
-                    rows.push(format!(
-                        "{{\"typeTag\":{},\"standardTag\":{},\"index\":{},\
-                         \"registrationIndex\":{},\"keyClass\":{},\
-                         \"txid\":\"{}\",\"vout\":{},\"amount\":{},\
-                         \"address\":{},\"scriptHex\":\"{}\",\
-                         \"height\":{},\"isLocked\":{}{}}}",
-                        acc.type_tag as u8,
-                        acc.standard_tag as u8,
-                        acc.index,
-                        acc.registration_index,
-                        acc.key_class,
-                        hex_lower(&u.outpoint_txid),
-                        u.outpoint_vout,
-                        u.value_duffs,
-                        json_escape(&address),
-                        hex_lower(script),
-                        u.height,
-                        u.is_locked,
-                        identity_suffix,
-                    ));
+                    remaining -= utxo_count.min(remaining);
+                    unsafe {
+                        platform_wallet_ffi::platform_wallet_account_utxos_free(
+                            utxos as *mut platform_wallet_ffi::AccountUtxoEntryFFI,
+                            utxo_count,
+                        )
+                    };
                 }
-                unsafe {
-                    platform_wallet_ffi::platform_wallet_account_utxos_free(
-                        utxos as *mut platform_wallet_ffi::AccountUtxoEntryFFI,
-                        utxo_count,
-                    )
-                };
-            }
-            // Second inventory half: the engine's spent outpoints, so the
-            // reconcile can classify a store row still marked unspent —
-            // present here means the row lost its spend update
-            // (dashpay/platform#4425, flip it); present in neither
-            // inventory means swept/abandoned residue
-            // (pre-rust-dashcore#971 stores, log-only). Soft-fail like the
-            // UTXO loop: one bad account must not mask the rest.
-            for acc in accounts {
-                let spec = platform_wallet_ffi::AccountSpecFFI {
-                    type_tag: acc.type_tag as u8,
-                    standard_tag: acc.standard_tag as u8,
-                    index: acc.index,
-                    registration_index: acc.registration_index,
-                    key_class: acc.key_class,
-                    user_identity_id: acc.user_identity_id,
-                    friend_identity_id: acc.friend_identity_id,
-                    account_xpub_bytes: ptr::null(),
-                    account_xpub_bytes_len: 0,
-                };
-                let mut outpoints: *const platform_wallet_ffi::OutPointFFI = ptr::null();
-                let mut spent_count: usize = 0;
-                let res = unsafe {
-                    platform_wallet_ffi::platform_wallet_account_spent_outpoints(
-                        manager_handle as Handle,
-                        wid.as_ptr(),
-                        &spec,
-                        &mut outpoints,
-                        &mut spent_count,
-                    )
-                };
-                if let Some(msg) = pwffi_error_message(res) {
-                    errors.push(format!(
-                        "{{\"typeTag\":{},\"index\":{},\"message\":{}}}",
-                        acc.type_tag as u8,
-                        acc.index,
-                        json_escape(&msg),
-                    ));
-                    continue;
+                if account_has_more {
+                    // Stopped inside this account: the cursor already names
+                    // its last emitted outpoint.
+                    has_more = true;
+                    break;
                 }
-                if outpoints.is_null() || spent_count == 0 {
-                    continue;
-                }
-                let items = unsafe { std::slice::from_raw_parts(outpoints, spent_count) };
-                for op in items {
-                    spent_rows.push(format!(
-                        "{{\"txid\":\"{}\",\"vout\":{}}}",
-                        hex_lower(&op.txid),
-                        op.vout,
-                    ));
-                }
-                unsafe {
-                    platform_wallet_ffi::platform_wallet_account_spent_outpoints_free(
-                        outpoints as *mut platform_wallet_ffi::OutPointFFI,
-                        spent_count,
-                    )
-                };
             }
         }
         unsafe {
@@ -3358,11 +3448,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 count,
             )
         };
+        // Without a cursor there is nowhere to resume, so a "more" claim
+        // would loop the caller forever. Cannot happen — a page only stops
+        // early after emitting a row — but the loop's termination should not
+        // rest on that reasoning alone.
+        if next_cursor.is_none() {
+            has_more = false;
+        }
         let json = format!(
-            "{{\"utxos\":[{}],\"spent\":[{}],\"errors\":[{}]}}",
+            "{{\"utxos\":[{}],\"errors\":[{}],\"cursor\":{},\"hasMore\":{}}}",
             rows.join(","),
-            spent_rows.join(","),
             errors.join(","),
+            next_cursor
+                .map(|c| json_escape(&c))
+                .unwrap_or_else(|| "null".to_string()),
+            has_more,
         );
         env.new_string(json)
             .map(|s| s.into_raw())
@@ -3370,9 +3470,100 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
+/// Classify a batch of outpoints against the engine's live state — the
+/// reverse half of the reconcile transport, and the reason
+/// `walletManagerUtxosPageJson` no longer exports a spent-outpoint list.
+/// The host pages its OWN mirror rows and asks about them a batch at a
+/// time, so neither side builds a set over the whole engine inventory.
+///
+/// `outpoints` is a flat `n * 36` byte blob in the store's own outpoint
+/// encoding — 32-byte txid in wire order followed by the vout as
+/// little-endian `u32`, which is exactly the `txos.outpoint` primary key,
+/// so a caller concatenates the column and reads the answers back
+/// positionally. Returns `n` bytes: 0 unknown, 1 unspent, 2 spent.
+///
+/// A 2 means some recorded transaction spends the outpoint — possibly one
+/// still in the mempool. It is not proof of a settled spend, and the
+/// reconcile treats it as a signal to log, never to write.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerClassifyOutpoints(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    outpoints: JByteArray,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        let blob = match env.convert_byte_array(&outpoints) {
+            Ok(b) => b,
+            Err(_) => {
+                throw_sdk_exception(env, 1, "outpoints must be a byte[]");
+                return ptr::null_mut();
+            }
+        };
+        if !blob.len().is_multiple_of(36) {
+            throw_sdk_exception(
+                env,
+                1,
+                "outpoints must be a multiple of 36 bytes (txid || vout LE)",
+            );
+            return ptr::null_mut();
+        }
+        let requested: Vec<platform_wallet_ffi::OutPointFFI> = blob
+            .chunks_exact(36)
+            .map(|chunk| {
+                let mut txid = [0u8; 32];
+                txid.copy_from_slice(&chunk[..32]);
+                platform_wallet_ffi::OutPointFFI {
+                    txid,
+                    vout: u32::from_le_bytes([chunk[32], chunk[33], chunk[34], chunk[35]]),
+                }
+            })
+            .collect();
+        if requested.is_empty() {
+            return env
+                .byte_array_from_slice(&[])
+                .map(|a| a.into_raw())
+                .unwrap_or(ptr::null_mut());
+        }
+        let mut classes: *const u8 = ptr::null();
+        let mut class_count: usize = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_classify_outpoints(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                requested.as_ptr(),
+                requested.len(),
+                &mut classes,
+                &mut class_count,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let verdicts: Vec<u8> = if classes.is_null() || class_count == 0 {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(classes, class_count) }.to_vec()
+        };
+        unsafe {
+            platform_wallet_ffi::platform_wallet_classify_outpoints_free(
+                classes as *mut u8,
+                class_count,
+            )
+        };
+        env.byte_array_from_slice(&verdicts)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 /// Extract-and-free a `PlatformWalletFFIResult`'s error message WITHOUT
 /// throwing — the per-account soft-fail path of
-/// [`Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerAllUtxosJson`]
+/// [`Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerUtxosPageJson`]
 /// reports account faults in-band so the sweep keeps going. `None` on
 /// success.
 fn pwffi_error_message(
