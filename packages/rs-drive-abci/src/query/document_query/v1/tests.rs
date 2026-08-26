@@ -3911,7 +3911,7 @@ mod having_trust_boundary {
         DocumentHavingRequest, DocumentHavingResponse,
     };
     use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
-    use drive::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+    use drive::query::drive_document_having_query::resolve_having_query_for_mode;
     use drive::query::having::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
     };
@@ -4073,30 +4073,21 @@ mod having_trust_boundary {
             platform_version(),
         )
         .expect("the case is well-formed");
-        let index = find_ranked_index_for_axis(
+        resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name("grade")
+                .expect("grade doctype exists"),
+            "grade".to_string(),
             contract
                 .document_types()
                 .get("grade")
                 .expect("grade doctype exists")
                 .indexes(),
-            &mode.group_by_property,
-            &[],
-            mode.bounds.axis(),
-            &mode.aggregate_field,
+            &mode,
+            PlatformVersion::latest(),
         )
-        .expect("the fixture declares the avg axis");
-        DriveDocumentHavingQuery {
-            document_type: contract
-                .document_type_for_name("grade")
-                .expect("grade doctype exists"),
-            contract_id: contract.id_ref().to_buffer(),
-            document_type_name: "grade".to_string(),
-            index,
-            bounds: mode.bounds,
-            prefix_branches: vec![Vec::new()],
-            descending: mode.descending,
-            limit: mode.limit,
-        }
+        .expect("the fixture declares the avg axis")
     }
 
     /// Prove the having request against the live Drive and return

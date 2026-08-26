@@ -241,13 +241,14 @@ pub fn detect_having_mode_v0(
         }
     };
 
-    // ---- WHERE: equality pins on the compound prefix ------------------
+    // ---- WHERE: pins on the compound prefix ---------------------------
     //
     // Identical contract to the ranked surface: empty for the
-    // single-property form; for a compound ranked index, one equality
-    // pin per leading property selects which prefix's secondary the
-    // bound reads. Shape-only here; the index picker enforces the
-    // exact-cover rule.
+    // single-property form; for a compound ranked index, one pin per
+    // leading property — `==`, except at most one bounded branching
+    // `IN` — selects which prefix secondary or secondaries the bound
+    // reads. Shape-only here; the index picker enforces the exact-cover
+    // rule.
     let prefix_pins = prefix_pins_from_where_clauses(where_clauses)?;
 
     // ---- LIMIT: required, 1 ..= MAX_HAVING_LIMIT ---------------------

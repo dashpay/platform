@@ -309,12 +309,13 @@ pub fn detect_ranked_mode_v0(
     // ---- WHERE: equality pins on the compound prefix ------------------
     //
     // Empty for the single-property form. For a compound ranked index,
-    // each `where` clause must pin one leading index property with `==`
-    // — that is what selects which prefix's secondary the walk reads
-    // (per-prefix semantics: there is no global cross-prefix ordering to
-    // serve). Anything other than a distinct-property equality is
-    // rejected loudly here; whether the pinned set matches a covering
-    // index's leading properties exactly is the index picker's call.
+    // each `where` clause pins one leading index property with `==`,
+    // except that at most one may use a bounded branching `IN` (a
+    // singleton `IN` normalizes to equality). These pins select the
+    // prefix secondary or secondaries the walk reads (per-prefix
+    // semantics: the only cross-prefix ordering is the branch merge);
+    // whether the pinned property set exactly matches a covering
+    // index's leading properties is the index picker's call.
     let prefix_pins = prefix_pins_from_where_clauses(where_clauses)?;
 
     // ---- LIMIT: required, 1 ..= MAX_RANKED_LIMIT ---------------------

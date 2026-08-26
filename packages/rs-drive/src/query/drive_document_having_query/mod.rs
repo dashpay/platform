@@ -289,8 +289,11 @@ pub struct DriveDocumentHavingQuery<'a> {
     /// least one branch, several exactly when the request carried a
     /// multi-element `IN` pin. Part of the prover/verifier agreement
     /// exactly as on the ranked surface. Produced by
-    /// [`super::drive_document_ranked_query::index_picker::encode_prefix_branches`].
-    pub prefix_branches: Vec<Vec<Vec<u8>>>,
+    /// [`super::drive_document_ranked_query::index_picker::encode_prefix_branches`]
+    /// — crate-private so the resolver is the only public constructor
+    /// and the encoder's invariants hold on every externally obtainable
+    /// value.
+    pub(crate) prefix_branches: Vec<Vec<Vec<u8>>>,
     /// Inclusive bounds on the aggregate. Carry the axis; the index must
     /// declare the matching `ranked_*` flag.
     pub bounds: AxisRangeBounds,
@@ -308,6 +311,17 @@ pub struct DriveDocumentHavingQuery<'a> {
     /// past the limit stay unreachable until a composite-key cursor
     /// exists, so size the limit above the widest expected tie.
     pub limit: u16,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl DriveDocumentHavingQuery<'_> {
+    /// The resolved prefix branches, in canonical order — one per `IN`
+    /// element (a single branch without an `IN`). Read-only: the field is
+    /// crate-private so the resolver's encoder invariants cannot be
+    /// bypassed by construction or mutation.
+    pub fn prefix_branches(&self) -> &[Vec<Vec<u8>>] {
+        &self.prefix_branches
+    }
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]

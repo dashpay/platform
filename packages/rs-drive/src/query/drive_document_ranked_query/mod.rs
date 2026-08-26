@@ -321,8 +321,11 @@ pub struct DriveDocumentRankedQuery<'a> {
     /// as much a part of the prover/verifier agreement as the path
     /// builder itself. Produced by
     /// [`index_picker::encode_prefix_branches`] from the request's
-    /// `where` pins.
-    pub prefix_branches: Vec<Vec<Vec<u8>>>,
+    /// `where` pins — crate-private so the resolver is the only public
+    /// constructor and the encoder's invariants (nonempty, canonical
+    /// order, distinct keys, one varying position, the fan-out ceiling)
+    /// hold on every externally obtainable value.
+    pub(crate) prefix_branches: Vec<Vec<Vec<u8>>>,
     /// Which aggregate the groups are ranked by. Must be covered by
     /// `index`'s matching `ranked_*` flag.
     pub axis: RankedAxis,
@@ -363,6 +366,17 @@ pub struct DriveDocumentRankedQuery<'a> {
     /// an error: the page comes back empty and
     /// [`RankedPage::skipped`] is the secondary's entire population.
     pub offset: u32,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl DriveDocumentRankedQuery<'_> {
+    /// The resolved prefix branches, in canonical order — one per `IN`
+    /// element (a single branch without an `IN`). Read-only: the field is
+    /// crate-private so the resolver's encoder invariants cannot be
+    /// bypassed by construction or mutation.
+    pub fn prefix_branches(&self) -> &[Vec<Vec<u8>>] {
+        &self.prefix_branches
+    }
 }
 
 /// A page of a ranked result: the entries, plus how many ranks were
