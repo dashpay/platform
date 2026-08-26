@@ -182,10 +182,12 @@ where
                         }
 
                         // Mark the state we can return to if this transition's result strips
-                        // it from the block (see `rollback_dropped_transitions` above).
+                        // it from the block (see `rollback_dropped_transitions` above). The
+                        // mint accumulator mirrors applied state, so it rewinds with it.
                         if rollback_dropped_transitions {
                             transaction.set_savepoint();
                         }
+                        let credit_mints_at_savepoint = block_credit_mints;
 
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
@@ -233,6 +235,11 @@ where
                                     transaction.rollback_to_savepoint().map_err(|e| {
                                         drive::grovedb::error::Error::StorageError(RocksDBError(e))
                                     })?;
+                                    // The rollback discarded this transition's writes; drop
+                                    // its mints with them, or the block would record a
+                                    // credit inflow for a transition the proposal omits and
+                                    // validators re-executing it would compute other state.
+                                    block_credit_mints = credit_mints_at_savepoint;
                                 }
                                 StateTransitionExecutionResult::SuccessfulExecution { .. }
                                 | StateTransitionExecutionResult::PaidConsensusError { .. } => {

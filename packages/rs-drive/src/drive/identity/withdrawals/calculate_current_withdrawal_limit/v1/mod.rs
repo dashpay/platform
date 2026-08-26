@@ -49,9 +49,12 @@ impl Drive {
     ///   other users. Only inflows younger than the snapshot count — an older one is already
     ///   inside the base, and adding it again would allow the pool level to drop below the
     ///   guaranteed share of the day-old total — and only unexpired ones, so an entry the
-    ///   bounded cleanup has not deleted yet cannot outlive its 25 hours here. The sum stays
-    ///   capped by `max_daily_withdrawal_amount`, the unlock capacity Core mines per day,
-    ///   which is a constraint on gross outflow that inflows cannot lift;
+    ///   bounded cleanup has not deleted yet cannot outlive its 25 hours here. The base
+    ///   stays capped by `max_daily_withdrawal_amount` (Core's unlock capacity per day) but
+    ///   the inflows ride above the cap: capping the sum would hand the whole capped budget
+    ///   back to a deposit-withdraw cycle whenever the base reaches the cap, and outflow
+    ///   funded by same-window deposits mirrors the net credit pool rule Core adopts
+    ///   alongside this;
     /// * the withdrawal reservations are bounded the same way: one pooled at or before the
     ///   snapshot describes an outflow the base already reflects (the history is recorded
     ///   after state transitions executed), so subtracting it again would deny budget the
@@ -103,14 +106,14 @@ impl Drive {
 
         let total_credits_a_day_ago = recorded_a_day_ago.map(|recorded| recorded.total_credits);
 
-        let daily_maximum = {
-            let uncapped = daily_withdrawal_limit(total_credits_a_day_ago, platform_version)?
-                .saturating_add(credit_inflows_since_the_snapshot);
-            match platform_version.system_limits.max_daily_withdrawal_amount {
-                Some(max_daily_withdrawal_amount) => uncapped.min(max_daily_withdrawal_amount),
-                None => uncapped,
-            }
-        };
+        // The base is capped at Core's unlock capacity inside `daily_withdrawal_limit`; the
+        // inflows ride on top of the capped base, not under the cap. Capping the sum would
+        // discard the inflows exactly when the base reaches the cap — at that point a
+        // deposit-withdraw cycle would consume the whole capped budget again (#4471 under
+        // mainnet totals). Outflow funded by same-window deposits mirrors the net credit
+        // pool rule Core adopts alongside this (see #4471), so it may exceed the cap.
+        let daily_maximum = daily_withdrawal_limit(total_credits_a_day_ago, platform_version)?
+            .saturating_add(credit_inflows_since_the_snapshot);
 
         let withdrawals_since_the_snapshot = self.sum_expiry_keyed_entries_at_or_after(
             get_withdrawal_transactions_sum_tree_path_vec(),
@@ -356,11 +359,13 @@ mod tests {
         assert_eq!(info.available(), dash_to_credits!(1500));
     }
 
-    /// Inflows extend the daily maximum only up to `max_daily_withdrawal_amount`: Core mines a
-    /// bounded amount of credit pool unlocks per day, and that is a constraint on gross
-    /// outflow that money entering Platform cannot lift.
+    /// Inflows extend the daily maximum past the capped base: the cap bounds what Core mines
+    /// out of the standing pool per day, and capping the sum instead would hand the whole
+    /// capped budget back to a deposit-withdraw cycle whenever the base reaches the cap —
+    /// #4471 under mainnet totals. At a 30,000 Dash total the base is capped at 4,000; a
+    /// 4,000 Dash deposit-withdraw cycle must leave the full 4,000 available to others.
     #[test]
-    fn credit_inflows_should_not_lift_the_daily_maximum_above_cores_capacity() {
+    fn a_cycle_at_the_capped_base_should_not_consume_the_budget_of_others() {
         let drive = setup_drive_with_initial_state_structure(None);
         let mut platform_version = PlatformVersion::latest().clone();
         platform_version
@@ -373,11 +378,21 @@ mod tests {
             time_ms,
             ..Default::default()
         };
+        let limit = |time_ms: u64| {
+            drive
+                .calculate_current_withdrawal_limit(
+                    &block(time_ms),
+                    Some(&transaction),
+                    &platform_version,
+                )
+                .expect("expected the limit")
+        };
 
-        // Platform holds 20,000 Dash, so a day later the base is 15% = 3,000 Dash.
+        // Platform holds 30,000 Dash: 15% would be 4,500, so the base sits at the 4,000 Dash
+        // cap — the network conditions of #4471.
         drive
             .add_to_system_credits(
-                dash_to_credits!(20000),
+                dash_to_credits!(30000),
                 Some(&transaction),
                 &platform_version,
             )
@@ -386,33 +401,58 @@ mod tests {
             .record_total_credits_history(&block(t0), 64, Some(&transaction), &platform_version)
             .expect("expected to record");
 
-        // A 5,000 Dash deposit would allow 8,000 Dash of gross outflow; the cap holds it at
-        // Core's 4,000 Dash of unlock capacity per day.
         let day_one = t0 + DAY_IN_MS;
+        assert_eq!(limit(day_one).daily_maximum, dash_to_credits!(4000));
+
+        // The attacker deposits the whole capped budget and withdraws it again.
         drive
             .add_to_system_credits(
-                dash_to_credits!(5000),
+                dash_to_credits!(4000),
                 Some(&transaction),
                 &platform_version,
             )
             .expect("expected to add the deposit");
         drive
             .record_credit_inflow(
-                dash_to_credits!(5000),
+                dash_to_credits!(4000),
                 &block(day_one),
                 Some(&transaction),
                 &platform_version,
             )
             .expect("expected to record the inflow");
-
-        let info = drive
-            .calculate_current_withdrawal_limit(
+        let mut drive_operations = vec![];
+        drive
+            .add_enqueue_untied_withdrawal_transaction_operations(
+                vec![(1, vec![0u8; 32])],
+                dash_to_credits!(4000),
+                &mut drive_operations,
+                &platform_version,
+            )
+            .expect("expected to enqueue the withdrawal");
+        drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
                 &block(day_one),
                 Some(&transaction),
                 &platform_version,
+                None,
             )
-            .expect("expected the limit");
-        assert_eq!(info.daily_maximum, dash_to_credits!(4000));
+            .expect("expected to apply the pooling operations");
+        drive
+            .remove_from_system_credits(
+                dash_to_credits!(4000),
+                Some(&transaction),
+                &platform_version,
+            )
+            .expect("expected to remove the withdrawn credits");
+
+        // The inflow rides above the cap, so the cycle nets out: everyone else still has the
+        // full capped budget available.
+        let info = limit(day_one);
+        assert_eq!(info.daily_maximum, dash_to_credits!(8000));
+        assert_eq!(info.withdrawals_amount, dash_to_credits!(4000));
+        assert_eq!(info.available(), dash_to_credits!(4000));
     }
 
     /// An inflow that is already part of the day-old base must not extend the daily maximum a
