@@ -13,8 +13,12 @@
         {
           "name": "byHashtagPost",
           "properties": [
-            { "hashtag": "asc" },
-            { "postId": "asc" }
+            {
+              "hashtag": "asc"
+            },
+            {
+              "postId": "asc"
+            }
           ],
           "terminal": "$ownerId",
           "countable": "countable",
@@ -24,7 +28,9 @@
         {
           "name": "byPost",
           "properties": [
-            { "postId": "asc" }
+            {
+              "postId": "asc"
+            }
           ],
           "countable": "countable",
           "rangeCountable": true,
@@ -33,7 +39,9 @@
         {
           "name": "byLiker",
           "properties": [
-            { "$ownerId": "asc" }
+            {
+              "$ownerId": "asc"
+            }
           ],
           "terminal": "postId"
         }
@@ -58,7 +66,10 @@
           "position": 1
         }
       },
-      "required": ["hashtag", "postId"],
+      "required": [
+        "hashtag",
+        "postId"
+      ],
       "additionalProperties": false
     },
     "post": {
@@ -69,7 +80,9 @@
         {
           "name": "byHashtag",
           "properties": [
-            { "hashtag": "asc" }
+            {
+              "hashtag": "asc"
+            }
           ]
         }
       ],
@@ -86,7 +99,54 @@
           "position": 1
         }
       },
-      "required": ["hashtag"],
+      "required": [
+        "hashtag"
+      ],
+      "additionalProperties": false
+    },
+    "mark": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byA",
+          "properties": [
+            {
+              "a": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        },
+        {
+          "name": "byB",
+          "properties": [
+            {
+              "b": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        }
+      ],
+      "properties": {
+        "a": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "b": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
       "additionalProperties": false
     }
   }

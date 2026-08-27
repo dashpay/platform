@@ -568,3 +568,112 @@ fn deletion_refunds_flow_from_terminal_item_flags() {
 
     assert_grovedb_is_consistent(&drive);
 }
+
+/// Row integrity: a values tuple spliced from two of the SAME owner's
+/// documents addresses entries that all exist — but they carry different
+/// row commitments, so the delete is refused and both documents keep every
+/// projection. (The `mark` doctype's two single-property indexes are the
+/// splice-prone shape; likes are immune because their compound index binds
+/// the values together, but the layout must not depend on that.)
+#[test]
+fn should_refuse_a_delete_spliced_across_two_rows() {
+    use dpp::document::DocumentV0Setters;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    let mark_type = contract
+        .document_type_for_name("mark")
+        .expect("mark doctype exists");
+
+    let build_mark = |a: &str, b: &str, seed: u64| {
+        let mut doc = mark_type
+            .random_document(Some(seed), platform_version())
+            .expect("random mark");
+        let mut props = std::collections::BTreeMap::new();
+        props.insert("a".to_string(), Value::Text(a.to_string()));
+        props.insert("b".to_string(), Value::Text(b.to_string()));
+        doc.set_properties(props);
+        doc.set_owner_id(dpp::identifier::Identifier::from(OWNER_1));
+        doc
+    };
+    let insert_mark = |doc: &dpp::document::Document| {
+        drive
+            .add_document_for_contract(
+                crate::util::object_size_info::DocumentAndContractInfo {
+                    owned_document_info: crate::util::object_size_info::OwnedDocumentInfo {
+                        document_info: crate::util::object_size_info::DocumentInfo::DocumentRefInfo(
+                            (doc, None),
+                        ),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: mark_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version(),
+                None,
+            )
+            .expect("insert mark");
+    };
+
+    let mark_1 = build_mark("a1", "b1", 1);
+    let mark_2 = build_mark("a2", "b2", 2);
+    insert_mark(&mark_1);
+    insert_mark(&mark_2);
+
+    // The spliced tuple (a1, b2): byA's entry exists (mark_1's), byB's
+    // entry exists (mark_2's) — but each carries its own row's commitment.
+    let spliced = build_mark("a1", "b2", 3);
+    let error = drive
+        .delete_index_only_document_for_contract(
+            spliced,
+            &contract,
+            mark_type,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version(),
+            None,
+        )
+        .expect_err("a spliced tuple must be refused");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Drive(
+                crate::error::drive::DriveError::DeletingDocumentThatDoesNotExist(_)
+            )
+        ),
+        "expected the row-integrity refusal, got: {error}"
+    );
+
+    // Both real rows survive intact and stay individually deletable.
+    drive
+        .delete_index_only_document_for_contract(
+            mark_1,
+            &contract,
+            mark_type,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version(),
+            None,
+        )
+        .expect("the real row must still delete");
+    drive
+        .delete_index_only_document_for_contract(
+            mark_2,
+            &contract,
+            mark_type,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version(),
+            None,
+        )
+        .expect("the other real row must still delete");
+
+    assert_grovedb_is_consistent(&drive);
+}

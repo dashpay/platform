@@ -41,6 +41,20 @@ pub fn index_only_row_commitment(
     document_type: DocumentTypeRef,
     platform_version: &PlatformVersion,
 ) -> Result<[u8; 32], Error> {
+    index_only_row_commitment_with_preimage_size(document, document_type, platform_version)
+        .map(|(commitment, _)| commitment)
+}
+
+/// [`index_only_row_commitment`] plus the byte length of the hashed
+/// preimage — the length is what fee accounting sizes the double-SHA256
+/// by (`FunctionOp::new_with_byte_count`), so a validation path that
+/// computes the commitment can bill the hash it just performed.
+#[cfg(feature = "server")]
+pub fn index_only_row_commitment_with_preimage_size(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    platform_version: &PlatformVersion,
+) -> Result<([u8; 32], u16), Error> {
     let owner_id = Some(document.owner_id().to_buffer());
 
     let mut preimage: Vec<u8> = Vec::with_capacity(128);
@@ -71,5 +85,9 @@ pub fn index_only_row_commitment(
         preimage.extend_from_slice(&created_at.to_be_bytes());
     }
 
-    Ok(hash_double(preimage))
+    // Index-bearing properties are bounded far below 64 KiB; saturate
+    // instead of failing if a pathological preimage ever exceeds u16.
+    let preimage_size = preimage.len().try_into().unwrap_or(u16::MAX);
+
+    Ok((hash_double(preimage), preimage_size))
 }
