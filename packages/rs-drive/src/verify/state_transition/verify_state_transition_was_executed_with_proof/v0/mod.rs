@@ -276,20 +276,25 @@ impl Drive {
                                     }
                                 };
 
-                                // An indexOnly snapshot can never bind THIS
-                                // transition's execution: the row commitment
-                                // authenticates the tuple but carries neither
-                                // id, entropy nor nonce, so a second create
-                                // with identical owner/values (different
-                                // entropy) shares the proven entry while only
-                                // one of them executed — and a delete's
-                                // absence proof may describe state that was
-                                // already absent. The proof attests the
-                                // resulting STATE, not the execution.
-                                return Ok((
-                                    root_hash,
-                                    StateTransitionProofOutcome::AffectedState(result),
-                                ));
+                                // The classifier below is the single
+                                // authority on binding, and it returns false
+                                // for every indexOnly document transition: a
+                                // second create with identical owner/values
+                                // (different entropy) shares the proven entry
+                                // while only one of them executed, and a
+                                // delete's absence proof may describe state
+                                // that was already absent — the proof attests
+                                // the resulting STATE (`AffectedState`), not
+                                // the execution.
+                                let outcome = if Self::state_transition_proof_binds_execution(
+                                    state_transition,
+                                    known_contracts_provider_fn,
+                                )? {
+                                    StateTransitionProofOutcome::ExecutionProved(result)
+                                } else {
+                                    StateTransitionProofOutcome::AffectedState(result)
+                                };
+                                return Ok((root_hash, outcome));
                             }
                         }
 
@@ -2077,8 +2082,25 @@ impl Drive {
                 // consulted; classify fail-closed regardless.
                 None => false,
                 // Document proofs bind the exact document (or its absence
-                // after deletion), including contested status and history.
-                Some(BatchedTransitionRef::Document(_)) => true,
+                // after deletion), including contested status and history —
+                // EXCEPT indexOnly types: their snapshot authenticates the
+                // commitment-checked entry (or its absence), which carries
+                // neither id, entropy nor nonce and so cannot bind one
+                // specific transition's execution.
+                Some(BatchedTransitionRef::Document(document_transition)) => {
+                    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+                    let data_contract_id = document_transition.data_contract_id();
+                    let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
+                        Error::Proof(ProofError::UnknownContract(format!(
+                            "unknown contract with id {} in document verification",
+                            data_contract_id
+                        ))),
+                    )?;
+                    !contract
+                        .document_type_for_name(document_transition.document_type_name())
+                        .map_err(|e| Error::Proof(ProofError::UnknownContract(e.to_string())))?
+                        .index_only()
+                }
                 Some(BatchedTransitionRef::Token(token_transition)) => {
                     let data_contract_id = token_transition.data_contract_id();
                     let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(

@@ -1629,6 +1629,14 @@ impl<'a> DriveDocumentQuery<'a> {
                         .to_string(),
                 )));
             }
+            if self.document_type.index_only() && self.start_at.is_some() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "startAt/startAfter is not yet supported for indexOnly document types: \
+                     the cursor would be resolved through the primary-key tree, which an \
+                     indexOnly type does not have"
+                        .to_string(),
+                )));
+            }
         }
         let drive_version = &platform_version.drive;
         // First we should get the overall document_type_path
@@ -1752,6 +1760,14 @@ impl<'a> DriveDocumentQuery<'a> {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
                     "indexOnly documents cannot be fetched by id: there is no primary-key \
                      tree; query through one of the type's indexes"
+                        .to_string(),
+                )));
+            }
+            if self.document_type.index_only() && self.start_at.is_some() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "startAt/startAfter is not yet supported for indexOnly document types: \
+                     the cursor would be resolved through the primary-key tree, which an \
+                     indexOnly type does not have"
                         .to_string(),
                 )));
             }

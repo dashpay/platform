@@ -528,7 +528,7 @@ fn likes_query<'a>(
 /// proof verification must synthesize identical documents, and each
 /// synthesized document must carry exactly what its index recovers.
 #[test]
-fn queries_synthesize_documents_and_proofs_agree() {
+fn should_synthesize_query_documents_with_proof_parity() {
     use crate::query::{WhereClause, WhereOperator};
     use dpp::document::DocumentV0Getters;
     use dpp::platform_value::Value;
@@ -648,7 +648,7 @@ fn queries_synthesize_documents_and_proofs_agree() {
 
 /// By-id fetches have no tree to land on and are refused with guidance.
 #[test]
-fn by_id_queries_are_refused() {
+fn should_refuse_by_id_queries() {
     use crate::query::{WhereClause, WhereOperator};
     use assert_matches::assert_matches;
     use dpp::platform_value::Value;
@@ -672,6 +672,39 @@ fn by_id_queries_are_refused() {
         &error,
         crate::error::Error::Query(crate::error::query::QuerySyntaxError::Unsupported(message))
             if message.contains("cannot be fetched by id"),
+        "unexpected error: {error}"
+    );
+}
+
+/// A cursor (`startAt`/`startAfter`) would be resolved through the
+/// primary-key tree an indexOnly type does not have — the path
+/// constructors must refuse it with the typed `Unsupported` error before
+/// any cursor storage lookup can turn it into `StartDocumentNotFound`.
+#[test]
+fn should_refuse_cursor_queries() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::{WhereClause, WhereOperator};
+    use assert_matches::assert_matches;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    let mut query = likes_query(
+        &contract,
+        vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("dash".to_string()),
+        }],
+        None,
+    );
+    query.start_at = Some([7u8; 32]);
+    let error = drive
+        .query_documents(query, None, false, None, None)
+        .expect_err("cursor queries on indexOnly types must be refused");
+    assert_matches!(
+        &error,
+        crate::error::Error::Query(QuerySyntaxError::Unsupported(message))
+            if message.contains("startAt/startAfter is not yet supported"),
         "unexpected error: {error}"
     );
 }
