@@ -2,21 +2,21 @@
 //! item stores, binding the independently stored index projections of one
 //! document back into one logical row.
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::drive::DriveError;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::document_methods::DocumentMethodsV0;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::{Document, DocumentV0Getters};
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::util::hash::hash_double;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::version::PlatformVersion;
 
 /// The byte length of an indexOnly terminal item's payload: the row
@@ -35,7 +35,7 @@ pub const INDEX_ONLY_ROW_COMMITMENT_SIZE: u32 = 32;
 /// other row. Without it, entry existence alone cannot distinguish "one
 /// document's projections" from "several documents' projections that
 /// happen to coexist".
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub fn index_only_row_commitment(
     document: &Document,
     document_type: DocumentTypeRef,
@@ -49,7 +49,7 @@ pub fn index_only_row_commitment(
 /// preimage — the length is what fee accounting sizes the double-SHA256
 /// by (`FunctionOp::new_with_byte_count`), so a validation path that
 /// computes the commitment can bill the hash it just performed.
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub fn index_only_row_commitment_with_preimage_size(
     document: &Document,
     document_type: DocumentTypeRef,

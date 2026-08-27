@@ -2183,6 +2183,31 @@ pub(super) fn apply_index_only(
         }
     }
 
+    // At least one index must involve no `$createdAt` at all — the PROOF
+    // index. Executed-transition proofs (waitForStateTransitionResult)
+    // locate the entry a create or delete produced from the transition's
+    // values alone, and a client verifier cannot know the block timestamp
+    // an entry was keyed with; if every index were time-keyed, creates and
+    // deletes of the type would work while every transition-proof request
+    // failed. (Every index already embeds `$ownerId`, so any
+    // `$createdAt`-free index qualifies as the proof index.)
+    let has_proof_index = document_type.indices.values().any(|index| {
+        index.terminal.as_deref() != Some(CREATED_AT)
+            && !index
+                .properties
+                .iter()
+                .any(|property| property.name == CREATED_AT)
+    });
+    if !has_proof_index {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must declare at least one index that does \
+             not involve $createdAt: executed-transition proofs locate entries from the \
+             transition's values alone and cannot reproduce the block timestamp a \
+             time-keyed entry was written with",
+            name,
+        )));
+    }
+
     // ---- coverage and requiredness --------------------------------------
     // The index content IS the document: a property in no index would not
     // exist, and an optional property would need the null-layout machinery

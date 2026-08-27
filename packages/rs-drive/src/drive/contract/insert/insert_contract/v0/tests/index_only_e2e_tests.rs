@@ -650,6 +650,7 @@ fn queries_synthesize_documents_and_proofs_agree() {
 #[test]
 fn by_id_queries_are_refused() {
     use crate::query::{WhereClause, WhereOperator};
+    use assert_matches::assert_matches;
     use dpp::platform_value::Value;
 
     let (drive, contract) = setup_likes();
@@ -665,8 +666,12 @@ fn by_id_queries_are_refused() {
     let error = drive
         .query_documents(query, None, false, None, None)
         .expect_err("by-id queries on indexOnly types must be refused");
-    assert!(
-        error.to_string().contains("cannot be fetched by id"),
+    // Pin the typed variant, not just the display text: another error
+    // carrying the same wording must not satisfy this test.
+    assert_matches!(
+        &error,
+        crate::error::Error::Query(crate::error::query::QuerySyntaxError::Unsupported(message))
+            if message.contains("cannot be fetched by id"),
         "unexpected error: {error}"
     );
 }

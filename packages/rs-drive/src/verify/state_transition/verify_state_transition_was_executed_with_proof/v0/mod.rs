@@ -202,12 +202,14 @@ impl Drive {
 
                                 let (root_hash, result) = match document_transition {
                                     DocumentTransition::Create(create_transition) => {
-                                        if entry_element.is_none() {
+                                        let Some(grovedb::Element::Item(payload, _)) =
+                                            entry_element
+                                        else {
                                             return Err(Error::Proof(ProofError::IncorrectProof(format!(
-                                                "proof did not contain the indexOnly entry expected to exist after create of {}",
+                                                "proof did not contain the indexOnly entry item expected to exist after create of {}",
                                                 create_transition.base().id()
                                             ))));
-                                        }
+                                        };
                                         let expected_document =
                                             Document::try_from_create_transition(
                                                 create_transition,
@@ -217,6 +219,31 @@ impl Drive {
                                                 &document_type,
                                                 platform_version,
                                             )?;
+                                        // Entry presence alone only proves that
+                                        // SOME row projects onto this position;
+                                        // the stored row commitment binds the
+                                        // entry to its document's full tuple,
+                                        // so a pre-existing row with the same
+                                        // projection but different values in
+                                        // other indexes cannot masquerade as
+                                        // this create. (`$createdAt`, when the
+                                        // type requires it, enters the
+                                        // commitment from the caller-supplied
+                                        // block info — the same execution-block
+                                        // assumption the expected document is
+                                        // built under.)
+                                        let expected_commitment =
+                                            crate::drive::document::index_only_row_commitment(
+                                                &expected_document,
+                                                document_type,
+                                                platform_version,
+                                            )?;
+                                        if payload != expected_commitment {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                "the proved indexOnly entry's row commitment does not match the created document {}: the entry belongs to a different row",
+                                                create_transition.base().id()
+                                            ))));
+                                        }
                                         (
                                             root_hash,
                                             VerifiedDocuments(BTreeMap::from([(
@@ -249,17 +276,20 @@ impl Drive {
                                     }
                                 };
 
-                                // Same outcome wrapping the shared tail below
-                                // applies to every other arm.
-                                let outcome = if Self::state_transition_proof_binds_execution(
-                                    state_transition,
-                                    known_contracts_provider_fn,
-                                )? {
-                                    StateTransitionProofOutcome::ExecutionProved(result)
-                                } else {
-                                    StateTransitionProofOutcome::AffectedState(result)
-                                };
-                                return Ok((root_hash, outcome));
+                                // An indexOnly snapshot can never bind THIS
+                                // transition's execution: the row commitment
+                                // authenticates the tuple but carries neither
+                                // id, entropy nor nonce, so a second create
+                                // with identical owner/values (different
+                                // entropy) shares the proven entry while only
+                                // one of them executed — and a delete's
+                                // absence proof may describe state that was
+                                // already absent. The proof attests the
+                                // resulting STATE, not the execution.
+                                return Ok((
+                                    root_hash,
+                                    StateTransitionProofOutcome::AffectedState(result),
+                                ));
                             }
                         }
 

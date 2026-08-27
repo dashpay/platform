@@ -822,6 +822,13 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-create proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
+        // An indexOnly snapshot authenticates the resulting STATE (the
+        // commitment-checked entry), never THIS transition's execution —
+        // a second create with identical values shares the entry.
+        assert_matches!(
+            &outcome,
+            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        );
         let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };
@@ -869,6 +876,10 @@ mod index_only_executed_proof_tests {
         )
         .expect("expected the executed-delete proof to verify");
         assert_ne!(root_hash, [0u8; 32]);
+        assert_matches!(
+            &outcome,
+            dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(_)
+        );
         let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
             panic!("expected verified documents");
         };

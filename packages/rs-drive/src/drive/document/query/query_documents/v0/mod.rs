@@ -89,7 +89,7 @@ impl Drive {
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
             if query.document_type.index_only() {
-                let documents = query.execute_index_only_documents_no_proof_internal(
+                let (documents, skipped) = query.execute_index_only_documents_no_proof_internal(
                     self,
                     transaction,
                     &mut drive_operations,
@@ -110,7 +110,7 @@ impl Drive {
                 };
                 return Ok(QueryDocumentsOutcomeV0 {
                     documents,
-                    skipped: 0,
+                    skipped,
                     cost,
                 });
             }

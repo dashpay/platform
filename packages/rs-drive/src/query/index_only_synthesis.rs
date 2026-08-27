@@ -21,12 +21,14 @@
 //! * `$ownerId` / `$createdAt` — from whichever position (prefix or
 //!   terminal) the index carries them.
 //!
-//! The synthesized `$id` is deterministic over the synthesized content:
-//! `hash_double(contract_id ‖ owner_id ‖ doctype ‖ (name ‖ key-bytes)*)`
-//! in property-name order. Nothing on chain is ever addressed by it — a
-//! query over a subset index yields a *projection*, and its id is scoped to
-//! that projection's content. Member keys are unique within any single
-//! query, so ids are unique within a result set.
+//! The synthesized `$id` is deterministic over the synthesized position:
+//! `hash_double("index_only_synthesized_id_v1" ‖ contract_id ‖ owner_id ‖
+//! frame(doctype) ‖ (frame(name) ‖ frame(key-bytes))*)` in index order —
+//! `frame(x) = u32_be(len(x)) ‖ x`, with every non-owner component
+//! (`$createdAt` included) participating, so distinct grove positions can
+//! never share an id. Nothing on chain is ever addressed by it — a query
+//! over a subset index yields a *projection*, and its id is scoped to that
+//! projection's content.
 //!
 //! Fail-closed: any arity or property-name mismatch between the trio and
 //! the index the query resolved is an error, never a partial document.
@@ -40,6 +42,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
 use dpp::platform_value::Value;
 use dpp::util::hash::hash_double;
 use dpp::version::PlatformVersion;
@@ -99,7 +102,7 @@ impl DriveDocumentQuery<'_> {
         transaction: grovedb::TransactionArg,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<Document>, Error> {
+    ) -> Result<(Vec<Document>, u16), Error> {
         use grovedb::query_result_type::QueryResultType;
 
         if self.start_at.is_some() {
@@ -126,7 +129,7 @@ impl DriveDocumentQuery<'_> {
             drive_operations,
             &platform_version.drive,
         );
-        let elements = match query_result {
+        let (elements, skipped) = match query_result {
             Err(Error::GroveDB(grove_error))
                 if matches!(
                     grove_error.as_ref(),
@@ -135,13 +138,13 @@ impl DriveDocumentQuery<'_> {
                         | grovedb::Error::PathParentLayerNotFound(_)
                 ) =>
             {
-                return Ok(Vec::new());
+                return Ok((Vec::new(), 0));
             }
-            other => other?.0,
+            other => other?,
         };
 
         let index = self.find_best_index(platform_version)?;
-        elements
+        let documents = elements
             .to_path_key_elements()
             .into_iter()
             .map(|(path, key, _element)| {
@@ -153,7 +156,8 @@ impl DriveDocumentQuery<'_> {
                     &key,
                 )
             })
-            .collect()
+            .collect::<Result<Vec<Document>, Error>>()?;
+        Ok((documents, skipped))
     }
 }
 
@@ -198,16 +202,25 @@ pub fn index_only_entry_path_and_key_from_values(
 ) -> Result<(Vec<Vec<u8>>, Vec<u8>), Error> {
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::document::property_names::OWNER_ID;
+    use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 
     let encoded_value_for = |property_name: &str| -> Result<Vec<u8>, Error> {
         if property_name == OWNER_ID {
             return Ok(owner_id.to_vec());
         }
-        let value = data.get(property_name).ok_or(Error::Query(
-            crate::error::query::QuerySyntaxError::Unsupported(
-                "the transition's values do not cover the index's properties".to_string(),
-            ),
-        ))?;
+        // Index property names are flattened dotted paths (`profile.targetId`)
+        // while transition data keeps the document's nested map shape — a
+        // plain top-level get would miss every nested indexed leaf the
+        // contract parser explicitly admits.
+        let value = data
+            .get_optional_at_path(property_name)
+            .ok()
+            .flatten()
+            .ok_or(Error::Query(
+                crate::error::query::QuerySyntaxError::Unsupported(
+                    "the transition's values do not cover the index's properties".to_string(),
+                ),
+            ))?;
         document_type
             .serialize_value_for_key(property_name, value, platform_version)
             .map_err(|e| Error::Protocol(Box::new(e)))
@@ -325,7 +338,13 @@ pub fn synthesize_index_only_document(
                     .property_type
                     .decode_value_for_tree_keys(encoded)
                     .map_err(|e| Error::Protocol(Box::new(e)))?;
-                properties.insert(name.to_string(), value);
+                // A flattened name like `profile.targetId` must come back
+                // as a nested `profile` map, not as a dotted top-level key
+                // — field access, schema serialization and index encoding
+                // all traverse the nested shape.
+                properties.insert_at_path(name, value).map_err(|_| {
+                    corrupted("indexOnly synthesis: could not rebuild the nested property path")
+                })?;
             }
         }
         Ok(())
@@ -356,20 +375,32 @@ pub fn synthesize_index_only_document(
         ),
     ))?;
 
-    // Deterministic content-scoped id (see module docs).
-    let mut id_preimage: Vec<u8> = Vec::with_capacity(96);
+    // Deterministic content-scoped id (see module docs). Every
+    // variable-length component is length-framed (`u32_be(len) ‖ bytes`)
+    // so distinct index positions can never concatenate to the same
+    // preimage, and every distinguishing component of the proved position
+    // — `$createdAt` included — participates: two rows differing only in
+    // their indexed creation time are different positions and must get
+    // different ids (verified results downstream are keyed by id, where a
+    // collision would silently drop a document).
+    let frame = |preimage: &mut Vec<u8>, bytes: &[u8]| {
+        preimage.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        preimage.extend_from_slice(bytes);
+    };
+    let mut id_preimage: Vec<u8> = Vec::with_capacity(128);
+    id_preimage.extend_from_slice(b"index_only_synthesized_id_v1");
     id_preimage.extend_from_slice(contract_id.as_bytes());
     id_preimage.extend_from_slice(owner_id.as_bytes());
-    id_preimage.extend_from_slice(document_type.name().as_bytes());
+    frame(&mut id_preimage, document_type.name().as_bytes());
     for (position, index_property) in index.properties.iter().enumerate() {
-        if index_property.name != OWNER_ID && index_property.name != CREATED_AT {
-            id_preimage.extend_from_slice(index_property.name.as_bytes());
-            id_preimage.extend_from_slice(&suffix[position * 2 + 1]);
+        if index_property.name != OWNER_ID {
+            frame(&mut id_preimage, index_property.name.as_bytes());
+            frame(&mut id_preimage, &suffix[position * 2 + 1]);
         }
     }
-    if terminal != OWNER_ID && terminal != CREATED_AT {
-        id_preimage.extend_from_slice(terminal.as_bytes());
-        id_preimage.extend_from_slice(member_key);
+    if terminal != OWNER_ID {
+        frame(&mut id_preimage, terminal.as_bytes());
+        frame(&mut id_preimage, member_key);
     }
     let id = Identifier::new(hash_double(id_preimage));
 

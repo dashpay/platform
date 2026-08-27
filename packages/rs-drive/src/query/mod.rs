@@ -285,7 +285,7 @@ pub mod drive_document_ranked_query;
 /// builder both the server's no-proof execution and the proof verifier
 /// call to turn one back into a `Document`.
 #[cfg(any(feature = "server", feature = "verify"))]
-pub mod index_only_synthesis;
+pub(crate) mod index_only_synthesis;
 
 /// Joint count-and-sum no-prove executor surface — backs the AVG
 /// no-prove path's unified single-walk dispatch. See its module
