@@ -745,6 +745,59 @@ fn catch_funding_panic(
     )
 }
 
+/// Post-panic guidance for the one-time-key invitation claim. Paired with the
+/// generic [`PlatformWalletFFIResultCode::ErrorUnknown`] in
+/// [`catch_one_time_claim_panic`].
+///
+/// Unlike [`SPEND_PANIC_GUIDANCE`], this does NOT say "do not retry": a claim's
+/// durable recovery record is retained until the created identity is durably
+/// registered, and re-running the same claim is exactly how that record is
+/// resumed — it recovers the identity the first attempt created rather than
+/// creating a second one. What it must not do is retry IMMEDIATELY: the panic
+/// unwound past the claim's deterministic lease release, so its admission and
+/// its per-invitation reservation are reclaimed by expiry, and an attempt
+/// before then is refused as busy.
+const ONE_TIME_CLAIM_PANIC_GUIDANCE: &str = "The claim may or may not have been broadcast and \
+     the new identity may already exist on chain — out_identity_id was NOT written, and the \
+     identity slot must NOT be released. The claim's recovery record is retained: re-running \
+     this same invitation claim once its lease expires resumes it and recovers the identity \
+     rather than creating a second one.";
+
+/// [`catch_panic_to_code`] specialized for the one-time-key claim export
+/// (#4313 review finding 945163f6ed5b).
+///
+/// The panic maps to the generic [`PlatformWalletFFIResultCode::ErrorUnknown`],
+/// deliberately NOT to any of this export's richer codes, none of which a panic
+/// can honestly promise:
+///
+/// * `ErrorShieldedBroadcastUnconfirmed` (17) — its ABI contract says
+///   `out_identity_id` IS written on that code, and a panic destroyed the
+///   result, so there is no id to write.
+/// * `ErrorShieldedInviteAlreadyClaimed` (43) — TERMINAL. Reporting it would
+///   tell the claimer the invitation can never be claimed again, which is the
+///   single worst thing to say about an outcome nobody knows.
+/// * `ErrorShieldedScanBudgetExhausted` (44) / `ErrorShieldedLifecycleBusy`
+///   (45) — both promise that nothing was scanned, built, or broadcast. A
+///   panic can strike after the broadcast.
+/// * `ErrorWalletOperation` (6) and `ErrorShieldedBroadcastFailed` (16) —
+///   definitive failures, which this is not.
+///
+/// No dedicated panic code exists in the registry-tracked enum, and minting one
+/// here would risk the cross-branch numeric collisions the codes 28-33 comment
+/// warns about — so the generic internal code carries it, with the recovery
+/// contract spelled out in the message.
+fn catch_one_time_claim_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorUnknown,
+        ONE_TIME_CLAIM_PANIC_GUIDANCE,
+        body,
+    )
+}
+
 /// Preserve the typed funding reports that hosts branch on across the FFI
 /// boundary while keeping every other funding failure on the existing generic
 /// error path.
@@ -1037,10 +1090,63 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
 /// - `signer_identity_handle` must be a valid, non-destroyed `*mut SignerHandle`
 ///   (a `VTableSigner` with the callback variant) that outlives this call.
 /// - `out_identity_id` must point to 32 writable bytes. Written on `Success` AND
-///   on `ErrorShieldedBroadcastUnconfirmed` only.
+///   on `ErrorShieldedBroadcastUnconfirmed` only. A panic inside the claim is
+///   caught by [`catch_one_time_claim_panic`] and reported as `ErrorUnknown`
+///   with `out_identity_id` left untouched.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_one_time_key(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    one_time_sk_bytes: *const u8,
+    has_funding_birth_height: bool,
+    funding_birth_height: u32,
+    change_address_raw43: *const u8,
+    identity_index: u32,
+    identity_pubkeys: *const IdentityPubkeyFFI,
+    identity_pubkeys_count: usize,
+    denomination: u64,
+    send_to_address_on_creation_failure_bytes: *const u8,
+    signer_identity_handle: *mut SignerHandle,
+    out_identity_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    // Guarded: this export calls `block_on_worker`, which re-panics when its
+    // Tokio task panics, so a panic in the transient scan, proof generation,
+    // signing, wallet bookkeeping, or SDK processing would otherwise reach this
+    // non-unwind `extern "C"` frame and ABORT the host process. The JNI layer's
+    // `support::guard` cannot help — it sits on the far side of this export
+    // (#4313 review finding 945163f6ed5b). See `catch_panic_to_code`.
+    catch_one_time_claim_panic("shielded identity-create-from-one-time-key", || {
+        shielded_identity_create_from_one_time_key_inner(
+            handle,
+            wallet_id_bytes,
+            one_time_sk_bytes,
+            has_funding_birth_height,
+            funding_birth_height,
+            change_address_raw43,
+            identity_index,
+            identity_pubkeys,
+            identity_pubkeys_count,
+            denomination,
+            send_to_address_on_creation_failure_bytes,
+            signer_identity_handle,
+            out_identity_id,
+        )
+    })
+}
+
+/// Body of
+/// [`platform_wallet_manager_shielded_identity_create_from_one_time_key`], as an
+/// ordinary Rust function so a panic unwinds into
+/// [`catch_one_time_claim_panic`] instead of across the C ABI.
+///
+/// `out_identity_id` is written only on this function's own return paths, so a
+/// panic anywhere inside it leaves the caller's buffer exactly as it was.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_identity_create_from_one_time_key_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
     one_time_sk_bytes: *const u8,
@@ -2609,6 +2715,109 @@ mod tests {
         assert!(
             message.contains("do NOT retry"),
             "the message must carry the do-not-retry guidance: {message}"
+        );
+    }
+
+    /// A panic inside the one-time-key CLAIM export must not unwind into the `extern "C"` frame
+    /// either (#4313 review finding 945163f6ed5b). That export calls `block_on_worker`, which
+    /// re-panics on a panicking Tokio task, so a panic in the transient scan, Halo 2 synthesis,
+    /// signing, or SDK processing reached the C ABI and aborted the host process — the JNI
+    /// `guard` is on the far side of the export and never saw it.
+    ///
+    /// The code must be `ErrorUnknown`, and the ambiguity contract must survive: a panic can
+    /// strike after the broadcast, so the message must neither claim the invitation is spent
+    /// (the terminal 43) nor that nothing happened.
+    #[test]
+    fn catch_one_time_claim_panic_keeps_the_claim_ambiguity_contract() {
+        let result =
+            catch_one_time_claim_panic("shielded identity-create-from-one-time-key", || {
+                panic!("halo2 synthesis panicked");
+            });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            "a claim panic must map to the generic code — every richer code this export uses \
+             promises something a panic cannot"
+        );
+        assert_ne!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedInviteAlreadyClaimed,
+            "a panic must never be reported as the TERMINAL already-claimed outcome"
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("shielded identity-create-from-one-time-key panicked")
+                && message.contains("halo2 synthesis panicked"),
+            "the panic payload must survive into the FFI message: {message}"
+        );
+        assert!(
+            message.contains("may or may not have been broadcast"),
+            "the message must preserve the ambiguity: {message}"
+        );
+        assert!(
+            message.contains("out_identity_id was NOT written"),
+            "the message must tell the host its out param is untouched: {message}"
+        );
+        assert!(
+            message.contains("recovery record is retained"),
+            "the message must point at the recovery path that makes this survivable: {message}"
+        );
+    }
+
+    /// The pre-fix shape, side by side with the fixed one, so the difference the guard makes is
+    /// pinned rather than asserted in prose (#4313 review finding 945163f6ed5b).
+    ///
+    /// `block_on_worker` `.expect`s on the Tokio `JoinError`, so a panicking claim task re-panics
+    /// in the export's own frame. UNGUARDED, that unwind leaves the body and reaches the caller —
+    /// which for a `#[no_mangle] extern "C"` function is a non-unwind C ABI frame, i.e. an
+    /// immediate `abort` of the host process, with no result and no Java exception. GUARDED, the
+    /// identical panic becomes a typed result the host can act on.
+    ///
+    /// The export's entire body is now the guard call, and
+    /// `shielded_identity_create_from_one_time_key_inner` is private with exactly that one caller,
+    /// so the wiring cannot be bypassed.
+    #[test]
+    fn an_unguarded_claim_body_lets_the_panic_escape_to_the_c_abi_frame() {
+        // Pre-fix: the body was invoked directly by the export.
+        let escaped = std::panic::catch_unwind(|| -> PlatformWalletFFIResult {
+            panic!("halo2 synthesis panicked");
+        });
+        assert!(
+            escaped.is_err(),
+            "RED: the panic leaves the body and reaches the export frame, where it aborts"
+        );
+
+        // Post-fix: the same panic is contained and typed.
+        let contained =
+            catch_one_time_claim_panic("shielded identity-create-from-one-time-key", || {
+                panic!("halo2 synthesis panicked");
+            });
+        assert_eq!(
+            contained.code,
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            "GREEN: the guard converts the identical panic into a result the host receives"
+        );
+    }
+
+    /// The guard must be transparent to the ordinary outcomes — it wraps the whole export, so a
+    /// bug here would corrupt every non-panicking claim result, including the
+    /// `ErrorShieldedBroadcastUnconfirmed` path whose contract WRITES `out_identity_id`.
+    #[test]
+    fn catch_one_time_claim_panic_passes_results_through() {
+        let ok = catch_one_time_claim_panic("test", PlatformWalletFFIResult::ok);
+        assert_eq!(ok.code, PlatformWalletFFIResultCode::Success);
+
+        let terminal = catch_one_time_claim_panic("test", || {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedInviteAlreadyClaimed,
+                "already claimed",
+            )
+        });
+        assert_eq!(
+            terminal.code,
+            PlatformWalletFFIResultCode::ErrorShieldedInviteAlreadyClaimed,
+            "the guard must not rewrite a real terminal outcome"
         );
     }
 

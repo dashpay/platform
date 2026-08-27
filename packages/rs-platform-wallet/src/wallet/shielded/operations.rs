@@ -1733,6 +1733,12 @@ where
 /// identity leaves a retry able to recover the exact identity id rather than
 /// hitting the terminal [`PlatformWalletError::ShieldedInviteAlreadyClaimed`]
 /// (#4313 review finding 325ce9fa8f84).
+///
+/// `detached` is the claimer wallet's irreversible removal flag. It is re-read
+/// once this claim holds store admission, so a claim that begins after a wallet
+/// removal has committed is refused with
+/// [`PlatformWalletError::WalletNotFound`] before anything is scanned, built or
+/// broadcast (#4313 review finding 4a2c679745bb).
 #[allow(clippy::too_many_arguments)]
 pub async fn identity_create_from_one_time_key<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -1745,6 +1751,11 @@ pub async fn identity_create_from_one_time_key<S, P, IS>(
     // [`super::sync::ForeignScanCheckpointCache`] for the chain-isolation
     // contract.
     scan_checkpoints: &super::sync::ForeignScanCheckpointCache,
+    // The claimer wallet's irreversible `shielded_detached` flag, re-read once
+    // this claim holds store admission (#4313 review finding 4a2c679745bb).
+    // See the re-check below for why the caller's own pre-flight check cannot
+    // stand alone.
+    detached: &std::sync::atomic::AtomicBool,
     // Claimer's wallet id — keys the durable pending-claim record (under the
     // reserved `ONE_TIME_CLAIM_RECORDS_ACCOUNT` subwallet of this wallet).
     wallet_id: WalletId,
@@ -1880,6 +1891,44 @@ where
                      claim was not started"
                 .to_string(),
         });
+    }
+
+    // ---- Removal fence, re-checked UNDER admission (#4313 review finding
+    // 4a2c679745bb) ----
+    //
+    // The caller checks `shielded_detached` before it gets here, and that check
+    // cannot stand alone: an FFI caller can resolve and retain the wallet and
+    // coordinator, pass the pre-flight check, and only then have
+    // `unregister_wallet_with` commit the detach, purge the store, release its
+    // destructive barrier, and drop the wallet from the manager. The stale
+    // handle would then take a FRESH admission (the barrier is gone), arm a new
+    // pending row, and broadcast for a wallet the host has already removed —
+    // and its registration tail, finding no manager entry, would leave that row
+    // behind.
+    //
+    // Re-reading the flag HERE is what closes it, because the two admissions
+    // are mutually exclusive at the store and totally ordered by it:
+    //
+    // * If the removal got there first, it has already set `detached` (the flag
+    //   is set by `on_admitted`, which runs after IT holds admission), so
+    //   either our `begin_claim_admission` above was refused, or the removal
+    //   has fully finished and this read sees `true`.
+    // * If we got here first, the removal cannot set the flag until it is
+    //   admitted, and it cannot be admitted until we release. So a `false` read
+    //   under our own lease stays true for the whole claim.
+    //
+    // Typed as `WalletNotFound`, deliberately NOT `ShieldedLifecycleBusy`: the
+    // wallet is gone for good, so this is terminal for this wallet and a retry
+    // can only fail again. It is equally not the invitation's terminal
+    // `ShieldedInviteAlreadyClaimed` — nothing was spent, and the invitation
+    // remains claimable by some other wallet.
+    if detached.load(std::sync::atomic::Ordering::Acquire) {
+        release_claim_admission(store, admission).await;
+        return Err(PlatformWalletError::WalletNotFound(format!(
+            "{} was removed from the manager while the invitation claim was starting; nothing \
+             was scanned, built or broadcast",
+            hex::encode(wallet_id)
+        )));
     }
 
     // ---- Durable per-INVITATION reservation (#4313 review finding cr-9d0e1a44) ----
@@ -7400,6 +7449,182 @@ mod claim_lease_heartbeat_tests {
                 Err(PlatformWalletError::ShieldedLifecycleBusy { .. })
             ),
             "an expired lease must not authorize a re-broadcast; got {refused:?}"
+        );
+    }
+}
+
+/// The claim's removal fence (#4313 review finding 4a2c679745bb).
+#[cfg(test)]
+mod claim_removal_fence_tests {
+    use super::*;
+    use crate::wallet::shielded::keys::OrchardKeySet;
+    use crate::wallet::shielded::store::{
+        admission_now_ms, AdmissionToken, InMemoryShieldedStore, DESTRUCTIVE_BARRIER_MS,
+    };
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use std::sync::atomic::AtomicBool;
+
+    /// Smallest member of the versioned exit-denomination set (0.1 DASH).
+    const DENOMINATION: u64 = 10_000_000_000;
+
+    /// A prover that cannot prove. Reaching it means the claim got past the
+    /// removal fence and started building a bundle, which is the whole failure
+    /// this test exists to catch — so it is `unreachable!`, not a stub.
+    #[derive(Debug)]
+    struct NeverProver;
+
+    impl OrchardProver for NeverProver {
+        fn proving_key(&self) -> &grovedb_commitment_tree::ProvingKey {
+            unreachable!("a claim refused at the removal fence must never build a bundle")
+        }
+    }
+
+    /// A signer that cannot sign, for the same reason.
+    #[derive(Debug)]
+    struct NeverSigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for NeverSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, dpp::ProtocolError> {
+            unreachable!("a claim refused at the removal fence must never sign")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("a claim refused at the removal fence must never sign")
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    fn master_auth_key() -> (IdentityPublicKey, IdentityPublicKeyInCreation) {
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(vec![0xA1; 20]),
+            disabled_at: None,
+        });
+        let in_creation: IdentityPublicKeyInCreation = (&key).into();
+        (key, in_creation)
+    }
+
+    /// The claimer's own default Orchard address, for the change note.
+    fn change_address() -> OrchardAddress {
+        let keys = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive the claimer's key set");
+        OrchardAddress::from_raw_bytes(&keys.default_address.to_raw_address_bytes())
+            .expect("the derived default address is a valid Orchard address")
+    }
+
+    /// A claim that begins AFTER its wallet's removal has committed must be
+    /// refused before it scans, builds, or broadcasts anything
+    /// (#4313 review finding 4a2c679745bb).
+    ///
+    /// The reviewer's sequence: an FFI caller resolves and retains the wallet
+    /// and coordinator, `unregister_wallet_with` then commits the detach,
+    /// purges the store, RELEASES its destructive barrier and drops the wallet
+    /// from the manager — and only then does the stale handle start executing.
+    /// With the barrier already released, the claim's own admission succeeds,
+    /// so admission alone does not refuse it; before the fix it went on to arm
+    /// a pending row and broadcast for a wallet the host had already removed,
+    /// and its registration tail — finding no manager entry — left that row
+    /// behind.
+    ///
+    /// This drives that state directly: `detached` is already `true` and no
+    /// destructive admission is held, exactly as after a completed removal.
+    #[tokio::test]
+    async fn a_claim_that_starts_after_a_committed_removal_is_refused() {
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let guards = ForeignClaimGuards::default();
+        let checkpoints = super::super::sync::ForeignScanCheckpointCache::default();
+        let wallet_id: WalletId = [0x11; 32];
+
+        // The removal has fully committed AND released its barrier.
+        let detached = AtomicBool::new(true);
+
+        let (_key, _in_creation) = master_auth_key();
+        let result = identity_create_from_one_time_key(
+            &sdk,
+            &store,
+            &guards,
+            &checkpoints,
+            &detached,
+            wallet_id,
+            zeroize::Zeroizing::new([0x01u8; 32]),
+            None,
+            &change_address(),
+            3,
+            vec![master_auth_key()],
+            DENOMINATION,
+            PlatformAddress::P2pkh([0x07; 20]),
+            &NeverSigner,
+            &NeverProver,
+        )
+        .await;
+
+        // RED before the fix: the claim ran on, and the `unreachable!` prover /
+        // signer above (or a mock-SDK scan error) stood in for the broadcast it
+        // would have made for a removed wallet.
+        match result {
+            Err(PlatformWalletError::WalletNotFound(reason)) => {
+                assert!(
+                    reason.contains(&hex::encode(wallet_id)),
+                    "the refusal must name the removed wallet, got: {reason}"
+                );
+            }
+            other => panic!(
+                "a claim beginning after a committed removal must be refused as WalletNotFound, \
+                 got {other:?}"
+            ),
+        }
+
+        // Nothing was armed for the removed wallet — the point of refusing
+        // under admission rather than after the broadcast.
+        let record_id = SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        assert!(
+            store
+                .read()
+                .await
+                .pending_redrives(record_id)
+                .expect("records readable")
+                .is_empty(),
+            "a refused claim must leave no pending record behind"
+        );
+
+        // And the admission the refusal took was RELEASED, not left to expire:
+        // a destructive operation on this wallet must see zero live claims.
+        // The early return is on the fence path, so this is the only test that
+        // exercises that path's release.
+        let token = AdmissionToken::generate().expect("token");
+        let live = store
+            .write()
+            .await
+            .begin_destructive_admission(
+                Some(wallet_id),
+                token,
+                admission_now_ms(),
+                DESTRUCTIVE_BARRIER_MS,
+            )
+            .expect("admission");
+        assert_eq!(
+            live, 0,
+            "the refusal must release its claim lease before returning"
         );
     }
 }

@@ -1166,12 +1166,24 @@ impl PlatformWallet {
     /// paths check here first, before writing anything.
     #[cfg(feature = "shielded")]
     fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
+        self.ensure_shielded_attached_for("shielded bind")
+    }
+
+    /// [`ensure_shielded_attached`](Self::ensure_shielded_attached) for a
+    /// named operation, so a refusal says which one was refused.
+    ///
+    /// Used by the one-time-key claim, whose reason for checking is not the
+    /// bind paths' key-hygiene one: a claim that begins after a removal has
+    /// committed would arm a pending row and BROADCAST for a wallet the host
+    /// has already deleted (#4313 review finding 4a2c679745bb).
+    #[cfg(feature = "shielded")]
+    fn ensure_shielded_attached_for(&self, operation: &str) -> Result<(), PlatformWalletError> {
         if self
             .shielded_detached
             .load(std::sync::atomic::Ordering::Acquire)
         {
             return Err(PlatformWalletError::WalletNotFound(format!(
-                "{} was removed from the manager; shielded bind refused",
+                "{} was removed from the manager; {operation} refused",
                 hex::encode(self.wallet_id)
             )));
         }
@@ -1588,11 +1600,27 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
+        // Refuse a claim for a wallet the host has already removed
+        // (#4313 review finding 4a2c679745bb). An FFI caller can resolve and
+        // retain this wallet and its coordinator BEFORE a removal and only
+        // begin executing afterwards, so the entry point has to check rather
+        // than rely on being unreachable.
+        //
+        // This check alone is not sufficient — it can pass a moment before the
+        // removal commits — which is why the same flag is re-checked inside the
+        // operation once the store's claim admission is held. See the
+        // `detached` parameter of `operations::identity_create_from_one_time_key`
+        // for why that second check is the one that actually closes the race.
+        // This one keeps the common case cheap: nothing is derived, scanned, or
+        // reserved for a wallet that is already gone.
+        self.ensure_shielded_attached_for("shielded invitation claim")?;
+
         let outcome = super::shielded::operations::identity_create_from_one_time_key(
             &self.sdk,
             coordinator.store(),
             coordinator.foreign_claim_guards(),
             coordinator.foreign_scan_checkpoints(),
+            &self.shielded_detached,
             self.wallet_id,
             one_time_sk,
             funding_birth_height,

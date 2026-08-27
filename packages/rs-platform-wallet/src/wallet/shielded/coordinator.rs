@@ -271,11 +271,27 @@ pub struct NetworkShieldedCoordinator {
     /// resurrected under a new bind. Purges are idempotent, so a retry that
     /// races a completed one is harmless.
     ///
-    /// In-memory by design: the store is exactly the layer that just failed,
-    /// so this cannot be persisted there. A process restart re-opens the
-    /// store and drops the entry — the residue is then reachable only
-    /// through a re-bind of the same wallet id, which purges the stale
-    /// subwallet state on its own before installing.
+    /// This set is the in-memory FAST PATH over a durable tombstone, not the
+    /// record itself. `unregister_wallet_with` writes
+    /// [`ShieldedStore::record_wallet_removal`] before it attempts the purge
+    /// and drops it only once that purge succeeds, so the authority on "does
+    /// this wallet still have orphaned rows" lives in the store's
+    /// `shielded_wallet_removal` table and survives a process death.
+    ///
+    /// It has to. Keeping the deferral only here meant a newly opened
+    /// coordinator started with an EMPTY set and then reported success
+    /// without inspecting any surviving row, so a re-registration after a
+    /// restart could inherit this wallet's decrypted notes, pending claims,
+    /// activity, and a stale `last_synced_note_index` — which, because
+    /// restore advances watermarks monotonically, also made the re-added
+    /// wallet skip historical notes (#4313 review finding 5ca995a0d2aa).
+    ///
+    /// The set is seeded from the store in [`Self::new`] and is otherwise a
+    /// cheap membership check that spares the common (empty) case a SQLite
+    /// read; every path that acts on it reconciles against the durable table.
+    ///
+    /// [`ShieldedStore::record_wallet_removal`]:
+    ///     super::store::ShieldedStore::record_wallet_removal
     deferred_purges: RwLock<std::collections::BTreeSet<WalletId>>,
 
     /// Counts completed [`clear`](Self::clear) calls, so a bind can tell
@@ -420,6 +436,32 @@ impl NetworkShieldedCoordinator {
         db_path: PathBuf,
         store: FileBackedShieldedStore,
     ) -> Self {
+        // Seed the deferred-purge fast path from the store's durable removal
+        // tombstones, so a coordinator opened by a RELAUNCHED process starts
+        // knowing about the purges an earlier process left unfinished
+        // (#4313 review finding 5ca995a0d2aa). Best-effort: this constructor
+        // is infallible, and every consumer re-reads the durable table anyway,
+        // so a read failure here costs the fast path and nothing else.
+        let deferred_purges = match store.outstanding_wallet_removals() {
+            Ok(ids) => {
+                if !ids.is_empty() {
+                    tracing::info!(
+                        outstanding = ids.len(),
+                        "Shielded store carries wallet removals whose purge did not complete; \
+                         they will be retried from the next sync pass or re-registration"
+                    );
+                }
+                ids.into_iter().collect()
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Could not read shielded wallet-removal tombstones at open; deferred purges \
+                     will still be found by the durable read on each pass"
+                );
+                std::collections::BTreeSet::new()
+            }
+        };
         Self {
             sdk,
             network,
@@ -434,7 +476,7 @@ impl NetworkShieldedCoordinator {
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             foreign_claim_guards: Default::default(),
             foreign_scan_checkpoints: Default::default(),
-            deferred_purges: RwLock::new(std::collections::BTreeSet::new()),
+            deferred_purges: RwLock::new(deferred_purges),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
         }
     }
@@ -897,8 +939,49 @@ impl NetworkShieldedCoordinator {
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
 
+        // DURABLE tombstone, written past the commit point and BEFORE the
+        // purge it guards (#4313 review finding 5ca995a0d2aa).
+        //
+        // Before the purge, not merely on its failure: a process death *during*
+        // the purge orphans exactly the same rows and leaves no failure to
+        // react to — SQLite rolls the delete back and the removal is simply
+        // forgotten. A tombstone that outlives a purge which actually succeeded
+        // costs one idempotent no-op purge on a later pass; a missing one costs
+        // the rows forever, and a re-registration of this id then inherits
+        // them.
+        //
+        // A failure to WRITE the tombstone cannot abort the removal either —
+        // everything above it is already committed — so it is logged and the
+        // in-memory deferral below still stands. That degrades to exactly the
+        // pre-fix behaviour for this one wallet, which is the best available
+        // when the store will not accept any write at all.
+        if let Err(e) = self.store.write().await.record_wallet_removal(wallet_id) {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "Failed to record the shielded removal tombstone; the removal stands, but an \
+                 unfinished purge will not survive a restart"
+            );
+        }
+
         let purged = self.store.write().await.purge_wallet(wallet_id);
         self.release_destructive_admission(admission).await;
+        if purged.is_ok() {
+            // The purge really did run, so the tombstone has done its job.
+            // Clearing is best-effort in the other direction: a leftover
+            // tombstone only makes a later pass re-run an idempotent purge
+            // over a wallet that has no rows left, and it stays deferred until
+            // that pass manages to drop it.
+            if let Err(e) = self.store.write().await.clear_wallet_removal(wallet_id) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "Purged the removed wallet's shielded state but could not clear its removal \
+                     tombstone; a later pass will retry the (now no-op) purge"
+                );
+                self.deferred_purges.write().await.insert(wallet_id);
+            }
+        }
         if let Err(e) = purged {
             // Past the commit point, so this CANNOT abort the removal. The
             // registries are already gone and `on_admitted` has set the
@@ -942,17 +1025,36 @@ impl NetworkShieldedCoordinator {
     /// wallet with no store rows is a no-op, and the id is removed from the
     /// deferred set only once its purge has actually succeeded.
     pub async fn finish_deferred_purges(&self) -> usize {
-        let outstanding: Vec<WalletId> = {
-            let deferred = self.deferred_purges.read().await;
-            if deferred.is_empty() {
-                return 0;
-            }
-            deferred.iter().copied().collect()
-        };
+        let outstanding = self.outstanding_deferred_purges().await;
+        if outstanding.is_empty() {
+            return 0;
+        }
         for wallet_id in outstanding {
             self.try_finish_deferred_purge(wallet_id).await;
         }
-        self.deferred_purges.read().await.len()
+        self.outstanding_deferred_purges().await.len()
+    }
+
+    /// The union of the in-memory deferred-purge set and the store's DURABLE
+    /// removal tombstones, ascending and deduplicated.
+    ///
+    /// The durable half is what makes this survive a restart: a coordinator
+    /// opened by a new process has an empty in-memory set, and reporting "none
+    /// outstanding" from that alone is what left orphaned rows to be inherited
+    /// by a re-registration (#4313 review finding 5ca995a0d2aa). The in-memory
+    /// half still matters for the one case the table cannot cover — a store so
+    /// broken that even the tombstone write failed.
+    async fn outstanding_deferred_purges(&self) -> std::collections::BTreeSet<WalletId> {
+        let mut outstanding = self.deferred_purges.read().await.clone();
+        match self.store.read().await.outstanding_wallet_removals() {
+            Ok(ids) => outstanding.extend(ids),
+            Err(e) => tracing::warn!(
+                error = %e,
+                "Could not read shielded wallet-removal tombstones; falling back to the \
+                 in-memory deferred-purge set for this pass"
+            ),
+        }
+        outstanding
     }
 
     /// One non-blocking attempt at `wallet_id`'s deferred purge. Returns
@@ -964,6 +1066,23 @@ impl NetworkShieldedCoordinator {
     async fn try_finish_deferred_purge(&self, wallet_id: WalletId) -> bool {
         use super::store::{admission_now_ms, AdmissionToken, DESTRUCTIVE_BARRIER_MS};
 
+        // Membership is decided by the in-memory set alone, and that IS enough
+        // for the restart case because [`Self::new`] seeds the set from the
+        // store's durable tombstones: a relaunched process starts already
+        // knowing every purge an earlier one left unfinished
+        // (#4313 review finding 5ca995a0d2aa).
+        //
+        // Deliberately NOT a durable read here. `register_locked` calls this
+        // first, and it must not touch the store lock: a bind REGISTERS and
+        // only then parks in its restore on that lock, so taking it this early
+        // makes a registration block behind an in-flight bind's transaction —
+        // `viewing_key_bind_tests::a_second_bind_cannot_commit_inside_another_binds_transaction`
+        // pins exactly that ordering, and a durable read here broke it. The
+        // only gap the fast path leaves is a tombstone written by a PEER
+        // coordinator or process after our open, and
+        // [`Self::finish_deferred_purges`] — which does union with the durable
+        // table, off the registration path — closes that from the next sync
+        // pass.
         if !self.deferred_purges.read().await.contains(&wallet_id) {
             return true;
         }
@@ -1001,6 +1120,21 @@ impl NetworkShieldedCoordinator {
         self.release_destructive_admission(token).await;
         match purged {
             Ok(()) => {
+                // Drop the DURABLE tombstone first, and only report the
+                // deferral finished if that succeeded. Clearing the in-memory
+                // set over a tombstone that is still on disk would report
+                // "nothing outstanding" while the next open still finds one —
+                // the fast path must never claim more than the durable record.
+                if let Err(e) = self.store.write().await.clear_wallet_removal(wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "Deferred shielded purge completed but its removal tombstone could not \
+                         be cleared; the (now no-op) purge stays deferred"
+                    );
+                    self.deferred_purges.write().await.insert(wallet_id);
+                    return false;
+                }
                 self.deferred_purges.write().await.remove(&wallet_id);
                 tracing::info!(
                     wallet_id = %hex::encode(wallet_id),
@@ -1458,7 +1592,30 @@ impl NetworkShieldedCoordinator {
         // included, so nothing is left for a later pass to finish
         // (#4313 review finding coordinator.rs:856). Only on the success
         // path: a failed clear leaves the residue, and the entries with it.
-        self.deferred_purges.write().await.clear();
+        //
+        // The DURABLE tombstones go with them, and go FIRST: a tombstone that
+        // outlived the wipe would make every later pass re-run a no-op purge
+        // forever, and after a restart it would be the only outstanding entry
+        // (#4313 review finding 5ca995a0d2aa). One that cannot be dropped
+        // stays in the in-memory set so the retry is not lost either.
+        {
+            let outstanding = self.outstanding_deferred_purges().await;
+            let mut store = self.store.write().await;
+            let mut unfinished = std::collections::BTreeSet::new();
+            for wallet_id in outstanding {
+                if let Err(e) = store.clear_wallet_removal(wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "Cleared the shielded store but could not drop this wallet's removal \
+                         tombstone; a later pass will retry the (now no-op) purge"
+                    );
+                    unfinished.insert(wallet_id);
+                }
+            }
+            drop(store);
+            *self.deferred_purges.write().await = unfinished;
+        }
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }
@@ -3395,6 +3552,223 @@ mod tests {
 
         // Idempotent: a second pass over an empty set is a no-op.
         assert_eq!(coordinator.finish_deferred_purges().await, 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A deferred purge must survive the PROCESS, not just the coordinator
+    /// that deferred it (#4313 review finding 5ca995a0d2aa).
+    ///
+    /// The deferral used to live only in the coordinator's in-memory
+    /// `deferred_purges` set. A newly opened coordinator starts with that set
+    /// empty, so after a restart `finish_deferred_purges` reported "nothing
+    /// outstanding" without inspecting a single surviving row, and
+    /// `try_finish_deferred_purge` — which `register_locked` relies on —
+    /// returned `true` on its membership check alone. Re-registering the same
+    /// wallet id then installed OVER the orphaned rows: the removed wallet's
+    /// pending claims and its stale `last_synced_note_index`, which restore
+    /// only ever advances, so the re-added wallet would skip the historical
+    /// notes the purge existed to force a rescan of.
+    ///
+    /// This drives the real restart: the first coordinator (and its store, and
+    /// therefore its SQLite connections and its `fail_purge_wallet` injection)
+    /// is DROPPED, and a second coordinator is opened over the same file the
+    /// way a relaunched process opens it.
+    #[tokio::test(start_paused = true)]
+    async fn a_deferred_purge_survives_a_process_restart() {
+        use crate::wallet::shielded::store::PendingRedrive;
+
+        let dir = temp_dir("unregister_purge_restart");
+        let db_path = dir.join("tree.sqlite");
+        let wallet_id: WalletId = [0x11; 32];
+        let record_id = SubwalletId::new(wallet_id, u32::MAX);
+
+        // ---- First process: remove the wallet, and lose the purge. ----
+        {
+            let coordinator = coordinator_with_one_wallet(&dir).await;
+            coordinator
+                .store()
+                .write()
+                .await
+                .arm_redrive(
+                    record_id,
+                    PendingRedrive {
+                        activity_id: [0x55; 32],
+                        anchor: [0x0A; 32],
+                        nullifiers: vec![[0x0F; 32]],
+                        st_bytes: vec![0xEF; 32],
+                        attempts: 0,
+                        identity_index: Some(9),
+                    },
+                )
+                .expect("arm the residue");
+            coordinator
+                .store()
+                .read()
+                .await
+                .fail_purge_wallet_for_tests();
+            coordinator
+                .unregister_wallet_with(wallet_id, || {})
+                .await
+                .expect("the removal completes despite the purge failure");
+            assert!(
+                coordinator
+                    .deferred_purges
+                    .read()
+                    .await
+                    .contains(&wallet_id),
+                "precondition: the first process deferred the purge"
+            );
+            // Process death. Dropping the coordinator drops the store, its
+            // SQLite connections, and the in-memory deferral with them.
+        }
+
+        // ---- Second process: a fresh coordinator over the same file. ----
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("reopen file store");
+        assert!(
+            store
+                .has_pending_row_for_tests(wallet_id)
+                .expect("count rows"),
+            "precondition: the orphaned rows really did survive the restart"
+        );
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            store,
+        );
+
+        // RED before the fix: the fresh set is empty, so this is 0 and the
+        // orphaned rows below survive untouched.
+        assert!(
+            coordinator
+                .deferred_purges
+                .read()
+                .await
+                .contains(&wallet_id),
+            "the relaunched coordinator must learn the unfinished purge from the store"
+        );
+        assert_eq!(
+            coordinator.finish_deferred_purges().await,
+            0,
+            "the relaunched coordinator must be able to finish it"
+        );
+        assert!(
+            !coordinator
+                .store()
+                .read()
+                .await
+                .has_pending_row_for_tests(wallet_id)
+                .expect("count rows"),
+            "the orphaned rows must actually be deleted after the restart"
+        );
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .outstanding_wallet_removals()
+                .expect("read tombstones")
+                .is_empty(),
+            "a completed purge drops its durable tombstone, so a THIRD process starts clean"
+        );
+
+        // And the tombstone is gone for good: a third open sees nothing.
+        drop(coordinator);
+        let reopened = FileBackedShieldedStore::open_path(&db_path, 100).expect("reopen again");
+        assert!(reopened
+            .outstanding_wallet_removals()
+            .expect("read tombstones")
+            .is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The restart sibling of
+    /// [`re_registering_a_wallet_finishes_its_deferred_purge_first`]: the
+    /// re-registration guard must ALSO hold when the deferral was inherited
+    /// from a previous process rather than observed in this one
+    /// (#4313 review finding 5ca995a0d2aa).
+    ///
+    /// This is the reviewer's exact harm — `register_locked` relies on
+    /// `try_finish_deferred_purge`, which used to short-circuit to `true` on an
+    /// in-memory set that a relaunch had emptied.
+    #[tokio::test(start_paused = true)]
+    async fn re_registering_after_a_restart_still_finishes_the_inherited_purge() {
+        use crate::wallet::shielded::store::PendingRedrive;
+
+        let dir = temp_dir("unregister_purge_restart_rebind");
+        let db_path = dir.join("tree.sqlite");
+        let wallet_id: WalletId = [0x11; 32];
+        let record_id = SubwalletId::new(wallet_id, u32::MAX);
+
+        {
+            let coordinator = coordinator_with_one_wallet(&dir).await;
+            coordinator
+                .store()
+                .write()
+                .await
+                .arm_redrive(
+                    record_id,
+                    PendingRedrive {
+                        activity_id: [0x66; 32],
+                        anchor: [0x0A; 32],
+                        nullifiers: vec![[0x1F; 32]],
+                        st_bytes: vec![0xBE; 32],
+                        attempts: 0,
+                        identity_index: Some(4),
+                    },
+                )
+                .expect("arm the residue");
+            coordinator
+                .store()
+                .read()
+                .await
+                .fail_purge_wallet_for_tests();
+            coordinator
+                .unregister_wallet_with(wallet_id, || {})
+                .await
+                .expect("the removal completes despite the purge failure");
+        }
+
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("reopen file store");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            db_path,
+            store,
+        );
+
+        // The host re-adds the same wallet id after the relaunch.
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        let mut account_views = BTreeMap::new();
+        account_views.insert(0u32, views);
+        coordinator
+            .register_wallet(
+                wallet_id,
+                account_views,
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await;
+
+        // RED before the fix: the inherited residue is still there, now under
+        // a live registration.
+        assert!(
+            !coordinator
+                .store()
+                .read()
+                .await
+                .has_pending_row_for_tests(wallet_id)
+                .expect("count rows"),
+            "a re-registration after a restart must finish the inherited purge rather than \
+             install over the removed wallet's rows"
+        );
+        assert!(
+            coordinator.deferred_purges.read().await.is_empty(),
+            "and the deferral is settled once the purge has actually run"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

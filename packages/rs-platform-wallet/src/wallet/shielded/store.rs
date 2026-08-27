@@ -468,6 +468,49 @@ pub trait ShieldedStore: Send + Sync {
     /// untouched. Used by `NetworkShieldedCoordinator::clear()`.
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error>;
 
+    // ── Removal tombstones ─────────────────────────────────────────────
+
+    /// Record that `wallet_id` has been removed and its
+    /// [`purge_wallet`](Self::purge_wallet) is NOT yet confirmed complete.
+    ///
+    /// Written by `NetworkShieldedCoordinator::unregister_wallet_with` past
+    /// its commit point and BEFORE it attempts the purge, then dropped by
+    /// [`clear_wallet_removal`](Self::clear_wallet_removal) once that purge
+    /// actually succeeds.
+    ///
+    /// # Why this has to be durable
+    ///
+    /// The coordinator remembers an unfinished purge in an in-memory
+    /// `deferred_purges` set, and a newly opened coordinator starts with that
+    /// set EMPTY. A process death between the removal and a successful purge
+    /// therefore lost the deferral entirely, leaving this wallet's rows —
+    /// decrypted notes, pending claims, activity, and a `last_synced_note_index`
+    /// that restore only ever advances — to be inherited by a later
+    /// re-registration of the same id, which would then report caught-up and
+    /// skip the historical notes the purge existed to force a rescan of
+    /// (#4313 review finding 5ca995a0d2aa).
+    ///
+    /// Written BEFORE the purge rather than only on its failure, because a
+    /// crash *during* the purge orphans exactly the same rows and leaves no
+    /// failure to react to. A tombstone that outlives a purge which actually
+    /// succeeded costs one idempotent no-op purge on a later pass; a missing
+    /// one costs the rows forever. Idempotent.
+    fn record_wallet_removal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
+
+    /// Drop `wallet_id`'s removal tombstone. Called only once its purge has
+    /// completed, so an outstanding tombstone means "this wallet's state may
+    /// still be here" and nothing weaker. Idempotent, and a no-op for a wallet
+    /// that has none.
+    fn clear_wallet_removal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
+
+    /// Every wallet id whose removal tombstone is still outstanding, ascending.
+    ///
+    /// The durable half of the coordinator's deferred-purge set: it is what a
+    /// freshly opened coordinator (a relaunched process) has instead of that
+    /// set, and what lets startup, every sync pass, and a re-registration find
+    /// orphaned state they never witnessed being orphaned.
+    fn outstanding_wallet_removals(&self) -> Result<Vec<WalletId>, Self::Error>;
+
     /// Empty the shared commitment tree back to zero leaves.
     ///
     /// After this returns, [`Self::tree_size`] reports `0` and the
@@ -1278,6 +1321,15 @@ pub struct InMemoryShieldedStore {
     /// The same total-order argument as `admissions` applies: the `&mut self`
     /// step under the shared `RwLock` is the atomicity the protocol needs.
     claim_key_reservations: Vec<ClaimKeyLease>,
+    /// Outstanding wallet-removal tombstones — see
+    /// [`ShieldedStore::record_wallet_removal`].
+    ///
+    /// This store has no file behind it, so "durable" degenerates to "as long
+    /// as the store object lives". That is the right shape for the trait
+    /// contract anyway: the tombstone outlives the coordinator that wrote it,
+    /// which is exactly what a test that rebuilds a coordinator over the same
+    /// store exercises. Only the file-backed store survives a real restart.
+    removal_tombstones: BTreeSet<WalletId>,
 }
 
 impl InMemoryShieldedStore {
@@ -1535,6 +1587,20 @@ impl ShieldedStore for InMemoryShieldedStore {
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
         self.subwallets.clear();
         Ok(())
+    }
+
+    fn record_wallet_removal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        self.removal_tombstones.insert(wallet_id);
+        Ok(())
+    }
+
+    fn clear_wallet_removal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        self.removal_tombstones.remove(&wallet_id);
+        Ok(())
+    }
+
+    fn outstanding_wallet_removals(&self) -> Result<Vec<WalletId>, Self::Error> {
+        Ok(self.removal_tombstones.iter().copied().collect())
     }
 
     fn reset_commitment_tree(&mut self) -> Result<(), Self::Error> {

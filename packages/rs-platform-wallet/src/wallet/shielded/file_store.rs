@@ -193,6 +193,26 @@ impl FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError(format!("create one_time_claim_reservation table: {e}"))
             })?;
+        // Wallet-removal tombstones (#4313 review finding 5ca995a0d2aa). On the
+        // DURABLE connection, and for the same reason the claim record is: this
+        // row's whole job is to survive the process death that would otherwise
+        // lose the deferral, so a WAL frame that only reached the OS is not
+        // good enough.
+        //
+        // Unlike the two lease tables above there is no `expires_at` and these
+        // rows are never aged out at open. A tombstone is not a lease — it
+        // records that a removed wallet's state may still be on disk, which
+        // stays true until a purge makes it false. Only `clear_wallet_removal`,
+        // after a purge that actually succeeded, may delete one.
+        pending_conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS shielded_wallet_removal (
+                    wallet_id   BLOB    NOT NULL PRIMARY KEY,
+                    recorded_at INTEGER NOT NULL
+                )",
+                [],
+            )
+            .map_err(|e| FileShieldedStoreError(format!("create wallet_removal table: {e}")))?;
         let mut store = Self {
             tree: Mutex::new(tree),
             path,
@@ -1095,6 +1115,68 @@ impl ShieldedStore for FileBackedShieldedStore {
         }
         self.subwallets.clear();
         Ok(())
+    }
+
+    fn record_wallet_removal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        // `INSERT OR REPLACE`, not `INSERT`: re-recording a tombstone that is
+        // already there is the normal case for a wallet whose purge has failed
+        // more than once, and must not be an error.
+        //
+        // Deliberately NOT gated by the `fail_purge_wallet` test injection —
+        // this row exists precisely to outlive a failed (or interrupted) purge,
+        // so it has to be written by an operation that does not share the
+        // purge's fate (#4313 review finding 5ca995a0d2aa).
+        let conn = self.lock_pending_conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO shielded_wallet_removal (wallet_id, recorded_at) \
+             VALUES (?1, ?2)",
+            rusqlite::params![
+                wallet_id.as_slice(),
+                super::store::admission_now_ms() as i64
+            ],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("record wallet removal tombstone: {e}")))?;
+        Ok(())
+    }
+
+    fn clear_wallet_removal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        let conn = self.lock_pending_conn()?;
+        conn.execute(
+            "DELETE FROM shielded_wallet_removal WHERE wallet_id = ?1",
+            rusqlite::params![wallet_id.as_slice()],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("clear wallet removal tombstone: {e}")))?;
+        Ok(())
+    }
+
+    fn outstanding_wallet_removals(&self) -> Result<Vec<WalletId>, Self::Error> {
+        let conn = self.lock_pending_conn()?;
+        let mut stmt = conn
+            .prepare("SELECT wallet_id FROM shielded_wallet_removal ORDER BY wallet_id")
+            .map_err(|e| {
+                FileShieldedStoreError(format!("prepare wallet removal tombstone read: {e}"))
+            })?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .map_err(|e| FileShieldedStoreError(format!("read wallet removal tombstones: {e}")))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let raw =
+                row.map_err(|e| FileShieldedStoreError(format!("wallet removal row: {e}")))?;
+            match WalletId::try_from(raw.as_slice()) {
+                Ok(wallet_id) => out.push(wallet_id),
+                // A corrupt id cannot be purged (there is no wallet to scope
+                // the purge to), and returning `Err` for it would wedge every
+                // later pass behind a row that can never be resolved. Drop it
+                // from the result and say so, exactly as the pending-spends
+                // rehydrate does for its corrupt rows.
+                Err(_) => tracing::warn!(
+                    width = raw.len(),
+                    "ignoring corrupt shielded_wallet_removal row (bad wallet_id width)"
+                ),
+            }
+        }
+        Ok(out)
     }
 
     fn reset_commitment_tree(&mut self) -> Result<(), Self::Error> {
