@@ -54,12 +54,25 @@ function safeActionForRemedy(remedy, isCertificateUsable) {
     return SAFE_ACTION.SWITCH_PROVIDER;
   }
 
-  // Renewal retries by itself, so asking now spends an attempt on a condition
-  // that has not changed yet - but only while the certificate in use still
-  // works. Once it does not, waiting an hour is a live outage, and whether
-  // that is true is not something either surface may decide for itself: doing
-  // so is what made them contradict each other about the same node.
-  if (remedy === REMEDY_CLASS.FIX_LOCALLY || remedy === REMEDY_CLASS.WAIT) {
+  // A repair the operator has just made needs checking, and asking the
+  // authority is the only way to check it: dashmate cannot test its own
+  // inbound port 80, because nothing listens there except during a renewal -
+  // which is why an external port scan reads closed on a healthy node.
+  //
+  // Sending them away for an hour to find out whether it worked is how a node
+  // stays broken: they leave, they forget, and the certificate expires. A
+  // failed attempt costs one of five hourly validations, of which renewal
+  // itself uses one; a successful one is the certificate they were after.
+  // Neither is the weekly allowance, which is what the withholding cases
+  // above protect.
+  if (remedy === REMEDY_CLASS.FIX_LOCALLY) {
+    return SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX;
+  }
+
+  // Waiting is only ever advised on a signal this repository raised itself,
+  // and it stays conditional: once the certificate in use has stopped working,
+  // an hour of waiting is a live outage.
+  if (remedy === REMEDY_CLASS.WAIT) {
     return isCertificateUsable
       ? SAFE_ACTION.WAIT_AFTER_LOCAL_FIX
       : SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX;

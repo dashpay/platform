@@ -1,4 +1,5 @@
 import errorDescriptions from './errors/errorDescriptions.js';
+import ProviderUnreachableError from '../errors/ProviderUnreachableError.js';
 
 const INVALID_API_KEY_MESSAGE = 'Invalid ZeroSSL API key';
 const INVALID_API_RESPONSE_MESSAGE = 'Invalid ZeroSSL API response';
@@ -75,13 +76,23 @@ export default async function requestApi(apiKey, url, options) {
     headers,
   };
 
-  const response = await fetch(url, requestOptions);
+  // Wrapped where the request is made. `fetch failed` is the only account Node
+  // gives of a transport failure, and recognising those words further down
+  // would let any text carrying them - including a page this node's own
+  // address served back - be read as this node's network failing.
+  let response;
+
+  try {
+    response = await fetch(url, requestOptions);
+  } catch (e) {
+    throw new ProviderUnreachableError(e.message);
+  }
 
   let data;
   try {
     data = await response.json();
   } catch {
-    throw new Error(INVALID_API_RESPONSE_MESSAGE);
+    throw new ProviderUnreachableError(INVALID_API_RESPONSE_MESSAGE);
   }
 
   if (data.error) {

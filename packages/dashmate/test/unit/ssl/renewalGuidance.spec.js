@@ -20,16 +20,42 @@ function failed(code, overrides = {}) {
 }
 
 describe('deriveRenewalGuidance', () => {
-  it('should let a working node wait, and send a broken one to obtain', () => {
-    // The same cause, and the right answer differs - which is precisely why
-    // neither surface may decide it alone. Waiting costs nothing while the
-    // certificate works, and is a live outage once it does not.
+  it('should offer the check whether or not the certificate still works', () => {
+    // A repair has been described and the operator needs to know whether it
+    // took. There is nothing they can probe: port 80 has no listener outside a
+    // renewal. A failed check costs one of five hourly validations, which is
+    // not the allowance worth guarding - the weekly one is, and only an
+    // outstanding issuance or a spent provider quota can waste that.
     const record = failed(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
 
     expect(deriveRenewalGuidance({ record, isCertificateUsable: true }).safeAction)
-      .to.equal(SAFE_ACTION.WAIT_AFTER_LOCAL_FIX);
+      .to.equal(SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX);
     expect(deriveRenewalGuidance({ record, isCertificateUsable: false }).safeAction)
       .to.equal(SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX);
+  });
+
+  // Stated over the whole set rather than case by case. A per-case list is what
+  // let a rate limit quietly choose "wait" and an unfamiliar problem type
+  // quietly choose "support", each of which stops an operator repairing a port
+  // they could have opened.
+  it('should give every cause read from a message the same action', () => {
+    const messageDerived = [
+      RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE,
+      RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER,
+      RENEWAL_FAILURE_CODES.RATE_LIMITED,
+      RENEWAL_FAILURE_CODES.CERTIFICATE_CHECK_REFUSED,
+    ];
+
+    [true, false].forEach((isCertificateUsable) => {
+      const actions = messageDerived.map((code) => deriveRenewalGuidance({
+        record: failed(code),
+        isCertificateUsable,
+      }).safeAction);
+
+      expect(actions).to.deep.equal(
+        Array(messageDerived.length).fill(SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX),
+      );
+    });
   });
 
   it('should let an outstanding issuance outrank a cause that could otherwise be repaired', () => {

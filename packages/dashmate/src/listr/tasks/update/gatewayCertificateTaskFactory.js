@@ -1,6 +1,7 @@
 import { SSL_PROVIDERS } from '../../../constants.js';
 import ServiceIsNotRunningError from '../../../docker/errors/ServiceIsNotRunningError.js';
 import CertificateUnresolvedError from '../../../ssl/errors/CertificateUnresolvedError.js';
+import ConfigurationLockLostError from '../../../ssl/errors/ConfigurationLockLostError.js';
 import {
   CERTIFICATE_REASONS,
   CERTIFICATE_STATUS,
@@ -155,7 +156,7 @@ export default function gatewayCertificateTaskFactory(
     // and another command to save and render newer state. Rendering from this
     // configuration would overwrite that.
     if (!configFileRepository.isExclusive()) {
-      throw new Error('Lost the configuration lock while obtaining the certificate, so the'
+      throw new ConfigurationLockLostError('Lost the configuration lock while obtaining the certificate, so the'
         + ' provider was not saved. The certificate was obtained and installed; re-run once no'
         + ' other command is changing configuration.');
     }

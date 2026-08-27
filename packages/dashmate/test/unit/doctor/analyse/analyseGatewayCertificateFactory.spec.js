@@ -807,17 +807,20 @@ describe('analyseGatewayCertificateFactory', () => {
         .to.contain(new Date(Date.now() + 2 * DAY_MS).toISOString().slice(0, 10));
     });
 
-    it('should not prescribe a command that spends an attempt while the node still works', () => {
-      // Renewal comes back around by itself once the cause is gone, and the
-      // authority allows only a handful of failures an hour. A problem ending
-      // in a runnable command is an instruction to run it.
+    it('should offer the check that tells an operator whether their repair worked', () => {
+      // There is no other way to find out. dashmate cannot test its own
+      // inbound port 80, because nothing listens there except during a
+      // renewal - which is why an external port check reads closed on a
+      // healthy node. Sending them away for an hour to learn whether they got
+      // it right is how a node stays broken: they leave, they forget, the
+      // certificate expires.
       installedValid();
       renewalFailed();
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
 
-      expect(renewal.getSolution()).to.not.contain('ssl obtain');
-      expect(renewal.getSolution()).to.contain('tries again by itself');
+      expect(renewal.getSolution()).to.contain('ssl obtain');
+      expect(renewal.getSolution()).to.contain('retries by itself');
     });
 
     it('should never claim renewal has been failing since it last succeeded', () => {
@@ -939,14 +942,20 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getSolution()).to.not.contain('ssl obtain');
     });
 
-    it('should not invite a retry that the authority has already refused', () => {
+    it('should say a rate limit clears by itself without forbidding the check', () => {
+      // A rate limit is read from the same text as every other cause, and that
+      // text is partly the responder's: a survived nonce retry can be all that
+      // is left of a run that actually failed on a closed port. So it persuades
+      // rather than forbids - the operator is told plainly that running the
+      // command now will not help, and decides.
       installedValid();
       renewalFailed({ code: 'RATE_LIMITED' });
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
 
-      expect(renewal.getSolution()).to.contain('Do not obtain a certificate now');
-      expect(renewal.getSolution()).to.contain('refused the same way');
+      expect(renewal.getSolution()).to.contain('clears by itself');
+      expect(renewal.getSolution()).to.contain('does not make it clear any sooner');
+      expect(renewal.getSolution()).to.contain('ssl obtain');
     });
 
     it('should offer the switch, not a retry, when the provider will never issue again', () => {
@@ -1008,7 +1017,7 @@ describe('analyseGatewayCertificateFactory', () => {
         validTo: validTo(-1),
         reasons: [{ code: 'EXPIRED', message: 'The installed certificate expired on 2026-08-20' }],
       });
-      renewalFailed({ code: 'RATE_LIMITED' });
+      renewalFailed({ code: 'CERTIFICATE_ISSUED_NOT_SAVED' });
 
       const [expired] = analyseGatewayCertificate(samples)
         .filter((p) => p.getDescription().includes('expired'));
@@ -1163,14 +1172,17 @@ describe('analyseGatewayCertificateFactory', () => {
     it('should point at the port 80 guide, because one message cannot hold the whole story', () => {
       // The three firewall layers, why an external port check lies, and which
       // causes must not be retried do not fit in a problem an operator will
-      // read. A short redirect rather than a full path: the last full path in
-      // this codebase went dead when the documentation was reorganised.
+      // read. The published path rather than the short redirect other pages
+      // use: no redirect was ever created for this article, so that form
+      // answers 404, and a link doctor prints has to resolve.
       installedValid();
       renewalFailed();
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
 
-      expect(renewal.getSolution()).to.contain('https://docs.dash.org/evonode-cert-port80');
+      expect(renewal.getSolution()).to.contain(
+        'https://docs.dash.org/en/stable/docs/user/masternodes/troubleshooting-certificates.html',
+      );
     });
 
     it('should keep the address prerequisite when a renewal failure is also recorded', () => {

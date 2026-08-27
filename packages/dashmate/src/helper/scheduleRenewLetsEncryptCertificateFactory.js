@@ -6,6 +6,7 @@ import LegoCertificate from '../ssl/letsencrypt/LegoCertificate.js';
 import isCertificatePairInstalled from '../ssl/letsencrypt/isCertificatePairInstalled.js';
 import { recordRenewalFailure } from './record-renewal-outcome.js';
 import scheduleRenewalJob from './scheduleRenewalJob.js';
+import CertificateFileMissingError from '../ssl/errors/CertificateFileMissingError.js';
 
 /**
  * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
@@ -87,16 +88,20 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
       // file that will not appear on its own - so without recording it, a node
       // in this state renews nothing and says nothing about why.
       //
-      // The error itself decides the cause. This read throws for an absent
-      // file, for a permission denial and for a corrupt certificate alike, and
-      // only the first of those is repaired by obtaining a new one.
+      // Only an absent file becomes the missing-file cause, and it is decided
+      // here rather than from the error's shape: this is the one place that
+      // knows the read was a local one. The same read throws for a permission
+      // denial and for a corrupt certificate, neither of which a new
+      // certificate repairs - and a provider response can carry a `code`
+      // property of its own, so shape alone does not even establish that the
+      // failure was local.
       recordRenewalFailure({
         renewalRecordRepository,
         generation,
         homeDir,
         configName,
         provider: 'letsencrypt',
-        error: e,
+        error: e.code === 'ENOENT' ? new CertificateFileMissingError(certPath) : e,
       });
 
       // Schedule a check in 1 hour to see if certificate appears

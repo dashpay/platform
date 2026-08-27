@@ -680,7 +680,7 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
       // below evidence rather than a restatement of the fixture behind it.
       expect(error.message).to.include('urn:ietf:params:acme:error:connection');
 
-      expect(classifyRenewalFailure(error).code)
+      expect(classifyRenewalFailure(error, { provider: 'letsencrypt' }).code)
         .to.equal(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
     });
 
@@ -689,7 +689,7 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
 
       expect(error.message).to.include('urn:ietf:params:acme:error:unauthorized');
 
-      expect(classifyRenewalFailure(error).code)
+      expect(classifyRenewalFailure(error, { provider: 'letsencrypt' }).code)
         .to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
     });
 

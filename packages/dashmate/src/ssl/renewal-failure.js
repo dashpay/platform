@@ -1,6 +1,10 @@
 import LegoArtifactsMissingError from './errors/LegoArtifactsMissingError.js';
 import LegoDidNotStartError from './errors/LegoDidNotStartError.js';
 import LegoResultNotObservedError from './errors/LegoResultNotObservedError.js';
+import ConfigurationLockLostError from './errors/ConfigurationLockLostError.js';
+import VerificationServerUnreachableError from './errors/VerificationServerUnreachableError.js';
+import ProviderUnreachableError from './errors/ProviderUnreachableError.js';
+import CertificateFileMissingError from './errors/CertificateFileMissingError.js';
 
 /**
  * Why a scheduled renewal did not produce a certificate.
@@ -11,6 +15,13 @@ import LegoResultNotObservedError from './errors/LegoResultNotObservedError.js';
  * is gone. A reader that meets a code it does not know treats it as UNKNOWN,
  * so a newer helper can add one without silencing an older reader.
  */
+/**
+ * The only provider whose output this module reads. Named rather than inlined
+ * so the gate is one value, not a string repeated at each site that grew a
+ * different idea of what counts.
+ */
+const LETSENCRYPT_PROVIDER = 'letsencrypt';
+
 export const RENEWAL_FAILURE_CODES = {
   PORT_80_UNREACHABLE: 'PORT_80_UNREACHABLE',
   PORT_80_WRONG_RESPONDER: 'PORT_80_WRONG_RESPONDER',
@@ -18,6 +29,7 @@ export const RENEWAL_FAILURE_CODES = {
   PORT_80_CHECK_FAILED: 'PORT_80_CHECK_FAILED',
   RATE_LIMITED: 'RATE_LIMITED',
   PROVIDER_REJECTED: 'PROVIDER_REJECTED',
+  CERTIFICATE_CHECK_REFUSED: 'CERTIFICATE_CHECK_REFUSED',
   HELPER_DID_NOT_START: 'HELPER_DID_NOT_START',
   HELPER_START_UNCONFIRMED: 'HELPER_START_UNCONFIRMED',
   CERTIFICATE_ISSUED_NOT_SAVED: 'CERTIFICATE_ISSUED_NOT_SAVED',
@@ -84,7 +96,16 @@ const DESCRIPTIONS = {
   [RENEWAL_FAILURE_CODES.RATE_LIMITED]: {
     sentence: 'the certificate authority has temporarily refused further attempts for this'
       + " account and this node's address",
-    remedy: REMEDY_CLASS.DO_NOT_RETRY,
+    // Every cause read from a message shares one remedy. A rate limit that
+    // withheld the verification would be an action chosen by text the
+    // responder can influence, and the same text can hide a closed port behind
+    // a nonce retry the client already survived. What a rate limit needs said
+    // is said in the guidance beside it, which persuades rather than forbids.
+    remedy: REMEDY_CLASS.FIX_LOCALLY,
+  },
+  [RENEWAL_FAILURE_CODES.CERTIFICATE_CHECK_REFUSED]: {
+    sentence: "the certificate authority refused this node's certificate check",
+    remedy: REMEDY_CLASS.FIX_LOCALLY,
   },
   [RENEWAL_FAILURE_CODES.PROVIDER_REJECTED]: {
     sentence: 'the certificate authority refused the request',
@@ -183,35 +204,52 @@ export const MAX_DETAIL_CHARS = 200;
  */
 const ACME_PROBLEM_PATTERN = /urn:ietf:params:acme:error:([A-Za-z]+)/;
 
-const ACME_PROBLEM_CODES = {
-  connection: RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE,
-  unauthorized: RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER,
-  rateLimited: RENEWAL_FAILURE_CODES.RATE_LIMITED,
-};
+/**
+ * The causes worth naming, in the order they are preferred when several appear.
+ *
+ * A run that ends badly often carries more than one problem type: a nonce the
+ * client retried and survived, a 429 the transport retried, and the failure
+ * that actually ended it. Nothing in the text says which was terminal - lego
+ * prints the authority's detail verbatim, newlines included, so even the line
+ * structure is the responder's to forge.
+ *
+ * That is survivable because the order below only decides which sentence an
+ * operator reads. Every one of these resolves to the same action, so preferring
+ * one over another cannot change what anybody is told to do.
+ *
+ * Port 80 outranks a rate limit deliberately. Both appear together often, and
+ * the asymmetry is not close: naming a rate limit when a firewall is shut
+ * leaves the node dark, while naming port 80 during a real rate limit costs an
+ * operator a few minutes and one of five hourly validations.
+ */
+const ACME_CAUSE_PRIORITY = [
+  ['connection', RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE],
+  ['unauthorized', RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER],
+  ['rateLimited', RENEWAL_FAILURE_CODES.RATE_LIMITED],
+];
 
 /**
- * The problem type that ended the run, which is the last one and not the first.
- *
- * A client recovers from some of these and carries on: a rejected nonce has to
- * be retried under RFC 8555, and authorities reject nonces routinely, so a
- * failed run's output regularly opens with a type that was survived. Reading
- * that one reports a cause the operator can do nothing about and buries the
- * one they can - and it does so intermittently, which is worse than either.
+ * What the authority said went wrong, or nothing.
  *
  * @param {string} message
  * @return {string|null}
  */
-function readAcmeProblemType(message) {
-  let type = null;
+function readAcmeCause(message) {
+  const types = new Set();
 
-  // A separate expression from the one used to test lines: a global regular
-  // expression carries its own position between calls, and sharing one makes
-  // every second test start from wherever the last left off.
   for (const match of message.matchAll(/urn:ietf:params:acme:error:([A-Za-z]+)/g)) {
-    [, type] = match;
+    types.add(match[1]);
   }
 
-  return type;
+  if (types.size === 0) {
+    return null;
+  }
+
+  const preferred = ACME_CAUSE_PRIORITY.find(([type]) => types.has(type));
+
+  // A type this build has never met still establishes that the authority
+  // refused the check, which is worth saying and takes the same ending.
+  return preferred ? preferred[1] : RENEWAL_FAILURE_CODES.CERTIFICATE_CHECK_REFUSED;
 }
 
 /**
@@ -238,15 +276,6 @@ const ZEROSSL_AUTH_CODES = [101, 102, 2801];
  * confusing them sends an operator to open a port that is already open.
  */
 const PORT_BIND_PATTERN = /port is already allocated|address already in use|bind for \S+ failed/i;
-
-/**
- * Dashmate's own account of losing the configuration lock.
- *
- * Recognised so it does not fall through to "could not work out why" - dashmate
- * diagnosed this one itself, and saying otherwise would send an operator to
- * support over a condition that clears on its own.
- */
-const LOCK_PATTERN = /Lost the configuration lock|Timed out waiting for configuration lock/;
 
 /**
  * Terminal control sequences, removed wherever this text is stored or shown.
@@ -360,7 +389,7 @@ function readProviderCode(error) {
  * @param {*} error
  * @return {string}
  */
-function classifyCode(error, message) {
+function classifyCode(error, message, provider) {
   // The typed errors describe how far the attempt got, which no amount of
   // reading the text can establish: whether the certificate check ever ran,
   // and whether an issuance was spent. They arrive as the cause because the
@@ -393,12 +422,37 @@ function classifyCode(error, message) {
       : RENEWAL_FAILURE_CODES.HELPER_DID_NOT_START;
   }
 
-  const acmeProblem = readAcmeProblemType(message);
+  // Raised where the failure happened rather than recognised by its wording.
+  // The authority copies a responder's page into its problem detail, so any
+  // phrase these once matched can arrive from the machine being diagnosed -
+  // and each of them ends in advice to stop and wait, which is the one thing a
+  // stranger must not be able to tell an operator to do.
+  const carried = [error, cause].find((candidate) => candidate instanceof ConfigurationLockLostError
+    || candidate instanceof VerificationServerUnreachableError
+    || candidate instanceof ProviderUnreachableError
+    || candidate instanceof CertificateFileMissingError);
 
-  if (acmeProblem !== null) {
-    return ACME_PROBLEM_CODES[acmeProblem] ?? RENEWAL_FAILURE_CODES.PROVIDER_REJECTED;
+  if (carried instanceof ConfigurationLockLostError) {
+    return RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED;
   }
 
+  if (carried instanceof VerificationServerUnreachableError) {
+    return RENEWAL_FAILURE_CODES.PORT_80_CHECK_FAILED;
+  }
+
+  if (carried instanceof ProviderUnreachableError) {
+    return RENEWAL_FAILURE_CODES.PROVIDER_UNREACHABLE;
+  }
+
+  if (carried instanceof CertificateFileMissingError) {
+    return RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING;
+  }
+
+  // Before anything that reads the message. A provider answers with a number
+  // and copies its own text onto the error beside it, so a provider message
+  // carrying ACME wording could otherwise be read as an authority's verdict -
+  // and a spent free tier would be reported as a rate limit that clears on its
+  // own. It never clears: the remedy is a different provider.
   const providerCode = readProviderCode(error);
 
   if (providerCode !== null) {
@@ -417,32 +471,15 @@ function classifyCode(error, message) {
     return RENEWAL_FAILURE_CODES.PROVIDER_REJECTED;
   }
 
-  // Only an absent file. The same read also throws for a permission denial and
-  // for a corrupt certificate, and telling an operator to obtain a new one
-  // spends an issuance against a weekly limit on a problem a new certificate
-  // cannot fix.
-  if (error?.code === 'ENOENT') {
-    return RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING;
-  }
+  // Only this provider's output is read this way, and only once everything
+  // above has declined. Another provider's text is not lego's, and reading it
+  // as though it were is how a ZeroSSL failure acquires a Let's Encrypt cause.
+  if (provider === LETSENCRYPT_PROVIDER) {
+    const acmeCause = readAcmeCause(message);
 
-  if (LOCK_PATTERN.test(message)) {
-    return RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED;
-  }
-
-  // The verification server had already bound port 80 on this machine by the
-  // time this was raised, and the check that failed fetches the node's PUBLIC
-  // validation URL - so a local process holding the port is ruled out. What is
-  // not ruled out is which of the two remaining readings applies: the check
-  // gives the same answer when nothing replied and when something replied with
-  // the wrong status, so a proxy or a router page looks exactly like a closed
-  // port. Claiming either one would assert more than was observed.
-  if (message.includes('Verification server is not responding')) {
-    return RENEWAL_FAILURE_CODES.PORT_80_CHECK_FAILED;
-  }
-
-  if (message.includes('Invalid ZeroSSL API response')
-    || message.includes('fetch failed')) {
-    return RENEWAL_FAILURE_CODES.PROVIDER_UNREACHABLE;
+    if (acmeCause !== null) {
+      return acmeCause;
+    }
   }
 
   return RENEWAL_FAILURE_CODES.UNKNOWN;
@@ -472,22 +509,20 @@ export function sanitizeDetail(text) {
  * @param {string|null} [options.homeDirPath] - collapsed out of the excerpt
  * @return {{code: string, detail: string|null}}
  */
-export default function classifyRenewalFailure(error, { homeDirPath = null, apiKey = null } = {}) {
+export default function classifyRenewalFailure(
+  error,
+  { homeDirPath = null, apiKey = null, provider = null } = {},
+) {
   // Bounded once, before anything examines it. lego writes single lines of
   // unbounded length and these patterns run on the helper's event loop - the
   // same loop that refreshes the configuration lock's lease, so a stall here
   // is a lease that stops being renewed while the helper still looks alive.
-  const raw = readMessage(error);
+  // A stall guard and nothing more. Which cause is read no longer depends on
+  // where anything sits, so a cut that drops a type falls back to a
+  // neighbouring sentence or to the generic one - never to a different ending.
+  const examined = readMessage(error).slice(0, MAX_EXAMINED_CHARS);
 
-  // Cut back to a line break when it does not fit. The problem type is taken
-  // from the end of what is examined, so a cut landing inside the last one
-  // would leave a shortened name that matches nothing and reads as a plain
-  // refusal - which is the misreading this is meant to prevent.
-  const examined = raw.length <= MAX_EXAMINED_CHARS
-    ? raw
-    : raw.slice(0, raw.lastIndexOf('\n', MAX_EXAMINED_CHARS) + 1 || MAX_EXAMINED_CHARS);
-
-  const code = classifyCode(error, examined);
+  const code = classifyCode(error, examined, provider);
   const evidence = selectEvidence(
     collapseHomeDir(examined, homeDirPath),
     readProviderCode(error),

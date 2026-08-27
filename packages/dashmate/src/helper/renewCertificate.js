@@ -17,6 +17,8 @@
  * @param {writeConfigTemplates} options.writeConfigTemplates
  * @return {Promise<{config: Config, renewed: boolean}>}
  */
+
+import ConfigurationLockLostError from '../ssl/errors/ConfigurationLockLostError.js';
 export default async function renewCertificate({
   configName,
   provider,
@@ -65,7 +67,7 @@ export default async function renewCertificate({
       // this configuration would overwrite that, and the save's own check comes
       // too late to prevent it.
       if (!configFileRepository.isExclusive()) {
-        throw new Error('Lost the configuration lock while renewing the certificate,'
+        throw new ConfigurationLockLostError('Lost the configuration lock while renewing the certificate,'
           + ' so the gateway service files were not written. The certificate was'
           + ' obtained; re-run renewal once no other command is changing configuration.');
       }

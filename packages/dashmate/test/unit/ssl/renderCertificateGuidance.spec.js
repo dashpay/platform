@@ -589,10 +589,10 @@ describe('renderCertificateGuidance', () => {
 
       const output = render({
         verdict: verdict({ provider: 'letsencrypt' }),
-        renewal: guidanceFor({ code: 'RATE_LIMITED' }),
+        renewal: guidanceFor({ code: 'CERTIFICATE_ISSUED_NOT_SAVED' }),
       });
 
-      expect(output).to.contain('temporarily refused further attempts');
+      expect(output).to.contain('could not save it');
       expect(output).to.not.contain('ssl obtain');
     });
 

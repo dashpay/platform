@@ -115,7 +115,11 @@ const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it
  * dead when the documentation was reorganised, while the redirects around it
  * survived.
  */
-const PORT_80_GUIDE = 'https://docs.dash.org/evonode-cert-port80';
+// The published article. The short `docs.dash.org/<slug>` form other pages use
+// is a ReadTheDocs dashboard redirect, and one was never created for this page -
+// so that form 404s. A link doctor prints has to resolve: the command's whole
+// value is that what it tells an operator is true.
+const PORT_80_GUIDE = 'https://docs.dash.org/en/stable/docs/user/masternodes/troubleshooting-certificates.html';
 
 /**
  * An operator reading a certificate problem is deciding whether their node is
@@ -244,6 +248,16 @@ function renderPortEightyHint(code, cfg, isShortLived) {
 {underline.cyanBright ${PORT_80_GUIDE}}`;
   }
 
+  // Named, and it takes the same ending as every other cause read from a
+  // message - so what a rate limit needs said has to be said here. Withholding
+  // the command instead would let text a responder can influence decide what
+  // an operator is allowed to do, and the same text can hide a closed port
+  // behind a nonce retry the client already survived.
+  if (code === RENEWAL_FAILURE_CODES.RATE_LIMITED) {
+    return chalk`This clears by itself - dashmate keeps trying every hour. Running the
+command below now will fail and does not make it clear any sooner.`;
+  }
+
   if (code === RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER) {
     return chalk`Another web server, a proxy, or your router is answering on port 80 instead
 of this node. Check this machine first:
@@ -358,6 +372,16 @@ ${obtain}`;
 ${obtain}`;
   }
 
+  // The repair is described above; this is how an operator finds out whether
+  // it worked. Nothing listens on port 80 outside a renewal, so there is
+  // nothing they can probe themselves - and an hour spent not knowing is an
+  // hour in which they stop looking.
+  if (safeAction === SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX) {
+    return chalk`Once that is done, check it worked right away:
+${obtain}
+Or leave it - dashmate retries by itself every hour.`;
+  }
+
   return mayObtain
     ? chalk`Get a working certificate:
 ${obtain}`
@@ -385,6 +409,17 @@ function renderCertificateRequest({
   if (safeAction === SAFE_ACTION.WAIT_AFTER_LOCAL_FIX) {
     return chalk`Fix the cause above. dashmate retries by itself - then check it worked:
 {bold.cyanBright dashmate doctor ${cfg}}`;
+  }
+
+  // A repair has just been described, and this is the only way to find out
+  // whether it worked: nothing listens on port 80 except during a renewal, so
+  // there is nothing an operator can probe for themselves. Framed as the check
+  // it is, with the automatic attempt named as the alternative, so nobody
+  // reads it as an instruction to keep asking.
+  if (safeAction === SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX) {
+    return chalk`Once that is done, check it worked right away:
+{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}
+Or leave it - dashmate retries by itself every hour.`;
   }
 
   if (safeAction !== SAFE_ACTION.DO_NOT_OBTAIN) {

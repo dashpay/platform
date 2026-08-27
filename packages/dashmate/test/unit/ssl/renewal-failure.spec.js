@@ -7,6 +7,10 @@ import classifyRenewalFailure, {
   sanitizeDetail,
 } from '../../../src/ssl/renewal-failure.js';
 import LegoArtifactsMissingError from '../../../src/ssl/errors/LegoArtifactsMissingError.js';
+import ConfigurationLockLostError from '../../../src/ssl/errors/ConfigurationLockLostError.js';
+import VerificationServerUnreachableError from '../../../src/ssl/errors/VerificationServerUnreachableError.js';
+import ProviderUnreachableError from '../../../src/ssl/errors/ProviderUnreachableError.js';
+import CertificateFileMissingError from '../../../src/ssl/errors/CertificateFileMissingError.js';
 import LegoDidNotStartError from '../../../src/ssl/errors/LegoDidNotStartError.js';
 import LegoResultNotObservedError from '../../../src/ssl/errors/LegoResultNotObservedError.js';
 
@@ -30,11 +34,20 @@ const LEGO_WRONG_RESPONDER = `Failed to obtain Let's Encrypt certificate: Lego e
 const LEGO_RATE_LIMITED = `Failed to obtain Let's Encrypt certificate: Lego exited with code 1
 [1.2.3.4] acme: error: 429 :: urn:ietf:params:acme:error:rateLimited :: Error creating new order :: too many failed authorizations recently`;
 
+/**
+ * lego's output is only read for the provider that produces it, so every case
+ * that exercises a message has to say whose message it is.
+ */
+const fromLetsEncrypt = (error, options = {}) => classifyRenewalFailure(
+  error,
+  { ...options, provider: 'letsencrypt' },
+);
+
 describe('renewalFailure', () => {
   describe('classifyRenewalFailure', () => {
     describe("Let's Encrypt", () => {
       it('should name an unreachable port 80 from the problem the authority returned', () => {
-        const { code } = classifyRenewalFailure(new Error(LEGO_CONNECTION_FAILURE));
+        const { code } = fromLetsEncrypt(new Error(LEGO_CONNECTION_FAILURE));
 
         expect(code).to.equal(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
       });
@@ -44,24 +57,28 @@ describe('renewalFailure', () => {
         // like "port 80 is broken" from outside, but one is a closed port and
         // the other is a web server answering in this node's place, and an
         // operator sent to open an already-open port never finds the second.
-        const { code } = classifyRenewalFailure(new Error(LEGO_WRONG_RESPONDER));
+        const { code } = fromLetsEncrypt(new Error(LEGO_WRONG_RESPONDER));
 
         expect(code).to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
       });
 
-      it('should name a rate limit, which must never invite another attempt', () => {
-        const { code } = classifyRenewalFailure(new Error(LEGO_RATE_LIMITED));
+      it('should name a rate limit without letting it choose a different ending', () => {
+        const { code } = fromLetsEncrypt(new Error(LEGO_RATE_LIMITED));
 
         expect(code).to.equal(RENEWAL_FAILURE_CODES.RATE_LIMITED);
-        expect(describeRenewalFailure(code).remedy).to.equal(REMEDY_CLASS.DO_NOT_RETRY);
+        // Named, but it takes the same ending as every other cause read from a
+        // message. A rate limit that withheld the verification would be an
+        // action chosen by text, and the same text can hide a closed port
+        // behind a nonce retry the client already survived.
+        expect(describeRenewalFailure(code).remedy).to.equal(REMEDY_CLASS.FIX_LOCALLY);
       });
 
-      it('should bucket an unrecognised problem as a refusal rather than guessing', () => {
-        const { code, detail } = classifyRenewalFailure(new Error(
+      it('should still name a refusal when the problem type is unfamiliar', () => {
+        const { code, detail } = fromLetsEncrypt(new Error(
           '[1.2.3.4] acme: error: 500 :: urn:ietf:params:acme:error:serverInternal :: try later',
         ));
 
-        expect(code).to.equal(RENEWAL_FAILURE_CODES.PROVIDER_REJECTED);
+        expect(code).to.equal(RENEWAL_FAILURE_CODES.CERTIFICATE_CHECK_REFUSED);
         // The type is kept so the reading is recoverable even though the
         // classifier had nothing to do with it.
         expect(detail).to.contain('serverInternal');
@@ -74,7 +91,7 @@ describe('renewalFailure', () => {
       // have opened. Observed against a real ACME server, where it appeared in
       // roughly half of otherwise identical failures.
       it('should name what ended the run, not a problem that was recovered from', () => {
-        const { code, detail } = classifyRenewalFailure(new Error(
+        const { code, detail } = fromLetsEncrypt(new Error(
           `Failed to obtain Let's Encrypt certificate: Lego exited with code 1
 2026/08/25 10:00:00 [INFO] [1.2.3.4] acme: Obtaining bundled SAN certificate
 2026/08/25 10:00:01 acme: error: 400 :: urn:ietf:params:acme:error:badNonce :: JWS has an invalid anti-replay nonce
@@ -108,11 +125,141 @@ describe('renewalFailure', () => {
         const padding = MAX_EXAMINED_CHARS - 4 - head.length
           - (severed.indexOf(prefix) + prefix.length);
 
-        const { code } = classifyRenewalFailure(new Error(
+        const { code } = fromLetsEncrypt(new Error(
           `${head}${'n'.repeat(padding - 1)}\n${severed}`,
         ));
 
         expect(code).to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
+      });
+    });
+
+    // Every cause read from a message resolves to one action. Stated as an
+    // invariant over the whole set rather than case by case: a per-case list is
+    // what hid a rate limit quietly choosing "wait" and an unfamiliar type
+    // quietly choosing "support", both of which stop an operator repairing a
+    // port they could have opened.
+    describe('what a message is allowed to decide', () => {
+      const MESSAGE_DERIVED = [
+        ['an unreachable port', LEGO_CONNECTION_FAILURE],
+        ['a wrong responder', LEGO_WRONG_RESPONDER],
+        ['a rate limit', LEGO_RATE_LIMITED],
+        ['an unfamiliar problem type', '[1.2.3.4] acme: error: 500 ::'
+          + ' urn:ietf:params:acme:error:serverInternal :: try later'],
+      ];
+
+      it('should give every cause read from a message the same ending', () => {
+        const remedies = MESSAGE_DERIVED.map(([, message]) => describeRenewalFailure(
+          fromLetsEncrypt(new Error(message)).code,
+        ).remedy);
+
+        expect(remedies).to.deep.equal(Array(MESSAGE_DERIVED.length).fill(REMEDY_CLASS.FIX_LOCALLY));
+      });
+
+      MESSAGE_DERIVED.forEach(([name, message]) => {
+        it(`should not let ${name} reach a provider switch`, () => {
+          const { code } = fromLetsEncrypt(new Error(message));
+
+          expect(describeRenewalFailure(code).remedy)
+            .to.not.equal(REMEDY_CLASS.SWITCH_PROVIDER);
+        });
+      });
+
+      // A recovered nonce arrives before the failure that ended the run, and a
+      // 429 the transport retried arrives before that. Neither is the cause.
+      it('should prefer a closed port over a rate limit when both appear', () => {
+        const { code } = fromLetsEncrypt(new Error(`${LEGO_RATE_LIMITED}
+[1.2.3.4] acme: error: 403 :: urn:ietf:params:acme:error:unauthorized :: 404`));
+
+        expect(code).to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
+      });
+
+      // The reverse of the above: only the survived 429 stays inside the cap.
+      // The sentence is then wrong, and the ending still has to be right.
+      it('should keep the ending when only a survived rate limit is visible', () => {
+        const { code } = fromLetsEncrypt(new Error(LEGO_RATE_LIMITED));
+
+        expect(describeRenewalFailure(code).remedy).to.equal(REMEDY_CLASS.FIX_LOCALLY);
+      });
+
+      it('should not read another provider\'s message as an authority verdict', () => {
+        [undefined, 'zerossl', 'something-else'].forEach((provider) => {
+          const { code } = classifyRenewalFailure(new Error(LEGO_CONNECTION_FAILURE), { provider });
+
+          expect(code).to.equal(RENEWAL_FAILURE_CODES.UNKNOWN);
+        });
+      });
+
+      // The free tier's three-certificate wall is the most common reason a
+      // mainnet certificate expires, and switching provider is the only thing
+      // that repairs it. Read as a rate limit it becomes "wait", and waiting
+      // never refills a spent allowance.
+      // The gate alone would make this pass for another provider, so it is
+      // asserted where the gate is open: a numeric code answers first because
+      // it is a fact the provider stated, and the message is text that may
+      // have come from somewhere else entirely.
+      it('should answer with the numeric code even where the message would be read', () => {
+        const error = new Error(LEGO_RATE_LIMITED);
+        error.code = 2817;
+
+        const { code } = fromLetsEncrypt(error);
+
+        expect(code).to.equal(RENEWAL_FAILURE_CODES.QUOTA_EXHAUSTED);
+      });
+
+      it('should let the provider code outrank ACME wording in the message', () => {
+        const error = new Error('quota reached, see urn:ietf:params:acme:error:rateLimited');
+        error.code = 2817;
+
+        const { code } = classifyRenewalFailure(error, { provider: 'zerossl' });
+
+        expect(code).to.equal(RENEWAL_FAILURE_CODES.QUOTA_EXHAUSTED);
+        expect(describeRenewalFailure(code).remedy).to.equal(REMEDY_CLASS.SWITCH_PROVIDER);
+      });
+    });
+
+    // Each of these used to be recognised by searching the whole message for a
+    // phrase. The authority copies whatever answered on port 80 into its
+    // problem detail, so each phrase could arrive from the machine being
+    // diagnosed - and every one of them ends in advice to stop and wait.
+    describe('failures this repository raises', () => {
+      const CARRIED = [
+        ['a lost configuration lock', () => new ConfigurationLockLostError('Lost the configuration lock'),
+          RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED],
+        ['an unreachable provider', () => new ProviderUnreachableError('fetch failed'),
+          RENEWAL_FAILURE_CODES.PROVIDER_UNREACHABLE],
+        ['a missing certificate file', () => new CertificateFileMissingError('/home/op/bundle.crt'),
+          RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING],
+      ];
+
+      CARRIED.forEach(([name, build, expected]) => {
+        it(`should recognise ${name} by its type`, () => {
+          expect(classifyRenewalFailure(build()).code).to.equal(expected);
+        });
+      });
+
+      it('should ignore those same words when a responder supplies them', () => {
+        [
+          'Lost the configuration lock',
+          'Verification server is not responding',
+          'fetch failed',
+        ].forEach((echoed) => {
+          const { code } = fromLetsEncrypt(new Error(
+            `[1.2.3.4] acme: error: 403 :: urn:ietf:params:acme:error:unauthorized ::`
+            + ` Invalid response: 200: "${echoed}"`,
+          ));
+
+          expect(code).to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
+        });
+      });
+
+      // The read that raises it also fails for a permission denial and for a
+      // corrupt file, and neither is repaired by asking for a certificate.
+      it('should not read a bare code property as a missing file', () => {
+        const error = new Error('ZeroSSL said something');
+        error.code = 'ENOENT';
+
+        expect(classifyRenewalFailure(error, { provider: 'zerossl' }).code)
+          .to.equal(RENEWAL_FAILURE_CODES.UNKNOWN);
       });
     });
 
@@ -206,7 +353,9 @@ describe('renewalFailure', () => {
         // nothing replied and when something replied with the wrong status, so
         // a proxy looks exactly like a closed port. Asserting either would
         // claim more than was observed.
-        const error = new Error('Verification server is not responding.\nPlease ensure that port 80');
+        const error = new VerificationServerUnreachableError(
+          'Verification server is not responding.\nPlease ensure that port 80',
+        );
 
         expect(classifyRenewalFailure(error).code)
           .to.equal(RENEWAL_FAILURE_CODES.PORT_80_CHECK_FAILED);
@@ -215,8 +364,8 @@ describe('renewalFailure', () => {
 
     describe("dashmate's own failures", () => {
       it('should recognise a lost configuration lock instead of sending the operator to support', () => {
-        const error = new Error('Lost the configuration lock while renewing the certificate,'
-          + ' so the gateway service files were not written.');
+        const error = new ConfigurationLockLostError('Lost the configuration lock while renewing'
+          + ' the certificate, so the gateway service files were not written.');
 
         expect(classifyRenewalFailure(error).code)
           .to.equal(RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED);

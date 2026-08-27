@@ -98,7 +98,11 @@ export function recordRenewalFailure({
 
     const classified = code
       ? { code, detail: null }
-      : classifyRenewalFailure(error, { homeDirPath: homeDir.getPath(), apiKey });
+      // The provider is what decides whether lego's output may be read at
+      // all. Dropping it here is how a ZeroSSL failure carrying ACME wording
+      // would acquire a Let's Encrypt cause, and how every Let's Encrypt
+      // failure would be recorded as one nobody could work out.
+      : classifyRenewalFailure(error, { homeDirPath: homeDir.getPath(), apiKey, provider });
 
     const asObject = previous?.toObject();
 
