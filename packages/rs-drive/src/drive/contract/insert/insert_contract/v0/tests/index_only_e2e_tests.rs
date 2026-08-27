@@ -576,7 +576,7 @@ fn deletion_refunds_flow_from_terminal_item_flags() {
 /// splice-prone shape; likes are immune because their compound index binds
 /// the values together, but the layout must not depend on that.)
 #[test]
-fn spliced_delete_across_two_rows_is_refused() {
+fn should_refuse_a_delete_spliced_across_two_rows() {
     use dpp::document::DocumentV0Setters;
     use dpp::platform_value::Value;
 

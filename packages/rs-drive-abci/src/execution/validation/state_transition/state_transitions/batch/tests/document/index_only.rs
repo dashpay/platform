@@ -313,9 +313,9 @@ mod index_only_tests {
             result.execution_results()
         );
 
-        // ── Bob cannot unlike Alice's like ─────────────────────────────
+        // ── Deletes are owner-scoped ───────────────────────────────────
         // Same values, signed by Bob: the owner-bearing probe runs with
-        // owner = Bob and lands on a key that is not there.
+        // owner = Bob, so it removes Bob's entry and leaves Alice's.
         let mut alices_values_for_bob = alice_like.clone();
         alices_values_for_bob.set_owner_id(bob.id());
         let bob_deletes_alices = BatchTransition::new_document_deletion_transition_from_document(
@@ -524,8 +524,8 @@ mod index_only_tests {
         );
     }
 
-    /// Signs a manually assembled batch (the factory methods only build
-    /// single-transition batches, and the sibling-collision tests need two).
+    /// Signs a manually assembled batch. The factory methods cannot build a
+    /// delete whose value payload is deliberately malformed.
     async fn sign_batch(
         batch: BatchTransitionV0,
         key: &dpp::identity::IdentityPublicKey,
