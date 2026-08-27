@@ -82,6 +82,40 @@ impl Drive {
             return Ok(QueryDocumentsOutcomeV0::default());
         }
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        // indexOnly documents are synthesized from their index positions —
+        // there are no stored bodies to fetch, so the raw serialized path
+        // below does not apply.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if query.document_type.index_only() {
+                let documents = query.execute_index_only_documents_no_proof_internal(
+                    self,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let cost = if let Some(epoch) = epoch {
+                    Drive::calculate_fee(
+                        None,
+                        Some(drive_operations),
+                        epoch,
+                        self.config.epochs_per_era,
+                        platform_version,
+                        None,
+                    )?
+                    .processing_fee
+                } else {
+                    0
+                };
+                return Ok(QueryDocumentsOutcomeV0 {
+                    documents,
+                    skipped: 0,
+                    cost,
+                });
+            }
+        }
+
         let (items, skipped) = query.execute_raw_results_no_proof_internal(
             self,
             transaction,

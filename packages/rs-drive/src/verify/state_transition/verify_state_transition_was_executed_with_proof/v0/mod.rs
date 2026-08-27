@@ -159,6 +159,110 @@ impl Drive {
                                 )))
                             })?;
 
+                        // indexOnly documents have no primary row: the executed
+                        // transition is verified against the single entry its
+                        // values produce under the proof index — rebuilt here
+                        // from the transition through the same builder the
+                        // prover used.
+                        {
+                            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+                            use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
+                            if document_type.index_only() {
+                                let values = match document_transition {
+                                    DocumentTransition::Create(create_transition) => {
+                                        create_transition.data().clone()
+                                    }
+                                    // The indexOnlyDelete kind always
+                                    // carries its values.
+                                    DocumentTransition::IndexOnlyDelete(delete_transition) => {
+                                        delete_transition.data().clone()
+                                    }
+                                    _ => {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "indexOnly documents only support create and \
+                                             indexOnlyDelete"
+                                                .to_string(),
+                                        )));
+                                    }
+                                };
+                                let path_query = crate::query::index_only_synthesis::index_only_transition_entry_path_query(
+                                    contract.id(),
+                                    document_type,
+                                    &values,
+                                    documents_batch_transition.owner_id(),
+                                    platform_version,
+                                )?;
+                                let (root_hash, mut proved) = grovedb::GroveDb::verify_query(
+                                    proof,
+                                    &path_query,
+                                    &platform_version.drive.grove_version,
+                                )?;
+                                let entry_element =
+                                    proved.pop().and_then(|(_path, _key, element)| element);
+
+                                let (root_hash, result) = match document_transition {
+                                    DocumentTransition::Create(create_transition) => {
+                                        if entry_element.is_none() {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                "proof did not contain the indexOnly entry expected to exist after create of {}",
+                                                create_transition.base().id()
+                                            ))));
+                                        }
+                                        let expected_document =
+                                            Document::try_from_create_transition(
+                                                create_transition,
+                                                documents_batch_transition.owner_id(),
+                                                block_info,
+                                                &contract,
+                                                &document_type,
+                                                platform_version,
+                                            )?;
+                                        (
+                                            root_hash,
+                                            VerifiedDocuments(BTreeMap::from([(
+                                                expected_document.id(),
+                                                Some(expected_document),
+                                            )])),
+                                        )
+                                    }
+                                    DocumentTransition::IndexOnlyDelete(delete_transition) => {
+                                        if entry_element.is_some() {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                "proof still contained the indexOnly entry after delete of {}",
+                                                delete_transition.base().id()
+                                            ))));
+                                        }
+                                        (
+                                            root_hash,
+                                            VerifiedDocuments(BTreeMap::from([(
+                                                delete_transition.base().id(),
+                                                None,
+                                            )])),
+                                        )
+                                    }
+                                    _ => {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "indexOnly documents only support create and \
+                                             indexOnlyDelete"
+                                                .to_string(),
+                                        )))
+                                    }
+                                };
+
+                                // Same outcome wrapping the shared tail below
+                                // applies to every other arm.
+                                let outcome = if Self::state_transition_proof_binds_execution(
+                                    state_transition,
+                                    known_contracts_provider_fn,
+                                )? {
+                                    StateTransitionProofOutcome::ExecutionProved(result)
+                                } else {
+                                    StateTransitionProofOutcome::AffectedState(result)
+                                };
+                                return Ok((root_hash, outcome));
+                            }
+                        }
+
                         let contested_status =
                             if let DocumentTransition::Create(create_transition) =
                                 document_transition
@@ -313,15 +417,14 @@ impl Drive {
                                 ))
                             }
                             DocumentTransition::IndexOnlyDelete(_) => {
-                                // An indexOnly document has no primary-storage
-                                // row, so the by-id single-document query this
-                                // verifier is built around cannot attest its
-                                // entries; indexOnly execution proofs verify
-                                // against the index entries themselves and are
-                                // not supported here yet.
+                                // Only reachable when the doctype is NOT
+                                // indexOnly (the indexOnly branch above
+                                // returns first): an indexOnlyDelete aimed at
+                                // a stored type can never have executed, so
+                                // there is nothing a proof could attest.
                                 Err(Error::Proof(ProofError::InvalidTransition(
-                                    "indexOnly delete-by-values execution proofs are not \
-                                     supported yet"
+                                    "an indexOnlyDelete cannot execute against a stored \
+                                     document type"
                                         .to_string(),
                                 )))
                             }
