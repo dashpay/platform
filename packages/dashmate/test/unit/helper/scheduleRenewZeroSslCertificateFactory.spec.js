@@ -160,7 +160,12 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
       expect(onConfigurationChanged).to.have.been.calledOnceWith(config);
       expect(obtainZeroSSLCertificateTask).to.not.have.been.called();
 
-      await clock.tickAsync(64 * 24 * 60 * 60 * 1000);
+      // The handoff must leave nothing armed for ZeroSSL, so running every
+      // remaining timer proves the old renewal can never fire. Ticking a blanket
+      // 64 days here instead would replay ~92k config-refresh firings (one real
+      // event-loop hop each) whenever a poll timer survives, blowing the test
+      // timeout on a slow runner rather than failing on the assertion below.
+      await clock.runAllAsync();
 
       expect(onConfigurationChanged).to.have.been.calledOnce();
       expect(obtainZeroSSLCertificateTask).to.not.have.been.called();
@@ -329,5 +334,62 @@ describe('scheduleRenewZeroSslCertificateFactory', () => {
     await clock.tickAsync(3001);
 
     expect(run).to.have.been.calledOnce();
+  });
+
+  it('should resume obtaining a pending certificate that has no expiry date', async function it() {
+    const clock = this.sinon.useFakeTimers({
+      now: new Date('2026-08-19T00:00:00.000Z'),
+    });
+    this.sinon.stub(console, 'log');
+
+    const certificate = {
+      id: 'pending-certificate-id',
+      status: 'pending_validation',
+      expires: null,
+      isExpiredInDays: this.sinon.stub().returns(false),
+    };
+    const tasks = {
+      run: this.sinon.stub().resolves(),
+    };
+
+    getCertificate.resolves(certificate);
+    obtainZeroSSLCertificateTask.returns(tasks);
+
+    await scheduleRenewZeroSslCertificate(config);
+    await clock.tickAsync(3000);
+
+    expect(obtainZeroSSLCertificateTask).to.have.been.calledOnceWith(config);
+    expect(tasks.run).to.have.been.calledOnceWithExactly({
+      expirationDays: 3,
+      noRetry: true,
+    });
+  });
+
+  // A missing expiry date is not a renewal time. Scheduling from it yields
+  // 1970-01-01, and cron rejects a date in the past by throwing, which takes down
+  // the helper's only renewal chain instead of renewing the certificate.
+  it('should obtain immediately when an issued certificate has no expiry date', async function it() {
+    const clock = this.sinon.useFakeTimers({
+      now: new Date('2026-08-19T00:00:00.000Z'),
+    });
+    this.sinon.stub(console, 'log');
+
+    const run = this.sinon.stub().resolves();
+    obtainZeroSSLCertificateTask.returns({ run });
+    getCertificate.resolves({
+      id: 'issued-without-expiry',
+      status: 'issued',
+      expires: null,
+      isExpiredInDays: this.sinon.stub().returns(false),
+    });
+
+    await expect(scheduleRenewZeroSslCertificate(config)).to.not.be.rejected();
+
+    await clock.tickAsync(3001);
+
+    expect(run).to.have.been.calledOnceWith({
+      expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
+      noRetry: true,
+    });
   });
 });

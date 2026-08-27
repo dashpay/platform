@@ -7,9 +7,10 @@
 //! the per-axis *secondary* Merk of an indexed tree (grovedb PR #657),
 //! so it costs `O(log n + k)` and comes with a proof that commits to
 //! exactly the `k` returned `(aggregate, group key)` pairs — plus the
-//! `OFFSET`, which grovedb attests from counted subtree commitments
-//! rather than by walking the skipped region, so deep pages cost the
-//! same as the first one.
+//! `OFFSET`, which grovedb counts from the subtree aggregates rather
+//! than by walking the skipped region — and additionally attests, on
+//! this proved path — so a deep page costs `O(log n + k)` like any
+//! other rather than growing with the offset.
 //!
 //! This module holds the client-facing result type
 //! ([`DocumentRankedEntries`]), the tenderdash-composition wrapper
@@ -274,6 +275,9 @@ pub(crate) fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<Ranked
         }
     };
     Ok(RankedEntry {
+        // Present exactly on `IN`-pinned responses; the wire's absent
+        // state maps to the drive type's `None` untouched.
+        in_key: entry.in_key.clone(),
         key: entry.key.clone(),
         value,
     })
@@ -296,9 +300,9 @@ pub(crate) fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<Ranked
 /// proved subtree from the same
 /// `DriveDocumentRankedQuery::indexed_property_name_tree_path`, so
 /// prover and verifier cannot drift on *which* ranking is being
-/// checked, and grovedb re-checks the `(axis, k, descending)` triple
-/// echoed in the envelope — a proof of one ranking does not verify as
-/// another.
+/// checked, and grovedb re-executes the proof against the
+/// `(axis, k, offset, descending)` traversal rebuilt from the request —
+/// a proof of one ranking does not cover another.
 ///
 /// ## The root hash is the whole point
 ///
@@ -406,6 +410,7 @@ mod tests {
 
     fn count_entry(key: &str, count: u64) -> ProtoRankedEntry {
         ProtoRankedEntry {
+            in_key: None,
             key: key.as_bytes().to_vec(),
             value: Some(ranked_entry::Value::Count(count)),
         }
@@ -423,6 +428,7 @@ mod tests {
     /// that no fixed point maps to.
     fn avg_entry_raw(key: &str, avg: f64) -> ProtoRankedEntry {
         ProtoRankedEntry {
+            in_key: None,
             key: key.as_bytes().to_vec(),
             value: Some(ranked_entry::Value::Avg(avg)),
         }
@@ -565,6 +571,7 @@ mod tests {
     #[test]
     fn decodes_signed_sum_entries() {
         let response = ranked_response(vec![ProtoRankedEntry {
+            in_key: None,
             key: b"refunds".to_vec(),
             value: Some(ranked_entry::Value::Sum(-1_000)),
         }]);
@@ -665,6 +672,7 @@ mod tests {
     #[test]
     fn rejects_an_entry_with_no_value() {
         let response = ranked_response(vec![ProtoRankedEntry {
+            in_key: None,
             key: b"alpha".to_vec(),
             value: None,
         }]);
@@ -733,10 +741,12 @@ mod tests {
     fn from_verified_carries_both_halves_of_the_page() {
         let entries = vec![
             RankedEntry {
+                in_key: None,
                 key: b"gamma".to_vec(),
                 value: RankedEntryValue::Count(9),
             },
             RankedEntry {
+                in_key: None,
                 key: b"alpha".to_vec(),
                 value: RankedEntryValue::Count(2),
             },

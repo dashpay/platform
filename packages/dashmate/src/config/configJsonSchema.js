@@ -1249,22 +1249,9 @@ export default {
                           additionalProperties: false,
                           required: ['timeout', 'delta'],
                         },
-                        commit: {
-                          type: 'object',
-                          properties: {
-                            timeout: {
-                              $ref: '#/definitions/optionalDuration',
-                            },
-                            bypass: {
-                              type: ['boolean', 'null'],
-                            },
-                          },
-                          additionalProperties: false,
-                          required: ['timeout', 'bypass'],
-                        },
                       },
                       additionalProperties: false,
-                      required: ['propose', 'vote', 'commit'],
+                      required: ['propose', 'vote'],
                     },
                   },
                   additionalProperties: false,

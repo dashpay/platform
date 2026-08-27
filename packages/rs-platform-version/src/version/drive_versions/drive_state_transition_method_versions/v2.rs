@@ -1,4 +1,5 @@
 use crate::version::drive_versions::drive_state_transition_method_versions::{
+    DriveDocumentFromActionVersions,
     DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions,
     DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
 };
@@ -57,4 +58,8 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 shielded_withdrawal_transition: 0,
                 identity_create_from_shielded_pool_transition: 0,
             },
+        document_from_action: DriveDocumentFromActionVersions {
+            document_from_create_transition_action: 0,
+            document_from_replace_transition_action: 0,
+        },
     };

@@ -153,6 +153,7 @@ describe('DPNS', () => {
       delete rawDocument.$transferredAtCoreBlockHeight;
       delete rawDocument.$transferredAtBlockHeight;
       delete rawDocument.$creatorId;
+      delete rawDocument.$contractVersion;
       delete rawDocument.preorderSalt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
@@ -167,6 +168,7 @@ describe('DPNS', () => {
       delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
       delete rawRegisteredDomain.$transferredAtBlockHeight;
       delete rawRegisteredDomain.$creatorId;
+      delete rawRegisteredDomain.$contractVersion;
       delete rawRegisteredDomain.preorderSalt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
@@ -187,6 +189,7 @@ describe('DPNS', () => {
       delete rawDocument.$transferredAtCoreBlockHeight;
       delete rawDocument.$transferredAtBlockHeight;
       delete rawDocument.$creatorId;
+      delete rawDocument.$contractVersion;
       delete rawDocument.preorderSalt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
@@ -201,6 +204,7 @@ describe('DPNS', () => {
       delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
       delete rawRegisteredDomain.$transferredAtBlockHeight;
       delete rawRegisteredDomain.$creatorId;
+      delete rawRegisteredDomain.$contractVersion;
       delete rawRegisteredDomain.preorderSalt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
@@ -224,6 +228,7 @@ describe('DPNS', () => {
       delete rawDocument.$transferredAtCoreBlockHeight;
       delete rawDocument.$transferredAtBlockHeight;
       delete rawDocument.$creatorId;
+      delete rawDocument.$contractVersion;
       delete rawDocument.preorderSalt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
@@ -238,6 +243,7 @@ describe('DPNS', () => {
       delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
       delete rawRegisteredDomain.$transferredAtBlockHeight;
       delete rawRegisteredDomain.$creatorId;
+      delete rawRegisteredDomain.$contractVersion;
       delete rawRegisteredDomain.preorderSalt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);

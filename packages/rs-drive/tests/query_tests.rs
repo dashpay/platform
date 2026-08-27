@@ -7275,8 +7275,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            237, 198, 157, 236, 20, 182, 87, 85, 216, 64, 84, 25, 163, 231, 107, 173, 155, 152, 34,
-            64, 34, 142, 234, 16, 99, 134, 153, 156, 24, 208, 150, 115,
+            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
+            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7356,8 +7356,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            237, 198, 157, 236, 20, 182, 87, 85, 216, 64, 84, 25, 163, 231, 107, 173, 155, 152, 34,
-            64, 34, 142, 234, 16, 99, 134, 153, 156, 24, 208, 150, 115,
+            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
+            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7458,8 +7458,8 @@ mod tests {
             .expect("there is always a root hash");
 
         let expected_app_hash = vec![
-            237, 198, 157, 236, 20, 182, 87, 85, 216, 64, 84, 25, 163, 231, 107, 173, 155, 152, 34,
-            64, 34, 142, 234, 16, 99, 134, 153, 156, 24, 208, 150, 115,
+            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
+            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -9055,6 +9055,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         // The current shape: the In clause in in_clauses
@@ -9076,6 +9077,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         for protocol_version in [13u32, 14u32] {

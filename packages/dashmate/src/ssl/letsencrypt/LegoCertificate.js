@@ -120,6 +120,13 @@ export default class LegoCertificate {
    * @returns {boolean}
    */
   isValid() {
-    return new Date(this.expires).getTime() > Date.now();
+    const now = Date.now();
+
+    // Both ends of the window. A certificate whose validity has not started is
+    // no more servable than an expired one, and the gateway checks reject it -
+    // so judging it usable here would hand a rejected certificate back to a
+    // repair meant to replace it.
+    return new Date(this.created).getTime() <= now
+      && new Date(this.expires).getTime() > now;
   }
 }
