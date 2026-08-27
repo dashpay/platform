@@ -611,15 +611,19 @@ mod index_only_tests {
             platform_version,
         );
         assert_eq!(result.valid_count(), 0);
+        // Pin the storage-mode pairing branch by its message: the fixture's
+        // `post` doctype also has `canBeDeleted: false`, whose earlier check
+        // returns the same error TYPE — matching on the type alone would
+        // keep this test green even with the pairing gate deleted.
         assert_matches!(
             result.execution_results().as_slice(),
             [StateTransitionExecutionResult::PaidConsensusError {
                 error: ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTransitionActionError(_)
+                    BasicError::InvalidDocumentTransitionActionError(error)
                 ),
                 ..
-            }],
-            "an indexOnlyDelete on a stored type must be refused by the structure gate"
+            }] if error.action().contains("indexOnlyDelete is only for indexOnly types"),
+            "an indexOnlyDelete on a stored type must be refused by the storage-mode pairing gate"
         );
     }
 

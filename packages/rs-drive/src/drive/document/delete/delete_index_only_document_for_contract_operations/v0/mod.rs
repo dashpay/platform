@@ -157,7 +157,8 @@ impl Drive {
                 )?;
                 if !matches {
                     return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
-                        "no indexOnly document with exactly these values exists for this                          owner (an entry is missing or belongs to a different document)",
+                        "no indexOnly document with exactly these values exists for this \
+                         owner (an entry is missing or belongs to a different document)",
                     )));
                 }
             }

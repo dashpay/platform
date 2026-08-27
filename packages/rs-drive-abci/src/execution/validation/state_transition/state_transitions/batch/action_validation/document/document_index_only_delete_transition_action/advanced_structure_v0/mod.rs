@@ -40,25 +40,27 @@ impl DocumentIndexOnlyDeleteTransitionActionStructureValidationV0
             ));
         };
 
-        if !document_type.documents_can_be_deleted() {
+        // Pair the delete KIND with the doctype's storage mode FIRST: a
+        // stored document is deleted by id (the delete kind), and its
+        // values would be nothing this pipeline validates against — the
+        // mirror of the delete kind's refusal of indexOnly types. On a
+        // stored doctype every later check would be judging the wrong
+        // kind, so this outranks the deletion-policy check below.
+        if !document_type.index_only() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
-                    "documents of type {} can not be deleted",
+                    "documents of stored type {} must be deleted with a delete (by-id) \
+                     transition; indexOnlyDelete is only for indexOnly types",
                     document_type_name
                 ))
                 .into(),
             ));
         }
 
-        // Pair the delete KIND with the doctype's storage mode: a stored
-        // document is deleted by id (the delete kind), and its values
-        // would be nothing this pipeline validates against — the mirror
-        // of the delete kind's refusal of indexOnly types.
-        if !document_type.index_only() {
+        if !document_type.documents_can_be_deleted() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
-                    "documents of stored type {} must be deleted with a delete (by-id) \
-                     transition; indexOnlyDelete is only for indexOnly types",
+                    "documents of type {} can not be deleted",
                     document_type_name
                 ))
                 .into(),
