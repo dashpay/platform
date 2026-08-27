@@ -105,16 +105,34 @@ pub enum PlatformWalletError {
     /// A core transaction broadcast failed with an **ambiguous** outcome — the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent inputs'
-    /// reservation is intentionally kept, so an immediate retry fails at
-    /// input selection instead of double-spending; the reservation-TTL
-    /// backstop (or a sync observing the transaction) reconciles the outcome.
+    /// whose earlier attempt may have succeeded). The spent inputs are
+    /// intentionally kept out of the selectable set, so an immediate retry
+    /// fails at input selection instead of double-spending.
+    ///
+    /// # What actually reconciles this, and what does not
+    ///
+    /// The inputs are held by TWO independent things, and only one of them
+    /// expires. Key-wallet's `ReservationSet` entry is swept once the wallet's
+    /// `last_processed_height` advances `RESERVATION_MAX_AGE_BLOCKS` past the
+    /// height it was stamped at. The generation's pending-spend fence
+    /// ([`WalletGeneration`](crate::wallet::core::WalletGeneration)) is NOT
+    /// swept with it and has no bound of its own: it is released by the wallet
+    /// OBSERVING the outpoint spent, and by nothing else
+    /// (`dashpay/platform#4309`).
+    ///
+    /// So an earlier promise made here — that the reservation TTL reconciles an
+    /// ambiguous outcome — no longer holds and was never sound: elapsed time is
+    /// not evidence about the transaction, which stays valid and relayable no
+    /// matter how long the wait. The build refusal that follows a `MaybeSent`
+    /// is [`Self::InputMidBroadcast`], and it stands until a spend is observed
+    /// (this wallet's own transaction landing, or a conflicting one taking the
+    /// outpoint) or the generation is torn down.
     ///
     /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
     #[error(
         "Transaction broadcast outcome unknown — it may already be on the \
-         network; its inputs stay reserved until a sync or the reservation \
-         TTL reconciles the outcome: {0}"
+         network; its inputs stay unspendable until this wallet observes them \
+         spent: {0}"
     )]
     TransactionBroadcastUnconfirmed(String),
 

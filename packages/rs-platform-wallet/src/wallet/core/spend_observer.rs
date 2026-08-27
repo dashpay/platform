@@ -76,8 +76,10 @@ use crate::wallet::PlatformWallet;
 ///
 /// A dropped observation (contended map, or a wallet not in the map) is
 /// FAIL-SAFE in the direction that matters: the fence simply stays up until
-/// another spend event for the same outpoint arrives or the orphan backstop
-/// expires. It can delay a release; it can never cause one.
+/// another spend event for the same outpoint arrives. There is no backstop
+/// behind it — no deadline retires a pending-spend fence
+/// (`dashpay/platform#4309`) — so a dropped observation costs a wait, not
+/// safety. It can delay a release; it can never cause one.
 pub struct SpendObservationHandler {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }

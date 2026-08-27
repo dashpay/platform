@@ -147,9 +147,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             //
             // `height` is NOT handed to the pin, and no height is sampled for
             // it later either. It authorizes the freshness check and nothing
-            // else; the fence answers to observed spends and a monotonic clock,
-            // because elapsed chain height is not evidence about this
-            // transaction (see the method docs).
+            // else; the fence answers to observed spends and to NO clock of any
+            // kind — not chain height, not wall time — because nothing that
+            // merely elapses is evidence about this transaction (see the method
+            // docs).
             info.map(|info| info.generation.pin_in_broadcast(transaction))
             // Guard dropped here — holding it across the await starves the
             // SPV pipeline that must complete the wait; the pin, not the
