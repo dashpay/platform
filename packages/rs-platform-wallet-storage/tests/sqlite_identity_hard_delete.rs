@@ -21,8 +21,8 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     ContactChangeSet, IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet,
-    PlatformWalletChangeSet, PlatformWalletPersistence, SentContactRequestKey,
-    TokenBalanceChangeSet,
+    PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
+    SentContactRequestKey, TokenBalanceChangeSet,
 };
 use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact, IdentityStatus};
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -561,72 +561,84 @@ fn strict_load_survives_a_removed_identity() {
     assert_eq!(bucket[&2].identity.id(), survivor);
 }
 
-/// The orphan shape a removal cannot produce and the schema cannot
-/// reject: a NULL-scoped `identity_keys` row naming an identity that is
-/// not there.
+/// The seam between V014 and V015: an `identity_keys` orphan can be
+/// neither written nor left behind.
 ///
-/// The compound FK is dormant under MATCH SIMPLE once `wallet_id` is
-/// NULL, and the NULL-scope guard trigger only refuses a key naming a
-/// WALLET-OWNED identity — a key naming no identity at all walks
-/// straight in. Strict must refuse to load around it (silently dropping
-/// key material is what that policy exists to prevent); Recovery counts
-/// and skips it so a damaged database still opens.
+/// V014's NULL-scope trigger refuses a key naming an identity that is not
+/// there, closing the only door MATCH SIMPLE's dormant compound FK left
+/// open on the write side. V015's delete broom closes the read side, by
+/// sweeping such keys when their identity goes. Either migration alone
+/// leaves `identity_keys` able to orphan; this pins that together they
+/// do not, so `MissingIdentityOwner` is reachable only through the
+/// FK-less `contacts` / `ignored_senders` tables (covered by
+/// `sqlite_contacts_keys_rehydration`).
 #[test]
-fn orphaned_null_scoped_key_is_fatal_only_under_strict() {
+fn null_scoped_key_can_neither_name_a_missing_identity_nor_outlive_one() {
+    let (persister, _tmp, _path) = fresh_persister();
     let ghost = iid(0x6B);
-    let orphan_key = PlatformWalletChangeSet {
-        identity_keys: Some(keys_of(ghost, 0, 0x6C)),
-        ..Default::default()
-    };
 
-    let (strict, _tmp, path) = fresh_persister();
-    strict
-        .store(UNOWNED, orphan_key)
-        .expect("the dormant FK admits a key naming no identity");
+    // Write side (V014): the key is refused, and nothing lands.
+    let err = persister
+        .store(
+            UNOWNED,
+            PlatformWalletChangeSet {
+                identity_keys: Some(keys_of(ghost, 0, 0x6C)),
+                ..Default::default()
+            },
+        )
+        .expect_err("a NULL-scoped key naming no identity must be refused");
+    let PersistenceError::Backend { kind, .. } = &err else {
+        panic!("expected a typed backend error, got {err:?}");
+    };
+    assert_eq!(
+        *kind,
+        PersistenceErrorKind::Constraint,
+        "a guard trigger firing is an integrity violation, not an engine fault"
+    );
     {
-        let conn = strict.lock_conn_for_test();
+        let conn = persister.lock_conn_for_test();
         assert_eq!(
             count_by_id(
                 &conn,
-                "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1 AND wallet_id IS NULL",
+                "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1",
                 ghost
             ),
-            1,
-            "the orphan row must exist, or this test proves nothing"
+            0,
+            "the refused key must not have reached disk"
         );
     }
-    let err = strict
-        .load_unowned_identities()
-        .expect_err("an orphaned key must abort a strict read");
-    assert!(
-        matches!(
-            err,
-            platform_wallet_storage::WalletStorageError::OrphanedIdentityEntry { .. }
-        ),
-        "expected OrphanedIdentityEntry, got {err:?}"
-    );
-    drop(strict);
 
-    let recovery = platform_wallet_storage::SqlitePersister::open(
-        platform_wallet_storage::SqlitePersisterConfig::new(&path)
-            .with_load_policy(platform_wallet_storage::LoadPolicy::Recovery),
-    )
-    .expect("reopen in recovery mode");
-    let unowned = recovery
-        .load_unowned_identities()
-        .expect("recovery must skip the orphan, not fail");
-    assert!(
-        !unowned.contains_key(&ghost),
-        "the ghost owner must not be conjured into the loaded state"
-    );
+    // Read side (V015): the same row, written legitimately under a live
+    // identity, does not survive that identity's removal.
+    persister
+        .store(
+            UNOWNED,
+            PlatformWalletChangeSet {
+                identities: Some(upsert_of(entry(ghost, None, None))),
+                identity_keys: Some(keys_of(ghost, 0, 0x6C)),
+                ..Default::default()
+            },
+        )
+        .expect("the same key is legal once its identity exists");
+    persister
+        .store(
+            UNOWNED,
+            PlatformWalletChangeSet {
+                identities: Some(removal_of(ghost)),
+                ..Default::default()
+            },
+        )
+        .expect("remove the unowned identity");
+
+    let conn = persister.lock_conn_for_test();
     assert_eq!(
-        recovery
-            .last_load_degradation()
-            .by_site
-            .get(&platform_wallet_storage::LoadSite::MissingIdentityOwner)
-            .copied(),
-        Some(1),
-        "the skipped row must be counted, never silently dropped"
+        count_by_id(
+            &conn,
+            "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1",
+            ghost
+        ),
+        0,
+        "the removal must sweep the key the dormant FK cannot cascade"
     );
 }
 

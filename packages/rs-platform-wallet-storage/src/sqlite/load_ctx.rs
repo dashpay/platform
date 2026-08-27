@@ -43,6 +43,10 @@ pub enum LoadSite {
     MissingIdentityOwner,
     /// An identity owned by no wallet carries a registration index.
     UnownedIdentityHasRegistrationIndex,
+    /// Two live `identities` rows of one wallet claim the same
+    /// `identity_index`. Only one can occupy the derivation slot, so the
+    /// loser is dropped from the wallet's identity map.
+    IdentityIndexCollision,
 }
 
 impl LoadSite {
@@ -59,6 +63,7 @@ impl LoadSite {
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
             Self::MissingIdentityOwner => "missing_identity_owner",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
+            Self::IdentityIndexCollision => "identity_index_collision",
         }
     }
 }

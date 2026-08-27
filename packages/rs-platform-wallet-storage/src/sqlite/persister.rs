@@ -1549,6 +1549,12 @@ impl PlatformWalletPersistence for SqlitePersister {
                     ))
                 })?
             };
+            // TODO(insert-wallet-id-recompute): confirm whether key_wallet's
+            // insert_wallet recomputes wallet_id — see PR's existing Deferred
+            // #3992 note. Both construction paths above hand it the persisted
+            // id; if the manager derives its own instead, a rehydrated wallet
+            // could be filed under an id that no longer matches its rows.
+            // Answering it needs the key-wallet crate, not this repo.
             let mut wallet_info =
                 key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
                     &wallet,
