@@ -7,7 +7,7 @@ use super::{AxisRangeBounds, DocumentHavingMode, MAX_HAVING_LIMIT};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::drive_document_ranked_query::mode_detection::{
-    equality_pins_from_where_clauses, ranked_order_key,
+    prefix_pins_from_where_clauses, ranked_order_key,
 };
 use crate::query::drive_document_ranked_query::{RankedAxis, RankedPaginationInputs};
 use crate::query::having::{
@@ -29,10 +29,12 @@ use grovedb::element::indexed::AVG_FIXED_POINT_SCALE;
 /// ```
 ///
 /// with no `OFFSET`, no `START AT` / `START AFTER`, exactly one
-/// `GROUP BY` property, `WHERE` clauses (when present) that are
-/// equality pins on distinct properties — one per leading property of a
-/// covering compound ranked index, selecting which prefix's secondary
-/// the bound reads — exactly one `HAVING` clause whose aggregate
+/// `GROUP BY` property, `WHERE` clauses (when present) that pin the
+/// covering compound ranked index's leading properties — one clause per
+/// property, each an equality except that **at most one** clause may be
+/// an `IN` whose elements fan the bound out across one prefix branch
+/// per element (merged deterministically; see the ranked surface's
+/// `prefix_pins_from_where_clauses`) — exactly one `HAVING` clause whose aggregate
 /// **is the selected aggregate** (same function, same field), an operator
 /// from the contiguous-range family (`=`, `>`, `>=`, `<`, `<=`, and the
 /// four `BETWEEN*` variants — `!=` and `IN` describe non-contiguous
@@ -79,13 +81,15 @@ pub fn detect_having_mode_v0(
     // covering index's LAST property, whose distinct values are the
     // secondary's group keys. A compound ranked index filters each
     // prefix's groups separately — its leading properties are pinned by
-    // equality `where` clauses, never grouped over.
+    // `where` clauses (`==`, at most one of them a bounded `IN`), never
+    // grouped over.
     if group_by.len() != 1 {
         return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
             "having-range queries require exactly one `group_by` property (the covering \
              ranked index's trailing property); got {}. A compound ranked index bounds \
-             each prefix's groups separately — pin every leading index property with an \
-             equality `where` clause and `group_by` the trailing property.",
+             each prefix's groups separately — pin every leading index property with a \
+             `where` clause (`==`, or a bounded `IN` on at most one of them) and \
+             `group_by` the trailing property.",
             group_by.len()
         ))));
     }
@@ -237,28 +241,29 @@ pub fn detect_having_mode_v0(
         }
     };
 
-    // ---- WHERE: equality pins on the compound prefix ------------------
+    // ---- WHERE: pins on the compound prefix ---------------------------
     //
     // Identical contract to the ranked surface: empty for the
-    // single-property form; for a compound ranked index, one equality
-    // pin per leading property selects which prefix's secondary the
-    // bound reads. Shape-only here; the index picker enforces the
-    // exact-cover rule.
-    let equality_pins = equality_pins_from_where_clauses(where_clauses)?;
+    // single-property form; for a compound ranked index, one pin per
+    // leading property — `==`, except at most one bounded branching
+    // `IN` — selects which prefix secondary or secondaries the bound
+    // reads. Shape-only here; the index picker enforces the exact-cover
+    // rule.
+    let prefix_pins = prefix_pins_from_where_clauses(where_clauses)?;
 
     // ---- LIMIT: required, 1 ..= MAX_HAVING_LIMIT ---------------------
     //
     // Required rather than defaulted for the same reason as ranked: the
-    // limit is echoed inside the proof envelope and re-checked by the
-    // verifier, so there is no server default a client could reproduce.
+    // limit is part of the traversal the verifier re-executes the proof
+    // against, so there is no server default a client could reproduce.
     // Required *especially* here, because a threshold can match
     // unboundedly many groups.
     let limit = pagination.limit.ok_or_else(|| {
         Error::Query(QuerySyntaxError::InvalidLimit(format!(
             "having-range queries require an explicit `limit` (1 ..= {MAX_HAVING_LIMIT}): \
              a bound can match any number of groups, the walk stops at `limit`, and the \
-             limit is echoed in the proof envelope and re-checked by the verifier, so \
-             there is no server-side default a client could reproduce."
+             verifier re-executes the proof under the limit it rebuilds from the request, \
+             so there is no server-side default a client could reproduce."
         )))
     })?;
     if limit == 0 {
@@ -270,9 +275,10 @@ pub fn detect_having_mode_v0(
         return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
             "`LIMIT {limit}` exceeds the having-range ceiling of {MAX_HAVING_LIMIT}; the \
              proof commits one secondary entry per returned group, so its size grows \
-             linearly in the limit. The ceiling is a hard limit, not a clamp, because the \
-             limit is echoed in the proof envelope and re-checked by the verifier. Narrow \
-             the bound to shrink the result set."
+             linearly in the limit. The ceiling is a hard limit, not a clamp, because \
+             the limit is part of the traversal the client rebuilds to verify — a clamped \
+             walk is one the client's reconstruction did not ask for. Narrow the bound to \
+             shrink the result set."
         ))));
     }
     // Bounded by MAX_HAVING_LIMIT (a u16) immediately above.
@@ -312,7 +318,7 @@ pub fn detect_having_mode_v0(
         limit,
         group_by_property,
         aggregate_field,
-        equality_pins,
+        prefix_pins,
     })
 }
 

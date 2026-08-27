@@ -26,12 +26,20 @@ use crate::version::drive_versions::drive_identity_method_versions::{
 ///   behavior change; v0 stays byte-frozen for protocol versions up to 13.
 /// * `withdrawals.calculate_current_withdrawal_limit` 0 -> 1: the daily
 ///   maximum derives from the total credits Platform held a day ago (the
-///   relative daily withdrawal limit) instead of the current total.
+///   relative daily withdrawal limit) instead of the current total. The
+///   `max_daily_withdrawal_amount` cap applies to that day-old base; credit
+///   inflows from the active window are added after the cap so matching
+///   deposit-withdraw cycles do not consume the capped budget.
 /// * `withdrawals.record_total_credits_history` and
 ///   `withdrawals.fetch_total_credits_in_platform_a_day_ago` `None -> Some(0)`:
 ///   the per-block total credits history under the withdrawals tree that the
 ///   lagged limit reads; the subtree does not exist before v14, so V1 keeps
 ///   both slots `None`.
+/// * `withdrawals.record_credit_inflows` `None -> Some(0)`: every credit mint
+///   (asset locks, epoch Core rewards) is recorded in the credit inflows sum
+///   tree so the daily withdrawal limit counts net outflow instead of gross —
+///   a deposit -> withdraw cycle no longer consumes the budget of other users.
+///   The subtree does not exist before v14, so V1 keeps the slot `None`.
 pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
     DriveIdentityMethodVersions {
         fetch: DriveIdentityFetchMethodVersions {
@@ -175,8 +183,9 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
                     move_broadcasted_withdrawal_transactions_back_to_queue_operations: 0,
                 },
             },
-            calculate_current_withdrawal_limit: 1, // changed in v14: daily maximum is a percentage of the total credits a day ago
+            calculate_current_withdrawal_limit: 1, // changed in v14: daily maximum is a percentage of the total credits a day ago plus the credit inflows of the last 25 hours
             record_total_credits_history: Some(0), // new in v14: total credits history for the day-lagged daily withdrawal limit
             fetch_total_credits_in_platform_a_day_ago: Some(0), // new in v14
+            record_credit_inflows: Some(0), // new in v14: credit inflows sum tree for the net daily withdrawal limit
         },
     };

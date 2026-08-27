@@ -122,6 +122,7 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v0(
         start_at: None,
         start_at_included: false,
         block_time_ms: None,
+        resolved_time_ranges: vec![],
     };
 
     // todo: deal with cost of this operation
@@ -182,6 +183,7 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v1(
         start_at: None,
         start_at_included: false,
         block_time_ms: None,
+        resolved_time_ranges: vec![],
     };
 
     // Diff vs `_v0`: epoch is `Some(...)` and the cost is billed via
@@ -307,6 +309,7 @@ fn fetch_document_with_id_v0(
         start_at: None,
         start_at_included: false,
         block_time_ms: None,
+        resolved_time_ranges: vec![],
     };
 
     // todo: deal with cost of this operation
@@ -369,6 +372,7 @@ fn fetch_document_with_id_v1(
         start_at: None,
         start_at_included: false,
         block_time_ms: None,
+        resolved_time_ranges: vec![],
     };
 
     // Diff vs `_v0`: epoch is `Some(...)` and the cost is billed via

@@ -28,6 +28,7 @@ hex = { version = "0.4.3" }
 tracing = "0.1.41"
 key-wallet = { workspace = true, optional = true }
 thiserror = { version = "2.0.17", optional = true }
+zeroize = "1"
 
 [package.metadata.cargo-machete]
 ignored = ["bincode"]

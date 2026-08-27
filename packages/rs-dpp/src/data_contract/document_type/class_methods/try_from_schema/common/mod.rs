@@ -27,9 +27,9 @@ use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, KEEPS_PRICING_HISTORY,
-    KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
-    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
+    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
+    RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -192,6 +192,23 @@ pub(super) struct ParserGeneration {
     pub ranked_index_key_length_check: RankedIndexKeyLengthCheck,
     /// See [`RankedIndexStructureCheck`].
     pub ranked_index_structure_check: RankedIndexStructureCheck,
+
+    // ---- TIME RANGE: the other generation-3 addition ----
+    /// Whether the index grammar admits the `timeRange` keyword. Forwarded to
+    /// [`Index::try_from_value_map`] exactly like `admit_ranked`: when `false`
+    /// the key falls through to the unknown-key arm and is rejected as any
+    /// pre-generation-3 node rejected it.
+    pub admit_time_range: bool,
+
+    // ---- INDEX ONLY: the third generation-3 addition ----
+    /// Whether the index grammar admits the `terminal` keyword (indexOnly
+    /// document types). Forwarded to [`Index::try_from_value_map`] exactly
+    /// like `admit_ranked` and `admit_time_range`. The doc-type-level
+    /// `indexOnly` keyword needs no admission flag of its own: it is read
+    /// only by the generation-3 driver (`parse_index_only_keyword`), so
+    /// earlier generations ignore it exactly as they ignore every other
+    /// doctype-level keyword they predate.
+    pub admit_index_terminal: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -487,6 +504,7 @@ pub(super) fn parse_document_type_core(
         schema_map,
         &flags,
         &properties.flattened_document_properties,
+        &properties.required_fields,
         validation_operations,
     )?;
 
@@ -745,6 +763,7 @@ fn parse_document_properties(
             &mut document_properties,
             &required_fields,
             &transient_fields,
+            true,
             property_key,
             property_value,
             root_schema,
@@ -777,6 +796,7 @@ fn parse_indices(
     schema_map: &[(Value, Value)],
     flags: &DocumentTypeFlags,
     flattened_document_properties: &IndexMap<String, DocumentProperty>,
+    required_fields: &BTreeSet<String>,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
 ) -> Result<(BTreeMap<String, Index>, IndexLevel), ProtocolError> {
     // Initialize indices
@@ -814,7 +834,11 @@ fn parse_indices(
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
                             .as_slice(),
-                        ctx.generation.admit_ranked,
+                        crate::data_contract::document_type::index::IndexGrammarAdmissions {
+                            ranked: ctx.generation.admit_ranked,
+                            time_range: ctx.generation.admit_time_range,
+                            terminal: ctx.generation.admit_index_terminal,
+                        },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -843,6 +867,95 @@ fn parse_indices(
                                 )
                                 .into(),
                             )));
+                        }
+
+                        // TIME RANGE: the source must be a millisecond
+                        // timestamp — a system timestamp ($createdAt /
+                        // $updatedAt / $transferredAt) or a user `Date`
+                        // property. Structural checks (first-property,
+                        // range % step, the uniqueness rules — unique only
+                        // over non-overlapping windows on `$createdAt` —
+                        // and non-contested) already happened in `Index`
+                        // parsing; the checks here need the document schema
+                        // or the platform version, so they live here. A
+                        // generation without the `timeRange` grammar never
+                        // parses a transform, so this is a no-op there.
+                        if let Some(transform) = &index.time_range {
+                            // The overlap factor is the number of index
+                            // entries a single document produces on this
+                            // index — its write amplification — so its cap
+                            // is a versioned system limit rather than a
+                            // structural constant: retuning it is a
+                            // protocol-version decision, not a code edit.
+                            // `None` means a protocol version predating
+                            // time-range indexes, which cannot reach here
+                            // because the keyword does not parse there.
+                            if let Some(max_overlap_factor) = ctx
+                                .platform_version
+                                .system_limits
+                                .max_time_range_overlap_factor
+                            {
+                                let overlap = transform.overlap_factor();
+                                if overlap > max_overlap_factor {
+                                    return Err(consensus_or_protocol_data_contract_error(
+                                        DataContractError::InvalidContractStructure(format!(
+                                            "timeRange overlap factor (range / step = {}) \
+                                             exceeds the maximum of {}; a smaller window or a \
+                                             larger step is required to bound per-document \
+                                             index entries",
+                                            overlap, max_overlap_factor
+                                        )),
+                                    ));
+                                }
+                            }
+                            let source = transform.source.as_str();
+                            let is_system_timestamp = matches!(
+                                source,
+                                property_names::CREATED_AT
+                                    | property_names::UPDATED_AT
+                                    | property_names::TRANSFERRED_AT
+                            );
+                            // A system timestamp is only ever populated when
+                            // the schema *requires* it. Without this check a
+                            // contract could declare `timeRange.on:
+                            // "$createdAt"` on a doctype that never sets
+                            // $createdAt: every document would take the null
+                            // branch, the index would hold nothing but null
+                            // entries, and — the transform being immutable —
+                            // the owner could never fix it.
+                            if is_system_timestamp && !required_fields.contains(source) {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "timeRange.on (\"{}\") names a system timestamp the \
+                                         document type does not require; add it to the \
+                                         document type's required fields so documents actually \
+                                         carry it",
+                                        source
+                                    )),
+                                ));
+                            }
+                            // Only the system timestamps can be a source. A
+                            // user property cannot: the document-schema
+                            // grammar has no type that parses to
+                            // `DocumentPropertyType::Date` (`type: "string"`
+                            // with `format: "date-time"` stays `String`, and
+                            // the meta-schema's `type` enum has no `"date"`),
+                            // so accepting `Date`-typed user properties here
+                            // would be a dead branch advertising a source no
+                            // valid contract can declare. Lift this together
+                            // with a reachable millisecond-timestamp property
+                            // representation, not before.
+                            if !is_system_timestamp {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "timeRange.on (\"{}\") must name one of the system \
+                                         timestamps ($createdAt, $updatedAt or $transferredAt); \
+                                         user-defined properties are not supported as a \
+                                         time-range source",
+                                        source
+                                    )),
+                                ));
+                            }
                         }
 
                         validation_operations.extend(std::iter::once(
@@ -975,6 +1088,14 @@ fn parse_indices(
     // grammar rejects the `ranked*` keywords pass the no-op, so the shared
     // core never branches on a version.
     (ctx.generation.ranked_index_structure_check)(&indices)?;
+
+    // TIME RANGE: indices that share a first property may bucket it with
+    // different grids (or not at all) — each grid forks into its own index
+    // level, keyed by the property name qualified with the grid parameters
+    // (`TimeRangeTransform::storage_key`), so a bucketed level never shares
+    // a keyspace with a plain level or with another grid's level. No
+    // cross-index agreement rule is needed; identical grids simply share
+    // one level.
 
     let index_structure =
         IndexLevel::try_from_indices(indices.values(), ctx.name, ctx.platform_version)?;
@@ -1707,6 +1828,392 @@ pub(super) fn apply_doctype_aggregates(
                     prop_name, name,
                 )),
             ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Read the doctype-level `indexOnly` keyword off the raw schema.
+///
+/// Runs before the core parse because the core takes `schema` by value —
+/// same shape as [`parse_doctype_aggregate_keywords`]. Only the generation-3
+/// driver calls this; earlier generations ignore the keyword exactly as they
+/// ignore every doctype-level keyword they predate (their meta-schemas still
+/// reject it under `full_validation`).
+pub(super) fn parse_index_only_keyword(schema: &Value) -> Result<bool, ProtocolError> {
+    let schema_map_opt = schema.to_map().ok();
+
+    Ok(schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, INDEX_ONLY)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?
+        .unwrap_or(false))
+}
+
+/// Write the `indexOnly` flag onto the parsed document type, normalize each
+/// index's `terminal` (an omitted terminal defaults to `$ownerId`), and run
+/// the structural cross-checks the index-only on-disk layout depends on.
+///
+/// An indexOnly document type has no primary-storage row: the index entries
+/// ARE the rows, each terminating in an `Item` keyed by the index's terminal
+/// property. Only what is in the indexes exists and is recoverable, which is
+/// why every check below is a storage-layout invariant rather than a schema
+/// lint. Like [`apply_doctype_aggregates`], this runs regardless of
+/// `full_validation`: this function sits on the untrusted-contract boundary,
+/// and admitting a malformed indexOnly type through a non-validating parse
+/// would brick the first document insert or make deletes unauthorizable.
+///
+/// Must run AFTER [`apply_doctype_aggregates`] — it rejects the doctype-level
+/// aggregate flags, which describe the primary-key tree an indexOnly type
+/// does not have.
+pub(super) fn apply_index_only(
+    document_type: &mut DocumentTypeV2,
+    index_only: bool,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    use crate::document::property_names::{CREATED_AT, OWNER_ID};
+
+    let structure_error = |message: String| {
+        ProtocolError::DataContractError(DataContractError::InvalidContractStructure(message))
+    };
+
+    if !index_only {
+        // `terminal` is only meaningful on indexOnly document types: it names
+        // the member key that replaces the document id, and a non-indexOnly
+        // index keys its members by document id unconditionally.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.terminal.is_some())
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" declares `terminal`, which is only \
+                 allowed on indexOnly document types (set `indexOnly: true` on the document \
+                 type, or remove the terminal)",
+                index_name, name,
+            )));
+        }
+        return Ok(());
+    }
+
+    document_type.index_only = true;
+
+    // ---- doctype-level flags -------------------------------------------
+    // Every rejection here names the flag the author must change: silently
+    // overriding a flag would emit a document type whose declared behavior
+    // and on-disk layout disagree.
+    if document_type.documents_mutable {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must set documentsMutable: false: there is no \
+             stored row (and no revision) to mutate",
+            name,
+        )));
+    }
+    if document_type.documents_transferable != Transferable::Never {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must not be transferable: ownership is embedded \
+             in the index entries themselves and cannot be reassigned",
+            name,
+        )));
+    }
+    if document_type.trade_mode != TradeMode::None {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must set tradeMode to none: there is no stored \
+             row to trade",
+            name,
+        )));
+    }
+    if document_type.documents_keep_history
+        || document_type.documents_keep_transfer_history
+        || document_type.documents_keep_purchase_history
+        || document_type.documents_keep_pricing_history
+    {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" cannot keep history (documentsKeepHistory / \
+             keepsTransferHistory / keepsPurchaseHistory / keepsPricingHistory): documents \
+             of this type are only ever created and deleted, and have no stored body to \
+             version",
+            name,
+        )));
+    }
+    if !document_type.transient_fields.is_empty() {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" cannot declare transient properties: on an \
+             indexOnly type only indexed values exist, and a transient property is by \
+             definition not stored — the two declarations contradict each other",
+            name,
+        )));
+    }
+    if document_type.documents_countable
+        || document_type.range_countable
+        || document_type.documents_summable.is_some()
+        || document_type.range_summable
+    {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" cannot use the doctype-level aggregate keywords \
+             (documentsCountable / rangeCountable / documentsSummable / rangeSummable / \
+             the averageable sugar): they describe the primary-key tree, which an indexOnly \
+             type does not have. Use the index-level `countable` / `rangeCountable` / \
+             `rankedCountable` flags instead",
+            name,
+        )));
+    }
+
+    if document_type.indices.is_empty() {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must declare at least one index: the indexes \
+             are the storage",
+            name,
+        )));
+    }
+
+    // ---- terminal normalization ----------------------------------------
+    // An omitted terminal defaults to `$ownerId`. Normalizing here (rather
+    // than leaving `None` to mean the default) keeps every downstream
+    // consumer — the walkers, the query planner, the update-immutability
+    // comparison — reading one canonical spelling, and both spellings of the
+    // same index parse to equal `Index` values.
+    for index in document_type.indices.values_mut() {
+        if index.terminal.is_none() {
+            index.terminal = Some(OWNER_ID.to_string());
+        }
+    }
+
+    // ---- per-index rules ------------------------------------------------
+    for (index_name, index) in document_type.indices.iter() {
+        if index.properties.is_empty() {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" has no properties: an \
+                 indexOnly entry is `[…property values, 0, terminal value]`, so at least \
+                 one prefix property is required above the terminal",
+                index_name, name,
+            )));
+        }
+        if index.unique {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" cannot be unique: \
+                 uniqueness is structural on an indexOnly type — one entry per value tuple \
+                 and terminal, enforced at insert — and an index without $ownerId already \
+                 enforces global uniqueness of its value tuple",
+                index_name, name,
+            )));
+        }
+        if index.contested_index.is_some() {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" cannot be contested: the \
+                 contested-resource machinery is document-based",
+                index_name, name,
+            )));
+        }
+        if !index.null_searchable {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" cannot set nullSearchable: \
+                 false: every property of an indexOnly type is required, so no null entries \
+                 exist to suppress",
+                index_name, name,
+            )));
+        }
+        if index.time_range.is_some() {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" cannot declare a timeRange: \
+                 bucketed indexOnly indexes are not yet supported",
+                index_name, name,
+            )));
+        }
+        if index.summable.is_some() || index.ranked_summable || index.ranked_averageable {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" cannot use the sum axes \
+                 (summable / rangeSummable / rankedSummable / rankedAverageable / the \
+                 averageable sugar): indexOnly terminals are plain Items carrying no sum \
+                 contribution; only the count axes (countable / rangeCountable / \
+                 rankedCountable) are supported",
+                index_name, name,
+            )));
+        }
+
+        let terminal = index.terminal.as_deref().expect("normalized to Some above");
+
+        if index
+            .properties
+            .iter()
+            .any(|property| property.name == terminal)
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" repeats its terminal \
+                 (\"{}\") in its properties: the terminal is the member key below the \
+                 listed properties, so listing it again would index the same dimension \
+                 twice",
+                index_name, name, terminal,
+            )));
+        }
+
+        // The terminal is the member key — it must be a referable entity id:
+        // the owner identity, or a property carrying a refersTo declaration
+        // whose value alone IS the referenced entity's id (identity,
+        // contract, token, or permanent document — all kinds that can never
+        // dangle). `identityPublicKey` is deliberately NOT admitted: it is a
+        // compound reference — this property carries the identity id while a
+        // separate `keyIdProperty` carries the key id — so a terminal keyed
+        // by it would conflate references to different keys of the same
+        // identity.
+        if terminal != OWNER_ID {
+            use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
+            match document_type.flattened_properties.get(terminal) {
+                Some(property)
+                    if matches!(
+                        property.property_type,
+                        DocumentPropertyType::IdentifierWithReference(
+                            DocumentPropertyReferenceTarget::Identity
+                                | DocumentPropertyReferenceTarget::Contract
+                                | DocumentPropertyReferenceTarget::Token
+                                | DocumentPropertyReferenceTarget::PermanentDocument { .. }
+                        )
+                    ) => {}
+                Some(_) => {
+                    return Err(structure_error(format!(
+                        "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
+                         must be \"$ownerId\" or an identifier property with a refersTo \
+                         declaration targeting identity, contract, token, or \
+                         permanentDocument: the terminal is the entry's member key and must \
+                         alone be a referable entity id (an identityPublicKey reference is \
+                         compound — its key id lives in a separate property — and is not \
+                         admitted)",
+                        terminal, index_name, name,
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
+                         does not name a property of the document type",
+                        terminal, index_name, name,
+                    )));
+                }
+            }
+        }
+
+        // Prefix properties: schema properties plus exactly two system
+        // properties — `$ownerId` (ownership) and `$createdAt` (assigned
+        // from block time at create, recoverable from the path). Every
+        // other system property either cannot exist on an immutable type
+        // ($updatedAt and friends) or has no stored home ($revision &co).
+        for property in index.properties.iter() {
+            if property.name.starts_with('$')
+                && property.name != OWNER_ID
+                && property.name != CREATED_AT
+            {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" indexes system property \
+                     \"{}\": only $ownerId and $createdAt may be indexed on an indexOnly \
+                     type (documents are immutable, so no other system property can carry \
+                     information)",
+                    index_name, name, property.name,
+                )));
+            }
+        }
+
+        // EVERY index must embed `$ownerId` (as a prefix property or the
+        // terminal). This is what makes each entry self-authorizing: a
+        // delete recomputes entries with owner = signer, so an entry the
+        // signer does not own is simply not there. With an owner-less
+        // index, a crafted delete could splice values from two different
+        // documents — its own owner-bearing row and a victim's owner-less
+        // row — and remove an entry it never created; binding every entry
+        // to its owner closes that, at the cost of the (unneeded) global-
+        // uniqueness-without-owner shape.
+        if terminal != OWNER_ID
+            && !index
+                .properties
+                .iter()
+                .any(|property| property.name == OWNER_ID)
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" must include $ownerId (as \
+                 a property or as the terminal): every entry must be bound to its owner so \
+                 deletes can only ever remove the signer's own entries",
+                index_name, name,
+            )));
+        }
+
+        // `$createdAt` in an index is only coherent when the document
+        // actually carries a timestamp — and document creation assigns
+        // `created_at` only when `$createdAt` is in `required`. Without
+        // this, an indexed `$createdAt` would silently take the missing-
+        // value branch instead of storing block time.
+        if (terminal == CREATED_AT
+            || index
+                .properties
+                .iter()
+                .any(|property| property.name == CREATED_AT))
+            && !document_type.required_fields.contains(CREATED_AT)
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" involves $createdAt, so \
+                 \"$createdAt\" must be listed in `required`: document creation only \
+                 assigns the timestamp for required system times, and an indexOnly entry \
+                 cannot represent a missing value",
+                index_name, name,
+            )));
+        }
+    }
+
+    // ---- coverage and requiredness --------------------------------------
+    // The index content IS the document: a property in no index would not
+    // exist, and an optional property would need the null-layout machinery
+    // this mode deliberately sidesteps.
+    for (property_name, property) in document_type.flattened_properties.iter() {
+        if matches!(property.property_type, DocumentPropertyType::Object(_)) {
+            // Containers are covered through their flattened leaves.
+            continue;
+        }
+        let covered = document_type.indices.values().any(|index| {
+            index.terminal.as_deref() == Some(property_name.as_str())
+                || index
+                    .properties
+                    .iter()
+                    .any(|index_property| index_property.name == *property_name)
+        });
+        if !covered {
+            return Err(structure_error(format!(
+                "property \"{}\" on indexOnly document type \"{}\" does not appear in any \
+                 index (as a property or terminal): on an indexOnly type only indexed \
+                 values exist and are recoverable, so an unindexed property would be \
+                 silently dropped",
+                property_name, name,
+            )));
+        }
+        if !document_type.required_fields.contains(property_name) {
+            return Err(structure_error(format!(
+                "property \"{}\" on indexOnly document type \"{}\" must be listed in \
+                 `required`: the index path is the storage, and an absent value would need \
+                 the null index layout this mode deliberately has no equivalent of",
+                property_name, name,
+            )));
+        }
+
+        // A required nested leaf inside an OPTIONAL ancestor object is only
+        // conditionally present — `required: ["targetId"]` inside an
+        // unrequired `profile` lets a valid document omit the whole object.
+        // Every ancestor path of an indexed dotted property must therefore
+        // be required too, or the no-null invariant silently breaks.
+        let mut ancestor = String::new();
+        for segment in property_name.split('.') {
+            if !ancestor.is_empty() {
+                if !document_type.required_fields.contains(&ancestor) {
+                    return Err(structure_error(format!(
+                        "property \"{}\" on indexOnly document type \"{}\" sits inside \
+                         \"{}\", which is not listed in `required`: a valid document could \
+                         omit the whole object, leaving the indexed leaf absent",
+                        property_name, name, ancestor,
+                    )));
+                }
+                ancestor.push('.');
+            }
+            ancestor.push_str(segment);
         }
     }
 

@@ -67,6 +67,8 @@ impl Index {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
+            terminal: None,
         })
     }
 }

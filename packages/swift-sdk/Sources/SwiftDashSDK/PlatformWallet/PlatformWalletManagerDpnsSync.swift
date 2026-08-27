@@ -116,8 +116,14 @@ func dpnsMarketplaceSyncCompletedCallback(
         syncUnixSeconds: syncUnixSeconds,
         walletResults: results
     )
+
+    // Snapshot before the main-actor hop. Shutdown bumps the generation as it
+    // consumes the native handle, invalidating a completion Rust had already
+    // dispatched but Swift has not published yet.
+    let generation = handler.manager?.dpnsSyncGeneration.current() ?? 0
+
     Task { @MainActor [weak manager = handler.manager] in
-        manager?.handleDpnsSyncCompleted(event)
+        manager?.handleDpnsSyncCompleted(event, generation: generation)
     }
 }
 
@@ -133,7 +139,11 @@ extension PlatformWalletManager {
     // cadence (60s) than DashPay's 15s because marketplace state changes
     // are rare.
 
-    func handleDpnsSyncCompleted(_ event: DpnsSyncEvent) {
+    func handleDpnsSyncCompleted(_ event: DpnsSyncEvent, generation: UInt64) {
+        // The generation rejects callbacks queued before shutdown. The
+        // configured-state check also rejects a callback native teardown
+        // dispatches after shutdown already bumped the counter.
+        guard isConfigured, generation == dpnsSyncGeneration.current() else { return }
         lastDpnsSyncEvent = event
     }
 

@@ -66,6 +66,7 @@ impl<C> Platform<C> {
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let document = DocumentV0 {
+            contract_version: None,
             id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
             properties: document_stub_properties,
             owner_id: contract.owner_id(),
