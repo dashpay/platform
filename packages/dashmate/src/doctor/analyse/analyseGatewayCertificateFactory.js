@@ -107,7 +107,7 @@ const TRUST_PATH_FAILURES = [
 const LEGO_EXPIRATION_LIMIT_DAYS = LegoCertificate.EXPIRATION_LIMIT_DAYS;
 const ZEROSSL_EXPIRATION_LIMIT_DAYS = ZeroSslCertificate.EXPIRATION_LIMIT_DAYS;
 
-const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart ${cfg} --platform}`;
+const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it up: {bold.cyanBright dashmate restart${cfg} --platform}`;
 
 /**
  * Where an operator can read the whole story rather than one message of it.
@@ -219,7 +219,7 @@ function renderNextAttempt(record, now, cfg) {
   if (nextAt <= now) {
     return chalk`dashmate should have tried again by now and has not, so the part of dashmate
 that renews certificates may not be running. Start it:
-{bold.cyanBright dashmate start ${cfg}}`;
+{bold.cyanBright dashmate start${cfg}}`;
   }
 
   // Dated, not just timed: an archived report is read days after it was
@@ -273,7 +273,7 @@ your router's port forwarding and your hosting provider.
   // never wrong is the failure this whole change exists to stop.
   if (code === RENEWAL_FAILURE_CODES.HELPER_DID_NOT_START) {
     return chalk`Check that Docker is running, then look at what it reported:
-{bold.cyanBright dashmate logs ${cfg} dashmate_helper}`;
+{bold.cyanBright dashmate logs${cfg} dashmate_helper}`;
   }
 
   return chalk`Open inbound port 80 - on the machine's firewall, at your hosting provider,
@@ -324,7 +324,7 @@ function renderRemedy({
 be saved, so asking again spends another. Check free space and permissions
 where dashmate saves certificates. dashmate retries by itself every hour -
 then check it worked:
-{bold.cyanBright dashmate doctor ${cfg}}`;
+{bold.cyanBright dashmate doctor${cfg}}`;
     }
 
     // A different cause now, but that earlier certificate is still spent, so
@@ -337,7 +337,7 @@ then check it worked:
   if (isIssuanceUncertain) {
     return chalk`Do not obtain one yet - an earlier attempt may already have been issued a
 certificate without dashmate seeing it. Check whether one arrived:
-{bold.cyanBright dashmate doctor ${cfg}}`;
+{bold.cyanBright dashmate doctor${cfg}}`;
   }
 
   if (remedy === REMEDY_CLASS.DO_NOT_RETRY) {
@@ -368,7 +368,7 @@ ${obtain}`;
   // be read instead.
   if (remedy === REMEDY_CLASS.SUPPORT) {
     return chalk`Send a report to Dash support:
-{bold.cyanBright dashmate doctor report ${cfg}}`;
+{bold.cyanBright dashmate doctor report${cfg}}`;
   }
 
   // The node still works and renewal comes back around on its own once the
@@ -399,7 +399,7 @@ Or leave it - dashmate retries by itself every hour.`;
     ? chalk`Get a working certificate:
 ${obtain}`
     : chalk`Send a report to Dash support:
-{bold.cyanBright dashmate doctor report ${cfg}}`;
+{bold.cyanBright dashmate doctor report${cfg}}`;
 }
 
 /**
@@ -421,7 +421,7 @@ function renderCertificateRequest({
   // operator has not made yet.
   if (safeAction === SAFE_ACTION.WAIT_AFTER_LOCAL_FIX) {
     return chalk`Fix the cause above. dashmate retries by itself - then check it worked:
-{bold.cyanBright dashmate doctor ${cfg}}`;
+{bold.cyanBright dashmate doctor${cfg}}`;
   }
 
   // A repair has just been described, and this is the only way to find out
@@ -444,18 +444,18 @@ Or leave it - dashmate retries by itself every hour.`;
   if (issuanceStatus === ISSUANCE_STATUS.SPENT) {
     return chalk`Do not obtain one - a certificate was already issued and could not be saved,
 so asking again spends another. Send a report instead:
-{bold.cyanBright dashmate doctor report ${cfg}}`;
+{bold.cyanBright dashmate doctor report${cfg}}`;
   }
 
   if (issuanceStatus === ISSUANCE_STATUS.UNCERTAIN) {
     return chalk`Do not obtain one yet - an earlier attempt may already have been issued a
 certificate without dashmate seeing it:
-{bold.cyanBright dashmate doctor ${cfg}}`;
+{bold.cyanBright dashmate doctor${cfg}}`;
   }
 
   return chalk`Do not obtain one right now - it would not succeed, and each attempt counts
 against this node's limits:
-{bold.cyanBright dashmate doctor ${cfg}}`;
+{bold.cyanBright dashmate doctor${cfg}}`;
 }
 
 export default function analyseGatewayCertificateFactory() {
@@ -481,7 +481,7 @@ export default function analyseGatewayCertificateFactory() {
       return [];
     }
 
-    const cfg = renderConfigFlag(config.getName());
+    const cfg = renderConfigFlag(config.getName(), samples.getDefaultConfigName());
 
     const problems = [];
 
@@ -631,7 +631,7 @@ export default function analyseGatewayCertificateFactory() {
           ? chalk`${UPDATE_CONSEQUENCE}
 
 Set this node's public address, then obtain a certificate:
-{bold.cyanBright dashmate config set ${cfg} externalIp <your-public-ip>}
+{bold.cyanBright dashmate config set${cfg} externalIp <your-public-ip>}
 ${certificateRequest()}`
           : chalk`${UPDATE_CONSEQUENCE}
 
@@ -644,7 +644,7 @@ ${certificateRequest(installedForce)}`;
         // with the renewal cause dropped it, leaving guidance that cannot run.
         const prerequisite = code === CERTIFICATE_REASONS.NO_EXTERNAL_IP
           ? chalk`Set this node's public address first - nothing can be issued without one:
-{bold.cyanBright dashmate config set ${cfg} externalIp <your-public-ip>}`
+{bold.cyanBright dashmate config set${cfg} externalIp <your-public-ip>}`
           : null;
 
         // A cause that forbids asking again outranks the reason's own repair,
@@ -663,7 +663,7 @@ ${certificateRequest(installedForce)}`;
 dashmate could not read what it recorded about the last renewal, so it cannot
 tell whether a certificate is already outstanding. Obtaining one now could spend
 a second one against this node's weekly limit:
-{bold.cyanBright dashmate doctor report ${cfg}}`;
+{bold.cyanBright dashmate doctor report${cfg}}`;
         }
 
         problems.push(new Problem(message, solution, SEVERITY.HIGH));
@@ -744,7 +744,7 @@ ${certificateRequest(installedForce)}`,
       problems.push(new Problem(
         "The gateway's own listener did not answer a secure connection:"
         + ` ${describe(CONNECTION_FAILURES, served.reason)}. Clients may not be able to connect`,
-        chalk`Please check that the gateway is running and listening: {bold.cyanBright dashmate status ${cfg} platform}`,
+        chalk`Please check that the gateway is running and listening: {bold.cyanBright dashmate status${cfg} platform}`,
         SEVERITY.MEDIUM,
       ));
 
@@ -815,7 +815,7 @@ ${certificateRequest(' --force')}`,
         `This node is using a certificate that expired on ${served.certificate.validTo}. `
         + 'A newer one has already been saved and is ready to use',
         chalk`The new certificate was saved but the node never picked it up. Load it:
-{bold.cyanBright dashmate restart ${cfg} --platform}`,
+{bold.cyanBright dashmate restart${cfg} --platform}`,
         SEVERITY.HIGH,
       ));
     } else if (isServedExpired && onDiskDiffers) {
@@ -839,9 +839,9 @@ ${certificateRequest(installedForce)}`,
             ? chalk`dashmate could not read what it recorded about the last renewal, so it cannot
 tell whether a certificate is already outstanding. Obtaining one now could spend
 a second one against this node's weekly limit:
-{bold.cyanBright dashmate doctor report ${cfg}}`
+{bold.cyanBright dashmate doctor report${cfg}}`
             : chalk`Renewal has not succeeded. Check the logs, then obtain a new certificate:
-{bold.cyanBright dashmate logs ${cfg} dashmate_helper}
+{bold.cyanBright dashmate logs${cfg} dashmate_helper}
 ${renderObtainCommand({
   configName: config.getName(), guidance, force: installedForce !== '',
 })}`,
@@ -855,7 +855,7 @@ ${renderObtainCommand({
           'This node is using an older certificate than the one that has been saved. '
           + `It will stop accepting clients on ${served.certificate.validTo}`,
           chalk`The new certificate was saved but the node never picked it up. Load it:
-{bold.cyanBright dashmate restart ${cfg} --platform}`,
+{bold.cyanBright dashmate restart${cfg} --platform}`,
           SEVERITY.HIGH,
         ));
       } else {

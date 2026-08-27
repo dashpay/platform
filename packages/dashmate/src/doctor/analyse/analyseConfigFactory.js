@@ -183,7 +183,7 @@ ${LETSENCRYPT_ALTERNATIVE}`,
                 description: chalk`A renewed Let's Encrypt certificate has not been installed for the gateway.`,
                 solution: chalk`The issued certificate was never copied to where the gateway loads
 from. Install it - no restart needed:
-{bold.cyanBright dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider=letsencrypt}
+{bold.cyanBright dashmate ssl obtain${renderConfigFlag(config.getName(), samples.getDefaultConfigName())} --provider=letsencrypt}
 
 Do not restart Platform. That reloads the out-of-date copy and may throw away
 a working certificate.`,

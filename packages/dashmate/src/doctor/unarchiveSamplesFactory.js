@@ -177,6 +177,10 @@ export default function unarchiveSamplesFactory(getServiceList) {
         if (configProperties?.options) {
           const config = new Config(configProperties.name, configProperties.options);
           samples.setDashmateConfig(config);
+          // The default config name is not in the archive format, so it stays
+          // unknown here and every command keeps its explicit flag. Printing a
+          // flag that was not needed costs an operator nothing; omitting one
+          // that was points them at a different node.
         }
       }
 

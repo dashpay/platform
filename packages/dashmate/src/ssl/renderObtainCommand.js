@@ -39,7 +39,7 @@ export default function renderObtainCommand({
 
   const cfg = renderConfigFlag(configName);
   const flags = `${provider ? ` --provider ${provider}` : ''}${force ? ' --force' : ''}`;
-  const command = chalk`{bold.cyanBright dashmate ssl obtain ${cfg}${flags}}`;
+  const command = chalk`{bold.cyanBright dashmate ssl obtain${cfg}${flags}}`;
 
   const { safeAction, issuanceStatus } = guidance;
 
@@ -48,7 +48,7 @@ export default function renderObtainCommand({
   // has not been made yet.
   if (safeAction === SAFE_ACTION.WAIT_AFTER_LOCAL_FIX) {
     return chalk`Fix the cause above. dashmate retries by itself - then check it worked:
-{bold.cyanBright dashmate doctor ${cfg}}`;
+{bold.cyanBright dashmate doctor${cfg}}`;
   }
 
   if (safeAction !== SAFE_ACTION.DO_NOT_OBTAIN) {
@@ -61,15 +61,15 @@ export default function renderObtainCommand({
   if (issuanceStatus === ISSUANCE_STATUS.SPENT) {
     return chalk`Do not obtain one - a certificate was already issued and could not be saved,
 so asking again spends another. Send a report instead:
-{bold.cyanBright dashmate doctor report ${cfg}}`;
+{bold.cyanBright dashmate doctor report${cfg}}`;
   }
 
   if (issuanceStatus === ISSUANCE_STATUS.UNCERTAIN) {
     return chalk`Do not obtain one yet - an earlier attempt may already have been issued a
 certificate without dashmate seeing it. Send a report instead:
-{bold.cyanBright dashmate doctor report ${cfg}}`;
+{bold.cyanBright dashmate doctor report${cfg}}`;
   }
 
   return chalk`Send a report to Dash support:
-{bold.cyanBright dashmate doctor report ${cfg}}`;
+{bold.cyanBright dashmate doctor report${cfg}}`;
 }
