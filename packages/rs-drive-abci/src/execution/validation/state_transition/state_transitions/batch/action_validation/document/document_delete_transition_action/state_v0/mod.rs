@@ -17,7 +17,10 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v1::DocumentDeleteTransitionActionAccessorsV1;
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::DocumentBaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
 use crate::platform_types::platform::PlatformStateRef;
@@ -86,8 +89,9 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
             )
             .map_err(Error::Drive)?;
 
+            let mut probe_operations = vec![];
+            let mut missing_entry = false;
             for index in document_type.indexes().values() {
-                let mut probe_operations = vec![];
                 let entry_exists = platform
                     .drive
                     .index_only_entry_commitment_matches(
@@ -102,12 +106,31 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
                     .map_err(Error::Drive)?;
 
                 if !entry_exists {
-                    return Ok(ConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(StateError::DocumentNotFoundError(
-                            DocumentNotFoundError::new(self.base().id()),
-                        )),
-                    ));
+                    missing_entry = true;
+                    break;
                 }
+            }
+
+            // Every probe is a stateful grove read validators actually
+            // perform — bill them all, on the not-found path included.
+            let fee_result = drive::drive::Drive::calculate_fee(
+                None,
+                Some(probe_operations),
+                &block_info.epoch,
+                platform.drive.config.epochs_per_era,
+                platform_version,
+                None,
+            )
+            .map_err(Error::Drive)?;
+            execution_context
+                .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+            if missing_entry {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::DocumentNotFoundError(
+                        DocumentNotFoundError::new(self.base().id()),
+                    )),
+                ));
             }
 
             return Ok(SimpleConsensusValidationResult::new());

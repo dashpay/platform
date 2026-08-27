@@ -17,15 +17,23 @@ mod index_only_tests {
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
+    use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::document::Document;
     use dpp::identifier::Identifier;
+    use dpp::identity::SecurityLevel;
     use dpp::platform_value;
     use dpp::prelude::DataContract;
+    use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::{
+        DocumentDeleteTransition, DocumentDeleteTransitionV1,
+    };
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
     use dpp::state_transition::StateTransition;
+    use simple_signer::signer::SimpleSigner;
 
     /// Shared with rs-drive's indexOnly e2e suite — the same fixture both
     /// layers are written against.
@@ -514,5 +522,110 @@ mod index_only_tests {
             "a V0 delete on an indexOnly type must be refused by the structure gate: {:?}",
             result.execution_results()
         );
+    }
+
+    /// Signs a manually assembled batch (the factory methods only build
+    /// single-transition batches, and the sibling-collision tests need two).
+    async fn sign_batch(
+        batch: BatchTransitionV0,
+        key: &dpp::identity::IdentityPublicKey,
+        signer: &SimpleSigner,
+    ) -> StateTransition {
+        let mut state_transition: StateTransition = BatchTransition::from(batch).into();
+        state_transition
+            .sign_external(key, signer, Some(|_, _| Ok(SecurityLevel::HIGH)))
+            .await
+            .expect("expected to sign the batch");
+        state_transition
+    }
+
+    /// A V1 delete's value payload is untrusted and selects the storage
+    /// entries every probe and removal touches — malformed values must be
+    /// refused by structure validation as consensus errors, never surface
+    /// later as internal errors from index-key derivation.
+    #[tokio::test]
+    async fn test_malformed_delete_values_are_refused_at_structure() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(31339);
+
+        let (alice, alice_signer, alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let contract = register_likes(&platform, alice.id(), platform_version);
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+
+        let post = create_post(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            &alice_key,
+            2,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let like = build_like(
+            &contract,
+            alice.id(),
+            post.id(),
+            entropy,
+            &mut rng,
+            platform_version,
+        );
+
+        // Missing required property, and a $createdAt the type never uses:
+        // each must die in structure validation with a consensus error.
+        let mut missing_property = like.properties().clone();
+        missing_property.remove("postId");
+        let mut spurious_created_at = like.properties().clone();
+        spurious_created_at.insert("$createdAt".to_string(), platform_value::Value::U64(1));
+
+        for (nonce, data) in [(3u64, missing_property), (4u64, spurious_created_at)] {
+            let delete_transition: DocumentDeleteTransition = DocumentDeleteTransitionV1 {
+                base: DocumentBaseTransition::from_document(
+                    &like,
+                    like_type,
+                    None,
+                    nonce,
+                    platform_version,
+                    None,
+                )
+                .expect("expected a base transition"),
+                data,
+            }
+            .into();
+            let batch = sign_batch(
+                BatchTransitionV0 {
+                    owner_id: alice.id(),
+                    transitions: vec![delete_transition.into()],
+                    user_fee_increase: 0,
+                    signature_public_key_id: 0,
+                    signature: Default::default(),
+                },
+                &alice_key,
+                &alice_signer,
+            )
+            .await;
+
+            let result = process_and_commit(&platform, &platform_state, &batch, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(_),
+                    ..
+                }],
+                "malformed delete values must be a consensus error: {:?}",
+                result.execution_results()
+            );
+        }
     }
 }

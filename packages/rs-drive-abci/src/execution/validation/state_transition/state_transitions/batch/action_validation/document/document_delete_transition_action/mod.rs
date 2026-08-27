@@ -43,7 +43,7 @@ impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction
             .batch_state_transition
             .document_delete_transition_structure_validation
         {
-            0 => self.validate_structure_v0(),
+            0 => self.validate_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentDeleteTransitionAction::validate_structure".to_string(),
                 known_versions: vec![0],
