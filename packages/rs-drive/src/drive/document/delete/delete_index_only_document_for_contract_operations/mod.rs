@@ -9,6 +9,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
@@ -70,6 +71,9 @@ impl Drive {
     /// values and owner) and applies the operations, returning the fee.
     /// `apply: false` runs the worst-case estimation instead — the same
     /// dry-run contract every other document operation follows.
+    /// `previous_fee_versions` carries the historical fee-version context
+    /// deletion refunds are priced against, exactly as on
+    /// `delete_document_for_contract`.
     #[allow(clippy::too_many_arguments)]
     pub fn delete_index_only_document_for_contract(
         &self,
@@ -80,39 +84,30 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
-
-        let batch_operations = self.delete_index_only_document_for_contract_operations(
-            document,
-            contract,
-            document_type,
-            None,
-            &mut estimated_costs_only_with_layer_info,
-            transaction,
-            platform_version,
-        )?;
-
-        self.apply_batch_low_level_drive_operations(
-            estimated_costs_only_with_layer_info,
-            transaction,
-            batch_operations,
-            &mut drive_operations,
-            &platform_version.drive,
-        )?;
-
-        Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            &block_info.epoch,
-            self.config.epochs_per_era,
-            platform_version,
-            None,
-        )
+        match platform_version
+            .drive
+            .methods
+            .document
+            .delete
+            .delete_index_only_document_for_contract
+        {
+            0 => self.delete_index_only_document_for_contract_v0(
+                document,
+                contract,
+                document_type,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "delete_index_only_document_for_contract".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }

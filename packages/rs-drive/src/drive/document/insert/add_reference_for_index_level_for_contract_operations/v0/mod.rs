@@ -437,13 +437,15 @@ impl Drive {
         index_path_info.push(Key(vec![0]))?;
 
         // An empty-payload item plus flags is the whole element.
-        // The payload is empty, but the estimated per-item value size is
-        // padded: the estimation layers under-count the serialized
-        // empty-item envelope (enum tag, length prefix, flags option) by a
-        // handful of bytes, and estimation must UPPER-bound the applied
-        // fee — the `estimated_fees_upper_bound_actual_fees` e2e test pins
-        // the invariant.
-        const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 = 16;
+        // The payload is the 32-byte row commitment; the estimated per-item
+        // value size is padded above it because the estimation layers
+        // under-count the serialized item envelope (enum tag, length
+        // prefix, flags option) by a handful of bytes, and estimation must
+        // UPPER-bound the applied fee — the
+        // `estimated_fees_upper_bound_actual_fees` e2e test pins the
+        // invariant.
+        const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 =
+            crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 16;
 
         let item_space = Element::required_item_space(
             INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE,
@@ -491,16 +493,28 @@ impl Drive {
             None => None,
         };
 
-        // The applied element is an EMPTY item; the dry run pads its value
-        // to the estimated size even when a real document is at hand. The
-        // real element is ~2 bytes, and the padding is what gives the
-        // estimate the headroom that keeps it above the applied fee once
-        // the indexed-tree layers' documented under-count is in play (see
+        // The applied element carries the 32-byte row commitment binding
+        // this entry to the document's full value tuple (see
+        // `index_only_row_commitment`); the dry run pads to the estimated
+        // size, which keeps the estimate above the applied fee across the
+        // indexed-tree layers' documented under-count (see
         // `estimated_sum_trees_for_value_tree_type`).
         let item_value = if estimated_costs_only_with_layer_info.is_some() {
             vec![0u8; INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE as usize]
         } else {
-            vec![]
+            let (document, _) = document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_borrowed_document_and_storage_flags()
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "indexOnly terminal insert needs a document outside estimation mode",
+                )))?;
+            crate::drive::document::index_only_row_commitment(
+                document,
+                document_and_contract_info.document_type,
+                platform_version,
+            )?
+            .to_vec()
         };
 
         let key_element_info = match &member_key {

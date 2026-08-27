@@ -174,6 +174,7 @@ fn delete_like(
         apply,
         None,
         pv,
+        None,
     )
 }
 
@@ -286,23 +287,36 @@ fn like_insert_writes_terminal_items_for_every_index() {
         POST_A.to_vec(),
         vec![0],
     ]);
+    let document_type = contract
+        .document_type_for_name(DOCTYPE)
+        .expect("like doctype exists");
+    let expected_commitment =
+        crate::drive::document::index_only_row_commitment(&like, document_type, platform_version())
+            .expect("commitment computes");
     match read_grove_element(&drive, &by_hashtag_post, &OWNER_1) {
         Some(Element::Item(data, _)) => {
-            assert!(data.is_empty(), "the terminal item carries no payload")
+            assert_eq!(
+                data,
+                expected_commitment.to_vec(),
+                "the terminal item carries the row commitment binding it to the full tuple"
+            )
         }
-        other => panic!("expected an empty Item at the byHashtagPost terminal, got {other:?}"),
+        other => {
+            panic!("expected the row-commitment Item at the byHashtagPost terminal, got {other:?}")
+        }
     }
 
     // byPost: [.., postId, POST_A, 0] key OWNER_1
     let mut by_post = base.clone();
     by_post.extend([b"postId".to_vec(), POST_A.to_vec(), vec![0]]);
-    assert!(
-        matches!(
-            read_grove_element(&drive, &by_post, &OWNER_1),
-            Some(Element::Item(..))
+    match read_grove_element(&drive, &by_post, &OWNER_1) {
+        Some(Element::Item(data, _)) => assert_eq!(
+            data,
+            expected_commitment.to_vec(),
+            "every index's entry carries the SAME row commitment"
         ),
-        "byPost terminal item must exist"
-    );
+        other => panic!("expected the byPost terminal item, got {other:?}"),
+    }
 
     // byLiker: [.., $ownerId, OWNER_1, 0] key POST_A — the generalized
     // terminal: a refersTo-typed property as member key.
@@ -330,8 +344,13 @@ fn duplicate_like_insert_is_refused() {
     let error = insert_like(&drive, &contract, &like, true)
         .expect_err("the identical like must be refused");
     assert!(
-        error.to_string().contains("already exists"),
-        "expected an already-exists error, got: {error}"
+        matches!(
+            error,
+            crate::error::Error::Drive(crate::error::drive::DriveError::CorruptedContractIndexes(
+                _
+            ))
+        ),
+        "expected the CorruptedContractIndexes backstop, got: {error}"
     );
 
     // A different owner liking the same post is a different member key and
@@ -469,6 +488,83 @@ fn estimated_fees_upper_bound_actual_fees() {
     // estimation path must simply not error or under-run the layer sweep.
     assert!(estimated_delete.processing_fee > 0);
     assert!(actual_delete.processing_fee > 0);
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Terminal items carry owner-and-epoch storage flags, so deleting them in
+/// a later epoch must refund the freed bytes to the inserting owner,
+/// attributed to the insertion epoch — the same refund contract stored
+/// documents follow.
+#[test]
+fn deletion_refunds_flow_from_terminal_item_flags() {
+    use dpp::block::epoch::Epoch;
+    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
+    use dpp::version::fee::FeeVersion;
+    use std::borrow::Cow;
+    use std::collections::BTreeMap;
+
+    let (drive, contract) = setup_likes();
+    let document_type = contract
+        .document_type_for_name(DOCTYPE)
+        .expect("like doctype exists");
+    let previous_fee_versions: CachedEpochIndexFeeVersions =
+        BTreeMap::from([(0, FeeVersion::first())]);
+
+    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
+
+    // Insert at epoch 0 with owner-attributed flags — what the production
+    // create-operation converter writes.
+    let pv = platform_version();
+    drive
+        .add_document_for_contract(
+            crate::util::object_size_info::DocumentAndContractInfo {
+                owned_document_info: crate::util::object_size_info::OwnedDocumentInfo {
+                    document_info: crate::util::object_size_info::DocumentInfo::DocumentRefInfo((
+                        &like,
+                        Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, OWNER_1))),
+                    )),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect("insert like with owned flags");
+
+    // Delete at a later epoch: the freed bytes must come back to OWNER_1,
+    // attributed to insertion epoch 0.
+    let later_epoch_block = BlockInfo {
+        epoch: Epoch::new(1).expect("epoch 1"),
+        ..Default::default()
+    };
+    let fee_result = drive
+        .delete_index_only_document_for_contract(
+            like,
+            &contract,
+            document_type,
+            later_epoch_block,
+            true,
+            None,
+            pv,
+            Some(&previous_fee_versions),
+        )
+        .expect("delete like in a later epoch");
+
+    let refund = fee_result
+        .fee_refunds
+        .calculate_refunds_amount_for_identity(dpp::identifier::Identifier::from(OWNER_1))
+        .expect("the refund must be attributed to the inserting owner");
+    assert!(
+        refund > 0,
+        "deleting owner-flagged terminal items must refund storage to the owner"
+    );
 
     assert_grovedb_is_consistent(&drive);
 }

@@ -81,7 +81,7 @@ impl Drive {
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllItems(
                             DEFAULT_HASH_SIZE_U8,
-                            0,
+                            crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE,
                             storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
@@ -113,7 +113,7 @@ impl Drive {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
                 AllItems(
                     DEFAULT_HASH_SIZE_U8,
-                    0,
+                    crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE,
                     storage_flags.map(|s| s.serialized_size()),
                 ),
                 &key_info_path,
