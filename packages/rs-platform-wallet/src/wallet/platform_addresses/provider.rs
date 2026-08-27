@@ -2314,6 +2314,65 @@ mod tests {
         assert!(outcome.entries.is_empty());
     }
 
+    /// External-recipient asset-lock funding (Alice pays Bob): the
+    /// proof carries BOTH Bob's third-party output and Alice's own
+    /// remainder/change output. Reconciliation must credit Alice's
+    /// address and quietly ignore Bob's — the partial resolve is the
+    /// normal, expected outcome, not an error.
+    ///
+    /// This is the provider-level half of the guarantee that
+    /// `fund_from_asset_lock_external` needs no persistence changes:
+    /// `resolved > 0`, so
+    /// `reconcile_address_infos_with_persistence` takes its normal
+    /// apply-and-persist path (and therefore reports `persisted =
+    /// true`, which is what gates `consume_asset_lock`), while the
+    /// stranger's address never enters the committed seed.
+    #[test]
+    fn commit_reconciliation_mixed_own_and_external_recipients() {
+        use dash_sdk::query_types::AddressInfo;
+
+        // Alice's change address, tracked by the provider.
+        let alice = p2pkh(0x11);
+        let mut provider = provider_with_one_funded_address(alice, funds(700, 3));
+
+        let alice_addr = PlatformAddress::P2pkh([0x11; 20]);
+        // Bob: a third party. Not in the provider bijection, not in the
+        // live pool — the wallet has never seen this address.
+        let bob_addr = PlatformAddress::P2pkh([0xBB; 20]);
+
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            alice_addr,
+            Some(AddressInfo {
+                address: alice_addr,
+                nonce: 3,
+                balance: 5_000,
+            }),
+        );
+        address_infos.insert(
+            bob_addr,
+            Some(AddressInfo {
+                address: bob_addr,
+                nonce: 0,
+                balance: 9_000,
+            }),
+        );
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new(), 77);
+
+        assert_eq!(
+            outcome.resolved, 1,
+            "exactly the sender-owned remainder output must resolve"
+        );
+        assert_eq!(outcome.entries.len(), 1);
+        assert_eq!(outcome.entries[0].address, alice);
+        assert_eq!(outcome.entries[0].funds, funds_at(5_000, 3, 77));
+
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(seed.len(), 1, "the third party must not enter the seed");
+        assert_eq!(seed[0].2, funds_at(5_000, 3, 77));
+    }
+
     /// Height authority: an absolute pinned at a LATER height is
     /// authoritative even when it revises the balance DOWNWARD — this is
     /// the ADDR-09 healing property. A poisoned legacy row (e.g. a
