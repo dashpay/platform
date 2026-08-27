@@ -2170,6 +2170,7 @@ mod range_countable_picker_tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }
     }
 
@@ -3542,6 +3543,7 @@ mod time_range_picker_tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range,
+            terminal: None,
         }
     }
 
