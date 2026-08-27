@@ -573,10 +573,13 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: this.sinon.stub().rejects(missing),
         createContainer: this.sinon.stub().resolves({
           start: this.sinon.stub().resolves(),
-          logs: () => {
+          logs: async () => {
+            // Handed over a tick later, as a daemon call is. The wait must not
+            // begin until this has actually resolved.
+            await Promise.resolve();
             attached = true;
 
-            return Promise.resolve(Readable.from([Buffer.from('lego said why')]));
+            return Readable.from([Buffer.from('lego said why')]);
           },
           modem: {
             demuxStream: (source, stdout) => {
@@ -596,7 +599,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       await expect(inject(task(config), getEnquirerMock(this.sinon, false)).run({ force: true }))
         .to.be.rejectedWith('lego said why');
 
-      expect(attachedBeforeWait, 'attached before the result was awaited').to.be.true();
+      expect(attachedBeforeWait, 'the stream was handed over before the wait began').to.be.true();
     });
 
     // Every attempt spends one of Let's Encrypt's five failed authorizations

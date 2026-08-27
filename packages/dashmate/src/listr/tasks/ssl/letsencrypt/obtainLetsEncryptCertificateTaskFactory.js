@@ -40,7 +40,9 @@ const OUTPUT_DRAIN_TIMEOUT_MS = 10000;
 function collectContainerOutput(container) {
   const chunks = [];
 
-  const collected = container.logs({ follow: true, stdout: true, stderr: true })
+  const attaching = container.logs({ follow: true, stdout: true, stderr: true });
+
+  const collected = attaching
     .then((stream) => new Promise((resolve) => {
       const sink = new PassThrough();
       let finished = false;
@@ -76,7 +78,13 @@ function collectContainerOutput(container) {
     // over leaves the error thinner, and must not replace it.
     .catch(() => {});
 
-  return async () => {
+  // Resolved once the daemon has handed over the stream. Awaiting this before
+  // the result is waited on is what makes the attach ordered rather than
+  // merely started: without it the request is in flight while the container
+  // may already have exited and been removed.
+  const attached = attaching.then(() => {}, () => {});
+
+  const read = async () => {
     // The timer is cleared whichever side wins. Left running it keeps this
     // callback's closure - and the buffered output - reachable for another ten
     // seconds on every renewal, and holds the event loop open for a command
@@ -96,6 +104,8 @@ function collectContainerOutput(container) {
 
     return Buffer.concat(chunks).toString();
   };
+
+  return { attached, read };
 }
 
 /**
@@ -528,7 +538,12 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             // eslint-disable-next-line no-param-reassign
             task.output = `Running lego ${command}...`;
 
-            const readOutput = collectContainerOutput(container);
+            const { attached, read: readOutput } = collectContainerOutput(container);
+
+            // Confirmed, not merely requested. The daemon deletes an
+            // auto-removed container the moment it exits, so a stream still
+            // being set up when the process ends can arrive empty.
+            await attached;
 
             // The container is running, so a request may have been made - but a
             // result nobody read is not a result that can be reported.
