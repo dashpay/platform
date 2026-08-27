@@ -519,9 +519,9 @@ mod index_only_tests {
         assert_matches!(
             result.execution_results().as_slice(),
             [StateTransitionExecutionResult::PaidConsensusError {
-                error: ConsensusError::BasicError(BasicError::InvalidDocumentTransitionActionError(
-                    _
-                )),
+                error: ConsensusError::BasicError(
+                    BasicError::InvalidDocumentTransitionActionError(_)
+                ),
                 ..
             }],
             "a V0 delete on an indexOnly type must be refused by the structure gate"
