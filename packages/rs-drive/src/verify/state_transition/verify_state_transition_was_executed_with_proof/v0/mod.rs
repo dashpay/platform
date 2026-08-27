@@ -312,6 +312,19 @@ impl Drive {
                                     )])),
                                 ))
                             }
+                            DocumentTransition::IndexOnlyDelete(_) => {
+                                // An indexOnly document has no primary-storage
+                                // row, so the by-id single-document query this
+                                // verifier is built around cannot attest its
+                                // entries; indexOnly execution proofs verify
+                                // against the index entries themselves and are
+                                // not supported here yet.
+                                Err(Error::Proof(ProofError::InvalidTransition(
+                                    "indexOnly delete-by-values execution proofs are not \
+                                     supported yet"
+                                        .to_string(),
+                                )))
+                            }
                         }
                     }
                     BatchedTransitionRef::Token(token_transition) => {

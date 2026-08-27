@@ -31,6 +31,7 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub data_contract_update_transition: FeatureVersion,
     pub document_create_transition: FeatureVersion,
     pub document_delete_transition: FeatureVersion,
+    pub document_index_only_delete_transition: FeatureVersion,
     pub document_purchase_transition: FeatureVersion,
     pub document_replace_transition: FeatureVersion,
     pub document_transfer_transition: FeatureVersion,

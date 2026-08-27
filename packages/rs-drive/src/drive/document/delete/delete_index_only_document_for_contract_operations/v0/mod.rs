@@ -9,6 +9,7 @@ use crate::util::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,
 };
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
@@ -130,6 +131,39 @@ impl Drive {
         }
 
         let owner_id = Some(document.owner_id().to_buffer());
+
+        // Row-integrity gate: every entry the submitted values address must
+        // exist AND carry this tuple's row commitment. State validation
+        // performs the same comparison first; this is the storage-layer
+        // backstop that keeps a spliced tuple from ever mixing projections
+        // of different documents into one delete batch.
+        if estimated_costs_only_with_layer_info.is_none() {
+            let mut check_operations: Vec<LowLevelDriveOperation> = vec![];
+            let expected_commitment = crate::drive::document::index_only_row_commitment(
+                &document,
+                document_type,
+                platform_version,
+            )?;
+            for index in document_type.indexes().values() {
+                let matches = self.index_only_entry_commitment_matches(
+                    contract.id(),
+                    document_type,
+                    index,
+                    &document,
+                    &expected_commitment,
+                    transaction,
+                    &mut check_operations,
+                    platform_version,
+                )?;
+                if !matches {
+                    return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
+                        "no indexOnly document with exactly these values exists for this \
+                         owner (an entry is missing or belongs to a different document)",
+                    )));
+                }
+            }
+            batch_operations.extend(check_operations);
+        }
 
         let document_info = if estimated_costs_only_with_layer_info.is_some() {
             DocumentEstimatedAverageSize(document_type.estimated_size(platform_version)? as u32)
