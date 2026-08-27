@@ -11,8 +11,8 @@ pub mod wallet;
 
 pub use balance::WalletBalance;
 pub use balance_handler::BalanceUpdateHandler;
-pub(crate) use generation::InBroadcastPin;
 pub use generation::WalletGeneration;
+pub(crate) use generation::{InBroadcastFences, InBroadcastPin};
 pub use spend_observer::SpendObservationHandler;
 pub(crate) use transaction::resolve_source_accounts;
 pub use transaction::{SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES};

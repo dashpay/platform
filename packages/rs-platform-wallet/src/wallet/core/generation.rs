@@ -185,9 +185,33 @@ pub struct WalletGeneration {
     /// sync lock is what lets [`InBroadcastPin::drop`] settle the fence from a
     /// plain (non-async) `Drop` — which is also what makes the pin
     /// cancellation-safe when the dispatching future is dropped mid-await.
-    /// Never persisted: after a restart nothing is mid-dispatch, and a
-    /// transaction that actually landed is reconciled by sync.
-    in_broadcast: Mutex<HashMap<OutPoint, InBroadcastFence>>,
+    ///
+    /// # Scoped to the WALLET, not to this generation
+    ///
+    /// Held behind a shared [`InBroadcastFences`] `Arc` that
+    /// [`PlatformWalletManager`](crate::PlatformWalletManager) keys by
+    /// `wallet_id` and hands to every generation registered under that id, so
+    /// removing a wallet and re-creating it under the same id inherits the
+    /// pending spends rather than starting clean
+    /// (`dashpay/platform#4309`, review round 8).
+    ///
+    /// The balance and the lifecycle gate above genuinely describe *this*
+    /// instance, and must not cross a recreation. A fence does not: it
+    /// describes a signed transaction that may be live on the network, and a
+    /// transaction does not become invalid because the wallet object holding
+    /// its record was replaced. A DAPI endpoint or peer that retained it can
+    /// still relay it afterwards, so a generation-local fence let the
+    /// re-created wallet restore the persisted UTXO — with neither the fence
+    /// nor key-wallet's memory-only reservation on it — and sign a conflicting
+    /// spend. Inheritance is strictly the conservative direction: fences are
+    /// still retired only by [`observe_spent`](Self::observe_spent), and an
+    /// observation on the new generation clears what the old one installed
+    /// because both name the same map.
+    ///
+    /// This closes the in-process half. The map is still not PERSISTED, so a
+    /// process restart loses it; see the module-level note on
+    /// `InBroadcastFences` for what closing that half requires.
+    in_broadcast: Arc<InBroadcastFences>,
     /// Test-only one-shot hook fired at the dispatching→pending midpoint —
     /// see [`WalletGeneration::on_next_settle_boundary`].
     #[cfg(test)]
@@ -206,6 +230,42 @@ struct SettleBoundaryHook(Mutex<Option<Box<dyn FnOnce() + Send>>>);
 impl std::fmt::Debug for SettleBoundaryHook {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("SettleBoundaryHook(..)")
+    }
+}
+
+/// One wallet's in-broadcast fence map, shared by every
+/// [`WalletGeneration`] ever registered under that wallet's id.
+///
+/// Owning the map here rather than inside `WalletGeneration` is what lets a
+/// pending spend outlive the instance that dispatched it: a remove-and-recreate
+/// under the same id mints a fresh generation but hands it this same `Arc`, so
+/// the still-valid signed transaction's inputs stay fenced
+/// (`dashpay/platform#4309`, review round 8). See the
+/// `WalletGeneration::in_broadcast` field docs for the full argument.
+///
+/// # Not yet durable
+///
+/// The manager's registry is process-lifetime, so this closes recreation but
+/// NOT a process restart: a fresh process loads the persisted UTXO with no
+/// fence on it. Closing that half needs the pending transaction itself to be
+/// durable — either recorded locally at dispatch, the way the SPV path already
+/// is via dash-spv's mempool injection (which would remove the input from the
+/// persisted UTXO set through the existing `CoreChangeSet::records` /
+/// `spent_utxos` fields, so no new persistence surface is needed), or written
+/// to a dedicated pending-spend table and rehydrated here before spending is
+/// enabled. Both change host-visible state and belong in their own change; the
+/// invariant this map must keep in the meantime is unchanged — nothing that
+/// merely ELAPSES may retire a fence.
+#[derive(Debug, Default)]
+pub(crate) struct InBroadcastFences {
+    fences: Mutex<HashMap<OutPoint, InBroadcastFence>>,
+}
+
+impl InBroadcastFences {
+    /// Recovers from a poisoned mutex rather than panicking — see
+    /// [`WalletGeneration::in_broadcast_lock`].
+    fn lock(&self) -> MutexGuard<'_, HashMap<OutPoint, InBroadcastFence>> {
+        self.fences.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -313,12 +373,31 @@ impl Default for WalletGeneration {
 }
 
 impl WalletGeneration {
-    /// A fresh generation: zeroed balance, uncontended gate, nothing pinned.
+    /// A fresh generation with fences of its own: zeroed balance, uncontended
+    /// gate, nothing pinned.
+    ///
+    /// Production registration and load go through
+    /// [`with_fences`](Self::with_fences) instead, so a generation replacing
+    /// another under the same `wallet_id` inherits its pending spends. This
+    /// form is for a wallet with no predecessor — and for tests that want an
+    /// isolated map.
     pub fn new() -> Self {
+        Self::with_fences(Arc::new(InBroadcastFences::default()))
+    }
+
+    /// A fresh generation sharing `fences` with every other generation of the
+    /// same wallet.
+    ///
+    /// The balance and the lifecycle gate are per generation — they describe
+    /// *this* instance. The fence map is not: it describes signed transactions
+    /// that may be live on the network, and those outlive the instance that
+    /// dispatched them (`dashpay/platform#4309`, review round 8). See the
+    /// [`in_broadcast`](Self#structfield.in_broadcast) field docs.
+    pub(crate) fn with_fences(fences: Arc<InBroadcastFences>) -> Self {
         Self {
             balance: WalletBalance::new(),
             lifecycle: Arc::new(RwLock::new(())),
-            in_broadcast: Mutex::new(HashMap::new()),
+            in_broadcast: fences,
             #[cfg(test)]
             settle_boundary_hook: SettleBoundaryHook::default(),
         }
@@ -381,9 +460,7 @@ impl WalletGeneration {
     /// panicking here would strand every later build and dispatch on this
     /// generation. (Same policy as key-wallet's `ReservationSet`.)
     fn in_broadcast_lock(&self) -> MutexGuard<'_, HashMap<OutPoint, InBroadcastFence>> {
-        self.in_broadcast
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.in_broadcast.lock()
     }
 
     /// Pin `transaction`'s inputs as **in-broadcast** until the returned
@@ -673,7 +750,7 @@ impl WalletGeneration {
     /// (`dashpay/platform#4309`, review round 5).
     #[cfg(test)]
     pub(crate) fn try_probe_in_broadcast(&self, outpoint: &OutPoint) -> InBroadcastProbe {
-        match self.in_broadcast.try_lock() {
+        match self.in_broadcast.fences.try_lock() {
             Err(std::sync::TryLockError::WouldBlock) => InBroadcastProbe::TransitionInProgress,
             Err(std::sync::TryLockError::Poisoned(poisoned)) => {
                 Self::probe_entry(poisoned.into_inner().get(outpoint))
@@ -777,10 +854,13 @@ impl InBroadcastPin {
     /// It used to take a `last_processed_height` sampled after the broadcaster
     /// returned, from a wallet-manager guard the caller had to keep held across
     /// the call so no writer could advance the clock between the sample and the
-    /// install. Both requirements are gone with the height itself: the orphan
-    /// deadline is [`Instant::now`] read INSIDE the `in_broadcast` critical
-    /// section that installs it, so there is no second clock, no guard to
-    /// release, and no window to protect (`dashpay/platform#4309`).
+    /// install. A later revision swapped that height for a monotonic
+    /// `Instant::now` deadline read inside the `in_broadcast` critical section.
+    ///
+    /// Both are gone, and so is the bound they computed. What this installs is
+    /// a plain flag: there is no clock to sample, so no guard to hold and no
+    /// window to protect. The phase it opens ends on an observed spend
+    /// (`dashpay/platform#4309`).
     ///
     /// # This is equivalent to just dropping the pin
     ///
@@ -838,7 +918,7 @@ mod tests {
 
     use dashcore::{OutPoint, Transaction, TxIn, Txid};
 
-    use super::{InBroadcastProbe, WalletGeneration};
+    use super::{InBroadcastFences, InBroadcastProbe, WalletGeneration};
 
     /// A minimal transaction spending exactly the given outpoints — the only
     /// part of a transaction the pin machinery reads.
@@ -1161,10 +1241,51 @@ mod tests {
         assert_eq!(generation.in_broadcast_conflict(&tx), Some(a));
     }
 
-    /// Fences are per GENERATION: a wallet re-created under the same id gets a
-    /// fresh map and cannot be blocked by the previous instance's dispatches.
+    /// Fences are per WALLET, and a generation that replaces another under the
+    /// same id INHERITS them (`dashpay/platform#4309`, review round 8).
+    ///
+    /// This test used to assert the opposite — that a re-created wallet got a
+    /// fresh map — and that was the bug: the map went with the old generation
+    /// while the transaction it protected stayed valid and relayable, so the
+    /// replacement could sign a conflicting spend of the same outpoint. The
+    /// end-to-end round trip through the manager is
+    /// `a_recreated_wallet_inherits_the_pending_fences_of_the_generation_it_replaces`;
+    /// this pins the mechanism.
     #[test]
-    fn pins_do_not_cross_generations() {
+    fn pins_cross_generations_of_the_same_wallet() {
+        let fences = Arc::new(InBroadcastFences::default());
+        let first = Arc::new(WalletGeneration::with_fences(Arc::clone(&fences)));
+        let a = outpoint(15, 0);
+        let tx = spending(&[a]);
+
+        // A dispatch that reached the network: settled into the pending-spend
+        // phase, awaiting an observed spend that has not arrived.
+        settle_dispatched(&first, &tx);
+        assert_eq!(first.in_broadcast_conflict(&tx), Some(a));
+
+        // The wallet is removed and re-created under the same id.
+        let second = Arc::new(WalletGeneration::with_fences(fences));
+        assert_eq!(
+            second.in_broadcast_conflict(&tx),
+            Some(a),
+            "the replacement generation must inherit the pending-spend fence — \
+             the signed transaction it protects is still live"
+        );
+
+        // …and the inherited fence still answers only to EVIDENCE, observed
+        // through whichever generation is current.
+        second.observe_spent([a]);
+        assert_eq!(
+            second.in_broadcast_conflict(&tx),
+            None,
+            "an observed spend on the new generation clears what the old one installed"
+        );
+    }
+
+    /// Inheritance is scoped to one wallet: two wallets' fence maps are
+    /// separate objects, so neither can block the other's builds.
+    #[test]
+    fn pins_do_not_cross_between_wallets() {
         let first = Arc::new(WalletGeneration::new());
         let second = Arc::new(WalletGeneration::new());
         let a = outpoint(15, 0);
@@ -1176,7 +1297,7 @@ mod tests {
         assert_eq!(
             second.in_broadcast_conflict(&tx),
             None,
-            "a different generation's fence must not block this one's builds"
+            "another wallet's fence must not block this one's builds"
         );
     }
 

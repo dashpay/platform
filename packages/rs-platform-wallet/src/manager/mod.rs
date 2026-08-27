@@ -420,6 +420,31 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// failed / rescan pending" state rather than re-freezing silently on
     /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    /// Per-WALLET in-broadcast fence maps, handed to every
+    /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) registered
+    /// under each id (`dashpay/platform#4309`, review round 8).
+    ///
+    /// A fence describes a signed transaction that may be live on the network.
+    /// That fact outlives the wallet *instance* that dispatched it: removing a
+    /// wallet and re-creating it under the same id used to mint a generation
+    /// with an empty map, so the re-created wallet restored the persisted UTXO
+    /// with nothing holding it — not the fence, not key-wallet's memory-only
+    /// reservation — and could sign a conflicting spend of an outpoint the
+    /// original transaction still spends. Keying the map here instead makes the
+    /// replacement inherit it.
+    ///
+    /// **Deliberately never pruned.** A removed wallet's entry stays, because a
+    /// removal is exactly when the protection must survive; dropping it on
+    /// removal would restore the bug for the recreate-after-remove path this
+    /// exists to close. Growth is bounded by the number of distinct wallet ids
+    /// this process has registered, and each entry reaps its own cleared rows
+    /// on read.
+    ///
+    /// A `std::sync::Mutex`: touched only at wallet registration and load, for
+    /// one map lookup, and never held across an await.
+    pub(super) in_broadcast_fences: std::sync::Mutex<
+        std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
+    >,
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -561,7 +586,28 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
             registry,
             sync_fault,
+            in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         }
+    }
+
+    /// The in-broadcast fence map for `wallet_id`, creating it on first use.
+    ///
+    /// Every [`WalletGeneration`](crate::wallet::core::WalletGeneration) this
+    /// manager mints for a wallet is built from this, so a generation that
+    /// replaces another under the same id inherits its pending-spend fences —
+    /// see the [`in_broadcast_fences`](Self#structfield.in_broadcast_fences)
+    /// field docs (`dashpay/platform#4309`).
+    pub(super) fn in_broadcast_fences_for(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Arc<crate::wallet::core::InBroadcastFences> {
+        Arc::clone(
+            self.in_broadcast_fences
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .entry(*wallet_id)
+                .or_default(),
+        )
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync
