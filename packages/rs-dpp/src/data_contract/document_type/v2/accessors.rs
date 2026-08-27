@@ -226,6 +226,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
     fn range_summable(&self) -> bool {
         self.range_summable
     }
+
+    fn index_only(&self) -> bool {
+        self.index_only
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentTypeV2 {
@@ -260,5 +264,9 @@ impl DocumentTypeV2Setters for DocumentTypeV2 {
         // This way an existing-true-but-inconsistent state can't survive
         // a setter call — the invariant always holds after this returns.
         self.range_summable = range_summable && self.documents_summable.is_some();
+    }
+
+    fn set_index_only(&mut self, index_only: bool) {
+        self.index_only = index_only;
     }
 }

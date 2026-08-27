@@ -132,6 +132,7 @@ impl DataContractInSerializationFormat {
                                 index_value_map.as_slice(),
                                 admissions.ranked,
                                 admissions.time_range,
+                                admissions.terminal,
                             ) {
                                 let base_index_fee = if index.contested_index.is_some() {
                                     fee_version.document_type_base_contested_index_registration_fee

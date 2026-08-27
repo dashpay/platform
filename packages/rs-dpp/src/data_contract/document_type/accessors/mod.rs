@@ -972,6 +972,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V2(v2) => v2.range_summable(),
         }
     }
+
+    fn index_only(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.index_only(),
+        }
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentType {
@@ -1004,6 +1012,14 @@ impl DocumentTypeV2Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(_) => { /* no-op */ }
             DocumentType::V2(v2) => v2.set_range_summable(range_summable),
+        }
+    }
+
+    fn set_index_only(&mut self, index_only: bool) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(_) => { /* no-op */ }
+            DocumentType::V2(v2) => v2.set_index_only(index_only),
         }
     }
 }
@@ -1040,6 +1056,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V2(v2) => v2.range_summable(),
         }
     }
+
+    fn index_only(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.index_only(),
+        }
+    }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
@@ -1072,6 +1096,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.range_summable(),
+        }
+    }
+
+    fn index_only(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.index_only(),
         }
     }
 }

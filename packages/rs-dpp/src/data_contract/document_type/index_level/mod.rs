@@ -479,6 +479,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -514,6 +515,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let new_indices = vec![
@@ -534,6 +536,7 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                terminal: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -552,6 +555,7 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                terminal: None,
             },
         ];
 
@@ -596,6 +600,7 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                terminal: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -614,6 +619,7 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                terminal: None,
             },
         ];
 
@@ -634,6 +640,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -676,6 +683,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let new_indices = vec![Index {
@@ -701,6 +709,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -749,6 +758,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let new_indices = vec![Index {
@@ -768,6 +778,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -810,6 +821,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let new_indices = vec![Index {
@@ -829,6 +841,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -871,6 +884,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let new_indices = vec![Index {
@@ -890,6 +904,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -932,6 +947,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -974,6 +990,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let new_indices = vec![Index {
@@ -993,6 +1010,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -1035,6 +1053,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let new_indices = vec![Index {
@@ -1054,6 +1073,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -1102,6 +1122,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let new_indices = vec![Index {
@@ -1127,6 +1148,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -1175,6 +1197,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let new_indices = vec![Index {
@@ -1200,6 +1223,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let old_index_structure =
@@ -1256,6 +1280,7 @@ mod tests {
             ranked_summable,
             ranked_averageable,
             time_range: None,
+            terminal: None,
         }
     }
 
@@ -1413,6 +1438,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }];
 
         let mut new_indices = old_indices.clone();
