@@ -11,10 +11,16 @@
 //! This is the wrong-seed detection without ever holding a resident seed.
 //!
 //! The check is also the gate in front of the deferred contact-crypto drain —
-//! see [`DashPayView::drain_pending_contact_crypto_verified`], the primitive
-//! every drain goes through so no caller can forget it, and
+//! see [`DashPayView::drain_pending_contact_crypto_verified`] and
+//! [`DashPayView::drain_auto_accepts_verified`], the two primitives every
+//! provider-deriving pass goes through so no caller can forget the check, and
 //! [`PlatformWallet::drain_pending_contact_crypto_verified`], the whole-wallet
-//! wrapper that adds the DIP-15 auto-accept pass behind the same gate.
+//! wrapper that runs both.
+//!
+//! Each primitive gates itself and returns a [`ProviderBinding`] recording
+//! whether the check actually ran, so a caller sequencing two of them carries
+//! that evidence forward instead of re-deriving it from a queue probe that may
+//! since have gone stale.
 
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
@@ -40,6 +46,49 @@ pub enum SeedBindingVerification {
     /// marker (when one is handed back) so later launches can skip the
     /// derivation.
     Verified,
+}
+
+/// Whether a contact-crypto provider has been put through the seed-binding
+/// check *on this drain cycle*.
+///
+/// This exists because "the queue was empty a moment ago" is not the same
+/// statement as "this provider owns this wallet", and the gated drain returns
+/// the first while its callers were reading it as the second. Every gated
+/// primitive in this module returns one, and every pass that would derive key
+/// material through the provider takes one — so the fact of verification
+/// travels with the value instead of being re-inferred from a queue probe that
+/// has already gone stale.
+///
+/// It cannot be forged: the two constructors are private to this module, so
+/// only a primitive that actually ran (or skipped) the check can mint one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderBinding(BindingState);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindingState {
+    /// `verify_seed_binds` passed for this provider.
+    Verified,
+    /// The check did not run — the gated drain found an empty queue and had
+    /// nothing to derive. **Not** a licence to run further provider work: the
+    /// queue can be refilled at any instant by the recurring contact sweep.
+    NotEstablished,
+}
+
+impl ProviderBinding {
+    /// The provider passed the seed-binding check.
+    fn verified() -> Self {
+        Self(BindingState::Verified)
+    }
+
+    /// The check did not run.
+    fn not_established() -> Self {
+        Self(BindingState::NotEstablished)
+    }
+
+    /// Whether the provider has been shown to resolve this wallet's seed.
+    pub fn is_verified(self) -> bool {
+        matches!(self.0, BindingState::Verified)
+    }
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
@@ -189,10 +238,102 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
+        self.drain_pending_contact_crypto_verified_reporting(crypto, deadline)
+            .await
+            .map(|(drained, _)| drained)
+    }
+
+    /// [`Self::drain_pending_contact_crypto_verified`], additionally reporting
+    /// whether the provider was actually put through the check.
+    ///
+    /// The empty-queue early-out returns without verifying — correctly, since
+    /// there is nothing to derive — but that makes the return value ambiguous
+    /// to a caller that wants to run *more* provider work afterwards. Review
+    /// found the whole-wallet wrapper doing exactly that: it probed the queue,
+    /// saw it nonempty, delegated here, and this call re-probed and found the
+    /// queue emptied by a concurrent drain, so it returned `Ok(0)` unverified —
+    /// after which the wrapper ran the DIP-15 auto-accept pass anyway. That
+    /// pass re-snapshots the queue at its own instant, and the recurring
+    /// contact sweep can enqueue an `AutoAccept` inside that window, so a
+    /// brand-new entry could be processed through a provider nobody had
+    /// checked. With a wrong seed the re-derived auto-accept key does not match
+    /// the proof, and the mapping treats a verify failure as *permanent*: the
+    /// valid proof is marked failed and dropped, so the sweep's enqueue gate
+    /// never offers it again.
+    ///
+    /// So the fact of verification is returned rather than inferred. See
+    /// [`Self::drain_auto_accepts_verified`], which takes it.
+    pub async fn drain_pending_contact_crypto_verified_reporting<C>(
+        &self,
+        crypto: &C,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(usize, ProviderBinding), PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+    {
         if self.drainable_contact_crypto_count().await == 0 {
-            return Ok(0);
+            return Ok((0, ProviderBinding::not_established()));
         }
 
+        self.establish_provider_binding(crypto).await?;
+
+        Ok((
+            self.drain_pending_contact_crypto_until(crypto, deadline)
+                .await,
+            ProviderBinding::verified(),
+        ))
+    }
+
+    /// Run the DIP-15 auto-accept pass behind the same gate, given whatever
+    /// binding a previous pass on this cycle established.
+    ///
+    /// `binding` is an optimisation, not the gate: an already-`Verified`
+    /// provider is not re-derived, and anything else is checked here before a
+    /// single entry is touched. So the auto-accept pass cannot run through an
+    /// unverified provider no matter how its caller is sequenced — which is
+    /// the property the wrapper was silently relying on the drain to provide
+    /// and, on the empty-queue path, not getting.
+    ///
+    /// There is deliberately **no** empty-queue early-out here. The queue this
+    /// would probe is re-snapshotted inside
+    /// [`Self::drain_auto_accepts_until`] anyway, so a probe here would only
+    /// re-open the same window: seeing it empty and skipping the check would
+    /// leave the pass unverified for an entry enqueued a moment later. The
+    /// check is cheap next to the risk, and it only runs at all once the
+    /// wrapper has already seen work queued.
+    ///
+    /// # Errors
+    ///
+    /// Fails closed on every verification error, exactly as the drain does.
+    /// The queue is untouched, so the next signer-present pass auto-accepts
+    /// everything this one declined to guess at.
+    pub async fn drain_auto_accepts_verified<S, C>(
+        &self,
+        signer: &S,
+        crypto: &C,
+        deadline: Option<std::time::Instant>,
+        binding: ProviderBinding,
+    ) -> Result<usize, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+    {
+        if !binding.is_verified() {
+            self.establish_provider_binding(crypto).await?;
+        }
+
+        Ok(self.drain_auto_accepts_until(signer, crypto, deadline).await)
+    }
+
+    /// The check itself, with the shared refusal log. Returns the binding so
+    /// callers propagate evidence rather than re-deriving the conclusion.
+    async fn establish_provider_binding<C>(
+        &self,
+        crypto: &C,
+    ) -> Result<ProviderBinding, PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+    {
         self.verify_seed_binds(crypto).await.inspect_err(|e| {
             tracing::error!(
                 wallet_id = %hex::encode(self.wallet_id),
@@ -201,10 +342,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                  the drain rather than deriving contact addresses that could never be corrected"
             );
         })?;
-
-        Ok(self
-            .drain_pending_contact_crypto_until(crypto, deadline)
-            .await)
+        Ok(ProviderBinding::verified())
     }
 }
 
@@ -235,13 +373,19 @@ impl PlatformWallet {
     /// The gated drain plus the DIP-15 auto-accept pass, for callers holding a
     /// whole wallet: the startup sequence and the FFI drain entry point.
     ///
-    /// Both passes ride the same queue, so one emptiness check covers both and
-    /// the auto-accepts run only after
-    /// [`DashPayView::drain_pending_contact_crypto_verified`] has cleared the
-    /// provider — there is no path to an auto-accept through an unverified
-    /// provider. Returns the combined completed count; `deadline` bounds both
-    /// from the inside, `None` is unbounded. Errors exactly as the inner
-    /// primitive does.
+    /// Both passes ride the same queue, so one emptiness check decides whether
+    /// this wrapper does anything at all — but *not* whether the provider was
+    /// checked. Each pass is separately gated, and the auto-accept pass is
+    /// handed the binding the drain established rather than inheriting the
+    /// assumption that it ran: the drain re-probes the queue and returns
+    /// unverified when a concurrent drain emptied it first, and the auto-accept
+    /// pass re-snapshots the queue at its own instant, so the two observations
+    /// can disagree. [`DashPayView::drain_auto_accepts_verified`] runs the
+    /// check itself in that case, so there is no path to an auto-accept
+    /// through an unverified provider on any interleaving.
+    ///
+    /// Returns the combined completed count; `deadline` bounds both from the
+    /// inside, `None` is unbounded. Errors exactly as the inner primitives do.
     pub async fn drain_pending_contact_crypto_verified<C, S>(
         &self,
         crypto: &C,
@@ -257,14 +401,14 @@ impl PlatformWallet {
             return Ok(0);
         }
 
-        let drained = dashpay
-            .drain_pending_contact_crypto_verified(crypto, deadline)
+        let (drained, binding) = dashpay
+            .drain_pending_contact_crypto_verified_reporting(crypto, deadline)
             .await?;
         let accepted = match identity_signer {
             Some(signer) => {
                 dashpay
-                    .drain_auto_accepts_until(signer, crypto, deadline)
-                    .await
+                    .drain_auto_accepts_verified(signer, crypto, deadline, binding)
+                    .await?
             }
             None => 0,
         };
@@ -1002,5 +1146,275 @@ mod tests {
             0,
             "the queued op completed rather than being skipped"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // The auto-accept pass and the queue-probe race.
+    //
+    // The whole-wallet wrapper probes the queue, delegates to the gated drain,
+    // then runs the DIP-15 auto-accept pass. Review found that the drain
+    // re-probes the queue and returns `Ok(0)` WITHOUT verifying when a
+    // concurrent drain emptied it in between — after which the wrapper ran the
+    // auto-accept pass anyway. That pass re-snapshots the queue at its own
+    // instant, so an `AutoAccept` the recurring sweep enqueued inside the
+    // window was processed through a provider nobody had checked.
+    //
+    // The damage is not a failed pass: `drain_auto_accepts_until` maps a proof
+    // that does not verify against our re-derived key to a PERMANENT verdict
+    // and clears it, and marks it so the sweep's enqueue gate will not offer it
+    // again. A wrong seed re-derives the wrong key, so a perfectly valid proof
+    // is destroyed.
+    // -----------------------------------------------------------------------
+
+    /// Identity signer for the auto-accept pass. Must never be reached: the
+    /// gate fires before a single queue entry is touched.
+    #[derive(Debug)]
+    struct UnreachableIdentitySigner;
+
+    #[async_trait::async_trait]
+    impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey>
+        for UnreachableIdentitySigner
+    {
+        async fn sign(
+            &self,
+            _key: &dpp::identity::IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            unreachable!("the seed-binding gate must fire before any auto-accept is signed")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &dpp::identity::IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("the seed-binding gate must fire before any auto-accept is signed")
+        }
+
+        fn can_sign_with(&self, _key: &dpp::identity::IdentityPublicKey) -> bool {
+            unreachable!("the seed-binding gate must fire before the signer is consulted")
+        }
+    }
+
+    /// Queue a DIP-15 `AutoAccept` op — what the recurring contact sweep
+    /// enqueues when it ingests an inbound request carrying an auto-accept
+    /// proof.
+    async fn enqueue_auto_accept(
+        manager: &PlatformWalletManager<NoopPersister>,
+        wallet_id: &WalletId,
+        contact: u8,
+    ) {
+        use crate::changeset::{
+            upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+        };
+        use dpp::prelude::Identifier;
+
+        let mut wm = manager.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(wallet_id).expect("wallet info");
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&Identifier::from([1u8; 32]))
+            .expect("managed identity");
+        upsert_pending_contact_crypto(
+            managed.dashpay_pending_contact_crypto_mut(),
+            PendingContactCrypto {
+                owner_identity_id: Identifier::from([1u8; 32]),
+                contact_id: Identifier::from([contact; 32]),
+                op: PendingContactCryptoOp::AutoAccept,
+                enqueued_at_ms: 0,
+            },
+        );
+    }
+
+    /// Stand-in for a concurrent drain on another task completing its work:
+    /// the queue this wallet's next probe will read is empty.
+    async fn empty_the_queue(manager: &PlatformWalletManager<NoopPersister>, wallet_id: &WalletId) {
+        use dpp::prelude::Identifier;
+
+        let mut wm = manager.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(wallet_id).expect("wallet info");
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&Identifier::from([1u8; 32]))
+            .expect("managed identity");
+        managed.dashpay_pending_contact_crypto_mut().clear();
+    }
+
+    /// The gated drain must say whether it actually checked the provider. Its
+    /// empty-queue early-out is correct on its own terms — nothing to derive,
+    /// nothing to protect — but a caller reading `Ok(0)` as "the provider is
+    /// good" is reading something the drain never said.
+    #[tokio::test]
+    async fn the_gated_drain_reports_whether_it_verified_the_provider() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        let owning = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+
+        // Work queued → the check runs and the binding is reported.
+        let (drained, binding) = wallet
+            .identity()
+            .dashpay()
+            .drain_pending_contact_crypto_verified_reporting(&owning, None)
+            .await
+            .expect("the owning seed binds");
+        assert_eq!(drained, 1);
+        assert!(
+            binding.is_verified(),
+            "a drain that ran must report the provider verified"
+        );
+
+        // Queue now empty → the early-out returns without checking, and must
+        // report exactly that rather than an unqualified success.
+        let (drained, binding) = wallet
+            .identity()
+            .dashpay()
+            .drain_pending_contact_crypto_verified_reporting(&owning, None)
+            .await
+            .expect("an empty queue is not an error");
+        assert_eq!(drained, 0);
+        assert!(
+            !binding.is_verified(),
+            "an empty-queue early-out never consulted the provider, so it must not \
+             report a binding it did not establish"
+        );
+        let _ = (&manager, &wallet_id);
+    }
+
+    /// The auto-accept pass gates itself. Handed a binding that was never
+    /// established, it must run the check rather than trust the caller's
+    /// sequencing — so no interleaving of the wrapper's two passes can reach
+    /// an auto-accept through an unverified provider.
+    #[tokio::test]
+    async fn the_auto_accept_pass_refuses_an_unestablished_binding() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        enqueue_auto_accept(&manager, &wallet_id, 3).await;
+        let queued_before = drainable(&wallet).await;
+
+        let foreign = SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), Network::Testnet);
+        let err = wallet
+            .identity()
+            .dashpay()
+            .drain_auto_accepts_verified(
+                &UnreachableIdentitySigner,
+                &foreign,
+                None,
+                super::ProviderBinding::not_established(),
+            )
+            .await
+            .expect_err("an unverified provider must not reach the auto-accept pass");
+
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "the refusal must be the typed wrong-seed error, got: {err:?}"
+        );
+        assert_eq!(
+            drainable(&wallet).await,
+            queued_before,
+            "not one queue entry may be touched — a proof cleared on a wrong-seed verify \
+             is destroyed permanently, the sweep's enqueue gate never re-offers it"
+        );
+    }
+
+    /// **The race, driven end to end.** The exact interleaving review
+    /// described, in the order the whole-wallet wrapper composes its two
+    /// passes:
+    ///
+    /// 1. the wrapper probes the queue and sees work;
+    /// 2. a concurrent drain empties it before the gated drain looks;
+    /// 3. the gated drain therefore returns without verifying;
+    /// 4. the recurring sweep enqueues a fresh `AutoAccept` in that window;
+    /// 5. the auto-accept pass runs — and must refuse.
+    ///
+    /// Step 2 is a real second task rather than a hope about scheduling: it is
+    /// awaited to completion, so the interleaving is the one under test on
+    /// every run instead of the one that happened to be scheduled.
+    ///
+    /// Before the fix this reached `drain_auto_accepts_until` with the foreign
+    /// provider, because `Ok(0)` from step 3 was indistinguishable from a
+    /// verified drain.
+    #[tokio::test]
+    async fn a_queue_emptied_between_the_probes_does_not_let_an_auto_accept_through() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        let foreign = SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), Network::Testnet);
+
+        // 1. The wrapper's probe: nonempty, so it does not early-out.
+        assert_eq!(
+            drainable(&wallet).await,
+            1,
+            "precondition: the wrapper must see work queued"
+        );
+
+        // 2. A concurrent drain on another task empties the queue.
+        {
+            let manager = manager.clone();
+            tokio::spawn(async move {
+                empty_the_queue(&manager, &wallet_id).await;
+            })
+            .await
+            .expect("the concurrent drain completes");
+        }
+
+        // 3. The gated drain re-probes, finds nothing, and returns UNVERIFIED.
+        let (drained, binding) = wallet
+            .identity()
+            .dashpay()
+            .drain_pending_contact_crypto_verified_reporting(&foreign, None)
+            .await
+            .expect("an empty queue is not an error, even for a foreign provider");
+        assert_eq!(drained, 0);
+        assert!(
+            !binding.is_verified(),
+            "the empty-queue path cannot have verified anything"
+        );
+
+        // 4. The recurring sweep enqueues a new AutoAccept inside the window.
+        enqueue_auto_accept(&manager, &wallet_id, 4).await;
+        assert_eq!(drainable(&wallet).await, 1);
+
+        // 5. The auto-accept pass must refuse the unverified provider.
+        let err = wallet
+            .identity()
+            .dashpay()
+            .drain_auto_accepts_verified(&UnreachableIdentitySigner, &foreign, None, binding)
+            .await
+            .expect_err(
+                "an auto-accept enqueued after the queue probe must not be processed \
+                 through a provider that was never checked",
+            );
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "the refusal must be the typed wrong-seed error, got: {err:?}"
+        );
+        assert_eq!(
+            drainable(&wallet).await,
+            1,
+            "the freshly enqueued auto-accept must survive for the next correct-seed pass"
+        );
+    }
+
+    /// The other half: a verified binding is not re-derived. Without this the
+    /// gate could be satisfied by refusing every auto-accept pass.
+    #[tokio::test]
+    async fn a_verified_binding_carries_into_the_auto_accept_pass() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        let owning = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+
+        let (_, binding) = wallet
+            .identity()
+            .dashpay()
+            .drain_pending_contact_crypto_verified_reporting(&owning, None)
+            .await
+            .expect("the owning seed binds");
+        assert!(binding.is_verified());
+
+        // Nothing is queued for the auto-accept pass to do, so it completes at
+        // zero — the point is that it is reached at all.
+        let accepted = wallet
+            .identity()
+            .dashpay()
+            .drain_auto_accepts_verified(&UnreachableIdentitySigner, &owning, None, binding)
+            .await
+            .expect("a verified binding must carry into the auto-accept pass");
+        assert_eq!(accepted, 0);
+        let _ = (&manager, &wallet_id);
     }
 }

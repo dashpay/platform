@@ -4394,6 +4394,342 @@ mod sweep_tests {
         ));
     }
 
+    // -----------------------------------------------------------------------
+    // The NEXT sweep has to actually retry the write.
+    //
+    // Holding the direction's high-water cursor makes the next sweep re-fetch
+    // the same range, and reporting the pass incomplete stops the launch
+    // claiming a sync it did not finish. Review found that neither of those
+    // gets the write to disk on its own: the state methods committed the
+    // mutation to memory BEFORE calling `persister.store`, so a failed store
+    // left the request sitting in `incoming_contact_requests` /
+    // `established_contacts` / `sent_contact_requests` anyway. The re-fetched
+    // range then hit the same-reference dedup — `tracked_reference ==
+    // Some(request.account_reference)` here, the no-op guards inside
+    // `add_sent_contact_request`, the `already_applied` guard inside
+    // `apply_rotated_incoming_request` — reported success and advanced the
+    // cursor. The backend never received the write, a later startup called the
+    // sync complete and reached `Ready`, and the contact was gone after a
+    // restart.
+    //
+    // These three drive two sweeps over the same fetched range, the first
+    // against a persister that fails and the second against one that takes the
+    // write, and assert the second actually ingests. Each covers one of the
+    // three branches.
+    // -----------------------------------------------------------------------
+
+    /// Counts the writes that reached the backend, so a retry that silently
+    /// no-ops is distinguishable from one that re-stored.
+    #[derive(Default)]
+    struct CountingPersistence(std::sync::atomic::AtomicUsize);
+
+    impl crate::changeset::PlatformWalletPersistence for CountingPersistence {
+        fn store(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+            _changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn flush(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    fn counting_persister() -> (WalletPersister, Arc<CountingPersistence>) {
+        let backend = Arc::new(CountingPersistence::default());
+        (
+            WalletPersister::new([0u8; 32], backend.clone()),
+            backend,
+        )
+    }
+
+    fn store_count(backend: &Arc<CountingPersistence>) -> usize {
+        backend.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Branch 1, the fresh received request (`add_incoming_contact_request`).
+    /// The first sweep's persist fails; the second must re-ingest the same
+    /// request and get it to disk, not skip it as already tracked.
+    #[test]
+    fn a_received_ingest_that_failed_to_persist_is_retried_by_the_next_sweep() {
+        let our = 1u8;
+        let our_id = Identifier::from([our; 32]);
+        let mut info = info_with_bare_identity(our);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+
+        // Sweep 1: the write fails, so the cursor is held and the pass is
+        // reported incomplete.
+        let mut rotated = Vec::new();
+        let mut all_requests = Vec::new();
+        assert!(
+            !ingest_received_requests(
+                managed,
+                &failing_persister(),
+                our_id,
+                one_received(2, our, 0),
+                &mut rotated,
+                &mut all_requests,
+            ),
+            "precondition: the failed write must report the pass incomplete"
+        );
+        assert!(
+            managed.dashpay().incoming_contact_requests().is_empty(),
+            "a request that never reached disk must not be tracked in memory, or the \
+             retry below is skipped as already known"
+        );
+
+        // Sweep 2: the held-back cursor re-fetches the SAME range against a
+        // working persister.
+        let (persister, backend) = counting_persister();
+        let mut rotated = Vec::new();
+        let mut all_requests = Vec::new();
+        assert!(
+            ingest_received_requests(
+                managed,
+                &persister,
+                our_id,
+                one_received(2, our, 0),
+                &mut rotated,
+                &mut all_requests,
+            ),
+            "the retry must complete the pass"
+        );
+
+        assert_eq!(
+            store_count(&backend),
+            1,
+            "the retry must actually re-store — a no-op that reports success \
+             advances the cursor over a write the backend never received"
+        );
+        assert_eq!(
+            all_requests.len(),
+            1,
+            "the retried request must surface as newly discovered"
+        );
+        assert_eq!(
+            managed.dashpay().incoming_contact_requests().len(),
+            1,
+            "and land in memory once it is safely on disk"
+        );
+    }
+
+    /// Branch 2, the rotation (`apply_rotated_incoming_request`). The retry has
+    /// two guards to get past: the sweep's `tracked_reference` skip and the
+    /// method's own `already_applied` idempotency guard. A rotation committed
+    /// to memory on a failed store trips both.
+    #[test]
+    fn a_received_rotation_that_failed_to_persist_is_retried_by_the_next_sweep() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let (_wallet, mut info) = info_with_established_contact(our, contact);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+
+        // Sweep 1: the sender's rotated doc at reference 7 fails to persist.
+        let mut rotated = Vec::new();
+        let mut all_requests = Vec::new();
+        assert!(
+            !ingest_received_requests(
+                managed,
+                &failing_persister(),
+                our_id,
+                one_received(contact, our, 7),
+                &mut rotated,
+                &mut all_requests,
+            ),
+            "precondition: the failed rotation must report the pass incomplete"
+        );
+        assert_eq!(
+            managed.dashpay().established_contacts()[&Identifier::from([contact; 32])]
+                .incoming_request
+                .account_reference,
+            0,
+            "memory must stay on the OLD reference — on the new one, both the sweep's \
+             same-reference skip and `already_applied` swallow the retry"
+        );
+
+        // Sweep 2: the same rotated doc, against a working persister.
+        let (persister, backend) = counting_persister();
+        let mut rotated = Vec::new();
+        let mut all_requests = Vec::new();
+        assert!(
+            ingest_received_requests(
+                managed,
+                &persister,
+                our_id,
+                one_received(contact, our, 7),
+                &mut rotated,
+                &mut all_requests,
+            ),
+            "the retry must complete the pass"
+        );
+
+        assert_eq!(
+            store_count(&backend),
+            1,
+            "the retried rotation must actually re-store"
+        );
+        assert_eq!(
+            rotated,
+            vec![Identifier::from([contact; 32])],
+            "and re-key the contact, so the caller tears down the stale external account"
+        );
+        assert_eq!(
+            managed.dashpay().established_contacts()[&Identifier::from([contact; 32])]
+                .incoming_request
+                .account_reference,
+            7,
+            "the new key material must be the tracked one once it is on disk"
+        );
+    }
+
+    /// Branch 3, the fresh sent request (`add_sent_contact_request`). Its
+    /// same-reference no-op guard returns `Ok(())`, so a memory-committed
+    /// failed write makes the retry report success without storing anything.
+    #[test]
+    fn a_sent_ingest_that_failed_to_persist_is_retried_by_the_next_sweep() {
+        let our = 1u8;
+        let our_id = Identifier::from([our; 32]);
+        let mut info = info_with_bare_identity(our);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+
+        // Sweep 1: the write fails.
+        let newest = newest_sent_per_recipient([test_request(our, 2, 0)]);
+        assert!(
+            !ingest_sent_requests(managed, &failing_persister(), our_id, newest),
+            "precondition: the failed write must report the pass incomplete"
+        );
+        assert!(
+            managed.dashpay().sent_contact_requests().is_empty(),
+            "an unpersisted sent request must not be tracked, or the retry hits the \
+             same-reference no-op guard"
+        );
+
+        // Sweep 2: the same range, against a working persister.
+        let (persister, backend) = counting_persister();
+        let newest = newest_sent_per_recipient([test_request(our, 2, 0)]);
+        assert!(
+            ingest_sent_requests(managed, &persister, our_id, newest),
+            "the retry must complete the pass"
+        );
+
+        assert_eq!(
+            store_count(&backend),
+            1,
+            "the retried sent request must actually re-store"
+        );
+        assert_eq!(
+            managed.dashpay().sent_contact_requests().len(),
+            1,
+            "and land in memory once it is safely on disk"
+        );
+    }
+
+    /// The auto-establish shape, which loses the most on a failed store: it
+    /// consumes the pending entry from the opposite direction's map. Committed
+    /// before the store, a failure left the incoming request *removed* and the
+    /// established contact tracked but unpersisted — so the retry could no
+    /// longer reproduce the auto-establish, and a restart came back with
+    /// neither the pending request nor the contact.
+    #[test]
+    fn a_failed_auto_establish_leaves_both_sides_intact_for_the_retry() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let contact_id = Identifier::from([contact; 32]);
+        let mut info = info_with_bare_identity(our);
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+
+        // We have already sent to this contact; their reciprocal now arrives.
+        managed
+            .add_sent_contact_request(test_request(our, contact, 0), &noop_persister())
+            .expect("the outgoing request persists");
+        assert_eq!(managed.dashpay().sent_contact_requests().len(), 1);
+
+        // Sweep 1: the auto-establish write fails.
+        let mut rotated = Vec::new();
+        let mut all_requests = Vec::new();
+        assert!(
+            !ingest_received_requests(
+                managed,
+                &failing_persister(),
+                our_id,
+                one_received(contact, our, 0),
+                &mut rotated,
+                &mut all_requests,
+            ),
+            "precondition: the failed write must report the pass incomplete"
+        );
+        assert_eq!(
+            managed.dashpay().sent_contact_requests().len(),
+            1,
+            "the outgoing request must survive the failed store — without it the retry \
+             cannot reproduce the auto-establish and silently downgrades the pair"
+        );
+        assert!(
+            managed.dashpay().established_contacts().is_empty(),
+            "and nothing may be tracked as established while it is not on disk"
+        );
+
+        // Sweep 2: the same reciprocal, against a working persister.
+        let (persister, backend) = counting_persister();
+        let mut rotated = Vec::new();
+        let mut all_requests = Vec::new();
+        assert!(
+            ingest_received_requests(
+                managed,
+                &persister,
+                our_id,
+                one_received(contact, our, 0),
+                &mut rotated,
+                &mut all_requests,
+            ),
+            "the retry must complete the pass"
+        );
+
+        assert_eq!(
+            store_count(&backend),
+            1,
+            "the retried auto-establish must actually re-store"
+        );
+        assert!(
+            managed
+                .dashpay()
+                .established_contacts()
+                .contains_key(&contact_id),
+            "the contact must be established on the retry"
+        );
+        assert!(
+            managed.dashpay().sent_contact_requests().is_empty(),
+            "and the pending outgoing entry consumed, now that the establish is on disk"
+        );
+    }
+
     /// **Test 3 (restore-from-seed shape):** an established contact with
     /// zero DashPay accounts must surface as an account-build candidate so
     /// the sweep rebuilds BOTH the receiving and external accounts. Before
