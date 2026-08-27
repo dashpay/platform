@@ -51,8 +51,6 @@ export default class RenewalRecord {
 
   #gatewayReloadFailedAt;
 
-  #storageWritable;
-
   /**
    * @param {Object} properties - already validated by fromObject
    */
@@ -67,7 +65,6 @@ export default class RenewalRecord {
     this.#issuanceSpentAt = properties.issuanceSpentAt;
     this.#issuanceUncertainAt = properties.issuanceUncertainAt;
     this.#gatewayReloadFailedAt = properties.gatewayReloadFailedAt;
-    this.#storageWritable = properties.storageWritable;
   }
 
   /**
@@ -139,15 +136,6 @@ export default class RenewalRecord {
       issuanceSpentAt: RenewalRecord.#readDate(raw.issuanceSpentAt),
       issuanceUncertainAt: RenewalRecord.#readDate(raw.issuanceUncertainAt),
       gatewayReloadFailedAt: RenewalRecord.#readDate(raw.gatewayReloadFailedAt),
-      // Never written into the record file, and read from a collected sample
-      // instead. The record lives in the directory this describes, so a node
-      // that cannot write there cannot write down that it cannot write there -
-      // the finding would be lost in exactly the state it exists to report.
-      //
-      // Absent means it was never asked, which is not the same as "writable".
-      // An archive from a build that did not collect it must not be read as an
-      // assurance it never gave.
-      storageWritable: typeof raw.storageWritable === 'boolean' ? raw.storageWritable : null,
     });
   }
 
@@ -171,7 +159,6 @@ export default class RenewalRecord {
       gatewayReloadFailedAt: this.#gatewayReloadFailedAt
         ? this.#gatewayReloadFailedAt.toISOString()
         : null,
-      storageWritable: this.#storageWritable,
     };
   }
 
@@ -260,19 +247,6 @@ export default class RenewalRecord {
    */
   isIssuanceOutstanding() {
     return this.isIssuanceSpent() || this.isIssuanceUncertain();
-  }
-
-  /**
-   * Whether a certificate obtained now could be saved.
-   *
-   * Three answers, not two: `null` means nothing was established, and is what
-   * a record written before this check existed carries. Only an outright
-   * `false` withholds anything.
-   *
-   * @return {boolean|null}
-   */
-  getStorageWritable() {
-    return this.#storageWritable;
   }
 
   /**

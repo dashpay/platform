@@ -3,9 +3,8 @@ import ServiceIsNotRunningError from '../../../docker/errors/ServiceIsNotRunning
 import CertificateUnresolvedError from '../../../ssl/errors/CertificateUnresolvedError.js';
 import ConfigurationLockLostError from '../../../ssl/errors/ConfigurationLockLostError.js';
 import deriveRenewalGuidance, { SAFE_ACTION } from '../../../ssl/renewalGuidance.js';
+import renderObtainCommand from '../../../ssl/renderObtainCommand.js';
 import { RENEWAL_RECORD_STATES } from '../../../ssl/renewalRecord/RenewalRecordRepository.js';
-import certificateStorageWritable from '../../../ssl/certificateStorageWritable.js';
-import certificateStorageTargets from '../../../ssl/certificateStorageTargets.js';
 import {
   CERTIFICATE_REASONS,
   CERTIFICATE_STATUS,
@@ -144,7 +143,6 @@ export default function gatewayCertificateTaskFactory(
   writeConfigTemplates,
   dockerCompose,
   renewalRecordRepository,
-  homeDir,
 ) {
   /**
    * What the helper last recorded, and whether a certificate could be kept.
@@ -182,10 +180,6 @@ export default function gatewayCertificateTaskFactory(
       // This surface only speaks when the certificate did not pass, so waiting
       // for the next automatic attempt is never affordable here.
       isCertificateUsable: false,
-      // Asked live: this runs on the node that would have to save it.
-      isCertificateStorageWritable: certificateStorageWritable(
-        certificateStorageTargets(homeDir, config.getName()),
-      ),
     });
   }
   /**
@@ -350,13 +344,9 @@ export default function gatewayCertificateTaskFactory(
         // all, so a node that already has an issuance outstanding, or one that
         // could not save what it obtained, was offered another anyway.
         const guidance = renewalGuidanceFor(config, verdict);
-        const mayAsk = guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
-          && guidance.safeAction !== SAFE_ACTION.REPAIR_STORAGE;
+        const mayAsk = guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN;
 
-        const withheld = guidance.safeAction === SAFE_ACTION.REPAIR_STORAGE
-          ? `\n\n    Free disk space and check permissions on this node's certificate
-    directory first - a certificate obtained now could not be saved.`
-          : `\n\n    Do not obtain one yet - a certificate may already have been issued.
+        const withheld = `\n\n    Do not obtain one yet - a certificate may already have been issued.
     Send a report instead: dashmate doctor report ${cfg}`;
 
         const warn = () => {
@@ -365,7 +355,7 @@ export default function gatewayCertificateTaskFactory(
             `This node uses ZeroSSL and its certificate expires ${remaining}.`
             + ' A free ZeroSSL account allows three certificates in total, so renewals'
             + ` stop working after about 270 days.${mayAsk
-              ? `\n\n    dashmate ssl obtain ${cfg} --provider letsencrypt`
+              ? `\n\n    ${renderObtainCommand({ configName: config.getName(), guidance })}`
               : withheld}`,
           ];
         };
@@ -564,8 +554,7 @@ export default function gatewayCertificateTaskFactory(
       // other surfaces and bypassed here is not a guarantee.
       const guidance = renewalGuidanceFor(config, verdict);
 
-      if (guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN
-        || guidance.safeAction === SAFE_ACTION.REPAIR_STORAGE) {
+      if (guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN) {
         throw new CertificateUnresolvedError(verdict);
       }
 

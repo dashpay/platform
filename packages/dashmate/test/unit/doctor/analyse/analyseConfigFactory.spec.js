@@ -23,20 +23,6 @@ describe('analyseConfigFactory', () => {
     return analyseConfig(samples);
   }
 
-  /**
-   * @param {Object} ssl
-   * @param {string} provider
-   * @return {Problem[]}
-   */
-  function analyseWithUnwritableStorage(ssl, provider) {
-    samples.setServiceInfo('gateway', 'certificateRenewal', {
-      state: 'PRESENT',
-      storageWritable: false,
-    });
-
-    return analyseSslSample(ssl, provider);
-  }
-
   beforeEach(() => {
     config = getBaseConfigFactory()();
 
@@ -221,29 +207,5 @@ describe('analyseConfigFactory', () => {
     const problems = analyseSslSample({ data: {} });
 
     expect(problems).to.be.empty();
-  });
-
-  // These checks predate the renewal record and each ends in its own request.
-  // A node that cannot write a certificate down must not be handed one here
-  // just because this analyser has never heard of the record - and for ZeroSSL
-  // the allowance is three in a node's lifetime, not five a week.
-  describe('when a certificate obtained now could not be saved', () => {
-    [
-      ['zerossl', { error: 'CERTIFICATE_EXPIRES_SOON', data: { certificate: { expires: '2026-01-01' } } }],
-      ['letsencrypt', { error: 'CERTIFICATE_EXPIRES_SOON', data: { certificate: { expires: '2026-01-01' } } }],
-    ].forEach(([provider, ssl]) => {
-      it(`should name the storage fault instead of a request for ${provider}`, () => {
-        const [problem] = analyseWithUnwritableStorage(ssl, provider);
-
-        expect(problem.getSolution()).to.not.contain('ssl obtain');
-        expect(problem.getSolution()).to.contain('could not be saved');
-      });
-
-      it(`should still print the request for ${provider} when storage is fine`, () => {
-        const [problem] = analyseSslSample(ssl, provider);
-
-        expect(problem.getSolution()).to.contain('ssl obtain');
-      });
-    });
   });
 });

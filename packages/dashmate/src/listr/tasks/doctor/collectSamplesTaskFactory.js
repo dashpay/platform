@@ -14,8 +14,6 @@ import providers from '../../../status/providers.js';
 import maskOperatorIdentity from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
-import certificateStorageWritable from '../../../ssl/certificateStorageWritable.js';
-import certificateStorageTargets from '../../../ssl/certificateStorageTargets.js';
 
 /**
  *
@@ -307,15 +305,6 @@ export default function collectSamplesTaskFactory(
                     path: renewal.path,
                     error: renewal.error,
                     ...renewal.record?.toObject(),
-                    // Collected here rather than carried in the record, because
-                    // the record lives in the directory this describes. A node
-                    // whose certificate directory refuses writes cannot write
-                    // down that it refuses writes: the finding would be lost in
-                    // exactly the state it exists to report, and the surfaces
-                    // would go on offering another issuance into the fault.
-                    storageWritable: certificateStorageWritable(
-                      certificateStorageTargets(homeDir, config.getName()),
-                    ),
                   };
 
                   // Same treatment as the certificate above: the path is what

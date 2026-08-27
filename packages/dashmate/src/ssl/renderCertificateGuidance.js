@@ -2,6 +2,7 @@ import { SSL_PROVIDERS } from '../constants.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
 import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from './renewalGuidance.js';
+import renderObtainCommand from './renderObtainCommand.js';
 
 /**
  * Faults in the files themselves. The gateway is handed the pair as-is, so any
@@ -174,12 +175,12 @@ function renderLetsEncryptDiagnosis(cfg, renewal) {
  * @param {string} cfg
  * @return {string}
  */
-function renderNoExternalIpGuidance(cfg, mayObtain) {
+function renderNoExternalIpGuidance(cfg, mayObtain, configName, guidance) {
   // The address is required either way. The request that follows it is not
   // exempt from the decision every other request goes through - an issuance
   // already outstanding is still outstanding once the address is set.
   const request = mayObtain
-    ? `      dashmate ssl obtain ${cfg} --provider letsencrypt\n`
+    ? `      ${renderObtainCommand({ configName, guidance })}\n`
     : '';
 
   return `  To fix it, tell dashmate this node's public address${mayObtain ? `, then get a
@@ -229,7 +230,7 @@ function renderWithheldObtain(cfg, renewal) {
  * @param {Object} verdict - decides whether the certificate can be reinstated
  * @return {string}
  */
-function renderFix(cfg, isAlreadyLetsEncrypt, verdict) {
+function renderFix(cfg, isAlreadyLetsEncrypt, verdict, configName, guidance) {
   // A node already on Let's Encrypt has nothing to switch to, so the heading
   // that offers a switch would contradict the diagnosis above it.
   const heading = isAlreadyLetsEncrypt
@@ -244,7 +245,9 @@ function renderFix(cfg, isAlreadyLetsEncrypt, verdict) {
 
   Then:
 
-      dashmate ssl obtain ${cfg} --provider letsencrypt${requiresReplacement(verdict) ? ' --force' : ''}
+      ${renderObtainCommand({
+    configName, guidance, force: requiresReplacement(verdict),
+  })}
 `;
 }
 
@@ -359,24 +362,24 @@ ${obtainAttemptFailed
     if (guidance.prerequisites.includes('EXTERNAL_IP')) {
       blocks.push(renderNoExternalIpGuidance(
         cfg,
-        guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
-        && guidance.safeAction !== SAFE_ACTION.REPAIR_STORAGE,
+        guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN,
+        config.getName(),
+        guidance,
       ));
     }
 
     if (guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN) {
       blocks.push(renderWithheldObtain(cfg, guidance));
-    } else if (guidance.safeAction === SAFE_ACTION.REPAIR_STORAGE) {
-      // Said the same way here as in the doctor. A certificate obtained now
-      // could not be written down, and each one counts against a weekly
-      // handful - so this outranks the repair the cause itself would suggest.
-      blocks.push(`  Free disk space and check permissions on this node's certificate
-  directory first. A certificate obtained now could not be saved, and each
-  one counts against this node's weekly limit.`);
     } else if (guidance.safeAction === SAFE_ACTION.WAIT_AFTER_LOCAL_FIX) {
       blocks.push(renderFixLocallyThenWait(cfg));
     } else if (!guidance.prerequisites.includes('EXTERNAL_IP')) {
-      blocks.push(renderFix(cfg, provider === SSL_PROVIDERS.LETSENCRYPT, verdict));
+      blocks.push(renderFix(
+        cfg,
+        provider === SSL_PROVIDERS.LETSENCRYPT,
+        verdict,
+        config.getName(),
+        guidance,
+      ));
     }
 
     blocks.push(renderPortEightyPermanence());

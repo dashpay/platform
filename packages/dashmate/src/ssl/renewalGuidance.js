@@ -25,11 +25,6 @@ export const SAFE_ACTION = {
   SWITCH_PROVIDER: 'SWITCH_PROVIDER',
   /** Asking again costs something and gains nothing. */
   DO_NOT_OBTAIN: 'DO_NOT_OBTAIN',
-  /**
-   * A certificate obtained now could not be saved. Repair the storage first;
-   * asking before that spends one of a weekly handful into the same fault.
-   */
-  REPAIR_STORAGE: 'REPAIR_STORAGE',
 };
 
 /**
@@ -105,32 +100,7 @@ export default function deriveRenewalGuidance({
   isRecordUnreadable = false,
   hasNoExternalIp = false,
   isCertificateUsable = true,
-  isCertificateStorageWritable = null,
 }) {
-  /**
-   * Nothing that would ask the authority may go ahead while the answer cannot
-   * be written down. Applied after the ordinary derivation rather than inside
-   * it, so it covers every route to a request - including the provider switch,
-   * which still has to save what it obtains.
-   *
-   * @param {string} action
-   * @param {RenewalRecord|null} candidate
-   * @return {string}
-   */
-  const withStorageChecked = (action, candidate) => {
-    const wouldAsk = action === SAFE_ACTION.OBTAIN
-      || action === SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX
-      || action === SAFE_ACTION.SWITCH_PROVIDER;
-
-    // A live answer where the caller has one, and the collected one otherwise.
-    // The doctor reads archives from other machines and can only have what was
-    // collected; `update` runs on the node itself and asks at the moment it
-    // matters.
-    const writable = isCertificateStorageWritable ?? candidate?.getStorageWritable() ?? null;
-
-    return wouldAsk && writable === false ? SAFE_ACTION.REPAIR_STORAGE : action;
-  };
-
   const prerequisites = hasNoExternalIp ? ['EXTERNAL_IP'] : [];
 
   // Nothing can be established, so nothing may be spent on the strength of it.
@@ -148,8 +118,7 @@ export default function deriveRenewalGuidance({
     return {
       cause: null,
       code: null,
-      // Nothing recorded still does not mean the certificate could be kept.
-      safeAction: withStorageChecked(SAFE_ACTION.OBTAIN, null),
+      safeAction: SAFE_ACTION.OBTAIN,
       issuanceStatus: ISSUANCE_STATUS.NONE,
       prerequisites,
     };
@@ -170,12 +139,9 @@ export default function deriveRenewalGuidance({
     code: record.getCode(),
     // An outstanding issuance outranks the cause's own remedy: it is spent, or
     // may be, whether or not this particular failure could be repaired.
-    safeAction: withStorageChecked(
-      issuanceStatus === ISSUANCE_STATUS.NONE
-        ? safeActionForRemedy(remedy, isCertificateUsable)
-        : SAFE_ACTION.DO_NOT_OBTAIN,
-      record,
-    ),
+    safeAction: issuanceStatus === ISSUANCE_STATUS.NONE
+      ? safeActionForRemedy(remedy, isCertificateUsable)
+      : SAFE_ACTION.DO_NOT_OBTAIN,
     issuanceStatus,
     prerequisites,
   };

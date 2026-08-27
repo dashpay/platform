@@ -21,6 +21,7 @@ import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from '../../ssl/r
 import { SSL_PROVIDERS } from '../../constants.js';
 import LegoCertificate from '../../ssl/letsencrypt/LegoCertificate.js';
 import ZeroSslCertificate from '../../ssl/zerossl/Certificate.js';
+import renderObtainCommand from '../../ssl/renderObtainCommand.js';
 
 /**
  * The manual obtain command writes certificate files but does not signal the gateway, so an
@@ -297,15 +298,17 @@ and on your router if this node is behind one.${isShortLived
  * @return {string|null} null when there is nothing for the operator to do
  */
 function renderRemedy({
-  code, remedy, cfg, force, isIssuanceSpent, isIssuanceUncertain, isCertificateUsable, safeAction,
+  code, remedy, cfg, configName, force, isIssuanceSpent, isIssuanceUncertain,
+  isCertificateUsable, safeAction, issuanceStatus,
 }) {
-  const obtain = chalk`{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}`;
+  const obtain = renderObtainCommand({
+    configName, guidance: { safeAction, issuanceStatus }, force: force !== '',
+  });
 
   // The derivation has already decided whether asking again is safe. Anything
   // below that would print a request must not run when it says no.
   const mayObtain = safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
-    && safeAction !== SAFE_ACTION.WAIT_AFTER_LOCAL_FIX
-    && safeAction !== SAFE_ACTION.REPAIR_STORAGE;
+    && safeAction !== SAFE_ACTION.WAIT_AFTER_LOCAL_FIX;
 
   // The spent issuance outranks everything except its own cause's wording: it
   // is the one state where asking again has a cost that is already incurred
@@ -348,11 +351,9 @@ certificate without dashmate seeing it. Check whether one arrived:
     return 'Do not obtain one yet - a certificate may already have been issued.';
   }
 
-  // Keyed on the decided action, not on the cause's own remedy. Switching
-  // provider still has to save what it obtains, so a node whose certificate
-  // directory refuses writes is told to repair that first - the derivation
-  // already turned this into REPAIR_STORAGE, and reading `remedy` here walked
-  // straight past it.
+  // Keyed on the decided action as well as the cause's own remedy: the
+  // derivation may already have withheld the request for a reason this branch
+  // has never heard of, and reading `remedy` alone walked straight past it.
   if (remedy === REMEDY_CLASS.SWITCH_PROVIDER && mayObtain) {
     return chalk`Switch to Let's Encrypt. Certificates are free and it does not cap the number
 of certificates this way. It needs inbound port 80 open to the internet,
@@ -388,17 +389,6 @@ ${obtain}`;
   // it worked. Nothing listens on port 80 outside a renewal, so there is
   // nothing they can probe themselves - and an hour spent not knowing is an
   // hour in which they stop looking.
-  // A certificate obtained now could not be written down, and the authority
-  // allows only a handful a week. The last one may already have gone this way
-  // without anything recording it: a helper that obtains a certificate and
-  // then fails to save it exits non-zero, and nothing marks the allowance as
-  // spent.
-  if (safeAction === SAFE_ACTION.REPAIR_STORAGE) {
-    return chalk`Free disk space and check permissions on this node's certificate
-directory first. A certificate obtained now could not be saved, and each
-one counts against this node's weekly limit.`;
-  }
-
   if (safeAction === SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX) {
     return chalk`Once that is done, check it worked right away:
 ${obtain}
@@ -424,7 +414,7 @@ ${obtain}`
  * @return {string}
  */
 function renderCertificateRequest({
-  cfg, force = '', safeAction, issuanceStatus,
+  cfg, configName, force = '', safeAction, issuanceStatus,
 }) {
   // A node that still works waits for the automatic attempt instead: asking now
   // spends one of the few failures the authority allows, on a repair the
@@ -441,22 +431,14 @@ function renderCertificateRequest({
   // reads it as an instruction to keep asking.
   if (safeAction === SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX) {
     return chalk`Once that is done, check it worked right away:
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}
+${renderObtainCommand({ configName, guidance: { safeAction, issuanceStatus }, force: force !== '' })}
 Or leave it - dashmate retries by itself every hour.`;
   }
 
-  // Every request routes through here, so the storage veto has to be answered
-  // here too. Treating everything that is not an outright refusal as
-  // permission is what let a node that could not save a certificate be handed
-  // the command to ask for one.
-  if (safeAction === SAFE_ACTION.REPAIR_STORAGE) {
-    return chalk`Free disk space and check permissions on this node's certificate
-directory first. A certificate obtained now could not be saved, and each
-one counts against this node's weekly limit.`;
-  }
-
   if (safeAction !== SAFE_ACTION.DO_NOT_OBTAIN) {
-    return chalk`{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}`;
+    return renderObtainCommand({
+      configName, guidance: { safeAction, issuanceStatus }, force: force !== '',
+    });
   }
 
   if (issuanceStatus === ISSUANCE_STATUS.SPENT) {
@@ -566,6 +548,7 @@ export default function analyseGatewayCertificateFactory() {
     // Bound once so no branch below can print a request the derivation forbids.
     const certificateRequest = (force = '') => renderCertificateRequest({
       cfg,
+      configName: config.getName(),
       force,
       safeAction: guidance.safeAction,
       issuanceStatus: guidance.issuanceStatus,
@@ -603,11 +586,13 @@ export default function analyseGatewayCertificateFactory() {
         code: failedRenewal.getCode(),
         remedy,
         cfg,
+        configName: config.getName(),
         force: installedForce,
         isIssuanceSpent: guidance.issuanceStatus === ISSUANCE_STATUS.SPENT,
         isIssuanceUncertain: guidance.issuanceStatus === ISSUANCE_STATUS.UNCERTAIN,
         isCertificateUsable,
         safeAction: guidance.safeAction,
+        issuanceStatus: guidance.issuanceStatus,
       });
 
       if (ending) {
@@ -726,7 +711,7 @@ a second one against this node's weekly limit:
           `This node's certificate was renewed${asDay(renewal.getLastSuccessAt())
             ? ` on ${asDay(renewal.getLastSuccessAt())}` : ''}, but the gateway is still using the old one`,
           chalk`Load it without an outage:
-{bold.cyanBright dashmate ssl obtain ${cfg}}`,
+${renderObtainCommand({ configName: config.getName(), guidance, provider: null })}`,
           SEVERITY.HIGH,
         ));
       }
@@ -857,7 +842,9 @@ a second one against this node's weekly limit:
 {bold.cyanBright dashmate doctor report ${cfg}}`
             : chalk`Renewal has not succeeded. Check the logs, then obtain a new certificate:
 {bold.cyanBright dashmate logs ${cfg} dashmate_helper}
-{bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${installedForce}}`,
+${renderObtainCommand({
+  configName: config.getName(), guidance, force: installedForce !== '',
+})}`,
         SEVERITY.HIGH,
       ));
     } else if (onDiskDiffers) {
