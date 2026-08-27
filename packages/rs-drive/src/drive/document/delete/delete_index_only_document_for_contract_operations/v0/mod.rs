@@ -26,7 +26,62 @@ use dpp::document::DocumentV0Getters;
 
 use dpp::version::PlatformVersion;
 
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::fee::fee_result::FeeResult;
+
 impl Drive {
+    /// The full fee-applying deletion for an indexOnly document: gather the
+    /// operations, apply (or dry-run) the batch, and price it — the same
+    /// orchestration `delete_document_for_contract`'s v0 performs for
+    /// stored documents.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn delete_index_only_document_for_contract_v0(
+        &self,
+        document: Document,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        block_info: BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+    ) -> Result<FeeResult, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+
+        let batch_operations = self.delete_index_only_document_for_contract_operations(
+            document,
+            contract,
+            document_type,
+            None,
+            &mut estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )?;
+
+        self.apply_batch_low_level_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            &mut drive_operations,
+            &platform_version.drive,
+        )?;
+
+        Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            self.config.epochs_per_era,
+            platform_version,
+            previous_fee_versions,
+        )
+    }
+
     /// Prepares the operations for deleting an indexOnly document.
     ///
     /// There is no primary row to fetch or remove: the document handed in

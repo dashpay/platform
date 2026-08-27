@@ -140,6 +140,9 @@ pub struct DriveDocumentDeleteMethodVersions {
     /// only reachable for indexOnly document types, which cannot exist below
     /// PV14).
     pub delete_index_only_document_for_contract_operations: FeatureVersion,
+    /// The fee-applying indexOnly deletion wrapper (dormant slot, 0 in
+    /// every table; only reachable for indexOnly document types).
+    pub delete_index_only_document_for_contract: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
