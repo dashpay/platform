@@ -148,8 +148,10 @@ pub fn apply(
 /// through the transient double-claim a swap goes through.
 ///
 /// A pre-existing on-disk duplicate (written before this check existed)
-/// makes both of its slot-mates unwritable here. That wallet already
-/// fails to load; refusing to extend the contradiction is the point.
+/// makes both of its slot-mates unwritable here. Refusing to extend the
+/// contradiction is the point: a strict load rejects that wallet outright
+/// and a `Recovery` load counts the collision and drops one identity from
+/// the slot, so the duplicate costs the user an identity either way.
 ///
 /// Scope-keying also covers the promotion case (an existing NULL-parented
 /// row being pulled into a wallet that already fills the slot) at no
