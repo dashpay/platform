@@ -269,3 +269,307 @@ pub(super) unsafe fn decode_funding_addresses(
     }
     Ok(address_map)
 }
+
+/// Fund a THIRD PARTY's platform address from a Core L1 asset lock,
+/// with the caller's own address absorbing the remainder (change) and
+/// the fee.
+///
+/// Sister to [`platform_address_wallet_fund_from_asset_lock_signer`]:
+/// identical parameters, identical marshalling, identical orchestration.
+/// The only delta is the recipient pre-flight on the Rust side —
+/// explicit-amount (`has_balance == true`) entries may be ANY valid
+/// P2PKH address, while the single remainder (`has_balance == false`)
+/// entry must still belong to `platform_account_index`.
+///
+/// Callers that mean to fund only their own addresses should keep using
+/// the non-`external` entry point: there, a mistyped recipient is
+/// rejected before anything is broadcast, whereas here it is a valid
+/// (and irreversible) payment to a stranger.
+///
+/// `fee_strategy` is positional over the outputs map's LEXICOGRAPHIC
+/// order (`PlatformAddress`'s derived `Ord`: P2PKH before P2SH, then
+/// hash bytes), NOT over the order entries appear in `addresses` —
+/// `decode_funding_addresses` collects into a `BTreeMap`. Callers must
+/// compute `ReduceOutput(index)` against that ordering; the Swift SDK
+/// does so by sorting its recipient array into the same canonical order
+/// before marshalling.
+///
+/// # Safety
+/// - `signer_address_handle` / `core_signer_handle` — see
+///   [`platform_address_wallet_fund_from_asset_lock_signer`]. Same
+///   ownership and validity contract.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_signer(
+    handle: Handle,
+    amount_duffs: u64,
+    account_index: u32,
+    platform_account_index: u32,
+    addresses: *const FundingAddressEntryFFI,
+    addresses_count: usize,
+    fee_strategy: *const FeeStrategyStepFFI,
+    fee_strategy_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_changeset: *mut PlatformAddressChangeSetFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_changeset);
+    // Sentinel first — see `platform_address_wallet_fund_from_asset_lock_signer`.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
+    check_ptr!(addresses);
+    check_ptr!(signer_address_handle);
+    check_ptr!(core_signer_handle);
+
+    let address_map = match decode_funding_addresses(addresses, addresses_count) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+
+    let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
+
+    let signer_addr = signer_address_handle as usize;
+    let core_signer_addr = core_signer_handle as usize;
+
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        let wallet_clone = wallet.clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        block_on_worker(async move {
+            // SAFETY: see the fn-level safety doc — both handles are
+            // pinned alive for the duration of this FFI call.
+            let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+            let asset_lock_signer = unsafe {
+                MnemonicResolverCoreSigner::new(
+                    core_signer_addr as *mut MnemonicResolverHandle,
+                    wallet_id,
+                    network,
+                )
+            };
+            wallet_clone
+                .fund_from_asset_lock_external(
+                    AssetLockFunding::FromWalletBalance {
+                        amount_duffs,
+                        account_index,
+                    },
+                    platform_account_index,
+                    address_map,
+                    fee,
+                    address_signer,
+                    &asset_lock_signer,
+                    None,
+                )
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let changeset = unwrap_result_or_return!(result);
+    *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Resume an external-recipient platform-address funding flow from an
+/// already-tracked asset lock by outpoint.
+///
+/// Sister to
+/// [`platform_address_wallet_fund_from_asset_lock_external_signer`]
+/// (same relaxed recipient rules) and to
+/// [`platform_address_wallet_resume_fund_from_asset_lock_signer`] (same
+/// resume-by-outpoint shape).
+///
+/// ## Why the recipients are a parameter and not recovered from state
+///
+/// The tracked asset lock records the L1 outpoint, its status and its
+/// proof — it does NOT record who the credits were destined for. Nothing
+/// on the Rust side ever learns the recipient set: it is chosen by the
+/// host at ST-submit time and, for a third-party payment, is not even
+/// derivable from the wallet's own key material. So a resume must be
+/// told the recipients again, exactly as the shielded resume entry point
+/// is (`platform_wallet_manager_shielded_resume_fund_from_asset_lock`).
+///
+/// The practical consequence is worth stating plainly: a resume with a
+/// DIFFERENT recipient set than the original attempt is accepted, and
+/// pays the new set. That is the correct behaviour for a flow whose
+/// first attempt never landed on Platform — the asset lock is a bearer
+/// input, not a commitment to a destination — but it does mean the host
+/// is responsible for round-tripping the intended recipient (which is
+/// what `PersistentAssetLock.recipientPlatformAddressHash` /
+/// `recipientIsExternal` exist for on the Swift side).
+///
+/// # Safety
+/// - `out_point` must be a valid, non-null pointer to an `OutPointFFI`
+///   (32-byte raw txid + u32 vout). The caller retains ownership.
+/// - `signer_address_handle` / `core_signer_handle` — see
+///   [`platform_address_wallet_fund_from_asset_lock_signer`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_external_signer(
+    handle: Handle,
+    out_point: *const OutPointFFI,
+    platform_account_index: u32,
+    addresses: *const FundingAddressEntryFFI,
+    addresses_count: usize,
+    fee_strategy: *const FeeStrategyStepFFI,
+    fee_strategy_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_changeset: *mut PlatformAddressChangeSetFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_changeset);
+    // Sentinel first — see `platform_address_wallet_fund_from_asset_lock_signer`.
+    *out_changeset = PlatformAddressChangeSetFFI::empty();
+    check_ptr!(addresses);
+    check_ptr!(out_point);
+    check_ptr!(signer_address_handle);
+    check_ptr!(core_signer_handle);
+
+    let address_map = match decode_funding_addresses(addresses, addresses_count) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+
+    let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
+
+    let out_point_ffi = *out_point;
+    let resume_outpoint = dashcore::OutPoint {
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+        vout: out_point_ffi.vout,
+    };
+
+    let signer_addr = signer_address_handle as usize;
+    let core_signer_addr = core_signer_handle as usize;
+
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        let wallet_clone = wallet.clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        block_on_worker(async move {
+            // SAFETY: see the fn-level safety doc — both handles are
+            // pinned alive for the duration of this FFI call.
+            let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+            let asset_lock_signer = unsafe {
+                MnemonicResolverCoreSigner::new(
+                    core_signer_addr as *mut MnemonicResolverHandle,
+                    wallet_id,
+                    network,
+                )
+            };
+            wallet_clone
+                .fund_from_asset_lock_external(
+                    AssetLockFunding::FromExistingAssetLock {
+                        out_point: resume_outpoint,
+                        consume_invitation_voucher: false,
+                    },
+                    platform_account_index,
+                    address_map,
+                    fee,
+                    address_signer,
+                    &asset_lock_signer,
+                    None,
+                )
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let changeset = unwrap_result_or_return!(result);
+    *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
+    PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform_address_types::PlatformAddressFFI;
+
+    fn entry(address_type: u8, tag: u8, balance: Option<u64>) -> FundingAddressEntryFFI {
+        FundingAddressEntryFFI {
+            address: PlatformAddressFFI {
+                address_type,
+                hash: [tag; 20],
+            },
+            has_balance: balance.is_some(),
+            balance: balance.unwrap_or(0),
+        }
+    }
+
+    /// Pins the contract the SDKs' fee-strategy computation depends on:
+    /// `ReduceOutput(index)` is resolved by consensus against the
+    /// outputs `BTreeMap`'s key order, and `decode_funding_addresses`
+    /// builds that map. So when the caller hands us a canonically
+    /// sorted array (P2PKH before P2SH, then hash bytes ascending — the
+    /// derived `Ord` on `PlatformAddress`), array position and
+    /// consensus output index are the SAME number.
+    ///
+    /// The hazard this guards: a caller that computes the remainder
+    /// index from its own arbitrary array order silently re-targets the
+    /// fee onto a different output whenever the remainder is not first
+    /// lexicographically. With a third-party recipient in the set, that
+    /// means the payee's explicit amount pays the fee instead of the
+    /// sender's change.
+    #[test]
+    fn decoded_map_order_matches_canonically_sorted_input() {
+        // Alice (0x0A) is the remainder; Bob (0xBB) and Carol (0xCC)
+        // take explicit amounts. Alice sorts FIRST, so the remainder
+        // index is 0 even though a caller listing "payees first" would
+        // have naively computed 2.
+        let canonical = [
+            entry(0, 0x0A, None),
+            entry(0, 0xBB, Some(500)),
+            entry(0, 0xCC, Some(700)),
+        ];
+
+        let map = unsafe { decode_funding_addresses(canonical.as_ptr(), canonical.len()) }
+            .expect("valid entries decode");
+
+        let decoded_order: Vec<PlatformAddress> = map.keys().copied().collect();
+        let input_order: Vec<PlatformAddress> = canonical
+            .iter()
+            .map(|e| PlatformAddress::try_from(e.address).expect("valid address"))
+            .collect();
+        assert_eq!(
+            decoded_order, input_order,
+            "a canonically sorted input array must survive the BTreeMap round trip in order"
+        );
+
+        let remainder_index = canonical
+            .iter()
+            .position(|e| !e.has_balance)
+            .expect("exactly one remainder");
+        assert_eq!(remainder_index, 0);
+        assert_eq!(
+            map.get(&decoded_order[remainder_index]),
+            Some(&None),
+            "ReduceOutput(remainder_index) must land on the None (remainder) output"
+        );
+    }
+
+    /// The inverse arrangement: the remainder sorts LAST. Pins that the
+    /// index tracks lexicographic position rather than being pinned to
+    /// 0 or to the caller's listing order.
+    #[test]
+    fn remainder_index_tracks_lexicographic_position() {
+        let canonical = [
+            entry(0, 0x0A, Some(500)),
+            entry(0, 0xBB, Some(700)),
+            entry(0, 0xCC, None),
+        ];
+
+        let map = unsafe { decode_funding_addresses(canonical.as_ptr(), canonical.len()) }
+            .expect("valid entries decode");
+        let decoded_order: Vec<PlatformAddress> = map.keys().copied().collect();
+
+        let remainder_index = canonical
+            .iter()
+            .position(|e| !e.has_balance)
+            .expect("exactly one remainder");
+        assert_eq!(remainder_index, 2);
+        assert_eq!(map.get(&decoded_order[remainder_index]), Some(&None));
+    }
+
+    #[test]
+    fn rejects_duplicate_recipients() {
+        let entries = [entry(0, 0x0A, Some(500)), entry(0, 0x0A, None)];
+        let err = unsafe { decode_funding_addresses(entries.as_ptr(), entries.len()) }
+            .expect_err("duplicates must be rejected");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+    }
+}
