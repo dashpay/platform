@@ -431,7 +431,7 @@ mod tests {
         let mut state = IdentityManagerStartState::default();
         state
             .scan_states
-            .insert(wallet, IdentityScanStateEntry::incomplete(5, vec![1]));
+            .insert(wallet, IdentityScanStateEntry::incomplete(0, 5, vec![1]));
 
         let manager = IdentityManager::from(state);
 
@@ -459,7 +459,7 @@ mod tests {
         let mut state = IdentityManagerStartState::default();
         state
             .scan_states
-            .insert(wallet, IdentityScanStateEntry::completed(6));
+            .insert(wallet, IdentityScanStateEntry::completed(0, 6));
 
         let manager = IdentityManager::from(state);
 
@@ -479,9 +479,8 @@ mod tests {
         assert!(manager.identity_scan_state(&[42u8; 32]).is_none());
     }
 
-    /// A later scan's verdict wholly supersedes an earlier one's — that is
-    /// what lets a clean rescan clear a prior partial scan and hand the
-    /// shortcut back.
+    /// A rescan that covers an earlier scan's unanswered indices clears
+    /// them — that is what lets a clean rescan hand the shortcut back.
     #[test]
     fn a_clean_rescan_clears_an_earlier_partial_verdict() {
         use crate::changeset::IdentityScanStateEntry;
@@ -489,10 +488,86 @@ mod tests {
         let wallet: WalletId = [10u8; 32];
         let mut manager = IdentityManager::new();
 
-        manager.record_identity_scan(wallet, IdentityScanStateEntry::incomplete(5, vec![1]));
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::incomplete(0, 5, vec![1]));
         assert!(manager.identity_scan_is_incomplete(&wallet));
 
-        manager.record_identity_scan(wallet, IdentityScanStateEntry::completed(6));
+        // Clearing takes coverage: this rescan walked index 1 and answered it.
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::completed(0, 6));
+        assert!(!manager.identity_scan_is_incomplete(&wallet));
+    }
+
+    /// The same gap, erased from the other side: a later scan may not clear
+    /// an index it never probed.
+    ///
+    /// Discovery's default options resume one past the highest registered
+    /// identity, so a wallet with identities at 0 and 2 and no answer at index
+    /// 1 resumes at 3. Publishing that suffix scan's clean verdict over the
+    /// recorded one dropped index 1, and the next launch took the warm
+    /// shortcut and reported a settled identity set with the identity at 1 —
+    /// and every contact it owns — still missing. That is the silent,
+    /// permanent gap the verdict exists to record, reached through the
+    /// bookkeeping meant to close it.
+    #[test]
+    fn a_clean_suffix_scan_cannot_erase_an_unresolved_index() {
+        use crate::changeset::IdentityScanStateEntry;
+
+        let wallet: WalletId = [10u8; 32];
+        let mut manager = IdentityManager::new();
+
+        // Identities at 0 and 2, index 1 never answered.
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::incomplete(0, 3, vec![1]));
+        assert!(manager.identity_scan_is_incomplete(&wallet));
+
+        // A later default scan resumes at 3 and answers 3..9 cleanly.
+        let recorded =
+            manager.record_identity_scan(wallet, IdentityScanStateEntry::completed(3, 9));
+
+        assert!(
+            manager.identity_scan_is_incomplete(&wallet),
+            "a scan that never probed index 1 must not clear it"
+        );
+        assert_eq!(
+            recorded.failed_indices,
+            vec![1],
+            "the gap must survive by name, so a later scan knows what to cover"
+        );
+        assert_eq!(
+            manager
+                .identity_scan_state(&wallet)
+                .expect("verdict on record"),
+            &recorded,
+            "what is persisted is what is in memory"
+        );
+
+        // And a scan that DOES cover it hands the shortcut back — without
+        // this the assertion above would pass against a verdict stuck on
+        // incomplete forever.
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::completed(0, 9));
+        assert!(!manager.identity_scan_is_incomplete(&wallet));
+    }
+
+    /// A scan abandoned before it answered anything records no index, so
+    /// nothing carries its gap by name. Only a scan that starts at the bottom
+    /// of the index space can be said to have covered whatever it never
+    /// reached; a suffix scan must not hand the shortcut back over it.
+    #[test]
+    fn an_abandoned_scan_is_not_cleared_by_a_suffix_scan() {
+        use crate::changeset::IdentityScanStateEntry;
+
+        let wallet: WalletId = [10u8; 32];
+        let mut manager = IdentityManager::new();
+
+        // What the startup budget records when discovery is dropped mid-await.
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::incomplete(0, 0, Vec::new()));
+        assert!(manager.identity_scan_is_incomplete(&wallet));
+
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::completed(3, 9));
+        assert!(
+            manager.identity_scan_is_incomplete(&wallet),
+            "a scan that started at 3 says nothing about the indices below it"
+        );
+
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::completed(0, 9));
         assert!(!manager.identity_scan_is_incomplete(&wallet));
     }
 

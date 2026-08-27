@@ -502,7 +502,7 @@ impl IdentityWallet {
         // conclusion on. Published on every ending — an unreachable Platform is
         // the strongest possible reason to scan again, and so is a scan that
         // was cut short by a fault on this device.
-        self.publish_scan_verdict(wallet_id, tally.verdict(probed_through))
+        self.publish_scan_verdict(wallet_id, tally.verdict(start_index, probed_through))
             .await;
 
         // Only now, with the verdict on record either way.
@@ -589,12 +589,15 @@ impl IdentityWallet {
         wallet_id: crate::wallet::platform_wallet::WalletId,
         verdict: crate::changeset::IdentityScanStateEntry,
     ) {
-        {
+        // What lands in memory is the verdict folded over the one already on
+        // record, so that is what gets persisted too — persisting this scan's
+        // own verdict instead would drop the gaps the fold carried forward.
+        let recorded = {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&wallet_id) {
                 Some(info) => info
                     .identity_manager
-                    .record_identity_scan(wallet_id, verdict.clone()),
+                    .record_identity_scan(wallet_id, verdict),
                 None => {
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
@@ -604,10 +607,10 @@ impl IdentityWallet {
                     return;
                 }
             }
-        }
+        };
 
         let changeset = crate::changeset::PlatformWalletChangeSet {
-            identity_scan_state: Some(verdict),
+            identity_scan_state: Some(recorded),
             ..Default::default()
         };
         if let Err(e) = self.persister.store(changeset) {
@@ -720,19 +723,32 @@ impl ScanTally {
         indices
     }
 
-    /// The verdict to persist for this scan.
+    /// The verdict to persist for this scan, over the index range
+    /// `probed_from..probed_through` it walked.
+    ///
+    /// The range is carried into the verdict because a later scan may only
+    /// clear a recorded gap it actually covered — a suffix scan that resumes
+    /// past an unanswered index has said nothing about it.
     ///
     /// Separate from [`Self::is_trustworthy`] and not its mirror: a scan that
     /// found an identity despite an unanswered probe IS trustworthy — its
     /// findings are real and worth keeping — and is still not complete. That
     /// gap is precisely where an identity goes missing for the life of an
     /// installation, so the two questions get two methods.
-    fn verdict(&self, probed_through: u32) -> crate::changeset::IdentityScanStateEntry {
+    fn verdict(
+        &self,
+        probed_from: u32,
+        probed_through: u32,
+    ) -> crate::changeset::IdentityScanStateEntry {
         let unanswered = self.unanswered_indices();
         if unanswered.is_empty() {
-            crate::changeset::IdentityScanStateEntry::completed(probed_through)
+            crate::changeset::IdentityScanStateEntry::completed(probed_from, probed_through)
         } else {
-            crate::changeset::IdentityScanStateEntry::incomplete(probed_through, unanswered)
+            crate::changeset::IdentityScanStateEntry::incomplete(
+                probed_from,
+                probed_through,
+                unanswered,
+            )
         }
     }
 
@@ -1077,7 +1093,7 @@ mod tests {
             tally.is_trustworthy(),
             "the identity it found is real and must not be discarded"
         );
-        let verdict = tally.verdict(5);
+        let verdict = tally.verdict(0, 5);
         assert!(
             !verdict.complete,
             "an unanswered index means the identity set is not settled"
@@ -1106,7 +1122,7 @@ mod tests {
             ],
         );
 
-        let verdict = tally.verdict(6);
+        let verdict = tally.verdict(0, 6);
         assert!(verdict.complete);
         assert!(verdict.failed_indices.is_empty());
     }
@@ -1117,7 +1133,7 @@ mod tests {
     fn a_scan_that_reached_nobody_records_every_failed_index() {
         let tally = run_scan(3, [Err(()), Err(()), Err(())]);
 
-        let verdict = tally.verdict(3);
+        let verdict = tally.verdict(0, 3);
         assert!(!verdict.complete);
         assert_eq!(verdict.failed_indices, vec![0, 1, 2]);
     }
@@ -1228,7 +1244,7 @@ mod tests {
         // records it.
         tally.record_local_fault(2);
 
-        let verdict = tally.verdict(3);
+        let verdict = tally.verdict(0, 3);
         assert!(
             !verdict.complete,
             "a scan that stopped early cannot claim it answered everything"
@@ -1248,7 +1264,7 @@ mod tests {
         let mut tally = run_scan(5, [Ok(Some(())), Err(()), Ok(None)]);
         tally.record_local_fault(3);
 
-        let verdict = tally.verdict(4);
+        let verdict = tally.verdict(0, 4);
         assert!(!verdict.complete);
         assert_eq!(verdict.failed_indices, vec![1, 3]);
         assert_eq!(
@@ -1263,7 +1279,7 @@ mod tests {
         let mut tally = run_scan(5, [Err(())]);
         tally.record_local_fault(0);
 
-        assert_eq!(tally.verdict(1).failed_indices, vec![0]);
+        assert_eq!(tally.verdict(0, 1).failed_indices, vec![0]);
     }
 
     /// End to end, with a real local fault injected mid-scan: a stale
@@ -1297,7 +1313,7 @@ mod tests {
             let mut wm = manager.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
             info.identity_manager
-                .record_identity_scan(wallet_id, IdentityScanStateEntry::completed(9));
+                .record_identity_scan(wallet_id, IdentityScanStateEntry::completed(0, 9));
         }
         {
             let wm = manager.wallet_manager.read().await;

@@ -1280,26 +1280,35 @@ pub struct WalletMetadataEntry {
 /// startup budget leaves none and is no more complete for it.
 ///
 /// Carried as `Option<IdentityScanStateEntry>` — at most one scan verdict per
-/// persist round, last-write-wins, which is correct because a later scan's
-/// verdict wholly supersedes an earlier one's.
+/// persist round. A newer verdict is folded over the older one rather than
+/// replacing it outright; see [`IdentityScanStateEntry::superseding`] for why
+/// replacing loses gaps.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityScanStateEntry {
-    /// Every index the scan probed was answered. Only a `true` here may let a
+    /// Every index the scan probed was answered, and nothing an earlier scan
+    /// left unanswered is still outstanding. Only a `true` here may let a
     /// later launch skip discovery.
     pub complete: bool,
+    /// The lowest index the scan probed. Together with
+    /// [`Self::probed_through`] this is the scan's coverage — what it is
+    /// entitled to have an opinion about, and the reason a suffix scan cannot
+    /// clear a gap below where it started.
+    pub probed_from: u32,
     /// One past the highest index the scan probed.
     pub probed_through: u32,
-    /// Indices whose probe never got an answer, ascending. Empty for a scan
-    /// that was cut off before it could fail anything.
+    /// Indices whose probe never got an answer, ascending — this scan's own,
+    /// plus any an earlier scan left that this one did not cover. Empty for a
+    /// scan that was cut off before it could fail anything.
     pub failed_indices: Vec<u32>,
 }
 
 impl IdentityScanStateEntry {
-    /// A scan that answered every index it probed.
-    pub fn completed(probed_through: u32) -> Self {
+    /// A scan that answered every index in `probed_from..probed_through`.
+    pub fn completed(probed_from: u32, probed_through: u32) -> Self {
         Self {
             complete: true,
+            probed_from,
             probed_through,
             failed_indices: Vec::new(),
         }
@@ -1307,12 +1316,52 @@ impl IdentityScanStateEntry {
 
     /// A scan that left at least one index unanswered, or was abandoned
     /// before it could finish.
-    pub fn incomplete(probed_through: u32, failed_indices: Vec<u32>) -> Self {
+    pub fn incomplete(probed_from: u32, probed_through: u32, failed_indices: Vec<u32>) -> Self {
         Self {
             complete: false,
+            probed_from,
             probed_through,
             failed_indices,
         }
+    }
+
+    /// Fold this scan's verdict over `previous`, the one already on record.
+    ///
+    /// A scan answers the range it walked and nothing else, so an index
+    /// `previous` recorded as unanswered is still unanswered unless this scan
+    /// covered it. Replacing the verdict outright is what let a clean suffix
+    /// scan erase a gap it never probed: discovery resumes one past the
+    /// highest registered identity by default, so a wallet with identities at
+    /// 0 and 2 and no answer at 1 resumes at 3, answers everything from there
+    /// cleanly, and publishes `complete` — after which the warm-launch
+    /// shortcut reports a settled identity set while the identity at index 1
+    /// and all of its contacts stay missing. That is the same
+    /// Ready-over-an-unprobed-gap failure the verdict exists to prevent,
+    /// reached from the other side.
+    ///
+    /// A gap this scan covered and answered is cleared; one it re-probed and
+    /// still could not answer is already among its own `failed_indices`. The
+    /// result is complete only when this scan was clean AND it left nothing
+    /// carried over.
+    pub fn superseding(mut self, previous: &Self) -> Self {
+        let covered = self.probed_from..self.probed_through;
+        for index in &previous.failed_indices {
+            if !covered.contains(index) && !self.failed_indices.contains(index) {
+                self.failed_indices.push(*index);
+            }
+        }
+        self.failed_indices.sort_unstable();
+
+        // An abandoned scan records no indices, so `failed_indices` cannot
+        // speak for it: what it never reached has no name. Only a scan that
+        // starts at the bottom of the index space can be said to have covered
+        // it, so nothing narrower may hand the shortcut back.
+        let previous_gap_is_unlocated = !previous.complete && previous.failed_indices.is_empty();
+
+        self.complete = self.complete
+            && self.failed_indices.is_empty()
+            && !(previous_gap_is_unlocated && self.probed_from > 0);
+        self
     }
 }
 
@@ -1814,12 +1863,16 @@ impl Merge for PlatformWalletChangeSet {
         if let Some(meta) = other.wallet_metadata {
             self.wallet_metadata = Some(meta);
         }
-        // Identity-scan verdict: last-write-wins. A later scan's verdict
-        // wholly supersedes an earlier one's — merging two would have to
-        // invent a rule for combining a complete scan with an incomplete one,
-        // and either answer would be wrong for one of them.
+        // Identity-scan verdict: the later scan's verdict folded over the
+        // earlier one, on the rule the manager applies — see
+        // `IdentityScanStateEntry::superseding`. Overwriting instead would let
+        // a scan batched into the same persist round clear a gap it never
+        // probed, which is the whole reason the verdict is recorded.
         if let Some(scan) = other.identity_scan_state {
-            self.identity_scan_state = Some(scan);
+            self.identity_scan_state = Some(match self.identity_scan_state.take() {
+                Some(previous) => scan.superseding(&previous),
+                None => scan,
+            });
         }
         // Per-account specs and address-pool snapshots: append-only.
         // See the type docstrings for the rationale (registration

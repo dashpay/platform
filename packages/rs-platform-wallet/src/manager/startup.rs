@@ -947,21 +947,20 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     /// Mirrors what `discover` publishes for itself; needed separately because
     /// a scan dropped mid-await never reaches its own bookkeeping.
     async fn record_identity_scan_cut_off(&self, wallet_id: &WalletId) {
-        {
+        // Coverage of nothing: the scan was dropped mid-await, so it answered
+        // no index and may not clear one an earlier scan left open.
+        let recorded = {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(wallet_id) {
                 Some(info) => info.identity_manager.record_identity_scan(
                     *wallet_id,
-                    crate::changeset::IdentityScanStateEntry::incomplete(0, Vec::new()),
+                    crate::changeset::IdentityScanStateEntry::incomplete(0, 0, Vec::new()),
                 ),
                 None => return,
             }
-        }
+        };
         let changeset = crate::changeset::PlatformWalletChangeSet {
-            identity_scan_state: Some(crate::changeset::IdentityScanStateEntry::incomplete(
-                0,
-                Vec::new(),
-            )),
+            identity_scan_state: Some(recorded),
             ..Default::default()
         };
         if let Err(e) = self.persister.store(*wallet_id, changeset) {
@@ -1684,6 +1683,7 @@ mod tests {
         // The wallet arrives with an unanswered index on record — a real
         // incomplete scan, produced by the mock SDK refusing every probe
         // during wallet creation, not a hand-planted flag.
+        let covered_through;
         {
             let wm = manager.wallet_manager.read().await;
             let verdict = wm
@@ -1697,6 +1697,7 @@ mod tests {
                 !verdict.complete,
                 "precondition: that verdict must be the incomplete one"
             );
+            covered_through = verdict.probed_through;
         }
 
         let outcome = manager
@@ -1731,8 +1732,13 @@ mod tests {
         {
             let mut wm = manager.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
-            info.identity_manager
-                .record_identity_scan(wallet_id, IdentityScanStateEntry::completed(4));
+            // Coverage matters: a verdict only clears the gaps it walked, so
+            // this stand-in for a clean rescan has to span the same indices
+            // the creation scan left unanswered.
+            info.identity_manager.record_identity_scan(
+                wallet_id,
+                IdentityScanStateEntry::completed(0, covered_through),
+            );
         }
 
         let outcome = manager
