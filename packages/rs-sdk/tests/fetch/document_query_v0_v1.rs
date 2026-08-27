@@ -140,9 +140,10 @@ fn v0_wire_shape_with_forced_v0_platform_version() {
 #[test]
 fn v0_rejects_count_star_projection() {
     let q = build_basic_document_query().with_select(SelectProjection::count_star());
-    let err = q
-        .try_into_request_for_version(v0_dispatch_version())
-        .expect_err("count_star on v0 must reject");
+    let err = SdkError::from(
+        q.try_into_request_for_version(v0_dispatch_version())
+            .expect_err("count_star on v0 must reject"),
+    );
     match err {
         SdkError::Config(msg) => assert!(
             msg.contains("v3.1+"),
@@ -155,9 +156,10 @@ fn v0_rejects_count_star_projection() {
 #[test]
 fn v0_rejects_group_by() {
     let q = build_basic_document_query().with_group_by("a");
-    let err = q
-        .try_into_request_for_version(v0_dispatch_version())
-        .expect_err("group_by on v0 must reject");
+    let err = SdkError::from(
+        q.try_into_request_for_version(v0_dispatch_version())
+            .expect_err("group_by on v0 must reject"),
+    );
     assert!(matches!(err, SdkError::Config(_)));
 }
 
@@ -174,9 +176,10 @@ fn v0_rejects_having() {
         operator: HavingOperator::GreaterThan,
         right: HavingRightOperand::Value(Value::U64(0)),
     }]);
-    let err = q
-        .try_into_request_for_version(v0_dispatch_version())
-        .expect_err("having on v0 must reject");
+    let err = SdkError::from(
+        q.try_into_request_for_version(v0_dispatch_version())
+            .expect_err("having on v0 must reject"),
+    );
     assert!(matches!(err, SdkError::Config(_)));
 }
 

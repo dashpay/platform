@@ -4803,6 +4803,7 @@ mod sweep_tests {
         );
 
         let doc = Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::from([9u8; 32]),
             owner_id: sender,
             properties,

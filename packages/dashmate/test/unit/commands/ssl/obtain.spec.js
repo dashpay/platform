@@ -1,5 +1,6 @@
 import { Listr } from 'listr2';
 import ObtainCommand from '../../../../src/commands/ssl/obtain.js';
+import ServiceIsNotRunningError from '../../../../src/docker/errors/ServiceIsNotRunningError.js';
 
 describe('SSL obtain command', () => {
   /**
@@ -10,6 +11,7 @@ describe('SSL obtain command', () => {
   function obtainDependencies(sinon, provider = 'letsencrypt') {
     return {
       provider,
+      observed: {},
       config: {
         get: sinon.stub().returns(provider),
       },
@@ -22,11 +24,28 @@ describe('SSL obtain command', () => {
   }
 
   /**
+   * Capture the context the obtain task is run with.
+   *
+   * @param {Object} dependencies
+   * @return {Object}
+   */
+  function captureContext(sinon, dependencies) {
+    const observed = {};
+
+    // eslint-disable-next-line no-param-reassign
+    dependencies.obtainTask = sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => Object.assign(observed, ctx),
+    }]));
+
+    return observed;
+  }
+
+  /**
    * @param {Object} dependencies
    * @return {Promise}
    */
   function runObtain({
-    provider, config, dockerCompose, obtainTask,
+    provider, config, dockerCompose, obtainTask, 'no-retry': noRetry = true,
   }) {
     const noop = () => new Listr([]);
 
@@ -34,7 +53,7 @@ describe('SSL obtain command', () => {
       {},
       {
         verbose: false,
-        'no-retry': true,
+        'no-retry': noRetry,
         'expiration-days': undefined,
         force: false,
         provider,
@@ -51,6 +70,28 @@ describe('SSL obtain command', () => {
   // Envoy loads the certificate once at startup. Obtaining a certificate
   // without telling the gateway to reload leaves the operator with a command
   // that reports success while the node keeps serving the old certificate.
+  // The notice belongs to the task that issues the certificate, so it renders
+  // in the task list with everything else. The command writing it directly -
+  // to either stream, from a finally or otherwise - is what this pins against.
+  it('should not print the port 80 notice itself', async function it() {
+    let written = '';
+    ['stdout', 'stderr'].forEach((stream) => {
+      this.sinon.stub(process[stream], 'write').callsFake((chunk) => {
+        written += chunk;
+
+        return true;
+      });
+    });
+
+    const dependencies = obtainDependencies(this.sinon);
+    dependencies.obtainTask = this.sinon.stub().callsFake(() => new Listr([{
+      task: (ctx) => { ctx.certificateObtained = true; },
+    }]));
+
+    await runObtain(dependencies);
+
+    expect(written).to.not.contain('LEAVE PORT 80 OPEN');
+  });
   it('should reload the gateway after obtaining a certificate', async function it() {
     const dependencies = obtainDependencies(this.sinon);
 
@@ -92,13 +133,24 @@ describe('SSL obtain command', () => {
       .to.have.been.calledOnceWith(dependencies.config, 'gateway', 'kill -SIGHUP 1');
   });
 
-  it('should not reload a gateway that is not running', async function it() {
+  // The certificate has already been obtained by the time the gateway is signalled, so a
+  // gateway that is down must not turn the whole command into a failure - that would send the
+  // operator back to a provider that may have nothing left to issue.
+  it('should not fail when the gateway is not running', async function it() {
     const dependencies = obtainDependencies(this.sinon);
-    dependencies.dockerCompose.isServiceRunning.resolves(false);
+    dependencies.dockerCompose.execCommand
+      .rejects(new ServiceIsNotRunningError('testnet', 'gateway'));
 
     await runObtain(dependencies);
 
-    expect(dependencies.dockerCompose.execCommand).to.have.not.been.called();
+    expect(dependencies.dockerCompose.execCommand).to.have.been.calledOnce();
+  });
+
+  it('should still fail on a reload error that is not a stopped gateway', async function it() {
+    const dependencies = obtainDependencies(this.sinon);
+    dependencies.dockerCompose.execCommand.rejects(new Error('docker daemon is unreachable'));
+
+    await expect(runObtain(dependencies)).to.be.rejected();
   });
 
   it('should checkpoint a newly created ZeroSSL certificate before a later failure', async function it() {
@@ -137,5 +189,63 @@ describe('SSL obtain command', () => {
 
     expect(obtainZeroSSLCertificateTask).to.have.been.calledOnce();
     expect(configFileRepository.write).to.have.been.calledOnceWith(configFile);
+  });
+
+  // The retry loop lives in the shared obtain task, so `ssl obtain` gains it
+  // too. Its --no-retry defaults to false, which would turn an obtain run from
+  // cron into a hang if the flag were what decided whether to prompt.
+  it('should not offer to prompt when run without a terminal', async function it() {
+    // Set rather than inherited: run from a developer's terminal with CI
+    // unset, the ambient streams are terminals and this stops proving
+    // anything about the unattended path.
+    const restore = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY };
+    delete process.stdin.isTTY;
+    delete process.stdout.isTTY;
+
+    const dependencies = obtainDependencies(this.sinon);
+    const context = captureContext(this.sinon, dependencies);
+
+    try {
+      await runObtain({ ...dependencies, 'no-retry': false });
+    } finally {
+      process.stdin.isTTY = restore.stdin;
+      process.stdout.isTTY = restore.stdout;
+    }
+
+    expect(context.interactive).to.equal(false);
+  });
+
+  it('should offer to prompt an operator at a terminal', async function it() {
+    // Built before the streams are touched, so nothing can throw between the
+    // change and the restore that undoes it.
+    const dependencies = obtainDependencies(this.sinon);
+    const context = captureContext(this.sinon, dependencies);
+
+    // A stream that is not a terminal has no isTTY property at all - not a
+    // false one - so it is assigned rather than stubbed.
+    const restore = { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY, ci: process.env.CI };
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    process.env.CI = '0';
+
+    this.restoreStreams = () => {
+      process.stdin.isTTY = restore.stdin;
+      process.stdout.isTTY = restore.stdout;
+      if (restore.ci === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = restore.ci;
+      }
+    };
+
+    try {
+      // The command's own default, not the helper's test-only one, since the
+      // point is that interactivity does not come from this flag.
+      await runObtain({ ...dependencies, 'no-retry': false });
+    } finally {
+      this.restoreStreams();
+    }
+
+    expect(context.interactive).to.equal(true);
   });
 });

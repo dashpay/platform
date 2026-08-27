@@ -5,11 +5,12 @@
 
 use std::error::Error as StdError;
 
-use crate::changeset::changeset::PlatformWalletChangeSet;
+use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
+use dpp::prelude::Identifier;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 /// One row of [`PlatformWalletPersistence::list_wallet_core_txids`]:
@@ -309,6 +310,34 @@ pub trait PlatformWalletPersistence: Send + Sync {
     // instead; a sentinel-scope flush path is still to be designed.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
+    /// Replace the persisted tracked-masternode set for `network` with
+    /// `records` (whole-set write; the set is user-curated and small).
+    ///
+    /// Default: a successful no-op — tracking then works but is
+    /// session-scoped. Backends that persist AND restore the rows attest
+    /// [`PersistenceCapabilities::TRACKED_MASTERNODES`] so hosts can tell
+    /// the difference; the default deliberately does not.
+    ///
+    /// The same reentrancy contract as [`Self::store`] applies.
+    fn persist_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+        records: &[crate::masternode::TrackedMasternode],
+    ) -> Result<(), PersistenceError> {
+        let _ = (network, records);
+        Ok(())
+    }
+
+    /// Load the persisted tracked-masternode set for `network`. Default:
+    /// empty (see [`Self::persist_tracked_masternodes`]).
+    fn load_tracked_masternodes(
+        &self,
+        network: dashcore::Network,
+    ) -> Result<Vec<crate::masternode::TrackedMasternode>, PersistenceError> {
+        let _ = network;
+        Ok(Vec::new())
+    }
+
     /// Load the full client state from storage.
     ///
     /// Returns a [`ClientStartState`] — a ready-to-boot snapshot covering
@@ -404,6 +433,106 @@ pub trait PlatformWalletPersistence: Send + Sync {
         &self,
         _wallet_id: WalletId,
     ) -> Result<Option<Vec<ListedCoreTxid>>, PersistenceError> {
+        Ok(None)
+    }
+
+    /// Look up the persisted DPNS marketplace row for one
+    /// `(wallet_id, wallet_identity_id, normalized_label)` triple.
+    ///
+    /// Used by the DPNS marketplace sync pass to recover a departed
+    /// name's `document_id` when the in-memory working set cannot
+    /// supply it.
+    ///
+    /// ## Why this read has to exist
+    ///
+    /// `PlatformWalletInfo::dpns_name_states` — the map the sync pass
+    /// diffs against — is **session-scoped**: the load path initializes
+    /// it EMPTY on every process start and nothing rehydrates it (the
+    /// SQLite backend deliberately does not attest
+    /// [`PersistenceCapabilities::WALLET_RESTORE`](crate::changeset::PersistenceCapabilities),
+    /// and `ClientStartState::wallets` is still unimplemented). The
+    /// durable copy is the host mirror this trait feeds — Swift
+    /// `PersistentDPNSName`, the Android Room `dpns_names` table.
+    ///
+    /// Marketplace rows are keyed by `document_id`, but a departure is
+    /// only ever *detected* by label: the sync pass notices a label on
+    /// the identity's list that the ownership scan no longer returns.
+    /// Turning that label back into the `document_id` the removal delta
+    /// must carry is precisely what the in-memory map was doing — so
+    /// when a name departs during the FIRST sync pass after a restart,
+    /// the map is empty, the id is unknown, and no removal is emitted.
+    /// The label is dropped locally all the same, so the departure never
+    /// comes back around on a later pass: the host mirror keeps a stale
+    /// owned/listed row for a name the wallet no longer holds, forever.
+    /// This lookup closes that hole by asking the mirror itself.
+    ///
+    /// ## Contract
+    ///
+    /// - `normalized_label` is the homograph-normalized label
+    ///   (`convert_to_homograph_safe_chars`), matching
+    ///   [`DpnsNameStateEntry::normalized_label`] as written through
+    ///   [`Self::store`]. Implementations MUST compare against the
+    ///   stored normalized column, never the display label.
+    /// - The returned row MUST belong to `wallet_id` AND carry
+    ///   `wallet_identity_id == wallet_identity_id`. Rows for a name
+    ///   that already left the wallet are retained (`Sold` /
+    ///   `Transferred`), so an implementation that dropped the identity
+    ///   filter could hand back another identity's row and remove the
+    ///   wrong document.
+    /// - Several rows CAN match, and WHICH one is returned matters. A
+    ///   name can be deleted and re-registered under a fresh
+    ///   `document_id`, while rows for names that already left are
+    ///   retained, so one identity may hold a historical row and the
+    ///   current row under the same normalized label. Implementations
+    ///   MUST return the CURRENT row, chosen deterministically:
+    ///   [`Owned`](crate::changeset::DpnsNameSaleStatus::Owned) ahead of
+    ///   any retained
+    ///   [`Sold`](crate::changeset::DpnsNameSaleStatus::Sold) /
+    ///   [`Transferred`](crate::changeset::DpnsNameSaleStatus::Transferred)
+    ///   row, then the greatest
+    ///   [`DpnsNameStateEntry::last_synced_at_ms`], then the
+    ///   greatest `document_id` as a final tie-break. Returning an
+    ///   arbitrary match is NOT acceptable: a historical row makes the
+    ///   caller delete that row and drop the identity's label, leaving
+    ///   the current row permanently orphaned — the very failure this
+    ///   lookup exists to prevent, just aimed at the wrong row. The
+    ///   SQLite backend implements exactly this order; see
+    ///   `schema::dpns_name_states::get_by_identity_and_label`.
+    /// - Returning `Ok(None)` while a matching row exists is likewise
+    ///   not acceptable — that reintroduces the orphan.
+    ///
+    /// ## Default
+    ///
+    /// `Ok(None)` — "this backend does not index DPNS rows by label".
+    /// Backends without the lookup keep the default and the caller
+    /// degrades to exactly the pre-fallback behaviour: the departure is
+    /// still classified and the label still removed, only the removal
+    /// delta is skipped — the restart orphan described above remains.
+    /// `Ok(None)` is therefore never an error condition — it means "no
+    /// better answer than the in-memory map already gave".
+    ///
+    /// ## Who actually implements this
+    ///
+    /// Today: `SqlitePersister` only.
+    /// [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence)
+    /// keeps the default by design. So does the FFI persister — and not
+    /// as a host choice: the persistence vtable has NO read slot for
+    /// this lookup, so there is no callback a host could set. The
+    /// mobile mirrors that persist
+    /// [`DpnsNameStateChangeSet`](crate::changeset::DpnsNameStateChangeSet)
+    /// rows (the Android Room `dpns_names` table, the iOS SwiftData
+    /// `PersistentDPNSName`) hold exactly the row this method asks for,
+    /// but cannot be asked for it until a `get_dpns_name_state` read
+    /// callback is added to the vtable — planned with the other batched
+    /// vtable/ABI additions, deliberately not part of the change that
+    /// introduced this method. Until then the restart orphan is closed
+    /// on SQLite-backed hosts only and is still live on FFI hosts.
+    fn get_dpns_name_state(
+        &self,
+        _wallet_id: WalletId,
+        _wallet_identity_id: &Identifier,
+        _normalized_label: &str,
+    ) -> Result<Option<DpnsNameStateEntry>, PersistenceError> {
         Ok(None)
     }
 

@@ -3,8 +3,9 @@ import SwiftData
 
 /// Factory for creating SwiftData model containers for Dash Platform persistence
 public enum DashModelContainer {
-    /// All persistent model types for the Dash SDK
-    public static var modelTypes: [any PersistentModel.Type] {
+    /// The exact model set shipped as schema V1. Keep frozen: staged
+    /// migration identifies an existing store by this schema checksum.
+    fileprivate static var v1ModelTypes: [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
             PersistentDPNSName.self,
@@ -43,9 +44,14 @@ public enum DashModelContainer {
         ]
     }
 
+    /// All persistent model types in the current Dash SDK schema.
+    public static var modelTypes: [any PersistentModel.Type] {
+        v1ModelTypes + [PersistentTrackedMasternode.self]
+    }
+
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(modelTypes)
+        Schema(versionedSchema: DashSchemaV2.self)
     }
 
     /// Create a persistent model container for storing data
@@ -65,10 +71,8 @@ public enum DashModelContainer {
             cloudKitDatabase: cloudKit ? .automatic : .none
         )
 
-        // Wire the migration plan even though V1 is the only shipped
-        // schema — future schema bumps just have to add a stage to
-        // `DashMigrationPlan.stages` without also having to remember
-        // to thread the plan into the container construction call.
+        // Always wire the migration plan so stores created by an older SDK
+        // advance through the registered versioned schemas.
         return try ModelContainer(
             for: schema,
             migrationPlan: DashMigrationPlan.self,
@@ -95,11 +99,13 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self]
+        [DashSchemaV1.self, DashSchemaV2.self]
     }
 
     public static var stages: [MigrationStage] {
-        []
+        [
+            .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self)
+        ]
     }
 }
 
@@ -228,6 +234,19 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 public enum DashSchemaV1: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(1, 0, 0)
+    }
+
+    public static var models: [any PersistentModel.Type] {
+        DashModelContainer.v1ModelTypes
+    }
+}
+
+/// Version 2 adds wallet-independent tracked masternodes. The new model has
+/// no relationship or required-data dependency on V1 rows, so a lightweight
+/// migration preserves every existing row and creates its table.
+public enum DashSchemaV2: VersionedSchema {
+    public static var versionIdentifier: Schema.Version {
+        Schema.Version(2, 0, 0)
     }
 
     public static var models: [any PersistentModel.Type] {

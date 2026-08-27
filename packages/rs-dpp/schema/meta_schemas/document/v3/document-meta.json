@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL THE RELEASE CARRYING PROTOCOL V14 SHIPS — FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable) and the refersTo reference keyword on identifier properties, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once the release carrying protocol v14 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL THE RELEASE CARRYING PROTOCOL V14 SHIPS — FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties, the requiredSince property keyword (the contract version a property is required from), and the timeRange index transform, and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once the release carrying protocol v14 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -224,6 +224,11 @@
         "position": {
           "type": "integer",
           "minimum": 0
+        },
+        "requiredSince": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
         }
       },
       "dependentSchemas": {
@@ -588,6 +593,35 @@
           "rankedAverageable": {
             "type": "boolean",
             "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's average (count + sum pair) of the `averageable` property, so \"top / bottom K groups by average\" queries are O(log n + k) with proofs. Requires `rangeAverageable: true` (which itself implies `rangeCountable` + `rangeSummable`). Adds the Avg ranking axis only — it does NOT imply `rankedCountable` or `rankedSummable`; each ranking axis costs its own secondary tree and is opted into separately."
+          },
+          "timeRange": {
+            "type": "object",
+            "properties": {
+              "on": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Name of the timestamp index property to bucket. Must be this index's first property and name one of the system timestamps ($createdAt, $updatedAt or $transferredAt). A timeRange index may be unique only when range equals step (non-overlapping windows) and `on` is $createdAt."
+              },
+              "range": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Length of each time range window, in seconds. Must be an exact multiple of `step`."
+              },
+              "step": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Interval between successive range starts, in seconds. When `range` > `step` the ranges overlap and a document is indexed under `range / step` bucket-start values, bounded by a protocol-versioned cap (24 at protocol version 14)."
+              },
+              "phase": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Grid alignment phase, in seconds. Range starts are `phase + k * step`; must be strictly less than `step` (a larger value would be a redundant spelling of `phase % step`) and strictly less than one year (31536000 — a phase further out could sit past current block time on a huge step, leaving valid timestamps before the grid's first bucket). A pure alignment offset — it moves where window boundaries fall (e.g. daily windows cut at 06:00 UTC instead of midnight) and never excludes any real timestamp. Defaults to 0."
+              }
+            },
+            "required": ["on", "range", "step"],
+            "additionalProperties": false,
+            "description": "Buckets the first index property's timestamp into fixed-length, regularly-spaced (possibly overlapping) time ranges. The window parameters (`range`, `step`, `phase`) are declared in seconds, since a bucket is selected from block time and the target block interval is five seconds; the stored key is the range start as a u64 millisecond timestamp, so it stays directly comparable to the source timestamp it buckets. Enables trending/leaderboard queries within the newest/oldest active range. A system-timestamp source must be listed in the document type's required fields. Several indexes may bucket the same timestamp with different grids — each grid gets its own index subtree, keyed by the property name qualified with the grid parameters. Available from protocol version 14."
           }
         },
         "required": [

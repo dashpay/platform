@@ -7,15 +7,18 @@
 //!
 //! ## What lives here (and what deliberately doesn't)
 //!
-//! These three entry points are process-global, take no wallet handle,
-//! and back the shielded funding screens' prover-status indicator and
-//! fee preview:
+//! Three support entry points back the shielded funding screens'
+//! prover-status indicator and fee preview:
 //! - [`platform_wallet_shielded_warm_up_prover`] — kick the ~30s Halo 2
-//!   proving-key build onto a background thread.
+//!   proving-key build onto a background thread (process-global, no
+//!   handle).
 //! - [`platform_wallet_shielded_prover_is_ready`] — poll whether that
-//!   build has finished (UI "preparing prover…" affordance).
+//!   build has finished (UI "preparing prover…" affordance; also
+//!   process-global).
 //! - [`platform_wallet_shielded_estimate_fee`] — the flat shielded fee in
-//!   credits for a transition of a given kind + action count.
+//!   credits for a transition of a given kind + action count, computed at
+//!   the manager's network-tracked platform version (so it takes the
+//!   manager `Handle`, unlike the two prover probes).
 //!
 //! The heavy shielded funding transitions themselves — the shielded
 //! fund-from-asset-lock (+ its resume-by-outpoint variant) and the
@@ -87,12 +90,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_proverI
 /// The flat shielded fee in credits for a transition of the given `kind`
 /// (`0` = ShieldedTransfer/Shield, `1` = Unshield, `2` = ShieldedWithdrawal)
 /// and Orchard action `count` (a single-note spend with change is 2
-/// actions). Pure computation — no wallet handle, no network. Throws on an
-/// unknown kind or a fee-formula overflow.
+/// actions), computed at `managerHandle`'s network-tracked platform
+/// version — the same version the shielded builders carve fees with. No
+/// network round-trip. Throws on an unknown kind, an invalid manager
+/// handle, or a fee-formula overflow.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_estimateShieldedFee(
     mut env: JNIEnv,
     _class: JClass,
+    manager_handle: jlong,
     kind: jint,
     num_actions: jint,
 ) -> jlong {
@@ -104,6 +110,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_estimat
         let mut out_fee: u64 = 0;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_shielded_estimate_fee(
+                manager_handle as Handle,
                 kind as u8,
                 num_actions.max(0) as usize,
                 &mut out_fee as *mut u64,
@@ -364,6 +371,66 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 recipient.as_ptr(),
                 surplus_ptr,
                 surplus_len,
+                core_signer_handle as *mut MnemonicResolverHandle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Fund the shielded pool by DRAINING the wallet's CoinJoin account
+/// (`m/9'/coinType'/4'/accountIndex'`) into a single asset lock — bridges
+/// `platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain`.
+///
+/// Mirrors Swift's `PlatformWalletManager.shieldedFundFromCoinJoinDrain`.
+/// Sibling of [`Java_..._shieldedFundFromAssetLock`] with drain funding, so
+/// it differs in exactly two ways:
+///
+/// 1. **No amount** — every final mixed-coin UTXO is consumed and the lock
+///    value is `Σ inputs − L1 fee`, computed Rust-side. The mixed coins never
+///    hop through a transparent BIP44 address, which is what makes this the
+///    CoinJoin → Shielded migration path rather than a normal shield.
+/// 2. **No surplus output** — the single-recipient remainder flow pins the
+///    consensus surplus to zero, so the parameter is omitted rather than
+///    plumbed as null.
+///
+/// `coinJoinAccountIndex` selects the CoinJoin account to drain (0 for every
+/// current wallet); `recipientRaw43` is the 43-byte raw Orchard address;
+/// `coreSignerHandle` is the manager's `MnemonicResolverHandle`. The Rust
+/// preflight rejects a drain whose balance could not clear the Type 18 pool
+/// fee, so an unrecoverable dust lock is never broadcast, and a stuck lock
+/// resumes through the same `shieldedResumeFundFromAssetLock` entry point as a
+/// BIP44-funded one. The ~30s Halo 2 proof runs inside the call; nothing is
+/// returned on success.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedFundFromCoinJoinDrain(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    coin_join_account_index: jint,
+    recipient_raw43: JByteArray,
+    core_signer_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        // Reject a negative index at the boundary — it would otherwise
+        // bit-cast to a huge u32 on the FFI call.
+        if coin_join_account_index < 0 {
+            throw_sdk_exception(env, 1, "coinJoinAccountIndex must be non-negative");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let Some(recipient) = read_recipient43(env, &recipient_raw43) else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                coin_join_account_index as u32,
+                recipient.as_ptr(),
                 core_signer_handle as *mut MnemonicResolverHandle,
             )
         };

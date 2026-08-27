@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -30,10 +31,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ShieldedFundProgress
 import org.dashfoundation.example.services.shielded.ShieldedFundFromAssetLockCoordinator.StartFundingResult
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
@@ -47,7 +50,9 @@ import org.dashfoundation.example.util.toHex
  * Shield funds from an asset lock — port of `ShieldedFundFromAssetLockView.swift`.
  * Gated on shielded support ([ShieldedGate]). Shows the Halo 2 prover
  * readiness (via [ShieldedProver.isReady], warming it on entry) and the
- * consensus-pinned shield fee ([ShieldedProver.estimateFee]).
+ * consensus-pinned shield fee
+ * ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.estimateShieldedFee],
+ * computed at the manager's network-tracked platform version).
  *
  * Submit is wired to the real shield FFI: the recipient defaults to the
  * wallet's own bound shielded address ("shield to self", via
@@ -64,6 +69,7 @@ import org.dashfoundation.example.util.toHex
 fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
     ShieldedGate(navController) {
         val container = LocalAppContainer.current
+        val appState = LocalAppState.current
         val walletId = remember(walletIdHex) { walletIdHex.hexToBytes() }
         val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
@@ -77,10 +83,34 @@ fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
             runCatching { ShieldedProver.warmUp() }
             value = runCatching { ShieldedProver.isReady() }.getOrDefault(false)
         }
-        val feeEstimate by produceState<Long?>(initialValue = null) {
-            value = runCatching {
-                ShieldedProver.estimateFee(ShieldedProver.FeeKind.TransferOrShield, 2)
-            }.getOrNull()
+        // Re-keyed on the published protocol version: the SDK learns the
+        // network's version on a background refresh after the manager
+        // exists, so an estimate produced before the ratchet completed was
+        // computed at the seed version (← iOS SendTransactionView
+        // re-resolves on `platformState.platformProtocolVersion`).
+        val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
+        // ...and re-read on every resume, because the flow alone can go
+        // stale: that refresh republishes the unchanged seed when its
+        // proven fetch fails, and the SDK independently ratchets its
+        // version from ANY proof-verified query's response metadata
+        // without publishing at all. The estimate is a pure handle
+        // lookup, so re-reading is free.
+        var feeReadEpoch by remember { mutableIntStateOf(0) }
+        LifecycleResumeEffect(Unit) {
+            feeReadEpoch++
+            onPauseOrDispose {}
+        }
+        val feeEstimate by produceState<Long?>(
+            initialValue = null,
+            manager,
+            protocolVersion,
+            feeReadEpoch,
+        ) {
+            value = manager?.let { m ->
+                runCatching {
+                    m.estimateShieldedFee(ShieldedProver.FeeKind.TransferOrShield, 2)
+                }.getOrNull()
+            }
         }
 
         // Default "shield to self" recipient — the wallet's bound shielded

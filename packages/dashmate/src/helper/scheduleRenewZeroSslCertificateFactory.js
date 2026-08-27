@@ -79,7 +79,10 @@ export default function scheduleRenewZeroSslCertificateFactory(
     let expiresAt;
     // A failed validation checkpoints the remote certificate ID. Resume pending
     // certificates immediately; their expiry is not a meaningful retry time.
+    // A certificate carrying no expiry date at all is handled here too: scheduling
+    // from it would yield a date in the past, which cron rejects by throwing.
     if (certificate.status !== 'issued'
+      || certificate.expires === null
       || certificate.isExpiredInDays(Certificate.EXPIRATION_LIMIT_DAYS)) {
       // Obtain new certificate right away
       expiresAt = new Date(Date.now() + 3000);

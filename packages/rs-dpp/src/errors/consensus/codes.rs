@@ -120,6 +120,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidTokenDistributionTimeIntervalTooShortError(_) => 10273,
             Self::InvalidTokenDistributionTimeIntervalNotMinuteAlignedError(_) => 10274,
             Self::RedundantDocumentPaidForByTokenWithContractId(_) => 10275,
+            Self::DataContractInvalidRequiredFieldsUpdateError { .. } => 10276,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,

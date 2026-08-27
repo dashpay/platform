@@ -57,6 +57,10 @@ final class InvitationPersistenceTests: XCTestCase {
             // `PersistentDPNSName`, so this bit is genuinely attested.
             | PlatformWalletPersistenceCapabilities.dpnsNameStates
             | PlatformWalletPersistenceCapabilities.trackedAssetLocks
+            // Tracked (wallet-independent) masternodes: the handler wires
+            // the persist/load/free trio onto `PersistentTrackedMasternode`,
+            // so restart survival is genuinely attested.
+            | PlatformWalletPersistenceCapabilities.trackedMasternodes
 
         XCTAssertEqual(
             capabilities.version,

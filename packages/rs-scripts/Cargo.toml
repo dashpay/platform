@@ -27,7 +27,7 @@ platform-version = { path = "../rs-platform-version" }
 dash-sdk = { path = "../rs-sdk" }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
-simple-signer = { path = "../simple-signer" }
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 base64 = "0.22"
 chrono = "0.4"
 hex = "0.4"

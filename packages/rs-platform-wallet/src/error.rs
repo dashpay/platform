@@ -282,6 +282,49 @@ pub enum PlatformWalletError {
         actual_identity_index: u32,
     },
 
+    /// Asset-lock coin selection came up short, so a host (and ultimately the
+    /// wallet UI) can render a precise shortfall instead of a stringly-typed
+    /// "Insufficient funds" message (dashpay/platform#4073).
+    ///
+    /// What `available` covers depends on the build's funding form. An
+    /// exact-amount build funds from a POOLED source list — the default
+    /// [`ASSET_LOCK_FUNDING_SOURCES`](crate::ASSET_LOCK_FUNDING_SOURCES)
+    /// unions the BIP44 and BIP32 accounts with every DashPay
+    /// contact-receiving account — so its shortfall describes that whole
+    /// permitted union, not any single account (an explicit single-element
+    /// source list narrows it back to one account). Only a *drain* build
+    /// (whole-account funding) selects exactly one account, so only there
+    /// does the figure name a single account's shortfall. CoinJoin funds
+    /// exclusively through the drain form — it is never pooled (spending
+    /// mixed outputs alongside transparent ones would link them), so the
+    /// CoinJoin → shielded migration's shortfall is always the mixed
+    /// account's own.
+    ///
+    /// Distinct from [`CoreInsufficientFunds`] / [`CorePooledInsufficientFunds`],
+    /// which belong to the atomic Core-send selector rather than the asset-lock
+    /// builder, and which carry `Option` amounts because a pooled send may not
+    /// know them. The asset-lock builder always has concrete figures: the
+    /// key-wallet shortfall errors carry their own, and the empty-candidate-set
+    /// case is reported as `available: 0` against the requested target.
+    ///
+    /// On a *drain* build (whole-account funding, e.g. the CoinJoin → shielded
+    /// migration) the requested target is the zero credit-output placeholder
+    /// that key-wallet rewrites to `Σ inputs − fee`, so `required` reports the
+    /// caller's drain floor instead: an empty account surfaces as
+    /// `available: 0, required: <minimum_lock_duffs>` (the shielded flow
+    /// installs the positive Type 18 pool-fee floor before building), and only
+    /// a floor-less drain reports `required: 0`. The floor is additionally
+    /// enforced downstream against the built payload once the lock value is
+    /// known.
+    ///
+    /// [`CoreInsufficientFunds`]: Self::CoreInsufficientFunds
+    /// [`CorePooledInsufficientFunds`]: Self::CorePooledInsufficientFunds
+    #[error(
+        "asset lock coin selection is short: available {available} duffs, \
+         required {required} duffs"
+    )]
+    AssetLockInsufficientFunds { available: u64, required: u64 },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
@@ -554,6 +597,29 @@ pub enum PlatformWalletError {
     )]
     ShieldedSpendUnconfirmed {
         operation: &'static str,
+        reason: String,
+    },
+
+    /// A masternode (evonode) identity credit withdrawal was **broadcast and
+    /// accepted**, but its execution result could not be confirmed (the
+    /// result-proof fetch/verify failed — transient DAPI/proof error or
+    /// timeout, not a Platform rejection). The claim may already have
+    /// executed, and the SDK's identity-nonce cache was bumped for it, so
+    /// re-submitting could execute a SECOND withdrawal with the next nonce.
+    /// Callers must NOT retry until they have re-read the identity's
+    /// claimable balance (and the payout) and reconciled the outcome.
+    /// `reason` carries the underlying SDK error for diagnostics.
+    ///
+    /// Shielded sibling: [`Self::ShieldedSpendUnconfirmed`]; core sibling:
+    /// [`Self::TransactionBroadcastUnconfirmed`].
+    #[error(
+        "Masternode withdrawal of {amount_credits} credits from identity {identity_id} was \
+         broadcast but its result could not be confirmed; it may already have executed — do \
+         not re-submit until the claimable balance has been re-read: {reason}"
+    )]
+    MasternodeWithdrawalUnconfirmed {
+        identity_id: Identifier,
+        amount_credits: u64,
         reason: String,
     },
 

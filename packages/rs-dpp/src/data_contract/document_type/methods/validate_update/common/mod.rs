@@ -1712,7 +1712,7 @@ mod tests {
             let old = document_type_with_byte_array(old_ba, platform_version);
             let new = document_type_with_byte_array(new_ba, platform_version);
             old.as_ref()
-                .validate_update(new.as_ref(), platform_version)
+                .validate_update(new.as_ref(), 2, platform_version)
                 .expect("validate_update should not error")
         }
 

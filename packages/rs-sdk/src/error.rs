@@ -133,6 +133,16 @@ pub enum Error {
     NoAvailableAddressesToRetry(Box<Error>),
 }
 
+impl From<dash_platform_queries::Error> for Error {
+    fn from(value: dash_platform_queries::Error) -> Self {
+        match value {
+            dash_platform_queries::Error::Config(msg) => Self::Config(msg),
+            dash_platform_queries::Error::Drive(e) => Self::Drive(e),
+            dash_platform_queries::Error::Protocol(e) => Self::Protocol(e),
+        }
+    }
+}
+
 /// State transition broadcast error
 #[derive(Debug, thiserror::Error)]
 #[error("state transition broadcast error: {message}")]
