@@ -149,12 +149,18 @@ impl WasmSdk {
     /// 4. Broadcasts and waits for confirmation
     ///
     /// @param options - Creation options including document, identity key, and signer
-    /// @returns Promise that resolves when the document is created
+    /// @returns Promise resolving to the confirmed Document as Platform
+    ///          committed it — consensus-populated system fields
+    ///          (`$createdAt` and friends) included. Keep THIS instance
+    ///          when you later intend to delete an indexOnly document
+    ///          whose type requires `$createdAt`: the delete carries the
+    ///          document's values, and the pre-broadcast wrapper never
+    ///          learns the block timestamp Platform assigned.
     #[wasm_bindgen(js_name = "documentCreate")]
     pub async fn document_create(
         &self,
         options: DocumentCreateOptionsJs,
-    ) -> Result<(), WasmSdkError> {
+    ) -> Result<DocumentWasm, WasmSdkError> {
         // Extract document from options
         let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
@@ -195,8 +201,10 @@ impl WasmSdk {
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
-        // Use PutDocument trait for creation
-        document
+        // Use PutDocument trait for creation, keeping the confirmed
+        // document Platform returns — it carries the consensus-assigned
+        // system fields the caller's pre-broadcast wrapper lacks.
+        let confirmed_document = document
             .put_to_platform_and_wait_for_response(
                 self.inner_sdk(),
                 document_type,
@@ -208,7 +216,12 @@ impl WasmSdk {
             )
             .await?;
 
-        Ok(())
+        Ok(DocumentWasm::new(
+            confirmed_document,
+            contract_id,
+            document_type_name,
+            Some(entropy_array),
+        ))
     }
 }
 
