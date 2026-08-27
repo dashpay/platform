@@ -622,6 +622,12 @@
             "required": ["on", "range", "step"],
             "additionalProperties": false,
             "description": "Buckets the first index property's timestamp into fixed-length, regularly-spaced (possibly overlapping) time ranges. The window parameters (`range`, `step`, `phase`) are declared in seconds, since a bucket is selected from block time and the target block interval is five seconds; the stored key is the range start as a u64 millisecond timestamp, so it stays directly comparable to the source timestamp it buckets. Enables trending/leaderboard queries within the newest/oldest active range. A system-timestamp source must be listed in the document type's required fields. Several indexes may bucket the same timestamp with different grids — each grid gets its own index subtree, keyed by the property name qualified with the grid parameters. Available from protocol version 14."
+          },
+          "terminal": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Only on indexOnly document types: names the property whose value is this index entry's member key — the docId-analog terminal key under the index's storage marker, stored as an Item instead of a Reference because there is no primary-storage row. Either \"$ownerId\" (the default when omitted) or an identifier property carrying a refersTo declaration (identity, contract, token, or permanentDocument). Must not repeat one of the index's listed properties. Available from protocol version 14."
           }
         },
         "required": [
@@ -765,6 +771,10 @@
     "rangeAverageable": {
       "type": "boolean",
       "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `documentsAverageable` to be set. Same caveat as `rangeSummable` — rarely useful on the primary key; per-index `rangeAverageable` is what most callers want."
+    },
+    "indexOnly": {
+      "type": "boolean",
+      "description": "When true, documents of this type are never written to primary storage: the index entries are the rows, each terminating in an Item keyed by the index's `terminal` property instead of a Reference keyed by the document id. Only what is in the indexes exists and is recoverable. Requires: every property required and appearing in at least one index, $ownerId in at least one index (as a property or terminal), documentsMutable: false, no transfers/trading/history/transient properties, and no doctype-level aggregate keywords (use the index-level count flags). Available from protocol version 14."
     },
     "tokenCost": {
       "type": "object",

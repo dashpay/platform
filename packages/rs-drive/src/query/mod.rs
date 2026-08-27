@@ -280,6 +280,13 @@ pub mod drive_document_having_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_ranked_query;
 
+/// Document synthesis for indexOnly queries: an indexOnly entry's proved
+/// `(path, key)` position IS the document, and this module is the single
+/// builder both the server's no-proof execution and the proof verifier
+/// call to turn one back into a `Document`.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod index_only_synthesis;
+
 /// Joint count-and-sum no-prove executor surface — backs the AVG
 /// no-prove path's unified single-walk dispatch. See its module
 /// docstring for the perf / atomicity contract. Server-only because
@@ -1611,6 +1618,26 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_in_clause_shape(platform_version)?;
+        // indexOnly documents have no primary-key tree: nothing is ever
+        // addressed by document id, so a by-id query has no tree to land on.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() && self.is_for_primary_key() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "indexOnly documents cannot be fetched by id: there is no primary-key \
+                     tree; query through one of the type's indexes"
+                        .to_string(),
+                )));
+            }
+            if self.document_type.index_only() && self.start_at.is_some() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "startAt/startAfter is not yet supported for indexOnly document types: \
+                     the cursor would be resolved through the primary-key tree, which an \
+                     indexOnly type does not have"
+                        .to_string(),
+                )));
+            }
+        }
         let drive_version = &platform_version.drive;
         // First we should get the overall document_type_path
         let document_type_path = self
@@ -1725,6 +1752,26 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_in_clause_shape(platform_version)?;
+        // indexOnly documents have no primary-key tree: nothing is ever
+        // addressed by document id, so a by-id query has no tree to land on.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() && self.is_for_primary_key() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "indexOnly documents cannot be fetched by id: there is no primary-key \
+                     tree; query through one of the type's indexes"
+                        .to_string(),
+                )));
+            }
+            if self.document_type.index_only() && self.start_at.is_some() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "startAt/startAfter is not yet supported for indexOnly document types: \
+                     the cursor would be resolved through the primary-key tree, which an \
+                     indexOnly type does not have"
+                        .to_string(),
+                )));
+            }
+        }
         // First we should get the overall document_type_path
         let document_type_path = self
             .contract

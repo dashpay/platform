@@ -69,6 +69,15 @@ pub const TIME_RANGE: &str = "timeRange";
 /// `range % step == 0`), not a versioned limit: it is part of what makes a
 /// transform well-formed at all.
 pub const MAX_TIME_RANGE_PHASE_SECONDS: u64 = 31_536_000;
+/// Index-level keyword naming the property whose value is the index entry's
+/// **member key** on an `indexOnly` document type — the docId-analog terminal
+/// key stored under the `0` storage marker, where a normal index stores the
+/// document id. `"$ownerId"` (the default) or a refersTo-typed identifier
+/// property (identity, contract, token, or permanent document — the permanent
+/// kinds `refersTo` targets). Only allowed on indexOnly document types; the
+/// doc-type-level validation rejects it elsewhere. Meta-schema v3+ (protocol
+/// version 14).
+pub const TERMINAL: &str = "terminal";
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -513,6 +522,21 @@ pub struct Index {
     // JSON must still deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub time_range: Option<TimeRangeTransform>,
+    /// On an `indexOnly` document type, the property whose value is this
+    /// index's member key: the terminal key under the `0` storage marker,
+    /// sitting exactly where a normal index stores the document id — except
+    /// the element is an `Item` instead of a `Reference`, because there is no
+    /// primary-storage row to reference. `"$ownerId"` or a refersTo-typed
+    /// identifier property; the doc-type-level validation
+    /// (`apply_index_only`) normalizes an omitted value to `"$ownerId"` and
+    /// rejects the keyword entirely on non-indexOnly document types, so on a
+    /// parsed non-indexOnly type this is always `None`.
+    //
+    // `serde(default)`: added after the struct's serde shape was in the wild
+    // (see the note on `countable` above), so pre-existing JSON must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub terminal: Option<String>,
 }
 
 /// Which grammar keywords a document meta-schema generation admits for
@@ -522,11 +546,15 @@ pub struct Index {
 /// and the registration-cost re-parse. Deriving the flags anywhere else
 /// invites the two to drift, and then an index the validator parses is
 /// billed nothing (or a rejected one is billed).
+#[derive(Clone, Copy)]
 pub(crate) struct IndexGrammarAdmissions {
     /// The `ranked*` keyword family (generation 3 and later).
     pub(crate) ranked: bool,
     /// The `timeRange` keyword (generation 3 and later).
     pub(crate) time_range: bool,
+    /// The `terminal` keyword (indexOnly document types; generation 3 and
+    /// later).
+    pub(crate) terminal: bool,
 }
 
 impl IndexGrammarAdmissions {
@@ -538,6 +566,7 @@ impl IndexGrammarAdmissions {
         Self {
             ranked: generation >= 3,
             time_range: generation >= 3,
+            terminal: generation >= 3,
         }
     }
 }
@@ -769,7 +798,14 @@ impl TryFrom<&[(Value, Value)]> for Index {
     /// `document_type_schema` version must go through
     /// [`Index::try_from_value_map`] instead so PV14+ contracts can use them.
     fn try_from(index_type_value_map: &[(Value, Value)]) -> Result<Self, Self::Error> {
-        Index::try_from_value_map(index_type_value_map, false, false)
+        Index::try_from_value_map(
+            index_type_value_map,
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: false,
+                terminal: false,
+            },
+        )
     }
 }
 
@@ -791,14 +827,21 @@ impl Index {
     ///
     /// `time_range_allowed` gates the `timeRange` keyword exactly the same
     /// way: it also joined the grammar at meta-schema v3 (protocol version
-    /// 14). The two flags are separate parameters because they are separate
+    /// 14). The flags are separate parameters because they are separate
     /// grammar admissions — a future generation may admit one without the
     /// other.
-    pub fn try_from_value_map(
+    ///
+    /// `terminal_allowed` gates the `terminal` keyword (indexOnly document
+    /// types), which also joined the grammar at meta-schema v3.
+    pub(crate) fn try_from_value_map(
         index_type_value_map: &[(Value, Value)],
-        ranked_aggregates_allowed: bool,
-        time_range_allowed: bool,
+        admissions: IndexGrammarAdmissions,
     ) -> Result<Self, DataContractError> {
+        let IndexGrammarAdmissions {
+            ranked: ranked_aggregates_allowed,
+            time_range: time_range_allowed,
+            terminal: terminal_allowed,
+        } = admissions;
         // Decouple the map
         // It contains properties and a unique key
         // If the unique key is absent, then unique is false
@@ -852,6 +895,7 @@ impl Index {
         let mut ranked_summable = false;
         let mut ranked_averageable = false;
         let mut time_range: Option<TimeRangeTransform> = None;
+        let mut terminal: Option<String> = None;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -1190,6 +1234,28 @@ impl Index {
                         step_seconds,
                         phase_seconds,
                     });
+                }
+                // `terminal` is guarded the same way as the ranking keywords
+                // above: it joined the grammar at meta-schema v3, so below
+                // that the key falls through to the unknown-property arm.
+                // Whether the declaring document type is actually indexOnly —
+                // the only place the keyword is legal — is a doc-type-level
+                // fact this parser cannot see; `apply_index_only` in
+                // `try_from_schema::common` enforces it.
+                TERMINAL if terminal_allowed => {
+                    let terminal_name =
+                        value_value
+                            .as_text()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "terminal value must be a string naming a property".to_string(),
+                            ))?;
+                    if terminal_name.is_empty() {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "terminal must name a property; an empty string names nothing"
+                                .to_string(),
+                        ));
+                    }
+                    terminal = Some(terminal_name.to_owned());
                 }
                 "properties" => {
                     let properties =
@@ -1670,6 +1736,7 @@ impl Index {
             ranked_summable,
             ranked_averageable,
             time_range,
+            terminal,
         })
     }
 }
@@ -1741,6 +1808,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            terminal: None,
         }
     }
 
@@ -1815,21 +1883,45 @@ mod tests {
     #[test]
     fn time_range_phase_parses_and_must_be_less_than_step() {
         let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "phase", 3_600);
-        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        let index = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .expect("should parse");
         let transform = index.time_range.expect("time_range should be set");
         assert_eq!(transform.phase_seconds, 3_600);
 
         // phase == step: one whole step of shift reproduces the identical
         // grid, so this is the smallest redundant spelling.
         let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "phase", 7_200);
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             DataContractError::InvalidContractStructure(_)
         ));
 
         let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "phase", 10_000);
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             DataContractError::InvalidContractStructure(_)
@@ -1853,7 +1945,15 @@ mod tests {
             "phase",
             1_900_000_000,
         );
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             DataContractError::InvalidContractStructure(_)
@@ -1866,7 +1966,15 @@ mod tests {
             "phase",
             MAX_TIME_RANGE_PHASE_SECONDS - 1,
         );
-        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        let index = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .expect("should parse");
         assert_eq!(
             index.time_range.expect("transform set").phase_seconds,
             MAX_TIME_RANGE_PHASE_SECONDS - 1
@@ -1879,7 +1987,15 @@ mod tests {
             "phase",
             MAX_TIME_RANGE_PHASE_SECONDS,
         );
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             DataContractError::InvalidContractStructure(_)
@@ -1893,7 +2009,15 @@ mod tests {
     #[test]
     fn time_range_rejects_the_removed_origin_key() {
         let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "origin", 3_600);
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             DataContractError::InvalidContractStructure(_)
@@ -1908,7 +2032,15 @@ mod tests {
     #[test]
     fn time_range_storage_keys_are_grid_qualified() {
         let map = index_value_map("$createdAt", Some(("$createdAt", 21_600, 7_200)));
-        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        let index = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .expect("should parse");
         assert_eq!(index.level_key(0, "$createdAt"), "$createdAt#21600#7200");
         assert_eq!(
             index.level_key_for_property("$createdAt"),
@@ -1919,7 +2051,15 @@ mod tests {
         assert_eq!(index.level_key_for_property("hashtag"), "hashtag");
 
         let map = index_value_map_with_extra_time_range_key(21_600, 7_200, "phase", 3_600);
-        let phased = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        let phased = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .expect("should parse");
         assert_eq!(
             phased.level_key(0, "$createdAt"),
             "$createdAt#21600#7200#3600"
@@ -1935,7 +2075,15 @@ mod tests {
     fn time_range_index_parses() {
         // A six-hour window refreshed every two hours.
         let map = index_value_map("$createdAt", Some(("$createdAt", 21_600, 7_200)));
-        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        let index = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .expect("should parse");
         let transform = index.time_range.expect("time_range should be set");
         assert_eq!(transform.source, "$createdAt");
         assert_eq!(transform.range_seconds, 21_600);
@@ -1951,7 +2099,15 @@ mod tests {
     #[test]
     fn time_range_rejects_non_multiple_range() {
         let map = index_value_map("$createdAt", Some(("$createdAt", 21_600, 7_000)));
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             DataContractError::InvalidContractStructure(_)
@@ -1965,7 +2121,15 @@ mod tests {
         // that can reject this transform.
         let too_large = u64::MAX / 1_000 + 1;
         let map = index_value_map("$createdAt", Some(("$createdAt", too_large, too_large)));
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         match err {
             DataContractError::InvalidContractStructure(message) => {
                 assert!(
@@ -1984,8 +2148,15 @@ mod tests {
         // rule — this parser has no platform version to read it from. A
         // huge factor must therefore parse; registration is what rejects it.
         let map = index_value_map("$createdAt", Some(("$createdAt", 300, 1)));
-        let index = Index::try_from_value_map(map.as_slice(), false, true)
-            .expect("the parser applies structural rules only");
+        let index = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .expect("the parser applies structural rules only");
         assert_eq!(
             index
                 .time_range
@@ -1999,7 +2170,15 @@ mod tests {
     fn time_range_rejects_source_not_first_property() {
         // `on` names a property that is not the first index property
         let map = index_value_map("$createdAt", Some(("hashtag", 60, 20)));
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             DataContractError::InvalidContractStructure(_)
@@ -2009,7 +2188,15 @@ mod tests {
     #[test]
     fn time_range_rejects_zero_step() {
         let map = index_value_map("$createdAt", Some(("$createdAt", 60, 0)));
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             DataContractError::InvalidContractStructure(_)
@@ -2023,7 +2210,15 @@ mod tests {
             Value::Text("nullSearchable".to_string()),
             Value::Bool(false),
         ));
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             DataContractError::InvalidContractStructure(_)
@@ -2068,7 +2263,15 @@ mod tests {
                 ]),
             ),
         ];
-        let err = Index::try_from_value_map(map.as_slice(), true, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        )
+        .unwrap_err();
         match err {
             DataContractError::InvalidContractStructure(message) => {
                 assert!(
@@ -2095,7 +2298,15 @@ mod tests {
             Some(("$createdAt", ONE_DAY_SECONDS, ONE_DAY_SECONDS)),
         );
         map.push((Value::Text("unique".to_string()), Value::Bool(true)));
-        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        let index = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .expect("should parse");
         assert!(index.unique, "the unique flag must survive parsing");
         let transform = index.time_range.expect("time_range should be set");
         assert_eq!(transform.source, "$createdAt");
@@ -2115,7 +2326,15 @@ mod tests {
             Some(("$createdAt", 3 * ONE_DAY_SECONDS, ONE_DAY_SECONDS)),
         );
         map.push((Value::Text("unique".to_string()), Value::Bool(true)));
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         match err {
             DataContractError::InvalidContractStructure(message) => {
                 assert!(
@@ -2137,7 +2356,15 @@ mod tests {
             Some(("$updatedAt", ONE_DAY_SECONDS, ONE_DAY_SECONDS)),
         );
         map.push((Value::Text("unique".to_string()), Value::Bool(true)));
-        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         match err {
             DataContractError::InvalidContractStructure(message) => {
                 assert!(
@@ -2153,8 +2380,15 @@ mod tests {
             "$updatedAt",
             Some(("$updatedAt", ONE_DAY_SECONDS, ONE_DAY_SECONDS)),
         );
-        Index::try_from_value_map(map.as_slice(), false, true)
-            .expect("a non-unique $updatedAt bucketing stays legal");
+        Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: true,
+                terminal: false,
+            },
+        )
+        .expect("a non-unique $updatedAt bucketing stays legal");
     }
 
     #[test]
@@ -2165,7 +2399,15 @@ mod tests {
         let map = index_value_map("$createdAt", Some(("$createdAt", 21_600, 7_200)));
         let err = Index::try_from(map.as_slice()).unwrap_err();
         assert!(matches!(err, DataContractError::ValueWrongType(_)));
-        let err = Index::try_from_value_map(map.as_slice(), true, false).unwrap_err();
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: false,
+                terminal: false,
+            },
+        )
+        .unwrap_err();
         assert!(matches!(err, DataContractError::ValueWrongType(_)));
     }
 
@@ -3138,8 +3380,15 @@ mod tests {
             ("rankedSummable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
-            .expect("all three ranked keywords must parse when the grammar allows them");
+        let index = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        )
+        .expect("all three ranked keywords must parse when the grammar allows them");
         assert!(index.ranked_countable);
         assert!(index.ranked_summable);
         assert!(index.ranked_averageable);
@@ -3156,8 +3405,15 @@ mod tests {
             ("averageable", Value::Text("score".to_string())),
             ("rangeAverageable", Value::Bool(true)),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
-            .expect("index without ranked keywords must parse");
+        let index = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        )
+        .expect("index without ranked keywords must parse");
         assert!(!index.ranked_countable);
         assert!(!index.ranked_summable);
         assert!(!index.ranked_averageable);
@@ -3190,8 +3446,15 @@ mod tests {
                 Value::Text("asc".to_string()),
             )]),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
-            .expect("ranked flags on a compound index must be accepted");
+        let index = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        )
+        .expect("ranked flags on a compound index must be accepted");
         assert!(index.ranked_averageable);
         assert_eq!(index.properties.len(), 2);
         assert_eq!(index.properties[1].name, "score");
@@ -3212,7 +3475,14 @@ mod tests {
                 Value::Text("asc".to_string()),
             )]),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
+        let result = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        );
         assert!(
             result.is_err(),
             "rankedCountable without rangeCountable must be rejected on a compound index too"
@@ -3235,7 +3505,14 @@ mod tests {
             ("rangeAverageable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
+        let result = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        );
         assert!(
             result.is_err(),
             "ranked flags on a unique index must be rejected"
@@ -3256,7 +3533,14 @@ mod tests {
             ("countable", Value::Text("countable".to_string())),
             ("rankedCountable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
+        let result = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        );
         assert!(
             result.is_err(),
             "rankedCountable without rangeCountable must be rejected"
@@ -3274,7 +3558,14 @@ mod tests {
             ("summable", Value::Text("score".to_string())),
             ("rankedSummable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
+        let result = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        );
         assert!(
             result.is_err(),
             "rankedSummable without rangeSummable must be rejected"
@@ -3294,7 +3585,14 @@ mod tests {
             ("rangeCountable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
+        let result = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        );
         assert!(
             result.is_err(),
             "rankedAverageable with only the count range axis must be rejected"
@@ -3314,7 +3612,14 @@ mod tests {
             ("rangeSummable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
+        let result = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        );
         assert!(
             result.is_err(),
             "rankedAverageable with only the sum range axis must be rejected"
@@ -3336,8 +3641,15 @@ mod tests {
             ("rangeAverageable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
-            .expect("rankedAverageable on the averageable sugar form must parse");
+        let index = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        )
+        .expect("rankedAverageable on the averageable sugar form must parse");
         assert!(index.ranked_averageable);
         assert!(index.countable.is_countable());
         assert_eq!(index.summable.as_deref(), Some("score"));
@@ -3364,8 +3676,15 @@ mod tests {
             ("rangeSummable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
-            .expect("rankedAverageable on the explicit longhand form must parse");
+        let index = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        )
+        .expect("rankedAverageable on the explicit longhand form must parse");
         assert!(index.ranked_averageable);
         assert!(index.range_countable);
         assert!(index.range_summable);
@@ -3382,7 +3701,14 @@ mod tests {
                 ("rangeAverageable", Value::Bool(true)),
                 (key, Value::Text("yes".to_string())),
             ]);
-            let result = Index::try_from_value_map(index_map.as_slice(), true, true);
+            let result = Index::try_from_value_map(
+                index_map.as_slice(),
+                IndexGrammarAdmissions {
+                    ranked: true,
+                    time_range: true,
+                    terminal: true,
+                },
+            );
             assert!(result.is_err(), "{key} must reject a non-boolean value");
             let msg = format!("{:?}", result.unwrap_err());
             assert!(
@@ -3406,7 +3732,14 @@ mod tests {
                     ("rangeAverageable", Value::Bool(true)),
                     (key, value.clone()),
                 ]);
-                let result = Index::try_from_value_map(index_map.as_slice(), false, false);
+                let result = Index::try_from_value_map(
+                    index_map.as_slice(),
+                    IndexGrammarAdmissions {
+                        ranked: false,
+                        time_range: false,
+                        terminal: false,
+                    },
+                );
                 assert!(
                     result.is_err(),
                     "{key}: {value:?} must be rejected when the ranked grammar is off"
@@ -3479,7 +3812,14 @@ mod tests {
         for (axis, mut extra) in ranked_axis_fixtures() {
             extra.push(("nullSearchable", Value::Bool(false)));
             let index_map = ranked_index_map(extra);
-            let result = Index::try_from_value_map(index_map.as_slice(), true, true);
+            let result = Index::try_from_value_map(
+                index_map.as_slice(),
+                IndexGrammarAdmissions {
+                    ranked: true,
+                    time_range: true,
+                    terminal: true,
+                },
+            );
             assert!(
                 result.is_err(),
                 "{axis} with nullSearchable: false must be rejected"
@@ -3499,8 +3839,15 @@ mod tests {
     fn test_index_try_from_ranked_without_null_searchable_key_accepted() {
         for (axis, extra) in ranked_axis_fixtures() {
             let index_map = ranked_index_map(extra);
-            let index = Index::try_from_value_map(index_map.as_slice(), true, true)
-                .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
+            let index = Index::try_from_value_map(
+                index_map.as_slice(),
+                IndexGrammarAdmissions {
+                    ranked: true,
+                    time_range: true,
+                    terminal: true,
+                },
+            )
+            .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
             assert!(
                 index.null_searchable,
                 "{axis}: the absent key must still default to true"
@@ -3515,10 +3862,17 @@ mod tests {
         for (axis, mut extra) in ranked_axis_fixtures() {
             extra.push(("nullSearchable", Value::Bool(true)));
             let index_map = ranked_index_map(extra);
-            let index =
-                Index::try_from_value_map(index_map.as_slice(), true, true).unwrap_or_else(|e| {
-                    panic!("{axis} with an explicit nullSearchable: true must parse: {e:?}")
-                });
+            let index = Index::try_from_value_map(
+                index_map.as_slice(),
+                IndexGrammarAdmissions {
+                    ranked: true,
+                    time_range: true,
+                    terminal: true,
+                },
+            )
+            .unwrap_or_else(|e| {
+                panic!("{axis} with an explicit nullSearchable: true must parse: {e:?}")
+            });
             assert!(index.null_searchable);
         }
     }
@@ -3529,8 +3883,15 @@ mod tests {
     #[test]
     fn test_index_try_from_non_ranked_with_null_searchable_false_still_accepted() {
         let plain = ranked_index_map(vec![("nullSearchable", Value::Bool(false))]);
-        let index = Index::try_from_value_map(plain.as_slice(), true, true)
-            .expect("nullSearchable: false on a plain index must still parse");
+        let index = Index::try_from_value_map(
+            plain.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        )
+        .expect("nullSearchable: false on a plain index must still parse");
         assert!(!index.null_searchable);
 
         let aggregating = ranked_index_map(vec![
@@ -3538,8 +3899,15 @@ mod tests {
             ("rangeAverageable", Value::Bool(true)),
             ("nullSearchable", Value::Bool(false)),
         ]);
-        let index = Index::try_from_value_map(aggregating.as_slice(), true, true)
-            .expect("nullSearchable: false on a range-averageable index must still parse");
+        let index = Index::try_from_value_map(
+            aggregating.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: true,
+                time_range: true,
+                terminal: true,
+            },
+        )
+        .expect("nullSearchable: false on a range-averageable index must still parse");
         assert!(!index.null_searchable);
         assert!(!index.ranked_averageable);
     }
@@ -4022,6 +4390,7 @@ mod json_convertible_tests {
             ranked_summable: false,
             ranked_averageable: true,
             time_range: None,
+            terminal: None,
         }
     }
 
@@ -4052,6 +4421,7 @@ mod json_convertible_tests {
                 "ranked_summable": false,
                 "ranked_averageable": true,
                 "time_range": serde_json::Value::Null,
+                "terminal": serde_json::Value::Null,
             })
         );
         let recovered = Index::from_json(json).expect("from_json");

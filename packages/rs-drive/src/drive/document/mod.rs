@@ -61,6 +61,23 @@ pub(crate) mod ranked_index_tree_type;
 #[cfg(feature = "server")]
 pub(crate) mod index_level_tree_types;
 
+/// indexOnly entry probes: entry path/key derivation shared by the write
+/// path and the ABCI state-validation probes
+#[cfg(feature = "server")]
+pub mod index_only;
+
+/// The indexOnly row commitment: the payload every indexOnly terminal item
+/// stores, binding one document's index projections into one logical row
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod index_only_row_commitment;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_row_commitment::index_only_row_commitment;
+#[cfg(feature = "server")]
+pub use index_only_row_commitment::index_only_row_commitment_with_preimage_size;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_row_commitment::INDEX_ONLY_ROW_COMMITMENT_SIZE;
+
 /// How many document history entries to fetch at once. This mirrors contract history
 /// and prevents unbounded history reads.
 pub const MAX_DOCUMENT_HISTORY_FETCH_LIMIT: u16 = 10;

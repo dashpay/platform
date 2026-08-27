@@ -11,7 +11,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
@@ -285,79 +285,89 @@ impl Drive {
                 type_key.as_bytes(),
             ];
 
-            // primary key tree — route through the centralized
-            // primary_key_tree_type() so contract creation, document inserts,
-            // deletes, and estimation paths all see the same tree-variant
-            // selection (under whichever drive method version is active).
-            let key_info = Key(vec![0]);
-            match document_type
-                .as_ref()
-                .primary_key_tree_type(platform_version)?
-            {
-                TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                TreeType::CountTree => self.batch_insert_empty_count_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                // Sum-capable variants — route to the matching helper so the
-                // doctype's primary-key tree is created with the correct
-                // sum-bearing element variant at contract apply time. Without
-                // these arms the previous catch-all `_` arm would create a
-                // plain `NormalTree`, and subsequent sum-aware document
-                // inserts / range proofs would operate on the wrong element
-                // type.
-                TreeType::SumTree => self.batch_insert_empty_sum_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                TreeType::ProvableCountSumTree => self.batch_insert_empty_provable_count_sum_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                TreeType::ProvableCountProvableSumTree => self
-                    .batch_insert_empty_provable_count_provable_sum_tree(
+            // indexOnly document types have no primary-key tree at all —
+            // the index entries are the rows, and nothing is ever addressed
+            // by document id, so the `[0]` tree is skipped and only the
+            // top-level property-name trees below are created.
+            // `index_only()` can only be true on a PV14+ contract (the
+            // grammar rejects the keyword below meta-schema v3), so
+            // historical contract inserts replay byte-identically.
+            if !document_type.as_ref().index_only() {
+                // primary key tree — route through the centralized
+                // primary_key_tree_type() so contract creation, document inserts,
+                // deletes, and estimation paths all see the same tree-variant
+                // selection (under whichever drive method version is active).
+                let key_info = Key(vec![0]);
+                match document_type
+                    .as_ref()
+                    .primary_key_tree_type(platform_version)?
+                {
+                    TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
                         type_path,
                         key_info,
                         storage_flags.as_ref(),
                         &mut batch_operations,
                         &platform_version.drive,
                     )?,
-                TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                _ => self.batch_insert_empty_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
+                    TreeType::CountTree => self.batch_insert_empty_count_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                    // Sum-capable variants — route to the matching helper so the
+                    // doctype's primary-key tree is created with the correct
+                    // sum-bearing element variant at contract apply time. Without
+                    // these arms the previous catch-all `_` arm would create a
+                    // plain `NormalTree`, and subsequent sum-aware document
+                    // inserts / range proofs would operate on the wrong element
+                    // type.
+                    TreeType::SumTree => self.batch_insert_empty_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                    TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                    TreeType::ProvableCountSumTree => self
+                        .batch_insert_empty_provable_count_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?,
+                    TreeType::ProvableCountProvableSumTree => self
+                        .batch_insert_empty_provable_count_provable_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?,
+                    TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                    _ => self.batch_insert_empty_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                }
             }
 
             let document_type_ref = document_type.as_ref();
