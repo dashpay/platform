@@ -17,10 +17,11 @@
 //! [`PlatformWallet::drain_pending_contact_crypto_verified`], the whole-wallet
 //! wrapper that runs both.
 //!
-//! Each primitive gates itself and returns a [`ProviderBinding`] recording
-//! whether the check actually ran, so a caller sequencing two of them carries
-//! that evidence forward instead of re-deriving it from a queue probe that may
-//! since have gone stale.
+//! Each primitive gates itself and returns a [`ProviderBinding`] — the
+//! provider it checked, tied to the wallet it checked it against — so a caller
+//! sequencing two of them carries the verified provider forward instead of
+//! re-deriving the conclusion from a queue probe that may since have gone
+//! stale.
 
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
@@ -30,7 +31,7 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
 use crate::wallet::identity::network::dashpay_view::DashPayView;
 use crate::wallet::identity::network::identity_handle::IdentityWallet;
-use crate::wallet::platform_wallet::PlatformWallet;
+use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 
 /// How [`PlatformWallet::verify_seed_binds_with_marker`] established the
 /// seed binding.
@@ -48,8 +49,8 @@ pub enum SeedBindingVerification {
     Verified,
 }
 
-/// Whether a contact-crypto provider has been put through the seed-binding
-/// check *on this drain cycle*.
+/// A contact-crypto provider and what the seed-binding check said about it
+/// *on this drain cycle*.
 ///
 /// This exists because "the queue was empty a moment ago" is not the same
 /// statement as "this provider owns this wallet", and the gated drain returns
@@ -59,10 +60,44 @@ pub enum SeedBindingVerification {
 /// travels with the value instead of being re-inferred from a queue probe that
 /// has already gone stale.
 ///
+/// It carries the provider itself rather than a verdict about one, because a
+/// verdict alone says nothing about which provider the pass that consumes it
+/// will use. Both composition helpers are public on the exported
+/// [`DashPayView`], so a caller could verify with provider A and hand the
+/// binding to a pass running provider B: B would skip the check, derive from
+/// the wrong seed, and turn a valid auto-accept proof into a permanent
+/// failure. The pass now derives through the borrowed provider inside the
+/// binding, so the provider that was checked and the provider that is used are
+/// the same value by construction.
+///
+/// The wallet is carried for the same reason and checked at the point of use:
+/// the two wallets' views have the same type, so nothing but the id can tell a
+/// binding earned for one from a binding earned for the other. A binding that
+/// does not match re-runs the check rather than being refused, which is the
+/// same fail-safe shape as an unestablished one.
+///
 /// It cannot be forged: the two constructors are private to this module, so
 /// only a primitive that actually ran (or skipped) the check can mint one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ProviderBinding(BindingState);
+pub struct ProviderBinding<'a, C> {
+    /// The provider the check was run against — and the one the pass this
+    /// binding authorizes derives through.
+    provider: &'a C,
+    /// The wallet the check was run for.
+    wallet_id: WalletId,
+    /// What the check said.
+    state: BindingState,
+}
+
+// Manual: a derive would bound `C: Debug`, and the provider is a host
+// Keychain handle that has no business being formatted anyway.
+impl<C> std::fmt::Debug for ProviderBinding<'_, C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProviderBinding")
+            .field("wallet_id", &hex::encode(self.wallet_id))
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BindingState {
@@ -74,20 +109,36 @@ enum BindingState {
     NotEstablished,
 }
 
-impl ProviderBinding {
-    /// The provider passed the seed-binding check.
-    fn verified() -> Self {
-        Self(BindingState::Verified)
+impl<'a, C> ProviderBinding<'a, C> {
+    /// The provider passed the seed-binding check for `wallet_id`.
+    fn verified(provider: &'a C, wallet_id: WalletId) -> Self {
+        Self {
+            provider,
+            wallet_id,
+            state: BindingState::Verified,
+        }
     }
 
     /// The check did not run.
-    fn not_established() -> Self {
-        Self(BindingState::NotEstablished)
+    fn not_established(provider: &'a C, wallet_id: WalletId) -> Self {
+        Self {
+            provider,
+            wallet_id,
+            state: BindingState::NotEstablished,
+        }
     }
 
-    /// Whether the provider has been shown to resolve this wallet's seed.
-    pub fn is_verified(self) -> bool {
-        matches!(self.0, BindingState::Verified)
+    /// Whether the provider has been shown to resolve the seed of the wallet
+    /// this binding was minted on.
+    pub fn is_verified(&self) -> bool {
+        matches!(self.state, BindingState::Verified)
+    }
+
+    /// Whether this binding is evidence about `wallet_id` specifically. A
+    /// binding earned on another wallet proves nothing here, however verified
+    /// it is over there.
+    fn proves(&self, wallet_id: &WalletId) -> bool {
+        self.is_verified() && self.wallet_id == *wallet_id
     }
 }
 
@@ -267,36 +318,39 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// So the fact of verification is returned rather than inferred. See
     /// [`Self::drain_auto_accepts_verified`], which takes it.
-    pub async fn drain_pending_contact_crypto_verified_reporting<C>(
+    pub async fn drain_pending_contact_crypto_verified_reporting<'c, C>(
         &self,
-        crypto: &C,
+        crypto: &'c C,
         deadline: Option<std::time::Instant>,
-    ) -> Result<(usize, ProviderBinding), PlatformWalletError>
+    ) -> Result<(usize, ProviderBinding<'c, C>), PlatformWalletError>
     where
         C: ContactCryptoProvider + Sync,
     {
         if self.drainable_contact_crypto_count().await == 0 {
-            return Ok((0, ProviderBinding::not_established()));
+            return Ok((0, ProviderBinding::not_established(crypto, self.wallet_id)));
         }
 
-        self.establish_provider_binding(crypto, deadline).await?;
+        let binding = self.establish_provider_binding(crypto, deadline).await?;
 
         Ok((
             self.drain_pending_contact_crypto_until(crypto, deadline)
                 .await,
-            ProviderBinding::verified(),
+            binding,
         ))
     }
 
     /// Run the DIP-15 auto-accept pass behind the same gate, given whatever
     /// binding a previous pass on this cycle established.
     ///
-    /// `binding` is an optimisation, not the gate: an already-`Verified`
-    /// provider is not re-derived, and anything else is checked here before a
-    /// single entry is touched. So the auto-accept pass cannot run through an
-    /// unverified provider no matter how its caller is sequenced — which is
-    /// the property the wrapper was silently relying on the drain to provide
-    /// and, on the empty-queue path, not getting.
+    /// The provider comes from `binding` rather than alongside it: a verdict
+    /// about provider A cannot authorize a pass through provider B if there is
+    /// no way to name a second provider. The check itself is still the gate —
+    /// a binding that was never established, or was established for another
+    /// wallet, is checked here before a single entry is touched. So the
+    /// auto-accept pass cannot run through an unverified provider no matter
+    /// how its caller is sequenced — which is the property the wrapper was
+    /// silently relying on the drain to provide and, on the empty-queue path,
+    /// not getting.
     ///
     /// There is deliberately **no** empty-queue early-out here. The queue this
     /// would probe is re-snapshotted inside
@@ -318,15 +372,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub async fn drain_auto_accepts_verified<S, C>(
         &self,
         signer: &S,
-        crypto: &C,
         deadline: Option<std::time::Instant>,
-        binding: ProviderBinding,
+        binding: ProviderBinding<'_, C>,
     ) -> Result<usize, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        if !binding.is_verified() {
+        let crypto = binding.provider;
+        if !binding.proves(&self.wallet_id) {
             self.establish_provider_binding(crypto, deadline).await?;
         }
 
@@ -348,11 +402,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// dropping the future strands no work and leaves the queue exactly as it
     /// found it. A deadline already spent refuses without consulting the
     /// provider at all.
-    async fn establish_provider_binding<C>(
+    async fn establish_provider_binding<'c, C>(
         &self,
-        crypto: &C,
+        crypto: &'c C,
         deadline: Option<std::time::Instant>,
-    ) -> Result<ProviderBinding, PlatformWalletError>
+    ) -> Result<ProviderBinding<'c, C>, PlatformWalletError>
     where
         C: ContactCryptoProvider + Sync,
     {
@@ -381,7 +435,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                  be corrected"
             );
         })?;
-        Ok(ProviderBinding::verified())
+        Ok(ProviderBinding::verified(crypto, self.wallet_id))
     }
 }
 
@@ -447,7 +501,7 @@ impl PlatformWallet {
         let accepted = match identity_signer {
             Some(signer) => {
                 dashpay
-                    .drain_auto_accepts_verified(signer, crypto, deadline, binding)
+                    .drain_auto_accepts_verified(signer, deadline, binding)
                     .await?
             }
             None => 0,
@@ -899,6 +953,18 @@ mod tests {
         Arc<crate::PlatformWallet>,
         WalletId,
     ) {
+        wallet_with_queued_contact_crypto_from(TEST_MNEMONIC).await
+    }
+
+    /// [`wallet_with_queued_contact_crypto`] over an arbitrary seed, so a test
+    /// can hold two wallets that are genuinely different wallets.
+    async fn wallet_with_queued_contact_crypto_from(
+        phrase: &str,
+    ) -> (
+        Arc<PlatformWalletManager<NoopPersister>>,
+        Arc<crate::PlatformWallet>,
+        WalletId,
+    ) {
         use crate::changeset::{
             upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
         };
@@ -910,7 +976,7 @@ mod tests {
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 Network::Testnet,
-                &seed_for(TEST_MNEMONIC),
+                &seed_for(phrase),
                 WalletAccountCreationOptions::Default,
                 Some(0),
             )
@@ -1335,9 +1401,8 @@ mod tests {
             .dashpay()
             .drain_auto_accepts_verified(
                 &UnreachableIdentitySigner,
-                &foreign,
                 None,
-                super::ProviderBinding::not_established(),
+                super::ProviderBinding::not_established(&foreign, wallet_id),
             )
             .await
             .expect_err("an unverified provider must not reach the auto-accept pass");
@@ -1414,7 +1479,7 @@ mod tests {
         let err = wallet
             .identity()
             .dashpay()
-            .drain_auto_accepts_verified(&UnreachableIdentitySigner, &foreign, None, binding)
+            .drain_auto_accepts_verified(&UnreachableIdentitySigner, None, binding)
             .await
             .expect_err(
                 "an auto-accept enqueued after the queue probe must not be processed \
@@ -1428,6 +1493,61 @@ mod tests {
             drainable(&wallet).await,
             1,
             "the freshly enqueued auto-accept must survive for the next correct-seed pass"
+        );
+    }
+
+    /// A binding is evidence about one provider and one wallet, and may not
+    /// authorize a pass that is neither.
+    ///
+    /// Both composition helpers are public on the exported `DashPayView`, so
+    /// the pairing is the caller's to get wrong: review found that a binding
+    /// earned by verifying provider A could be handed to an auto-accept pass
+    /// running provider B, which then skipped the check and derived from the
+    /// wrong seed — and `drain_auto_accepts_until` treats a proof that does
+    /// not verify against the re-derived key as PERMANENTLY failed, so a valid
+    /// auto-accept is destroyed and the sweep's enqueue gate never re-offers
+    /// it.
+    ///
+    /// The provider half of that pairing is now unrepresentable: the pass
+    /// takes the binding instead of a provider and derives through the one
+    /// inside it. The wallet half is what this test drives, because two views
+    /// have the same type and only the recorded id separates them — a binding
+    /// earned on wallet A must send wallet B's pass back through the check,
+    /// which A's provider then fails.
+    #[tokio::test]
+    async fn a_binding_earned_elsewhere_cannot_authorize_this_wallets_auto_accepts() {
+        let (_manager_a, wallet_a, _id_a) =
+            wallet_with_queued_contact_crypto_from(TEST_MNEMONIC).await;
+        let provider_a = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+
+        let (manager_b, wallet_b, id_b) =
+            wallet_with_queued_contact_crypto_from(FOREIGN_MNEMONIC).await;
+        enqueue_auto_accept(&manager_b, &id_b, 3).await;
+        let queued_before = drainable(&wallet_b).await;
+
+        let (_, binding) = wallet_a
+            .identity()
+            .dashpay()
+            .drain_pending_contact_crypto_verified_reporting(&provider_a, None)
+            .await
+            .expect("wallet A's own seed binds");
+        assert!(binding.is_verified());
+
+        let err = wallet_b
+            .identity()
+            .dashpay()
+            .drain_auto_accepts_verified(&UnreachableIdentitySigner, None, binding)
+            .await
+            .expect_err("a binding earned on another wallet proves nothing here");
+        assert!(
+            matches!(err, PlatformWalletError::SeedMismatch { .. }),
+            "the refusal must be the typed wrong-seed error, got: {err:?}"
+        );
+        assert_eq!(
+            drainable(&wallet_b).await,
+            queued_before,
+            "not one queue entry may be touched — a proof cleared on a wrong-seed verify \
+             is destroyed permanently"
         );
     }
 
@@ -1451,7 +1571,7 @@ mod tests {
         let accepted = wallet
             .identity()
             .dashpay()
-            .drain_auto_accepts_verified(&UnreachableIdentitySigner, &owning, None, binding)
+            .drain_auto_accepts_verified(&UnreachableIdentitySigner, None, binding)
             .await
             .expect("a verified binding must carry into the auto-accept pass");
         assert_eq!(accepted, 0);
@@ -1655,9 +1775,8 @@ mod tests {
             .dashpay()
             .drain_auto_accepts_verified(
                 &UnreachableIdentitySigner,
-                &provider,
                 Some(Instant::now()),
-                super::ProviderBinding::not_established(),
+                super::ProviderBinding::not_established(&provider, wallet_id),
             )
             .await
             .expect_err("a spent deadline must refuse rather than derive");
@@ -1743,9 +1862,8 @@ mod tests {
             STALL_TEST_CAP,
             wallet.identity().dashpay().drain_auto_accepts_verified(
                 &UnreachableIdentitySigner,
-                &provider,
                 Some(deadline),
-                super::ProviderBinding::not_established(),
+                super::ProviderBinding::not_established(&provider, wallet_id),
             ),
         )
         .await
