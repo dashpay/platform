@@ -50,6 +50,252 @@ use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
 impl DriveDocumentQuery<'_> {
+    /// The terminal-clause route for indexOnly queries.
+    ///
+    /// An indexOnly entry's member key IS the terminal property's encoded
+    /// value, so a clause on the terminal lowers directly onto the final
+    /// key level — the shape behind both "did I like X" (equality on the
+    /// terminal) and keyset pagination (range on the terminal after the
+    /// last seen value, with a limit). The shape requirement: every one of
+    /// the index's prefix properties carries an equality clause (the path
+    /// down to the `0` level must be fully determined), the terminal
+    /// carries the one remaining clause, and `orderBy` names nothing
+    /// outside the index (a range or `in` on the terminal requires
+    /// ordering by it, mirroring the stored-document rule).
+    ///
+    /// Returns `Ok(None)` when no index's terminal is named by any clause
+    /// or orderBy (the generic index route owns the query), `Ok(Some(..))`
+    /// with the selected index and the terminal clause — `None` for the
+    /// first keyset page, which has no cursor clause yet and scans the
+    /// member keys in `orderBy` order — and a targeted error when a
+    /// terminal was named but no index satisfies the shape.
+    pub(crate) fn index_only_terminal_clause_selection(
+        &self,
+    ) -> Result<Option<(&Index, Option<&crate::query::WhereClause>)>, Error> {
+        let terminal_clause_for = |terminal: &str| -> Option<&crate::query::WhereClause> {
+            self.internal_clauses
+                .equal_clauses
+                .get(terminal)
+                .or(match &self.internal_clauses.range_clause {
+                    Some(range_clause) if range_clause.field == terminal => Some(range_clause),
+                    _ => None,
+                })
+                .or_else(|| {
+                    self.internal_clauses
+                        .in_clauses
+                        .iter()
+                        .find(|in_clause| in_clause.field == terminal)
+                })
+        };
+
+        let mut candidate_seen = false;
+        for index in self.document_type.indexes().values() {
+            let Some(terminal) = index.terminal.as_deref() else {
+                continue;
+            };
+            let terminal_clause = terminal_clause_for(terminal);
+            // The index is only a terminal-route candidate when the query
+            // actually names its terminal — through a clause, or through
+            // an orderBy alone (the first keyset page: full prefix
+            // equalities, ordered member-key scan, no cursor clause yet).
+            if terminal_clause.is_none() && !self.order_by.contains_key(terminal) {
+                continue;
+            }
+            candidate_seen = true;
+
+            // Every prefix property must carry an equality clause: the
+            // path down to the entry level must be fully determined.
+            if !index.properties.iter().all(|property| {
+                self.internal_clauses
+                    .equal_clauses
+                    .contains_key(property.name.as_str())
+            }) {
+                continue;
+            }
+
+            // No clause may be left over: equalities must all sit on the
+            // index's properties (or be the terminal equality), and any
+            // range / `in` clause must BE the terminal clause.
+            let within_index = |field: &str| {
+                field == terminal
+                    || index
+                        .properties
+                        .iter()
+                        .any(|property| property.name == field)
+            };
+            if !self
+                .internal_clauses
+                .equal_clauses
+                .keys()
+                .all(|field| within_index(field))
+            {
+                continue;
+            }
+            if let Some(range_clause) = &self.internal_clauses.range_clause {
+                if range_clause.field != terminal {
+                    continue;
+                }
+            }
+            if !self
+                .internal_clauses
+                .in_clauses
+                .iter()
+                .all(|in_clause| in_clause.field == terminal)
+                || self.internal_clauses.in_clauses.len() > 1
+            {
+                continue;
+            }
+
+            // orderBy must stay within the index; ordering a fully
+            // determined prefix is a no-op, so only the terminal's
+            // direction matters — and a range or `in` terminal clause
+            // requires it, same as the stored-document rule.
+            if !self.order_by.keys().all(|field| within_index(field)) {
+                continue;
+            }
+            if let Some(terminal_clause) = terminal_clause {
+                if terminal_clause.operator.is_range() && !self.order_by.contains_key(terminal) {
+                    return Err(Error::Query(
+                        crate::error::query::QuerySyntaxError::MissingOrderByForRange(
+                            "a range or `in` clause on an indexOnly terminal property \
+                             requires an orderBy on that property",
+                        ),
+                    ));
+                }
+            }
+
+            return Ok(Some((index, terminal_clause)));
+        }
+
+        if candidate_seen {
+            return Err(Error::Query(
+                crate::error::query::QuerySyntaxError::Unsupported(
+                    "a clause on an indexOnly terminal property requires equality clauses \
+                     on ALL of that index's properties (the path to the entries must be \
+                     fully determined), with no other clauses and orderBy limited to the \
+                     index"
+                        .to_string(),
+                ),
+            ));
+        }
+        Ok(None)
+    }
+
+    /// Build the path query for a terminal-clause indexOnly query: the
+    /// fully determined prefix path down to the `0` entry level, with the
+    /// terminal clause lowered over the member keys. One builder for the
+    /// server's execution, the prover and the verifier.
+    pub(crate) fn index_only_terminal_path_query(
+        &self,
+        document_type_path: Vec<Vec<u8>>,
+        index: &Index,
+        terminal_clause: Option<&crate::query::WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> Result<grovedb::PathQuery, Error> {
+        use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+
+        let terminal_direction = |field: &str| {
+            self.order_by
+                .get(field)
+                .map(|order_clause| order_clause.ascending)
+                .unwrap_or(true)
+        };
+        let final_query = match terminal_clause {
+            Some(terminal_clause) => {
+                let left_to_right = if terminal_clause.operator.is_range() {
+                    terminal_direction(terminal_clause.field.as_str())
+                } else {
+                    true
+                };
+                terminal_clause.to_path_query(
+                    self.document_type,
+                    &None,
+                    left_to_right,
+                    platform_version,
+                )?
+            }
+            // First keyset page: no cursor clause yet — every member key
+            // in the terminal's orderBy direction.
+            None => {
+                let terminal = index.terminal.as_deref().ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution(
+                        "terminal-route selection guarantees an indexOnly index",
+                    ),
+                ))?;
+                let mut query = grovedb::Query::new_with_direction(terminal_direction(terminal));
+                query.insert_all();
+                query
+            }
+        };
+
+        let mut path = document_type_path;
+        for property in index.properties.iter() {
+            let where_clause = self
+                .internal_clauses
+                .equal_clauses
+                .get(property.name.as_str())
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "terminal-route selection guarantees an equality per prefix property",
+                )))?;
+            path.push(property.name.as_bytes().to_vec());
+            path.push(self.document_type.serialize_value_for_key(
+                &property.name,
+                &where_clause.value,
+                platform_version,
+            )?);
+        }
+        path.push(vec![0]);
+
+        Ok(grovedb::PathQuery::new(
+            path,
+            grovedb::SizedQuery::new(final_query, self.limit, self.offset),
+        ))
+    }
+
+    /// The index an indexOnly query resolves to — the generic matcher
+    /// when it can serve the query, else the terminal-clause route. Used
+    /// by synthesis (which must decode trios against the same index the
+    /// path query was built from) and by the route dispatch in the path
+    /// constructors.
+    pub(crate) fn index_only_query_index(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<&Index, Error> {
+        match self.find_best_index(platform_version) {
+            Ok(index) => Ok(index),
+            Err(generic_error) => match self.index_only_terminal_clause_selection()? {
+                Some((index, _)) => Ok(index),
+                None => Err(generic_error),
+            },
+        }
+    }
+
+    /// Route an indexOnly query: `Ok(Some(..))` with the terminal-route
+    /// path query when the generic index matcher cannot serve the query
+    /// but a terminal clause can, `Ok(None)` when the generic route owns
+    /// it. Shared by both path constructors so server, prover and
+    /// verifier build the same query.
+    pub(crate) fn index_only_route(
+        &self,
+        document_type_path: &[Vec<u8>],
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<grovedb::PathQuery>, Error> {
+        match self.find_best_index(platform_version) {
+            Ok(_) => Ok(None),
+            Err(generic_error) => match self.index_only_terminal_clause_selection()? {
+                Some((index, terminal_clause)) => self
+                    .index_only_terminal_path_query(
+                        document_type_path.to_vec(),
+                        index,
+                        terminal_clause,
+                        platform_version,
+                    )
+                    .map(Some),
+                None => Err(generic_error),
+            },
+        }
+    }
+
     /// Verify a proof for an indexOnly query, synthesizing the documents
     /// from the proved `(path, key)` positions. The mirror of the server's
     /// no-proof synthesis path — both call the one builder below.
@@ -71,7 +317,7 @@ impl DriveDocumentQuery<'_> {
         let (root_hash, proved_key_values) =
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
-        let index = self.find_best_index(platform_version)?;
+        let index = self.index_only_query_index(platform_version)?;
         let documents = proved_key_values
             .into_iter()
             .filter_map(|(path, key, element)| element.map(|_| (path, key)))
@@ -143,7 +389,7 @@ impl DriveDocumentQuery<'_> {
             other => other?,
         };
 
-        let index = self.find_best_index(platform_version)?;
+        let index = self.index_only_query_index(platform_version)?;
         let documents = elements
             .to_path_key_elements()
             .into_iter()

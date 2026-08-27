@@ -646,6 +646,259 @@ fn should_synthesize_query_documents_with_proof_parity() {
     assert_grovedb_is_consistent(&drive);
 }
 
+/// "Did I like X" as a single query: equality on the terminal property
+/// through `byLiker` ([$ownerId] → postId) — the prefix equality fixes the
+/// path, the terminal equality selects one member key. Proved and
+/// unproved paths agree.
+#[test]
+fn should_serve_terminal_equality_did_i_like_queries() {
+    use crate::query::{WhereClause, WhereOperator};
+    use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    for (post, owner, seed) in [
+        (POST_A, OWNER_1, 1u64),
+        (POST_A, OWNER_2, 2),
+        (POST_B, OWNER_3, 3),
+    ] {
+        let like = build_like(&contract, "dash", post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let did_owner_1_like_post_a = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(POST_A),
+            },
+        ],
+        Some(1),
+    );
+    let outcome = drive
+        .query_documents(did_owner_1_like_post_a.clone(), None, false, None, None)
+        .expect("terminal-equality query executes");
+    let documents = outcome.documents();
+    assert_eq!(documents.len(), 1, "OWNER_1 liked POST_A");
+    assert_eq!(documents[0].owner_id().to_buffer(), OWNER_1);
+
+    // Proof parity for the existence answer.
+    let (proof, _) = did_owner_1_like_post_a
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("terminal-equality proof generation");
+    let (_root, verified) = did_owner_1_like_post_a
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("terminal-equality proof verification");
+    assert_eq!(verified.len(), 1);
+    assert_eq!(verified[0].id(), documents[0].id());
+
+    // And the negative answer: OWNER_1 never liked POST_B.
+    let did_owner_1_like_post_b = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(POST_B),
+            },
+        ],
+        Some(1),
+    );
+    let outcome = drive
+        .query_documents(did_owner_1_like_post_b.clone(), None, false, None, None)
+        .expect("negative terminal-equality query executes");
+    assert_eq!(outcome.documents().len(), 0, "no such like");
+    let (proof, _) = did_owner_1_like_post_b
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("absence proof generation");
+    let (_root, verified) = did_owner_1_like_post_b
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("absence proof verification");
+    assert!(verified.is_empty(), "absence must verify as absence");
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Keyset pagination through a range clause on the terminal: with the
+/// prefix fully determined, `terminal > <last seen>` ordered by the
+/// terminal walks the member keys page by page — the indexOnly
+/// replacement for id-shaped startAt cursors. Every page agrees with its
+/// proof.
+#[test]
+fn should_serve_terminal_range_keyset_pagination() {
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    for (owner, seed) in [(OWNER_1, 1u64), (OWNER_2, 2), (OWNER_3, 3)] {
+        let like = build_like(&contract, "dash", POST_A, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let page_query = |after: Option<[u8; 32]>| {
+        let mut clauses = vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(POST_A),
+            },
+        ];
+        if let Some(after) = after {
+            clauses.push(WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Identifier(after),
+            });
+        }
+        let mut query = likes_query(&contract, clauses, Some(1));
+        query.order_by.insert(
+            "$ownerId".to_string(),
+            OrderClause {
+                field: "$ownerId".to_string(),
+                ascending: true,
+            },
+        );
+        query
+    };
+
+    // Walk the three likes one page at a time, keyed by the last owner.
+    let mut cursor: Option<[u8; 32]> = None;
+    let mut walked: Vec<[u8; 32]> = vec![];
+    loop {
+        let query = page_query(cursor);
+        let outcome = drive
+            .query_documents(query.clone(), None, false, None, None)
+            .expect("keyset page executes");
+        let documents = outcome.documents();
+        if documents.is_empty() {
+            break;
+        }
+        assert_eq!(documents.len(), 1, "limit 1 per page");
+        let owner = documents[0].owner_id().to_buffer();
+
+        // The page's proof verifies to the same document.
+        let (proof, _) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version())
+            .expect("page proof generation");
+        let (_root, verified) = query
+            .verify_proof(proof.as_slice(), platform_version())
+            .expect("page proof verification");
+        assert_eq!(verified.len(), 1);
+        assert_eq!(verified[0].id(), documents[0].id());
+
+        walked.push(owner);
+        cursor = Some(owner);
+    }
+    assert_eq!(
+        walked,
+        vec![OWNER_1, OWNER_2, OWNER_3],
+        "keyset pagination must walk every entry exactly once, in key order"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// A terminal clause whose index prefix is not fully determined is
+/// refused with the shape requirement — never a wrong-answer scan.
+#[test]
+fn should_refuse_terminal_clause_without_full_prefix_equalities() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::{WhereClause, WhereOperator};
+    use assert_matches::assert_matches;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    // hashtag is a property of byHashtagPost, $ownerId its terminal — but
+    // the prefix also needs postId, which carries no equality here.
+    let query = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+        ],
+        Some(1),
+    );
+    let error = drive
+        .query_documents(query, None, false, None, None)
+        .expect_err("an underdetermined terminal clause must be refused");
+    assert_matches!(
+        &error,
+        crate::error::Error::Query(QuerySyntaxError::Unsupported(message))
+            if message.contains("equality clauses"),
+        "unexpected error: {error}"
+    );
+}
+
+/// A range on the terminal requires an orderBy on it, mirroring the
+/// stored-document rule.
+#[test]
+fn should_require_order_by_for_terminal_range() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::{WhereClause, WhereOperator};
+    use assert_matches::assert_matches;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    let query = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(POST_A),
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Identifier(OWNER_1),
+            },
+        ],
+        Some(1),
+    );
+    let error = drive
+        .query_documents(query, None, false, None, None)
+        .expect_err("a terminal range without orderBy must be refused");
+    assert_matches!(
+        &error,
+        crate::error::Error::Query(QuerySyntaxError::MissingOrderByForRange(_)),
+        "unexpected error: {error}"
+    );
+}
+
 /// By-id fetches have no tree to land on and are refused with guidance.
 #[test]
 fn should_refuse_by_id_queries() {

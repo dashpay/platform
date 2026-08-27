@@ -1631,9 +1631,11 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             if self.document_type.index_only() && self.start_at.is_some() {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
-                    "startAt/startAfter is not yet supported for indexOnly document types: \
-                     the cursor would be resolved through the primary-key tree, which an \
-                     indexOnly type does not have"
+                    "startAt/startAfter cursors cannot address an indexOnly position (the \
+                     synthesized document id is a one-way hash of it); paginate with a \
+                     range clause on the terminal property instead — equality clauses on \
+                     the index's properties, `terminal > <last seen value>` ordered by the \
+                     terminal, and a limit"
                         .to_string(),
                 )));
             }
@@ -1646,6 +1648,21 @@ impl<'a> DriveDocumentQuery<'a> {
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
+
+        // indexOnly terminal-clause route: a clause on an index's terminal
+        // lowers onto the entry level's member keys when the generic
+        // matcher cannot serve the query. Shared with the verifier-side
+        // constructor below so prover and verifier build the same query.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                if let Some(path_query) =
+                    self.index_only_route(&document_type_path, platform_version)?
+                {
+                    return Ok(path_query);
+                }
+            }
+        }
 
         let (starts_at_document, start_at_path_query) = match &self.start_at {
             None => Ok((None, None)),
@@ -1765,9 +1782,11 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             if self.document_type.index_only() && self.start_at.is_some() {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
-                    "startAt/startAfter is not yet supported for indexOnly document types: \
-                     the cursor would be resolved through the primary-key tree, which an \
-                     indexOnly type does not have"
+                    "startAt/startAfter cursors cannot address an indexOnly position (the \
+                     synthesized document id is a one-way hash of it); paginate with a \
+                     range clause on the terminal property instead — equality clauses on \
+                     the index's properties, `terminal > <last seen value>` ordered by the \
+                     terminal, and a limit"
                         .to_string(),
                 )));
             }
@@ -1779,6 +1798,21 @@ impl<'a> DriveDocumentQuery<'a> {
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
+
+        // indexOnly terminal-clause route — the verifier-side mirror of
+        // the dispatch in `construct_path_query_operations`, so both
+        // sides build the same query.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                if let Some(path_query) =
+                    self.index_only_route(&document_type_path, platform_version)?
+                {
+                    return Ok(path_query);
+                }
+            }
+        }
+
         let starts_at_document = starts_at_document
             .map(|starts_at_document| (starts_at_document, self.start_at_included));
         if self.is_for_primary_key() {
