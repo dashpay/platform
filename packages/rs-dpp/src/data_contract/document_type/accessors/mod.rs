@@ -1014,14 +1014,6 @@ impl DocumentTypeV2Setters for DocumentType {
             DocumentType::V2(v2) => v2.set_range_summable(range_summable),
         }
     }
-
-    fn set_index_only(&mut self, index_only: bool) {
-        match self {
-            DocumentType::V0(_) => { /* no-op */ }
-            DocumentType::V1(_) => { /* no-op */ }
-            DocumentType::V2(v2) => v2.set_index_only(index_only),
-        }
-    }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeRef<'_> {

@@ -265,8 +265,4 @@ impl DocumentTypeV2Setters for DocumentTypeV2 {
         // a setter call — the invariant always holds after this returns.
         self.range_summable = range_summable && self.documents_summable.is_some();
     }
-
-    fn set_index_only(&mut self, index_only: bool) {
-        self.index_only = index_only;
-    }
 }

@@ -834,9 +834,11 @@ fn parse_indices(
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
                             .as_slice(),
-                        ctx.generation.admit_ranked,
-                        ctx.generation.admit_time_range,
-                        ctx.generation.admit_index_terminal,
+                        crate::data_contract::document_type::index::IndexGrammarAdmissions {
+                            ranked: ctx.generation.admit_ranked,
+                            time_range: ctx.generation.admit_time_range,
+                            terminal: ctx.generation.admit_index_terminal,
+                        },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -1983,7 +1985,6 @@ pub(super) fn apply_index_only(
     }
 
     // ---- per-index rules ------------------------------------------------
-    let mut owner_id_indexed = false;
     for (index_name, index) in document_type.indices.iter() {
         if index.properties.is_empty() {
             return Err(structure_error(format!(
@@ -2053,22 +2054,35 @@ pub(super) fn apply_index_only(
 
         // The terminal is the member key — it must be a referable entity id:
         // the owner identity, or a property carrying a refersTo declaration
-        // (identity, contract, token, or permanent document — all kinds that
-        // can never dangle).
+        // whose value alone IS the referenced entity's id (identity,
+        // contract, token, or permanent document — all kinds that can never
+        // dangle). `identityPublicKey` is deliberately NOT admitted: it is a
+        // compound reference — this property carries the identity id while a
+        // separate `keyIdProperty` carries the key id — so a terminal keyed
+        // by it would conflate references to different keys of the same
+        // identity.
         if terminal != OWNER_ID {
+            use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
             match document_type.flattened_properties.get(terminal) {
                 Some(property)
                     if matches!(
                         property.property_type,
-                        DocumentPropertyType::IdentifierWithReference(_)
+                        DocumentPropertyType::IdentifierWithReference(
+                            DocumentPropertyReferenceTarget::Identity
+                                | DocumentPropertyReferenceTarget::Contract
+                                | DocumentPropertyReferenceTarget::Token
+                                | DocumentPropertyReferenceTarget::PermanentDocument { .. }
+                        )
                     ) => {}
                 Some(_) => {
                     return Err(structure_error(format!(
                         "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
                          must be \"$ownerId\" or an identifier property with a refersTo \
-                         declaration (identity, contract, token, or permanentDocument): \
-                         the terminal is the entry's member key and must be a referable \
-                         entity id",
+                         declaration targeting identity, contract, token, or \
+                         permanentDocument: the terminal is the entry's member key and must \
+                         alone be a referable entity id (an identityPublicKey reference is \
+                         compound — its key id lives in a separate property — and is not \
+                         admitted)",
                         terminal, index_name, name,
                     )));
                 }
@@ -2102,13 +2116,48 @@ pub(super) fn apply_index_only(
             }
         }
 
-        if terminal == OWNER_ID
-            || index
+        // EVERY index must embed `$ownerId` (as a prefix property or the
+        // terminal). This is what makes each entry self-authorizing: a
+        // delete recomputes entries with owner = signer, so an entry the
+        // signer does not own is simply not there. With an owner-less
+        // index, a crafted delete could splice values from two different
+        // documents — its own owner-bearing row and a victim's owner-less
+        // row — and remove an entry it never created; binding every entry
+        // to its owner closes that, at the cost of the (unneeded) global-
+        // uniqueness-without-owner shape.
+        if terminal != OWNER_ID
+            && !index
                 .properties
                 .iter()
                 .any(|property| property.name == OWNER_ID)
         {
-            owner_id_indexed = true;
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" must include $ownerId (as \
+                 a property or as the terminal): every entry must be bound to its owner so \
+                 deletes can only ever remove the signer's own entries",
+                index_name, name,
+            )));
+        }
+
+        // `$createdAt` in an index is only coherent when the document
+        // actually carries a timestamp — and document creation assigns
+        // `created_at` only when `$createdAt` is in `required`. Without
+        // this, an indexed `$createdAt` would silently take the missing-
+        // value branch instead of storing block time.
+        if (terminal == CREATED_AT
+            || index
+                .properties
+                .iter()
+                .any(|property| property.name == CREATED_AT))
+            && !document_type.required_fields.contains(CREATED_AT)
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" involves $createdAt, so \
+                 \"$createdAt\" must be listed in `required`: document creation only \
+                 assigns the timestamp for required system times, and an indexOnly entry \
+                 cannot represent a missing value",
+                index_name, name,
+            )));
         }
     }
 
@@ -2145,19 +2194,27 @@ pub(super) fn apply_index_only(
                 property_name, name,
             )));
         }
-    }
 
-    // Ownership must be recoverable: a delete is authorized by probing an
-    // $ownerId-bearing entry computed with owner = signer, so at least one
-    // index has to embed the owner.
-    if !owner_id_indexed {
-        return Err(structure_error(format!(
-            "indexOnly document type \"{}\" must include $ownerId in at least one index \
-             (as a property or as the terminal): delete authorization recovers ownership \
-             from an owner-bearing index entry, and without one no document of this type \
-             could ever be deleted by its owner",
-            name,
-        )));
+        // A required nested leaf inside an OPTIONAL ancestor object is only
+        // conditionally present — `required: ["targetId"]` inside an
+        // unrequired `profile` lets a valid document omit the whole object.
+        // Every ancestor path of an indexed dotted property must therefore
+        // be required too, or the no-null invariant silently breaks.
+        let mut ancestor = String::new();
+        for segment in property_name.split('.') {
+            if !ancestor.is_empty() {
+                if !document_type.required_fields.contains(&ancestor) {
+                    return Err(structure_error(format!(
+                        "property \"{}\" on indexOnly document type \"{}\" sits inside \
+                         \"{}\", which is not listed in `required`: a valid document could \
+                         omit the whole object, leaving the indexed leaf absent",
+                        property_name, name, ancestor,
+                    )));
+                }
+                ancestor.push('.');
+            }
+            ancestor.push_str(segment);
+        }
     }
 
     Ok(())

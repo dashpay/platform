@@ -3543,6 +3543,7 @@ mod time_range_picker_tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range,
+            terminal: None,
         }
     }
 

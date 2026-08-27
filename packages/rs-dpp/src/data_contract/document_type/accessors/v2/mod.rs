@@ -51,8 +51,4 @@ pub trait DocumentTypeV2Setters {
     /// be set to `Some(_)`; setters MAY enforce this by panicking or by
     /// silently no-op'ing — refer to the impl docs.
     fn set_range_summable(&mut self, range_summable: bool);
-
-    /// Sets whether this document type is indexOnly. Only the parser should
-    /// call this — the flag's structural invariants are enforced there.
-    fn set_index_only(&mut self, index_only: bool);
 }
