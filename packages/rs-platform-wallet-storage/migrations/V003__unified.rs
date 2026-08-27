@@ -38,6 +38,14 @@
 //! No MAC column ships here — manifest authentication is deferred out of
 //! this workstream (dev-plan §7).
 
+// INTENTIONAL(account-type-unconstrained): `core_address_pool.account_type`
+// is plain `TEXT NOT NULL` with no `CHECK` allow-list. A constraint was
+// considered and deferred as low-priority defence-in-depth — the column is
+// written only from a closed Rust enum's own label, never from user input,
+// and the readers reject an unknown label anyway. Deliberately NOT added
+// inside the SQL below: this migration is already applied in the field, and
+// editing a rendered body is the schema-drift alarm `sqlite_schema_pinning`
+// exists to raise. A future CHECK belongs in a new migration.
 pub fn migration() -> String {
     "\
 CREATE TABLE core_address_pool (

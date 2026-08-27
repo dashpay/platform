@@ -328,6 +328,13 @@ impl SecretStore {
                 })
             }
             Self::Os(_) => {
+                // INTENTIONAL(keyring-reprotect-non-atomic): the OS keyring
+                // exposes no compare-and-swap, so this get-then-set is not
+                // atomic. Accepted residual: a crash between the two leaves
+                // the entry under the OLD passphrase (the set never landed),
+                // and a concurrent writer's value can be overwritten. The
+                // File arm gets atomicity from its own rename; there is no
+                // equivalent primitive to borrow here.
                 let Some(secret) = self.get_secret(service, label, current)? else {
                     return Err(SecretStoreError::NoEntry);
                 };

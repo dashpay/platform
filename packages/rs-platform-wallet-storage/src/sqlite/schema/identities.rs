@@ -85,6 +85,25 @@ pub fn apply(
                 payload,
             ])?;
         }
+        // Carry the promoted identities' NULL-scoped keys into the same
+        // scope, inside the promotion's own transaction. A key left
+        // NULL-scoped under a now-owned identity is the state the
+        // `identity_keys_null_scope_*` triggers forbid, and it drops out of
+        // the owner's scoped read. The `EXISTS` clause is what makes this
+        // safe to run for every flushed id: it fires only where the identity
+        // row really is owned by this scope, so a cross-wallet upsert that
+        // the `DO UPDATE WHERE` turned into a no-op moves no keys either.
+        if !scope_is_sentinel {
+            let mut rescope = tx.prepare_cached(
+                "UPDATE identity_keys SET wallet_id = ?1 \
+                 WHERE identity_id = ?2 AND wallet_id IS NULL \
+                   AND EXISTS (SELECT 1 FROM identities i \
+                               WHERE i.identity_id = ?2 AND i.wallet_id IS ?1)",
+            )?;
+            for id in cs.identities.keys() {
+                rescope.execute(params![wallet_id_param, id.as_slice()])?;
+            }
+        }
     }
     if !cs.removed.is_empty() {
         // Scope the tombstone to the flush wallet (NULL-safe `IS`) so wallet
@@ -254,9 +273,33 @@ pub fn fetch(
 /// a hard error (corruption is never silently dropped). Rows with
 /// `identity_index = Some(_)` bucket into `wallet_identities`, `None` into
 /// `out_of_wallet_identities`.
+/// Strict-policy [`load_state_with_ctx`], for the tests that read identity
+/// state directly rather than through `load_prekeyed`.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
+) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
+    // `LoadCtx::strict()` is cfg-gated to test/helper builds; the policy
+    // constructor is not, so the plain library build keeps compiling.
+    load_state_with_ctx(
+        conn,
+        wallet_id,
+        &LoadCtx::new(crate::sqlite::config::LoadPolicy::Strict),
+    )
+}
+
+/// [`load_state`] under an explicit load policy.
+///
+/// Only the duplicate-slot case consults `ctx`: a second live row claiming
+/// an `identity_index` this wallet has already filled is fatal under
+/// `Strict` and a counted, logged drop under `Recovery`. The typed-column
+/// cross-checks stay unconditional — a row whose columns contradict its own
+/// blob is corruption, not a recoverable projection.
+pub fn load_state_with_ctx(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
     use platform_wallet::changeset::IdentityManagerStartState;
 
@@ -266,7 +309,7 @@ pub fn load_state(
     // unowned bucket. A plain `=` could not express the second case at all.
     let wallet_id_param = wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
-        "SELECT identity_id, length(entry_blob), entry_blob, tombstoned \
+        "SELECT identity_id, length(entry_blob), entry_blob, tombstoned, identity_index \
          FROM identities WHERE wallet_id IS ?1",
     )?;
     // The ignored-senders TABLE is the authoritative ignore record (every
@@ -281,6 +324,7 @@ pub fn load_state(
         blob::check_size(row.get::<_, i64>(1)?)?;
         let payload: Vec<u8> = row.get(2)?;
         let tombstoned: i64 = row.get(3)?;
+        let typed_identity_index: Option<i64> = row.get(4)?;
         if tombstoned != 0 {
             continue;
         }
@@ -301,15 +345,42 @@ pub fn load_state(
                 });
             }
         }
+        // The blob's index is what the wallet runs on; the column is what
+        // the write-path slot guard (`check_index_conflicts`) reasons about.
+        // Divergence means the guard has been policing a value the runtime
+        // never sees, so the two must be proven equal on the way in.
+        let typed_identity_index = typed_identity_index
+            .map(|raw| crate::sqlite::util::safe_cast::i64_to_u32("identities.identity_index", raw))
+            .transpose()?;
+        if entry.identity_index != typed_identity_index {
+            return Err(WalletStorageError::IdentityEntryIdMismatch);
+        }
         let ignored = ignored_by_owner.remove(&entry.id).unwrap_or_default();
         let managed = managed_identity_from_entry(&entry, wallet_id, ignored);
         match entry.identity_index {
             Some(idx) => {
-                state
+                let entry_id = entry.id;
+                if let Some(displaced) = state
                     .wallet_identities
                     .entry(*wallet_id)
                     .or_default()
-                    .insert(idx, managed);
+                    .insert(idx, managed)
+                {
+                    // `identities` carries no `(wallet_id, identity_index)`
+                    // UNIQUE index, so a pre-guard duplicate can still be on
+                    // disk. Left unreported the map keyed by `idx` just drops
+                    // whichever row SQLite happened to yield first — an
+                    // identity silently missing from the wallet.
+                    ctx.tolerate(
+                        LoadSite::IdentityIndexCollision,
+                        WalletStorageError::IdentityIndexConflict {
+                            wallet_id: *wallet_id,
+                            identity_index: idx,
+                            existing: displaced.identity.id().to_buffer(),
+                            incoming: entry_id.to_buffer(),
+                        },
+                    )?;
+                }
             }
             None => {
                 state.out_of_wallet_identities.insert(entry.id, managed);
@@ -334,7 +405,7 @@ pub fn load_prekeyed(
     wallet_id: &WalletId,
     ctx: &LoadCtx,
 ) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
-    let mut state = load_state(conn, wallet_id)?;
+    let mut state = load_state_with_ctx(conn, wallet_id, ctx)?;
     let identity_keys = crate::sqlite::schema::identity_keys::load_state(conn, wallet_id)?;
     let records = crate::sqlite::schema::contacts::load_state(conn, wallet_id)?;
     // Ignored senders restore in `load_state` from the authoritative
@@ -804,6 +875,167 @@ mod tests {
             oow.identity.public_keys()[&0].data().as_slice(),
             &[0xB2; 33],
             "out-of-wallet identity carries its own key"
+        );
+    }
+
+    /// Promoting an orphan identity into a wallet must carry its
+    /// NULL-scoped `identity_keys` rows across in the same transaction.
+    /// Left behind, those keys stay NULL-scoped while their identity is
+    /// wallet-owned — a state the `identity_keys_null_scope_*` triggers
+    /// exist to forbid, and one that hides the keys from the promoted
+    /// identity's own scoped read.
+    #[test]
+    fn orphan_promotion_rescopes_the_identitys_null_scoped_keys() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let a = [0xA1u8; 32];
+        let y = [0x02u8; 32];
+        insert_wallet(&conn, &a);
+
+        // Orphan Y under the sentinel scope, then give it a NULL-scoped key.
+        let mut cs_orphan = IdentityChangeSet::default();
+        cs_orphan
+            .identities
+            .insert(Identifier::from(y), entry(y, None, 10, None));
+        apply_in_tx(&mut conn, &[0u8; 32], &cs_orphan);
+
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts.insert(
+            (Identifier::from(y), 0),
+            sample_key_entry(Identifier::from(y), 0x09),
+        );
+        let tx = conn.transaction().unwrap();
+        crate::sqlite::schema::identity_keys::apply(&tx, &[0u8; 32], &keys).unwrap();
+        tx.commit().unwrap();
+
+        // A claims Y.
+        let mut cs_a = IdentityChangeSet::default();
+        cs_a.identities
+            .insert(Identifier::from(y), entry(y, Some(a), 500, Some(3)));
+        apply_in_tx(&mut conn, &a, &cs_a);
+
+        let orphaned: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM identity_keys \
+                 WHERE identity_id = ?1 AND wallet_id IS NULL",
+                params![&y[..]],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            orphaned, 0,
+            "the promoted identity's keys must not stay NULL-scoped"
+        );
+
+        let rescoped: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM identity_keys \
+                 WHERE identity_id = ?1 AND wallet_id IS ?2",
+                params![&y[..], &a[..]],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rescoped, 1, "the key must move to the promoting wallet");
+    }
+
+    /// A NULL-scoped key must name an identity that actually exists. V001's
+    /// guard only rejected keys whose identity was wallet-OWNED, so one
+    /// naming no identity at all slipped through — MATCH SIMPLE leaves both
+    /// foreign keys dormant on a NULL-scoped row, making the trigger the
+    /// only guard there is. Closed by V014.
+    #[test]
+    fn null_scoped_key_is_rejected_for_a_missing_identity() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let ghost = Identifier::from([0x5Eu8; 32]); // never written to `identities`
+
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts
+            .insert((ghost, 0), sample_key_entry(ghost, 0x5E));
+
+        let tx = conn.transaction().unwrap();
+        let err = crate::sqlite::schema::identity_keys::apply(&tx, &[0u8; 32], &keys)
+            .expect_err("a NULL-scoped key naming no identity must be rejected");
+        assert!(
+            matches!(err, WalletStorageError::IdentityKeyWalletMismatch { .. }),
+            "expected IdentityKeyWalletMismatch from the NULL-scope trigger, got {err:?}"
+        );
+    }
+
+    /// Two live rows of one wallet claiming the same `identity_index` must
+    /// not resolve by silently dropping whichever the scan reached first.
+    /// `identities` has no `(wallet_id, identity_index)` UNIQUE index, so a
+    /// duplicate written before the write-path slot guard existed is still
+    /// reachable on disk.
+    #[test]
+    fn load_state_reports_a_duplicate_identity_index_instead_of_dropping_one() {
+        let conn = migrated_conn();
+        let wallet = [7u8; 32];
+        insert_wallet(&conn, &wallet);
+        for id_byte in [0xAAu8, 0xBBu8] {
+            let e = entry([id_byte; 32], Some(wallet), 100, Some(1));
+            let payload = blob::encode(&e).unwrap();
+            conn.execute(
+                "INSERT INTO identities \
+                 (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+                 VALUES (?1, ?2, 1, ?3, 0)",
+                params![&[id_byte; 32][..], &wallet[..], payload],
+            )
+            .unwrap();
+        }
+
+        // Strict: the contradiction is fatal rather than silently resolved.
+        let err = load_state_with_ctx(&conn, &wallet, &LoadCtx::strict())
+            .expect_err("a duplicated derivation slot must fail a strict load");
+        assert!(
+            matches!(err, WalletStorageError::IdentityIndexConflict { .. }),
+            "expected IdentityIndexConflict, got {err:?}"
+        );
+
+        // Recovery: still degraded, but counted and logged rather than silent.
+        let ctx = LoadCtx::recovery();
+        let state = load_state_with_ctx(&conn, &wallet, &ctx)
+            .expect("recovery tolerates the duplicate to get the wallet open");
+        assert_eq!(
+            state.wallet_identities.get(&wallet).map(|m| m.len()),
+            Some(1),
+            "one identity still loses the slot — the point is that it is reported"
+        );
+        let degradation = ctx.degradation();
+        assert!(degradation.degraded);
+        assert_eq!(
+            degradation.by_site.get(&LoadSite::IdentityIndexCollision),
+            Some(&1),
+            "the collision must be counted against its own site"
+        );
+    }
+
+    /// The `identity_index` COLUMN and the index inside `entry_blob` are two
+    /// copies of one fact. The write-path slot guard polices the column while
+    /// the wallet runs on the blob, so a load must refuse a row where they
+    /// disagree rather than let the guard protect a value nothing reads.
+    #[test]
+    fn load_state_rejects_identity_index_column_drift() {
+        let conn = migrated_conn();
+        let wallet = [8u8; 32];
+        insert_wallet(&conn, &wallet);
+        let e = entry([0xC1u8; 32], Some(wallet), 100, Some(2));
+        let payload = blob::encode(&e).unwrap();
+        conn.execute(
+            "INSERT INTO identities \
+             (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+             VALUES (?1, ?2, 9, ?3, 0)",
+            params![&[0xC1u8; 32][..], &wallet[..], payload],
+        )
+        .unwrap();
+
+        let err =
+            load_state(&conn, &wallet).expect_err("column/blob index drift must fail the load");
+        assert!(
+            matches!(err, WalletStorageError::IdentityEntryIdMismatch),
+            "expected IdentityEntryIdMismatch, got {err:?}"
         );
     }
 

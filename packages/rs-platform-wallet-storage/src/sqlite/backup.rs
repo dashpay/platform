@@ -426,6 +426,12 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     //    use `OsString::push` so non-UTF-8 bytes round-trip; `NotFound` is a
     //    silent no-op. The lock conn was dropped in step 7 for cross-platform
     //    unlink semantics.
+    //    INTENTIONAL(wal-shm-cleanup-race): this unlink shares the
+    //    lock-release-before-rename trade-off documented on this function. A
+    //    peer that opened the old database still holds its own descriptors,
+    //    so under POSIX these unlinks just detach the names — the peer reads
+    //    its already-open inode and nothing escalates. Accepted risk: that
+    //    peer keeps serving pre-restore state until it reopens.
     if let Some(file_name) = dest_db_path.file_name() {
         for ext in ["-wal", "-shm"] {
             let mut sibling_name = file_name.to_os_string();
@@ -488,7 +494,18 @@ where
         return Err(on_failure(String::new()));
     }
     if rows.len() == 1 && rows[0] == "ok" && trailing_err.is_none() {
-        Ok(())
+        // `integrity_check` validates page/index structure and says nothing
+        // about referential integrity, so a file can be structurally perfect
+        // while an identity's keys point at a wallet that no longer exists.
+        // SQLite also skips FK enforcement entirely for any child key with a
+        // NULL column (MATCH SIMPLE), so violations can accumulate on the
+        // nullable-scope tables without any write ever failing.
+        let violations = foreign_key_violations(conn)?;
+        if violations.is_empty() {
+            Ok(())
+        } else {
+            Err(on_failure(violations.join("\n")))
+        }
     } else {
         let mut report = rows.join("\n");
         if let Some(e) = trailing_err {
@@ -498,6 +515,34 @@ where
         }
         Err(on_failure(report))
     }
+}
+
+/// One diagnostic line per `PRAGMA foreign_key_check` row, empty when the
+/// database is referentially clean.
+///
+/// Each row is `(child table, child rowid, parent table, fk index)`; the
+/// rowid is NULL for a WITHOUT ROWID child, so it renders as `-`.
+fn foreign_key_violations(conn: &Connection) -> Result<Vec<String>, WalletStorageError> {
+    let mut stmt = conn
+        .prepare("PRAGMA foreign_key_check")
+        .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
+    let rows = stmt
+        .query_map([], |row| {
+            let table: String = row.get(0)?;
+            let rowid: Option<i64> = row.get(1)?;
+            let parent: String = row.get(2)?;
+            let fkid: i64 = row.get(3)?;
+            Ok(format!(
+                "foreign_key_check: {table} row {} violates FK #{fkid} into {parent}",
+                rowid.map_or_else(|| "-".to_string(), |id| id.to_string())
+            ))
+        })
+        .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
+    let mut out = Vec::new();
+    for item in rows {
+        out.push(item.map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?);
+    }
+    Ok(out)
 }
 
 /// Apply retention to a directory. Files that match the recognised
@@ -621,6 +666,57 @@ fn utc_timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A structurally sound file can still be referentially broken:
+    /// `integrity_check` alone reports "ok" while a child row points at a
+    /// parent that does not exist. The verification path must catch that.
+    #[test]
+    fn integrity_check_reports_foreign_key_violations() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        // Plant an orphan with enforcement off, the way a file written by an
+        // older build (or with the pragma disabled) can arrive on disk.
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        conn.execute(
+            "INSERT INTO identities \
+             (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+             VALUES (?1, ?2, NULL, ?3, 0)",
+            rusqlite::params![&[0x1Au8; 32][..], &[0x2Bu8; 32][..], vec![0u8; 4]],
+        )
+        .unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        // `integrity_check` on its own is satisfied by this file.
+        let structural: String = conn
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(structural, "ok", "the file is structurally sound");
+
+        let err = run_integrity_check(&conn, |report| WalletStorageError::IntegrityCheckFailed {
+            report,
+        })
+        .expect_err("a dangling foreign key must fail verification");
+        match err {
+            WalletStorageError::IntegrityCheckFailed { report } => {
+                assert!(
+                    report.contains("foreign_key_check") && report.contains("identities"),
+                    "report must name the check and the offending table, got: {report}"
+                );
+            }
+            other => panic!("expected IntegrityCheckFailed, got {other:?}"),
+        }
+    }
+
+    /// A clean migrated database passes both halves of the check.
+    #[test]
+    fn integrity_check_passes_a_clean_database() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        run_integrity_check(&conn, |report| WalletStorageError::IntegrityCheckFailed {
+            report,
+        })
+        .expect("a freshly migrated database is both sound and consistent");
+    }
 
     #[test]
     fn manual_backup_filename_matches_regex() {

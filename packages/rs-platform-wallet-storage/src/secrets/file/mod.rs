@@ -778,6 +778,11 @@ fn do_write_vault_at(
     // ([`EncryptedFileStore::durability_uncertain_count`]).
     #[cfg(unix)]
     {
+        // INTENTIONAL(fsync-parent-dir-tolerant): a failed parent-dir fsync
+        // warns and counts instead of failing the write. Accepted risk: the
+        // vault's own fsync+rename already put the data on disk, so only the
+        // directory entry's durability across power loss is unconfirmed —
+        // surfaced to callers via `durability_uncertain_count()`.
         let signal_unconfirmed = |e: &std::io::Error| {
             tracing::warn!(
                 error = %e,

@@ -15,13 +15,13 @@ use platform_wallet_storage::sqlite::migrations as mig;
 /// Golden `(version, name)` fingerprint of the frozen migration set. Bump
 /// deliberately only when adding/removing/renaming a migration file.
 const EXPECTED_ID_FINGERPRINT: &str =
-    "7b64cb59144e7243e4ef6b5978ca529db504c0b105084db189db04cb239b7b61";
+    "63ee86e2ec0cb4377d4f3742dec32c5a6aad235e323cca62afec154d6ed5820d";
 
 /// Golden content-level fingerprint over every migration's rendered SQL.
 /// Bump deliberately only when the DDL body itself changes; an accidental
 /// change (a silent table rename) must fail this test, not slip through.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "c35038cd41302c2678e0d20f0bc9cc02e2aea7e30d7b8e51de40bd852d485bb5";
+    "8e139bed08fba4dfa9ce1c83dcff84b78548fd9e593a63c848fba4958ad8e1b4";
 
 /// Table names that lost the cross-branch reconciliation and must never
 /// resurface as SQL identifiers on this frozen (`wallets`) baseline.

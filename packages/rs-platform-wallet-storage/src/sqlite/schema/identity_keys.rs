@@ -241,7 +241,8 @@ pub fn load_state(
     // those keys are unreachable — `wallet_id = NULL` is never true.
     let wallet_id_param = super::wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
-        "SELECT identity_id, key_id, length(public_key_blob), public_key_blob \
+        "SELECT identity_id, key_id, length(public_key_blob), public_key_blob, \
+                public_key_hash \
          FROM identity_keys WHERE wallet_id IS ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id_param])?;
@@ -250,6 +251,7 @@ pub fn load_state(
         let key_id: i64 = row.get(1)?;
         blob::check_size(row.get::<_, i64>(2)?)?;
         let payload: Vec<u8> = row.get(3)?;
+        let typed_public_key_hash: Vec<u8> = row.get(4)?;
         let id32 = super::id32("identity_keys.identity_id", &identity_id_bytes)?;
         let identity_id = Identifier::from(id32);
         let key_id: KeyID =
@@ -262,9 +264,13 @@ pub fn load_state(
         // `public_key.id()` is verified too — it becomes the DPP
         // signing-selection map key via `add_public_key`, so a mismatch would
         // file the key under a wrong KeyID rather than being caught here.
+        // `public_key_hash` is the indexed lookup column while the blob is
+        // what callers receive, so a divergence makes a key findable under a
+        // hash it does not carry.
         if entry.identity_id != identity_id
             || entry.key_id != key_id
             || entry.public_key.id() != key_id
+            || entry.public_key_hash[..] != typed_public_key_hash[..]
         {
             return Err(WalletStorageError::IdentityKeyEntryMismatch);
         }
@@ -459,6 +465,35 @@ mod tests {
         insert_key_row(&conn, &wallet, &typed_identity, &wire);
 
         let err = load_state(&conn, &wallet).expect_err("wallet_id mismatch must fail");
+        assert!(
+            matches!(err, WalletStorageError::IdentityKeyEntryMismatch),
+            "expected IdentityKeyEntryMismatch, got {err:?}"
+        );
+    }
+
+    /// `load_state` rejects a row whose typed `public_key_hash` column
+    /// disagrees with the hash inside the decoded blob. The column is the
+    /// indexed lookup key while the blob is what callers receive, so a
+    /// divergence means a key is findable under a hash it does not carry.
+    #[test]
+    fn load_state_rejects_public_key_hash_column_mismatch() {
+        let conn = migrated_conn();
+        let wallet = [0x44u8; 32];
+        let typed_identity = [0xEEu8; 32];
+        let wire = IdentityKeyWire {
+            identity_id: Identifier::from(typed_identity),
+            key_id: 0,
+            public_key_bincode: bincode::encode_to_vec(sample_public_key(), blob::bounded_config())
+                .unwrap(),
+            // `insert_key_row` writes an all-zero hash column, so a non-zero
+            // blob hash is the drift under test.
+            public_key_hash: [0x77u8; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        insert_key_row(&conn, &wallet, &typed_identity, &wire);
+
+        let err = load_state(&conn, &wallet).expect_err("public_key_hash mismatch must fail");
         assert!(
             matches!(err, WalletStorageError::IdentityKeyEntryMismatch),
             "expected IdentityKeyEntryMismatch, got {err:?}"

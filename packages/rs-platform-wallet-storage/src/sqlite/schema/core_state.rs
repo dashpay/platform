@@ -575,7 +575,16 @@ pub fn get_tx_record(
     drop(rows);
     drop(stmt);
     if let Err(mismatch) = ensure_transaction_record_matches_columns(txid, height, &record) {
+        // Captured before `mismatch` moves: only a txid disagreement means
+        // the row is a different transaction from the one asked for.
+        let names_another_transaction = record.txid != *txid;
         ctx.tolerate(LoadSite::CoreTransactionColumnDrift, mismatch)?;
+        // Recovery tolerated the drift, which licenses continuing the load —
+        // not answering a point read with someone else's transaction. Height
+        // drift keeps the blob authoritative and still serves the record.
+        if names_another_transaction {
+            return Ok(None);
+        }
     }
     Ok(Some(record))
 }
@@ -1278,8 +1287,12 @@ mod tests {
         );
     }
 
+    /// A txid-drifted row names a DIFFERENT transaction than the one asked
+    /// for, so recovery mode must decline to answer rather than hand back
+    /// the wrong record. Contrast the height-drift sibling below, where the
+    /// blob stays authoritative and the record is still served.
     #[test]
-    fn get_tx_record_tolerates_blob_txid_drift_in_recovery_without_repairing() {
+    fn get_tx_record_declines_a_txid_drifted_row_in_recovery_without_repairing() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0x4Bu8; 32];
@@ -1308,10 +1321,13 @@ mod tests {
         )
         .unwrap();
 
-        let record = get_tx_record(&conn, &wallet_id, &typed_txid, &LoadCtx::recovery())
-            .expect("recovery mode must still serve the point read")
-            .expect("blob-bearing row must return its record");
-        assert_eq!(record.txid, blob_txid);
+        assert!(
+            get_tx_record(&conn, &wallet_id, &typed_txid, &LoadCtx::recovery())
+                .expect("recovery mode tolerates the drift instead of erroring")
+                .is_none(),
+            "the row's blob names a different transaction than the one asked \
+             for; recovery must decline rather than serve the wrong record"
+        );
         // The row was NOT repaired, so the blob txid still matches no row.
         assert!(
             get_tx_record(&conn, &wallet_id, &blob_txid, &LoadCtx::recovery())
@@ -1319,6 +1335,16 @@ mod tests {
                 .is_none(),
             "a read must never rewrite the row it read"
         );
+        // Declining is not deleting: the drifted row is still on disk under
+        // its typed txid, for an operator or a later repair pass to find.
+        let still_present: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(&typed_txid)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(still_present, 1, "a read must never delete the row it read");
     }
 
     #[test]

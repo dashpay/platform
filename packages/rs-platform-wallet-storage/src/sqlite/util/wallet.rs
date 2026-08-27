@@ -387,6 +387,12 @@ fn route_to_funds_account(
     owner: Option<&OwningAccount>,
     orphaned_owners: &mut Vec<String>,
 ) -> usize {
+    // INTENTIONAL(funds-account-fallback): an unattributable owner routes to
+    // account 0 rather than failing. Accepted risk: until the next sync warms
+    // the per-account view, such a UTXO or used address is attributed to the
+    // first funds account instead of its own. Failing closed here would brick
+    // wallets whose owners legitimately have no funds account (provider
+    // accounts sit on a non-secp256k1 curve), which is the worse outcome.
     match owner {
         None => 0,
         Some(owner) => account_keys
