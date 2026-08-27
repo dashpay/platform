@@ -833,8 +833,12 @@ pub fn setup_with_token_perpetual_distribution(
 /// schedule) — the perpetual node is the only deviation.
 ///
 /// Schema mirrors the round-trip example in
-/// `rs-dpp/src/data_contract/conversion/json/mod.rs`:
-/// `{ "distributionType": { "BlockBasedDistribution": { "interval", "function": { "FixedAmount": { "amount" } } } }, "distributionRecipient": {"$type": "contractOwner"} }`.
+/// `rs-dpp/src/data_contract/conversion/json/mod.rs`. Both
+/// `RewardDistributionType` and `DistributionFunction` are INTERNALLY
+/// tagged (`#[serde(tag = "$type", rename_all = "camelCase")]`), so each
+/// carries its variant inline as a camelCase `$type` rather than nesting
+/// under a PascalCase key:
+/// `{ "distributionType": { "$type": "blockBasedDistribution", "interval": _, "function": { "$type": "fixedAmount", "amount": _ } }, "distributionRecipient": {"$type": "contractOwner"} }`.
 pub fn permissive_owner_token_contract_with_perpetual_distribution_json(
     owner_id: Identifier,
     position: u16,
@@ -856,11 +860,11 @@ pub fn permissive_owner_token_contract_with_perpetual_distribution_json(
         json!({
             "$formatVersion": "0",
             "distributionType": {
-                "BlockBasedDistribution": {
-                    "interval": distribution.interval_blocks,
-                    "function": {
-                        "FixedAmount": { "amount": distribution.amount_per_interval },
-                    },
+                "$type": "blockBasedDistribution",
+                "interval": distribution.interval_blocks,
+                "function": {
+                    "$type": "fixedAmount",
+                    "amount": distribution.amount_per_interval,
                 },
             },
             "distributionRecipient": {"$type": "contractOwner"},
@@ -1329,6 +1333,54 @@ impl CloneForTokenSetup for RegisteredIdentity {
             signer: Arc::clone(&self.signer),
             identity_index: self.identity_index,
             funding: self.funding,
+        }
+    }
+}
+
+#[cfg(test)]
+mod perpetual_distribution_json_tests {
+    use super::*;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+
+    /// The perpetual-distribution node the harness builds must deserialize
+    /// into the DPP type the contract deploy will parse it as.
+    ///
+    /// `RewardDistributionType` and `DistributionFunction` are internally
+    /// tagged (`#[serde(tag = "$type", rename_all = "camelCase")]`), so an
+    /// externally-tagged / PascalCase nesting carries no `$type` at all and
+    /// fails deploy with `missing field \`$type\`` — 5 minutes into a live
+    /// testnet run. This pins the shape in milliseconds instead.
+    #[test]
+    fn perpetual_distribution_type_node_deserializes_into_dpp() {
+        let json = permissive_owner_token_contract_with_perpetual_distribution_json(
+            Identifier::default(),
+            0,
+            1_000_000,
+            &PerpetualDistribution {
+                interval_blocks: 5,
+                amount_per_interval: 100,
+            },
+        );
+
+        let node = json
+            .pointer("/0/distributionRules/perpetualDistribution/distributionType")
+            .expect("distributionType node must exist");
+
+        let parsed: RewardDistributionType = serde_json::from_value(node.clone())
+            .unwrap_or_else(|e| panic!("distributionType must parse as DPP's type: {e}\n{node:#}"));
+
+        match parsed {
+            RewardDistributionType::BlockBasedDistribution { interval, function } => {
+                assert_eq!(interval, 5, "interval must survive the round trip");
+                assert!(
+                    matches!(
+                        function,
+                        dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction::FixedAmount { amount: 100 }
+                    ),
+                    "function must round-trip as FixedAmount {{ amount: 100 }}, got {function:?}"
+                );
+            }
+            other => panic!("expected BlockBasedDistribution, got {other:?}"),
         }
     }
 }
