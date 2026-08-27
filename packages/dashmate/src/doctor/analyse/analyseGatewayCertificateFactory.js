@@ -312,10 +312,16 @@ function renderRemedy({
   // and cannot be undone.
   if (isIssuanceSpent) {
     if (code === RENEWAL_FAILURE_CODES.CERTIFICATE_ISSUED_NOT_SAVED) {
+      // No command. It used to end in one, directly under the sentence saying
+      // not to - and a problem that ends in a runnable command is an
+      // instruction to run it, which is the second weekly certificate this
+      // state exists to protect. The repair is local, and the next automatic
+      // attempt takes it from there.
       return chalk`Do not obtain another certificate yet - one was already issued and could not
 be saved, so asking again spends another. Check free space and permissions
-where dashmate saves certificates, then:
-${obtain}`;
+where dashmate saves certificates. dashmate retries by itself every hour -
+then check it worked:
+{bold.cyanBright dashmate doctor ${cfg}}`;
     }
 
     // A different cause now, but that earlier certificate is still spent, so
@@ -342,7 +348,12 @@ certificate without dashmate seeing it. Check whether one arrived:
     return 'Do not obtain one yet - a certificate may already have been issued.';
   }
 
-  if (remedy === REMEDY_CLASS.SWITCH_PROVIDER) {
+  // Keyed on the decided action, not on the cause's own remedy. Switching
+  // provider still has to save what it obtains, so a node whose certificate
+  // directory refuses writes is told to repair that first - the derivation
+  // already turned this into REPAIR_STORAGE, and reading `remedy` here walked
+  // straight past it.
+  if (remedy === REMEDY_CLASS.SWITCH_PROVIDER && mayObtain) {
     return chalk`Switch to Let's Encrypt. Certificates are free and it does not cap the number
 of certificates this way. It needs inbound port 80 open to the internet,
 permanently - and if you cannot open it, there is no other way to get a
@@ -382,12 +393,6 @@ ${obtain}`;
   // without anything recording it: a helper that obtains a certificate and
   // then fails to save it exits non-zero, and nothing marks the allowance as
   // spent.
-  if (safeAction === SAFE_ACTION.REPAIR_STORAGE) {
-    return chalk`Free disk space and check permissions on this node's certificate
-directory first. A certificate obtained now could not be saved, and each
-one counts against this node's weekly limit.`;
-  }
-
   if (safeAction === SAFE_ACTION.REPAIR_STORAGE) {
     return chalk`Free disk space and check permissions on this node's certificate
 directory first. A certificate obtained now could not be saved, and each
@@ -438,6 +443,16 @@ function renderCertificateRequest({
     return chalk`Once that is done, check it worked right away:
 {bold.cyanBright dashmate ssl obtain ${cfg} --provider letsencrypt${force}}
 Or leave it - dashmate retries by itself every hour.`;
+  }
+
+  // Every request routes through here, so the storage veto has to be answered
+  // here too. Treating everything that is not an outright refusal as
+  // permission is what let a node that could not save a certificate be handed
+  // the command to ask for one.
+  if (safeAction === SAFE_ACTION.REPAIR_STORAGE) {
+    return chalk`Free disk space and check permissions on this node's certificate
+directory first. A certificate obtained now could not be saved, and each
+one counts against this node's weekly limit.`;
   }
 
   if (safeAction !== SAFE_ACTION.DO_NOT_OBTAIN) {

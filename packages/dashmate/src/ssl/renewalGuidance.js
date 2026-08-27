@@ -105,6 +105,7 @@ export default function deriveRenewalGuidance({
   isRecordUnreadable = false,
   hasNoExternalIp = false,
   isCertificateUsable = true,
+  isCertificateStorageWritable = null,
 }) {
   /**
    * Nothing that would ask the authority may go ahead while the answer cannot
@@ -121,9 +122,13 @@ export default function deriveRenewalGuidance({
       || action === SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX
       || action === SAFE_ACTION.SWITCH_PROVIDER;
 
-    return wouldAsk && candidate?.getStorageWritable() === false
-      ? SAFE_ACTION.REPAIR_STORAGE
-      : action;
+    // A live answer where the caller has one, and the collected one otherwise.
+    // The doctor reads archives from other machines and can only have what was
+    // collected; `update` runs on the node itself and asks at the moment it
+    // matters.
+    const writable = isCertificateStorageWritable ?? candidate?.getStorageWritable() ?? null;
+
+    return wouldAsk && writable === false ? SAFE_ACTION.REPAIR_STORAGE : action;
   };
 
   const prerequisites = hasNoExternalIp ? ['EXTERNAL_IP'] : [];
@@ -143,7 +148,8 @@ export default function deriveRenewalGuidance({
     return {
       cause: null,
       code: null,
-      safeAction: SAFE_ACTION.OBTAIN,
+      // Nothing recorded still does not mean the certificate could be kept.
+      safeAction: withStorageChecked(SAFE_ACTION.OBTAIN, null),
       issuanceStatus: ISSUANCE_STATUS.NONE,
       prerequisites,
     };

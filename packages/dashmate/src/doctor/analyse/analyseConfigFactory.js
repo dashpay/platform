@@ -211,9 +211,21 @@ a working certificate.`,
             }[ssl.error] ?? {};
 
             if (description) {
+              // These predate the renewal record and each one ends in its own
+              // request. A node that cannot write a certificate down would be
+              // handed one here regardless of what every other surface decided
+              // - and for ZeroSSL the allowance is three in a node's lifetime,
+              // not five a week.
+              const storageRefuses = samples
+                .getServiceInfo('gateway', 'certificateRenewal')?.storageWritable === false;
+
               const problem = new Problem(
                 description,
-                solution,
+                storageRefuses && solution?.includes('ssl obtain')
+                  ? chalk`Free disk space and check permissions on this node's certificate
+directory first. A certificate obtained now could not be saved, and each
+one counts against this node's certificate allowance.`
+                  : solution,
                 severity,
               );
 

@@ -1,7 +1,6 @@
 import classifyRenewalFailure, { RENEWAL_FAILURE_CODES } from '../ssl/renewal-failure.js';
 import RenewalRecord from '../ssl/renewalRecord/RenewalRecord.js';
 import { RENEWAL_RECORD_STATES } from '../ssl/renewalRecord/RenewalRecordRepository.js';
-import certificateStorageWritable from '../ssl/certificateStorageWritable.js';
 
 /**
  * Everything that can throw, kept inside one boundary.
@@ -105,14 +104,6 @@ export function recordRenewalFailure({
       // failure would be recorded as one nobody could work out.
       : classifyRenewalFailure(error, { homeDirPath: homeDir.getPath(), apiKey, provider });
 
-    // Asked at the moment of failure, on the machine that would have to save
-    // the certificate, and carried in the record so a collected report answers
-    // it too. `doctor` reads archives from other machines and cannot look.
-    const storageWritable = certificateStorageWritable([
-      homeDir.joinPath(configName, 'platform', 'gateway', 'lego'),
-      homeDir.joinPath(configName, 'platform', 'gateway', 'ssl'),
-    ]);
-
     const asObject = previous?.toObject();
 
     // Both markers are carried until a certificate actually arrives. Either one
@@ -145,7 +136,6 @@ export function recordRenewalFailure({
       issuanceSpentAt,
       issuanceUncertainAt,
       gatewayReloadFailedAt: null,
-      storageWritable,
     }), generation);
   }, configName);
 }

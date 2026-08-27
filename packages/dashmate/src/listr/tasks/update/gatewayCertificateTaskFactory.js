@@ -3,6 +3,9 @@ import ServiceIsNotRunningError from '../../../docker/errors/ServiceIsNotRunning
 import CertificateUnresolvedError from '../../../ssl/errors/CertificateUnresolvedError.js';
 import ConfigurationLockLostError from '../../../ssl/errors/ConfigurationLockLostError.js';
 import deriveRenewalGuidance, { SAFE_ACTION } from '../../../ssl/renewalGuidance.js';
+import { RENEWAL_RECORD_STATES } from '../../../ssl/renewalRecord/RenewalRecordRepository.js';
+import certificateStorageWritable from '../../../ssl/certificateStorageWritable.js';
+import certificateStorageTargets from '../../../ssl/certificateStorageTargets.js';
 import {
   CERTIFICATE_REASONS,
   CERTIFICATE_STATUS,
@@ -141,7 +144,50 @@ export default function gatewayCertificateTaskFactory(
   writeConfigTemplates,
   dockerCompose,
   renewalRecordRepository,
+  homeDir,
 ) {
+  /**
+   * What the helper last recorded, and whether a certificate could be kept.
+   *
+   * Every branch that prints or runs an obtain asks this. Deciding it per
+   * branch is how the ZeroSSL warning came to print a command the same file
+   * withheld twenty lines further down, and how an unreadable record came to
+   * read as no record at all.
+   *
+   * @param {Config} config
+   * @param {Object} verdict
+   * @return {Object}
+   */
+  function renewalGuidanceFor(config, verdict) {
+    const { state, record } = renewalRecordRepository.read(config.getName());
+    const isManaged = config.get('platform.gateway.ssl.enabled') === true;
+
+    // A record left by a previous provider, one an installed certificate has
+    // already outlived, or one describing a success is not this node's current
+    // state - and a record that exists and cannot be read is not the same as
+    // one that is absent.
+    const applicable = state === RENEWAL_RECORD_STATES.PRESENT
+      && isManaged
+      && record.isFailed()
+      && record.appliesTo({
+        provider: config.get('platform.gateway.ssl.provider'),
+        certificateValidFrom: verdict.installed ? verdict.installed.validFrom : null,
+      })
+      ? record
+      : null;
+
+    return deriveRenewalGuidance({
+      record: applicable,
+      isRecordUnreadable: isManaged && state === RENEWAL_RECORD_STATES.UNREADABLE,
+      // This surface only speaks when the certificate did not pass, so waiting
+      // for the next automatic attempt is never affordable here.
+      isCertificateUsable: false,
+      // Asked live: this runs on the node that would have to save it.
+      isCertificateStorageWritable: certificateStorageWritable(
+        certificateStorageTargets(homeDir, config.getName()),
+      ),
+    });
+  }
   /**
    * Persist the provider, and only after a certificate exists to back it.
    *
@@ -298,17 +344,33 @@ export default function gatewayCertificateTaskFactory(
         // Said on every run, to a human and to a script alike: a free ZeroSSL
         // account allows three certificates in total, and nothing tells an
         // operator that renewal has stopped being possible until it has.
+        // This certificate still works, so nothing here is urgent - but it
+        // still ends in a command, and a command is an instruction to run it.
+        // Both endings below used to be chosen without reading the record at
+        // all, so a node that already has an issuance outstanding, or one that
+        // could not save what it obtained, was offered another anyway.
+        const guidance = renewalGuidanceFor(config, verdict);
+        const mayAsk = guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
+          && guidance.safeAction !== SAFE_ACTION.REPAIR_STORAGE;
+
+        const withheld = guidance.safeAction === SAFE_ACTION.REPAIR_STORAGE
+          ? `\n\n    Free disk space and check permissions on this node's certificate
+    directory first - a certificate obtained now could not be saved.`
+          : `\n\n    Do not obtain one yet - a certificate may already have been issued.
+    Send a report instead: dashmate doctor report ${cfg}`;
+
         const warn = () => {
           ctx.certificateWarnings = [
             ...(ctx.certificateWarnings ?? []),
             `This node uses ZeroSSL and its certificate expires ${remaining}.`
             + ' A free ZeroSSL account allows three certificates in total, so renewals'
-            + ' stop working after about 270 days.'
-            + `\n\n    dashmate ssl obtain ${cfg} --provider letsencrypt`,
+            + ` stop working after about 270 days.${mayAsk
+              ? `\n\n    dashmate ssl obtain ${cfg} --provider letsencrypt`
+              : withheld}`,
           ];
         };
 
-        if (!interactive) {
+        if (!interactive || !mayAsk) {
           warn();
           collectWarnings(ctx, verdict);
 
@@ -500,13 +562,7 @@ export default function gatewayCertificateTaskFactory(
       // one whose storage cannot hold a certificate, could be talked into
       // spending another from a weekly handful. A guarantee enforced on the
       // other surfaces and bypassed here is not a guarantee.
-      const recorded = renewalRecordRepository.read(config.getName());
-      const guidance = deriveRenewalGuidance({
-        record: recorded.record?.appliesTo({ provider: verdict.provider })
-          ? recorded.record
-          : null,
-        isCertificateUsable: false,
-      });
+      const guidance = renewalGuidanceFor(config, verdict);
 
       if (guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN
         || guidance.safeAction === SAFE_ACTION.REPAIR_STORAGE) {

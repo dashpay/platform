@@ -86,6 +86,7 @@ describe('gatewayCertificateTaskFactory', () => {
       writeConfigTemplates,
       dockerCompose,
       renewalRecordRepository,
+      homeDir,
     );
 
     const context = {};
@@ -522,13 +523,17 @@ describe('gatewayCertificateTaskFactory', () => {
     // other surfaces enforce could be walked straight past here.
     [
       ['an issuance is already outstanding', { issuanceSpentAt: new Date().toISOString() }],
-      ['a certificate obtained now could not be saved', { storageWritable: false }],
       ['it is unknown whether a certificate was issued', {
         code: 'RESULT_UNKNOWN',
         issuanceUncertainAt: new Date().toISOString(),
       }],
     ].forEach(([reason, overrides]) => {
       it(`should not offer to obtain when ${reason}`, async function it() {
+        // A node dashmate manages the certificate for. With SSL disabled the
+        // record describes something dashmate no longer renews, and is
+        // deliberately not applied - the same rule both other surfaces use.
+        config.set('platform.gateway.ssl.enabled', true);
+
         await run.call(this, {
           checkGatewayCertificate: () => invalid(),
           answers: [true],
@@ -545,6 +550,33 @@ describe('gatewayCertificateTaskFactory', () => {
         expect(obtainLetsEncryptCertificateTask).to.not.have.been.called();
         expect(configFileRepository.write).to.not.have.been.called();
       });
+    });
+
+    // `update` runs on the node itself, so it asks the filesystem rather than
+    // trusting what was recorded - the record lives in the directory this
+    // describes, and a node that cannot write there cannot write down that it
+    // cannot write there.
+    it('should not offer to obtain when a certificate could not be saved', async function it() {
+      if (typeof process.getuid === 'function' && process.getuid() === 0) {
+        this.skip();
+      }
+
+      config.set('platform.gateway.ssl.enabled', true);
+
+      const sslDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+      fs.mkdirSync(sslDir, { recursive: true });
+      fs.chmodSync(sslDir, 0o500);
+
+      try {
+        await run.call(this, {
+          checkGatewayCertificate: () => invalid(),
+          answers: [true],
+        });
+
+        expect(obtainLetsEncryptCertificateTask).to.not.have.been.called();
+      } finally {
+        fs.chmodSync(sslDir, 0o700);
+      }
     });
 
     it('should not persist anything when the obtain fails', async function it() {

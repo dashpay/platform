@@ -277,6 +277,7 @@ describe('every command dashmate tells an operator to run', () => {
         // Nothing recorded: the node this test describes has never had a
         // renewal fail, so the prompt it raises is the ordinary one.
         { read: () => ({ state: 'ABSENT', path: '', record: null, error: null }) },
+        homeDir,
       );
 
       const tasks = new Listr(

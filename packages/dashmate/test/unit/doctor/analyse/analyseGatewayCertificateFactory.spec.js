@@ -807,6 +807,64 @@ describe('analyseGatewayCertificateFactory', () => {
         .to.contain(new Date(Date.now() + 2 * DAY_MS).toISOString().slice(0, 10));
     });
 
+    // Collected on the node, not carried in the record: the record lives in the
+    // directory this describes, so a node that cannot write there cannot write
+    // down that it cannot write there.
+    describe('when a certificate obtained now could not be saved', () => {
+      // Every ending has its own wording, and each one of them used to reach a
+      // command by a different route - the cause's own remedy, the provider
+      // switch, or the central request renderer.
+      [
+        ['a repairable cause', { code: 'PORT_80_UNREACHABLE' }],
+        ['a provider that will never issue again', { code: 'QUOTA_EXHAUSTED', provider: 'zerossl' }],
+      ].forEach(([name, overrides]) => {
+        it(`should name the storage fault instead of a request for ${name}`, () => {
+          if (overrides.provider) {
+            config.set('platform.gateway.ssl.provider', overrides.provider);
+          }
+          installedValid();
+          renewalFailed({ ...overrides, storageWritable: false });
+
+          const [renewal] = analyse(served())
+            .filter((p) => p.getDescription().includes('not being renewed'));
+
+          expect(renewal.getSolution()).to.not.contain('ssl obtain');
+          expect(renewal.getSolution()).to.contain('could not be saved');
+        });
+      });
+
+      // This one already withholds for its own reason, and the storage fault
+      // does not need to be named twice. What matters is that it still does
+      // not end in a request.
+      it('should keep withholding when the cause was never established', () => {
+        installedValid();
+        renewalFailed({ code: 'UNKNOWN', storageWritable: false });
+
+        const [renewal] = analyse(served())
+          .filter((p) => p.getDescription().includes('not being renewed'));
+
+        expect(renewal.getSolution()).to.not.contain('ssl obtain');
+      });
+    });
+
+    // It said "do not obtain another certificate yet" and then printed the
+    // command underneath. A problem that ends in a runnable command is an
+    // instruction to run it, and this is the one state where running it spends
+    // a second weekly certificate on a fault no certificate repairs.
+    it('should not print a request beneath the sentence withholding it', () => {
+      installedValid();
+      renewalFailed({
+        code: 'CERTIFICATE_ISSUED_NOT_SAVED',
+        issuanceSpentAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      });
+
+      const [renewal] = analyse(served())
+        .filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('Do not obtain another certificate yet');
+      expect(renewal.getSolution()).to.not.contain('ssl obtain');
+    });
+
     it('should offer the check that tells an operator whether their repair worked', () => {
       // There is no other way to find out. dashmate cannot test its own
       // inbound port 80, because nothing listens there except during a
