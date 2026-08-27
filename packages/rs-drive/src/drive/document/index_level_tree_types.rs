@@ -265,6 +265,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            terminal: None,
         }
     }
 

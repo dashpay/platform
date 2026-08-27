@@ -102,6 +102,18 @@ pub struct IndexLevelTypeInfo {
     /// other two. The set of axes declared here is what the rs-drive write path
     /// turns into the indexed tree's axis list.
     pub ranked_averageable: bool,
+    /// On an indexOnly document type, the property whose value is this
+    /// index's member key: the terminal key under the `0` storage marker,
+    /// where a normal index stores the document id — stored as an `Item`
+    /// instead of a `Reference` because there is no primary-storage row.
+    /// Always `Some` here when the declaring type is indexOnly (the parser
+    /// normalizes an omitted terminal to `$ownerId`), always `None`
+    /// otherwise. Carried on the level info because index levels merge
+    /// across indexes sharing prefixes, and the write path only sees the
+    /// level at the terminal — but two indexes can never share a full
+    /// property list (duplicates are rejected), so each terminating level
+    /// belongs to exactly one index and the field is unambiguous.
+    pub terminal: Option<String>,
 }
 
 impl IndexType {
@@ -335,6 +347,11 @@ impl IndexLevel {
                         ranked_countable: index.ranked_countable,
                         ranked_summable: index.ranked_summable,
                         ranked_averageable: index.ranked_averageable,
+                        // indexOnly member key. Only ever `Some` on PV14+
+                        // contracts (the grammar rejects the keyword below
+                        // generation 3), so stamping it here changes nothing
+                        // for any historical index level.
+                        terminal: index.terminal.clone(),
                     });
                 }
             }
