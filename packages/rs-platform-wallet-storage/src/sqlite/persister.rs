@@ -574,7 +574,7 @@ impl SqlitePersister {
     ///
     /// Keys are folded in exactly as `load()` does for wallet-owned
     /// identities, so a returned `ManagedIdentity` is usable without a
-    /// second call. Tombstoned identities are omitted.
+    /// second call.
     ///
     /// # Errors
     ///
@@ -716,7 +716,7 @@ impl SqlitePersister {
             // must precede the cascade's `BEGIN EXCLUSIVE` because
             // `Backup::new` deadlocks if the source holds an active write tx.
             // Applying a changeset outside `store()` is safe here because
-            // `identities::apply` re-runs the slot check inside this very tx.
+            // `identities::apply_upserts` re-runs the slot check in this very tx.
             if let Some(cs) = drained_slot.take() {
                 #[cfg(any(test, feature = "__test-helpers"))]
                 if let Some(primed) = primed_pre_flush_error {
@@ -1841,7 +1841,7 @@ fn apply_changeset_to_tx(
         schema::shielded_viewing_keys::apply(tx, wallet_id, shielded)?;
     }
     if let Some(identities) = cs.identities.as_ref() {
-        schema::identities::apply(tx, wallet_id, identities)?;
+        schema::identities::apply_upserts(tx, wallet_id, identities)?;
     }
     if let Some(keys) = cs.identity_keys.as_ref() {
         schema::identity_keys::apply(tx, wallet_id, keys)?;
@@ -1871,6 +1871,13 @@ fn apply_changeset_to_tx(
             cs.dashpay_profiles.as_ref(),
             cs.dashpay_payments_overlay.as_ref(),
         )?;
+    }
+    // Identity removals land LAST: the delete cascades every identity-scoped
+    // child row, so running it before the writers above would instead pull
+    // the FK parent out from under their inserts and fail the whole flush.
+    // See `schema::identities::apply_removals`.
+    if let Some(identities) = cs.identities.as_ref() {
+        schema::identities::apply_removals(tx, wallet_id, identities)?;
     }
     // Bump each touched domain's version inside this same tx so a domain's
     // cache-invalidation marker commits atomically with its data.

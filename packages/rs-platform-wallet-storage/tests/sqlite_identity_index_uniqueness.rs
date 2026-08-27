@@ -85,7 +85,7 @@ fn backend_kind(err: &PersistenceError) -> PersistenceErrorKind {
     }
 }
 
-/// Live (non-tombstoned) occupant of `(wallet_id, index)`, if any.
+/// Occupant of `(wallet_id, index)`, if any.
 fn live_occupant(p: &SqlitePersister, wallet_id: &WalletId, index: u32) -> Option<[u8; 32]> {
     let conn = p.lock_conn_for_test();
     let wid_param: Option<&[u8]> = if *wallet_id == SENTINEL {
@@ -95,7 +95,7 @@ fn live_occupant(p: &SqlitePersister, wallet_id: &WalletId, index: u32) -> Optio
     };
     conn.query_row(
         "SELECT identity_id FROM identities \
-         WHERE wallet_id IS ?1 AND identity_index = ?2 AND tombstoned = 0",
+         WHERE wallet_id IS ?1 AND identity_index = ?2",
         params![wid_param, i64::from(index)],
         |row| row.get::<_, Vec<u8>>(0),
     )
@@ -104,17 +104,18 @@ fn live_occupant(p: &SqlitePersister, wallet_id: &WalletId, index: u32) -> Optio
     .map(|raw| raw.try_into().expect("32-byte identity_id"))
 }
 
-/// `Some(tombstoned)` when the row exists at all.
-fn row_tombstoned(p: &SqlitePersister, id: &Identifier) -> Option<bool> {
+/// Whether the identity has a row on disk. A removal deletes it, so
+/// "removed" and "never written" are the same observable state.
+fn row_exists(p: &SqlitePersister, id: &Identifier) -> bool {
     let conn = p.lock_conn_for_test();
     conn.query_row(
-        "SELECT tombstoned FROM identities WHERE identity_id = ?1",
+        "SELECT 1 FROM identities WHERE identity_id = ?1",
         params![id.as_slice()],
-        |row| row.get::<_, i64>(0),
+        |_| Ok(()),
     )
     .optional()
     .expect("query identity row")
-    .map(|t| t != 0)
+    .is_some()
 }
 
 /// Claim a slot by writing an `identities` row straight to the DB —
@@ -126,8 +127,8 @@ fn row_tombstoned(p: &SqlitePersister, id: &Identifier) -> Option<bool> {
 fn peer_claims_slot(p: &SqlitePersister, wallet_id: &WalletId, id: &Identifier, index: u32) {
     let conn = p.lock_conn_for_test();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-         VALUES (?1, ?2, ?3, X'00', 0)",
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
+         VALUES (?1, ?2, ?3, X'00')",
         params![id.as_slice(), wallet_id.as_slice(), i64::from(index)],
     )
     .expect("peer claims slot");
@@ -171,9 +172,8 @@ fn duplicate_index_is_rejected_at_write_time() {
         Some([0x01; 32]),
         "the resident identity must keep its slot"
     );
-    assert_eq!(
-        row_tombstoned(&p, &iid(0x02)),
-        None,
+    assert!(
+        !row_exists(&p, &iid(0x02)),
         "the rejected identity must not reach disk at all"
     );
 }
@@ -238,7 +238,7 @@ fn rejected_duplicate_does_not_swallow_a_staged_changeset() {
         Some([0x03; 32]),
         "the staged write survived the rejection"
     );
-    assert_eq!(row_tombstoned(&p, &iid(0x02)), None);
+    assert!(!row_exists(&p, &iid(0x02)));
 }
 
 /// The probe keys on the FLUSH SCOPE, not on the incoming identity's own
@@ -263,10 +263,10 @@ fn probe_keys_on_the_flush_scope_not_the_stored_wallet_id() {
     assert_eq!(live_occupant(&p, &w, 1), Some([0x01; 32]));
 }
 
-/// A tombstoned row holds no slot: remove-then-re-register at the same
+/// A removed row holds no slot: remove-then-re-register at the same
 /// index is legitimate reuse, not a collision.
 #[test]
-fn tombstoned_row_frees_its_slot_for_reuse() {
+fn removed_row_frees_its_slot_for_reuse() {
     let (p, _tmp, _path) = fresh_persister();
     let w = wid(0xF1);
     ensure_wallet_meta(&p, &w);
@@ -278,15 +278,15 @@ fn tombstoned_row_frees_its_slot_for_reuse() {
     p.store(w, identity_cs([identity_entry(0x02, Some(1))], []))
         .expect("the freed slot must be reusable");
 
-    assert_eq!(row_tombstoned(&p, &iid(0x01)), Some(true));
+    assert!(!row_exists(&p, &iid(0x01)));
     assert_eq!(live_occupant(&p, &w, 1), Some([0x02; 32]));
 }
 
 /// Removal and re-registration merged into ONE changeset has a legal
-/// final state (the tombstone lands in the same transaction), so the
-/// probe must treat a removed id as holding no slot.
+/// final state (the delete lands in the same transaction), so the probe
+/// must treat a removed id as holding no slot.
 #[test]
-fn tombstone_and_reinsert_in_one_changeset_is_accepted() {
+fn removal_and_reinsert_in_one_changeset_is_accepted() {
     let (p, _tmp, _path) = fresh_persister();
     let w = wid(0xF2);
     ensure_wallet_meta(&p, &w);
@@ -294,9 +294,9 @@ fn tombstone_and_reinsert_in_one_changeset_is_accepted() {
         .expect("first identity at index 1");
 
     p.store(w, identity_cs([identity_entry(0x02, Some(1))], [iid(0x01)]))
-        .expect("tombstone + reinsert at the same index is legal");
+        .expect("removal + reinsert at the same index is legal");
 
-    assert_eq!(row_tombstoned(&p, &iid(0x01)), Some(true));
+    assert!(!row_exists(&p, &iid(0x01)));
     assert_eq!(live_occupant(&p, &w, 1), Some([0x02; 32]));
 }
 
@@ -319,8 +319,8 @@ fn colliding_entries_in_one_changeset_are_rejected_without_picking_a_winner() {
         .expect_err("two identities cannot share one slot");
 
     assert_index_conflict(&err);
-    assert_eq!(row_tombstoned(&p, &iid(0x01)), None);
-    assert_eq!(row_tombstoned(&p, &iid(0x02)), None);
+    assert!(!row_exists(&p, &iid(0x01)));
+    assert!(!row_exists(&p, &iid(0x02)));
     assert_eq!(live_occupant(&p, &w, 1), None);
 }
 
@@ -364,7 +364,7 @@ fn reupserting_the_same_identity_at_its_own_index_is_accepted() {
 
 /// An occupant that the SAME changeset moves to another index has
 /// vacated its old slot by the time the changeset lands, exactly like
-/// one it tombstones. Judging the final state, not the starting one, is
+/// one it removes. Judging the final state, not the starting one, is
 /// what makes the guard a uniqueness rule rather than a freeze.
 #[test]
 fn an_occupant_reindexed_in_the_same_changeset_frees_its_old_slot() {
@@ -437,9 +437,8 @@ fn an_occupant_losing_its_index_in_the_same_changeset_frees_its_slot() {
     .expect("A gives up its index in the same changeset that B claims it");
 
     assert_eq!(live_occupant(&p, &w, 1), Some([0x02; 32]));
-    assert_eq!(
-        row_tombstoned(&p, &iid(0x01)),
-        Some(false),
+    assert!(
+        row_exists(&p, &iid(0x01)),
         "A is still a live row, just no longer in a wallet slot"
     );
 }
@@ -462,7 +461,7 @@ fn walletless_identity_carrying_an_index_is_rejected() {
     );
     assert!(!typed.is_transient());
     assert_eq!(typed.persistence_kind(), PersistenceErrorKind::Constraint);
-    assert_eq!(row_tombstoned(&p, &iid(0x01)), None);
+    assert!(!row_exists(&p, &iid(0x01)));
 }
 
 /// The companion positive case: a wallet-less identity WITHOUT an index
@@ -474,7 +473,7 @@ fn walletless_identity_without_an_index_is_accepted() {
     p.store(SENTINEL, identity_cs([identity_entry(0x01, None)], []))
         .expect("wallet-less identities are first-class");
 
-    assert_eq!(row_tombstoned(&p, &iid(0x01)), Some(false));
+    assert!(row_exists(&p, &iid(0x01)));
 }
 
 /// A store checks disk and buffer as they are at that instant. A
@@ -499,7 +498,7 @@ fn flush_rejects_a_duplicate_that_a_peer_created_under_the_buffer() {
         Some([0x01; 32]),
         "the whole transaction rolls back — the peer's row stands"
     );
-    assert_eq!(row_tombstoned(&p, &iid(0x02)), None);
+    assert!(!row_exists(&p, &iid(0x02)));
 
     // A fatal flush failure drops that wallet's buffer rather than
     // restoring an unflushable changeset, so the retry is a no-op
@@ -533,17 +532,16 @@ fn a_slot_held_by_a_buffered_write_refuses_a_second_claimant() {
         Some([0x01; 32]),
         "the first caller's write is untouched by the rejection"
     );
-    assert_eq!(
-        row_tombstoned(&p, &iid(0x02)),
-        None,
+    assert!(
+        !row_exists(&p, &iid(0x02)),
         "the rejected changeset never reached the buffer"
     );
 }
 
 /// A buffered removal frees the slot it names: the check reads the
-/// merged view exactly as the flush will apply it, and `apply` inserts
-/// before it tombstones. Reclaiming the slot in a later store is
-/// legitimate reuse, not a collision.
+/// merged view exactly as the flush will apply it, and the flush inserts
+/// before it deletes. Reclaiming the slot in a later store is legitimate
+/// reuse, not a collision.
 #[test]
 fn a_buffered_removal_frees_its_slot_for_a_later_store() {
     let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
@@ -557,7 +555,7 @@ fn a_buffered_removal_frees_its_slot_for_a_later_store() {
 
     p.flush(w).expect("the merged changeset is consistent");
     assert_eq!(live_occupant(&p, &w, 1), Some([0x02; 32]));
-    assert_eq!(row_tombstoned(&p, &iid(0x01)), Some(true));
+    assert!(!row_exists(&p, &iid(0x01)));
 }
 
 /// One wallet's rejected flush is one wallet's problem: `commit_writes`
@@ -612,10 +610,9 @@ fn delete_wallet_proceeds_despite_unpersistable_pending_writes() {
         .expect("an unflushable buffer must not block the delete");
 
     assert_eq!(report.wallet_id, w);
-    assert_eq!(row_tombstoned(&p, &iid(0x01)), None);
-    assert_eq!(
-        row_tombstoned(&p, &iid(0x02)),
-        None,
+    assert!(!row_exists(&p, &iid(0x01)));
+    assert!(
+        !row_exists(&p, &iid(0x02)),
         "the peer's row went with the wallet's cascade"
     );
     let conn = p.lock_conn_for_test();

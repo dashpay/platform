@@ -475,37 +475,37 @@ fn tc8_out_of_wallet_identity_loads_empty() {
     assert!(managed.dashpay().incoming_contact_requests().is_empty());
 }
 
-/// TC-9 — a tombstoned identity's orphaned key/contact rows are the one
-/// orphan class recovery mode forgives. Strict refuses them: "the owner is
-/// gone" is exactly the state that silently discards live key material, so
-/// only an operator who asked for a best-effort load gets the old skip.
+/// TC-9 — a `contacts` row whose owner identity is not loaded is the
+/// orphan class recovery mode forgives. Strict refuses it: "the owner is
+/// gone" is exactly the state that silently discards live contact
+/// material, so only an operator who asked for a best-effort load gets
+/// the skip.
+///
+/// `contacts` is keyed by `owner_id` with no foreign key to `identities`
+/// (only to `wallets`), which is what makes this row writable at all — a
+/// removal sweeps such rows via the delete trigger, so one surviving here
+/// means genuine corruption rather than routine bookkeeping.
 #[test]
-fn tc9_tombstoned_identity_orphan_rows_load_only_in_recovery() {
+fn tc9_orphaned_contact_row_loads_only_in_recovery() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0xC9);
     ensure_wallet_meta(&persister, &w);
-    let id = Identifier::from([0x99; 32]);
+    let resident = Identifier::from([0x98; 32]);
+    let ghost = Identifier::from([0x99; 32]);
     let contact = Identifier::from([0xAB; 32]);
     let mut established_map = BTreeMap::new();
     established_map.insert(
         SentContactRequestKey {
-            owner_id: id,
+            owner_id: ghost,
             recipient_id: contact,
         },
-        established(id, contact),
+        established(ghost, contact),
     );
-    // Store identity + key + contact.
     persister
         .store(
             w,
             PlatformWalletChangeSet {
-                identities: Some(id_changeset([wallet_identity_entry(id, w, 0)])),
-                identity_keys: Some(keys_changeset([key_entry(
-                    id,
-                    0,
-                    0x99,
-                    SecurityLevel::HIGH,
-                )])),
+                identities: Some(id_changeset([wallet_identity_entry(resident, w, 0)])),
                 contacts: Some(ContactChangeSet {
                     established: established_map,
                     ..Default::default()
@@ -514,23 +514,11 @@ fn tc9_tombstoned_identity_orphan_rows_load_only_in_recovery() {
             },
         )
         .unwrap();
-    // Tombstone the identity only; its key/contact rows are left behind.
-    let mut removed = IdentityChangeSet::default();
-    removed.removed.insert(id);
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                identities: Some(removed),
-                ..Default::default()
-            },
-        )
-        .unwrap();
     drop(persister);
 
     let strict = reopen(&path)
         .load()
-        .expect_err("orphan rows of a tombstoned owner must abort a strict load");
+        .expect_err("an orphaned contact row must abort a strict load");
     let PersistenceError::Backend { source, .. } = strict else {
         panic!("expected a typed backend error, got {strict:?}");
     };
@@ -554,57 +542,55 @@ fn tc9_tombstoned_identity_orphan_rows_load_only_in_recovery() {
         recovery
             .last_load_degradation()
             .by_site
-            .get(&platform_wallet_storage::LoadSite::TombstonedIdentityOrphan)
+            .get(&platform_wallet_storage::LoadSite::MissingIdentityOwner)
             .copied(),
-        // One per leftover row: the key row and the established-contact row.
-        Some(2),
-        "both leftover collections must be counted"
+        Some(1),
+        "the skipped row must be counted, never silently dropped"
     );
     let im = &state.wallets[&w].identity_manager;
     let present = im
         .wallet_identities
         .values()
         .flat_map(|m| m.values())
-        .any(|m| m.identity.id() == id)
-        || im.out_of_wallet_identities.contains_key(&id);
+        .any(|m| m.identity.id() == ghost)
+        || im.out_of_wallet_identities.contains_key(&ghost);
     assert!(
         !present,
-        "tombstoned identity must be absent from both buckets"
+        "the ghost owner must not be conjured into a bucket"
     );
 }
 
-/// Several leftover rows of one tombstoned owner in one collection must
+/// Several orphaned rows of one missing owner in one collection must
 /// count several times: every other `LoadSite` counts occurrences, so a
 /// rescue operator reading `by_site` would otherwise be unable to tell
-/// three lost keys from three lost collections.
+/// three lost contacts from three lost collections.
 #[test]
-fn tombstoned_identity_orphan_rows_are_counted_per_row() {
+fn orphaned_rows_of_one_owner_are_counted_per_row() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0xCA);
     ensure_wallet_meta(&persister, &w);
-    let id = Identifier::from([0x9A; 32]);
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                identities: Some(id_changeset([wallet_identity_entry(id, w, 0)])),
-                identity_keys: Some(keys_changeset([
-                    key_entry(id, 0, 0x91, SecurityLevel::HIGH),
-                    key_entry(id, 1, 0x92, SecurityLevel::HIGH),
-                    key_entry(id, 2, 0x93, SecurityLevel::HIGH),
-                ])),
-                ..Default::default()
+    let resident = Identifier::from([0x99; 32]);
+    let ghost = Identifier::from([0x9A; 32]);
+    let mut established_map = BTreeMap::new();
+    for contact in [0xC1u8, 0xC2, 0xC3] {
+        let contact = Identifier::from([contact; 32]);
+        established_map.insert(
+            SentContactRequestKey {
+                owner_id: ghost,
+                recipient_id: contact,
             },
-        )
-        .unwrap();
-    // Tombstone the owner; its three key rows are left behind.
-    let mut removed = IdentityChangeSet::default();
-    removed.removed.insert(id);
+            established(ghost, contact),
+        );
+    }
     persister
         .store(
             w,
             PlatformWalletChangeSet {
-                identities: Some(removed),
+                identities: Some(id_changeset([wallet_identity_entry(resident, w, 0)])),
+                contacts: Some(ContactChangeSet {
+                    established: established_map,
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
         )
@@ -623,10 +609,10 @@ fn tombstoned_identity_orphan_rows_are_counted_per_row() {
         recovery
             .last_load_degradation()
             .by_site
-            .get(&platform_wallet_storage::LoadSite::TombstonedIdentityOrphan)
+            .get(&platform_wallet_storage::LoadSite::MissingIdentityOwner)
             .copied(),
         Some(3),
-        "each leftover key row must be counted"
+        "each orphaned contact row must be counted"
     );
 }
 

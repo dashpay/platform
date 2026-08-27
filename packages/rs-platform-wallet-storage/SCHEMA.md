@@ -28,6 +28,8 @@ Schema evolution is version-gated by refinery. Every read-write connection turns
 - **`wallet_id`-scoped meta** (`meta_wallet`, `meta_contact`, `meta_platform_address`) carries a `wallet_id` column, so `cascade_meta_on_wallet_delete` brooms it directly — regardless of the lifecycle state of any typed parent and even for rows written ahead of (or without) a typed parent.
 - **identity-scoped meta** (`meta_identity`, `meta_token`) carries no `wallet_id` — only `identity_id` (+ `token_id`). It is cleaned by `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`), which fires for the wallet's own identities when the FK cascade removes them on a wallet delete.
 
+Deleting an `identities` row — on its own, or cascaded from a wallet delete — additionally fires `cascade_children_on_identity_delete` (V015), which brooms `identity_keys`, `contacts`, and `ignored_senders` by the deleted `identity_id`. That trigger exists because no live foreign key reaches those rows in every case: `identity_keys`' FK to `identities` is compound (`wallet_id, identity_id`), and SQLite's default MATCH SIMPLE skips FK enforcement entirely once ANY column of the child key is NULL, leaving it dormant for an out-of-wallet identity; `contacts` and `ignored_senders` are keyed by `owner_id` (an identity id) but carry no FK to `identities` at all. Keying the broom on `identity_id` alone covers the wallet-owned case too, as an idempotent overlap with the live cascade.
+
 ### Orphan metadata and future garbage collection
 
 Any `meta_*` row whose parent object does not exist — because it was never created, or because it was removed via a path the cascade does not cover — may persist indefinitely. This is an accepted limitation that applies to all metadata types and scopes. Examples:
@@ -122,7 +124,6 @@ erDiagram
         BLOB wallet_id FK "NULL = orphan identity (no parent wallet yet)"
         INTEGER identity_index "BIP-32 index; NULL for out-of-wallet identities"
         BLOB entry_blob "bincode-encoded IdentityEntry"
-        INTEGER tombstoned "0 | 1 (logical delete)"
     }
 
     IDENTITY_KEYS {
@@ -419,8 +420,18 @@ until a ChainLock has been applied and flushed.
 
 Platform identities, wallet-parented or orphan. `wallet_id` is nullable:
 NULL means the identity was written before a parent wallet was registered
-(orphan-to-parented promotion via COALESCE on upsert). `tombstoned = 1`
-marks a logical delete; the row is retained for cascade integrity.
+(orphan-to-parented promotion via COALESCE on upsert).
+
+Removal (`IdentityChangeSet.removed`) is a physical `DELETE`, scoped to
+the flush wallet, and it is terminal: every dependent row goes with it
+(see [How integrity is kept](#how-integrity-is-kept)), so re-adding the
+same `identity_id` later starts from a blank identity rather than
+inheriting the removed one's keys, contacts, or balances. The writer runs
+in two halves for this reason — `apply_upserts` sits with the other
+identity writers, `apply_removals` runs last in the transaction, after
+every identity-scoped child writer, so a changeset carrying both an
+upsert and a removal for one identity commits instead of pulling the FK
+parent out from under its own child inserts.
 
 - PK: `identity_id`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE` (nullable).
@@ -437,7 +448,8 @@ reserved column for a future typed projection and is always NULL today
 
 - PK: `(wallet_id, identity_id, key_id)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
-- FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
+- FK: `(wallet_id, identity_id) → identities(wallet_id, identity_id) ON DELETE CASCADE` — dormant under MATCH SIMPLE when `wallet_id` is NULL.
+- Trigger cleanup: `cascade_children_on_identity_delete` brooms by `identity_id`, closing the dormant case.
 - Index: `idx_identity_keys_wallet_identity(wallet_id, identity_id)`.
 
 ### `contacts`
@@ -454,6 +466,8 @@ bincode-encoded `Vec<u32>`.
 
 - PK: `(wallet_id, owner_id, contact_id)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
+- Trigger cleanup: `cascade_children_on_identity_delete` brooms by `owner_id` — there is no FK to `identities`.
+- Index: `idx_contacts_owner(owner_id)`, the broom's access path (`owner_id` is not the leading PK column).
 - `state` CHECK: sourced from `sqlite::schema::contacts::CONTACT_STATE_LABELS`.
 
 ### `ignored_senders`
@@ -464,6 +478,8 @@ deleted; `ignored_at` records when the mute was applied.
 
 - PK: `(wallet_id, owner_id, sender_id)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
+- Trigger cleanup: `cascade_children_on_identity_delete` brooms by `owner_id` — there is no FK to `identities`.
+- Index: `idx_ignored_senders_owner(owner_id)`, the broom's access path.
 - No enum-domain CHECK column.
 
 ### `platform_addresses`
@@ -698,3 +714,4 @@ having to grep this repo.
 | V008 | `V008__shielded_viewing_keys.rs` | Adds `shielded_viewing_keys` to persist Orchard full viewing keys by wallet and shielded account. |
 | V009 | `V009__single_source_core_confirmation_height.rs` | Rebuilds `core_transactions` with nullable `record_blob` for height-only rows, preserves existing transaction metadata and blobs, and drops `core_utxos.height` so UTXO confirmation height has one authority (#4178). |
 | V012 | `V012__purge_legacy_empty_script_spent_utxos.rs` | Deletes legacy `core_utxos` rows matching `spent = 1 AND length(script) = 0`, left by a producer that fabricated an empty script for a spend of an output the wallet never recorded. One such row rejects the load of the whole file, since `load_used_addresses` decodes every stored script with no load-policy escape hatch. Balance-neutral: the balance readers select `spent = 0` only. |
+| V015 | `V015__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` by the deleted `identity_id`, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner` and `idx_ignored_senders_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
