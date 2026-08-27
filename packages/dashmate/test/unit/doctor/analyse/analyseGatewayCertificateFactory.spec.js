@@ -2,6 +2,7 @@ import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFact
 import analyseGatewayCertificateFactory from '../../../../src/doctor/analyse/analyseGatewayCertificateFactory.js';
 import { SEVERITY } from '../../../../src/doctor/Prescription.js';
 import Samples from '../../../../src/doctor/Samples.js';
+import { DOCS_LINKS } from '../../../../src/docsLinks.js';
 
 const EXTERNAL_IP = '198.51.100.7';
 
@@ -1198,9 +1199,7 @@ describe('analyseGatewayCertificateFactory', () => {
 
       const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
 
-      expect(renewal.getSolution()).to.contain(
-        'https://docs.dash.org/en/stable/docs/user/masternodes/troubleshooting-certificates.html',
-      );
+      expect(renewal.getSolution()).to.contain(DOCS_LINKS.CERTIFICATE_TROUBLESHOOTING);
     });
 
     it('should keep the address prerequisite when a renewal failure is also recorded', () => {

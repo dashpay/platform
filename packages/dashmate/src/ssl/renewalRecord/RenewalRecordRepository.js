@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import writeFileAtomic from 'write-file-atomic';
+import { randomUUID } from 'crypto';
 import RenewalRecord from './RenewalRecord.js';
 
 /**
@@ -79,15 +80,18 @@ export default class RenewalRecordRepository {
 
     fs.mkdirSync(path.dirname(generationPath), { recursive: true });
 
-    if (!fs.existsSync(generationPath)) {
-      // proper-lockfile needs a target that exists; a fence nobody has claimed
-      // yet is zero.
-      writeFileAtomic.sync(generationPath, '0\n', { encoding: 'utf8', mode: RECORD_FILE_MODE });
-    }
-
     const release = this.#acquire(generationPath);
 
     try {
+      // Created under the lock, not before it. Two processes reaching an
+      // unclaimed fence at the same time would both find it absent and both
+      // write zero, and the one that lost would go on to claim a generation the
+      // other had already taken - which is the exact guarantee this fence
+      // exists to provide.
+      if (!fs.existsSync(generationPath)) {
+        writeFileAtomic.sync(generationPath, '0\n', { encoding: 'utf8', mode: RECORD_FILE_MODE });
+      }
+
       return fn();
     } finally {
       try {
@@ -111,21 +115,33 @@ export default class RenewalRecordRepository {
    * @param {string} generationPath
    * @return {function} release
    */
-  // eslint-disable-next-line class-methods-use-this
   #acquire(generationPath) {
     const lockPath = `${generationPath}.lock`;
     const deadline = Date.now() + LOCK_ACQUIRE_TIMEOUT_MS;
 
     for (;;) {
       try {
-        fs.closeSync(fs.openSync(lockPath, 'wx'));
+        // The holder writes who it is. Without that, a holder whose lock was
+        // broken as stale still releases on its way out and deletes whatever
+        // lock is there by then - which is the new holder's, leaving two
+        // processes believing they hold the same fence.
+        const token = `${process.pid}.${randomUUID()}`;
+        const handle = fs.openSync(lockPath, 'wx');
+
+        try {
+          fs.writeFileSync(handle, token);
+        } finally {
+          fs.closeSync(handle);
+        }
 
         return () => {
           try {
-            fs.rmSync(lockPath, { force: true });
+            if (fs.readFileSync(lockPath, 'utf8') === token) {
+              fs.rmSync(lockPath, { force: true });
+            }
           } catch {
-            // A fence that cannot be released goes stale and is reclaimed
-            // below. Nothing thrown here may replace the caller's outcome.
+            // Already gone, or taken over. Either way it is not ours to
+            // remove, and nothing thrown here may replace the caller's outcome.
           }
         };
       } catch (e) {

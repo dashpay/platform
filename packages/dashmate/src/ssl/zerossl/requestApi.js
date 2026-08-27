@@ -1,5 +1,6 @@
 import errorDescriptions from './errors/errorDescriptions.js';
 import ProviderUnreachableError from '../errors/ProviderUnreachableError.js';
+import ProviderCredentialsRejectedError from '../errors/ProviderCredentialsRejectedError.js';
 
 const INVALID_API_KEY_MESSAGE = 'Invalid ZeroSSL API key';
 const INVALID_API_RESPONSE_MESSAGE = 'Invalid ZeroSSL API response';
@@ -42,7 +43,7 @@ function redactApiKey(value, apiKey) {
  */
 function createHeaders(apiKey, sourceHeaders) {
   if (typeof apiKey !== 'string' || apiKey.length === 0 || apiKey.trim() !== apiKey) {
-    throw new Error(INVALID_API_KEY_MESSAGE);
+    throw new ProviderCredentialsRejectedError(INVALID_API_KEY_MESSAGE);
   }
 
   const authorization = `ApiKey ${apiKey}`;
@@ -52,12 +53,12 @@ function createHeaders(apiKey, sourceHeaders) {
     headers.set('Authorization', authorization);
 
     if (headers.get('Authorization') !== authorization) {
-      throw new Error(INVALID_API_KEY_MESSAGE);
+      throw new ProviderCredentialsRejectedError(INVALID_API_KEY_MESSAGE);
     }
 
     return headers;
   } catch {
-    throw new Error(INVALID_API_KEY_MESSAGE);
+    throw new ProviderCredentialsRejectedError(INVALID_API_KEY_MESSAGE);
   }
 }
 

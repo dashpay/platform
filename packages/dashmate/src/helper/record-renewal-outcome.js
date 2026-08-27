@@ -35,6 +35,22 @@ function readPrevious(repository, configName) {
 }
 
 /**
+ * Whether the record that came before may have been holding an issuance guard.
+ *
+ * A record that exists and cannot be read is not an absent one. It may be the
+ * record that says a certificate was issued and never saved, and treating it as
+ * nothing writes a fresh record with no markers - so the next failure an hour
+ * later advises asking again, which is exactly what the lost marker forbade.
+ *
+ * @param {RenewalRecordRepository} repository
+ * @param {string} configName
+ * @return {boolean}
+ */
+function previousMayBeHidingAnIssuance(repository, configName) {
+  return repository.read(configName).state === RENEWAL_RECORD_STATES.UNREADABLE;
+}
+
+/**
  * Record that a renewal completed.
  *
  * Written before the gateway is told to load the certificate, because the two
@@ -122,6 +138,7 @@ export function recordRenewalFailure({
       || classified.code === RENEWAL_FAILURE_CODES.HELPER_START_UNCONFIRMED;
 
     const issuanceUncertainAt = isIssuanceUnconfirmed
+      || previousMayBeHidingAnIssuance(renewalRecordRepository, configName)
       ? new Date().toISOString()
       : asObject?.issuanceUncertainAt ?? null;
 

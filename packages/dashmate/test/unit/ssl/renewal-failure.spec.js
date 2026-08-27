@@ -11,6 +11,7 @@ import ConfigurationLockLostError from '../../../src/ssl/errors/ConfigurationLoc
 import VerificationServerUnreachableError from '../../../src/ssl/errors/VerificationServerUnreachableError.js';
 import ProviderUnreachableError from '../../../src/ssl/errors/ProviderUnreachableError.js';
 import CertificateFileMissingError from '../../../src/ssl/errors/CertificateFileMissingError.js';
+import ProviderCredentialsRejectedError from '../../../src/ssl/errors/ProviderCredentialsRejectedError.js';
 import LegoDidNotStartError from '../../../src/ssl/errors/LegoDidNotStartError.js';
 import LegoResultNotObservedError from '../../../src/ssl/errors/LegoResultNotObservedError.js';
 
@@ -229,6 +230,12 @@ describe('renewalFailure', () => {
           RENEWAL_FAILURE_CODES.PROVIDER_UNREACHABLE],
         ['a missing certificate file', () => new CertificateFileMissingError('/home/op/bundle.crt'),
           RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING],
+        // A key that is absent, empty or malformed never reaches the provider,
+        // so there is no numeric code to classify it by. Untyped it fell
+        // through to "could not work out why", sending an operator to support
+        // for something one command repairs.
+        ['rejected credentials', () => new ProviderCredentialsRejectedError('Invalid ZeroSSL API key'),
+          RENEWAL_FAILURE_CODES.PROVIDER_AUTH],
       ];
 
       CARRIED.forEach(([name, build, expected]) => {

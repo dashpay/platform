@@ -5,6 +5,7 @@ import { ERRORS as ZEROSSL_ERRORS } from '../../ssl/zerossl/validateZeroSslCerti
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
 import renderConfigFlag from '../../util/renderConfigFlag.js';
+import { DOCS_LINKS } from '../../docsLinks.js';
 
 /**
  * Whether a ZeroSSL certificate can be renewed depends on the operator's plan, which dashmate
@@ -52,7 +53,7 @@ export default function analyseConfigFactory() {
             if (config.get('network') !== NETWORK_LOCAL) {
               const problem = new Problem(
                 'SSL certificates are disabled. Clients won\'t be able to connect securely',
-                chalk`Please enable and set up SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/docs/user/masternodes/setup-evonode.html#ssl-certificates}`,
+                chalk`Please enable and set up SSL certificates {bold.cyanBright ${DOCS_LINKS.SSL_CERTIFICATES}}`,
                 SEVERITY.HIGH,
               );
 
@@ -63,7 +64,7 @@ export default function analyseConfigFactory() {
             if (config.get('network') === NETWORK_MAINNET) {
               const problem = new Problem(
                 'Self-signed SSL certificate is used on mainnet. Clients won\'t be able to connect securely',
-                chalk`Please use valid SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/docs/user/masternodes/setup-evonode.html#ssl-certificates}`,
+                chalk`Please use valid SSL certificates {bold.cyanBright ${DOCS_LINKS.SSL_CERTIFICATES}}`,
                 SEVERITY.HIGH,
               );
 
@@ -88,7 +89,7 @@ Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}`,
 Certificate chain file path: {bold.cyanBright ${ssl?.data?.chainFilePath}}
 Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}
 
-Or use ZeroSSL https://docs.dash.org/en/stable/docs/user/masternodes/setup-evonode.html#ssl-certificates`,
+Or use ZeroSSL ${DOCS_LINKS.SSL_CERTIFICATES}`,
               },
             };
 

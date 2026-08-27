@@ -22,6 +22,7 @@ import { SSL_PROVIDERS } from '../../constants.js';
 import LegoCertificate from '../../ssl/letsencrypt/LegoCertificate.js';
 import ZeroSslCertificate from '../../ssl/zerossl/Certificate.js';
 import renderObtainCommand from '../../ssl/renderObtainCommand.js';
+import { DOCS_LINKS } from '../../docsLinks.js';
 
 /**
  * The manual obtain command writes certificate files but does not signal the gateway, so an
@@ -116,12 +117,6 @@ const restartHint = (cfg) => chalk`Then restart Platform so the gateway picks it
  * dead when the documentation was reorganised, while the redirects around it
  * survived.
  */
-// The published article. The short `docs.dash.org/<slug>` form other pages use
-// is a ReadTheDocs dashboard redirect, and one was never created for this page -
-// so that form 404s. A link doctor prints has to resolve: the command's whole
-// value is that what it tells an operator is true.
-const PORT_80_GUIDE = 'https://docs.dash.org/en/stable/docs/user/masternodes/troubleshooting-certificates.html';
-
 /**
  * An operator reading a certificate problem is deciding whether their node is
  * falling behind. It is not: `update` pulls images whatever the certificate
@@ -246,7 +241,7 @@ function renderPortEightyHint(code, cfg, isShortLived) {
   if (code === RENEWAL_FAILURE_CODES.PORT_80_IN_USE) {
     return chalk`Find what is using port 80 on this machine and move it off that port:
 {bold.cyanBright sudo ss -lntp 'sport = :80'}
-{underline.cyanBright ${PORT_80_GUIDE}}`;
+{underline.cyanBright ${DOCS_LINKS.CERTIFICATE_TROUBLESHOOTING}}`;
   }
 
   // Named, and it takes the same ending as every other cause read from a
@@ -265,7 +260,7 @@ of this node. Check this machine first:
 {bold.cyanBright sudo ss -lntp 'sport = :80'}
 Nothing listed? Then it is answered before it reaches this machine - check
 your router's port forwarding and your hosting provider.
-{underline.cyanBright ${PORT_80_GUIDE}}`;
+{underline.cyanBright ${DOCS_LINKS.CERTIFICATE_TROUBLESHOOTING}}`;
   }
 
   // Nothing reached the certificate authority, so none of the above is where
@@ -280,7 +275,7 @@ your router's port forwarding and your hosting provider.
 and on your router if this node is behind one.${isShortLived
   ? '\nIt has to stay open: the certificate is renewed every few days.'
   : ''}
-{underline.cyanBright ${PORT_80_GUIDE}}`;
+{underline.cyanBright ${DOCS_LINKS.CERTIFICATE_TROUBLESHOOTING}}`;
 }
 
 /**

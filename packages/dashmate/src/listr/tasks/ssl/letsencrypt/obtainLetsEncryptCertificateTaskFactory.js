@@ -77,10 +77,22 @@ function collectContainerOutput(container) {
     .catch(() => {});
 
   return async () => {
-    await Promise.race([
-      collected,
-      new Promise((resolve) => { setTimeout(resolve, OUTPUT_DRAIN_TIMEOUT_MS); }),
-    ]);
+    // The timer is cleared whichever side wins. Left running it keeps this
+    // callback's closure - and the buffered output - reachable for another ten
+    // seconds on every renewal, and holds the event loop open for a command
+    // that has otherwise finished.
+    let timer;
+
+    try {
+      await Promise.race([
+        collected,
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, OUTPUT_DRAIN_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
 
     return Buffer.concat(chunks).toString();
   };
@@ -499,6 +511,11 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               ExposedPorts: { '80/tcp': {} },
               ...legoContainerOptions,
               HostConfig: {
+                // Auto-removed, with the residual this leaves documented on
+                // collectContainerOutput. Retaining it instead is worse here:
+                // every run shares one container name, and the stale-container
+                // cleanup force-removes whatever holds it - which kills a live
+                // lego, observed as exit 137 across the Pebble suite.
                 AutoRemove: true,
                 Binds: binds,
                 PortBindings: { '80/tcp': [{ HostPort: '80' }] },
@@ -508,12 +525,10 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               () => startedContainers.addContainer(containerName),
             );
 
-            // Attached before the wait below, not after it: see
-            // collectContainerOutput.
-            const readOutput = collectContainerOutput(container);
-
             // eslint-disable-next-line no-param-reassign
             task.output = `Running lego ${command}...`;
+
+            const readOutput = collectContainerOutput(container);
 
             // The container is running, so a request may have been made - but a
             // result nobody read is not a result that can be reported.
@@ -524,13 +539,13 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               throw new LegoResultNotObservedError(e);
             }
 
+            const output = await readOutput();
+
             if (result.StatusCode !== 0) {
               // lego's own output is the best account of what went wrong -
               // Boulder answers "why did port 80 fail" in prose better than any
               // classifier dashmate could keep current.
               let errorMessage = `Lego exited with code ${result.StatusCode}`;
-
-              const output = await readOutput();
 
               if (output.length > 0) {
                 errorMessage += `\n${output}`;

@@ -5,6 +5,7 @@ import ConfigurationLockLostError from './errors/ConfigurationLockLostError.js';
 import VerificationServerUnreachableError from './errors/VerificationServerUnreachableError.js';
 import ProviderUnreachableError from './errors/ProviderUnreachableError.js';
 import CertificateFileMissingError from './errors/CertificateFileMissingError.js';
+import ProviderCredentialsRejectedError from './errors/ProviderCredentialsRejectedError.js';
 
 /**
  * Why a scheduled renewal did not produce a certificate.
@@ -430,7 +431,8 @@ function classifyCode(error, message, provider) {
   const carried = [error, cause].find((candidate) => candidate instanceof ConfigurationLockLostError
     || candidate instanceof VerificationServerUnreachableError
     || candidate instanceof ProviderUnreachableError
-    || candidate instanceof CertificateFileMissingError);
+    || candidate instanceof CertificateFileMissingError
+    || candidate instanceof ProviderCredentialsRejectedError);
 
   if (carried instanceof ConfigurationLockLostError) {
     return RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED;
@@ -446,6 +448,12 @@ function classifyCode(error, message, provider) {
 
   if (carried instanceof CertificateFileMissingError) {
     return RENEWAL_FAILURE_CODES.CERTIFICATE_FILE_MISSING;
+  }
+
+  // A key this node never sent, so the provider returned no number to classify
+  // it by. It is still a rejected account, and the repair is the same one.
+  if (carried instanceof ProviderCredentialsRejectedError) {
+    return RENEWAL_FAILURE_CODES.PROVIDER_AUTH;
   }
 
   // Before anything that reads the message. A provider answers with a number

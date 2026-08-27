@@ -92,6 +92,22 @@ describe('recordRenewalOutcome', () => {
     expect(record.toObject().issuanceSpentAt).to.equal(spentAt);
   });
 
+  // A record that exists and cannot be read is not an absent one. It may be the
+  // record that says a certificate was issued and never saved, and treating it
+  // as nothing writes a fresh one with no markers - so the next failure an hour
+  // later advises asking again, which is exactly what the lost marker forbade.
+  it('should keep withholding when the previous record could not be read', () => {
+    fs.mkdirSync(path.dirname(renewalRecordRepository.getPath(CONFIG_NAME)), { recursive: true });
+    fs.writeFileSync(renewalRecordRepository.getPath(CONFIG_NAME), '{ not json');
+
+    fail(new Error('[1.2.3.4] acme: error: 400 :: urn:ietf:params:acme:error:connection :: timeout'));
+
+    const { record } = read();
+
+    expect(record.isIssuanceUncertain(), 'the guard survives an unreadable record').to.be.true();
+    expect(record.isIssuanceOutstanding()).to.be.true();
+  });
+
   it('should not inherit the previous provider\'s history when the provider changed', () => {
     // A provider change handed over by the configuration watcher does not clear
     // the record. Carrying the old provider's spent issuance forward would

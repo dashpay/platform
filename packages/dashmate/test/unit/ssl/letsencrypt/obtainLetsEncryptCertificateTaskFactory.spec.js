@@ -553,16 +553,20 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       return tasks;
     }
 
-    // The container is started with AutoRemove, so the daemon deletes it - and
-    // its output with it - the moment it exits. Output read after that point
-    // is a race the daemon usually wins, and losing it leaves the authority's
-    // own account of the failure out of the error entirely: what reaches the
-    // operator is an exit code, and every cause looks alike. Measured against
-    // a real Docker before this was changed, the reason was absent from every
-    // one of eight runs.
-    it('should attach to the output before the container can exit', async function it() {
+    // The output is the certificate authority's own account of the failure, and
+    // the daemon deletes an auto-removed container the moment it exits. So the
+    // stream is attached as soon as the container is running and before the
+    // wait, which is what keeps the reason out of the race.
+    //
+    // Two alternatives were tried against a real Docker and are worse. Attaching
+    // before the start yields an empty stream - a container that has not run has
+    // nothing to follow. Retaining the container instead collides with the single
+    // shared container name: the stale-container cleanup force-removes whatever
+    // holds it, killing a live lego (exit 137). The residual - a container the
+    // daemon removes before the attach lands - is documented where it is created.
+    it('should attach to the output before waiting on the result', async function it() {
       let attached = false;
-      let attachedBeforeExit = false;
+      let attachedBeforeWait = false;
 
       const missing = Object.assign(new Error('container not found'), { statusCode: 404 });
       const docker = {
@@ -580,7 +584,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
             },
           },
           wait: async () => {
-            attachedBeforeExit = attached;
+            attachedBeforeWait = attached;
 
             return { StatusCode: 1 };
           },
@@ -590,9 +594,9 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       const task = buildFailingTask(this.sinon, docker);
 
       await expect(inject(task(config), getEnquirerMock(this.sinon, false)).run({ force: true }))
-        .to.be.rejected();
+        .to.be.rejectedWith('lego said why');
 
-      expect(attachedBeforeExit).to.be.true();
+      expect(attachedBeforeWait, 'attached before the result was awaited').to.be.true();
     });
 
     // Every attempt spends one of Let's Encrypt's five failed authorizations

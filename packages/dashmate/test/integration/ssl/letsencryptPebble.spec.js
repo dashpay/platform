@@ -244,8 +244,17 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     pebbleContainer = await docker.createContainer({
       Image: PEBBLE_IMAGE,
       Cmd: ['-config', '/test/config/pebble-config.json'],
-      // Without this Pebble sleeps before validating, for no benefit here.
-      Env: ['PEBBLE_VA_NOSLEEP=1'],
+      Env: [
+        // Without this Pebble sleeps before validating, for no benefit here.
+        'PEBBLE_VA_NOSLEEP=1',
+        // Pebble rejects a share of nonces on purpose, to exercise a client's
+        // retry. lego retries and usually survives it - but when it does not,
+        // the attempt fails on the nonce and never reaches validation, so a
+        // case written to exercise a port-80 failure silently tests something
+        // else. What happens when a survived nonce sits beside a real failure
+        // is pinned deterministically in the unit tests instead.
+        'PEBBLE_WFE_NONCEREJECT=0',
+      ],
       HostConfig: {
         AutoRemove: true,
         NetworkMode: networkName,
