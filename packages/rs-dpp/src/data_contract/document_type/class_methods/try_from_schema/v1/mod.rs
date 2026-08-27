@@ -108,6 +108,9 @@ impl DocumentTypeV1 {
                 admit_index_terminal: false,
             },
             platform_version,
+            // indexOnly is a generation-3 doctype keyword; below generation 3
+            // no document type can be index-only.
+            false,
         )
     }
 }

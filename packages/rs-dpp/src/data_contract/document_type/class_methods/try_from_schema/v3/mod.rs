@@ -271,6 +271,11 @@ fn try_from_schema_generation_3(
             admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
         },
         platform_version,
+        // Lets the core default omitted index terminals to `$ownerId`
+        // before it builds the index structure, so the structure's level
+        // info is born normalized (`apply_index_only` below validates the
+        // already-normalized set).
+        index_only,
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
@@ -278,7 +283,7 @@ fn try_from_schema_generation_3(
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
-    common::apply_index_only(&mut v2, index_only, name, platform_version)?;
+    common::apply_index_only(&mut v2, index_only, name)?;
 
     Ok(v2)
 }
