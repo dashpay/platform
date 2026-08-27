@@ -19,22 +19,25 @@ impl DocumentDeleteTransition {
         feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {
-        // An indexOnly document is deleted from its values (V1); everything
-        // else keeps the table's default (V0, delete-by-id). Selecting here
-        // means every construction path — SDKs included — produces the
-        // variant the ABCI structure gates require for the doctype, with no
-        // per-client knowledge of the storage mode.
+        // An indexOnly document is deleted from its values (V1 or later);
+        // everything else keeps the table's default (V0, delete-by-id).
+        // Selecting here means every construction path — SDKs included —
+        // produces the variant the ABCI structure gates require for the
+        // doctype, with no per-client knowledge of the storage mode. The
+        // table default is raised to 1, never clamped down: a future table
+        // whose default is a later values-carrying variant keeps winning.
         let default_version = {
             use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            let table_default = platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .document_delete_state_transition
+                .bounds
+                .default_current_version;
             if document_type.index_only() {
-                1
+                table_default.max(1)
             } else {
-                platform_version
-                    .dpp
-                    .state_transition_serialization_versions
-                    .document_delete_state_transition
-                    .bounds
-                    .default_current_version
+                table_default
             }
         };
         match feature_version.unwrap_or(default_version) {

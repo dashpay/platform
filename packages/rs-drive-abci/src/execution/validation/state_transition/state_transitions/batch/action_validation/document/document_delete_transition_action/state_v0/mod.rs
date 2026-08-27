@@ -70,14 +70,14 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         };
 
         // indexOnly (V1) deletes have no primary row to fetch. EVERY index
-        // entry the values produce is probed, and all must exist: every
-        // index embeds $ownerId (the parser enforces it), so each probe —
-        // computed with owner = signer — proves ownership as well as
-        // existence, and requiring all of them keeps the apply-side batch
-        // infallible even against values spliced from different documents
-        // (a mixed tuple fails one of these probes cleanly instead of
-        // failing mid-apply). V1 actions only exist for PV14+ indexOnly
-        // contracts, so this branch is unreachable historically.
+        // entry the values produce is probed, and each must exist AND carry
+        // the row commitment this tuple produces: every index embeds
+        // $ownerId (ownership) and every entry stores the commitment
+        // binding it to its document's full tuple (row integrity), so a
+        // values tuple spliced from different documents — even two by the
+        // same owner — fails a probe cleanly here instead of mid-apply.
+        // V1 actions only exist for PV14+ indexOnly contracts, so this
+        // branch is unreachable historically.
         if let Some(data) = self.data() {
             let document = drive::drive::Drive::index_only_document_from_values(
                 self.base().id(),
@@ -90,7 +90,7 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
                 let mut probe_operations = vec![];
                 let entry_exists = platform
                     .drive
-                    .has_index_only_document_entry(
+                    .index_only_entry_commitment_matches(
                         contract.id(),
                         document_type,
                         index,

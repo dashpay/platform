@@ -133,6 +133,50 @@ impl Drive {
         Ok((path, member_key))
     }
 
+    /// Whether `document`'s entry under `index` exists AND carries the row
+    /// commitment `document`'s full tuple produces. Existence alone cannot
+    /// distinguish one document's projections from several coexisting
+    /// documents' projections — the stored commitment is what binds an
+    /// entry to its row, so a values tuple spliced from different creates
+    /// fails this check on whichever entry belongs to the other row.
+    #[allow(clippy::too_many_arguments)]
+    pub fn index_only_entry_commitment_matches(
+        &self,
+        contract_id: Identifier,
+        document_type: DocumentTypeRef,
+        index: &Index,
+        document: &Document,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let (path, member_key) = Self::index_only_entry_path_and_key(
+            contract_id,
+            document_type,
+            index,
+            document,
+            platform_version,
+        )?;
+        let expected_commitment = crate::drive::document::index_only_row_commitment(
+            document,
+            document_type,
+            platform_version,
+        )?;
+        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
+        let element = self.grove_get_raw_optional(
+            path_refs.as_slice().into(),
+            member_key.as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?;
+        Ok(match element {
+            Some(grovedb::Element::Item(payload, _)) => payload == expected_commitment,
+            _ => false,
+        })
+    }
+
     /// Whether `document`'s entry under `index` exists (stateful read).
     #[allow(clippy::too_many_arguments)]
     pub fn has_index_only_document_entry(
