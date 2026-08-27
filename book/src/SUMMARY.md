@@ -68,6 +68,7 @@
 - [Average Index Examples](drive/average-index-examples.md)
 - [Document Ranked Trees](drive/document-ranked-trees.md)
 - [Ranked Index Examples](drive/ranked-index-examples.md)
+- [Index-Only Document Types](drive/index-only-document-types.md)
 
 # Testing
 

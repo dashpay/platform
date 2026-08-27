@@ -50,7 +50,13 @@ export class DocumentsFacade {
     return w.getDocumentWithProofInfo(contractId, type, documentId);
   }
 
-  async create(options: wasm.DocumentCreateOptions): Promise<void> {
+  /**
+   * Creates a document and resolves to the confirmed Document as Platform
+   * committed it, consensus-populated system fields included — keep this
+   * instance when you later intend to delete an indexOnly document whose
+   * type requires `$createdAt`.
+   */
+  async create(options: wasm.DocumentCreateOptions): Promise<wasm.Document> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentCreate(options);
   }
