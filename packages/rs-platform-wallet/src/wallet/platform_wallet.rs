@@ -1382,20 +1382,7 @@ impl PlatformWallet {
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let keyset = self.derive_spend_keyset(seed, account).await?;
-        let parsed: Vec<(grovedb_commitment_tree::PaymentAddress, u64)> = outputs
-            .iter()
-            .map(|(raw, amount)| {
-                Option::<grovedb_commitment_tree::PaymentAddress>::from(
-                    grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(raw),
-                )
-                .map(|addr| (addr, *amount))
-                .ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(
-                        "invalid Orchard payment address bytes".to_string(),
-                    )
-                })
-            })
-            .collect::<Result<_, _>>()?;
+        let parsed = parse_shielded_outputs(outputs)?;
 
         super::shielded::operations::transfer_multi(
             &self.sdk,
@@ -2094,6 +2081,35 @@ fn check_recipient_hrp(
     Ok(())
 }
 
+/// Parse the raw multi-output recipient list for
+/// [`PlatformWallet::shielded_transfer_multi_to`].
+///
+/// Each entry pairs 43 raw Orchard payment-address bytes with an amount in
+/// credits. Parsing is positional: a malformed entry reports its zero-based
+/// output index so the caller can identify WHICH recipient must be corrected
+/// (the C and JNI layers validate buffer lengths and amounts but defer Orchard
+/// address decoding to here, so this error is their only signal).
+#[cfg(feature = "shielded")]
+fn parse_shielded_outputs(
+    outputs: &[([u8; 43], u64)],
+) -> Result<Vec<(grovedb_commitment_tree::PaymentAddress, u64)>, PlatformWalletError> {
+    outputs
+        .iter()
+        .enumerate()
+        .map(|(index, (raw, amount))| {
+            Option::<grovedb_commitment_tree::PaymentAddress>::from(
+                grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(raw),
+            )
+            .map(|addr| (addr, *amount))
+            .ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "invalid Orchard payment address bytes at output index {index}"
+                ))
+            })
+        })
+        .collect()
+}
+
 #[cfg(all(test, feature = "shielded"))]
 mod check_recipient_hrp_tests {
     use super::*;
@@ -2191,6 +2207,74 @@ mod check_recipient_hrp_tests {
                 if m.contains("invalid platform address")),
             "unexpected error: {err:?}"
         );
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod parse_shielded_outputs_tests {
+    use super::*;
+    use grovedb_commitment_tree::{FullViewingKey, Scope, SpendingKey};
+
+    fn valid_raw_address(seed_byte: u8) -> [u8; 43] {
+        let sk = SpendingKey::from_bytes([seed_byte; 32]).expect("valid spending key bytes");
+        let fvk = FullViewingKey::from(&sk);
+        fvk.address_at(0u32, Scope::External).to_raw_address_bytes()
+    }
+
+    fn malformed_raw_address() -> [u8; 43] {
+        // 0xFF * 32 is not a valid Pallas point encoding, so pk_d fails to
+        // decode and `from_raw_address_bytes` returns none.
+        [0xFF; 43]
+    }
+
+    #[test]
+    fn valid_outputs_parse_and_keep_amounts_in_order() {
+        let outputs = [
+            (valid_raw_address(42), 1_000u64),
+            (valid_raw_address(7), 2_000u64),
+        ];
+        let parsed = parse_shielded_outputs(&outputs).expect("both addresses are valid");
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].1, 1_000);
+        assert_eq!(parsed[1].1, 2_000);
+        assert_eq!(parsed[0].0.to_raw_address_bytes(), outputs[0].0);
+        assert_eq!(parsed[1].0.to_raw_address_bytes(), outputs[1].0);
+    }
+
+    #[test]
+    fn malformed_non_first_recipient_reports_its_output_index() {
+        let outputs = [
+            (valid_raw_address(42), 1_000u64),
+            (malformed_raw_address(), 2_000u64),
+        ];
+        let err = parse_shielded_outputs(&outputs).unwrap_err();
+        assert!(
+            matches!(&err, PlatformWalletError::ShieldedBuildError(m)
+                if m.contains("invalid Orchard payment address bytes at output index 1")),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn malformed_first_recipient_reports_index_zero() {
+        let outputs = [
+            (malformed_raw_address(), 2_000u64),
+            (valid_raw_address(42), 1_000u64),
+        ];
+        let err = parse_shielded_outputs(&outputs).unwrap_err();
+        assert!(
+            matches!(&err, PlatformWalletError::ShieldedBuildError(m)
+                if m.contains("at output index 0")),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn empty_output_list_parses_to_empty() {
+        // Emptiness is rejected downstream (the builder requires at least one
+        // recipient); parsing itself is total on the empty list.
+        let parsed = parse_shielded_outputs(&[]).expect("empty list parses");
+        assert!(parsed.is_empty());
     }
 }
 

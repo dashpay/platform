@@ -223,7 +223,12 @@ pub const PER_KEY_SIGNATURE_ALLOWANCE_BYTES: u64 = 97;
 /// `platform_serialization`'s unversioned `PlatformSerialize` path), so the
 /// pre-proving gate prices exactly the bytes the byte prefilter will see.
 /// `what` names the field in the error.
-pub fn serialized_envelope_bytes<T: bincode::Encode>(
+///
+/// Crate-private on purpose: this is an implementation helper for the
+/// transition-specific pre-proving gates, and its bincode configuration is an
+/// implementation detail established only for the measured transition fields —
+/// not a public serialization commitment.
+pub(crate) fn serialized_envelope_bytes<T: bincode::Encode>(
     field: &T,
     what: &str,
 ) -> Result<u64, ProtocolError> {
