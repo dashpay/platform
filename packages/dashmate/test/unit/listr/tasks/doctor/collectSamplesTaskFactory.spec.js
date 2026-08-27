@@ -126,9 +126,6 @@ describe('collectSamplesTaskFactory', () => {
       this.sinon.stub().resolves({}),
       checkGatewayCertificateFactory(homeDir),
       new RenewalRecordRepository(homeDir),
-      // A single-config node, which is what most are: its only config is the
-      // default, so every command the report renders omits the flag.
-      { getDefaultConfigName: () => 'base' },
     );
 
     analyseConfig = analyseConfigFactory();
@@ -234,7 +231,6 @@ describe('collectSamplesTaskFactory', () => {
           expiresInDays: null,
         }),
         new RenewalRecordRepository(homeDir),
-        { getDefaultConfigName: () => 'base' },
       );
 
       getCertificate.resolves(new Certificate({

@@ -73,26 +73,6 @@ export default class Samples {
   /**
    * @param {Config} config
    */
-  /**
-   * The config dashmate acts on when a command names none.
-   *
-   * Collected so a report can render the same commands the node would: a
-   * command that names the default config says nothing an operator can act on,
-   * and one that omits a non-default config acts on the wrong node.
-   *
-   * @param {string|null} name
-   */
-  setDefaultConfigName(name) {
-    this.defaultConfigName = name;
-  }
-
-  /**
-   * @return {string|null}
-   */
-  getDefaultConfigName() {
-    return this.defaultConfigName ?? null;
-  }
-
   setDashmateConfig(config) {
     this.#dashmateConfig = config;
   }

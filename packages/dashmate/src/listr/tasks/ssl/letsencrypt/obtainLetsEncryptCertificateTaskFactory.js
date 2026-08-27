@@ -12,7 +12,6 @@ import LegoDidNotStartError from '../../../../ssl/errors/LegoDidNotStartError.js
 import LegoResultNotObservedError from '../../../../ssl/errors/LegoResultNotObservedError.js';
 import promptOrThrow from '../../../../util/promptOrThrow.js';
 import renderConfigFlag from '../../../../util/renderConfigFlag.js';
-import defaultConfigNameOf from '../../../../util/defaultConfigNameOf.js';
 
 const LEGO_IMAGE = 'goacme/lego:v4.31.0';
 
@@ -119,8 +118,8 @@ export const PORT_80_PERMANENCE = 'Keep inbound port 80 reachable from the inter
  * @param {number} attempts
  * @return {string}
  */
-function renderGiveUpGuidance(config, attempts, defaultConfigName) {
-  const cfg = renderConfigFlag(config.getName(), defaultConfigName);
+function renderGiveUpGuidance(config, attempts) {
+  const cfg = renderConfigFlag(config.getName());
 
   return `No certificate after ${attempts} attempt${attempts === 1 ? '' : 's'}.
 
@@ -130,12 +129,12 @@ Do not keep retrying - Let's Encrypt limits how often this node may fail.
 
 Open inbound port 80, on the machine's firewall and your hosting provider's.
 Then:
-    dashmate ssl obtain${cfg} --provider letsencrypt
+    dashmate ssl obtain ${cfg} --provider letsencrypt
 
 ${PORT_80_PERMANENCE}
 
 Still stuck? Send a report to Dash support:
-    dashmate doctor report${cfg}`;
+    dashmate doctor report ${cfg}`;
 }
 
 /**
@@ -151,7 +150,7 @@ Still stuck? Send a report to Dash support:
  * @param {boolean} [neverRan] - whether the helper is known not to have run
  * @return {string}
  */
-function renderHelperDidNotStartGuidance(config, cause, defaultConfigName, neverRan = true) {
+function renderHelperDidNotStartGuidance(config, cause, neverRan = true) {
   // Nothing is claimed about this node's allowance unless it is known.
   return `dashmate could not start the certificate helper.${neverRan
     ? " It never contacted Let's Encrypt."
@@ -165,7 +164,7 @@ Common causes: another process already using port 80, Docker not running, or
 this user not permitted to use it.
 
     sudo ss -lntp 'sport = :80'
-    dashmate ssl obtain${renderConfigFlag(config.getName(), defaultConfigName)} --provider letsencrypt`;
+    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
 }
 
 /**
@@ -178,7 +177,7 @@ this user not permitted to use it.
  * @param {string} missingPath
  * @return {string}
  */
-function renderArtifactsMissingGuidance(config, missingPath, defaultConfigName) {
+function renderArtifactsMissingGuidance(config, missingPath) {
   return `Let's Encrypt issued a certificate, but dashmate could not find the
 file it should have written:
 
@@ -192,7 +191,7 @@ requests a replacement, which spends the limit a second time.
 So fix the local cause first. Check the disk for space and for permissions, and
 that the helper is allowed to write there. Only then:
 
-    dashmate ssl obtain${renderConfigFlag(config.getName(), defaultConfigName)} --provider letsencrypt`;
+    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
 }
 
 /**
@@ -206,7 +205,7 @@ that the helper is allowed to write there. Only then:
  * @param {Error} cause
  * @return {string}
  */
-function renderResultNotObservedGuidance(config, cause, defaultConfigName) {
+function renderResultNotObservedGuidance(config, cause) {
   return `The certificate helper started, but dashmate could not read how it
 finished:
 
@@ -216,8 +215,8 @@ So dashmate does not know whether a certificate was requested. Check whether
 one arrived before trying again - a request that did reach Let's Encrypt
 counts against this node's limits whether or not dashmate saw the answer:
 
-    dashmate doctor${renderConfigFlag(config.getName(), defaultConfigName)}
-    dashmate ssl obtain${renderConfigFlag(config.getName(), defaultConfigName)} --provider letsencrypt`;
+    dashmate doctor ${renderConfigFlag(config.getName())}
+    dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider letsencrypt`;
 }
 
 const LEGO_CA_CERTIFICATE_MOUNT_PATH = '/acme-ca.pem';
@@ -245,7 +244,6 @@ export default function obtainLetsEncryptCertificateTaskFactory(
   saveCertificateTask,
   legoCaCertificatePath,
   legoContainerOptions,
-  configFile,
 ) {
   /**
    * Create and start the lego container, reporting a failure to do either as
@@ -580,28 +578,20 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               // tell us and nothing to retry against - the fix is local.
               if (e instanceof LegoDidNotStartError) {
                 throw new Error(
-                  renderHelperDidNotStartGuidance(
-                    config,
-                    e.cause,
-                    defaultConfigNameOf(configFile),
-                    e.neverRan,
-                  ),
+                  renderHelperDidNotStartGuidance(config, e.cause, e.neverRan),
                   { cause: e },
                 );
               }
 
               if (e instanceof LegoResultNotObservedError) {
-                throw new Error(
-                  renderResultNotObservedGuidance(config, e.cause, defaultConfigNameOf(configFile)),
-                  { cause: e },
-                );
+                throw new Error(renderResultNotObservedGuidance(config, e.cause), { cause: e });
               }
 
               // A certificate exists. Retrying would ask for another one for a
               // problem that is entirely local to this machine.
               if (e instanceof LegoArtifactsMissingError) {
                 throw new Error(
-                  renderArtifactsMissingGuidance(config, e.missingPath, defaultConfigNameOf(configFile)),
+                  renderArtifactsMissingGuidance(config, e.missingPath),
                   { cause: e },
                 );
               }

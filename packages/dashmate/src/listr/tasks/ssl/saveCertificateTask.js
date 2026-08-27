@@ -4,14 +4,13 @@ import fs from 'fs';
 
 import selectLeafCertificate from '../../../ssl/selectLeafCertificate.js';
 import renderConfigFlag from '../../../util/renderConfigFlag.js';
-import defaultConfigNameOf from '../../../util/defaultConfigNameOf.js';
 
 /**
  * @param {HomeDir} homeDir
  * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {saveCertificateTask}
  */
-export default function saveCertificateTaskFactory(homeDir, renewalRecordRepository, configFile) {
+export default function saveCertificateTaskFactory(homeDir, renewalRecordRepository) {
   /**
    * @typedef {function} saveCertificateTask
    * @param {Config} config
@@ -86,7 +85,7 @@ export default function saveCertificateTaskFactory(homeDir, renewalRecordReposit
               + ` ${detail}.\n`
               + `Certificate: ${crtFile}\nPrivate key: ${keyFile}\n`
               + 'The gateway will not start with these files. Obtain the certificate again:\n'
-              + `    dashmate ssl obtain${renderConfigFlag(config.getName(), defaultConfigNameOf(configFile))} --force`);
+              + `    dashmate ssl obtain ${renderConfigFlag(config.getName())} --force`);
           }
 
           config.set('platform.gateway.ssl.enabled', true);

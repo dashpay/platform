@@ -132,8 +132,8 @@ function renderSwitchIncompleteGuidance(config, cfg) {
   ${config.get('platform.gateway.ssl.provider')}. Nothing needs to be obtained - save the setting,
   then load the certificate that is already there:
 
-      dashmate config set${cfg} platform.gateway.ssl.provider letsencrypt
-      dashmate restart${cfg} --platform
+      dashmate config set ${cfg} platform.gateway.ssl.provider letsencrypt
+      dashmate restart ${cfg} --platform
 `;
 }
 
@@ -162,7 +162,7 @@ function renderLetsEncryptDiagnosis(cfg, renewal) {
   return `  This node already uses Let's Encrypt, so there is no provider to switch to.
   Inbound port 80 is the most common cause. Check the renewal logs:
 
-      dashmate logs${cfg} dashmate_helper
+      dashmate logs ${cfg} dashmate_helper
 `;
 }
 
@@ -186,7 +186,7 @@ function renderNoExternalIpGuidance(cfg, mayObtain, configName, guidance) {
   return `  To fix it, tell dashmate this node's public address${mayObtain ? `, then get a
   certificate for it` : ''}:
 
-      dashmate config set${cfg} externalIp <your-public-ip>
+      dashmate config set ${cfg} externalIp <your-public-ip>
 ${request}`;
 }
 
@@ -201,7 +201,7 @@ function renderWithheldObtain(cfg, renewal) {
   against this node's limit and asking again spends another. Check free space
   and permissions where dashmate saves certificates first:
 
-      dashmate doctor${cfg}
+      dashmate doctor ${cfg}
 `;
   }
 
@@ -212,7 +212,7 @@ function renderWithheldObtain(cfg, renewal) {
   seeing it, so asking again could spend a second one. Check whether one
   arrived first:
 
-      dashmate doctor${cfg}
+      dashmate doctor ${cfg}
 `;
   }
 
@@ -220,7 +220,7 @@ function renderWithheldObtain(cfg, renewal) {
   attempt counts against this node's limits. Check again once the cause above
   has cleared:
 
-      dashmate doctor${cfg}
+      dashmate doctor ${cfg}
 `;
 }
 
@@ -241,7 +241,7 @@ function renderFix(cfg, isAlreadyLetsEncrypt, verdict, configName, guidance) {
 
   This needs inbound port 80 reachable from the internet. Check it first:
 
-      dashmate doctor${cfg}
+      dashmate doctor ${cfg}
 
   Then:
 
@@ -263,7 +263,7 @@ function renderFixLocallyThenWait(cfg) {
   return `  Fix the cause above. dashmate retries by itself, so there is no command to
   run - check it worked afterwards:
 
-      dashmate doctor${cfg}
+      dashmate doctor ${cfg}
 `;
 }
 
@@ -342,7 +342,7 @@ ${obtainAttemptFailed
 `
       : `  Your node is stopped. The certificate does not prevent it starting:
 
-      dashmate start${cfg}
+      dashmate start ${cfg}
 `);
   }
 
@@ -388,7 +388,7 @@ ${obtainAttemptFailed
   certificate. Images are pulled either way, so this node is not held back. To
   skip this check for one run:
 
-      dashmate update${cfg} --skip-certificate-check
+      dashmate update ${cfg} --skip-certificate-check
 `);
   }
 

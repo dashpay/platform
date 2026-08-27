@@ -13,7 +13,6 @@ import {
 } from '../../../ssl/checkGatewayCertificateFactory.js';
 import promptOrThrow from '../../../util/promptOrThrow.js';
 import renderConfigFlag from '../../../util/renderConfigFlag.js';
-import defaultConfigNameOf from '../../../util/defaultConfigNameOf.js';
 
 /**
  * Below this the switch is offered with Yes preselected. Six of the twenty-one
@@ -79,7 +78,7 @@ ${renderDeclining(verdict ?? { status: CERTIFICATE_STATUS.INVALID, warnings: [] 
  * @param {Object} verdict - the verdict taken after the obtain
  * @return {string}
  */
-function renderSuccess(config, verdict, defaultConfigName) {
+function renderSuccess(config, verdict) {
   const expiresAt = verdict.installed
     ? verdict.installed.validTo.toISOString().slice(0, 10)
     : 'unknown';
@@ -90,7 +89,7 @@ function renderSuccess(config, verdict, defaultConfigName) {
   Keep inbound port 80 reachable from the internet permanently, for certificate
   reissue. Nothing will warn you if it lapses.
 
-      dashmate doctor${renderConfigFlag(config.getName(), defaultConfigName)}
+      dashmate doctor ${renderConfigFlag(config.getName())}
 `;
 }
 
@@ -241,7 +240,7 @@ export default function gatewayCertificateTaskFactory(
         throw new Error(`The certificate is installed, but the gateway could not be signalled`
           + ` to load it: ${e.message}\n`
           + 'The node keeps serving the certificate it had until it is loaded:\n'
-          + `    dashmate restart${renderConfigFlag(config.getName(), defaultConfigNameOf(configFile))} --platform`);
+          + `    dashmate restart ${renderConfigFlag(config.getName())} --platform`);
       }
     }
   }
@@ -258,7 +257,7 @@ export default function gatewayCertificateTaskFactory(
    * @return {function(Object, Object): Promise<void>}
    */
   function gatewayCertificateTask(config, { interactive, skipCertificateCheck = false }) {
-    const cfg = renderConfigFlag(config.getName(), defaultConfigNameOf(configFile));
+    const cfg = renderConfigFlag(config.getName());
 
     /**
      * Run an obtain and decide what its outcome means.
@@ -348,7 +347,7 @@ export default function gatewayCertificateTaskFactory(
         const mayAsk = guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN;
 
         const withheld = `\n\n    Do not obtain one yet - a certificate may already have been issued.
-    Send a report instead: dashmate doctor report${cfg}`;
+    Send a report instead: dashmate doctor report ${cfg}`;
 
         const warn = () => {
           ctx.certificateWarnings = [

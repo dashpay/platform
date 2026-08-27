@@ -14,7 +14,6 @@ import providers from '../../../status/providers.js';
 import maskOperatorIdentity from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
-import defaultConfigNameOf from '../../../util/defaultConfigNameOf.js';
 
 /**
  *
@@ -106,7 +105,6 @@ export default function collectSamplesTaskFactory(
   validateLetsEncryptCertificate,
   checkGatewayCertificate,
   renewalRecordRepository,
-  configFile,
 ) {
   /**
    * @typedef {function} collectSamplesTask
@@ -137,10 +135,6 @@ export default function collectSamplesTaskFactory(
           task: async (ctx) => {
             ctx.samples.setDashmateVersion(DASHMATE_VERSION);
             ctx.samples.setDashmateConfig(obfuscateConfig(config));
-            // So a report renders the same commands this node would: naming
-            // the default config tells an operator nothing, and omitting a
-            // non-default one points them at the wrong node.
-            ctx.samples.setDefaultConfigName(defaultConfigNameOf(configFile));
 
             return new Listr([
               {
