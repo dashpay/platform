@@ -406,6 +406,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // resume, once SPV is connected, re-broadcasts and resolves
                 // it normally.
                 //
+                // The error type follows the same logic. `Rejected` converts
+                // to `TransactionBroadcast`, which the FFI surfaces as the
+                // definite-rejection code: it promises the host that Core
+                // rejected the transaction, that its inputs' reservation was
+                // released, and that rebuilding is therefore safe. None of
+                // that holds here — the row and its reservation are kept
+                // precisely because the original may still confirm, so a host
+                // honouring that contract would rebuild from other UTXOs and
+                // create a SECOND asset lock beside a live one. The resume
+                // fails as `TransactionBroadcastUnconfirmed` instead: outcome
+                // unknown, inputs still reserved, do not retry.
+                //
                 // Nor is there a state on this path where non-dispatch of the
                 // original send IS provable: a row can sit at `Built` after a
                 // successful broadcast too (app killed between the send and
@@ -432,13 +444,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                                     error = %e,
                                     probe = %probe_err,
                                     "resume_asset_lock: defensive re-broadcast of a \
-                                     Broadcast-status lock was definitively rejected \
-                                     and no local proof exists — this attempt never \
-                                     left the device, which proves nothing about the \
-                                     original broadcast; leaving the row tracked at \
-                                     Broadcast and failing the resume"
+                                     Broadcast-status lock was rejected before \
+                                     dispatch and no local proof exists — this \
+                                     attempt never left the device, which proves \
+                                     nothing about the original broadcast; leaving \
+                                     the row tracked at Broadcast and failing the \
+                                     resume as an unknown outcome"
                                 );
-                                return Err(e.into());
+                                return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                                    format!(
+                                        "asset lock {out_point} remains tracked after the \
+                                         defensive re-broadcast was rejected before \
+                                         dispatch; the original broadcast may still be on \
+                                         the network: {e}"
+                                    ),
+                                ));
                             }
                         }
                     } else {
@@ -1295,21 +1315,32 @@ mod tests {
         assert_eq!(status, Some(AssetLockStatus::Broadcast));
     }
 
-    /// A DEFINITE rejection on the `Broadcast` arm is surfaced rather than
-    /// swallowed — and the row SURVIVES it.
+    /// A rejected defensive re-broadcast must not be reported as a rejection
+    /// of the ORIGINAL transaction — and the row SURVIVES it.
     ///
-    /// The first revision of this fix untracked the row here, reasoning that
-    /// `Rejected` proves the transaction never reached the network. It does
-    /// not: with the production `SpvBroadcaster` that verdict means an
-    /// unstarted client or zero connected peers, which is a fact about the
-    /// re-broadcast attempt, not about the ORIGINAL broadcast that put the
-    /// row at `Broadcast` in an earlier process. `catchUpStuckAssetLocks`
+    /// With the production `SpvBroadcaster`, `Rejected` means an unstarted
+    /// client or zero connected peers: a fact about the re-broadcast attempt,
+    /// not about the ORIGINAL broadcast that put the row at `Broadcast` in an
+    /// earlier process. Two things followed from reading it as a verdict on
+    /// the row.
+    ///
+    /// The first revision untracked the row here. `catchUpStuckAssetLocks`
     /// resumes every `statusRaw < 2` row on each wallet load with no
     /// SPV-connected gate, so that untrack deleted tracking for
     /// possibly-mined asset locks on ordinary offline relaunches, with no
     /// path back (reconstruction re-inserts only on a fresh detection event).
+    ///
+    /// The second was the error type. `TransactionBroadcast` is the FFI's
+    /// code 26, which promises the host that Core rejected the transaction,
+    /// its UTXO reservation was released and a rebuild is safe — while this
+    /// arm deliberately keeps both the row and its reservation because the
+    /// original may still confirm. A host honouring code 26 would rebuild
+    /// from other UTXOs and create a SECOND asset lock alongside a live one.
+    /// The non-terminal `TransactionBroadcastUnconfirmed` (code 20) is the
+    /// contract that matches what this arm actually knows: outcome unknown,
+    /// do not retry.
     #[tokio::test]
-    async fn definite_rejection_on_a_broadcast_lock_surfaces_without_untracking() {
+    async fn rejected_defensive_rebroadcast_is_not_a_rejection_of_the_original_transaction() {
         let (error, tracked) = resume_lock_at(
             Arc::new(AlwaysRejectedBroadcaster),
             AssetLockStatus::Broadcast,
@@ -1318,9 +1349,18 @@ mod tests {
         .await;
 
         assert!(
-            matches!(error, PlatformWalletError::TransactionBroadcast(_)),
-            "a definite rejection must fail the resume instead of falling through \
-             to a proof wait, got {error:?}"
+            !matches!(error, PlatformWalletError::TransactionBroadcast(_)),
+            "a re-broadcast that never left the device is not evidence the original \
+             transaction was rejected, so it must not claim the definite-rejection \
+             contract, got {error:?}"
+        );
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::TransactionBroadcastUnconfirmed(_)
+            ),
+            "a rejected defensive re-broadcast must fail the resume as an unknown \
+             outcome instead of falling through to a proof wait, got {error:?}"
         );
         assert_eq!(
             tracked,
