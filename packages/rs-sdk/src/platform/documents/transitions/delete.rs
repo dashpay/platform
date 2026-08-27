@@ -23,6 +23,11 @@ pub struct DocumentDeleteTransitionBuilder {
     pub document_type_name: String,
     pub document_id: Identifier,
     pub owner_id: Identifier,
+    /// The full document, when the builder was constructed from one.
+    /// Required for indexOnly document types: their delete transition
+    /// carries the document's values (there is no stored row to fetch
+    /// them from), so an id-only builder cannot delete them.
+    pub document: Option<Document>,
     pub token_payment_info: Option<TokenPaymentInfo>,
     pub settings: Option<PutSettings>,
     pub user_fee_increase: Option<UserFeeIncrease>,
@@ -53,6 +58,7 @@ impl DocumentDeleteTransitionBuilder {
             document_type_name,
             document_id,
             owner_id,
+            document: None,
             token_payment_info: None,
             settings: None,
             user_fee_increase: None,
@@ -77,12 +83,15 @@ impl DocumentDeleteTransitionBuilder {
         document: &Document,
     ) -> Self {
         use dpp::document::DocumentV0Getters;
-        Self::new(
+        let mut builder = Self::new(
             data_contract,
             document_type_name,
             document.id(),
             document.owner_id(),
-        )
+        );
+        // Keep the full document: an indexOnly delete carries its values.
+        builder.document = Some(document.clone());
+        builder
     }
 
     /// Adds token payment info to the document delete transition
@@ -177,24 +186,44 @@ impl DocumentDeleteTransitionBuilder {
             .document_type_for_name(&self.document_type_name)
             .map_err(|e| Error::Protocol(e.into()))?;
 
-        // Create a minimal document for deletion
-        let document = Document::V0(dpp::document::DocumentV0 {
-            contract_version: None,
-            id: self.document_id,
-            owner_id: self.owner_id,
-            properties: Default::default(),
-            revision: Some(INITIAL_REVISION),
-            created_at: None,
-            updated_at: None,
-            transferred_at: None,
-            created_at_block_height: None,
-            updated_at_block_height: None,
-            transferred_at_block_height: None,
-            created_at_core_block_height: None,
-            updated_at_core_block_height: None,
-            transferred_at_core_block_height: None,
-            creator_id: None,
-        });
+        // indexOnly deletes carry the document's values — an id-only
+        // builder has nothing to carry, so demand the full document.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if document_type.index_only() && self.document.is_none() {
+                return Err(Error::Generic(
+                    "deleting an indexOnly document requires the full document (its values \
+                     are what identify the entries): construct the builder with \
+                     DocumentDeleteTransitionBuilder::from_document"
+                        .to_string(),
+                ));
+            }
+        }
+
+        // The stored full document when we have one (mandatory for
+        // indexOnly types); otherwise a minimal id-only document, which is
+        // all a stored-document (V0) delete needs.
+        let document = if let Some(document) = &self.document {
+            document.clone()
+        } else {
+            Document::V0(dpp::document::DocumentV0 {
+                contract_version: None,
+                id: self.document_id,
+                owner_id: self.owner_id,
+                properties: Default::default(),
+                revision: Some(INITIAL_REVISION),
+                created_at: None,
+                updated_at: None,
+                transferred_at: None,
+                created_at_block_height: None,
+                updated_at_block_height: None,
+                transferred_at_block_height: None,
+                created_at_core_block_height: None,
+                updated_at_core_block_height: None,
+                transferred_at_core_block_height: None,
+                creator_id: None,
+            })
+        };
 
         let state_transition = BatchTransition::new_document_deletion_transition_from_document(
             document,

@@ -404,12 +404,16 @@ impl WasmSdk {
             return Err(WasmSdkError::invalid_argument("document is required"));
         }
 
-        // Check if it's a Document instance or a plain object with fields
-        let (document_id, owner_id, contract_id, document_type_name): (
+        // Check if it's a Document instance or a plain object with fields.
+        // The full document is kept when provided — indexOnly document
+        // types can ONLY be deleted from their values, so the id-only
+        // plain-object form does not work for them.
+        let (document_id, owner_id, contract_id, document_type_name, full_document): (
             Identifier,
             Identifier,
             Identifier,
             String,
+            Option<Document>,
         ) = if get_class_type(&document_js).ok().as_deref() == Some("Document") {
             // It's a Document instance - extract fields from it
             let doc: DocumentWasm = document_js
@@ -421,6 +425,7 @@ impl WasmSdk {
                 doc_inner.owner_id(),
                 doc.data_contract_id().into(),
                 doc.document_type_name(),
+                Some(doc_inner),
             )
         } else {
             // It's a plain object - extract individual fields
@@ -431,6 +436,7 @@ impl WasmSdk {
                 try_from_options_with(&document_js, "documentTypeName", |v| {
                     try_to_string(v, "documentTypeName")
                 })?,
+                None,
             )
         };
 
@@ -449,13 +455,23 @@ impl WasmSdk {
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
-        // Build and execute delete transition using DocumentDeleteTransitionBuilder
-        let builder = DocumentDeleteTransitionBuilder::new(
-            Arc::new(data_contract),
-            document_type_name,
-            document_id,
-            owner_id,
-        );
+        // Build and execute delete transition using DocumentDeleteTransitionBuilder.
+        // A provided Document instance goes through from_document so its
+        // values ride along (required for indexOnly document types).
+        let builder = if let Some(full_document) = &full_document {
+            DocumentDeleteTransitionBuilder::from_document(
+                Arc::new(data_contract),
+                document_type_name,
+                full_document,
+            )
+        } else {
+            DocumentDeleteTransitionBuilder::new(
+                Arc::new(data_contract),
+                document_type_name,
+                document_id,
+                owner_id,
+            )
+        };
 
         let builder = if let Some(token_payment_info) = token_payment_info {
             builder.with_token_payment_info(token_payment_info)
