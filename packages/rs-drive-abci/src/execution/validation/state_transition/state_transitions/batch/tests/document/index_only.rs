@@ -516,11 +516,15 @@ mod index_only_tests {
 
         let result = process_and_commit(&platform, &platform_state, &v0_delete, platform_version);
         assert_eq!(result.valid_count(), 0);
-        assert_eq!(
-            result.invalid_paid_count(),
-            1,
-            "a V0 delete on an indexOnly type must be refused by the structure gate: {:?}",
-            result.execution_results()
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::InvalidDocumentTransitionActionError(
+                    _
+                )),
+                ..
+            }],
+            "a V0 delete on an indexOnly type must be refused by the structure gate"
         );
     }
 
