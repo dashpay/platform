@@ -6,13 +6,14 @@
 //! cheap, sufficient probes:
 //!
 //! * **create**: any existing entry is a duplicate, so probe every index —
-//!   a shorter or owner-less index thereby doubles as a uniqueness
-//!   constraint over its value projection (by design; for Yappr's likes
-//!   the global `[postId]` index is the one-like-per-(post, owner) rule).
-//! * **delete**: probing ONE `$ownerId`-bearing entry (computed with
-//!   owner = signer) proves both existence and ownership — entries embed
-//!   the owner at create, and all of a document's entries exist or none
-//!   do. The parser guarantees an owner-bearing index exists.
+//!   a shorter index thereby doubles as a uniqueness constraint over its
+//!   value projection plus owner (for Yappr's likes the `[postId]` index
+//!   is the one-like-per-(post, owner) rule).
+//! * **delete**: probe every index entry, all must exist. Every index
+//!   embeds `$ownerId` (the parser enforces it), so each probe — computed
+//!   with owner = signer — proves ownership as well as existence, and
+//!   requiring all of them keeps the apply-side batch infallible even
+//!   against values spliced from different documents.
 //!
 //! Path and key encoding reuse `Document::get_raw_for_document_type`,
 //! the same function the index walkers key trees with — the probe cannot
