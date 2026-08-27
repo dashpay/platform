@@ -241,6 +241,11 @@ fn try_from_schema_generation_3(
         token_configurations,
         data_contact_config,
         full_validation,
+        // Lets the core default omitted index terminals to `$ownerId` before
+        // it builds the index structure, so the structure's level info is
+        // born normalized (`apply_index_only` below validates the
+        // already-normalized set).
+        index_only,
         validation_operations,
         &common::ParserGeneration {
             // Generation 3 exists if and only if `document_type_schema` is 3 —
@@ -271,11 +276,6 @@ fn try_from_schema_generation_3(
             admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
         },
         platform_version,
-        // Lets the core default omitted index terminals to `$ownerId`
-        // before it builds the index structure, so the structure's level
-        // info is born normalized (`apply_index_only` below validates the
-        // already-normalized set).
-        index_only,
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();

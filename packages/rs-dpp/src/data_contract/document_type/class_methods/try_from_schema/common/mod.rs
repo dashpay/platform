@@ -385,8 +385,6 @@ struct CoreParseContext<'a> {
     /// behind `#[cfg(feature = "validation")]`: a build that compiled none of
     /// those checks in has nothing to skip.
     full_validation: bool,
-    generation: &'a ParserGeneration,
-    platform_version: &'a PlatformVersion,
     /// Whether the document type being parsed declared `indexOnly: true`.
     /// Read by [`parse_indices`] to default an omitted index `terminal` to
     /// `$ownerId` BEFORE the index structure is built — the level info
@@ -395,6 +393,8 @@ struct CoreParseContext<'a> {
     /// generation admitting the keyword can ever pass `true` (the caller
     /// reads it off the schema); generations 1 and 2 always pass `false`.
     index_only: bool,
+    generation: &'a ParserGeneration,
+    platform_version: &'a PlatformVersion,
 }
 
 /// The document-type level switches, each falling back to the contract-level
@@ -452,10 +452,10 @@ pub(super) fn parse_document_type_core(
     token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
     data_contact_config: &DataContractConfig,
     full_validation: bool, // we don't need to validate if loaded from state
+    index_only: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     generation: &ParserGeneration,
     platform_version: &PlatformVersion,
-    index_only: bool,
 ) -> Result<DocumentTypeV1, ProtocolError> {
     let ctx = CoreParseContext {
         data_contract_id,
@@ -465,9 +465,9 @@ pub(super) fn parse_document_type_core(
         token_configurations,
         data_contact_config,
         full_validation,
+        index_only,
         generation,
         platform_version,
-        index_only,
     };
 
     // Create a full root JSON Schema from shorten contract document type schema
