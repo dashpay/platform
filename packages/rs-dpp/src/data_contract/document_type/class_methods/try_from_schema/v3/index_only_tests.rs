@@ -354,31 +354,122 @@ fn rejects_disallowed_system_properties_in_prefix() {
 }
 
 #[test]
-fn accepts_created_at_in_prefix() {
-    // `$createdAt` is assigned from block time at create and recoverable
-    // from the entry path — the one system property besides `$ownerId`
-    // an indexOnly index may carry.
+fn accepts_created_at_in_prefix_when_required() {
+    // `$createdAt` is assigned from block time at create (only when it is
+    // required — which indexing it therefore demands) and recoverable from
+    // the entry path — the one system property besides `$ownerId` an
+    // indexOnly index may carry.
+    let mut schema = likes_schema_with_index_key(
+        2,
+        "properties",
+        platform_value!([{ "$ownerId": "asc" }, { "$createdAt": "asc" }]),
+    );
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    parse_with(schema, PlatformVersion::latest(), false)
+        .expect("$createdAt in an index prefix should be accepted when required");
+}
+
+#[test]
+fn rejects_indexed_created_at_that_is_not_required() {
+    // Document creation assigns `created_at` only for a REQUIRED
+    // $createdAt; indexing an unrequired one would silently take the
+    // missing-value branch instead of storing block time.
     let schema = likes_schema_with_index_key(
         2,
         "properties",
         platform_value!([{ "$ownerId": "asc" }, { "$createdAt": "asc" }]),
     );
-    parse_with(schema, PlatformVersion::latest(), false)
-        .expect("$createdAt in an index prefix should be accepted");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "\"$createdAt\" must be listed in `required`",
+    );
+}
+
+#[test]
+fn rejects_identity_public_key_reference_terminals() {
+    // identityPublicKey is a compound reference (identity id here, key id
+    // in a companion property) — the member key alone cannot identify the
+    // referenced key, so it is not a legal terminal.
+    let mut schema = likes_schema_with_index_key(2, "terminal", platform_value!("keyRef"));
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(
+            "keyRef",
+            platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "refersTo": { "type": "identityPublicKey", "keyIdProperty": "keyId" },
+                "position": 2
+            }),
+        )
+        .expect("property applies");
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(
+            "keyId",
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 100, "position": 3 }),
+        )
+        .expect("property applies");
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "keyRef", "keyId"]),
+        )
+        .expect("required applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "identityPublicKey",
+    );
+}
+
+#[test]
+fn rejects_owner_less_indexes() {
+    // Every index must be bound to its owner: an owner-less index would
+    // let a crafted delete splice a victim's row in with the signer's own
+    // owner-bearing row.
+    let schema =
+        likes_schema_with_index_key(2, "properties", platform_value!([{ "hashtag": "asc" }]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must include $ownerId",
+    );
 }
 
 // ── coverage, requiredness, ownership ───────────────────────────────────
 
 #[test]
 fn rejects_unindexed_property() {
-    // Drop `hashtag` from every index; it would be silently unrecoverable.
-    // ($createdAt keeps the reshaped index distinct from `byPost` — two
-    // indexes over the same properties are rejected as duplicates before
-    // the indexOnly checks run — and clear of the ranked prefix-overlap
-    // rule that a [postId, …] compound would trip next to countable
-    // `byPost`.)
-    let schema =
-        likes_schema_with_index_key(0, "properties", platform_value!([{ "$createdAt": "asc" }]));
+    // Drop the compound index entirely: `hashtag` then appears in no
+    // index and would be silently unrecoverable.
+    let schema = likes_schema_with(
+        "indices",
+        platform_value!([
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "countable": true,
+                "rangeCountable": true,
+                "rankedCountable": true
+            },
+            {
+                "name": "byLiker",
+                "properties": [{ "$ownerId": "asc" }],
+                "terminal": "postId"
+            }
+        ]),
+    );
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
         "does not appear in any index",
@@ -396,8 +487,8 @@ fn rejects_optional_property() {
 
 #[test]
 fn rejects_missing_owner_id() {
-    // Rewrite all three indexes so no prefix or terminal carries $ownerId:
-    // no owner-bearing entry means no delete could ever be authorized.
+    // An index carrying no $ownerId anywhere is refused outright — every
+    // entry must be self-authorizing for deletes.
     let schema = likes_schema_with(
         "indices",
         platform_value!([
@@ -410,7 +501,7 @@ fn rejects_missing_owner_id() {
     );
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "$ownerId in at least one index",
+        "must include $ownerId",
     );
 }
 
