@@ -375,6 +375,40 @@ fn accepts_created_at_in_prefix_when_required() {
 }
 
 #[test]
+fn rejects_when_every_index_involves_created_at() {
+    // Executed-transition proofs locate an entry from the transition's
+    // values alone — a client verifier cannot reproduce the block
+    // timestamp a time-keyed entry was written with. At least one index
+    // must therefore stay $createdAt-free (the proof index); with every
+    // index time-keyed, creates and deletes would work while every
+    // wait-for-transition proof failed.
+    let mut schema = likes_schema_with(
+        "indices",
+        platform_value!([
+            {
+                "name": "byHashtagPostTime",
+                "properties": [
+                    { "hashtag": "asc" },
+                    { "postId": "asc" },
+                    { "$createdAt": "asc" }
+                ],
+                "terminal": "$ownerId"
+            }
+        ]),
+    );
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "at least one index that does not involve $createdAt",
+    );
+}
+
+#[test]
 fn rejects_indexed_created_at_that_is_not_required() {
     // Document creation assigns `created_at` only for a REQUIRED
     // $createdAt; indexing an unrequired one would silently take the

@@ -492,6 +492,223 @@ fn estimated_fees_upper_bound_actual_fees() {
     assert_grovedb_is_consistent(&drive);
 }
 
+// ---------------------------------------------------------------------------
+// Queries and proofs (Phase 4): synthesis from proved index positions
+// ---------------------------------------------------------------------------
+
+use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
+
+fn likes_query<'a>(
+    contract: &'a dpp::prelude::DataContract,
+    clauses: Vec<crate::query::WhereClause>,
+    limit: Option<u16>,
+) -> crate::query::DriveDocumentQuery<'a> {
+    let document_type = contract
+        .document_type_for_name(DOCTYPE)
+        .expect("like doctype exists");
+    crate::query::DriveDocumentQuery {
+        contract,
+        document_type,
+        internal_clauses: crate::query::InternalClauses::extract_from_clauses(
+            clauses,
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit,
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+    }
+}
+
+/// The one builder both sides call: the server's no-proof execution and the
+/// proof verification must synthesize identical documents, and each
+/// synthesized document must carry exactly what its index recovers.
+#[test]
+fn should_synthesize_query_documents_with_proof_parity() {
+    use crate::query::{WhereClause, WhereOperator};
+    use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    for (post, owner, seed) in [
+        (POST_A, OWNER_1, 1u64),
+        (POST_A, OWNER_2, 2),
+        (POST_B, OWNER_3, 3),
+    ] {
+        let like = build_like(&contract, "dash", post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    // ── who liked anything under #dash (compound index, full synthesis) ──
+    let query = likes_query(
+        &contract,
+        vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("dash".to_string()),
+        }],
+        Some(10),
+    );
+
+    let outcome = drive
+        .query_documents(query.clone(), None, false, None, None)
+        .expect("indexOnly query executes");
+    let documents = outcome.documents();
+    assert_eq!(documents.len(), 3, "three likes under #dash");
+    let mut seen: Vec<([u8; 32], [u8; 32])> = documents
+        .iter()
+        .map(|document| {
+            assert_eq!(
+                document.properties().get("hashtag"),
+                Some(&Value::Text("dash".to_string())),
+                "prefix property must be recovered from the path"
+            );
+            let post: [u8; 32] = document
+                .properties()
+                .get("postId")
+                .expect("postId recovered")
+                .to_identifier_bytes()
+                .expect("postId is an identifier")
+                .try_into()
+                .expect("32 bytes");
+            (post, document.owner_id().to_buffer())
+        })
+        .collect();
+    seen.sort();
+    assert_eq!(
+        seen,
+        vec![(POST_A, OWNER_1), (POST_A, OWNER_2), (POST_B, OWNER_3)],
+        "synthesis must recover every (post, owner) pair"
+    );
+
+    // ── proof parity: the verifier synthesizes the same documents ──
+    let (proof, _) = query
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("proof generation");
+    let (_root_hash, verified) = query
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("proof verification synthesizes");
+    let mut verified_ids: Vec<_> = verified.iter().map(|d| d.id()).collect();
+    let mut queried_ids: Vec<_> = documents.iter().map(|d| d.id()).collect();
+    verified_ids.sort();
+    queried_ids.sort();
+    assert_eq!(
+        verified_ids, queried_ids,
+        "proved and unproved synthesis must agree document for document"
+    );
+
+    // ── projection through byLiker: what did OWNER_1 like ──
+    let my_likes = likes_query(
+        &contract,
+        vec![WhereClause {
+            field: "$ownerId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(OWNER_1),
+        }],
+        Some(10),
+    );
+    let outcome = drive
+        .query_documents(my_likes.clone(), None, false, None, None)
+        .expect("projection query executes");
+    let documents = outcome.documents();
+    assert_eq!(documents.len(), 1);
+    let projection = &documents[0];
+    assert_eq!(projection.owner_id().to_buffer(), OWNER_1);
+    assert_eq!(
+        projection
+            .properties()
+            .get("postId")
+            .expect("terminal recovered")
+            .to_identifier_bytes()
+            .expect("identifier"),
+        POST_A.to_vec()
+    );
+    assert!(
+        !projection.properties().contains_key("hashtag"),
+        "a subset index yields a projection — hashtag is not in byLiker"
+    );
+    // Projection proofs agree too.
+    let (proof, _) = my_likes
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("projection proof generation");
+    let (_root, verified) = my_likes
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("projection proof verification");
+    assert_eq!(verified.len(), 1);
+    assert_eq!(verified[0].id(), projection.id());
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// By-id fetches have no tree to land on and are refused with guidance.
+#[test]
+fn should_refuse_by_id_queries() {
+    use crate::query::{WhereClause, WhereOperator};
+    use assert_matches::assert_matches;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    let query = likes_query(
+        &contract,
+        vec![WhereClause {
+            field: "$id".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier([9u8; 32]),
+        }],
+        None,
+    );
+    let error = drive
+        .query_documents(query, None, false, None, None)
+        .expect_err("by-id queries on indexOnly types must be refused");
+    // Pin the typed variant, not just the display text: another error
+    // carrying the same wording must not satisfy this test.
+    assert_matches!(
+        &error,
+        crate::error::Error::Query(crate::error::query::QuerySyntaxError::Unsupported(message))
+            if message.contains("cannot be fetched by id"),
+        "unexpected error: {error}"
+    );
+}
+
+/// A cursor (`startAt`/`startAfter`) would be resolved through the
+/// primary-key tree an indexOnly type does not have — the path
+/// constructors must refuse it with the typed `Unsupported` error before
+/// any cursor storage lookup can turn it into `StartDocumentNotFound`.
+#[test]
+fn should_refuse_cursor_queries() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::{WhereClause, WhereOperator};
+    use assert_matches::assert_matches;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    let mut query = likes_query(
+        &contract,
+        vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("dash".to_string()),
+        }],
+        None,
+    );
+    query.start_at = Some([7u8; 32]);
+    let error = drive
+        .query_documents(query, None, false, None, None)
+        .expect_err("cursor queries on indexOnly types must be refused");
+    assert_matches!(
+        &error,
+        crate::error::Error::Query(QuerySyntaxError::Unsupported(message))
+            if message.contains("startAt/startAfter is not yet supported"),
+        "unexpected error: {error}"
+    );
+}
+
 /// Terminal items carry owner-and-epoch storage flags, so deleting them in
 /// a later epoch must refund the freed bytes to the inserting owner,
 /// attributed to the insertion epoch — the same refund contract stored

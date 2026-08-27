@@ -71,7 +71,7 @@ pub mod index_only;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_only_row_commitment;
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::index_only_row_commitment;
 #[cfg(feature = "server")]
 pub use index_only_row_commitment::index_only_row_commitment_with_preimage_size;
