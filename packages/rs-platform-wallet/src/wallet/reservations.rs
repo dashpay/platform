@@ -4,10 +4,20 @@
 //! contributing funding account's `ReservationSet` and leaves the reservation
 //! held on success, expecting the transaction to be broadcast. When the
 //! broadcast *fails* the reservation must be reconciled here: released for an
-//! immediate retry when Core definitively rejected the transaction, kept (for
-//! the reservation-TTL backstop or a later sync) when acceptance is unknown.
-//! A pooled build reserves across several accounts under one owner token, so
-//! the reconciliation takes the whole contributor list, not one account.
+//! immediate retry when Core definitively rejected the transaction, kept when
+//! acceptance is unknown. A pooled build reserves across several accounts under
+//! one owner token, so the reconciliation takes the whole contributor list, not
+//! one account.
+//!
+//! "Kept" means kept until key-wallet's own `ReservationSet` TTL sweeps it, and
+//! that sweep is NOT what makes the ambiguous case safe. The inputs of a
+//! transaction that may be on the network are held by the generation's
+//! pending-spend fence, which the TTL does not touch and which no elapsed
+//! quantity retires — only an observed spend does
+//! (`dashpay/platform#4309`). Reservation cleanup here and fence settlement in
+//! the caller are two separate obligations; see
+//! [`release_reservation_after_rejected_broadcast`] for the order they must run
+//! in.
 //!
 //! Every build-then-broadcast path must go through
 //! [`broadcast_releasing_on_rejection`] so the cleanup exists once instead of
@@ -182,11 +192,29 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
 /// must reconcile; releasing only the first would leave the rest of the inputs
 /// held until the TTL backstop reclaims them.
 ///
-/// Callers that pair the release with other rejection cleanup must order
-/// that cleanup **before** this call when it removes state a concurrent
-/// flow could act on — while the reservation is still held the inputs
-/// cannot be re-selected by a new build, so the pre-release window is
-/// safe.
+/// # Ordering contract for paired cleanup
+///
+/// This call `.await`s a manager lock, so anything a caller does around it is
+/// separated from it by a scheduling point. Which side of the call a given
+/// cleanup belongs on follows from one rule — *the inputs must never be
+/// reusable while anything else can still act on them*:
+///
+/// * Cleanup that removes **resumability** runs **before**: the asset-lock
+///   flow untracks its `Built` row first, so the row is gone before its inputs
+///   become re-spendable. While the reservation is still held a new build
+///   cannot take them, so the pre-release window is safe.
+/// * Cleanup that removes **protection** runs **after**:
+///   [`InBroadcastPin::settle_released`](crate::wallet::core::InBroadcastPin::settle_released)
+///   comes down only once this call has returned. Releasing the fence first
+///   left a window in which the outpoint was neither fenced nor — once
+///   catch-up had swept it — reserved; a build queued on the manager write
+///   lock could reserve and sign it there, and the token-less form of this
+///   call would then delete that newer reservation, freeing the input for a
+///   second signer (`dashpay/platform#4309`, review round 8). With the fence
+///   held across the call, such a build meets it and rolls back instead.
+///
+/// Both halves are exercised end to end by
+/// `payments::tests::the_contact_send_fence_outlives_its_rejected_broadcast_reservation_cleanup`.
 pub(crate) async fn release_reservation_after_rejected_broadcast(
     wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
     wallet_id: &WalletId,

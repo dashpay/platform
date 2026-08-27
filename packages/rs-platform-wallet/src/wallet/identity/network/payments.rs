@@ -1421,7 +1421,29 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             Err(e) if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) => {
                 // Provably nothing on the wire: free the fence alongside the
                 // reservation, so the instructed immediate retry can reselect.
-                in_broadcast_pin.settle_released();
+                //
+                // ORDER MATTERS — the cleanup runs FIRST, under the still-live
+                // fence, and only then does the pin come down
+                // (`dashpay/platform#4309`, review round 8). The cleanup is an
+                // `.await`: it must re-acquire the wallet-manager read lock, and
+                // on this path it carries NO reservation token, so it performs an
+                // unconditional `release_reservation`. Releasing the fence first
+                // opened a window in which this input was neither fenced nor —
+                // once catch-up had swept the build's reservation — reserved. A
+                // build already queued on the manager write lock could take it in
+                // that window, pass the now-absent conflict check, and drop the
+                // lock with its external signer still pending (finalized builds
+                // install no pin until broadcast); the unconditional cleanup then
+                // deleted THAT build's newer reservation, and a second
+                // finalization could reserve and sign the same input — two live
+                // conflicting handles.
+                //
+                // With the fence held across the cleanup there is no such window:
+                // a queued build that runs first meets the fence and rolls back
+                // its own selection, so there is never a newer reservation for
+                // the unconditional release to clobber. `release_reservation_
+                // after_rejected_broadcast` documents this ordering requirement
+                // for exactly this reason.
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
@@ -1432,6 +1454,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     None,
                 )
                 .await;
+                in_broadcast_pin.settle_released();
                 Err(e)
             }
             other => {
@@ -6807,6 +6830,149 @@ mod tests {
             sent.is_ok(),
             "the parked payment itself must complete normally, got {sent:?}"
         );
+    }
+
+    /// `dashpay/platform#4309`, REVIEW ROUND 8 — THE FENCE MUST OUTLIVE THE
+    /// REJECTED-BROADCAST RESERVATION CLEANUP.
+    ///
+    /// The definitive-rejection arm used to drop the fence FIRST and only then
+    /// await `release_reservation_after_rejected_broadcast`. That cleanup is
+    /// token-less on this path, so it performs an UNCONDITIONAL
+    /// `release_reservation`, and it can only run after re-acquiring the
+    /// wallet-manager read lock — an await. In that window the input was
+    /// neither fenced nor (once catch-up had swept it) reserved, so a build
+    /// already queued on the manager write lock could reserve it, pass the
+    /// now-absent conflict check, and drop the lock with an external signer
+    /// still pending. The unconditional cleanup then deleted THAT build's
+    /// newer reservation, leaving the outpoint free for a second finalization
+    /// to reserve and sign — two fresh conflicting handles over one input.
+    ///
+    /// The invariant that closes it: the fence stays up THROUGH the cleanup and
+    /// comes down only after it. A queued build that runs first then meets a
+    /// live fence and rolls back its own selection instead.
+    ///
+    /// Driven here by holding the wallet-manager WRITE lock across the
+    /// broadcaster's rejection. The cleanup needs the READ lock, so it cannot
+    /// complete while the test holds the write side — which makes the assertion
+    /// an invariant rather than a race: with the fix the fence CANNOT be gone at
+    /// this observation point, because the only code that releases it runs after
+    /// a cleanup that is provably still blocked. Before the fix the release ran
+    /// synchronously the instant `broadcast` returned, so the fence was gone.
+    #[tokio::test]
+    async fn the_contact_send_fence_outlives_its_rejected_broadcast_reservation_cleanup() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        fund_bip44_account_0(&manager, wallet_id, 0xD2, 1_000_000).await;
+        let funded = dashcore::OutPoint {
+            txid: <dashcore::Txid as dashcore::hashes::Hash>::from_slice(&[0xD2; 32])
+                .expect("txid"),
+            vout: 0,
+        };
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let gated =
+            with_gated_rejecting_broadcaster(iw, Arc::clone(&entered), Arc::clone(&release));
+
+        let parked = async {
+            gated
+                .dashpay()
+                .send_payment(&owner_id, &contact_id, 100_000, None, &signer, &provider)
+                .await
+        };
+
+        let observer = async {
+            // Signed, build guard dropped, parked inside `broadcast`.
+            entered.wait().await;
+
+            // Take the manager WRITE lock and keep it: the rejection cleanup
+            // below wants the READ lock, so it is pinned outside this hold.
+            let held = iw.wallet_manager.write().await;
+
+            // Let the broadcaster return `Rejected`. The send now runs its
+            // rejection arm; the cleanup blocks on the read lock.
+            release.wait().await;
+            for _ in 0..256 {
+                tokio::task::yield_now().await;
+            }
+
+            let observed = wallet_arc.generation().in_broadcast_fence_state(&funded);
+            drop(held);
+            observed
+        };
+
+        let (sent, observed) = tokio::join!(parked, observer);
+
+        assert!(
+            observed.is_some(),
+            "the contact-send fence must still stand while the rejected \
+             broadcast's reservation cleanup is pending — it was already \
+             released (observed: {observed:?})"
+        );
+
+        assert!(
+            sent.is_err(),
+            "a definitively rejected send must surface an error, got {sent:?}"
+        );
+
+        // …and once the cleanup HAS run, the fence comes down: a definitive
+        // rejection is provable evidence nothing reached the wire, so the
+        // input must be immediately reselectable.
+        assert_eq!(
+            wallet_arc.generation().in_broadcast_fence_state(&funded),
+            None,
+            "after the cleanup completes the rejected send must free its fence"
+        );
+    }
+
+    /// [`GatedBroadcaster`], but the transport definitively REJECTS after the
+    /// park — the shape the rejection-arm ordering test needs.
+    struct GatedRejectingBroadcaster {
+        entered: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for GatedRejectingBroadcaster {
+        async fn broadcast(
+            &self,
+            _transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            self.entered.wait().await;
+            self.release.wait().await;
+            Err(crate::broadcaster::BroadcastError::Rejected {
+                reason: "test rejection".to_string(),
+            })
+        }
+    }
+
+    fn with_gated_rejecting_broadcaster(
+        real: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+        entered: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+    ) -> crate::wallet::identity::IdentityWallet<GatedRejectingBroadcaster> {
+        crate::wallet::identity::IdentityWallet {
+            sdk: Arc::clone(&real.sdk),
+            wallet_manager: Arc::clone(&real.wallet_manager),
+            wallet_id: real.wallet_id,
+            asset_locks: Arc::clone(&real.asset_locks),
+            persister: real.persister.clone(),
+            broadcaster: Arc::new(GatedRejectingBroadcaster { entered, release }),
+            sdk_writer: Arc::clone(&real.sdk_writer),
+            dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
+            dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
+        }
     }
 
     /// Broadcaster stub that PARKS inside `broadcast` — the production

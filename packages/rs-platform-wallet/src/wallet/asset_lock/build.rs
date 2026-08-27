@@ -994,8 +994,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             if locked_amount_duffs < minimum {
                 drop(build_persist_guard);
                 // Nothing reached the broadcaster, so the fence has no
-                // transaction to protect: release it alongside the reservation.
-                in_broadcast_pin.settle_released();
+                // transaction to protect: release it alongside the reservation
+                // — but AFTER the cleanup, never before it. The cleanup awaits
+                // the manager read lock, and an input that is unfenced while
+                // still reserved-or-reusable is exactly the window review round
+                // 8 closed on the contact-send path
+                // (`dashpay/platform#4309`). This site's release is
+                // owner-guarded by `reservation_token`, so a newer build's
+                // reservation cannot be clobbered here even so; the ordering is
+                // uniform across every settle-with-cleanup site rather than
+                // resting on that one argument.
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
@@ -1004,6 +1012,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     reservation_token,
                 )
                 .await;
+                in_broadcast_pin.settle_released();
                 return Err(PlatformWalletError::AssetLockTransaction(format!(
                     "drained asset lock of {locked_amount_duffs} duffs is below the required \
                      minimum of {minimum} duffs (the balance cannot clear the shield pool fee); \
@@ -1044,8 +1053,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // fence goes with the reservation for the same reason: the
                 // broadcaster was never reached, so it protects nothing, and
                 // leaving it would block the retry the release exists to enable.
+                // It comes down AFTER the cleanup, not before — see the
+                // drain-floor branch above for why every settle-with-cleanup
+                // site keeps that order (`dashpay/platform#4309`, round 8).
                 drop(build_persist_guard);
-                in_broadcast_pin.settle_released();
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
@@ -1054,6 +1065,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     reservation_token,
                 )
                 .await;
+                in_broadcast_pin.settle_released();
                 return Err(PlatformWalletError::AssetLockTransaction(format!(
                     "aborted before broadcast: could not durably record the invitation \
                      funding index (broadcasting anyway would risk voucher-key reuse on \
@@ -1119,8 +1131,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.queue_asset_lock_changeset(cs_untrack);
                 if removed_built_row {
                     // Provably nothing on the wire and the row is gone: free the
-                    // fence with the reservation so the rebuild can reselect.
-                    in_broadcast_pin.settle_released();
+                    // fence with the reservation so the rebuild can reselect —
+                    // the fence coming down LAST, after the cleanup await, so
+                    // the input is never unfenced while still reusable
+                    // (`dashpay/platform#4309`, round 8; see the drain-floor
+                    // branch for the full window).
                     crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                         &self.wallet_manager,
                         &self.wallet_id,
@@ -1129,6 +1144,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         reservation_token,
                     )
                     .await;
+                    in_broadcast_pin.settle_released();
                 } else {
                     // The untrack guard fired: a concurrent `resume_asset_lock`
                     // advanced the row past `Built`, which is positive evidence
