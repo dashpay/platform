@@ -42,6 +42,7 @@ mod delete_document_for_contract_with_named_type_operations;
 // Module: delete_document_for_contract_operations
 // This module contains functionality to delete a document for contract operations
 mod delete_document_for_contract_operations;
+mod delete_index_only_document_for_contract_operations;
 
 mod internal;
 

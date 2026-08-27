@@ -193,6 +193,7 @@ mod tests {
             ranked_countable,
             ranked_summable,
             ranked_averageable,
+            terminal: None,
         }
     }
 

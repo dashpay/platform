@@ -128,11 +128,9 @@ impl DataContractInSerializationFormat {
                                     .schema
                                     .document_type_schema,
                             );
-                            if let Ok(index) = Index::try_from_value_map(
-                                index_value_map.as_slice(),
-                                admissions.ranked,
-                                admissions.time_range,
-                            ) {
+                            if let Ok(index) =
+                                Index::try_from_value_map(index_value_map.as_slice(), admissions)
+                            {
                                 let base_index_fee = if index.contested_index.is_some() {
                                     fee_version.document_type_base_contested_index_registration_fee
                                 } else if index.unique {
