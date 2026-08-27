@@ -99,6 +99,7 @@ These are shipped ABI. Do not renumber.
 | 25 | `ErrorAssetLockFundingMismatch` | |
 | 26 | `ErrorTransactionBroadcastRejected` | Merged in `9302c62e8b`; took a number several open branches had been treating as free |
 | 27 | `ErrorShutdownIncomplete` | Merged 2026-08-02 by **#4268** (`429667e723`). A quiesce/drain barrier missed its budget. **Took the number #4185 had held since before this file existed** — see the collision history below |
+| 29 | `ErrorAssetLockInsufficientFunds` | Merged 2026-08-26 by **#4361** (`699d25704a`) — the typed asset-lock shortfall, landed alongside the coinjoin-drain shielded funding binding. Lineage: fork-era #4184 → #4316 (closed unmerged) → #4361. Complete across all three layers at merge: the Rust discriminant with its raw-value test pin, Swift's `errorAssetLockInsufficientFunds = 29` raw case *and* its `init(ffi:)` arm *and* the typed `PlatformWalletError.assetLockInsufficientFunds` case with its `init(result:)` arm and an `ErrorHandlingTests` pin, and Kotlin's typed `PlatformWallet.AssetLockInsufficientFunds` with the `29 ->` arm in `fromPlatformWalletNative` and a `DashSdkErrorTest` pin. **Rule 5 was satisfied only as of `15aa2caea1`, late in review.** Kotlin had mirrored 29 since the branch's binding commit `a711c55eca`; Swift carried none of rule 5's three edits until `15aa2caea1`, so 29 fell to `init(ffi:)`'s `default:` and lost its identity as `.errorUnknown` — the rule-5 failure this file exists to catch, one host typed and the other blind. Its Rust sibling `2eac8a897e` is what lets the code reach either host on the exact-amount funding path, which flattened the variant to `ErrorWalletOperation` (6) in `map_asset_lock_funding_result` before the blanket `From` arm could run |
 | 31 | `ErrorSigningKeyUnavailable` | Merged 2026-08-04 by **#4183** (merge commit `189a3abb1c`, stacked on #4191). The signer holds no usable private key for a requested public key. Landed complete in that one commit: the Rust C-facing discriminant, Swift's `errorSigningKeyUnavailable = 31` raw case *and* its `init(ffi:)` arm *and* the typed `PlatformWalletError` case with its `init(result:)` arm, and Kotlin's `31 -> PlatformWallet.SigningKeyUnavailable`. Rule 3 now protects it — see the 31-vs-33 note below |
 | 34 | `ErrorStaleReservationToken` | Merged 2026-08-06 by **#4308** (`438153da39`) — the reservation trio landed with the split build/broadcast surface (successor of fork-era #4185's claim) |
 | 35 | `ErrorReservationTokenConsumed` | Merged 2026-08-06 by **#4308** (`438153da39`) |
@@ -113,10 +114,9 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 48** — 27–47 are all claimed (27, 31, 34–42, 46
-merged; 29 proposed by active #4361; 43–45
-proposed by active #4313 at head `0302b188ab`; 47 proposed by active #4356
-(renumbered from 42 — see its row below); 28, 30,
+**Next allocatable integer: 48** — 27–47 are all claimed (27, 29, 31, 34–42
+and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47
+proposed by active #4356 (renumbered from 42 — see its row below); 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
@@ -139,22 +139,22 @@ fork-era PRs that originally held these allocations (#4184, #4185, #4204,
 plus #4247 and #4256) were closed and recreated in-repository per repo
 policy. Of the successors: #4308 **merged** (the trio, 34–36 — now in the
 merged table); three others — #4316, #4310 and #4311 — **closed without
-merging** (32 and 33 lapse to RESERVED; 29 is carried live by #4361, which
-holds the typed shortfall today); and #4313 (the shielded-invite
-claim) lost 37 to merged #4348, revived, and now holds 43–45 from the
-frontier at head `0302b188ab` — see its three rows below.
+merging** (32 and 33 lapse to RESERVED; 29 passed to #4361, which **merged**
+on 2026-08-26 — it is in the merged table now, and 29 is ABI under rule 3);
+and #4313 (the shielded-invite claim) lost 37 to merged #4348, revived, and
+now holds 43–45 from the frontier at head `0302b188ab` — see its three rows
+below.
 Fork-era numbers remain in the collision history, which is immutable record.
 
 | Code | Name | Owning PR | Status |
 | ---: | --- | --- | --- |
 | 28 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
-| 29 | `ErrorAssetLockInsufficientFunds` | #4361 | In review — **keeps 29**. Lineage: fork-era #4184 → #4316 (closed unmerged) → carried live by #4361's typed asset-lock shortfall (`ErrorAssetLockInsufficientFunds = 29` at its head). **Rule 5 is satisfied as of `15aa2caea1`, and was not before it.** Kotlin has mirrored 29 since the branch's binding commit `a711c55eca` (`fromPlatformWalletNative` plus a `DashSdkErrorTest` pin); Swift carried none of rule 5's three edits until `15aa2caea1`, so 29 fell to `init(ffi:)`'s `default:` and lost its identity as `.errorUnknown` — the rule-5 failure this file exists to catch, one host typed and the other blind. That commit adds the raw case, the `init(ffi:)` arm, and the typed `PlatformWalletError` case with its `init(result:)` arm, plus an `ErrorHandlingTests` case pinning the raw value. Its Rust sibling `2eac8a897e` is what lets the code reach either host on the exact-amount funding path, which flattened the variant to `ErrorWalletOperation` (6) in `map_asset_lock_funding_result` before the blanket `From` arm could run |
 | 47 | `ErrorAssetLockInputConflict` | #4356 | Proposed — **47 is reserved for this active PR, but the three-layer renumber is still PENDING.** Merged #4451 took 42 for `ErrorMasternodeWithdrawalUnconfirmed` on 2026-08-22, and merged ABI wins. At the cited #4356 head `7d9be71a08`, Rust still defines and tests `ErrorAssetLockInputConflict = 42`, Swift still declares `errorAssetLockInputConflict = 42`, and Kotlin still maps and tests native 42 — #4356 must move all three layers and their tests together to 47 before it can merge. Rule 1 makes 47 unavailable to any other contributor while #4356 is active |
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 32 | *(reserved — lapsed)* | — | Owner #4310 (successor of fork-era #4247) closed without merging; RESERVED, not reissuable |
 | 33 | *(reserved — lapsed)* | — | Owner #4311 (successor of fork-era #4256) closed without merging; RESERVED, not reissuable |
 | 43 | `ErrorShieldedInviteAlreadyClaimed` | #4313 | In review — **ACTIVE; the former "on hold — holds no number" row is obsolete.** The branch revived and renumbered to the frontier exactly as that row prescribed. Lineage: fork-era #4204's 32 → 37 move, then 37 **taken by merged #4348** (`ErrorDocumentNotForSale = 37`, ABI since 2026-08-09), then 37 → 43 on revival. `ErrorShieldedInviteAlreadyClaimed = 43` at head `0302b188ab`. **Rule 5 is satisfied at that head**: Swift carries all three edits — the raw case, the `init(ffi:)` arm, and the typed `PlatformWalletError.shieldedInviteAlreadyClaimed` case with its arm in `init(code:message:)` (which `init(result:)` delegates to) — plus `errorDescription`; Kotlin has the typed terminal `PlatformWallet.ShieldedInviteAlreadyClaimed`, the `43 ->` arm in `fromPlatformWalletNative`, and a `DashSdkErrorTest` pin on 43. Swift's 43 mirror predates `0302b188ab` on the branch; the raw-value test pin for 43 is Kotlin's (Swift's `ErrorHandlingTests` pins 44 and 45 only) |
-| 44 | `ErrorShieldedScanBudgetExhausted` | #4313 | In review — claimed from the frontier; carries the #4306 scan-budget semantics (retryable — progress is checkpointed). **Rule 5 is satisfied as of `0302b188ab`, and was not before it.** At that commit's parent Kotlin already mirrored 44 (typed `ShieldedScanBudgetExhausted`, the `fromPlatformWalletNative` arm, a `DashSdkErrorTest` pin) while Swift carried none of rule 5's three edits, so 44 fell to `init(ffi:)`'s `default:` and lost its identity as `.errorUnknown` — one host typed, the other blind, the same failure shape as row 29's. `0302b188ab` adds the raw case, the `init(ffi:)` arm, the typed case with its `init(code:message:)` arm and `errorDescription`, and an `ErrorHandlingTests` pin of raw value 44 |
+| 44 | `ErrorShieldedScanBudgetExhausted` | #4313 | In review — claimed from the frontier; carries the #4306 scan-budget semantics (retryable — progress is checkpointed). **Rule 5 is satisfied as of `0302b188ab`, and was not before it.** At that commit's parent Kotlin already mirrored 44 (typed `ShieldedScanBudgetExhausted`, the `fromPlatformWalletNative` arm, a `DashSdkErrorTest` pin) while Swift carried none of rule 5's three edits, so 44 fell to `init(ffi:)`'s `default:` and lost its identity as `.errorUnknown` — one host typed, the other blind, the same failure shape as merged row 29's. `0302b188ab` adds the raw case, the `init(ffi:)` arm, the typed case with its `init(code:message:)` arm and `errorDescription`, and an `ErrorHandlingTests` pin of raw value 44 |
 | 45 | `ErrorShieldedLifecycleBusy` | #4313 | In review — claimed from the frontier. A shielded lifecycle operation refused because teardown/clear holds the wallet (retryable — nothing consumed); the FFI remove path passes the refusal through as 45 instead of flattening it to `ErrorWalletOperation` (6). Same rule-5 history as 44: Kotlin mirrored 45 at the parent commit already; Swift's three edits and an `ErrorHandlingTests` pin of raw value 45 landed in `0302b188ab`. **Rule 5 is satisfied at that head** |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
