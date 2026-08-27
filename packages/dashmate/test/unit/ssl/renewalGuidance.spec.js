@@ -58,6 +58,35 @@ describe('deriveRenewalGuidance', () => {
     });
   });
 
+  // The gap the issuance markers cannot cover. A helper that obtains a
+  // certificate and then fails to save it exits non-zero, and nothing records
+  // that an issuance happened - so the operator who repairs the original cause
+  // is offered a request that spends a second weekly certificate into the same
+  // broken storage.
+  it('should withhold every request while the certificate could not be saved', () => {
+    [
+      RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE,
+      RENEWAL_FAILURE_CODES.RATE_LIMITED,
+      RENEWAL_FAILURE_CODES.QUOTA_EXHAUSTED,
+    ].forEach((code) => {
+      const record = failed(code, { storageWritable: false });
+
+      expect(deriveRenewalGuidance({ record }).safeAction)
+        .to.equal(SAFE_ACTION.REPAIR_STORAGE);
+    });
+  });
+
+  // Only an outright refusal withholds. A record written before this was
+  // checked carries nothing, and must not be read as an assurance either way.
+  it('should not withhold when storage was never asked about', () => {
+    [undefined, true].forEach((storageWritable) => {
+      const record = failed(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE, { storageWritable });
+
+      expect(deriveRenewalGuidance({ record }).safeAction)
+        .to.equal(SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX);
+    });
+  });
+
   it('should let an outstanding issuance outrank a cause that could otherwise be repaired', () => {
     const record = failed(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE, {
       issuanceSpentAt: new Date().toISOString(),

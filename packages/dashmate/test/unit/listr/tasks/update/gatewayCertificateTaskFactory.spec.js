@@ -11,6 +11,7 @@ import {
 } from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import getEnquirerMock from '../../../../../src/test/mock/getEnquirerMock.js';
 import ServiceIsNotRunningError from '../../../../../src/docker/errors/ServiceIsNotRunningError.js';
+import RenewalRecord from '../../../../../src/ssl/renewalRecord/RenewalRecord.js';
 
 describe('gatewayCertificateTaskFactory', () => {
   let homeDir;
@@ -60,8 +61,21 @@ describe('gatewayCertificateTaskFactory', () => {
     interactive = true,
     skipCertificateCheck = false,
     answers = [],
+    renewalRecord = null,
   }) {
     enquirer = getEnquirerMock(this.sinon, ...answers);
+
+    // The prompt below defaults to Yes and obtains directly, so what the
+    // helper last recorded has to reach it. Absent is the ordinary case: a
+    // node whose renewal has never failed.
+    const renewalRecordRepository = {
+      read: () => ({
+        state: renewalRecord ? 'PRESENT' : 'ABSENT',
+        path: '/tmp/renewal.json',
+        record: renewalRecord,
+        error: null,
+      }),
+    };
 
     const gatewayCertificateTask = gatewayCertificateTaskFactory(
       checkGatewayCertificate,
@@ -71,6 +85,7 @@ describe('gatewayCertificateTaskFactory', () => {
       configFile,
       writeConfigTemplates,
       dockerCompose,
+      renewalRecordRepository,
     );
 
     const context = {};
@@ -502,6 +517,36 @@ describe('gatewayCertificateTaskFactory', () => {
     // configuration would name an authority it has no account with, and the
     // helper's watcher would reschedule renewal against it within a minute,
     // forever.
+    // This prompt defaults to Yes and obtains directly, and it used to run
+    // without reading the helper's record at all - so the one guarantee the
+    // other surfaces enforce could be walked straight past here.
+    [
+      ['an issuance is already outstanding', { issuanceSpentAt: new Date().toISOString() }],
+      ['a certificate obtained now could not be saved', { storageWritable: false }],
+      ['it is unknown whether a certificate was issued', {
+        code: 'RESULT_UNKNOWN',
+        issuanceUncertainAt: new Date().toISOString(),
+      }],
+    ].forEach(([reason, overrides]) => {
+      it(`should not offer to obtain when ${reason}`, async function it() {
+        await run.call(this, {
+          checkGatewayCertificate: () => invalid(),
+          answers: [true],
+          renewalRecord: RenewalRecord.fromObject({
+            provider: 'zerossl',
+            outcome: 'failed',
+            code: 'PORT_80_UNREACHABLE',
+            attemptedAt: new Date().toISOString(),
+            consecutiveFailures: 1,
+            ...overrides,
+          }),
+        });
+
+        expect(obtainLetsEncryptCertificateTask).to.not.have.been.called();
+        expect(configFileRepository.write).to.not.have.been.called();
+      });
+    });
+
     it('should not persist anything when the obtain fails', async function it() {
       obtainLetsEncryptCertificateTask.callsFake(() => ({
         run: async () => {

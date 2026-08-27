@@ -2,6 +2,7 @@ import { SSL_PROVIDERS } from '../../../constants.js';
 import ServiceIsNotRunningError from '../../../docker/errors/ServiceIsNotRunningError.js';
 import CertificateUnresolvedError from '../../../ssl/errors/CertificateUnresolvedError.js';
 import ConfigurationLockLostError from '../../../ssl/errors/ConfigurationLockLostError.js';
+import deriveRenewalGuidance, { SAFE_ACTION } from '../../../ssl/renewalGuidance.js';
 import {
   CERTIFICATE_REASONS,
   CERTIFICATE_STATUS,
@@ -139,6 +140,7 @@ export default function gatewayCertificateTaskFactory(
   configFile,
   writeConfigTemplates,
   dockerCompose,
+  renewalRecordRepository,
 ) {
   /**
    * Persist the provider, and only after a certificate exists to back it.
@@ -491,6 +493,25 @@ export default function gatewayCertificateTaskFactory(
   every renewal - permanently, roughly every four days. It is not always port
   80: half the nodes in this state have it open and stopped renewing anyway.\n`
         : renderSwitchOffer(config, config.get('externalIp'));
+
+      // What the helper recorded, before offering to spend a certificate. This
+      // prompt used to run without reading it at all - it defaults to Yes and
+      // obtains directly, so a node with an issuance already outstanding, or
+      // one whose storage cannot hold a certificate, could be talked into
+      // spending another from a weekly handful. A guarantee enforced on the
+      // other surfaces and bypassed here is not a guarantee.
+      const recorded = renewalRecordRepository.read(config.getName());
+      const guidance = deriveRenewalGuidance({
+        record: recorded.record?.appliesTo({ provider: verdict.provider })
+          ? recorded.record
+          : null,
+        isCertificateUsable: false,
+      });
+
+      if (guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN
+        || guidance.safeAction === SAFE_ACTION.REPAIR_STORAGE) {
+        throw new CertificateUnresolvedError(verdict);
+      }
 
       const accepted = await promptOrThrow(task, {
         type: 'toggle',

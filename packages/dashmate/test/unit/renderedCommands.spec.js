@@ -274,6 +274,9 @@ describe('every command dashmate tells an operator to run', () => {
         {},
         this.sinon.stub(),
         { execCommand: this.sinon.stub().resolves() },
+        // Nothing recorded: the node this test describes has never had a
+        // renewal fail, so the prompt it raises is the ordinary one.
+        { read: () => ({ state: 'ABSENT', path: '', record: null, error: null }) },
       );
 
       const tasks = new Listr(

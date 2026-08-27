@@ -304,7 +304,8 @@ function renderRemedy({
   // The derivation has already decided whether asking again is safe. Anything
   // below that would print a request must not run when it says no.
   const mayObtain = safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
-    && safeAction !== SAFE_ACTION.WAIT_AFTER_LOCAL_FIX;
+    && safeAction !== SAFE_ACTION.WAIT_AFTER_LOCAL_FIX
+    && safeAction !== SAFE_ACTION.REPAIR_STORAGE;
 
   // The spent issuance outranks everything except its own cause's wording: it
   // is the one state where asking again has a cost that is already incurred
@@ -376,6 +377,23 @@ ${obtain}`;
   // it worked. Nothing listens on port 80 outside a renewal, so there is
   // nothing they can probe themselves - and an hour spent not knowing is an
   // hour in which they stop looking.
+  // A certificate obtained now could not be written down, and the authority
+  // allows only a handful a week. The last one may already have gone this way
+  // without anything recording it: a helper that obtains a certificate and
+  // then fails to save it exits non-zero, and nothing marks the allowance as
+  // spent.
+  if (safeAction === SAFE_ACTION.REPAIR_STORAGE) {
+    return chalk`Free disk space and check permissions on this node's certificate
+directory first. A certificate obtained now could not be saved, and each
+one counts against this node's weekly limit.`;
+  }
+
+  if (safeAction === SAFE_ACTION.REPAIR_STORAGE) {
+    return chalk`Free disk space and check permissions on this node's certificate
+directory first. A certificate obtained now could not be saved, and each
+one counts against this node's weekly limit.`;
+  }
+
   if (safeAction === SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX) {
     return chalk`Once that is done, check it worked right away:
 ${obtain}

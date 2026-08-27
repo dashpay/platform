@@ -359,12 +359,20 @@ ${obtainAttemptFailed
     if (guidance.prerequisites.includes('EXTERNAL_IP')) {
       blocks.push(renderNoExternalIpGuidance(
         cfg,
-        guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN,
+        guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
+        && guidance.safeAction !== SAFE_ACTION.REPAIR_STORAGE,
       ));
     }
 
     if (guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN) {
       blocks.push(renderWithheldObtain(cfg, guidance));
+    } else if (guidance.safeAction === SAFE_ACTION.REPAIR_STORAGE) {
+      // Said the same way here as in the doctor. A certificate obtained now
+      // could not be written down, and each one counts against a weekly
+      // handful - so this outranks the repair the cause itself would suggest.
+      blocks.push(`  Free disk space and check permissions on this node's certificate
+  directory first. A certificate obtained now could not be saved, and each
+  one counts against this node's weekly limit.`);
     } else if (guidance.safeAction === SAFE_ACTION.WAIT_AFTER_LOCAL_FIX) {
       blocks.push(renderFixLocallyThenWait(cfg));
     } else if (!guidance.prerequisites.includes('EXTERNAL_IP')) {
