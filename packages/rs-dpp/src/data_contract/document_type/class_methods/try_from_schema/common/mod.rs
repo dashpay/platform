@@ -387,6 +387,14 @@ struct CoreParseContext<'a> {
     full_validation: bool,
     generation: &'a ParserGeneration,
     platform_version: &'a PlatformVersion,
+    /// Whether the document type being parsed declared `indexOnly: true`.
+    /// Read by [`parse_indices`] to default an omitted index `terminal` to
+    /// `$ownerId` BEFORE the index structure is built — the level info
+    /// stamps the terminal off the `Index`, and the write path reads it off
+    /// the level, so the structure must be born already normalized. Only a
+    /// generation admitting the keyword can ever pass `true` (the caller
+    /// reads it off the schema); generations 1 and 2 always pass `false`.
+    index_only: bool,
 }
 
 /// The document-type level switches, each falling back to the contract-level
@@ -447,6 +455,7 @@ pub(super) fn parse_document_type_core(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     generation: &ParserGeneration,
     platform_version: &PlatformVersion,
+    index_only: bool,
 ) -> Result<DocumentTypeV1, ProtocolError> {
     let ctx = CoreParseContext {
         data_contract_id,
@@ -458,6 +467,7 @@ pub(super) fn parse_document_type_core(
         full_validation,
         generation,
         platform_version,
+        index_only,
     };
 
     // Create a full root JSON Schema from shorten contract document type schema
@@ -1082,6 +1092,24 @@ fn parse_indices(
         })
         .transpose()?
         .unwrap_or_default();
+
+    // INDEX ONLY: an omitted `terminal` on an indexOnly document type means
+    // `$ownerId`. Normalize before the index structure is built below — the
+    // level info stamps the terminal off the `Index` and the write path
+    // reads it off the level, so the structure must be born normalized.
+    // Doing it here also keeps every downstream consumer (the walkers, the
+    // query planner, the update-immutability comparison) reading one
+    // canonical spelling: both spellings of the same index parse to equal
+    // `Index` values. `apply_index_only` then validates the normalized set.
+    let mut indices = indices;
+    if ctx.index_only {
+        use crate::document::property_names::OWNER_ID;
+        for index in indices.values_mut() {
+            if index.terminal.is_none() {
+                index.terminal = Some(OWNER_ID.to_string());
+            }
+        }
+    }
 
     // Cross-index structural check owned by the generation, exactly like
     // the per-property key-length check above: generations whose index
@@ -1875,7 +1903,6 @@ pub(super) fn apply_index_only(
     document_type: &mut DocumentTypeV2,
     index_only: bool,
     name: &str,
-    platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     use crate::document::property_names::{CREATED_AT, OWNER_ID};
 
@@ -1973,27 +2000,11 @@ pub(super) fn apply_index_only(
         )));
     }
 
-    // ---- terminal normalization ----------------------------------------
-    // An omitted terminal defaults to `$ownerId`. Normalizing here (rather
-    // than leaving `None` to mean the default) keeps every downstream
-    // consumer — the walkers, the query planner, the update-immutability
-    // comparison — reading one canonical spelling, and both spellings of the
-    // same index parse to equal `Index` values.
-    let mut any_terminal_normalized = false;
-    for index in document_type.indices.values_mut() {
-        if index.terminal.is_none() {
-            index.terminal = Some(OWNER_ID.to_string());
-            any_terminal_normalized = true;
-        }
-    }
-    if any_terminal_normalized {
-        // The index structure was built by the core parser from the
-        // PRE-normalization indices, so a defaulted terminal is missing
-        // from its level info — and the write path reads the terminal off
-        // the level, not the index. Rebuild it from the normalized set.
-        document_type.index_structure =
-            IndexLevel::try_from_indices(document_type.indices.values(), name, platform_version)?;
-    }
+    // Terminals are already normalized: `parse_indices` defaulted every
+    // omitted `terminal` to `$ownerId` before the index structure was built
+    // (the same `index_only` value was passed into the core parse), so the
+    // structure's level info and the `Index` values below agree, and every
+    // check here reads `Some`.
 
     // ---- per-index rules ------------------------------------------------
     for (index_name, index) in document_type.indices.iter() {
