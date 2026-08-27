@@ -1873,6 +1873,7 @@ pub(super) fn apply_index_only(
     document_type: &mut DocumentTypeV2,
     index_only: bool,
     name: &str,
+    platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     use crate::document::property_names::{CREATED_AT, OWNER_ID};
 
@@ -1976,10 +1977,20 @@ pub(super) fn apply_index_only(
     // consumer — the walkers, the query planner, the update-immutability
     // comparison — reading one canonical spelling, and both spellings of the
     // same index parse to equal `Index` values.
+    let mut any_terminal_normalized = false;
     for index in document_type.indices.values_mut() {
         if index.terminal.is_none() {
             index.terminal = Some(OWNER_ID.to_string());
+            any_terminal_normalized = true;
         }
+    }
+    if any_terminal_normalized {
+        // The index structure was built by the core parser from the
+        // PRE-normalization indices, so a defaulted terminal is missing
+        // from its level info — and the write path reads the terminal off
+        // the level, not the index. Rebuild it from the normalized set.
+        document_type.index_structure =
+            IndexLevel::try_from_indices(document_type.indices.values(), name, platform_version)?;
     }
 
     // ---- per-index rules ------------------------------------------------

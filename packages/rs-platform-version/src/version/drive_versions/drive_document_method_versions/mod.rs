@@ -136,6 +136,10 @@ pub struct DriveDocumentDeleteMethodVersions {
     pub delete_document_for_contract_id_with_named_type_operations: FeatureVersion,
     pub delete_document_for_contract_with_named_type_operations: FeatureVersion,
     pub delete_document_for_contract_operations: FeatureVersion,
+    /// indexOnly delete-by-values (dormant slot: present in every table at 0;
+    /// only reachable for indexOnly document types, which cannot exist below
+    /// PV14).
+    pub delete_index_only_document_for_contract_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

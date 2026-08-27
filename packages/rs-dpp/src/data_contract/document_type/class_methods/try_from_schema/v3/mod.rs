@@ -278,7 +278,7 @@ fn try_from_schema_generation_3(
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
-    common::apply_index_only(&mut v2, index_only, name)?;
+    common::apply_index_only(&mut v2, index_only, name, platform_version)?;
 
     Ok(v2)
 }
