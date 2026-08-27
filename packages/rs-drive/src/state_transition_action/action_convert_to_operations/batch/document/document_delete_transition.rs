@@ -10,7 +10,6 @@ use dpp::identifier::Identifier;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
-use crate::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
 use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
 use crate::error::drive::DriveError;
@@ -31,7 +30,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
             .document_delete_transition
         {
             0 => {
-                let base = self.base_owned();
+                let (base, index_only_data) = self.base_and_data_owned();
 
                 let contract_fetch_info = base.data_contract_fetch_info();
 
@@ -41,12 +40,21 @@ impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
 
                 let document_deletion_token_cost = base.token_cost();
 
-                let mut ops = vec![
-                    IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
-                        identity_id: owner_id.into_buffer(),
-                        contract_id: data_contract_id.into_buffer(),
-                        nonce: identity_contract_nonce,
-                    }),
+                // A V1 (indexOnly) action deletes from its carried values;
+                // V0 keeps the by-id path.
+                let delete_operation = if let Some(data) = index_only_data {
+                    DocumentOperation(DocumentOperationType::DeleteIndexOnlyDocument {
+                        document_id: base.id(),
+                        owner_id,
+                        data,
+                        contract_info: DataContractInfo::DataContractFetchInfo(
+                            base.data_contract_fetch_info(),
+                        ),
+                        document_type_info: DocumentTypeInfo::DocumentTypeName(
+                            base.document_type_name_owned(),
+                        ),
+                    })
+                } else {
                     DocumentOperation(DocumentOperationType::DeleteDocument {
                         document_id: base.id(),
                         contract_info: DataContractInfo::DataContractFetchInfo(
@@ -55,7 +63,16 @@ impl DriveHighLevelBatchOperationConverter for DocumentDeleteTransitionAction {
                         document_type_info: DocumentTypeInfo::DocumentTypeName(
                             base.document_type_name_owned(),
                         ),
+                    })
+                };
+
+                let mut ops = vec![
+                    IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
+                        identity_id: owner_id.into_buffer(),
+                        contract_id: data_contract_id.into_buffer(),
+                        nonce: identity_contract_nonce,
                     }),
+                    delete_operation,
                 ];
 
                 if let Some((token_id, effect, cost)) = document_deletion_token_cost {

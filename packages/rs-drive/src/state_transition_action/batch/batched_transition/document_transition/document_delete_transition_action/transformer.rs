@@ -25,6 +25,7 @@ impl DocumentDeleteTransitionAction {
     > {
         match value {
             DocumentDeleteTransition::V0(v0) => DocumentDeleteTransitionActionV0::try_from_borrowed_document_delete_transition_with_contract_lookup(v0, owner_id, user_fee_increase,  get_data_contract),
+            DocumentDeleteTransition::V1(v1) => crate::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v1::DocumentDeleteTransitionActionV1::try_from_borrowed_document_delete_transition_with_contract_lookup(v1, owner_id, user_fee_increase,  get_data_contract),
         }
     }
 }

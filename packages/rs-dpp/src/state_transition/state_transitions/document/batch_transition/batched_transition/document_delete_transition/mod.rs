@@ -1,12 +1,15 @@
 mod from_document;
 pub mod v0;
 pub mod v0_methods;
+pub mod v1;
+pub mod v1_methods;
 
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::*;
+pub use v1::*;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
 #[cfg_attr(
@@ -18,6 +21,14 @@ pub enum DocumentDeleteTransition {
     #[display("V0({})", "_0")]
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DocumentDeleteTransitionV0),
+    /// The indexOnly delete: base plus the document's full property-value
+    /// tuple (there is no primary-storage row to fetch values from). Only
+    /// accepted for indexOnly document types — the ABCI structure gates
+    /// pair each variant with its storage mode. Serialization bound is
+    /// raised to 1 at PV14 (STATE_TRANSITION_SERIALIZATION_VERSIONS_V3).
+    #[display("V1({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(DocumentDeleteTransitionV1),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]

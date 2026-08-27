@@ -102,6 +102,33 @@ impl BatchTransition {
                         NonceOutOfBoundsError::new(transition.identity_contract_nonce()),
                     ));
                 }
+
+                // The V1 (indexOnly delete-by-values) variant joined the
+                // wire at PV14. Old software cannot decode it at all, so
+                // no historical block can contain one — this check exists
+                // so that NEW software agrees with old software while a
+                // pre-PV14 protocol version is still active: without it, a
+                // V1 delete submitted at PV13 would decode fine here while
+                // being undecodable on 4.1 nodes.
+                if let DocumentTransition::Delete(
+                    crate::state_transition::batch_transition::batched_transition::DocumentDeleteTransition::V1(_),
+                ) = transition
+                {
+                    let bounds = &platform_version
+                        .dpp
+                        .state_transition_serialization_versions
+                        .document_delete_state_transition
+                        .bounds;
+                    if bounds.max_version < 1 {
+                        result.add_error(BasicError::UnsupportedVersionError(
+                            crate::consensus::basic::unsupported_version_error::UnsupportedVersionError::new(
+                                1,
+                                bounds.min_version,
+                                bounds.max_version,
+                            ),
+                        ));
+                    }
+                }
             }
 
             // Make sure we don't have duplicate transitions
@@ -287,6 +314,60 @@ mod tests {
             signature_public_key_id: 0,
             signature: BinaryData::default(),
         })
+    }
+
+    // -----------------------------------------------------------------------
+    // delete V1 (indexOnly delete-by-values) wire gate
+    // -----------------------------------------------------------------------
+
+    /// A V1 delete cannot decode at all on pre-4.2 software, so blocks never
+    /// contain one below PV14 — this check is what keeps NEW software
+    /// agreeing with old software at check_tx while an earlier protocol
+    /// version is still active. Admitted at PV14 (bounds max_version 1,
+    /// STATE_TRANSITION_SERIALIZATION_VERSIONS_V3), rejected below.
+    #[test]
+    fn validate_base_structure_v0_gates_delete_v1_by_protocol_version() {
+        use crate::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV1;
+        use crate::state_transition::batch_transition::batched_transition::DocumentDeleteTransition;
+
+        let delete_v1 =
+            DocumentTransition::Delete(DocumentDeleteTransition::V1(DocumentDeleteTransitionV1 {
+                base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                    id: Identifier::new([0x11; 32]),
+                    identity_contract_nonce: 1,
+                    document_type_name: "like".to_string(),
+                    data_contract_id: Identifier::new([0xAA; 32]),
+                }),
+                data: Default::default(),
+            }));
+
+        let batch = make_batch_v0(vec![delete_v1]);
+
+        let pv13 = PlatformVersion::get(13).expect("PV13 exists");
+        let result = batch
+            .validate_base_structure_v0(pv13)
+            .expect("no protocol err");
+        assert!(
+            result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )),
+            "PV13 must reject a V1 delete as an unsupported version, got {:?}",
+            result.errors
+        );
+
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let result = batch
+            .validate_base_structure_v0(pv14)
+            .expect("no protocol err");
+        assert!(
+            !result.errors.iter().any(|error| matches!(
+                error,
+                ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
+            )),
+            "PV14 must admit a V1 delete, got {:?}",
+            result.errors
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -14,6 +14,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v1::DocumentDeleteTransitionActionAccessorsV1;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::DocumentBaseTransitionActionValidation;
@@ -66,6 +67,50 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
                 InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
             ));
         };
+
+        // indexOnly (V1) deletes have no primary row to fetch: probing ONE
+        // $ownerId-bearing entry computed with owner = signer proves both
+        // existence and ownership — every entry of a document exists or
+        // none does (create writes and delete removes them atomically),
+        // and the owner is embedded in the probed entry's own path/key, so
+        // a non-owner's probe simply lands on a key that is not there.
+        // V1 actions only exist for PV14+ indexOnly contracts, so this
+        // branch is unreachable for every historical transition.
+        if let Some(data) = self.data() {
+            let document = drive::drive::Drive::index_only_document_from_values(
+                self.base().id(),
+                owner_id,
+                data.clone(),
+            )
+            .map_err(Error::Drive)?;
+            let owner_bearing_index =
+                drive::drive::Drive::index_only_owner_bearing_index(&document_type)
+                    .map_err(Error::Drive)?;
+
+            let mut probe_operations = vec![];
+            let entry_exists = platform
+                .drive
+                .has_index_only_document_entry(
+                    contract.id(),
+                    document_type,
+                    owner_bearing_index,
+                    &document,
+                    transaction,
+                    &mut probe_operations,
+                    platform_version,
+                )
+                .map_err(Error::Drive)?;
+
+            if !entry_exists {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::DocumentNotFoundError(
+                        DocumentNotFoundError::new(self.base().id()),
+                    )),
+                ));
+            }
+
+            return Ok(SimpleConsensusValidationResult::new());
+        }
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         // `fetch_document_with_id` bills internally on transform_into_action: 1+.

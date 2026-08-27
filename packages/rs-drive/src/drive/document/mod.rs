@@ -61,6 +61,11 @@ pub(crate) mod ranked_index_tree_type;
 #[cfg(feature = "server")]
 pub(crate) mod index_level_tree_types;
 
+/// indexOnly entry probes: entry path/key derivation shared by the write
+/// path and the ABCI state-validation probes
+#[cfg(feature = "server")]
+pub mod index_only;
+
 /// How many document history entries to fetch at once. This mirrors contract history
 /// and prevents unbounded history reads.
 pub const MAX_DOCUMENT_HISTORY_FETCH_LIMIT: u16 = 10;
