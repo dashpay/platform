@@ -499,7 +499,7 @@ fn estimated_fees_upper_bound_actual_fees() {
 #[test]
 fn deletion_refunds_flow_from_terminal_item_flags() {
     use dpp::block::epoch::Epoch;
-    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
     use dpp::version::fee::FeeVersion;
     use std::borrow::Cow;
     use std::collections::BTreeMap;
