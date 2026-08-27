@@ -4450,10 +4450,7 @@ mod sweep_tests {
 
     fn counting_persister() -> (WalletPersister, Arc<CountingPersistence>) {
         let backend = Arc::new(CountingPersistence::default());
-        (
-            WalletPersister::new([0u8; 32], backend.clone()),
-            backend,
-        )
+        (WalletPersister::new([0u8; 32], backend.clone()), backend)
     }
 
     fn store_count(backend: &Arc<CountingPersistence>) -> usize {

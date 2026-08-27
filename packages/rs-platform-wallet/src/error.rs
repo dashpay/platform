@@ -497,6 +497,23 @@ pub enum PlatformWalletError {
     },
 
     #[error(
+        "Seed-binding check for wallet {wallet_id} did not answer within the \
+         caller's deadline (refusing to derive through a provider that was \
+         never checked)"
+    )]
+    /// The contact-crypto provider did not return the BIP44 account-0 xpub
+    /// before the deadline the caller supplied — a stalled host Keychain /
+    /// Keystore, or a budget already spent by the time the gated pass was
+    /// reached. Distinct from [`Self::SeedMismatch`], which is a *proven*
+    /// wrong seed: this one proves nothing either way, which is why it is
+    /// refused just as firmly. The check derives nothing and commits nothing,
+    /// so the queue survives for the next signer-present pass.
+    SeedBindingUnanswered {
+        /// Hex of the wallet id whose binding could not be established.
+        wallet_id: String,
+    },
+
+    #[error(
         "Contact-request sync reached none of the wallet's {identities} identities \
          (Platform unreachable) — the pass did not complete"
     )]

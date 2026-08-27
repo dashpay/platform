@@ -185,7 +185,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Runs the provider-only ops ([`Self::drain_pending_contact_crypto_until`])
     /// behind the gate and returns the completed count. `deadline` bounds the
-    /// drain from the inside; `None` is unbounded.
+    /// gate and the drain alike, so neither can hold a caller past its budget;
+    /// `None` is unbounded.
     ///
     /// This is the **innermost** gated primitive — the one every drain reaches,
     /// whatever handle the caller is holding. The startup sequence and the FFI
@@ -227,9 +228,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Fails closed on **every** verification error, not only on
     /// [`PlatformWalletError::SeedMismatch`]: a provider that cannot answer has
-    /// not been shown to own this wallet. Skipping costs nothing that is not
-    /// recoverable — the queue is untouched, so the next signer-present drain
-    /// completes exactly the work this one declined to guess at.
+    /// not been shown to own this wallet, and neither has one that cannot
+    /// answer inside `deadline`
+    /// ([`PlatformWalletError::SeedBindingUnanswered`]). Skipping costs nothing
+    /// that is not recoverable — the queue is untouched, so the next
+    /// signer-present drain completes exactly the work this one declined to
+    /// guess at.
     pub async fn drain_pending_contact_crypto_verified<C>(
         &self,
         crypto: &C,
@@ -275,7 +279,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Ok((0, ProviderBinding::not_established()));
         }
 
-        self.establish_provider_binding(crypto).await?;
+        self.establish_provider_binding(crypto, deadline).await?;
 
         Ok((
             self.drain_pending_contact_crypto_until(crypto, deadline)
@@ -302,10 +306,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// check is cheap next to the risk, and it only runs at all once the
     /// wrapper has already seen work queued.
     ///
+    /// `deadline` bounds the check it may have to run as well as the pass
+    /// itself; `None` is unbounded.
+    ///
     /// # Errors
     ///
-    /// Fails closed on every verification error, exactly as the drain does.
-    /// The queue is untouched, so the next signer-present pass auto-accepts
+    /// Fails closed on every verification error, exactly as the drain does —
+    /// including a check the provider did not answer inside `deadline`. The
+    /// queue is untouched, so the next signer-present pass auto-accepts
     /// everything this one declined to guess at.
     pub async fn drain_auto_accepts_verified<S, C>(
         &self,
@@ -319,27 +327,58 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         C: ContactCryptoProvider + Sync,
     {
         if !binding.is_verified() {
-            self.establish_provider_binding(crypto).await?;
+            self.establish_provider_binding(crypto, deadline).await?;
         }
 
-        Ok(self.drain_auto_accepts_until(signer, crypto, deadline).await)
+        Ok(self
+            .drain_auto_accepts_until(signer, crypto, deadline)
+            .await)
     }
 
     /// The check itself, with the shared refusal log. Returns the binding so
     /// callers propagate evidence rather than re-deriving the conclusion.
+    ///
+    /// Bounded by the same `deadline` the pass it gates takes. The provider is
+    /// the host's Keychain / Keystore, so the derivation is a round trip out of
+    /// this process and can stall for as long as that host does — and the
+    /// startup sequence's whole reason for handing a deadline down is that no
+    /// Platform-wallet step may hold Core SPV past it. Unlike the drains, this
+    /// one is safe to abandon mid-await rather than between units of work: it
+    /// derives a public key and compares it, committing nothing on the way, so
+    /// dropping the future strands no work and leaves the queue exactly as it
+    /// found it. A deadline already spent refuses without consulting the
+    /// provider at all.
     async fn establish_provider_binding<C>(
         &self,
         crypto: &C,
+        deadline: Option<std::time::Instant>,
     ) -> Result<ProviderBinding, PlatformWalletError>
     where
         C: ContactCryptoProvider + Sync,
     {
-        self.verify_seed_binds(crypto).await.inspect_err(|e| {
+        let unanswered = || PlatformWalletError::SeedBindingUnanswered {
+            wallet_id: hex::encode(self.wallet_id),
+        };
+        let checked = match deadline {
+            Some(deadline) => {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    Err(unanswered())
+                } else {
+                    tokio::time::timeout(remaining, self.verify_seed_binds(crypto))
+                        .await
+                        .unwrap_or_else(|_elapsed| Err(unanswered()))
+                }
+            }
+            None => self.verify_seed_binds(crypto).await,
+        };
+        checked.inspect_err(|e| {
             tracing::error!(
                 wallet_id = %hex::encode(self.wallet_id),
                 error = %e,
-                "the contact-crypto provider does not bind to this wallet's seed; skipping \
-                 the drain rather than deriving contact addresses that could never be corrected"
+                "the contact-crypto provider was not shown to bind to this wallet's seed; \
+                 skipping the drain rather than deriving contact addresses that could never \
+                 be corrected"
             );
         })?;
         Ok(ProviderBinding::verified())
@@ -384,8 +423,9 @@ impl PlatformWallet {
     /// check itself in that case, so there is no path to an auto-accept
     /// through an unverified provider on any interleaving.
     ///
-    /// Returns the combined completed count; `deadline` bounds both from the
-    /// inside, `None` is unbounded. Errors exactly as the inner primitives do.
+    /// Returns the combined completed count; `deadline` bounds both passes and
+    /// the seed-binding check in front of each, `None` is unbounded. Errors
+    /// exactly as the inner primitives do.
     pub async fn drain_pending_contact_crypto_verified<C, S>(
         &self,
         crypto: &C,
@@ -419,7 +459,9 @@ impl PlatformWallet {
 #[cfg(test)]
 mod tests {
     use super::SeedBindingVerification;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -1172,9 +1214,7 @@ mod tests {
     struct UnreachableIdentitySigner;
 
     #[async_trait::async_trait]
-    impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey>
-        for UnreachableIdentitySigner
-    {
+    impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> for UnreachableIdentitySigner {
         async fn sign(
             &self,
             _key: &dpp::identity::IdentityPublicKey,
@@ -1416,5 +1456,336 @@ mod tests {
             .expect("a verified binding must carry into the auto-accept pass");
         assert_eq!(accepted, 0);
         let _ = (&manager, &wallet_id);
+    }
+
+    // -----------------------------------------------------------------------
+    // The deadline in front of the check.
+    //
+    // Both gated passes take a deadline, and the startup sequence hands one
+    // down precisely so no Platform-wallet step can hold Core SPV past its
+    // budget. The check itself used to sit outside it: the provider is the
+    // host's Keychain / Keystore, and a host that never answers held the whole
+    // launch. An already-spent deadline was worse than useless — it still paid
+    // for a Keychain derivation before the drain it guards would have stopped
+    // at its first entry.
+    //
+    // Bounding it is safe in a way bounding the drains is not: the check
+    // derives a public key and compares it, committing nothing on the way, so
+    // an abandoned check strands no work. It fails closed, which lands on the
+    // path the sequence already has for a refused drain — the launch reports
+    // the binding unverified and starts Core SPV anyway.
+    // -----------------------------------------------------------------------
+
+    /// A provider that counts every consultation and then either answers from
+    /// the seed it was given or never answers at all — the stalled host
+    /// Keychain the deadline exists to survive.
+    ///
+    /// The count is the point: the expired-deadline tests assert the provider
+    /// was not reached, which no error value on its own can show.
+    struct CountingCryptoProvider {
+        consulted: Arc<AtomicUsize>,
+        /// `None` never returns.
+        answers_from: Option<SeedCryptoProvider>,
+    }
+
+    impl CountingCryptoProvider {
+        fn stalled() -> (Self, Arc<AtomicUsize>) {
+            let consulted = Arc::new(AtomicUsize::new(0));
+            (
+                Self {
+                    consulted: consulted.clone(),
+                    answers_from: None,
+                },
+                consulted,
+            )
+        }
+
+        /// Answers, but from a foreign seed — so a check that runs at all
+        /// fails with `SeedMismatch` rather than hanging. That is what makes
+        /// "the deadline was already spent" distinguishable from "the check
+        /// ran and refused".
+        fn foreign() -> (Self, Arc<AtomicUsize>) {
+            let consulted = Arc::new(AtomicUsize::new(0));
+            (
+                Self {
+                    consulted: consulted.clone(),
+                    answers_from: Some(SeedCryptoProvider::from_seed(
+                        seed_for(FOREIGN_MNEMONIC),
+                        Network::Testnet,
+                    )),
+                },
+                consulted,
+            )
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::wallet::identity::network::contact_requests::ContactCryptoProvider
+        for CountingCryptoProvider
+    {
+        async fn receiving_xpub(
+            &self,
+            path: &key_wallet::bip32::DerivationPath,
+        ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError> {
+            self.consulted.fetch_add(1, Ordering::SeqCst);
+            match &self.answers_from {
+                Some(seed) => seed.receiving_xpub(path).await,
+                None => std::future::pending().await,
+            }
+        }
+
+        async fn ecdh_shared_secret(
+            &self,
+            _path: &key_wallet::bip32::DerivationPath,
+            _peer: &dashcore::secp256k1::PublicKey,
+        ) -> Result<zeroize::Zeroizing<[u8; 32]>, PlatformWalletError> {
+            unreachable!("the gate refuses, so no queue entry is ever derived")
+        }
+
+        async fn export_auto_accept_private_key(
+            &self,
+            _path: &key_wallet::bip32::DerivationPath,
+        ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+            unreachable!("the gate refuses, so no queue entry is ever derived")
+        }
+
+        async fn account_reference(
+            &self,
+            _path: &key_wallet::bip32::DerivationPath,
+            _compact_xpub: &[u8],
+            _account_index: u32,
+            _version: u32,
+        ) -> Result<u32, PlatformWalletError> {
+            unreachable!("the gate refuses, so no queue entry is ever derived")
+        }
+
+        async fn unmask_account_reference(
+            &self,
+            _path: &key_wallet::bip32::DerivationPath,
+            _compact_xpub: &[u8],
+            _account_reference: u32,
+        ) -> Result<(u32, u32), PlatformWalletError> {
+            unreachable!("the gate refuses, so no queue entry is ever derived")
+        }
+
+        async fn contact_info_seal(
+            &self,
+            _root_path: &key_wallet::bip32::DerivationPath,
+            _derivation_index: u32,
+            _contact_id: &[u8; 32],
+            _private_data_plaintext: &[u8],
+            _private_data_iv: &[u8; 16],
+        ) -> Result<crate::wallet::identity::network::ContactInfoSealed, PlatformWalletError>
+        {
+            unreachable!("the gate refuses, so no queue entry is ever derived")
+        }
+
+        async fn contact_info_open(
+            &self,
+            _root_path: &key_wallet::bip32::DerivationPath,
+            _derivation_index: u32,
+            _enc_to_user_id: &[u8; 32],
+            _private_data_blob: &[u8],
+        ) -> Result<crate::wallet::identity::network::ContactInfoOpened, PlatformWalletError>
+        {
+            unreachable!("the gate refuses, so no queue entry is ever derived")
+        }
+    }
+
+    /// Long enough that a machine under load cannot mistake a bounded check
+    /// for an unbounded one, short enough to keep the tests quick.
+    const STALL_BUDGET: Duration = Duration::from_millis(150);
+
+    /// If the fix is absent the call never returns, so every stall test caps
+    /// itself well above `STALL_BUDGET` and fails on the cap rather than
+    /// hanging the suite.
+    const STALL_TEST_CAP: Duration = Duration::from_secs(5);
+
+    /// A deadline already spent must refuse before the provider is touched.
+    /// Resolving the mnemonic is the expensive half on a host — at worst a
+    /// biometric prompt — and paying for it to guard a drain that will stop at
+    /// its first entry anyway is exactly the cost the budget exists to cap.
+    #[tokio::test]
+    async fn an_expired_deadline_refuses_the_gated_drain_without_consulting_the_provider() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        let (provider, consulted) = CountingCryptoProvider::foreign();
+
+        let err = wallet
+            .drain_pending_contact_crypto_verified(
+                &provider,
+                None::<&UnusedSigner>,
+                Some(Instant::now()),
+            )
+            .await
+            .expect_err("a spent deadline must refuse rather than derive");
+
+        assert!(
+            matches!(err, PlatformWalletError::SeedBindingUnanswered { .. }),
+            "the refusal must say the check never got an answer, not claim a verdict \
+             it never reached; got: {err:?}"
+        );
+        assert_eq!(
+            consulted.load(Ordering::SeqCst),
+            0,
+            "a spent deadline must not pay for a Keychain derivation"
+        );
+        assert_eq!(
+            receiving_account_count(&manager, &wallet_id).await,
+            0,
+            "nothing may be registered from a provider that was never checked"
+        );
+        assert_eq!(
+            drainable(&wallet).await,
+            1,
+            "the queue must survive for the next pass with budget to spend"
+        );
+    }
+
+    /// The same for the auto-accept pass, which gates itself independently —
+    /// so it has its own spent-deadline path to get right.
+    #[tokio::test]
+    async fn an_expired_deadline_refuses_the_auto_accept_pass_without_consulting_the_provider() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        enqueue_auto_accept(&manager, &wallet_id, 3).await;
+        let queued_before = drainable(&wallet).await;
+        let (provider, consulted) = CountingCryptoProvider::foreign();
+
+        let err = wallet
+            .identity()
+            .dashpay()
+            .drain_auto_accepts_verified(
+                &UnreachableIdentitySigner,
+                &provider,
+                Some(Instant::now()),
+                super::ProviderBinding::not_established(),
+            )
+            .await
+            .expect_err("a spent deadline must refuse rather than derive");
+
+        assert!(
+            matches!(err, PlatformWalletError::SeedBindingUnanswered { .. }),
+            "the refusal must say the check never got an answer; got: {err:?}"
+        );
+        assert_eq!(
+            consulted.load(Ordering::SeqCst),
+            0,
+            "a spent deadline must not pay for a Keychain derivation"
+        );
+        assert_eq!(
+            drainable(&wallet).await,
+            queued_before,
+            "not one queue entry may be touched — a proof cleared on a failed verify \
+             is destroyed permanently"
+        );
+    }
+
+    /// **The finding, driven end to end.** A host Keychain that never answers
+    /// must not hold the launch: the gated drain the startup sequence calls
+    /// has to come back inside the deadline it was handed, having derived
+    /// nothing.
+    ///
+    /// Before the fix the check awaited the provider unbounded, so this call
+    /// never returned and the cap below is what fails.
+    #[tokio::test]
+    async fn a_stalled_provider_cannot_hold_the_gated_drain_past_its_deadline() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        let (provider, consulted) = CountingCryptoProvider::stalled();
+        let deadline = Instant::now() + STALL_BUDGET;
+
+        let refused = tokio::time::timeout(
+            STALL_TEST_CAP,
+            wallet.drain_pending_contact_crypto_verified(
+                &provider,
+                None::<&UnusedSigner>,
+                Some(deadline),
+            ),
+        )
+        .await
+        .expect(
+            "a provider that never answers must not hold the gated drain past its \
+             deadline — startup hands one down so Platform-wallet work cannot delay \
+             Core SPV",
+        );
+
+        let err = refused.expect_err("an unanswered check must fail closed");
+        assert!(
+            matches!(err, PlatformWalletError::SeedBindingUnanswered { .. }),
+            "the refusal must say the check never got an answer; got: {err:?}"
+        );
+        assert_eq!(
+            consulted.load(Ordering::SeqCst),
+            1,
+            "the check must have been attempted — a deadline that refuses without \
+             trying would pass this test for the wrong reason"
+        );
+        assert_eq!(
+            receiving_account_count(&manager, &wallet_id).await,
+            0,
+            "nothing may be registered from a provider that never answered"
+        );
+        assert_eq!(
+            drainable(&wallet).await,
+            1,
+            "the abandoned check commits nothing, so the queue survives intact"
+        );
+    }
+
+    /// The auto-accept pass has the same exposure through the same check.
+    #[tokio::test]
+    async fn a_stalled_provider_cannot_hold_the_auto_accept_pass_past_its_deadline() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        enqueue_auto_accept(&manager, &wallet_id, 4).await;
+        let queued_before = drainable(&wallet).await;
+        let (provider, consulted) = CountingCryptoProvider::stalled();
+        let deadline = Instant::now() + STALL_BUDGET;
+
+        let refused = tokio::time::timeout(
+            STALL_TEST_CAP,
+            wallet.identity().dashpay().drain_auto_accepts_verified(
+                &UnreachableIdentitySigner,
+                &provider,
+                Some(deadline),
+                super::ProviderBinding::not_established(),
+            ),
+        )
+        .await
+        .expect("a provider that never answers must not hold the auto-accept pass either");
+
+        let err = refused.expect_err("an unanswered check must fail closed");
+        assert!(
+            matches!(err, PlatformWalletError::SeedBindingUnanswered { .. }),
+            "the refusal must say the check never got an answer; got: {err:?}"
+        );
+        assert_eq!(consulted.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            drainable(&wallet).await,
+            queued_before,
+            "the abandoned check commits nothing, so the queue survives intact"
+        );
+    }
+
+    /// The other half: a deadline with room in it changes nothing. Without
+    /// this the four above would all pass against a gate that refused every
+    /// bounded pass outright.
+    #[tokio::test]
+    async fn a_deadline_with_room_left_still_lets_the_owning_seed_through() {
+        let (manager, wallet, wallet_id) = wallet_with_queued_contact_crypto().await;
+        let owning = SeedCryptoProvider::from_seed(seed_for(TEST_MNEMONIC), Network::Testnet);
+
+        let drained = wallet
+            .drain_pending_contact_crypto_verified(
+                &owning,
+                None::<&UnusedSigner>,
+                Some(Instant::now() + Duration::from_secs(30)),
+            )
+            .await
+            .expect("the wallet's own seed must bind inside a budget it fits in");
+
+        assert_eq!(drained, 1, "the queued RegisterReceiving op must complete");
+        assert_eq!(
+            receiving_account_count(&manager, &wallet_id).await,
+            1,
+            "the contact receiving account must exist after a verified drain"
+        );
     }
 }
