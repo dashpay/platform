@@ -104,6 +104,8 @@ impl DocumentTypeV1 {
                 ranked_index_structure_check: common::no_ranked_index_structure_check,
                 // TIME RANGE: also a generation-3 keyword; not in this grammar.
                 admit_time_range: false,
+                // INDEX ONLY: also a generation-3 keyword; not in this grammar.
+                admit_index_terminal: false,
             },
             platform_version,
         )

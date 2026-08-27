@@ -226,8 +226,10 @@ fn try_from_schema_generation_3(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
-    // Read the aggregate keywords before the core parser consumes `schema`.
+    // Read the aggregate and indexOnly keywords before the core parser
+    // consumes `schema`.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
+    let index_only = common::parse_index_only_keyword(&schema)?;
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -264,12 +266,19 @@ fn try_from_schema_generation_3(
             ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
             ranked_index_structure_check: validate_no_ranked_prefix_overlap,
             admit_time_range: IndexGrammarAdmissions::for_schema_generation(3).time_range,
+            // INDEX ONLY: the `terminal` index keyword, admitted from the
+            // same shared generation → admission mapping as the two above.
+            admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
         },
         platform_version,
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
+    // After the aggregates: `apply_index_only` rejects the doctype-level
+    // aggregate flags (they describe the primary-key tree, which an
+    // indexOnly type does not have), so it has to see them already applied.
+    common::apply_index_only(&mut v2, index_only, name)?;
 
     Ok(v2)
 }
@@ -306,6 +315,9 @@ impl DocumentType {
         .map(DocumentType::V2)
     }
 }
+
+#[cfg(test)]
+mod index_only_tests;
 
 #[cfg(test)]
 mod tests {
