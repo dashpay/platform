@@ -23,6 +23,10 @@ pub struct DriveIdentityWithdrawalMethodVersions {
     /// The total credits history under the withdrawals tree exists from protocol version 14.
     pub record_total_credits_history: OptionalFeatureVersion,
     pub fetch_total_credits_in_platform_a_day_ago: OptionalFeatureVersion,
+    /// Record every credit mint (asset locks, epoch Core rewards) in the credit inflows sum
+    /// tree the net daily withdrawal limit reads back. The subtree exists from protocol
+    /// version 14.
+    pub record_credit_inflows: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

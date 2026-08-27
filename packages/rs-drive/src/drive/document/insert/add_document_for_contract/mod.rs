@@ -62,3 +62,6 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod time_range_index_e2e_tests;

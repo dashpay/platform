@@ -95,6 +95,41 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         }
     }
 
+    /// [`Self::index_for_types`] restricted to the indexes `filter` admits.
+    ///
+    /// Candidates rejected by `filter` are skipped before they are scored, so
+    /// they can never be returned. This is the only correct way to require a
+    /// property of the selected index: because several indexes can cover the
+    /// same fields and ties are broken by the index map's name ordering,
+    /// checking the property after an unrestricted search can reject the
+    /// winner but cannot surface the index the caller actually needed.
+    ///
+    /// Shares the `index_for_types` feature-version gate — the filter narrows
+    /// the candidate set, it does not change how a candidate is scored.
+    fn index_for_types_matching(
+        &self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+        filter: impl Fn(&Index) -> bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(&Index, u16)>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .index_for_types
+        {
+            0 => Ok(self.index_for_types_matching_v0(index_names, in_field_name, order_by, filter)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "index_for_types_matching".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
     fn serialize_value_for_key(
         &self,
         key: &str,
@@ -164,9 +199,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .estimated_size
         {
             0 => self.estimated_size_v0(platform_version),
+            1 => self.estimated_size_v1(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "estimated_size".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

@@ -443,6 +443,37 @@ fn number_records(records: &mut [MasternodeRecord]) {
     }
 }
 
+/// The manager's tracked-masternode registry: the rows plus the per-node
+/// refresh gates. Both live behind one `Arc`, so every
+/// [`TrackedMasternodes`] handle a manager hands out shares the rows AND
+/// the gates that order the refreshes writing to them.
+#[derive(Default)]
+pub(crate) struct TrackedMasternodeRegistry {
+    rows: std::sync::RwLock<TrackedMasternodeMap>,
+    /// One gate per node, created on demand and dropped once no pass holds
+    /// it. Held for a whole refresh pass — see [`refresh_row_and_persist`].
+    gates: std::sync::Mutex<BTreeMap<[u8; 32], std::sync::Arc<tokio::sync::Mutex<()>>>>,
+}
+
+impl TrackedMasternodeRegistry {
+    /// Take `pro_tx_hash`'s refresh gate. The `std` lock over the gate map
+    /// is released before the `await`, so waiting for a gate never blocks
+    /// the runtime thread.
+    async fn refresh_gate(&self, pro_tx_hash: &[u8; 32]) -> tokio::sync::OwnedMutexGuard<()> {
+        let gate = {
+            let mut gates = self
+                .gates
+                .lock()
+                .expect("tracked masternode gate map lock poisoned");
+            // Every pass keeps its own clone alive for its whole duration,
+            // so a gate the map alone references has no pass on it.
+            gates.retain(|_, gate| std::sync::Arc::strong_count(gate) > 1);
+            std::sync::Arc::clone(gates.entry(*pro_tx_hash).or_default())
+        };
+        gate.lock_owned().await
+    }
+}
+
 /// Shared handle to the tracked-masternode registry and everything its
 /// operations need (SPV for the list, the SDK for Platform / DAPI, the
 /// persister for durability). Cloneable and `Send + Sync`, so hosts can run
@@ -452,11 +483,102 @@ fn number_records(records: &mut [MasternodeRecord]) {
 /// shares one registry.
 #[derive(Clone)]
 pub struct TrackedMasternodes {
-    registry: std::sync::Arc<std::sync::RwLock<TrackedMasternodeMap>>,
+    registry: std::sync::Arc<TrackedMasternodeRegistry>,
     spv: std::sync::Arc<crate::spv::SpvRuntime>,
     sdk: std::sync::Arc<dash_sdk::Sdk>,
     persister: std::sync::Arc<dyn PlatformWalletPersistence>,
     network: Network,
+}
+
+/// Apply one registry mutation and durably replace the persisted set as one
+/// linearizable operation.
+fn mutate_registry_and_persist<T>(
+    registry: &TrackedMasternodeRegistry,
+    persister: &dyn PlatformWalletPersistence,
+    network: Network,
+    mutation: impl FnOnce(&mut TrackedMasternodeMap) -> Result<T, PlatformWalletError>,
+) -> Result<T, PlatformWalletError> {
+    let mut guard = registry
+        .rows
+        .write()
+        .expect("tracked masternode registry lock poisoned");
+    let before = guard.clone();
+    let result = match mutation(&mut guard) {
+        Ok(result) => result,
+        Err(error) => {
+            *guard = before;
+            return Err(error);
+        }
+    };
+    let records: Vec<TrackedMasternode> = guard.values().cloned().collect();
+    if let Err(e) = persister.persist_tracked_masternodes(network, &records) {
+        *guard = before;
+        return Err(PlatformWalletError::WalletCreation(format!(
+            "failed to persist tracked masternodes: {e}"
+        )));
+    }
+    Ok(result)
+}
+
+/// What a refresh pass's network half learned besides the snapshot: the
+/// masternode list it read (the returned record renders the node's LIVE
+/// status from it) and the first error it hit, if any.
+#[derive(Default)]
+struct RefreshOutcome {
+    list_now: Option<Vec<MasternodeListSummary>>,
+    first_error: Option<PlatformWalletError>,
+}
+
+/// One refresh pass over `pro_tx_hash`: take the node's refresh gate, read
+/// the row under it, hand its snapshot to `learn`, then write the learned
+/// snapshot back and durably replace the persisted set.
+///
+/// The gate spans the read AND the write, so two passes over one node never
+/// both start from the same snapshot: `learn` always sees everything
+/// earlier passes learned, and keeps a field by simply not overwriting it —
+/// otherwise the pass that finished last would put its own pre-read clone
+/// back over the other's findings and persist the loss. Serializing also
+/// spares the second pass the network work the first one already did.
+///
+/// Only the snapshot is written: a relabel that raced the pass keeps its
+/// label, and an untrack that raced it wins — the row is gone, so the pass
+/// errors instead of resurrecting it.
+async fn refresh_row_and_persist<F, Fut>(
+    registry: &TrackedMasternodeRegistry,
+    persister: &dyn PlatformWalletPersistence,
+    network: Network,
+    pro_tx_hash: &[u8; 32],
+    learn: F,
+) -> Result<(TrackedMasternode, RefreshOutcome), PlatformWalletError>
+where
+    F: FnOnce(TrackedMasternodeSnapshot) -> Fut,
+    Fut: std::future::Future<Output = (TrackedMasternodeSnapshot, RefreshOutcome)>,
+{
+    let _gate = registry.refresh_gate(pro_tx_hash).await;
+
+    let mut tracked = registry
+        .rows
+        .read()
+        .expect("tracked masternode registry lock poisoned")
+        .get(pro_tx_hash)
+        .cloned()
+        .ok_or_else(|| not_tracked(pro_tx_hash))?;
+
+    let (snapshot, outcome) = learn(tracked.snapshot).await;
+    tracked.snapshot = snapshot;
+
+    let label = mutate_registry_and_persist(registry, persister, network, |guard| {
+        match guard.get_mut(pro_tx_hash) {
+            Some(live) => {
+                live.snapshot = tracked.snapshot.clone();
+                Ok(live.label.clone())
+            }
+            None => Err(not_tracked(pro_tx_hash)),
+        }
+    })?;
+    tracked.label = label;
+
+    Ok((tracked, outcome))
 }
 
 impl std::fmt::Debug for TrackedMasternodes {
@@ -477,23 +599,25 @@ impl TrackedMasternodes {
             .contains(PersistenceCapabilities::TRACKED_MASTERNODES)
     }
 
-    /// Write the whole registry through the persister (whole-set replace
-    /// for this network — the set is small and user-curated).
-    fn persist(&self) -> Result<(), PlatformWalletError> {
-        let records: Vec<TrackedMasternode> = {
-            let guard = self
-                .registry
-                .read()
-                .expect("tracked masternode registry lock poisoned");
-            guard.values().cloned().collect()
-        };
-        self.persister
-            .persist_tracked_masternodes(self.network, &records)
-            .map_err(|e| {
-                PlatformWalletError::WalletCreation(format!(
-                    "failed to persist tracked masternodes: {e}"
-                ))
-            })
+    /// Apply one registry mutation and durably replace the persisted set as
+    /// one linearizable operation. The write guard deliberately spans the
+    /// persistence call: every backend is bound by the trait's non-reentrant
+    /// callback contract, and releasing it earlier would let an older
+    /// snapshot overwrite a newer concurrent mutation.
+    ///
+    /// The registry is user-curated and small, so retaining a complete
+    /// before-image is cheap and lets a rejected write restore exactly the
+    /// in-memory state the caller observed before the operation.
+    fn mutate_and_persist<T>(
+        &self,
+        mutation: impl FnOnce(&mut TrackedMasternodeMap) -> Result<T, PlatformWalletError>,
+    ) -> Result<T, PlatformWalletError> {
+        mutate_registry_and_persist(
+            self.registry.as_ref(),
+            self.persister.as_ref(),
+            self.network,
+            mutation,
+        )
     }
 
     /// Hydrate the registry from the persister. A load failure logs and
@@ -503,6 +627,7 @@ impl TrackedMasternodes {
             Ok(rows) => {
                 let mut guard = self
                     .registry
+                    .rows
                     .write()
                     .expect("tracked masternode registry lock poisoned");
                 for row in rows {
@@ -519,6 +644,7 @@ impl TrackedMasternodes {
     /// `already_tracked` mark).
     pub fn hashes(&self) -> std::collections::BTreeSet<[u8; 32]> {
         self.registry
+            .rows
             .read()
             .expect("tracked masternode registry lock poisoned")
             .keys()
@@ -529,6 +655,7 @@ impl TrackedMasternodes {
     /// The tracked row itself (snapshot included), when present.
     pub fn get(&self, pro_tx_hash: &[u8; 32]) -> Option<TrackedMasternode> {
         self.registry
+            .rows
             .read()
             .expect("tracked masternode registry lock poisoned")
             .get(pro_tx_hash)
@@ -549,11 +676,7 @@ impl TrackedMasternodes {
             .as_ref()
             .map(|summaries| summaries.iter().find(|s| s.pro_tx_hash == pro_tx_hash));
 
-        let tracked = {
-            let mut guard = self
-                .registry
-                .write()
-                .expect("tracked masternode registry lock poisoned");
+        let tracked = self.mutate_and_persist(|guard| {
             if guard.contains_key(&pro_tx_hash) {
                 return Err(PlatformWalletError::InvalidParameter(
                     "this masternode is already tracked".to_string(),
@@ -571,10 +694,9 @@ impl TrackedMasternodes {
                 },
             };
             guard.insert(pro_tx_hash, tracked.clone());
-            tracked
-        };
+            Ok(tracked)
+        })?;
 
-        self.persist()?;
         Ok(tracked.record(entry))
     }
 
@@ -582,19 +704,7 @@ impl TrackedMasternodes {
     /// host owns any attached keys (secure storage) and deletes them
     /// itself. Blocking.
     pub fn untrack_blocking(&self, pro_tx_hash: &[u8; 32]) -> Result<bool, PlatformWalletError> {
-        let removed = {
-            let mut guard = self
-                .registry
-                .write()
-                .expect("tracked masternode registry lock poisoned");
-            guard.remove(pro_tx_hash).is_some()
-        };
-        // Persist unconditionally: an earlier call may have removed the row
-        // from memory and then failed the write, so a retry arrives with
-        // `removed == false` while the stale row still sits on disk — a
-        // skipped persist would resurrect the node on the next start.
-        self.persist()?;
-        Ok(removed)
+        self.mutate_and_persist(|guard| Ok(guard.remove(pro_tx_hash).is_some()))
     }
 
     /// Rename a tracked masternode (`None` / blank clears the label).
@@ -604,17 +714,13 @@ impl TrackedMasternodes {
         pro_tx_hash: &[u8; 32],
         label: Option<String>,
     ) -> Result<(), PlatformWalletError> {
-        {
-            let mut guard = self
-                .registry
-                .write()
-                .expect("tracked masternode registry lock poisoned");
+        self.mutate_and_persist(|guard| {
             let tracked = guard
                 .get_mut(pro_tx_hash)
                 .ok_or_else(|| not_tracked(pro_tx_hash))?;
             tracked.label = label.filter(|l| !l.trim().is_empty());
-        }
-        self.persist()
+            Ok(())
+        })
     }
 
     /// Every tracked masternode as a display record, with the CURRENT list
@@ -630,6 +736,7 @@ impl TrackedMasternodes {
         let mut rows: Vec<TrackedMasternode> = {
             let guard = self
                 .registry
+                .rows
                 .read()
                 .expect("tracked masternode registry lock poisoned");
             guard.values().cloned().collect()
@@ -656,22 +763,52 @@ impl TrackedMasternodes {
     /// error is returned, so a flaky step never discards what an earlier
     /// step learned; `refreshed_at` advances only on a fully successful
     /// pass.
+    ///
+    /// Serialized per masternode: a second refresh of the same node waits
+    /// for the one in flight instead of racing it — two passes that both
+    /// started from the same snapshot would end with the one finishing last
+    /// putting its own pre-read clone back over the other's findings.
     pub async fn refresh(
         &self,
         pro_tx_hash: &[u8; 32],
     ) -> Result<MasternodeRecord, PlatformWalletError> {
-        let mut tracked = self
-            .get(pro_tx_hash)
-            .ok_or_else(|| not_tracked(pro_tx_hash))?;
+        let (tracked, outcome) = refresh_row_and_persist(
+            self.registry.as_ref(),
+            self.persister.as_ref(),
+            self.network,
+            pro_tx_hash,
+            |snapshot| self.learn(pro_tx_hash, snapshot),
+        )
+        .await?;
 
-        // 1. Current list entry (local).
-        let list_now = self.spv.masternode_list_summaries().await;
-        let entry = list_now
+        let entry = outcome
+            .list_now
             .as_ref()
             .map(|s| s.iter().find(|e| e.pro_tx_hash == *pro_tx_hash));
-        if let Some(Some(entry)) = &entry {
-            tracked.snapshot.list = Some((*entry).clone());
-            tracked.snapshot.ever_listed = true;
+        match outcome.first_error {
+            Some(e) => Err(e),
+            None => Ok(tracked.record(entry)),
+        }
+    }
+
+    /// The network half of a [`Self::refresh`] pass: everything the wallet
+    /// layer can learn about `pro_tx_hash`, merged into `snapshot`. Runs
+    /// under the node's refresh gate, so `snapshot` already carries what
+    /// earlier passes learned and a step that comes back empty leaves its
+    /// field alone rather than clearing it.
+    async fn learn(
+        &self,
+        pro_tx_hash: &[u8; 32],
+        mut snapshot: TrackedMasternodeSnapshot,
+    ) -> (TrackedMasternodeSnapshot, RefreshOutcome) {
+        // 1. Current list entry (local).
+        let list_now = self.spv.masternode_list_summaries().await;
+        if let Some(Some(entry)) = list_now
+            .as_ref()
+            .map(|s| s.iter().find(|e| e.pro_tx_hash == *pro_tx_hash))
+        {
+            snapshot.list = Some(entry.clone());
+            snapshot.ever_listed = true;
         }
 
         let mut display = *pro_tx_hash;
@@ -682,7 +819,7 @@ impl TrackedMasternodes {
         // balance.
         match Identity::fetch(self.sdk.as_ref(), Identifier::from(display)).await {
             Ok(Some(identity)) => {
-                let mut platform = tracked.snapshot.platform.clone().unwrap_or_default();
+                let mut platform = snapshot.platform.clone().unwrap_or_default();
                 for key in identity.public_keys().values() {
                     let data: Option<[u8; 20]> = key.data().as_slice().try_into().ok();
                     match key.purpose() {
@@ -696,7 +833,7 @@ impl TrackedMasternodes {
                     }
                 }
                 platform.owner_identity_balance = Some(identity.balance());
-                tracked.snapshot.platform = Some(platform);
+                snapshot.platform = Some(platform);
             }
             Ok(None) => {
                 // No owner identity (node registered before Platform, or a
@@ -711,13 +848,11 @@ impl TrackedMasternodes {
 
         // 3. Operator identity (needs the operator key — list, else
         // registration).
-        let operator_key = tracked
-            .snapshot
+        let operator_key = snapshot
             .list
             .as_ref()
             .map(|l| l.operator_public_key)
-            .or(tracked
-                .snapshot
+            .or(snapshot
                 .registration
                 .as_ref()
                 .map(|r| r.operator_public_key));
@@ -725,14 +860,14 @@ impl TrackedMasternodes {
             let operator_id = Identifier::create_operator_identifier(&display, &operator_key);
             match Identity::fetch(self.sdk.as_ref(), operator_id).await {
                 Ok(Some(identity)) => {
-                    let mut platform = tracked.snapshot.platform.clone().unwrap_or_default();
+                    let mut platform = snapshot.platform.clone().unwrap_or_default();
                     platform.operator_payout_key_hash = identity
                         .public_keys()
                         .values()
                         .find(|k| k.purpose() == Purpose::TRANSFER)
                         .and_then(|k| k.data().as_slice().try_into().ok())
                         .or(platform.operator_payout_key_hash);
-                    tracked.snapshot.platform = Some(platform);
+                    snapshot.platform = Some(platform);
                 }
                 Ok(None) => {}
                 Err(e) => {
@@ -745,13 +880,13 @@ impl TrackedMasternodes {
 
         // 4. ProRegTx (once): registration height, collateral, original
         // keys / payout script.
-        if tracked.snapshot.registration.is_none() {
+        if snapshot.registration.is_none() {
             match self.sdk.get_transaction(&hex::encode(display)).await {
                 Ok(Some(fetched)) => {
                     if let Some(details) =
                         registration_from_transaction(&fetched.transaction, fetched.height)
                     {
-                        tracked.snapshot.registration = Some(details);
+                        snapshot.registration = Some(details);
                     }
                 }
                 Ok(None) => {}
@@ -764,36 +899,16 @@ impl TrackedMasternodes {
         }
 
         if first_error.is_none() {
-            tracked.snapshot.refreshed_at = Some(now_unix());
+            snapshot.refreshed_at = Some(now_unix());
         }
 
-        // Keep + persist whatever was learned, even on a partial failure —
-        // but only while the node is STILL tracked: an untrack that raced
-        // the network calls must win (no resurrection), and a concurrent
-        // relabel keeps its label (only the snapshot is refreshed here).
-        let still_tracked = {
-            let mut guard = self
-                .registry
-                .write()
-                .expect("tracked masternode registry lock poisoned");
-            match guard.get_mut(pro_tx_hash) {
-                Some(live) => {
-                    live.snapshot = tracked.snapshot.clone();
-                    tracked.label = live.label.clone();
-                    true
-                }
-                None => false,
-            }
-        };
-        if !still_tracked {
-            return Err(not_tracked(pro_tx_hash));
-        }
-        self.persist()?;
-
-        match first_error {
-            Some(e) => Err(e),
-            None => Ok(tracked.record(entry)),
-        }
+        (
+            snapshot,
+            RefreshOutcome {
+                list_now,
+                first_error,
+            },
+        )
     }
 
     /// Withdraw from a TRACKED masternode's owner identity with a
@@ -871,7 +986,7 @@ impl TrackedMasternodes {
             _ => {
                 return Err(PlatformWalletError::InvalidParameter(
                     "a withdrawal signs with the owner key or the payout-address key".to_string(),
-                ))
+                ));
             }
         };
 
@@ -985,6 +1100,10 @@ pub(crate) type TrackedMasternodeMap = BTreeMap<[u8; 32], TrackedMasternode>;
 mod tests {
     use super::super::list::test_support::{evonode, masternode};
     use super::*;
+    use crate::changeset::{ClientStartState, PersistenceError, PlatformWalletChangeSet};
+    use crate::wallet::platform_wallet::WalletId;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex, RwLock};
 
     fn snapshot_full() -> TrackedMasternodeSnapshot {
         TrackedMasternodeSnapshot {
@@ -1047,6 +1166,207 @@ mod tests {
             added_at: 1,
             snapshot: snapshot_full(),
         }
+    }
+
+    struct RegistryPersister {
+        registry: Arc<TrackedMasternodeRegistry>,
+        reject: AtomicBool,
+        saw_exclusive_registry_lock: AtomicBool,
+        writes: Mutex<Vec<Vec<TrackedMasternode>>>,
+    }
+
+    impl PlatformWalletPersistence for RegistryPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn persist_tracked_masternodes(
+            &self,
+            _network: Network,
+            records: &[TrackedMasternode],
+        ) -> Result<(), PersistenceError> {
+            self.saw_exclusive_registry_lock
+                .store(self.registry.rows.try_read().is_err(), Ordering::SeqCst);
+            if self.reject.load(Ordering::SeqCst) {
+                return Err(PersistenceError::backend("tracked write rejected"));
+            }
+            self.writes.lock().unwrap().push(records.to_vec());
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn registry_persister(
+        initial: TrackedMasternodeMap,
+    ) -> (Arc<TrackedMasternodeRegistry>, Arc<RegistryPersister>) {
+        let registry = Arc::new(TrackedMasternodeRegistry {
+            rows: RwLock::new(initial),
+            gates: Default::default(),
+        });
+        let persister = Arc::new(RegistryPersister {
+            registry: Arc::clone(&registry),
+            reject: AtomicBool::new(false),
+            saw_exclusive_registry_lock: AtomicBool::new(false),
+            writes: Mutex::new(Vec::new()),
+        });
+        (registry, persister)
+    }
+
+    #[test]
+    fn registry_mutation_remains_exclusive_until_whole_set_is_persisted() {
+        let (registry, persister) = registry_persister(TrackedMasternodeMap::new());
+        let row = tracked();
+
+        mutate_registry_and_persist(
+            registry.as_ref(),
+            persister.as_ref(),
+            Network::Testnet,
+            |rows| {
+                rows.insert(row.pro_tx_hash, row.clone());
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert!(persister.saw_exclusive_registry_lock.load(Ordering::SeqCst));
+        assert_eq!(persister.writes.lock().unwrap().as_slice(), &[vec![row]]);
+    }
+
+    #[test]
+    fn rejected_whole_set_write_restores_the_complete_registry() {
+        let original = tracked();
+        let mut initial = TrackedMasternodeMap::new();
+        initial.insert(original.pro_tx_hash, original.clone());
+        let (registry, persister) = registry_persister(initial.clone());
+        persister.reject.store(true, Ordering::SeqCst);
+
+        let error = mutate_registry_and_persist(
+            registry.as_ref(),
+            persister.as_ref(),
+            Network::Testnet,
+            |rows| {
+                rows.get_mut(&original.pro_tx_hash).unwrap().label = Some("changed".to_string());
+                rows.insert(
+                    [8; 32],
+                    TrackedMasternode {
+                        pro_tx_hash: [8; 32],
+                        label: None,
+                        added_at: 2,
+                        snapshot: TrackedMasternodeSnapshot::default(),
+                    },
+                );
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("failed to persist tracked masternodes"));
+        assert_eq!(*registry.rows.read().unwrap(), initial);
+    }
+
+    /// Two refresh passes over one node, interleaved so the pass that
+    /// learns nothing writes last. Its snapshot must not be the pre-read
+    /// clone that predates what the other pass learned — in memory or in
+    /// the persisted set.
+    #[tokio::test]
+    async fn interleaved_refresh_passes_keep_what_the_other_learned() {
+        let hash = [7u8; 32];
+        let mut initial = TrackedMasternodeMap::new();
+        initial.insert(
+            hash,
+            TrackedMasternode {
+                pro_tx_hash: hash,
+                label: Some("my node".to_string()),
+                added_at: 1,
+                snapshot: TrackedMasternodeSnapshot::default(),
+            },
+        );
+        let (registry, persister) = registry_persister(initial);
+
+        let (learning_tx, learning_rx) = tokio::sync::oneshot::channel();
+        let (release_learner_tx, release_learner_rx) = tokio::sync::oneshot::channel();
+        let (release_blind_tx, release_blind_rx) = tokio::sync::oneshot::channel();
+
+        // The pass that learns the registration, held mid-pass so the other
+        // one can start while it is still in its network half.
+        let learner = {
+            let (registry, persister) = (Arc::clone(&registry), Arc::clone(&persister));
+            tokio::spawn(async move {
+                refresh_row_and_persist(
+                    registry.as_ref(),
+                    persister.as_ref(),
+                    Network::Testnet,
+                    &hash,
+                    move |mut snapshot| async move {
+                        learning_tx.send(()).expect("the test awaits this");
+                        release_learner_rx.await.expect("the test releases this");
+                        snapshot.registration = snapshot_full().registration;
+                        (snapshot, RefreshOutcome::default())
+                    },
+                )
+                .await
+            })
+        };
+        learning_rx
+            .await
+            .expect("the learner starts its network half");
+
+        // The pass whose network half comes back empty: it keeps a field by
+        // not overwriting it, so it may only write a snapshot it read AFTER
+        // the learner's.
+        let blind = {
+            let (registry, persister) = (Arc::clone(&registry), Arc::clone(&persister));
+            tokio::spawn(async move {
+                refresh_row_and_persist(
+                    registry.as_ref(),
+                    persister.as_ref(),
+                    Network::Testnet,
+                    &hash,
+                    move |snapshot| async move {
+                        release_blind_rx.await.expect("the test releases this");
+                        (snapshot, RefreshOutcome::default())
+                    },
+                )
+                .await
+            })
+        };
+        // Let it get as far as it can while the learner still holds the row.
+        tokio::task::yield_now().await;
+
+        release_learner_tx.send(()).expect("the learner waits");
+        learner.await.expect("learner task").expect("learner pass");
+        release_blind_tx.send(()).expect("the blind pass waits");
+        blind.await.expect("blind task").expect("blind pass");
+
+        let live = registry
+            .rows
+            .read()
+            .unwrap()
+            .get(&hash)
+            .expect("still tracked")
+            .clone();
+        assert_eq!(live.snapshot.registration, snapshot_full().registration);
+        let persisted = persister
+            .writes
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .expect("both passes persisted the set");
+        assert_eq!(persisted, vec![live]);
     }
 
     #[test]

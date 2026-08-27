@@ -66,6 +66,26 @@ internal object FundingNative {
     )
 
     /**
+     * Fund the shielded pool by DRAINING the wallet's CoinJoin account into a
+     * single asset lock (bridges
+     * `platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain`).
+     * Sibling of [shieldedFundFromAssetLock] with drain funding: there is no
+     * amount (the lock value is `Σ inputs − L1 fee`, computed Rust-side) and no
+     * surplus output (the single-recipient remainder flow pins it to zero).
+     * [coinJoinAccountIndex] selects the CoinJoin account to drain;
+     * [recipientRaw43] is the 43-byte raw Orchard address; [coreSignerHandle]
+     * is the manager's `MnemonicResolverHandle`. Blocks for the ~30s Halo 2
+     * proof; the note arrives on the next shielded sync.
+     */
+    external fun shieldedFundFromCoinJoinDrain(
+        managerHandle: Long,
+        walletId: ByteArray,
+        coinJoinAccountIndex: Int,
+        recipientRaw43: ByteArray,
+        coreSignerHandle: Long,
+    )
+
+    /**
      * Resume a stuck shielded fund-from-asset-lock by outpoint (bridges
      * `platform_wallet_manager_shielded_resume_fund_from_asset_lock`).
      * [outPointTxid] is the 32-byte raw txid (little-endian wire order).
