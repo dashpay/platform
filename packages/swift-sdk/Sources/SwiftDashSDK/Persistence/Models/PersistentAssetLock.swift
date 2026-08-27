@@ -38,9 +38,10 @@ import SwiftData
 /// - **Platform address** (`fundingTypeRaw == 4` —
 ///   AssetLockAddressTopUp):
 ///   `recipientPlatformAddressHash` + `recipientPlatformAddressType`
-///   identify the destination. Set by Swift on the controller's
-///   `.completed` phase because the recipient is picked at
-///   ST-submit time on the host side; Rust never sees it.
+///   identify the destination, and `recipientIsExternal` says whether
+///   it belongs to this wallet or to a third party. Set by Swift on
+///   the controller's `.completed` phase because the recipient is
+///   picked at ST-submit time on the host side; Rust never sees it.
 ///
 /// - **Shielded address** (`fundingTypeRaw == 5` —
 ///   AssetLockShieldedAddressTopUp, not yet wired): will add a
@@ -157,6 +158,39 @@ public final class PersistentAssetLock {
     /// without joining against `PersistentPlatformAddress`. `nil`
     /// whenever `recipientPlatformAddressHash` is `nil`.
     public var recipientPlatformAddressType: UInt8?
+
+    /// Whether `recipientPlatformAddressHash` is a THIRD PARTY's
+    /// address (`true`) or one of this wallet's own addresses
+    /// (`false`) — the own/external discriminator for the funding
+    /// type 4 field-family.
+    ///
+    /// Without it, a populated recipient hash is ambiguous. Consumers
+    /// read that hash as "this lock topped up an address of mine" —
+    /// `PlatformAddressActivityStore.matchesOwnAssetLockTopUp` in
+    /// dashwallet-ios does exactly that — so an outgoing payment to
+    /// someone else would be rendered as an incoming credit to the
+    /// user. `true` marks the row as an outgoing send whose recipient
+    /// hash names a stranger and therefore will NEVER have a matching
+    /// `PersistentPlatformAddress` row.
+    ///
+    /// Written by the caller that picked the recipient, alongside the
+    /// hash and type: `false` for `fundFromAssetLock`, `true` for
+    /// `fundFromAssetLockExternal`.
+    ///
+    /// `nil` for:
+    /// - Identity-funding asset locks (no platform-address recipient).
+    /// - Address-funding locks that haven't completed yet.
+    /// - Pre-this-commit address-funding locks that completed before
+    ///   the field existed. Treat `nil` alongside a populated
+    ///   `recipientPlatformAddressHash` as "own" — that was the only
+    ///   flow those rows could have come from.
+    ///
+    /// Default `nil` on the column makes SwiftData's lightweight
+    /// migration safe for rows that pre-date this field; adding an
+    /// optional property to an existing `@Model` needs no new
+    /// `MigrationStage`, and the model LIST is unchanged, so
+    /// `DashMigrationPlan` is untouched.
+    public var recipientIsExternal: Bool?
 
     /// Record timestamps.
     public var createdAt: Date

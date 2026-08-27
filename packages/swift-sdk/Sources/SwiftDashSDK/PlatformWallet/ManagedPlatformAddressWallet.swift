@@ -623,12 +623,20 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
     // MARK: - Fund from Core asset lock
 
-    /// Recipient entry for `fundFromAssetLock(...)`.
+    /// Recipient entry for `fundFromAssetLock(...)` and
+    /// `fundFromAssetLockExternal(...)`.
     ///
     /// Exactly one entry per call must have `credits = nil` — that
     /// address receives the remainder after explicit outputs and fees
     /// (the asset lock is consumed in full, so a remainder bucket is
     /// mandatory).
+    ///
+    /// There is deliberately no `isExternal` flag here: whether a
+    /// recipient may be a third party is decided by WHICH entry point
+    /// you call, not per row. The same convention as the shielded
+    /// funding surface, and it keeps "am I allowed to pay a stranger?"
+    /// a single, auditable decision at the call site rather than a
+    /// property buried in one element of an array.
     public struct FundFromAssetLockRecipient: Sendable {
         /// Must be `0` (P2PKH). Funding recipients flow through the same
         /// P2PKH-only Rust `TryFrom<PlatformAddressFFI>` as transfer
@@ -666,10 +674,14 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     ///   - platformAccountIndex: Platform-payment account containing
     ///     `recipients`. Used for the membership pre-flight on the Rust
     ///     side and the post-success balance write.
-    ///   - recipients: Destination addresses. Exactly one must carry
+    ///   - recipients: Destination addresses, ALL of which must belong
+    ///     to `platformAccountIndex`. Exactly one must carry
     ///     `credits = nil` (remainder recipient). The Rust side
     ///     enforces both invariants and returns a typed error if
-    ///     either is violated.
+    ///     either is violated. To pay an address this wallet does not
+    ///     own, use [`fundFromAssetLockExternal`] instead — this entry
+    ///     point deliberately keeps rejecting unknown addresses so a
+    ///     typo cannot become an irreversible payment to a stranger.
     ///   - signer: `KeychainSigner` used for any input-witness
     ///     signatures on the address-funding transition. The same
     ///     wallet's `MnemonicResolver` (constructed internally) signs
@@ -685,7 +697,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         recipients: [FundFromAssetLockRecipient],
         signer: KeychainSigner
     ) async throws -> [UpdatedBalance] {
-        try fundFromAssetLockPreflight(recipients: recipients)
+        try Self.fundFromAssetLockPreflight(recipients: recipients)
         let handle = self.handle
         let signerHandle = signer.handle
         let recipientRows = recipients
@@ -699,26 +711,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
         return try await Task.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
-            let ffiAddresses = recipientRows.map { r -> FundingAddressEntryFFI in
-                FundingAddressEntryFFI(
-                    address: PlatformAddressFFI(
-                        address_type: r.addressType,
-                        hash: Self.hashTuple(from: r.hash)
-                    ),
-                    has_balance: r.credits != nil,
-                    balance: r.credits ?? 0
-                )
-            }
-            // Take the fee out of the remainder output. Today the
-            // `None` recipient is structurally the same as the
-            // "change" output on a transfer — it absorbs whatever's
-            // left after explicit outputs + fees.
-            let remainderIndex = UInt16(
-                ffiAddresses.firstIndex(where: { !$0.has_balance }) ?? 0
-            )
-            let feeRows: [FeeStrategyStepFFI] = [
-                FeeStrategyStepFFI(step_type: 1, index: remainderIndex)  // 1 = ReduceOutput
-            ]
+            let (ffiAddresses, feeRows) = Self.marshalFundingRequest(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             let result = withExtendedLifetime((signer, coreSigner)) {
                 ffiAddresses.withUnsafeBufferPointer { addrBp in
@@ -778,7 +771,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                 "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
             )
         }
-        try fundFromAssetLockPreflight(recipients: recipients)
+        try Self.fundFromAssetLockPreflight(recipients: recipients)
         let handle = self.handle
         let signerHandle = signer.handle
         let recipientRows = recipients
@@ -786,37 +779,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
         return try await Task.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
-            var txidTuple: (
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-            ) = (
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            var outPoint = OutPointFFI(
+                txid: Self.txidTuple(from: outPointTxid),
+                vout: outPointVout
             )
-            outPointTxid.withUnsafeBytes { src in
-                Swift.withUnsafeMutableBytes(of: &txidTuple) { dst in
-                    dst.copyMemory(from: src)
-                }
-            }
-            var outPoint = OutPointFFI(txid: txidTuple, vout: outPointVout)
-            let ffiAddresses = recipientRows.map { r -> FundingAddressEntryFFI in
-                FundingAddressEntryFFI(
-                    address: PlatformAddressFFI(
-                        address_type: r.addressType,
-                        hash: Self.hashTuple(from: r.hash)
-                    ),
-                    has_balance: r.credits != nil,
-                    balance: r.credits ?? 0
-                )
-            }
-            let remainderIndex = UInt16(
-                ffiAddresses.firstIndex(where: { !$0.has_balance }) ?? 0
-            )
-            let feeRows: [FeeStrategyStepFFI] = [
-                FeeStrategyStepFFI(step_type: 1, index: remainderIndex)  // 1 = ReduceOutput
-            ]
+            let (ffiAddresses, feeRows) = Self.marshalFundingRequest(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             let result = withExtendedLifetime((signer, coreSigner)) {
                 ffiAddresses.withUnsafeBufferPointer { addrBp in
@@ -843,11 +810,291 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         }.value
     }
 
+    // MARK: - Fund an external recipient from a Core asset lock
+
+    /// Pay a THIRD PARTY's platform address from a Core L1 asset lock,
+    /// keeping the remainder (change) on one of this wallet's own
+    /// addresses.
+    ///
+    /// Sibling to [`fundFromAssetLock`]: same orchestration, same
+    /// parameters, same return value. The only delta is on the Rust
+    /// side's recipient pre-flight — explicit-amount recipients may be
+    /// ANY valid P2PKH platform address, not just members of
+    /// `platformAccountIndex`.
+    ///
+    /// Externality is a property of WHICH function you call, not a flag
+    /// on `FundFromAssetLockRecipient` — the same shape the shielded
+    /// funding surface uses. Keep using [`fundFromAssetLock`] for
+    /// self-funding: there a mistyped address is rejected before
+    /// anything is broadcast, while here it is a valid and irreversible
+    /// payment to a stranger.
+    ///
+    /// - Parameters:
+    ///   - amountDuffs: Amount to lock in Core duffs.
+    ///   - fundingAccountIndex: standard-family source index — see
+    ///     [`fundFromAssetLock`].
+    ///   - platformAccountIndex: Platform-payment account that owns the
+    ///     REMAINDER recipient. Explicit-amount recipients are not
+    ///     required to belong to it.
+    ///   - recipients: Exactly one entry must carry `credits = nil` (the
+    ///     remainder, which must be an address of this wallet); at least
+    ///     one entry must carry an explicit amount, otherwise there is
+    ///     no external payment to make and [`fundFromAssetLock`] is the
+    ///     right call.
+    ///   - signer: `KeychainSigner` — see [`fundFromAssetLock`].
+    ///
+    /// Returns `[UpdatedBalance]` for the recipients that resolved to
+    /// this wallet — in practice just the remainder/change address. The
+    /// third party's output is proven and credited on Platform but has
+    /// no local row, so it does not appear here; query its balance to
+    /// observe it.
+    @discardableResult
+    public func fundFromAssetLockExternal(
+        amountDuffs: UInt64,
+        fundingAccountIndex: UInt32,
+        platformAccountIndex: UInt32,
+        recipients: [FundFromAssetLockRecipient],
+        signer: KeychainSigner
+    ) async throws -> [UpdatedBalance] {
+        try Self.fundFromAssetLockExternalPreflight(recipients: recipients)
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let recipientRows = recipients
+        // Constructed on the calling actor so it lives for the entire
+        // detached Task — see `fundFromAssetLock` for why `_ = signer`
+        // is not a substitute.
+        let coreSigner = MnemonicResolver()
+
+        return try await Task.detached(priority: .userInitiated) {
+            () -> [UpdatedBalance] in
+            let (ffiAddresses, feeRows) = Self.marshalFundingRequest(recipientRows)
+            var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
+            let result = withExtendedLifetime((signer, coreSigner)) {
+                ffiAddresses.withUnsafeBufferPointer { addrBp in
+                    feeRows.withUnsafeBufferPointer { feeBp in
+                        platform_address_wallet_fund_from_asset_lock_external_signer(
+                            handle,
+                            amountDuffs,
+                            fundingAccountIndex,
+                            platformAccountIndex,
+                            addrBp.baseAddress,
+                            UInt(addrBp.count),
+                            feeBp.baseAddress,
+                            UInt(feeBp.count),
+                            signerHandle,
+                            coreSigner.handle,
+                            &changeset
+                        )
+                    }
+                }
+            }
+            try result.check()
+
+            defer { platform_address_wallet_free_changeset(&changeset) }
+            return Self.decodeChangeset(&changeset)
+        }.value
+    }
+
+    /// Resume a stuck external-recipient funding flow from an
+    /// already-tracked asset lock by outpoint.
+    ///
+    /// Sibling to [`resumeFundFromAssetLock`] (same resume-by-outpoint
+    /// shape) and to [`fundFromAssetLockExternal`] (same relaxed
+    /// recipient rules).
+    ///
+    /// The recipients are a PARAMETER, not something recovered from the
+    /// tracked lock: Rust never learns the destination of an
+    /// address-funding asset lock — it only tracks the L1 outpoint, its
+    /// status and its proof. The host is responsible for round-tripping
+    /// the intended recipient, which is what
+    /// `PersistentAssetLock.recipientPlatformAddressHash` /
+    /// `.recipientIsExternal` record. Resuming with a different
+    /// recipient set pays the new set; the asset lock is a bearer input,
+    /// not a commitment to a destination.
+    ///
+    /// - Parameters:
+    ///   - outPointTxid: 32-byte raw txid (little-endian wire order) —
+    ///     see [`resumeFundFromAssetLock`].
+    ///   - outPointVout: Funding output index.
+    @discardableResult
+    public func resumeFundFromAssetLockExternal(
+        outPointTxid: Data,
+        outPointVout: UInt32,
+        platformAccountIndex: UInt32,
+        recipients: [FundFromAssetLockRecipient],
+        signer: KeychainSigner
+    ) async throws -> [UpdatedBalance] {
+        guard outPointTxid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
+            )
+        }
+        try Self.fundFromAssetLockExternalPreflight(recipients: recipients)
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let recipientRows = recipients
+        let coreSigner = MnemonicResolver()
+
+        return try await Task.detached(priority: .userInitiated) {
+            () -> [UpdatedBalance] in
+            var outPoint = OutPointFFI(
+                txid: Self.txidTuple(from: outPointTxid),
+                vout: outPointVout
+            )
+            let (ffiAddresses, feeRows) = Self.marshalFundingRequest(recipientRows)
+            var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
+            let result = withExtendedLifetime((signer, coreSigner)) {
+                ffiAddresses.withUnsafeBufferPointer { addrBp in
+                    feeRows.withUnsafeBufferPointer { feeBp in
+                        platform_address_wallet_resume_fund_from_asset_lock_external_signer(
+                            handle,
+                            &outPoint,
+                            platformAccountIndex,
+                            addrBp.baseAddress,
+                            UInt(addrBp.count),
+                            feeBp.baseAddress,
+                            UInt(feeBp.count),
+                            signerHandle,
+                            coreSigner.handle,
+                            &changeset
+                        )
+                    }
+                }
+            }
+            try result.check()
+
+            defer { platform_address_wallet_free_changeset(&changeset) }
+            return Self.decodeChangeset(&changeset)
+        }.value
+    }
+
+    /// Recipients in the order the Rust side will see them.
+    ///
+    /// `decode_funding_addresses` collects the FFI array into a
+    /// `BTreeMap<PlatformAddress, Option<Credits>>`, and consensus
+    /// resolves `ReduceOutput(index)` positionally against THAT map's key
+    /// order — never against the order the caller happened to list its
+    /// recipients in. `PlatformAddress`'s derived `Ord` orders by variant
+    /// first (P2PKH before P2SH) and then by the 20-byte hash, so
+    /// reproducing it here is a two-key sort.
+    ///
+    /// Sorting before marshalling makes array position and consensus
+    /// output index the same number, which is what lets
+    /// [`remainderStepIndex`] name the remainder output correctly. The
+    /// recipient SET is unaffected — a `BTreeMap` does not care what
+    /// order it was filled in.
+    static func canonicallyOrderedRecipients(
+        _ recipients: [FundFromAssetLockRecipient]
+    ) -> [FundFromAssetLockRecipient] {
+        recipients.sorted { lhs, rhs in
+            if lhs.addressType != rhs.addressType {
+                return lhs.addressType < rhs.addressType
+            }
+            return lhs.hash.lexicographicallyPrecedes(rhs.hash)
+        }
+    }
+
+    /// Position of the remainder (`credits == nil`) recipient within a
+    /// [`canonicallyOrderedRecipients`] list — i.e. the index consensus
+    /// will resolve `ReduceOutput` against.
+    ///
+    /// Callers never supply this index themselves. A positional index
+    /// over a lexicographically-ordered map is a live hazard: adding one
+    /// recipient can shift which output pays the fee, and with a
+    /// third-party payee in the set that means the payee's explicit
+    /// amount silently absorbs the fee instead of the sender's change.
+    /// Computing it here from the canonical order is what prevents that.
+    static func remainderStepIndex(
+        in ordered: [FundFromAssetLockRecipient]
+    ) -> UInt16 {
+        UInt16(ordered.firstIndex(where: { $0.credits == nil }) ?? 0)
+    }
+
+    /// Marshal recipients into the FFI address array plus the matching
+    /// fee strategy.
+    ///
+    /// The fee comes out of the remainder output: the `nil`-credits
+    /// recipient is structurally the "change" output — it absorbs
+    /// whatever is left after the explicit outputs and fees.
+    static func marshalFundingRequest(
+        _ recipients: [FundFromAssetLockRecipient]
+    ) -> (addresses: [FundingAddressEntryFFI], feeStrategy: [FeeStrategyStepFFI]) {
+        let ordered = canonicallyOrderedRecipients(recipients)
+        let addresses = ordered.map { r -> FundingAddressEntryFFI in
+            FundingAddressEntryFFI(
+                address: PlatformAddressFFI(
+                    address_type: r.addressType,
+                    hash: Self.hashTuple(from: r.hash)
+                ),
+                has_balance: r.credits != nil,
+                balance: r.credits ?? 0
+            )
+        }
+        let feeStrategy = [
+            FeeStrategyStepFFI(step_type: 1, index: remainderStepIndex(in: ordered))  // 1 = ReduceOutput
+        ]
+        return (addresses, feeStrategy)
+    }
+
+    /// Copy a 32-byte txid `Data` into the C tuple `OutPointFFI` wants.
+    private static func txidTuple(
+        from data: Data
+    ) -> (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    ) {
+        var tuple: (
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+        ) = (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        )
+        data.withUnsafeBytes { src in
+            Swift.withUnsafeMutableBytes(of: &tuple) { dst in
+                dst.copyMemory(from: src)
+            }
+        }
+        return tuple
+    }
+
+    /// Pre-flight for the external-recipient entry points.
+    ///
+    /// Sibling to [`fundFromAssetLockPreflight`]: every rule there still
+    /// applies verbatim — exactly one remainder, P2PKH only (address
+    /// type `0`), 20-byte hashes. Third-party explicit-amount
+    /// recipients were already permitted by those rules, because
+    /// ownership is not something Swift can check: only the Rust side
+    /// knows which addresses belong to `platformAccountIndex`, and it
+    /// enforces the remaining rule (the remainder must be ours) in
+    /// `fund_from_asset_lock_external`.
+    ///
+    /// The one rule this ADDS: at least one explicit-amount recipient.
+    /// A call with nothing but a remainder makes no external payment at
+    /// all, so it is a caller mistake — [`fundFromAssetLock`] is the
+    /// entry point for pure self-funding, and it validates the
+    /// destination properly.
+    static func fundFromAssetLockExternalPreflight(
+        recipients: [FundFromAssetLockRecipient]
+    ) throws {
+        try Self.fundFromAssetLockPreflight(recipients: recipients)
+        guard recipients.contains(where: { $0.credits != nil }) else {
+            throw PlatformWalletError.invalidParameter(
+                "fundFromAssetLockExternal requires at least one explicit-amount recipient; "
+                    + "a remainder-only request funds nothing externally — use fundFromAssetLock"
+            )
+        }
+    }
+
     /// Validate the recipient list before the FFI sees it. The Rust
     /// side enforces the same invariants — we duplicate them here so
     /// the user gets a synchronous error before paying for the Task
     /// detach + handle marshaling.
-    private func fundFromAssetLockPreflight(
+    static func fundFromAssetLockPreflight(
         recipients: [FundFromAssetLockRecipient]
     ) throws {
         guard !recipients.isEmpty else {
