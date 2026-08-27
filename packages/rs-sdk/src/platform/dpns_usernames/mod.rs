@@ -188,6 +188,7 @@ impl Sdk {
 
         // Create preorder document
         let preorder_document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: preorder_id,
             owner_id: identity_id,
             properties: BTreeMap::from([(
@@ -209,6 +210,7 @@ impl Sdk {
 
         // Create domain document
         let domain_document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: domain_id,
             owner_id: identity_id,
             properties: BTreeMap::from([
@@ -339,6 +341,7 @@ impl Sdk {
                     value: Value::Text(normalized_label),
                 },
             ],
+            time_range_clauses: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![],
@@ -398,6 +401,7 @@ impl Sdk {
                     value: Value::Text(normalized_label),
                 },
             ],
+            time_range_clauses: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![],

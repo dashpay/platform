@@ -17,6 +17,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::Credits;
 
 pub use address_funds::AddressFundsOperationType;
 pub use contract::DataContractOperationType;
@@ -242,6 +243,22 @@ impl DriveOperation<'_> {
             DriveOperation::FinalizeOperation(task) => Ok(Some(vec![task.clone()])),
             _ => Ok(None),
         }
+    }
+
+    /// Sums the credits the batch mints into Platform (its `AddToSystemCredits` operations,
+    /// saturating). This is the gross inflow of the batch — the net rule of the daily
+    /// withdrawal limit records it per block, and netting against removals here instead would
+    /// let a same-block deposit and withdrawal hide the inflow.
+    pub fn credit_mints(operations: &[DriveOperation]) -> Credits {
+        operations
+            .iter()
+            .filter_map(|operation| match operation {
+                DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits {
+                    amount,
+                }) => Some(*amount),
+                _ => None,
+            })
+            .fold(0u64, |total, amount| total.saturating_add(amount))
     }
 }
 

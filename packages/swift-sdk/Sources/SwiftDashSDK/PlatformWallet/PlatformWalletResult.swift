@@ -89,6 +89,34 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// (Not returned by `destroy`: Rust owns the callback contexts, so a
     /// straggling worker is memory-safe and merely logged there.)
     case errorShutdownIncomplete = 27
+    /// Asset-lock coin selection came up short over the *permitted* funding
+    /// set (dashpay/platform#4073). Nothing was built or broadcast and no
+    /// funding output was consumed, so the caller may refresh its preflight
+    /// and retry.
+    ///
+    /// **Recovery depends on the funding form** — both reach this one code,
+    /// and only one of them can be retried at a smaller amount:
+    /// - *exact-amount* funding carries a caller-chosen amount, so the fix is
+    ///   to re-run preflight and confirm a smaller one;
+    /// - a whole-account *drain* accepts no amount argument at all, so there
+    ///   is nothing to lower. Its shortfall means the account's drainable
+    ///   balance is under the required minimum lock floor: add funds to that
+    ///   account, or lower the floor.
+    ///
+    /// Do not present "try a smaller amount" to the user on the drain path.
+    ///
+    /// The structured `available` / `required` duff amounts travel in the
+    /// message string — `PlatformWalletFFIResult` is ABI-frozen at code +
+    /// message, so there are no out-params for them.
+    ///
+    /// Distinct from `errorCoreInsufficientFunds` (22), which is the atomic
+    /// Core-send selector rather than the asset-lock builder. What the figures
+    /// cover depends on the funding form: an exact-amount build pools the
+    /// default source list (BIP44 + BIP32 + every DashPay contact-receiving
+    /// account) and its shortfall describes that whole permitted union, while
+    /// a whole-account *drain* build names exactly one account. CoinJoin funds
+    /// only through the drain form.
+    case errorAssetLockInsufficientFunds = 29
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — restored from the
     /// structured signer completion code (dashpay/platform#4060 finding 7).
@@ -99,13 +127,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// wallet does not own — or owns only watch-only, a DashPay *external*
     /// account holding a contact's addresses.
     case errorSigningKeyUnavailable = 31
-    // Codes 27-33 are claimed outside this PR and must not be reused here:
-    // 27 errorShutdownIncomplete (dashpay/platform#4268, merged), 29
-    // errorAssetLockInsufficientFunds (#4184), 31 errorSigningKeyUnavailable
-    // (#4183/#4259), 32 errorTransactionBuild (#4247/#4256), 33
-    // errorTransactionSigning (#4256); 28 and 30 are free. The deferred-token
-    // trio therefore occupies the contiguous block 34-36. These raw values
-    // MUST match `PlatformWalletFFIResultCode` in
+    // Codes 27-33 are claimed outside this PR — except 29, mirrored above —
+    // and must not be reused here: 27 errorShutdownIncomplete
+    // (dashpay/platform#4268, merged), 29 errorAssetLockInsufficientFunds
+    // (claimed by #4184, which was closed unmerged along with its successor
+    // #4316; this PR salvages the code at its reserved number, so the mirror
+    // above matches the Rust discriminant rather than trailing it), 31
+    // errorSigningKeyUnavailable (#4183/#4259), 32 errorTransactionBuild
+    // (#4247/#4256), 33 errorTransactionSigning (#4256); 28 and 30 are free.
+    // The deferred-token trio therefore occupies the contiguous block 34-36.
+    // These raw values MUST match `PlatformWalletFFIResultCode` in
     // packages/rs-platform-wallet-ffi/src/error.rs — there is no compile-time
     // check across the ABI. See ERROR_CODE_REGISTRY.md (#4261).
     /// A deferred (BIP70/BIP270) reservation token has outlived its funding
@@ -154,12 +185,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// amount plus input 0's retained fee reserve. Refresh the shield
     /// preflight and ask the user to confirm the new capacity.
     case errorShieldedInsufficientBalance = 41
-    // Persister failure classes (42-43) — a fresh contiguous block above
-    // every prior claim, for the same reason the 34-36 trio moved there.
+    // Persister failure classes (48-49) — claimed from the error-code
+    // registry's allocation frontier; these raw values are hand-mirrored ABI.
     /// A persister operation failed transiently; callers may retry.
-    case errorPersisterTransient = 42
+    case errorPersisterTransient = 48
     /// A persister operation failed permanently; callers must not retry.
-    case errorPersisterFatal = 43
+    case errorPersisterFatal = 49
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -239,6 +270,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockAlreadyConsumed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_FUNDING_MISMATCH:
             self = .errorAssetLockFundingMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS:
+            self = .errorAssetLockInsufficientFunds
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_TRANSIENT:
             self = .errorPersisterTransient
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_FATAL:
@@ -349,6 +382,15 @@ public enum PlatformWalletError: LocalizedError {
     /// prove that the requested operation completed.
     case assetLockAlreadyConsumed(String)
     case assetLockFundingMismatch(String)
+    /// Asset-lock coin selection could not cover the requested funding over
+    /// the permitted source set. Nothing was built or broadcast and no
+    /// funding output was consumed — refresh the preflight, then recover by
+    /// the funding form: an exact-amount build can confirm a smaller amount,
+    /// while a whole-account drain takes no amount to lower and instead needs
+    /// funds added to the drained account (or a lower minimum lock floor).
+    /// The `available` / `required` duff figures are in the message. Kotlin
+    /// parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
+    case assetLockInsufficientFunds(String)
     /// A persister operation failed transiently; callers may retry.
     case persisterTransient(String)
     /// A persister operation failed permanently; callers must not retry.
@@ -480,7 +522,7 @@ public enum PlatformWalletError: LocalizedError {
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
-             .assetLockFundingMismatch(let m),
+             .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .persisterTransient(let m), .persisterFatal(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
@@ -548,6 +590,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockNotTracked: self = .assetLockNotTracked(detail)
         case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
+        case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorPersisterTransient: self = .persisterTransient(detail)
         case .errorPersisterFatal: self = .persisterFatal(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)

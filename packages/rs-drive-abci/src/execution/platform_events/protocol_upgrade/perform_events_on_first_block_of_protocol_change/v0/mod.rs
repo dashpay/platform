@@ -19,8 +19,9 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-    WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    get_withdrawal_root_path, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+    WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use drive::drive::saved_block_transactions::{
@@ -723,6 +724,18 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
+        // Credit inflows sum tree: every credit mint is recorded here so the daily withdrawal
+        // limit counts net outflow instead of gross — credits that entered Platform within the
+        // window may leave again without consuming the withdrawal budget of other users.
+        self.drive.grove_insert_if_not_exists(
+            get_withdrawal_root_path().as_slice().into(),
+            &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
         Ok(())
     }
 }
@@ -1402,17 +1415,22 @@ mod tests {
         use drive::grovedb_path::SubtreePath;
 
         // Not there on a v13 genesis state
-        assert!(platform
-            .drive
-            .grove
-            .get(
-                SubtreePath::from(&get_withdrawal_root_path()),
-                &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-                Some(&transaction),
-                &platform_version.drive.grove_version,
-            )
-            .value
-            .is_err());
+        for key in [
+            &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
+            &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+        ] {
+            assert!(platform
+                .drive
+                .grove
+                .get(
+                    SubtreePath::from(&get_withdrawal_root_path()),
+                    key,
+                    Some(&transaction),
+                    &platform_version.drive.grove_version,
+                )
+                .value
+                .is_err());
+        }
 
         let block_info = BlockInfo {
             time_ms: 1_000_000,
@@ -1436,6 +1454,19 @@ mod tests {
             .value
             .expect("total credits history tree should exist after the v14 transition");
         assert!(element.is_any_tree());
+
+        let element = platform
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(&get_withdrawal_root_path()),
+                &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+                Some(&transaction),
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .expect("credit inflows sum tree should exist after the v14 transition");
+        assert!(element.is_sum_tree());
 
         // Running it again is harmless and the tree stays usable
         platform

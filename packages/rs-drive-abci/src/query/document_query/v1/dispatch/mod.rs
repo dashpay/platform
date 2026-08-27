@@ -34,6 +34,10 @@ use drive::query::{RankedEntry as DriveRankedEntry, RankedEntryValue};
 /// silent about).
 fn into_v1_ranked_entry(e: DriveRankedEntry) -> RankedEntry {
     RankedEntry {
+        // Set exactly when the request carried an `IN` prefix pin —
+        // drive's merge tags entries with their branch, single-branch
+        // responses stay untagged.
+        in_key: e.in_key,
         key: e.key,
         value: Some(match e.value {
             RankedEntryValue::Count(count) => ranked_entry::Value::Count(count),
@@ -58,10 +62,11 @@ fn into_v1_ranked_entry(e: DriveRankedEntry) -> RankedEntry {
 /// proved**.
 ///
 /// **This is now a backstop rather than a live path.** The ranked
-/// prover moved to `prove_indexed_axis_top_k_paginated`, which emits a
-/// guaranteed-empty range against an empty axis secondary instead of
-/// refusing, so proving a ranking over a contract with no documents
-/// succeeds and the proved and unproven paths agree (pinned by
+/// prover moved to the paginated axis traversal (today through
+/// grovedb's unified `prove_query`), which emits a guaranteed-empty
+/// range against an empty axis secondary instead of refusing, so
+/// proving a ranking over a contract with no documents succeeds and
+/// the proved and unproven paths agree (pinned by
 /// `ranked_tests::proving_an_empty_ranking_succeeds`). The mapping is
 /// kept because the failure it recognizes is a *class* — a merk-level
 /// "cannot prove an empty tree" surfacing from somewhere in the

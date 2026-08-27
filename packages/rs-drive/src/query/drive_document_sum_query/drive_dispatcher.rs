@@ -10,13 +10,18 @@
 //! CBOR-decoded `Value::Array` input into structured `Vec<WhereClause>` /
 //! `Vec<OrderClause>`. Identical input contract to count.
 
+use crate::config::DriveConfig;
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::drive_document_sum_query::{
     DocumentSumMode, DocumentSumRequest, DocumentSumResponse, RangeSumOptions, RangeSumWalkMode,
     SumMode,
 };
-use crate::query::{OrderClause, WhereClause};
+use crate::query::{
+    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
+    OrderClause, WhereClause,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
@@ -25,18 +30,16 @@ use grovedb::TransactionArg;
 
 fn effective_no_proof_distinct_limit(
     requested_limit: Option<u32>,
-    drive_config: &crate::config::DriveConfig,
+    drive_config: &DriveConfig,
 ) -> Result<u16, Error> {
     let effective_limit = requested_limit
         .unwrap_or(drive_config.default_query_limit as u32)
         .min(drive_config.max_query_limit as u32);
 
     if effective_limit == 0 {
-        return Err(Error::Query(
-            crate::error::query::QuerySyntaxError::InvalidLimit(
-                "effective distinct SUM limit must be greater than zero".to_string(),
-            ),
-        ));
+        return Err(Error::Query(QuerySyntaxError::InvalidLimit(
+            "effective distinct SUM limit must be greater than zero".to_string(),
+        )));
     }
 
     // Both configuration limits are u16, and the `min` above bounds every
@@ -53,15 +56,28 @@ impl Drive {
     /// Mirrors [`Drive::execute_document_count_request`].
     pub fn execute_document_sum_request(
         &self,
-        request: DocumentSumRequest,
+        mut request: DocumentSumRequest,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentSumResponse, Error> {
+        // Canonicalize exactly as the count and joint dispatchers do (the
+        // shared step in [`crate::query::canonicalize`]), so callers can
+        // pass either the bounded pair form (`[f > A, f < B]`) or the
+        // pre-merged `between*` form and get equivalent mode detection.
+        request.where_clauses =
+            validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
+        // Same provenance-vs-shape contract as the count and joint
+        // dispatchers, anchored before mode detection just as there.
+        validate_resolved_time_range_clause_shapes(
+            &request.where_clauses,
+            &request.resolved_time_ranges,
+        )?;
         let resolved_mode = super::mode_detection::detect_sum_mode(&request, platform_version)?;
 
         let contract_id = request.contract.id().to_buffer();
         let document_type_name = request.document_type.name().to_string();
         let where_clauses = request.where_clauses;
+        let resolved_time_ranges = request.resolved_time_ranges;
         let sum_property = request.sum_property;
         // Default direction is ascending; the first order clause's
         // direction (if any) wins. Mirrors count's analog.
@@ -78,6 +94,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_ranges,
                     sum_property,
                     transaction,
                     platform_version,
@@ -97,6 +114,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
+                        &resolved_time_ranges,
                         sum_property,
                         options,
                         transaction,
@@ -127,6 +145,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_ranges,
                     sum_property,
                     options,
                     transaction,
@@ -145,6 +164,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_ranges,
                     sum_property,
                     transaction,
                     platform_version,
@@ -196,6 +216,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
+                        &resolved_time_ranges,
                         sum_property,
                         limit_u16,
                         order_by_ascending,
@@ -210,6 +231,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_ranges,
                     sum_property,
                     transaction,
                     platform_version,
@@ -254,6 +276,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
+                        &resolved_time_ranges,
                         sum_property,
                         limit_u16,
                         order_by_ascending,

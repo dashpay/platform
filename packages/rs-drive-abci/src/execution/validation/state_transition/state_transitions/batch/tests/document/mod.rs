@@ -4,6 +4,7 @@ mod dpns;
 mod nft;
 mod ranked_group_drain;
 mod replacement;
+mod required_since;
 mod transfer;
 
 use super::*;

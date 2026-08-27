@@ -1,10 +1,10 @@
 //! The grove path a ranked read / proof / verification is issued against.
 //!
-//! This is the **prover/verifier-agreement boundary** for the ranked
-//! surface. Unlike the count and sum surfaces there is no `PathQuery` to
-//! agree on — grovedb's indexed-axis envelope carries the query shape
-//! itself and re-checks `(axis, k, descending)` at verification time — so
-//! the entire shared contract is these path segments. Prover and verifier
+//! This is one half of the **prover/verifier-agreement boundary** for
+//! the ranked surface: both sides build the same axis `PathQuery` —
+//! these path segments plus the traversal (`axis, k, offset,
+//! descending`) — and grovedb re-executes the proof against that
+//! reconstruction at verification time. Prover and verifier
 //! both call [`DriveDocumentRankedQuery::indexed_property_name_tree_path`];
 //! a divergence here surfaces as a failed root-hash reconstruction, not a
 //! wrong answer, but it is still the one place the two sides must not
@@ -24,14 +24,14 @@ use dpp::data_contract::document_type::Index;
 /// tree. See [`DriveDocumentRankedQuery::indexed_property_name_tree_path`]
 /// for the segment layout.
 ///
-/// `equality_prefix_values` carries the **encoded index-key bytes** of
+/// The branch's prefix segments carry the **encoded index-key bytes** of
 /// each leading property's pinned value, in index-property order — one
 /// per property before the terminal one. Empty for a single-property
 /// index. The arity must match exactly: a compound index's terminal
 /// tree sits under one prefix value tree per leading property, and only
-/// an equality `where` clause can name those values, so a missing or
-/// surplus value means the caller resolved the wrong index — a typed
-/// error, not a guess.
+/// a `where` pin (an equality, or one element of the single permitted
+/// `IN`) can name those values, so a missing or surplus value means the
+/// caller resolved the wrong index — a typed error, not a guess.
 pub(crate) fn indexed_property_name_tree_path_for_index(
     contract_id: &[u8; 32],
     document_type_name: &str,
@@ -49,8 +49,8 @@ pub(crate) fn indexed_property_name_tree_path_for_index(
             "ranked and having-range queries over a compound index require exactly one \
              encoded equality value per leading index property: the axis secondary lives \
              on the index's terminal property-name tree, which for a compound index sits \
-             under one prefix value tree per leading property, and only an equality \
-             `where` clause can name those values",
+             under one prefix value tree per leading property, and only a `where` pin (an \
+             equality, or one element of the single permitted `IN`) can name those values",
         )));
     }
     let mut path = Vec::with_capacity(5 + 2 * leading_properties.len());
@@ -84,7 +84,7 @@ impl DriveDocumentRankedQuery<'_> {
     /// For a compound index `[p1, …, pn]`, each leading property
     /// contributes two segments — its name and the **encoded index-key
     /// bytes of its pinned value** (from
-    /// [`Self::equality_prefix_values`]) — and the terminal property
+    /// [`Self::prefix_branches`]) — and the terminal property
     /// name closes the path:
     ///
     /// ```text
@@ -101,12 +101,22 @@ impl DriveDocumentRankedQuery<'_> {
     /// Errors when the number of encoded prefix values does not match
     /// the index's leading-property count — the fail-closed backstop
     /// for a caller that resolved the query against the wrong index.
-    pub fn indexed_property_name_tree_path(&self) -> Result<Vec<Vec<u8>>, Error> {
+    ///
+    /// `branch` indexes into [`Self::prefix_branches`]; single-branch
+    /// queries (no `IN` pin) always pass `0`.
+    pub fn indexed_property_name_tree_path(&self, branch: usize) -> Result<Vec<Vec<u8>>, Error> {
+        let prefix_values =
+            self.prefix_branches
+                .get(branch)
+                .ok_or(Error::Drive(DriveError::NotSupported(
+                    "ranked and having-range queries addressed a prefix branch outside the \
+                 query's resolved branch set",
+                )))?;
         indexed_property_name_tree_path_for_index(
             &self.contract_id,
             &self.document_type_name,
             self.index,
-            &self.equality_prefix_values,
+            prefix_values,
         )
     }
 }

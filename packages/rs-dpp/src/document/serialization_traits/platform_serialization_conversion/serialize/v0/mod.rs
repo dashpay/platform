@@ -24,6 +24,15 @@ pub(in crate::document) trait DocumentPlatformSerializationMethodsV0 {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     /// Serialize v2 will serialize the creator id if the document can be transferred or sold
     fn serialize_v2(&self, document_type: DocumentTypeRef) -> Result<Vec<u8>, ProtocolError>;
+
+    /// Serializes the document.
+    ///
+    /// The serialization of a document follows the pattern:
+    /// contract version stamp varint + id 32 bytes + owner_id 32 bytes + encoded values byte arrays
+    /// Serialize v3 stamps the document with the data contract version its
+    /// bytes conform to, and encodes a property whose `requiredSince` exceeds
+    /// the stamp with a presence flag instead of raw
+    fn serialize_v3(&self, document_type: DocumentTypeRef) -> Result<Vec<u8>, ProtocolError>;
 }
 
 #[cfg(feature = "extended-document")]

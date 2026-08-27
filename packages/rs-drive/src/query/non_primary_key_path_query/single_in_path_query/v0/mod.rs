@@ -459,8 +459,24 @@ impl<'a> DriveDocumentQuery<'a> {
                 // We should set the starts at document to be included for the query if there are
                 // left over index properties.
 
+                // A time-range index's transformed first level stores bucket
+                // *starts*, so the cursor document's raw timestamp is not
+                // comparable to this level's keys: an included cursor created
+                // mid-bucket orders after the bucket-start key and would
+                // suppress it, validly proving an empty page. The resolved
+                // equality already pins this level to one key; the terminal
+                // document-id query attached below applies the cursor.
+                let last_clause_is_on_transformed_source = index
+                    .time_range
+                    .as_ref()
+                    .is_some_and(|transform| transform.source == where_clause.field);
+
                 let query_starts_at_document = if left_over_index_properties.is_empty() {
-                    &starts_at_document
+                    if last_clause_is_on_transformed_source {
+                        &None
+                    } else {
+                        &starts_at_document
+                    }
                 } else if sibling_aware_cursor_lowering {
                     // The cursor's branch always stays included at this level,
                     // trimming only the branches ordered before it; whether
@@ -534,6 +550,72 @@ impl<'a> DriveDocumentQuery<'a> {
                                 &self.order_by,
                                 platform_version,
                             )?;
+                        } else if last_clause_is_on_transformed_source
+                            && left_over_index_properties.is_empty()
+                        {
+                            // The cursor was deliberately withheld from the
+                            // bucket-keyed level above; apply it here by
+                            // bucket membership instead. A cursor inside the
+                            // selected bucket continues the walk at its
+                            // document id (for a unique index the bucket
+                            // holds exactly the cursor document, so excluded
+                            // means the page is exhausted); a cursor from
+                            // outside the bucket cannot order within it and
+                            // is ignored.
+                            let cursor_in_bucket = match &starts_at_document {
+                                None => None,
+                                Some((document, included)) => {
+                                    let transform = index
+                                        .time_range
+                                        .as_ref()
+                                        .expect("checked by last_clause_is_on_transformed_source");
+                                    let bucket_key = self.document_type.serialize_value_for_key(
+                                        where_clause.field.as_str(),
+                                        &where_clause.value,
+                                        platform_version,
+                                    )?;
+                                    document
+                                        .get_raw_for_document_type(
+                                            where_clause.field.as_str(),
+                                            self.document_type,
+                                            None,
+                                            platform_version,
+                                        )?
+                                        .filter(|raw| {
+                                            transform.entry_keys_for_raw(raw).contains(&bucket_key)
+                                        })
+                                        .map(|_| (document, *included))
+                                }
+                            };
+                            match cursor_in_bucket {
+                                Some((document, included)) if !index.unique => {
+                                    query.set_subquery_key(vec![0]);
+                                    query.set_subquery(Self::inner_query_from_starts_at_for_id(
+                                        Some(&StartAtDocument {
+                                            document: document.clone(),
+                                            document_type: self.document_type,
+                                            included,
+                                        }),
+                                        left_to_right,
+                                    ));
+                                }
+                                cursor => {
+                                    if matches!(cursor, Some((_, false))) {
+                                        // Unique: the excluded cursor is the
+                                        // bucket's only document.
+                                        query = Query::new_with_direction(left_to_right);
+                                    }
+                                    Self::recursive_insert_on_query_ordered_with_cursor(
+                                        &mut query,
+                                        left_over_index_properties.as_slice(),
+                                        index.unique,
+                                        None,
+                                        left_to_right,
+                                        &self.order_by,
+                                        platform_version,
+                                    )?;
+                                }
+                            }
                         } else {
                             Self::recursive_insert_on_query_ordered_with_cursor(
                                 &mut query,
@@ -602,14 +684,22 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let mut path = document_type_path;
 
+        // Path segments are level keys: grid-qualified for a time-range
+        // index's first property (`Index::level_key_for_property`), the bare
+        // property name everywhere else. The values pushed between them are
+        // untouched — a bucket start is encoded exactly like a timestamp.
         for (intermediate_index, intermediate_value) in
             intermediate_indexes.iter().zip(intermediate_values.iter())
         {
-            path.push(intermediate_index.name.as_bytes().to_vec());
+            path.push(
+                index
+                    .level_key_for_property(&intermediate_index.name)
+                    .into_bytes(),
+            );
             path.push(intermediate_value.as_slice().to_vec());
         }
 
-        path.push(last_index.name.as_bytes().to_vec());
+        path.push(index.level_key_for_property(&last_index.name).into_bytes());
 
         Ok(PathQuery::new(
             path,

@@ -712,10 +712,65 @@ fn catch_spend_panic(
     )
 }
 
-/// Preserve the typed "already consumed" funding report across the FFI
+/// Post-panic guidance for the asset-lock funding exports. Paired with
+/// `ErrorTransactionBroadcastUnconfirmed` in [`catch_funding_panic`].
+const FUNDING_PANIC_GUIDANCE: &str = "The asset lock may or may not have been broadcast — do \
+     NOT retry; the funding UTXOs stay reserved, and the reservation TTL or the next sync \
+     reconciles the outcome (a tracked lock resumes via the resume entry point).";
+
+/// [`catch_panic_to_code`] specialized for the asset-lock funding exports.
+///
+/// The panic is mapped to
+/// [`PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed`], NOT to a definitive
+/// failure code: a panic can strike after the asset-lock transaction reached the wire (broadcast
+/// precedes the ChainLock wait, the Platform submit, and the note bookkeeping), so the outcome
+/// is genuinely ambiguous. That code's contract is exactly the conservative one this needs — the
+/// host must not auto-retry, the funding UTXOs' reservation is still held (`ReservationToken` is
+/// a plain id, not a drop-release guard, so the unwind does not free it and an immediate retry
+/// fails at input selection instead of double-spending), and the reservation TTL or a sync
+/// observing the transaction reconciles the outcome; a tracked lock is resumable through
+/// `platform_wallet_manager_shielded_resume_fund_from_asset_lock`.
+fn catch_funding_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        FUNDING_PANIC_GUIDANCE,
+        body,
+    )
+}
+
+/// Preserve the typed funding reports that hosts branch on across the FFI
 /// boundary while keeping every other funding failure on the existing generic
-/// error path. The wallet retains nonterminal consumption-unknown state; the
-/// host must not interpret this code as authenticated completion.
+/// error path.
+///
+/// Both preserved variants reach their dedicated code through the blanket
+/// `From<PlatformWalletError> for PlatformWalletFFIResult` impl in
+/// [`crate::error`], so `e.into()` also carries each typed `Display`
+/// rendering verbatim — the structured figures ride the message string or
+/// not at all (`PlatformWalletFFIResult` is ABI-frozen at code + message).
+///
+/// - `AssetLockAlreadyConsumed` -> `ErrorAssetLockAlreadyConsumed` (24). The
+///   wallet retains nonterminal consumption-unknown state; the host must not
+///   interpret this code as authenticated completion.
+/// - `AssetLockInsufficientFunds` -> `ErrorAssetLockInsufficientFunds` (29).
+///   Coin selection came up short over the permitted funding set, so nothing
+///   was built or broadcast and no funding output was consumed; the host may
+///   re-run preflight and retry. Recovery depends on which funding form
+///   raised it, and BOTH reach this one code: an exact-amount build
+///   (`AssetLockFunding::FromWalletBalance`) can be re-confirmed at a smaller
+///   amount, but the whole-account CoinJoin *drain* takes no amount argument
+///   at all — there is nothing to lower. A drain shortfall means the account's
+///   drainable balance sits under the required minimum lock floor, so the
+///   host's only remedies are to add funds to that account or lower the
+///   floor. Do not surface "try a smaller amount" for the drain form.
+///
+///   Without this arm the shortfall flattened into the generic
+///   `ErrorWalletOperation` (6) catch-all below, hiding a typed error behind
+///   the code every unclassified failure already uses and forcing hosts back
+///   to substring-matching the Display text.
 fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
@@ -723,6 +778,7 @@ fn map_asset_lock_funding_result(
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
+        Err(e @ PlatformWalletError::AssetLockInsufficientFunds { .. }) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -1397,6 +1453,38 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
 ///   `dash_sdk_mnemonic_resolver_create`. The caller retains ownership.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account_index: u32,
+    recipient_raw_43: *const u8,
+    core_signer_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
+    // The whole body runs under `catch_unwind`: a panic (most concretely `block_on_worker`'s
+    // `.expect` on a panicking funding/proving task) must NOT reach this `extern "C"` frame,
+    // where it would abort the process instead of surfacing to the host as a typed error — on
+    // Android that abort strikes before the JNI layer's `support::guard`, which sits on the far
+    // side of this export. A panic can land after the whole-account lock was broadcast, so the
+    // ambiguous broadcast-unconfirmed contract applies (the same code the flow's own
+    // ambiguous-outcome errors use); the host resumes a tracked lock via
+    // `platform_wallet_manager_shielded_resume_fund_from_asset_lock` rather than re-draining.
+    catch_funding_panic("shielded CoinJoin-drain fund-from-asset-lock", || {
+        shielded_fund_from_asset_lock_coinjoin_drain_inner(
+            handle,
+            wallet_id_bytes,
+            account_index,
+            recipient_raw_43,
+            core_signer_handle,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain`], as an
+/// ordinary Rust function so a panic unwinds into [`catch_funding_panic`] instead of across
+/// the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
     account_index: u32,
@@ -2141,6 +2229,35 @@ mod tests {
         );
     }
 
+    /// A panic inside the CoinJoin-drain funding export must NOT unwind into the `extern "C"`
+    /// frame (that aborts the Android process before the JNI layer's own guard can translate it
+    /// into a Java exception). It becomes `ErrorTransactionBroadcastUnconfirmed` — the
+    /// conservative "may already be on the wire, do NOT retry" contract — because a panic can
+    /// strike after the whole-account lock was broadcast. Same panic-hook note as the spend
+    /// sibling above.
+    #[test]
+    fn catch_funding_panic_maps_a_panic_to_the_broadcast_unconfirmed_contract() {
+        let result = catch_funding_panic("shielded CoinJoin-drain fund-from-asset-lock", || {
+            panic!("tokio worker panicked");
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            "a funding panic must map to the ambiguous, do-not-retry code"
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("shielded CoinJoin-drain fund-from-asset-lock panicked")
+                && message.contains("tokio worker panicked"),
+            "the panic payload must survive into the FFI message: {message}"
+        );
+        assert!(
+            message.contains("do NOT retry"),
+            "the message must carry the do-not-retry guidance: {message}"
+        );
+    }
+
     /// `map_spend_result` pins the retry-relevant code split the three spend
     /// entry points depend on:
     /// - `ShieldedSpendUnconfirmed` → `ErrorShieldedSpendUnconfirmed` (host
@@ -2276,7 +2393,7 @@ mod tests {
     }
 
     #[test]
-    fn map_asset_lock_funding_result_preserves_already_consumed_code_only() {
+    fn map_asset_lock_funding_result_preserves_typed_funding_codes() {
         let out_point = dashcore::OutPoint {
             txid: dashcore::Txid::all_zeros(),
             vout: 7,
@@ -2303,6 +2420,70 @@ mod tests {
         assert_eq!(
             map_asset_lock_funding_result(Ok(()), "shielded fund-from-asset-lock").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    /// The asset-lock coin-selection shortfall must reach hosts as the
+    /// dedicated `ErrorAssetLockInsufficientFunds` (29) through THIS entry
+    /// point — `platform_wallet_manager_shielded_fund_from_asset_lock`, the
+    /// exact-amount funding form, whose whole result path is this helper.
+    /// The blanket `From` impl has always produced 29
+    /// (`error::tests::asset_lock_insufficient_funds_maps_to_dedicated_code`),
+    /// but the helper's catch-all used to flatten the variant to
+    /// `ErrorWalletOperation` (6) before it ever got there, so the typed code
+    /// never actually crossed the boundary on this call. Kotlin already
+    /// mirrors 29 as
+    /// `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`
+    /// (`DashSdkError.kt`) — this pins the Rust side that feeds it.
+    #[test]
+    fn map_asset_lock_funding_result_preserves_shortfall_code_29() {
+        let err = PlatformWalletError::AssetLockInsufficientFunds {
+            available: 18_000_000,
+            required: 100_000_000,
+        };
+        let rendered = err.to_string();
+        let result = map_asset_lock_funding_result(Err(err), "shielded fund-from-asset-lock");
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds,
+            "must not flatten into the generic ErrorWalletOperation catch-all \
+             (rendered: {rendered})"
+        );
+        assert_ne!(
+            result.code as i32,
+            PlatformWalletFFIResultCode::ErrorWalletOperation as i32
+        );
+        // The number, not the name, is what Swift/Kotlin mirror by hand.
+        assert_eq!(result.code as i32, 29);
+
+        // The structured available/required duffs have no out-params, so they
+        // only survive if the arm hands the typed error to the blanket impl
+        // verbatim instead of re-wrapping it behind an operation prefix.
+        assert_eq!(
+            message_of(&result),
+            rendered,
+            "structured available/required duffs must cross the boundary verbatim"
+        );
+        assert!(message_of(&result).contains("asset lock coin selection is short"));
+    }
+
+    /// The resume sibling shares the helper, so the shortfall stays typed on
+    /// `platform_wallet_manager_shielded_resume_fund_from_asset_lock` too — a
+    /// host must not have to classify the same failure two different ways
+    /// depending on which funding entry point it came in through.
+    #[test]
+    fn map_asset_lock_funding_result_shortfall_is_typed_on_resume_too() {
+        let result = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockInsufficientFunds {
+                available: 0,
+                required: 100_000_000,
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
         );
     }
 }

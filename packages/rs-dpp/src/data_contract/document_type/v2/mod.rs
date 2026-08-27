@@ -99,6 +99,16 @@ pub struct DocumentTypeV2 {
     /// [`Self::documents_summable`] is `Some` — enforced by
     /// [`crate::data_contract::document_type::accessors::DocumentTypeV2Setters::set_range_summable`].
     pub(in crate::data_contract) range_summable: bool,
+    /// When true, documents of this type are **indexOnly**: nothing is
+    /// written to primary storage (there is no `[0]` primary-key tree at
+    /// all) — the index entries are the rows, each terminating in an `Item`
+    /// keyed by the index's `terminal` property instead of a `Reference`
+    /// keyed by the document id. Only what is in the indexes exists and is
+    /// recoverable. The parser (`apply_index_only`) enforces the structural
+    /// constraints this layout depends on: every property required and
+    /// indexed, `$ownerId` recoverable from at least one index, immutable /
+    /// non-transferable / no history, and per-index terminal typing.
+    pub(in crate::data_contract) index_only: bool,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -166,6 +176,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             range_countable: false,
             documents_summable: None,
             range_summable: false,
+            index_only: false,
         }
     }
 }
@@ -205,6 +216,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             range_countable: false,
             documents_summable: None,
             range_summable: false,
+            index_only: false,
         }
     }
 }

@@ -26,6 +26,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::platform_value::{platform_value, Value};
 use drive::query::WhereOperator;
+use drive::query::{resolve_time_range_bucket_clause, validate_resolved_time_range_clause_shapes};
 
 /// Build a `ProtoDocumentFieldValue` from a `dpp::platform_value::Value`
 /// for use inside this test module only. **Subset of the SDK's
@@ -1130,6 +1131,7 @@ mod ported_v0_count_tests {
         properties.insert("age".to_string(), Value::U64(age));
 
         let document: Document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from(id),
             owner_id: Identifier::from([0u8; 32]),
             properties,
@@ -2803,8 +2805,8 @@ mod ranked_tests {
     }
 
     /// `limit` is **required** on the ranked path — it is the `k` the
-    /// proof envelope echoes, so there is no server default a verifying
-    /// client could reproduce. What this pins is that drive's
+    /// verifier rebuilds its `PathQuery` around, so there is no server
+    /// default a verifying client could reproduce. What this pins is that drive's
     /// `Error::Query` reaches the caller as a query error on the
     /// validation result, rather than being swallowed into an internal
     /// error by the dispatcher's `Err(e) => Err(e.into())` arm.
@@ -3425,7 +3427,7 @@ mod having_range_tests {
             QueryError::Query(QuerySyntaxError::InvalidParameter(message)) => {
                 assert!(
                     message.contains("exactly one `group_by` property")
-                        && message.contains("equality `where` clause"),
+                        && message.contains("pin every leading index property"),
                     "the rejection must steer to the pinned-prefix form, got: {message}"
                 );
             }
@@ -3475,6 +3477,88 @@ mod having_range_tests {
                 &document,
                 platform_version,
             );
+        }
+    }
+
+    /// The `IN`-pinned form end to end on the wire: `WHERE identityId
+    /// IN [X, Y] GROUP BY class HAVING AVG(grade) > 80 LIMIT 10` fans
+    /// out across both identities' secondaries and answers one merged
+    /// `ResultData.ranked` page whose entries carry `in_key`; the
+    /// proved variant returns the unified branched `PathQuery` envelope as its Proof
+    /// payload. Merge/proof semantics are pinned in rs-drive's suites;
+    /// this pins the wire encoding, routing, and `in_key` mapping.
+    #[test]
+    fn in_pinned_having_is_served_end_to_end() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = register_grades_compound(&platform, version);
+        let identity_x = [1u8; 32];
+        let identity_y = [2u8; 32];
+        insert_grade_docs(
+            &platform,
+            &contract,
+            21_000,
+            &[
+                (identity_x, "art", 90),
+                (identity_x, "math", 60),
+                (identity_y, "science", 95),
+            ],
+            version,
+        );
+
+        let mut request = having_request(
+            &contract,
+            "grade",
+            select(v1_select::Function::Avg, "grade"),
+            hc(
+                having_aggregate::Function::Avg,
+                "grade",
+                having_clause::Operator::GreaterThan,
+                Value::U64(80),
+            ),
+            Vec::new(),
+            Some(10),
+            false,
+        );
+        request.group_by = vec!["class".to_string()];
+        request.where_clauses = vec![wc(
+            "identityId",
+            ProtoWhereOperator::In,
+            Value::Array(vec![
+                Value::Bytes(identity_y.to_vec()),
+                Value::Bytes(identity_x.to_vec()),
+            ]),
+        )];
+
+        let page = ranked_page(&platform, &state, request.clone(), version);
+        assert_eq!(
+            group_keys(&page.entries),
+            vec!["art", "science"],
+            "merged ascending: X's art (90) then Y's science (95); X's math \
+             (60) misses the bound"
+        );
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|e| e.in_key.clone())
+                .collect::<Vec<_>>(),
+            vec![Some(identity_x.to_vec()), Some(identity_y.to_vec())],
+            "merged entries carry their branch's in_key on the wire"
+        );
+
+        // The proved variant answers with a Proof payload (the unified
+        // branched `PathQuery` envelope — verified client-side, pinned
+        // in rs-drive's tamper suite).
+        request.prove = true;
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("query should succeed");
+        assert!(result.errors.is_empty(), "got {:?}", result.errors);
+        match result.data {
+            Some(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
+                ..
+            }) => assert!(!proof.grovedb_proof.is_empty()),
+            other => panic!("expected a Proof response, got {:?}", other),
         }
     }
 
@@ -3829,7 +3913,7 @@ mod having_trust_boundary {
         DocumentHavingRequest, DocumentHavingResponse,
     };
     use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
-    use drive::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+    use drive::query::drive_document_having_query::resolve_having_query_for_mode;
     use drive::query::having::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
     };
@@ -3859,8 +3943,14 @@ mod having_trust_boundary {
     const TIME_MS: u64 = 1_755_000_000_000;
 
     /// Provider that knows exactly one quorum key — the test one.
-    struct TestQuorumProvider {
-        pubkey: [u8; 48],
+    ///
+    /// This and the two signing helpers below are `pub(super)` so the
+    /// sibling [`super::time_range_proof_verification`] suite signs its
+    /// commits through the same canonical construction; a second copy of
+    /// the tenderdash harness could drift from this one and quietly stop
+    /// testing the binding.
+    pub(super) struct TestQuorumProvider {
+        pub(super) pubkey: [u8; 48],
     }
 
     impl ContextProvider for TestQuorumProvider {
@@ -3898,7 +3988,7 @@ mod having_trust_boundary {
     }
 
     /// A deterministic, valid BLS scalar — no RNG dependency.
-    fn quorum_secret_key() -> SecretKey<Bls12381G2Impl> {
+    pub(super) fn quorum_secret_key() -> SecretKey<Bls12381G2Impl> {
         let mut bytes = [0u8; 32];
         bytes[31] = 42;
         SecretKey::<Bls12381G2Impl>::from_be_bytes(&bytes)
@@ -3991,30 +4081,21 @@ mod having_trust_boundary {
             platform_version(),
         )
         .expect("the case is well-formed");
-        let index = find_ranked_index_for_axis(
+        resolve_having_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name("grade")
+                .expect("grade doctype exists"),
+            "grade".to_string(),
             contract
                 .document_types()
                 .get("grade")
                 .expect("grade doctype exists")
                 .indexes(),
-            &mode.group_by_property,
-            &[],
-            mode.bounds.axis(),
-            &mode.aggregate_field,
+            &mode,
+            PlatformVersion::latest(),
         )
-        .expect("the fixture declares the avg axis");
-        DriveDocumentHavingQuery {
-            document_type: contract
-                .document_type_for_name("grade")
-                .expect("grade doctype exists"),
-            contract_id: contract.id_ref().to_buffer(),
-            document_type_name: "grade".to_string(),
-            index,
-            bounds: mode.bounds,
-            equality_prefix_values: Vec::new(),
-            descending: mode.descending,
-            limit: mode.limit,
-        }
+        .expect("the fixture declares the avg axis")
     }
 
     /// Prove the having request against the live Drive and return
@@ -4034,6 +4115,7 @@ mod having_trust_boundary {
                     having: &having,
                     order_by: &[],
                     where_clauses: &[],
+                    resolved_time_ranges: &[],
                     limit: Some(10),
                     offset: None,
                     has_start_at: false,
@@ -4069,7 +4151,7 @@ mod having_trust_boundary {
     /// Sign a tenderdash precommit whose state id carries `app_hash` —
     /// the same canonical construction `verify_tenderdash_proof`
     /// rebuilds on the verify side.
-    fn signed_proof(
+    pub(super) fn signed_proof(
         grovedb_proof: Vec<u8>,
         app_hash: &[u8; 32],
         mtd: &ResponseMetadata,
@@ -4241,6 +4323,1300 @@ mod having_trust_boundary {
         assert!(
             matches!(error, ProofVerifierError::InvalidSignature { .. }),
             "the rejection must be the signature binding, got: {error:?}"
+        );
+    }
+}
+
+mod time_range_proof_verification {
+    //! The whole time-range reconstruction sequence, run end to end
+    //! against a populated Drive: the handler resolves `IN_TIME_RANGE`
+    //! from committed block time, proves the resulting bucket query,
+    //! and the client re-derives the *identical* bucket from the
+    //! quorum-signed response metadata `time_ms`, re-runs the
+    //! provenance guard, re-picks the bucketed index and verifies the
+    //! proof over the GroveDB path that selection produces. Every link
+    //! in that chain is load-bearing: a resolution reading anything
+    //! but the signed time, a picker admitting the plain index, or a
+    //! guard accepting a shape the resolver never built would each
+    //! turn a wrong answer into a *proven* wrong answer.
+    //!
+    //! The headline assertion is the overlapping-window one. With
+    //! `range = 6h, step = 2h` a document is written under three
+    //! bucket keys at once, so a count that walked buckets rather
+    //! than addressing exactly one would return three times the
+    //! truth — and would verify, because the proof would be an
+    //! honest proof of the wrong query.
+    //!
+    //! Split, same as [`super::having_trust_boundary`]: proof
+    //! end-to-end lives here because generating proofs needs drive's
+    //! `server` feature and a populated platform; the client-surface
+    //! half (resolution from metadata time, provenance bookkeeping,
+    //! ordering) is offline-tested in rs-sdk, which builds drive with
+    //! `verify` only.
+
+    use super::having_trust_boundary::{quorum_secret_key, signed_proof, TestQuorumProvider};
+    use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dapi_grpc::platform::v0::get_documents_response::Version as ResponseVersion;
+    use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::DocumentTypeRef;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+    use dpp::platform_value::platform_value;
+    use dpp::prelude::DataContract;
+    use drive::drive::Drive;
+    use drive::query::{
+        DriveDocumentCountQuery, DriveDocumentQuery, TimeRangeSelector, WhereClause,
+    };
+    use drive_proof_verifier::types::Documents;
+    use drive_proof_verifier::{
+        verify_point_lookup_count_proof, Error as ProofVerifierError, FromProof, SplitCountEntry,
+    };
+    use std::collections::BTreeMap;
+
+    const DOCUMENT_TYPE: &str = "post";
+    const CREATED_AT: &str = "$createdAt";
+    const BUCKETED_INDEX: &str = "trending";
+    const MINUTE_MS: u64 = 60_000;
+    const HOUR_MS: u64 = 3_600_000;
+
+    /// A bucket start on the contract's grid: `origin` is 0 and the step is
+    /// two hours, and this is an exact multiple of two hours. Every timestamp
+    /// below is expressed relative to it.
+    const NEWEST_BUCKET_START_MS: u64 = 1_755_000_000_000;
+    /// Committed block time, one hour into the newest bucket — so the newest
+    /// active range is `NEWEST_BUCKET_START_MS` and there is a full hour of
+    /// bucket in which documents can sit.
+    const BLOCK_TIME_MS: u64 = NEWEST_BUCKET_START_MS + HOUR_MS;
+    const BLOCK_HEIGHT: u64 = 100;
+    const BLOCK_CORE_HEIGHT: u32 = 42;
+    const QUORUM_HASH: [u8; 32] = [3u8; 32];
+
+    /// `($createdAt, hashtag)` for the four posts, chosen so the newest
+    /// bucket contains: two `#ibiza` posts that *also* live in the two older
+    /// overlapping buckets (the double-count regression), and one `#berlin`
+    /// post (so the second index property has to do work). The third
+    /// `#ibiza` post starts one hour before the newest bucket, so it belongs
+    /// to the three *older* buckets and to none of the newest — the negative
+    /// control that pins the query to a single bucket rather than to "recent
+    /// enough".
+    const POSTS: [(u64, &str); 4] = [
+        (NEWEST_BUCKET_START_MS + 10 * MINUTE_MS, "ibiza"),
+        (NEWEST_BUCKET_START_MS + 30 * MINUTE_MS, "ibiza"),
+        (NEWEST_BUCKET_START_MS - HOUR_MS, "ibiza"),
+        (NEWEST_BUCKET_START_MS + 15 * MINUTE_MS, "berlin"),
+    ];
+
+    /// A `countable` bucketed index over `(timeRange($createdAt), hashtag)`
+    /// with a six-hour window sliding every two hours — overlap factor 3 —
+    /// next to a plain index covering the same two fields the other way
+    /// round. The plain one exists so index selection has something wrong to
+    /// pick: it covers the identical clause field set, and only the
+    /// resolution provenance keeps the query off it.
+    fn register_trending_contract(
+        platform: &Platform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a factory");
+        let schemas = platform_value!({
+            DOCUMENT_TYPE: {
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+                },
+                "indices": [
+                    {
+                        "name": BUCKETED_INDEX,
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "timeRange": { "on": "$createdAt", "range": 21_600u64, "step": 7_200u64 },
+                    },
+                    {
+                        "name": "byHashtag",
+                        "properties": [{ "hashtag": "asc" }, { "$createdAt": "asc" }],
+                        "countable": true,
+                    },
+                ],
+                "required": ["$createdAt", "hashtag"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = factory
+            .create_with_value_config(Identifier::new([7u8; 32]), 0, schemas, None, None)
+            .expect("the trending contract is well-formed")
+            .data_contract_owned();
+        store_data_contract(platform, &contract, platform_version);
+        contract
+    }
+
+    fn insert_posts(
+        platform: &Platform<MockCoreRPCLike>,
+        contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Vec<Document> {
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        POSTS
+            .iter()
+            .enumerate()
+            .map(|(i, (created_at_ms, hashtag))| {
+                let mut document: Document = document_type
+                    .random_document(Some(7_000 + i as u64), platform_version)
+                    .expect("random document");
+                document.set_properties(BTreeMap::from([(
+                    "hashtag".to_string(),
+                    Value::Text(hashtag.to_string()),
+                )]));
+                document.set_created_at(Some(*created_at_ms));
+                store_document(
+                    platform,
+                    contract,
+                    document_type,
+                    &document,
+                    platform_version,
+                );
+                document
+            })
+            .collect()
+    }
+
+    fn root_hash(drive: &Drive, platform_version: &PlatformVersion) -> [u8; 32] {
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable")
+    }
+
+    /// A state whose last committed block carries [`BLOCK_TIME_MS`] — the
+    /// handler resolves `IN_TIME_RANGE` from it and stamps it into the
+    /// response metadata, which is what makes the client's re-derivation
+    /// land on the same bucket.
+    fn state_with_committed_block_time(
+        base: &PlatformState,
+        drive: &Drive,
+        platform_version: &PlatformVersion,
+    ) -> PlatformState {
+        let mut state = base.clone();
+        state.set_last_committed_block_info(Some(
+            ExtendedBlockInfoV0 {
+                basic_info: BlockInfo {
+                    time_ms: BLOCK_TIME_MS,
+                    height: BLOCK_HEIGHT,
+                    core_height: BLOCK_CORE_HEIGHT,
+                    epoch: Default::default(),
+                },
+                app_hash: root_hash(drive, platform_version),
+                quorum_hash: [0u8; 32],
+                block_id_hash: [0u8; 32],
+                proposer_pro_tx_hash: [0u8; 32],
+                signature: [0u8; 96],
+                round: 0,
+            }
+            .into(),
+        ));
+        state
+    }
+
+    /// Contract registered, posts inserted, and a platform state whose
+    /// committed block time is [`BLOCK_TIME_MS`].
+    fn setup_trending(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        base_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Vec<Document>, PlatformState) {
+        assert!(
+            platform_version.protocol_version >= 14,
+            "time-range indexes require protocol version 14 or later"
+        );
+        let contract = register_trending_contract(platform, platform_version);
+        let documents = insert_posts(platform, &contract, platform_version);
+        let state = state_with_committed_block_time(base_state, &platform.drive, platform_version);
+        (contract, documents, state)
+    }
+
+    /// `IN_TIME_RANGE($createdAt, "newest") AND hashtag = <hashtag>` — the
+    /// selector rides the wire as an operator, never as a resolved value, so
+    /// the bucket in the proof can only have come from the node's committed
+    /// block time.
+    fn trending_where_clauses(hashtag: &str) -> Vec<ProtoWhereClause> {
+        vec![
+            wc(
+                "hashtag",
+                ProtoWhereOperator::Equal,
+                Value::Text(hashtag.to_string()),
+            ),
+            wc(
+                CREATED_AT,
+                ProtoWhereOperator::InTimeRange,
+                Value::Text(TimeRangeSelector::Newest.as_str().to_string()),
+            ),
+        ]
+    }
+
+    fn trending_request(
+        contract_id: Vec<u8>,
+        hashtag: &str,
+        selects: Vec<V1Select>,
+    ) -> GetDocumentsRequestV1 {
+        GetDocumentsRequestV1 {
+            data_contract_id: contract_id,
+            document_type: DOCUMENT_TYPE.to_string(),
+            where_clauses: trending_where_clauses(hashtag),
+            order_by: Vec::new(),
+            limit: None,
+            start: None,
+            prove: true,
+            selects,
+            group_by: Vec::new(),
+            having: Vec::new(),
+            offset: None,
+        }
+    }
+
+    /// Run the request through the real v1 handler and re-sign the proof it
+    /// produced: the test platform never signs a commit, so the tenderdash
+    /// binding is supplied here over the *live* root hash and the handler's
+    /// own response metadata. Tampering with either afterwards is what the
+    /// negative case does.
+    fn prove_and_sign(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        state: &PlatformState,
+        request: GetDocumentsRequestV1,
+        platform_version: &PlatformVersion,
+    ) -> (Proof, ResponseMetadata, TestQuorumProvider) {
+        let result = platform
+            .query_documents_v1(request, state, platform_version)
+            .expect("query call should not error at the transport layer");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let response = result.data.expect("data");
+        let proof = match response.result {
+            Some(get_documents_response_v1::Result::Proof(proof)) => proof,
+            other => panic!("expected a proof, got {:?}", other),
+        };
+        let mtd = response
+            .metadata
+            .expect("the handler stamps response metadata");
+        assert_eq!(
+            mtd.time_ms, BLOCK_TIME_MS,
+            "the metadata time the client resolves from must be the committed \
+             block time the server resolved from"
+        );
+
+        let secret_key = quorum_secret_key();
+        let signed = signed_proof(
+            proof.grovedb_proof,
+            &root_hash(&platform.drive, platform_version),
+            &mtd,
+            &secret_key,
+            QUORUM_HASH,
+        );
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+        (signed, mtd, provider)
+    }
+
+    /// Re-sign the handler's proof over *altered* metadata with the fixture
+    /// quorum key. The signature then verifies, so a rejection can only come
+    /// from the proof path itself: the verifier resolves the selector from
+    /// the altered time into the NEXT bucket, reconstructs that bucket's
+    /// path query, and the GroveDB proof over the original bucket cannot
+    /// satisfy it. Without the re-signing, the negative tests could pass at
+    /// signature verification and never reach that property.
+    fn resign_over(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        proof: &Proof,
+        mtd: &ResponseMetadata,
+        platform_version: &PlatformVersion,
+    ) -> Proof {
+        signed_proof(
+            proof.grovedb_proof.clone(),
+            &root_hash(&platform.drive, platform_version),
+            mtd,
+            &quorum_secret_key(),
+            QUORUM_HASH,
+        )
+    }
+
+    /// The bucket start the transform puts `time_ms` in, computed straight
+    /// off the contract's declared window rather than off the constants
+    /// above — so a fixture edit that moves the grid cannot leave the
+    /// expectation behind.
+    fn expected_newest_bucket(contract: &DataContract, time_ms: u64) -> u64 {
+        contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists")
+            .indexes()
+            .get(BUCKETED_INDEX)
+            .expect("the bucketed index survives contract registration")
+            .time_range
+            .as_ref()
+            .expect("the bucketed index carries its transform")
+            .newest_active_start(time_ms)
+            .expect("the block time is inside an active range")
+    }
+
+    /// The client's reconstruction sequence, step for step, exactly as the
+    /// SDK's count helper performs it: resolve the selector from the signed
+    /// metadata time, record the provenance, re-run the shape guard, pick
+    /// the index that provenance admits, rebuild the prover's count query.
+    ///
+    /// Returns the resolved bucket start alongside the query so callers can
+    /// assert on what the metadata time resolved to.
+    fn client_count_query<'a>(
+        contract: &'a DataContract,
+        document_type: &'a DocumentTypeRef<'a>,
+        hashtag: &str,
+        time_ms: u64,
+    ) -> (DriveDocumentCountQuery<'a>, u64) {
+        let mut where_clauses = vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(hashtag.to_string()),
+        }];
+        let (clause, resolution) = resolve_time_range_bucket_clause(
+            CREATED_AT,
+            TimeRangeSelector::Newest,
+            None,
+            *document_type,
+            time_ms,
+        )
+        .expect("the metadata time falls inside an active range");
+        let bucket_start = clause
+            .value
+            .to_integer::<u64>()
+            .expect("a resolved bucket start is a millisecond timestamp");
+        where_clauses.push(clause);
+        let resolutions = vec![resolution];
+
+        validate_resolved_time_range_clause_shapes(&where_clauses, &resolutions)
+            .expect("resolution produces exactly the one equality the guard admits");
+
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+            &resolutions,
+        )
+        .expect("the bucketed index covers the resolved clause set");
+        assert_eq!(
+            index.name, BUCKETED_INDEX,
+            "resolution provenance must pin selection to the bucketed index, not \
+             to the plain index covering the same fields"
+        );
+
+        let query = DriveDocumentCountQuery {
+            document_type: *document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: DOCUMENT_TYPE.to_string(),
+            index,
+            where_clauses,
+        };
+        (query, bucket_start)
+    }
+
+    fn total_of(entries: &[SplitCountEntry]) -> u64 {
+        entries.iter().map(|e| e.count.unwrap_or_default()).sum()
+    }
+
+    /// The headline case. Two `#ibiza` posts sit in the newest bucket and,
+    /// because the window overlaps three deep, each is *stored* under three
+    /// bucket keys. The verified count must be 2 — one per document — which
+    /// is only true if both sides addressed exactly the one bucket the
+    /// signed block time names.
+    #[test]
+    fn a_count_over_an_overlapping_bucket_verifies_and_counts_each_document_once() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let transform = document_type
+            .indexes()
+            .get(BUCKETED_INDEX)
+            .expect("the bucketed index survives contract registration")
+            .time_range
+            .as_ref()
+            .expect("the bucketed index carries its transform");
+        assert_eq!(
+            transform.overlap_factor(),
+            3,
+            "the fixture's whole point is that windows overlap"
+        );
+        assert_eq!(
+            transform.containing_buckets(POSTS[0].0).len(),
+            3,
+            "a matching document must really be stored under three bucket keys"
+        );
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let client_document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let (query, bucket_start) =
+            client_count_query(&contract, &client_document_type, "ibiza", mtd.time_ms);
+        assert_eq!(
+            bucket_start,
+            expected_newest_bucket(&contract, mtd.time_ms),
+            "the resolved bucket must be the transform's newest active start \
+             for the signed time"
+        );
+        assert_eq!(bucket_start, NEWEST_BUCKET_START_MS);
+
+        let entries = verify_point_lookup_count_proof(&query, &proof, &mtd, version, &provider)
+            .expect("a correctly signed count over the resolved bucket must verify");
+
+        assert_eq!(
+            total_of(&entries),
+            2,
+            "the two #ibiza posts in the newest bucket count once each — a \
+             document living in three overlapping buckets must not count three \
+             times, and the #ibiza post one hour older belongs to the previous \
+             buckets only"
+        );
+    }
+
+    /// Move the signed time forward by one full step and the client resolves
+    /// a *different* bucket. Verification must fail hard: either the proof
+    /// cannot be replayed over the other bucket's path, or the tenderdash
+    /// binding rejects the altered metadata. What must never happen is a
+    /// second, differently-scoped count coming back verified.
+    #[test]
+    fn a_tampered_metadata_time_cannot_verify_a_different_bucket() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let step_ms = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists")
+            .indexes()
+            .get(BUCKETED_INDEX)
+            .expect("the bucketed index survives contract registration")
+            .time_range
+            .as_ref()
+            .expect("the bucketed index carries its transform")
+            .step_ms();
+
+        let mut tampered = mtd.clone();
+        tampered.time_ms += step_ms;
+
+        let client_document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let (_honest_query, honest_bucket) =
+            client_count_query(&contract, &client_document_type, "ibiza", mtd.time_ms);
+        let (tampered_query, tampered_bucket) =
+            client_count_query(&contract, &client_document_type, "ibiza", tampered.time_ms);
+        assert_eq!(
+            tampered_bucket,
+            honest_bucket + step_ms,
+            "one step of tampering must move the resolution one bucket — \
+             otherwise this test proves nothing about where the bucket comes from"
+        );
+
+        let error =
+            verify_point_lookup_count_proof(&tampered_query, &proof, &tampered, version, &provider)
+                .expect_err("an altered signed time must not yield a verified count");
+        assert!(
+            matches!(
+                error,
+                ProofVerifierError::InvalidSignature { .. }
+                    | ProofVerifierError::GroveDBError { .. }
+                    | ProofVerifierError::DriveError { .. }
+            ),
+            "the rejection must be the proof or the signature binding, got: {error:?}"
+        );
+    }
+
+    /// The non-aggregate route through the same fixture: the documents path
+    /// resolves the selector, carries the provenance onto the drive query
+    /// and verifies the returned rows. Same bucket scoping, different
+    /// primitive — so a regression that only reached the documents index
+    /// picker still turns a test red.
+    #[test]
+    fn a_documents_proof_over_the_newest_bucket_verifies_to_the_bucket_members() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_documents());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let mut where_clauses = vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("ibiza".to_string()),
+        }];
+        let (resolved_clause, resolution) = resolve_time_range_bucket_clause(
+            CREATED_AT,
+            TimeRangeSelector::Newest,
+            None,
+            document_type,
+            mtd.time_ms,
+        )
+        .expect("the metadata time falls inside an active range");
+        where_clauses.push(resolved_clause);
+        let mut drive_query = DriveDocumentQuery::from_typed_clauses(
+            where_clauses,
+            Vec::new(),
+            None,
+            None,
+            true,
+            None,
+            &contract,
+            document_type,
+            &platform.config.drive,
+            version,
+        )
+        .expect("the resolved clause set builds a drive query");
+        drive_query.resolved_time_ranges = vec![resolution];
+
+        let response = GetDocumentsResponse {
+            version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
+                metadata: Some(mtd),
+            })),
+        };
+        let (verified, _mtd, _proof) =
+            <Documents as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
+                drive_query,
+                response,
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed documents proof must verify");
+
+        let mut verified_ids: Vec<_> = verified
+            .expect("the newest bucket is not empty")
+            .into_iter()
+            .filter_map(|(id, document)| document.map(|_| id))
+            .collect();
+        verified_ids.sort();
+        let mut expected_ids = vec![documents[0].id(), documents[1].id()];
+        expected_ids.sort();
+        assert_eq!(
+            verified_ids, expected_ids,
+            "only the two #ibiza posts inside the newest bucket are proven \
+             members — the older #ibiza post and the #berlin post are not"
+        );
+    }
+
+    // ----- the SDK `FromProof` entry points -------------------------------
+    //
+    // The tests above re-run the client sequence step by step so a failure
+    // names the broken link. These run the same signed responses through the
+    // aggregate `FromProof<DocumentQuery>` entry points the SDK actually
+    // exposes — resolution from signed metadata time, provenance, shape
+    // guard, index pick and proof verification all happen *inside* the call
+    // — so a regression in how that layer wires the steps together (not just
+    // in a step) turns a test red.
+
+    use dash_platform_queries::documents::document_query::DocumentQuery as SdkDocumentQuery;
+    use drive::query::SelectProjection;
+    use drive_proof_verifier::{DocumentAverage, DocumentCount, DocumentSum};
+    use std::sync::Arc;
+
+    const SUMMABLE_INDEX: &str = "trendingLikes";
+
+    /// `likes` per post, aligned with [`POSTS`]: the two newest-bucket
+    /// `#ibiza` posts carry 10 and 30 (sum 40, average 20), the older
+    /// `#ibiza` post carries 100 and the `#berlin` post 7 — both excluded,
+    /// so an aggregate that leaked either is off by an unmistakable amount.
+    const LIKES: [u64; 4] = [10, 30, 100, 7];
+
+    /// The summable twin of [`register_trending_contract`]: the same
+    /// six-hour/two-hour bucketed `(timeRange($createdAt), hashtag)` index,
+    /// but countable *and* summable over a `likes` property — the CountSum
+    /// value trees that SUM reads and AVG derives `(count, sum)` from. The
+    /// plain `byHashtag` index mirrors both aggregate declarations so index
+    /// selection again has a wrong-but-covering candidate to reject.
+    fn register_engagement_contract(
+        platform: &Platform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a factory");
+        let schemas = platform_value!({
+            DOCUMENT_TYPE: {
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+                    "likes": { "type": "integer", "position": 1 },
+                },
+                "indices": [
+                    {
+                        "name": SUMMABLE_INDEX,
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "summable": "likes",
+                        "timeRange": { "on": "$createdAt", "range": 21_600u64, "step": 7_200u64 },
+                    },
+                    {
+                        "name": "byHashtag",
+                        "properties": [{ "hashtag": "asc" }, { "$createdAt": "asc" }],
+                        "countable": true,
+                        "summable": "likes",
+                    },
+                ],
+                "required": ["$createdAt", "hashtag", "likes"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = factory
+            .create_with_value_config(Identifier::new([8u8; 32]), 0, schemas, None, None)
+            .expect("the engagement contract is well-formed")
+            .data_contract_owned();
+        store_data_contract(platform, &contract, platform_version);
+        contract
+    }
+
+    /// [`insert_posts`] with a `likes` value from [`LIKES`] on each post.
+    fn insert_engagement_posts(
+        platform: &Platform<MockCoreRPCLike>,
+        contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) {
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        for (i, ((created_at_ms, hashtag), likes)) in POSTS.iter().zip(LIKES).enumerate() {
+            let mut document: Document = document_type
+                .random_document(Some(8_000 + i as u64), platform_version)
+                .expect("random document");
+            document.set_properties(BTreeMap::from([
+                ("hashtag".to_string(), Value::Text(hashtag.to_string())),
+                ("likes".to_string(), Value::U64(likes)),
+            ]));
+            document.set_created_at(Some(*created_at_ms));
+            store_document(
+                platform,
+                contract,
+                document_type,
+                &document,
+                platform_version,
+            );
+        }
+    }
+
+    /// Engagement contract registered, liked posts inserted, and a platform
+    /// state whose committed block time is [`BLOCK_TIME_MS`].
+    fn setup_engagement(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        base_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, PlatformState) {
+        let contract = register_engagement_contract(platform, platform_version);
+        insert_engagement_posts(platform, &contract, platform_version);
+        let state = state_with_committed_block_time(base_state, &platform.drive, platform_version);
+        (contract, state)
+    }
+
+    /// The query a real SDK caller would build: the selector still pending in
+    /// `time_range_clauses`, to be resolved by the entry point itself from
+    /// the signed metadata time.
+    fn sdk_query(
+        contract: &DataContract,
+        hashtag: &str,
+        select: SelectProjection,
+    ) -> SdkDocumentQuery {
+        SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
+            .expect("the fixture has this document type")
+            .with_select(select)
+            .with_where(WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(hashtag.to_string()),
+            })
+            .with_time_range(CREATED_AT, TimeRangeSelector::Newest)
+    }
+
+    /// Wrap a handler proof and its metadata the way the wire does, so the
+    /// entry points consume exactly what a node returns.
+    fn signed_response(proof: Proof, mtd: &ResponseMetadata) -> GetDocumentsResponse {
+        GetDocumentsResponse {
+            version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
+                metadata: Some(mtd.clone()),
+            })),
+        }
+    }
+
+    fn select_field(function: v1_select::Function, field: &str) -> Vec<V1Select> {
+        vec![V1Select {
+            function: function as i32,
+            field: field.to_string(),
+        }]
+    }
+
+    /// Nudge the signed time one full step so the entry point's own
+    /// resolution lands on a different bucket than the proof covers.
+    fn one_step_later(
+        contract: &DataContract,
+        index: &str,
+        mtd: &ResponseMetadata,
+    ) -> ResponseMetadata {
+        let step_ms = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists")
+            .indexes()
+            .get(index)
+            .expect("the bucketed index survives contract registration")
+            .time_range
+            .as_ref()
+            .expect("the bucketed index carries its transform")
+            .step_ms();
+        let mut tampered = mtd.clone();
+        tampered.time_ms += step_ms;
+        tampered
+    }
+
+    /// The rejection must come from proof reconstruction (GroveDB/Drive) —
+    /// the caller re-signed the altered metadata, so `InvalidSignature`
+    /// would mean the deeper property (resolve-later-bucket → mismatched
+    /// proof path) was never exercised.
+    fn assert_proof_path_rejection(error: ProofVerifierError) {
+        assert!(
+            matches!(
+                error,
+                ProofVerifierError::GroveDBError { .. } | ProofVerifierError::DriveError { .. }
+            ),
+            "the rejection must come from the proof path, got: {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_count_proof_verifies_through_the_sdk_from_proof_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::count_star());
+        let (count, verified_mtd, _proof) =
+            <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed count must verify through the entry point");
+
+        assert_eq!(
+            count.expect("the newest bucket is not empty"),
+            DocumentCount(2),
+            "the two #ibiza posts in the newest bucket count once each through \
+             the entry point, exactly as through the step-by-step sequence"
+        );
+        assert_eq!(
+            verified_mtd.time_ms, BLOCK_TIME_MS,
+            "the metadata handed back is the one the resolution consumed"
+        );
+    }
+
+    #[test]
+    fn a_tampered_metadata_time_is_rejected_at_the_count_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let tampered = one_step_later(&contract, BUCKETED_INDEX, &mtd);
+
+        // Re-sign the altered metadata so the signature is valid —
+        // verification must then resolve the selector one step later,
+        // reconstruct the NEXT bucket's path query, and reject the
+        // original bucket's GroveDB proof. (Verification reconstructs the
+        // proof path BEFORE checking the signature, so an unsigned
+        // alteration would hit the same rejection without proving the
+        // signature binds anything; the binding itself is pinned by the
+        // trust-boundary tests above.)
+        let resigned = resign_over(&platform, &proof, &tampered, version);
+        let query = sdk_query(&contract, "ibiza", SelectProjection::count_star());
+        let error = <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+            query,
+            signed_response(resigned, &tampered),
+            Network::Testnet,
+            version,
+            &provider,
+        )
+        .expect_err("a validly re-signed later time must not verify the stale bucket's proof");
+        assert_proof_path_rejection(error);
+    }
+
+    #[test]
+    fn a_sum_proof_verifies_through_the_sdk_from_proof_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_engagement(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            selects: select_field(v1_select::Function::Sum, "likes"),
+            ..trending_request(contract.id().to_vec(), "ibiza", Vec::new())
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::sum("likes"));
+        let (sum, _mtd, _proof) =
+            <DocumentSum as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed sum must verify through the entry point");
+
+        assert_eq!(
+            sum.expect("the newest bucket is not empty"),
+            DocumentSum(40),
+            "10 + 30 likes on the two newest-bucket #ibiza posts — the older \
+             #ibiza post's 100 and the #berlin post's 7 must not leak in, and \
+             overlap fan-out must not multiply the total"
+        );
+    }
+
+    #[test]
+    fn a_tampered_metadata_time_is_rejected_at_the_sum_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_engagement(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            selects: select_field(v1_select::Function::Sum, "likes"),
+            ..trending_request(contract.id().to_vec(), "ibiza", Vec::new())
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let tampered = one_step_later(&contract, SUMMABLE_INDEX, &mtd);
+        let resigned = resign_over(&platform, &proof, &tampered, version);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::sum("likes"));
+        let error = <DocumentSum as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+            query,
+            signed_response(resigned, &tampered),
+            Network::Testnet,
+            version,
+            &provider,
+        )
+        .expect_err("a validly re-signed later time must not verify the stale bucket's proof");
+        assert_proof_path_rejection(error);
+    }
+
+    #[test]
+    fn an_average_proof_verifies_through_the_sdk_from_proof_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_engagement(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            selects: select_field(v1_select::Function::Avg, "likes"),
+            ..trending_request(contract.id().to_vec(), "ibiza", Vec::new())
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::avg("likes"));
+        let (average, _mtd, _proof) =
+            <DocumentAverage as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed average must verify through the entry point");
+
+        let average = average.expect("the newest bucket is not empty");
+        assert_eq!(
+            average,
+            DocumentAverage { count: 2, sum: 40 },
+            "the verified pair is the newest bucket's two #ibiza posts and \
+             their 40 likes — nothing from outside the bucket, nothing doubled"
+        );
+        assert_eq!(average.as_f64(), Some(20.0));
+    }
+
+    #[test]
+    fn a_tampered_metadata_time_is_rejected_at_the_average_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_engagement(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            selects: select_field(v1_select::Function::Avg, "likes"),
+            ..trending_request(contract.id().to_vec(), "ibiza", Vec::new())
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let tampered = one_step_later(&contract, SUMMABLE_INDEX, &mtd);
+        let resigned = resign_over(&platform, &proof, &tampered, version);
+
+        let query = sdk_query(&contract, "ibiza", SelectProjection::avg("likes"));
+        let error =
+            <DocumentAverage as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(resigned, &tampered),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect_err("a validly re-signed later time must not verify the stale bucket's proof");
+        assert_proof_path_rejection(error);
+    }
+    // ----- multiple grids over one timestamp ------------------------------
+
+    use drive::query::TimeRangeGridSpec;
+
+    const DAILY_INDEX: &str = "daily";
+    const DAY_SECONDS: u64 = 24 * 3_600;
+
+    /// The trending contract plus a second, daily (24h/24h) grid over the
+    /// same `$createdAt`. Grid-qualified level keys give each grid its own
+    /// subtree; the tests below pin that the wire can address each grid and
+    /// that the two prove independently.
+    fn register_two_grid_contract(
+        platform: &Platform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a factory");
+        let schemas = platform_value!({
+            DOCUMENT_TYPE: {
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+                },
+                "indices": [
+                    {
+                        "name": BUCKETED_INDEX,
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "timeRange": { "on": "$createdAt", "range": 21_600u64, "step": 7_200u64 },
+                    },
+                    {
+                        "name": DAILY_INDEX,
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "timeRange": { "on": "$createdAt", "range": DAY_SECONDS, "step": DAY_SECONDS },
+                    },
+                ],
+                "required": ["$createdAt", "hashtag"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = factory
+            .create_with_value_config(Identifier::new([9u8; 32]), 0, schemas, None, None)
+            .expect("a contract may bucket one timestamp with several grids")
+            .data_contract_owned();
+        store_data_contract(platform, &contract, platform_version);
+        contract
+    }
+
+    fn setup_two_grids(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        base_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, PlatformState) {
+        let contract = register_two_grid_contract(platform, platform_version);
+        insert_posts(platform, &contract, platform_version);
+        let state = state_with_committed_block_time(base_state, &platform.drive, platform_version);
+        (contract, state)
+    }
+
+    /// The wire's structured `IN_TIME_RANGE` operand:
+    /// `[selector, range, step]` (seconds, as the contract declares them).
+    fn structured_where_clauses(hashtag: &str, grid: TimeRangeGridSpec) -> Vec<ProtoWhereClause> {
+        let uint = |n: u64| ProtoDocumentFieldValue {
+            variant: Some(document_field_value::Variant::Uint64Value(n)),
+        };
+        let mut values = vec![
+            ProtoDocumentFieldValue {
+                variant: Some(document_field_value::Variant::Text(
+                    TimeRangeSelector::Newest.as_str().to_string(),
+                )),
+            },
+            uint(grid.range_seconds),
+            uint(grid.step_seconds),
+        ];
+        if grid.phase_seconds != 0 {
+            values.push(uint(grid.phase_seconds));
+        }
+        vec![
+            wc(
+                "hashtag",
+                ProtoWhereOperator::Equal,
+                Value::Text(hashtag.to_string()),
+            ),
+            ProtoWhereClause {
+                field: CREATED_AT.to_string(),
+                operator: ProtoWhereOperator::InTimeRange as i32,
+                value: Some(ProtoDocumentFieldValue {
+                    variant: Some(document_field_value::Variant::List(
+                        document_field_value::ValueList { values },
+                    )),
+                }),
+            },
+        ]
+    }
+
+    const TRENDING_GRID: TimeRangeGridSpec = TimeRangeGridSpec {
+        range_seconds: 21_600,
+        step_seconds: 7_200,
+        phase_seconds: 0,
+    };
+    const DAILY_GRID: TimeRangeGridSpec = TimeRangeGridSpec {
+        range_seconds: DAY_SECONDS,
+        step_seconds: DAY_SECONDS,
+        phase_seconds: 0,
+    };
+
+    /// With two grids on `$createdAt`, the bare text selector no longer
+    /// names a grid, so the handler refuses it as ambiguous rather than
+    /// picking one — a silent pick would prove an answer to a question the
+    /// client didn't ask.
+    #[test]
+    fn a_bare_selector_on_a_multi_grid_field_is_refused_as_ambiguous() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_two_grids(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("transport-level success");
+        assert!(
+            !result.errors.is_empty(),
+            "a bare selector over two grids must be refused"
+        );
+        assert!(
+            format!("{:?}", result.errors).contains("grids"),
+            "the refusal must say the field is multi-grid: {:?}",
+            result.errors
+        );
+    }
+
+    /// A four-element operand spelling a zero phase is refused: like the
+    /// contract grammar and the storage key, zero is spelled by omission so
+    /// every grid has exactly one wire spelling.
+    #[test]
+    fn an_explicit_zero_phase_operand_is_refused_as_non_canonical() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_two_grids(&platform, &base_state, version);
+
+        let mut clauses = structured_where_clauses("ibiza", TRENDING_GRID);
+        // append an explicit zero phase to the list operand
+        if let Some(ProtoDocumentFieldValue {
+            variant: Some(document_field_value::Variant::List(list)),
+        }) = clauses[1].value.as_mut()
+        {
+            list.values.push(ProtoDocumentFieldValue {
+                variant: Some(document_field_value::Variant::Uint64Value(0)),
+            });
+        } else {
+            panic!("the helper builds a list operand");
+        }
+        let request = GetDocumentsRequestV1 {
+            where_clauses: clauses,
+            ..trending_request(contract.id().to_vec(), "ibiza", select_count_star())
+        };
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("transport-level success");
+        assert!(
+            format!("{:?}", result.errors).contains("omission"),
+            "expected the one-spelling-per-grid refusal, got {:?}",
+            result.errors
+        );
+    }
+
+    /// Each grid proves and verifies independently through the SDK
+    /// `FromProof` entry point, with the structured operand naming the grid
+    /// on the wire and `with_time_range_grid` naming it in the client query.
+    /// The counts differ by design: the newest trending window holds two
+    /// `#ibiza` posts, while the newest daily window also contains the
+    /// one-hour-older post — three. A collapsed keyspace could not produce
+    /// both answers.
+    #[test]
+    fn each_grid_proves_and_verifies_independently_through_the_entry_point() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_two_grids(&platform, &base_state, version);
+
+        for (grid, expected_count) in [(TRENDING_GRID, 2u64), (DAILY_GRID, 3u64)] {
+            let request = GetDocumentsRequestV1 {
+                where_clauses: structured_where_clauses("ibiza", grid),
+                ..trending_request(contract.id().to_vec(), "ibiza", select_count_star())
+            };
+            let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+            let query = SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
+                .expect("the fixture has this document type")
+                .with_select(SelectProjection::count_star())
+                .with_where(WhereClause {
+                    field: "hashtag".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("ibiza".to_string()),
+                })
+                .with_time_range_grid(CREATED_AT, TimeRangeSelector::Newest, grid);
+            let (count, _mtd, _proof) =
+                <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                    query,
+                    signed_response(proof, &mtd),
+                    Network::Testnet,
+                    version,
+                    &provider,
+                )
+                .expect("a correctly signed per-grid count must verify");
+            assert_eq!(
+                count.expect("the bucket is not empty"),
+                DocumentCount(expected_count),
+                "grid {:?} must count its own bucket's members",
+                grid
+            );
+        }
+    }
+    // ----- routes that must refuse time-range selections ------------------
+
+    use drive_proof_verifier::{DocumentHavingEntries, DocumentRankedEntries};
+
+    /// The HAVING route accepts equality prefixes that pin plain ranked
+    /// indexes, and its picker excludes transformed ones — so a resolved
+    /// bucket-start equality reaching it would be served from raw
+    /// timestamps at the bucket boundary instead of the selected window.
+    /// The server must refuse the combination outright (drive owns the
+    /// rejection, through `DocumentHavingRequest::resolved_time_ranges`).
+    #[test]
+    fn the_having_route_refuses_a_time_range_selection() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            group_by: vec!["hashtag".to_string()],
+            having: vec![hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThan,
+                Value::U64(0),
+            )],
+            ..trending_request(contract.id().to_vec(), "ibiza", select_count_star())
+        };
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("transport-level success");
+        assert!(
+            format!("{:?}", result.errors).contains("time-range"),
+            "the HAVING route must refuse a time-range selection, got {:?}",
+            result.errors
+        );
+    }
+
+    /// The ranked and HAVING *verifiers* must refuse a time-range request
+    /// before authenticating anything: both surfaces pin plain ranked
+    /// indexes with equality prefixes, so a malicious node could otherwise
+    /// prove raw-timestamp matches at the bucket boundary against a request
+    /// shape every honest server rejects. The rejection fires ahead of
+    /// proof verification, so any signed response works as the fixture.
+    #[test]
+    fn ranked_and_having_verifiers_refuse_time_range_requests() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let time_range_query = || {
+            SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
+                .expect("the fixture has this document type")
+                .with_select(SelectProjection::count_star())
+                .with_time_range(CREATED_AT, TimeRangeSelector::Newest)
+        };
+
+        let error =
+            <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                time_range_query(),
+                signed_response(proof.clone(), &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect_err("the ranked verifier must refuse a time-range request");
+        assert!(
+            error.to_string().contains("time-range"),
+            "expected the ranked time-range refusal, got {error}"
+        );
+
+        let error =
+            <DocumentHavingEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                time_range_query().with_having(vec![drive::query::HavingClause {
+                    aggregate: drive::query::HavingAggregate {
+                        function: drive::query::HavingAggregateFunction::Count,
+                        field: String::new(),
+                    },
+                    operator: drive::query::HavingOperator::GreaterThan,
+                    right: drive::query::HavingRightOperand::Value(Value::U64(0)),
+                }]),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect_err("the HAVING verifier must refuse a time-range request");
+        assert!(
+            error.to_string().contains("time-range"),
+            "expected the HAVING time-range refusal, got {error}"
+        );
+    }
+
+    /// A drive query carrying resolution provenance has no faithful
+    /// `DocumentQuery` form — serializing it would demote the resolved
+    /// bucket equality to a raw-timestamp predicate — so the conversion
+    /// must refuse rather than silently rewrite the question.
+    #[test]
+    fn a_resolved_drive_query_cannot_convert_to_a_document_query() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let block_time_ms = state
+            .last_committed_block_time_ms()
+            .expect("the fixture committed a block");
+        let (clause, resolution) = resolve_time_range_bucket_clause(
+            CREATED_AT,
+            TimeRangeSelector::Newest,
+            None,
+            document_type,
+            block_time_ms,
+        )
+        .expect("the committed block time is inside an active range");
+
+        let mut drive_query = DriveDocumentQuery::from_typed_clauses(
+            vec![clause],
+            Vec::new(),
+            None,
+            None,
+            true,
+            None,
+            &contract,
+            document_type,
+            &platform.config.drive,
+            version,
+        )
+        .expect("the resolved clause builds a drive query");
+        drive_query.resolved_time_ranges = vec![resolution];
+
+        let error = SdkDocumentQuery::try_from(&drive_query)
+            .expect_err("resolution provenance must not survive the conversion");
+        assert!(
+            error.to_string().contains("provenance"),
+            "expected the provenance rejection, got {error}"
         );
     }
 }
