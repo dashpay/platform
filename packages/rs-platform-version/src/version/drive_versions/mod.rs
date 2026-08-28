@@ -78,6 +78,8 @@ pub struct DriveMethodVersions {
 pub struct DrivePlatformStateMethodVersions {
     pub fetch_platform_state_bytes: FeatureVersion,
     pub store_platform_state_bytes: FeatureVersion,
+    pub fetch_reduced_platform_state_bytes: FeatureVersion,
+    pub store_reduced_platform_state_bytes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
