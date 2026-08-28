@@ -1306,8 +1306,9 @@ pub struct IdentityScanStateEntry {
     ///
     /// A scan abandoned mid-await answered no index and failed none, so
     /// [`Self::failed_indices`] cannot speak for it: what it never reached has
-    /// no name. Only a scan starting at index 0 covers a region nobody can
-    /// point at, so the fact rides the state until one does.
+    /// no name. Only a scan that starts at index 0 and answers everything it
+    /// probed covers a region nobody can point at, so the fact rides the state
+    /// until one does.
     ///
     /// Stored rather than read back off `failed_indices` because a fold mixes
     /// the two kinds of gap. An unlocated gap followed by a suffix scan with
@@ -1361,9 +1362,11 @@ impl IdentityScanStateEntry {
     /// A gap this scan covered and answered is cleared; one it re-probed and
     /// still could not answer is already among its own `failed_indices`. A gap
     /// nobody could name is carried in [`Self::unlocated_gap`], which only a
-    /// scan starting at index 0 clears — the fold in between may add and clear
-    /// named gaps freely without touching it. The result is complete only when
-    /// this scan was clean AND it left nothing carried over of either kind.
+    /// clean scan starting at index 0 clears — a from-zero scan cut short
+    /// covered no more than the window it walked, so the unknown region above
+    /// it is still unknown. The folds in between may add and clear named gaps
+    /// freely without touching it. The result is complete only when this scan
+    /// was clean AND it left nothing carried over of either kind.
     pub fn superseding(mut self, previous: &Self) -> Self {
         let covered = self.probed_from..self.probed_through;
         for index in &previous.failed_indices {
@@ -1375,11 +1378,16 @@ impl IdentityScanStateEntry {
 
         // An unlocated gap is carried as a fact rather than re-derived from
         // `failed_indices`, which cannot hold a gap that has no name. Only a
-        // scan that starts at the bottom of the index space can be said to
-        // have covered it, so nothing narrower supersedes it — and until one
-        // does it survives every fold in between, including the ones that put
-        // named gaps of their own into the list.
-        self.unlocated_gap = self.unlocated_gap || (previous.unlocated_gap && self.probed_from > 0);
+        // scan that starts at the bottom of the index space and answers
+        // everything it probed can be said to have covered it: one that starts
+        // there and is itself cut short walked only as far as it got, and the
+        // region above that is the same one nobody could point at. So nothing
+        // narrower and nothing unfinished supersedes it — until one does it
+        // survives every fold in between, including the ones that put named
+        // gaps of their own into the list.
+        let supersedes_unlocated_gap = self.complete && self.probed_from == 0;
+        self.unlocated_gap =
+            self.unlocated_gap || (previous.unlocated_gap && !supersedes_unlocated_gap);
 
         self.complete = self.complete && self.failed_indices.is_empty() && !self.unlocated_gap;
         self

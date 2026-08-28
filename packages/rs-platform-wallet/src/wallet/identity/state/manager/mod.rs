@@ -617,6 +617,56 @@ mod tests {
         assert!(!manager.identity_scan_is_incomplete(&wallet));
     }
 
+    /// Starting at index 0 is not the same as having covered the region an
+    /// unlocated gap could be hiding in. A scan that begins at the bottom and
+    /// is itself cut short walked only as far as it got, and everything above
+    /// that is still the same unlooked-at space the abandoned scan left.
+    ///
+    /// Only the scan's own window can be credited: an incomplete from-zero
+    /// scan carries the gap on, and a later suffix scan that answers the names
+    /// it did leave behind must not read the list going empty as the unknown
+    /// region having been covered.
+    #[test]
+    fn an_abandoned_gap_survives_an_incomplete_scan_from_index_zero() {
+        use crate::changeset::IdentityScanStateEntry;
+
+        let wallet: WalletId = [11u8; 32];
+        let mut manager = IdentityManager::new();
+
+        // Discovery dropped mid-await: no coverage, no named index, the gap
+        // could be anywhere.
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::incomplete(0, 0, Vec::new()));
+        assert!(manager.identity_scan_is_incomplete(&wallet));
+
+        // A rescan does start at the bottom, but is cut off at index 2 with
+        // index 1 unanswered. It covered 0..2 and nothing above, so the
+        // abandoned gap is exactly as unlocated as it was.
+        let recorded =
+            manager.record_identity_scan(wallet, IdentityScanStateEntry::incomplete(0, 2, vec![1]));
+        assert!(
+            recorded.unlocated_gap,
+            "a from-zero scan that never finished covered only the window it walked, \
+             so the region above it is still the one nobody can point at"
+        );
+        assert!(manager.identity_scan_is_incomplete(&wallet));
+
+        // A suffix scan answers index 1. That named gap is legitimately gone —
+        // the unlocated one is not, and the failed list going empty must not
+        // be read as it having been covered.
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::completed(1, 3));
+        assert!(
+            manager.identity_scan_is_incomplete(&wallet),
+            "no scan has both started at index 0 and finished clean, so this hands \
+             the warm shortcut back over a region no scan ever covered"
+        );
+
+        // A scan that starts at the bottom AND finishes clean does supersede
+        // it — without this the assertion above would pass against a verdict
+        // stuck on incomplete forever.
+        manager.record_identity_scan(wallet, IdentityScanStateEntry::completed(0, 9));
+        assert!(!manager.identity_scan_is_incomplete(&wallet));
+    }
+
     #[test]
     fn from_start_state_rebuilds_location_index() {
         use crate::changeset::IdentityManagerStartState;
