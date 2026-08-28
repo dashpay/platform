@@ -305,6 +305,7 @@ fn list_to_json(list: &MasternodeListSummary) -> Value {
         "platformNodeId": hex_opt(list.platform_node_id),
         "isValid": list.is_valid,
         "isEvonode": list.is_evonode,
+        "hasExtendedNetInfo": list.has_extended_net_info,
     })
 }
 
@@ -320,6 +321,9 @@ fn list_from_json(value: &Value) -> Option<MasternodeListSummary> {
         platform_node_id: parse_hex(&value["platformNodeId"]),
         is_valid: value["isValid"].as_bool()?,
         is_evonode: value["isEvonode"].as_bool()?,
+        // Absent on snapshots persisted before the field existed; the
+        // next refresh rewrites it from the live entry.
+        has_extended_net_info: value["hasExtendedNetInfo"].as_bool().unwrap_or(false),
     })
 }
 

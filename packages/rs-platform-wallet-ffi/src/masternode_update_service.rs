@@ -134,13 +134,17 @@ unsafe fn wallet_operator_secret(
             "the wallet did not return the operator private key",
         )
     })?;
-    let bytes: [u8; 32] = private.as_slice().try_into().map_err(|_| {
-        PlatformWalletFFIResult::err(
+    // Copy straight into zeroizing storage — a plain `[u8; 32]` intermediate
+    // is `Copy` and would leave an unscrubbed stack copy of the secret.
+    if private.len() != 32 {
+        return Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             "the derived operator private key is not 32 bytes",
-        )
-    })?;
-    Ok(Zeroizing::new(bytes))
+        ));
+    }
+    let mut bytes = Zeroizing::new([0u8; 32]);
+    bytes.copy_from_slice(private.as_slice());
+    Ok(bytes)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -223,11 +227,13 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_update_service(
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     out_txid: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
+    // `out_txid` first: the zero-on-every-path contract must hold even
+    // when a later required pointer is null.
+    check_ptr!(out_txid);
+    *out_txid = [0u8; 32];
     check_ptr!(wallet_id);
     check_ptr!(pro_tx_hash);
     check_ptr!(mnemonic_resolver_handle);
-    check_ptr!(out_txid);
-    *out_txid = [0u8; 32];
 
     let context = match resolve_context(manager_handle, wallet_id) {
         Ok(context) => context,
@@ -283,12 +289,14 @@ pub unsafe extern "C" fn platform_wallet_manager_tracked_masternode_update_servi
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     out_txid: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
+    // `out_txid` first: the zero-on-every-path contract must hold even
+    // when a later required pointer is null.
+    check_ptr!(out_txid);
+    *out_txid = [0u8; 32];
     check_ptr!(wallet_id);
     check_ptr!(pro_tx_hash);
     check_ptr!(operator_key_text);
     check_ptr!(mnemonic_resolver_handle);
-    check_ptr!(out_txid);
-    *out_txid = [0u8; 32];
 
     let key_text = unwrap_result_or_return!(std::ffi::CStr::from_ptr(operator_key_text).to_str());
 
@@ -298,7 +306,9 @@ pub unsafe extern "C" fn platform_wallet_manager_tracked_masternode_update_servi
     };
     let secret = match parse_secret_for_role(key_text, MasternodeKeyRole::Operator, context.network)
     {
-        Ok(LocatorSecret::Bls(secret)) => Zeroizing::new(*secret),
+        // Move the existing zeroizing container; dereferencing it would
+        // place a `Copy` of the secret on the stack.
+        Ok(LocatorSecret::Bls(secret)) => secret,
         Ok(_) => {
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -377,13 +387,14 @@ mod tests {
         }
     }
 
-    /// Null required pointers are rejected before anything else runs.
+    /// Null required pointers are rejected before anything else runs —
+    /// and a valid `out_txid` is still zeroed first, per its contract.
     #[test]
     fn null_pointers_are_rejected() {
         unsafe {
             let wallet_id = [0u8; 32];
             let pro_tx_hash = [0u8; 32];
-            let mut txid = [0u8; 32];
+            let mut txid = [0xAAu8; 32];
 
             let result = platform_wallet_manager_masternode_update_service(
                 Handle::MAX,
@@ -397,9 +408,14 @@ mod tests {
                 &mut txid,
             );
             assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+            assert_eq!(
+                txid, [0u8; 32],
+                "out_txid is zeroed before other pointer checks"
+            );
             let mut result = result;
             platform_wallet_ffi_result_free(&mut result);
 
+            let mut txid = [0xAAu8; 32];
             let result = platform_wallet_manager_tracked_masternode_update_service(
                 Handle::MAX,
                 wallet_id.as_ptr(),
@@ -412,6 +428,10 @@ mod tests {
                 &mut txid,
             );
             assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+            assert_eq!(
+                txid, [0u8; 32],
+                "out_txid is zeroed before other pointer checks"
+            );
             let mut result = result;
             platform_wallet_ffi_result_free(&mut result);
         }

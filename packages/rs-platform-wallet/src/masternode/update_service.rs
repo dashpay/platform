@@ -135,12 +135,34 @@ async fn fetch_operator_reward(
                  operator reward"
             ))
         })?;
-    match fetched.transaction.special_transaction_payload {
+    operator_reward_from_registration(pro_tx_hash, &fetched.transaction)
+}
+
+/// Read `operatorReward` out of a fetched registration transaction —
+/// binding the response to the request first: DAPI's get-transaction reply
+/// is not authenticated, so the decoded transaction must hash to the
+/// SPV-authenticated proTxHash before its payload is trusted. Without this
+/// check a faulty or malicious endpoint could answer with an unrelated
+/// zero-reward ProRegTx and steer [`resolve_operator_payout_script`] into
+/// clearing a real operator payout.
+pub(crate) fn operator_reward_from_registration(
+    pro_tx_hash: &[u8; 32],
+    transaction: &dashcore::Transaction,
+) -> Result<u16, PlatformWalletError> {
+    let expected = Txid::from_byte_array(*pro_tx_hash);
+    let actual = transaction.txid();
+    if actual != expected {
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "DAPI returned transaction {actual} for requested registration transaction \
+             {expected}"
+        )));
+    }
+    match &transaction.special_transaction_payload {
         Some(TransactionPayload::ProviderRegistrationPayloadType(registration)) => {
             Ok(registration.operator_reward)
         }
         _ => Err(PlatformWalletError::InvalidParameter(format!(
-            "transaction {display} is not a provider registration transaction"
+            "transaction {expected} is not a provider registration transaction"
         ))),
     }
 }
@@ -219,6 +241,18 @@ pub(crate) fn prepare_update_service_placeholder(
     platform_p2p_port: Option<u16>,
     script_payout: ScriptBuf,
 ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+    // A v3 extended entry advertises an endpoint map the version-2 payload
+    // cannot express: Core would replace the whole map with the single
+    // address below, downgrading the entry and discarding live endpoints.
+    // Refuse until a v3 ProUpServTx payload exists to re-assert it.
+    if entry.has_extended_net_info {
+        return Err(PlatformWalletError::InvalidParameter(
+            "this masternode advertises v3 extended network info; a version-2 update-service \
+             payload would replace its whole endpoint map with a single address, so it cannot \
+             be re-asserted from this wallet yet"
+                .to_string(),
+        ));
+    }
     let service = entry.service_address.ok_or_else(|| {
         PlatformWalletError::InvalidParameter(
             "the masternode's service address is not a plain IP:port entry, so it cannot be \
@@ -514,6 +548,81 @@ mod tests {
 
         let err = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
             .expect_err("an evonode payload without the P2P port must be refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    #[test]
+    fn placeholder_refuses_a_v3_extended_net_info_entry() {
+        // A v2 payload would replace the whole endpoint map with the primary
+        // address — refuse even though a routable primary exists.
+        let mut entry = operator_entry(0x55, false);
+        entry.has_extended_net_info = true;
+        assert!(
+            entry.service_address.is_some(),
+            "primary address present and routable"
+        );
+        let err = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
+            .expect_err("an extended-net-info entry must be refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    fn registration_transaction(operator_reward: u16) -> Transaction {
+        use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderRegistrationPayload;
+        use dashcore::bls_sig_utils::BLSPublicKey;
+        use dashcore::{OutPoint, PubkeyHash};
+
+        Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: Some(TransactionPayload::ProviderRegistrationPayloadType(
+                ProviderRegistrationPayload {
+                    version: ProviderRegistrationPayload::CURRENT_VERSION,
+                    masternode_type: ProviderMasternodeType::Regular,
+                    masternode_mode: 0,
+                    collateral_outpoint: OutPoint {
+                        txid: Txid::all_zeros(),
+                        vout: 0,
+                    },
+                    service_address: "10.0.0.1:9999".parse().expect("socket address"),
+                    owner_key_hash: PubkeyHash::from_byte_array([1; 20]),
+                    operator_public_key: BLSPublicKey::from([2; 48]),
+                    voting_key_hash: PubkeyHash::from_byte_array([3; 20]),
+                    operator_reward,
+                    script_payout: ScriptBuf::new(),
+                    inputs_hash: InputsHash::all_zeros(),
+                    signature: vec![],
+                    platform_node_id: None,
+                    platform_p2p_port: None,
+                    platform_http_port: None,
+                },
+            )),
+        }
+    }
+
+    /// The DAPI get-transaction reply is unauthenticated: the payload is
+    /// trusted only after the decoded transaction hashes to the requested
+    /// proTxHash.
+    #[test]
+    fn operator_reward_binds_the_fetched_transaction_to_the_request() {
+        let transaction = registration_transaction(500);
+        let matching = transaction.txid().to_byte_array();
+
+        let reward = operator_reward_from_registration(&matching, &transaction)
+            .expect("a matching registration transaction is accepted");
+        assert_eq!(reward, 500);
+
+        let err = operator_reward_from_registration(&[0x99; 32], &transaction)
+            .expect_err("a transaction that does not hash to the request must be refused");
+        assert!(matches!(err, PlatformWalletError::InvalidIdentityData(_)));
+
+        // The right txid but not a ProRegTx payload.
+        let mut not_registration = registration_transaction(0);
+        not_registration.special_transaction_payload = None;
+        let plain_txid = not_registration.txid().to_byte_array();
+        let err = operator_reward_from_registration(&plain_txid, &not_registration)
+            .expect_err("a non-registration transaction must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
 
