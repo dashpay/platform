@@ -278,7 +278,20 @@ struct WalletDetailView: View {
             WithdrawPlatformAddressView(wallet: wallet)
         }
         .sheet(item: $resumingAssetLock) { lock in
-            FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+            // Route by funding type. Both top-up types reach this sheet from
+            // `PendingPlatformFundFromAssetLocksList`, and they consume their
+            // locks through DIFFERENT transitions: type 4 resumes via
+            // `resumeFundFromAssetLock` (credit a Platform address), type 5
+            // via `shieldedResumeFundFromAssetLock` (Type 18 shield into the
+            // Orchard pool). Sending a shielded lock to the address view
+            // would submit the wrong transition against it, so surfacing the
+            // row without this branch would only move the dead end one tap
+            // later.
+            if lock.fundingTypeRaw == 5 {
+                ShieldedFundFromAssetLockView(wallet: wallet, resumeFromLock: lock)
+            } else {
+                FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+            }
         }
         .sheet(isPresented: $showShieldFromAssetLock) {
             ShieldedFundFromAssetLockView(wallet: wallet)
