@@ -1301,6 +1301,21 @@ pub struct IdentityScanStateEntry {
     /// plus any an earlier scan left that this one did not cover. Empty for a
     /// scan that was cut off before it could fail anything.
     pub failed_indices: Vec<u32>,
+    /// A scan ended without naming where its gap was, and nothing has covered
+    /// that region since.
+    ///
+    /// A scan abandoned mid-await answered no index and failed none, so
+    /// [`Self::failed_indices`] cannot speak for it: what it never reached has
+    /// no name. Only a scan starting at index 0 covers a region nobody can
+    /// point at, so the fact rides the state until one does.
+    ///
+    /// Stored rather than read back off `failed_indices` because a fold mixes
+    /// the two kinds of gap. An unlocated gap followed by a suffix scan with
+    /// unanswered probes of its own produces a state with a non-empty failed
+    /// list, at which point the derived reading says "located" and a later
+    /// suffix scan covering those names hands the shortcut back over the
+    /// original gap.
+    pub unlocated_gap: bool,
 }
 
 impl IdentityScanStateEntry {
@@ -1311,6 +1326,7 @@ impl IdentityScanStateEntry {
             probed_from,
             probed_through,
             failed_indices: Vec::new(),
+            unlocated_gap: false,
         }
     }
 
@@ -1319,6 +1335,9 @@ impl IdentityScanStateEntry {
     pub fn incomplete(probed_from: u32, probed_through: u32, failed_indices: Vec<u32>) -> Self {
         Self {
             complete: false,
+            // A scan that named an unanswered index located its gap; one that
+            // named none was cut off before it could, and its gap has no name.
+            unlocated_gap: failed_indices.is_empty(),
             probed_from,
             probed_through,
             failed_indices,
@@ -1340,9 +1359,11 @@ impl IdentityScanStateEntry {
     /// reached from the other side.
     ///
     /// A gap this scan covered and answered is cleared; one it re-probed and
-    /// still could not answer is already among its own `failed_indices`. The
-    /// result is complete only when this scan was clean AND it left nothing
-    /// carried over.
+    /// still could not answer is already among its own `failed_indices`. A gap
+    /// nobody could name is carried in [`Self::unlocated_gap`], which only a
+    /// scan starting at index 0 clears — the fold in between may add and clear
+    /// named gaps freely without touching it. The result is complete only when
+    /// this scan was clean AND it left nothing carried over of either kind.
     pub fn superseding(mut self, previous: &Self) -> Self {
         let covered = self.probed_from..self.probed_through;
         for index in &previous.failed_indices {
@@ -1352,15 +1373,15 @@ impl IdentityScanStateEntry {
         }
         self.failed_indices.sort_unstable();
 
-        // An abandoned scan records no indices, so `failed_indices` cannot
-        // speak for it: what it never reached has no name. Only a scan that
-        // starts at the bottom of the index space can be said to have covered
-        // it, so nothing narrower may hand the shortcut back.
-        let previous_gap_is_unlocated = !previous.complete && previous.failed_indices.is_empty();
+        // An unlocated gap is carried as a fact rather than re-derived from
+        // `failed_indices`, which cannot hold a gap that has no name. Only a
+        // scan that starts at the bottom of the index space can be said to
+        // have covered it, so nothing narrower supersedes it — and until one
+        // does it survives every fold in between, including the ones that put
+        // named gaps of their own into the list.
+        self.unlocated_gap = self.unlocated_gap || (previous.unlocated_gap && self.probed_from > 0);
 
-        self.complete = self.complete
-            && self.failed_indices.is_empty()
-            && !(previous_gap_is_unlocated && self.probed_from > 0);
+        self.complete = self.complete && self.failed_indices.is_empty() && !self.unlocated_gap;
         self
     }
 }
