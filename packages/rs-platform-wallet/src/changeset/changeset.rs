@@ -110,12 +110,17 @@ pub struct CoreChangeSet {
     /// `transactions` row but destroys account attribution: a sibling
     /// account's `Change` output rides a record whose `account_type`
     /// names the funding account, and `OutputDetail` carries no owning
-    /// account. Persisters that route per-account state — the FFI
-    /// projection buckets `utxos_added` / `utxos_spent` by account so
-    /// Swift/Kotlin store each TXO under its owning account — read the
-    /// slices from here instead. Persisters that resolve accounts
-    /// another way (SQLite looks the address up in
-    /// `core_derived_addresses`) can ignore this field.
+    /// account. Persisters that route per-account state read the
+    /// slices from here instead: the FFI projection buckets
+    /// `utxos_added` / `utxos_spent` by each slice's account so
+    /// Swift/Kotlin store each TXO under its owning account, and it
+    /// emits the folded transaction row into EVERY slice-owning
+    /// account's bucket so the per-account transaction callback still
+    /// writes the tx↔account involvement join for payload-only
+    /// matches (provider owner/voting keys) that restart restoration
+    /// depends on. Persisters that resolve accounts another way
+    /// (SQLite looks the address up in `core_derived_addresses`) can
+    /// ignore this field.
     ///
     /// Merge coalesces by `(txid, account_type)` newest-wins, mirroring
     /// the wallet-level coalesce on `records`.

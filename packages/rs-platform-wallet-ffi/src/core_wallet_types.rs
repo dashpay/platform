@@ -319,8 +319,22 @@ impl WalletChangeSetFFI {
         //
         // Two record sources fill each account's bucket:
         //  - transaction rows come from `records` — wallet-level,
-        //    same-txid slices folded, attributed to the funding
-        //    account (dashpay/platform#4387);
+        //    same-txid slices folded (dashpay/platform#4387). Each
+        //    folded row is emitted into the bucket of EVERY account
+        //    that owns a slice of its txid, not just the funding
+        //    account's: the Swift/Kotlin per-account transaction
+        //    callback is the sole writer of the tx↔account involvement
+        //    join (`involvedAccounts` / `transaction_account_
+        //    involvements`), which payload-only matches — a ProReg/
+        //    ProUp payload hitting a provider owner or voting key, no
+        //    TXO in the account — depend on for restart restoration.
+        //    Funding-bucket-only emission dropped that involvement and
+        //    provider transactions vanished from restoration until a
+        //    rescan. The row's VALUES are identical in every bucket
+        //    (the persisted row is txid-keyed and account-agnostic),
+        //    so duplicate upserts converge; only the enclosing bucket
+        //    differs, which is exactly what the involvement join
+        //    records.
         //  - TXO deltas come from `account_records` — the raw
         //    per-account slices — so every UTXO lands in its OWNING
         //    account's bucket. Deriving TXOs from the folded record
@@ -349,13 +363,23 @@ impl WalletChangeSetFFI {
             Vec<&key_wallet::managed_account::transaction_record::TransactionRecord>,
         )> = Vec::new();
         for rec in &cs.records {
-            if let Some(bucket) = by_account
-                .iter_mut()
-                .find(|(at, _, _)| at == &rec.account_type)
-            {
-                bucket.1.push(rec);
-            } else {
-                by_account.push((rec.account_type, vec![rec], Vec::new()));
+            // Every account with a slice of this txid is involved; the
+            // record's own account (the funder) is a target even in
+            // the no-slices fallback. Dedup keeps a bucket from
+            // receiving the same row twice if a producer ever carries
+            // a duplicate slice.
+            let mut targets: Vec<AccountType> = vec![rec.account_type];
+            for slice in utxo_source.iter().filter(|s| s.txid == rec.txid) {
+                if !targets.contains(&slice.account_type) {
+                    targets.push(slice.account_type);
+                }
+            }
+            for target in targets {
+                if let Some(bucket) = by_account.iter_mut().find(|(at, _, _)| at == &target) {
+                    bucket.1.push(rec);
+                } else {
+                    by_account.push((target, vec![rec], Vec::new()));
+                }
             }
         }
         for rec in utxo_source {
@@ -1668,11 +1692,120 @@ mod tests {
             coinjoin_bucket.utxos_spent_count, 1,
             "the spend stays with the account that owned the coin"
         );
-        assert_eq!(bip44_bucket.transactions_count, 0);
+        assert_eq!(
+            bip44_bucket.transactions_count, 1,
+            "every involved account's bucket carries the folded row — the \
+             per-account transaction callback is the sole writer of the \
+             tx↔account involvement join"
+        );
+        let coinjoin_row = unsafe { &*coinjoin_bucket.transactions };
+        let bip44_row = unsafe { &*bip44_bucket.transactions };
+        assert_eq!(
+            coinjoin_row.net_amount, bip44_row.net_amount,
+            "the row's wallet-level values are identical in every bucket"
+        );
+        assert_eq!(coinjoin_row.net_amount, -901_000);
         assert_eq!(
             bip44_bucket.utxos_added_count, 1,
             "the change TXO lands in its OWNING account's bucket"
         );
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// The exact shape behind the provider-restoration P1: a ProReg-like
+    /// transaction funded by a Standard account whose payload ALSO
+    /// matches a provider owner-keys account. The provider slice is
+    /// payload-only — no TXO in the account — so the tx↔account
+    /// involvement join written by the per-bucket transaction callback
+    /// is the ONLY thing linking the tx to the provider account, and
+    /// restart restoration selects provider transactions through it.
+    /// The provider bucket must therefore receive the folded row even
+    /// though it contributes no TXO deltas.
+    #[test]
+    fn payload_only_provider_account_still_receives_the_transaction_row() {
+        use dashcore::{Address, Network, OutPoint, ScriptBuf, TxIn, TxOut, Witness};
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let provider = AccountType::ProviderOwnerKeys;
+        let funded_addr = Address::dummy(Network::Testnet, 4);
+        let dest = Address::dummy(Network::Testnet, 5);
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::default(),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 100_000_000,
+                script_pubkey: dest.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let rec =
+            |account, direction, inputs: Vec<InputDetail>, outputs: Vec<OutputDetail>, net| {
+                TransactionRecord::new(
+                    tx.clone(),
+                    account,
+                    TransactionContext::Mempool,
+                    TransactionType::Standard,
+                    direction,
+                    inputs,
+                    outputs,
+                    net,
+                )
+            };
+        let funding_slice = rec(
+            bip44,
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 100_001_000,
+                address: funded_addr,
+            }],
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Sent,
+                address: Some(dest),
+                value: 100_000_000,
+            }],
+            -100_001_000,
+        );
+        // Payload-only provider match: no input details, no output
+        // details — the owner key appears in the special-tx payload.
+        let provider_slice = rec(provider, TransactionDirection::Outgoing, vec![], vec![], 0);
+        let folded = funding_slice.clone();
+
+        let cs = CoreChangeSet {
+            records: vec![folded],
+            account_records: vec![funding_slice, provider_slice],
+            ..CoreChangeSet::default()
+        };
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 2);
+        let buckets = unsafe { std::slice::from_raw_parts(ffi.accounts, ffi.accounts_count) };
+        let provider_bucket = buckets
+            .iter()
+            .find(|b| b.type_tag == account_type_to_tags(&provider).type_tag)
+            .expect("provider bucket");
+        assert_eq!(
+            provider_bucket.transactions_count, 1,
+            "the payload-only provider account must receive the folded row, \
+             or its involvement join is never written and the transaction \
+             disappears from provider restoration after restart"
+        );
+        assert_eq!(provider_bucket.utxos_added_count, 0);
+        assert_eq!(provider_bucket.utxos_spent_count, 0);
         unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 
