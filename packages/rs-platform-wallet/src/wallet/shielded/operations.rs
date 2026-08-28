@@ -818,9 +818,11 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
-    // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
-    // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
-    // for 1 would under-fee a single-note transition and the builder would reject it locally.
+    // Reserve against the builder's actual bundle shape: 1 shielded output (the change note —
+    // the unshielded value leaves the pool as `value_balance`, not as a note), matching
+    // `build_unshield_transition`'s `shielded_bundle_action_count(spends, 1, …)`. The selector
+    // derives the action count from that shape through the same shared entry point, so
+    // Orchard's 2-action minimum padding comes from the shared layout rule, not a local floor.
     // Unshield is carved with `compute_shielded_unshield_fee` (the base fee PLUS the flat storage
     // cost of the single `AddBalanceToAddress` write crediting the net to the output address), so
     // reserve against `ShieldedFeeKind::Unshield` — reserving the base fee here would under-fund the
@@ -831,7 +833,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         store,
         id,
         amount,
-        2,
+        1,
         ShieldedFeeKind::Unshield,
         // `build_unshield_transition` accepts a zero-valued change output (it rejects only
         // `required > total_spent`), so exact coverage is a fundable selection.
@@ -1029,8 +1031,10 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
-    // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
-    // against `ShieldedFeeKind::Base`.
+    // Reserve against the builder's actual bundle shape: 2 shielded outputs (recipient +
+    // change), matching `build_shielded_transfer_transition`'s
+    // `shielded_bundle_action_count(spends, 2, …)`. ShieldedTransfer is carved with the base
+    // `compute_minimum_shielded_fee`, so reserve against `ShieldedFeeKind::Base`.
     let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
         sdk,
         store,
@@ -1430,9 +1434,12 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let id = SubwalletId::new(wallet_id, account);
     let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
 
-    // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
-    // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
-    // for 1 would under-fee a single-note transition and the builder would reject it locally.
+    // Reserve against the builder's actual bundle shape: 1 shielded output (the change note —
+    // the withdrawn value leaves the pool as `value_balance`), matching
+    // `build_shielded_withdrawal_transition`'s `shielded_bundle_action_count(spends, 1, …)`.
+    // The selector derives the action count from that shape through the same shared entry
+    // point, so Orchard's 2-action minimum padding comes from the shared layout rule, not a
+    // local floor.
     // ShieldedWithdrawal is carved with `compute_shielded_withdrawal_fee` (the base fee PLUS the
     // flat Core withdrawal-document storage cost), so reserve against
     // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
@@ -1443,7 +1450,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         store,
         id,
         amount,
-        2,
+        1,
         ShieldedFeeKind::Withdrawal,
         // `build_shielded_withdrawal_transition` likewise accepts zero change.
         ChangeRequirement::Optional,
@@ -1644,9 +1651,12 @@ where
     // Exact-equality model: reserve notes covering the denomination itself (NOT denomination + fee
     // — the fee is metered FROM the denomination at execution). The reservation also gates on
     // `denomination > predicted_fee` so the new identity can't be created with a non-positive
-    // balance. Orchard's BundleType::DEFAULT pads single-spend bundles to a 2-action floor.
+    // balance. The bundle shape is 1 shielded output (the change note — the denomination leaves
+    // the pool as `value_balance`), matching the builder's
+    // `shielded_bundle_action_count(spends, 1, …)`; Orchard's 2-action minimum padding comes
+    // from that shared layout rule.
     let (selected_notes, total_input, predicted_fee) =
-        reserve_unspent_notes_for_denomination(sdk, store, id, denomination, 2, num_keys).await?;
+        reserve_unspent_notes_for_denomination(sdk, store, id, denomination, 1, num_keys).await?;
 
     info!(
         account,
@@ -2312,6 +2322,11 @@ async fn mark_notes_spent<S: ShieldedStore>(
 /// Callers must pair this with [`finalize_pending`] (on
 /// broadcast success) or [`cancel_pending`] (on failure) so the
 /// reservation is always released.
+///
+/// `outputs` is the number of shielded outputs the builder will
+/// publish, INCLUDING its change output — the bundle shape
+/// [`select_notes_with_fee`] prices the fee from via the shared
+/// `shielded_bundle_action_count` layout rule.
 async fn reserve_unspent_notes<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -2347,7 +2362,7 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     denomination: u64,
-    min_actions: usize,
+    num_outputs: usize,
     num_keys: usize,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
     let mut store = store.write().await;
@@ -2357,7 +2372,7 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
     let (selected, total_input, predicted_fee) = select_notes_for_denomination(
         &unspent,
         denomination,
-        min_actions,
+        num_outputs,
         num_keys,
         sdk.version(),
     )?

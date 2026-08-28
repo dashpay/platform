@@ -7,6 +7,7 @@
 use super::store::ShieldedNote;
 use crate::error::PlatformWalletError;
 use dpp::fee::Credits;
+use dpp::shielded::builder::shielded_bundle_action_count;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
     compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
@@ -99,6 +100,29 @@ impl ChangeRequirement {
     }
 }
 
+/// Action count the builder's bundle layout will publish for `num_spends` spends and
+/// `num_outputs` outputs, via the shared DPP abstraction ([`shielded_bundle_action_count`],
+/// which delegates to Orchard's own `BundleType::num_actions`). This is the SAME entry point
+/// every shielded builder prices its fee from, so the reservation and construction paths
+/// cannot drift — the selector must never re-derive the bundle-layout rule locally (#4312
+/// review finding f5106ba1c721; parity pinned by
+/// `selector_reserved_fee_matches_builder_bundle_layout_across_shapes`).
+///
+/// `extra_envelope_bytes` is passed as 0 deliberately: the envelope only tightens the
+/// size-derived action CEILING the shared gate enforces, never the count it returns, and the
+/// builder re-runs the gate with its real envelope (asset-lock proof / identity key set)
+/// before any proving work. A fragmented selection that exceeds even the zero-envelope
+/// ceiling now fails here — before the notes are reserved — with the same gate error the
+/// builder would have produced.
+fn reserved_action_count(
+    num_spends: usize,
+    num_outputs: usize,
+    platform_version: &PlatformVersion,
+) -> Result<usize, PlatformWalletError> {
+    shielded_bundle_action_count(num_spends, num_outputs, 0, platform_version)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))
+}
+
 /// Select unspent notes to cover `amount + fee` using a greedy algorithm.
 ///
 /// Notes are sorted by value descending and accumulated until the target is met.
@@ -170,10 +194,17 @@ pub fn select_notes(
 ///
 /// The fee depends on the number of actions, which depends on the number of
 /// selected notes. This function iterates:
-/// 1. Estimate fee for `min_actions` (the builder's minimum action count)
+/// 1. Estimate fee for the smallest possible bundle shape (one spend, `num_outputs` outputs)
 /// 2. Select notes for amount + estimated fee
-/// 3. Compute exact fee from actual note count
+/// 3. Compute exact fee from the actual bundle shape (selected notes × `num_outputs`)
 /// 4. If insufficient, re-select with exact fee; repeat (converges in 2-3 iterations)
+///
+/// `num_outputs` is the number of shielded outputs the builder will publish, INCLUDING its
+/// change output (2 for the single-recipient transfer, `recipients + 1` for the multi-output
+/// transfer, 1 for unshield/withdrawal — their only shielded output is the change note). The
+/// action count is derived from that shape through [`reserved_action_count`] — the same shared
+/// DPP entry point the builders price from — so Orchard's bundle-layout rules (the 2-action
+/// minimum padding included) are delegated, never re-derived here.
 ///
 /// `fee_kind` selects which consensus fee formula to reserve against: pass
 /// [`ShieldedFeeKind::Withdrawal`] for a ShieldedWithdrawal (so the flat Core
@@ -197,14 +228,17 @@ pub fn select_notes(
 pub fn select_notes_with_fee<'a>(
     unspent: &'a [ShieldedNote],
     amount: u64,
-    min_actions: usize,
+    num_outputs: usize,
     fee_kind: ShieldedFeeKind,
     change: ChangeRequirement,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<&'a ShieldedNote>, u64, u64), PlatformWalletError> {
     let min_change = change.min_change_credits();
     let mut fee_estimate = fee_kind
-        .compute(min_actions, platform_version)
+        .compute(
+            reserved_action_count(1, num_outputs, platform_version)?,
+            platform_version,
+        )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
     // Target for `select_notes`, which adds it to `amount`: the fee plus the minimum change the
@@ -236,7 +270,7 @@ pub fn select_notes_with_fee<'a>(
     for _ in 0..5 {
         let selected = select_notes(unspent, amount, selection_target(fee_estimate)?)?;
         let total: u64 = selected.iter().map(|n| n.value).sum();
-        let num_actions = selected.len().max(min_actions);
+        let num_actions = reserved_action_count(selected.len(), num_outputs, platform_version)?;
         let exact_fee = fee_kind
             .compute(num_actions, platform_version)
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -251,7 +285,7 @@ pub fn select_notes_with_fee<'a>(
     // Final attempt with last computed fee
     let selected = select_notes(unspent, amount, selection_target(fee_estimate)?)?;
     let total: u64 = selected.iter().map(|n| n.value).sum();
-    let num_actions = selected.len().max(min_actions);
+    let num_actions = reserved_action_count(selected.len(), num_outputs, platform_version)?;
     let exact_fee = fee_kind
         .compute(num_actions, platform_version)
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -281,11 +315,16 @@ pub fn select_notes_with_fee<'a>(
 /// metered at consensus — so a small drift between the predictor and the metered amount does not
 /// affect selection (the full denomination is reserved regardless).
 ///
+/// `num_outputs` is the number of shielded outputs the identity-create builder publishes — 1,
+/// its change note (`build_identity_create_from_shielded_pool_transition` prices
+/// `shielded_bundle_action_count(spends, 1, …)`). The action count is derived from that shape
+/// through [`reserved_action_count`], the same shared DPP entry point the builder prices from.
+///
 /// Returns the selected notes, total input value, and the predicted fee.
 pub fn select_notes_for_denomination<'a>(
     unspent: &'a [ShieldedNote],
     denomination: u64,
-    min_actions: usize,
+    num_outputs: usize,
     num_keys: usize,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<&'a ShieldedNote>, u64, u64), PlatformWalletError> {
@@ -306,7 +345,7 @@ pub fn select_notes_for_denomination<'a>(
     // Target the denomination exactly — no fee added on top (exact-equality model).
     let selected = select_notes(unspent, denomination, 0)?;
     let total: u64 = selected.iter().map(|n| n.value).sum();
-    let num_actions = selected.len().max(min_actions);
+    let num_actions = reserved_action_count(selected.len(), num_outputs, platform_version)?;
     let predicted_fee = ShieldedFeeKind::IdentityCreate { num_keys }
         .compute(num_actions, platform_version)
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -358,7 +397,7 @@ mod tests {
         // validate_structure, so burning the prove path on it is pure waste.
         let platform_version = PlatformVersion::latest();
         let notes = vec![test_note(u64::MAX / 2, 0)];
-        let err = select_notes_for_denomination(&notes, 12_345, 2, 1, platform_version)
+        let err = select_notes_for_denomination(&notes, 12_345, 1, 1, platform_version)
             .expect_err("a non-member denomination must be rejected");
         assert!(
             matches!(err, PlatformWalletError::ShieldedBuildError(ref m) if m.contains("not a member")),
@@ -373,7 +412,7 @@ mod tests {
         let denomination = 10_000_000_000u64; // 0.1 DASH — a member of both the v12 and v13 sets.
         let notes = vec![test_note(denomination + 1, 0)];
         let (selected, total, _fee) =
-            select_notes_for_denomination(&notes, denomination, 2, 1, platform_version)
+            select_notes_for_denomination(&notes, denomination, 1, 1, platform_version)
                 .expect("a member denomination with enough value must select");
         assert_eq!(selected.len(), 1);
         assert!(total >= denomination);
@@ -433,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn test_select_notes_with_fee_floors_to_min_actions() {
+    fn test_select_notes_with_fee_pads_to_orchard_min_actions() {
         let platform_version = PlatformVersion::latest();
         let min_fee_2 = compute_minimum_shielded_fee(2, platform_version)
             .expect("fee computation should not overflow");
@@ -444,7 +483,7 @@ mod tests {
         let (selected, total, exact_fee) = select_notes_with_fee(
             &notes,
             amount,
-            2,
+            1,
             ShieldedFeeKind::Base,
             ChangeRequirement::Optional,
             platform_version,
@@ -453,8 +492,9 @@ mod tests {
 
         assert_eq!(selected.len(), 1);
         assert_eq!(total, amount + min_fee_2 + 5);
-        // One selected note → num_actions = max(1, min_actions=2) = 2, so the fee is the
-        // 2-action minimum even though only one note is spent (the Orchard bundle pads to 2).
+        // One spend and one output still price as 2 actions: Orchard's BundleType::DEFAULT pads
+        // every bundle to its 2-action minimum, and the selector inherits that from the shared
+        // `shielded_bundle_action_count` layout rule rather than a caller-supplied floor.
         assert_eq!(exact_fee, min_fee_2);
     }
 
@@ -466,8 +506,8 @@ mod tests {
     #[test]
     fn test_select_notes_with_fee_reserves_multi_output_action_floor() {
         let platform_version = PlatformVersion::latest();
-        // Two recipient notes + change = 3 outputs → a 3-action floor.
-        let min_actions = 3;
+        // Two recipient notes + change = 3 outputs → a 3-action bundle even with one spend.
+        let num_outputs = 3;
         let min_fee_3 = compute_minimum_shielded_fee(3, platform_version).expect("fee");
         let min_fee_2 = compute_minimum_shielded_fee(2, platform_version).expect("fee");
         assert!(
@@ -482,7 +522,7 @@ mod tests {
         let (selected, _total, exact_fee) = select_notes_with_fee(
             &notes,
             amount,
-            min_actions,
+            num_outputs,
             ShieldedFeeKind::Base,
             ChangeRequirement::Optional,
             platform_version,
@@ -507,10 +547,10 @@ mod tests {
     #[test]
     fn test_select_notes_with_fee_strict_change_takes_one_more_credit() {
         let platform_version = PlatformVersion::latest();
-        // Two recipient notes + change = 3 outputs → the 3-action floor the multi-output
+        // Two recipient notes + change = 3 outputs → the 3-action bundle the multi-output
         // transfer reserves against.
-        let min_actions = 3;
-        let fee = compute_minimum_shielded_fee(min_actions, platform_version).expect("fee");
+        let num_outputs = 3;
+        let fee = compute_minimum_shielded_fee(num_outputs, platform_version).expect("fee");
         let amount = 3_000_000_000u64;
 
         // The reviewer's shape: one note covering `amount + fee` exactly, plus a single credit.
@@ -519,7 +559,7 @@ mod tests {
         let (selected, total, exact_fee) = select_notes_with_fee(
             &notes,
             amount,
-            min_actions,
+            num_outputs,
             ShieldedFeeKind::Base,
             ChangeRequirement::StrictlyPositive,
             platform_version,
@@ -545,7 +585,7 @@ mod tests {
         let (permissive, permissive_total, permissive_fee) = select_notes_with_fee(
             &notes,
             amount,
-            min_actions,
+            num_outputs,
             ShieldedFeeKind::Base,
             ChangeRequirement::Optional,
             platform_version,
@@ -564,8 +604,8 @@ mod tests {
     #[test]
     fn test_select_notes_with_fee_strict_change_reports_the_extra_credit_as_required() {
         let platform_version = PlatformVersion::latest();
-        let min_actions = 3;
-        let fee = compute_minimum_shielded_fee(min_actions, platform_version).expect("fee");
+        let num_outputs = 3;
+        let fee = compute_minimum_shielded_fee(num_outputs, platform_version).expect("fee");
         let amount = 3_000_000_000u64;
         // Exactly `amount + fee` and not a credit more.
         let notes = vec![test_note(amount + fee, 0)];
@@ -573,7 +613,7 @@ mod tests {
         let err = select_notes_with_fee(
             &notes,
             amount,
-            min_actions,
+            num_outputs,
             ShieldedFeeKind::Base,
             ChangeRequirement::StrictlyPositive,
             platform_version,
@@ -608,7 +648,7 @@ mod tests {
     #[test]
     fn test_select_notes_with_fee_strict_change_overflow_is_an_error_not_saturation() {
         let platform_version = PlatformVersion::latest();
-        let min_actions = 2;
+        let num_outputs = 2;
         let fee_2 = compute_minimum_shielded_fee(2, platform_version).expect("fee");
         let fee_3 = compute_minimum_shielded_fee(3, platform_version).expect("fee");
         assert!(fee_3 > fee_2, "the fee must grow with the action count");
@@ -630,7 +670,7 @@ mod tests {
         let err = select_notes_with_fee(
             &notes,
             amount,
-            min_actions,
+            num_outputs,
             ShieldedFeeKind::Base,
             ChangeRequirement::StrictlyPositive,
             platform_version,
@@ -652,7 +692,7 @@ mod tests {
     #[test]
     fn test_select_notes_with_fee_strict_change_holds_after_fee_reconvergence() {
         let platform_version = PlatformVersion::latest();
-        let min_actions = 3;
+        let num_outputs = 3;
         let amount = 1_000_000u64;
         // Many equal mid-size notes, so several must be selected and the action count — and with
         // it the fee — climbs past the 3-action floor during convergence.
@@ -661,16 +701,19 @@ mod tests {
         let (selected, total, exact_fee) = select_notes_with_fee(
             &notes,
             amount,
-            min_actions,
+            num_outputs,
             ShieldedFeeKind::Base,
             ChangeRequirement::StrictlyPositive,
             platform_version,
         )
         .expect("selection ok");
 
-        let expected_fee =
-            compute_minimum_shielded_fee(selected.len().max(min_actions), platform_version)
-                .expect("fee");
+        let expected_fee = compute_minimum_shielded_fee(
+            shielded_bundle_action_count(selected.len(), num_outputs, 0, platform_version)
+                .expect("shape within ceilings"),
+            platform_version,
+        )
+        .expect("fee");
         assert_eq!(
             exact_fee, expected_fee,
             "the returned fee must match the selected action count"
@@ -729,7 +772,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let amount = 1_000_000u64;
         // Many equal mid-size notes so several are needed; the convergence loop must settle on
-        // a fee that matches the actual selected-note (action) count, not the min_actions floor.
+        // a fee that matches the actual selected-note (action) count, not Orchard's minimum pad.
         let note_val = 60_000_000u64;
         let notes: Vec<ShieldedNote> = (0..20).map(|i| test_note(note_val, i)).collect();
 
@@ -743,8 +786,12 @@ mod tests {
         )
         .expect("selection ok");
 
-        let expected_fee =
-            compute_minimum_shielded_fee(selected.len().max(2), platform_version).unwrap();
+        let expected_fee = compute_minimum_shielded_fee(
+            shielded_bundle_action_count(selected.len(), 2, 0, platform_version)
+                .expect("shape within ceilings"),
+            platform_version,
+        )
+        .unwrap();
         assert_eq!(
             exact_fee, expected_fee,
             "fee must match the selected action count"
@@ -842,7 +889,7 @@ mod tests {
         let notes = vec![test_note(denomination, 0)];
 
         let (selected, total, predicted_fee) =
-            select_notes_for_denomination(&notes, denomination, 2, 1, platform_version)
+            select_notes_for_denomination(&notes, denomination, 1, 1, platform_version)
                 .expect("selection ok");
 
         assert_eq!(selected.len(), 1);
@@ -867,10 +914,10 @@ mod tests {
         let notes = vec![test_note(denomination, 0)];
 
         let (_, _, fee_1_key) =
-            select_notes_for_denomination(&notes, denomination, 2, 1, platform_version)
+            select_notes_for_denomination(&notes, denomination, 1, 1, platform_version)
                 .expect("selection ok");
         let (_, _, fee_5_keys) =
-            select_notes_for_denomination(&notes, denomination, 2, 5, platform_version)
+            select_notes_for_denomination(&notes, denomination, 1, 5, platform_version)
                 .expect("selection ok");
 
         assert!(
@@ -890,7 +937,7 @@ mod tests {
         let denomination = predicted_fee;
         let notes = vec![test_note(denomination, 0)];
 
-        let result = select_notes_for_denomination(&notes, denomination, 2, 1, platform_version);
+        let result = select_notes_for_denomination(&notes, denomination, 1, 1, platform_version);
         assert!(
             matches!(result, Err(PlatformWalletError::ShieldedBuildError(_))),
             "denomination == fee must reject (non-positive resulting balance)"
@@ -905,10 +952,118 @@ mod tests {
         let denomination = 10_000_000_000u64;
         let notes = vec![test_note(denomination - 1, 0)];
 
-        let result = select_notes_for_denomination(&notes, denomination, 2, 1, platform_version);
+        let result = select_notes_for_denomination(&notes, denomination, 1, 1, platform_version);
         assert!(matches!(
             result,
             Err(PlatformWalletError::ShieldedInsufficientBalance { .. })
         ));
+    }
+
+    /// Selector-to-builder bundle-layout parity (#4312 review finding f5106ba1c721).
+    ///
+    /// The fee the selector reserves is priced from an action count, and the builders price
+    /// theirs from [`shielded_bundle_action_count`] — the shared DPP abstraction that delegates
+    /// to Orchard's own `BundleType::num_actions` (and is itself pinned against a real Orchard
+    /// bundle by `shielded_bundle_action_count_matches_a_real_bundle` in `dpp`). For every
+    /// bundle shape a wallet can produce within the size-derived action ceiling, the fee the
+    /// selection reserves MUST equal the fee computed from that shared entry point: if either
+    /// side drifts — a bundle-layout change in Orchard/DPP or a formula change here — this goes
+    /// red.
+    ///
+    /// The sweep covers 1..=6 spends × 1..=4 outputs, which includes the min-actions padding
+    /// edge (1 spend × 1 output pads to Orchard's 2-action minimum) and the output-dominated
+    /// shapes (outputs > spends) where a spends-only formula would under-count.
+    #[test]
+    fn selector_reserved_fee_matches_builder_bundle_layout_across_shapes() {
+        let platform_version = PlatformVersion::latest();
+        // Each note dwarfs any flat shielded fee, so the fee target never changes how many
+        // notes the greedy pass takes — the spend count is pinned by `amount` alone.
+        const NOTE: u64 = 1_000_000_000_000; // 10 DASH in credits
+
+        for num_spends in 1usize..=6 {
+            for num_outputs in 1usize..=4 {
+                // Builder side: the action count the real bundle layout produces for this
+                // shape, via the shared DPP entry point every builder routes through.
+                let builder_actions =
+                    shielded_bundle_action_count(num_spends, num_outputs, 0, platform_version)
+                        .expect("shape is within the size-derived action ceiling");
+                let expected_fee = compute_minimum_shielded_fee(builder_actions, platform_version)
+                    .expect("fee computation should not overflow");
+                assert!(
+                    expected_fee < NOTE / 2,
+                    "test premise: the fee must not perturb the forced spend count"
+                );
+
+                // Selector side: force exactly `num_spends` equal notes to be selected.
+                let notes: Vec<ShieldedNote> =
+                    (0..num_spends).map(|i| test_note(NOTE, i as u64)).collect();
+                let amount = NOTE * num_spends as u64 - NOTE / 2;
+
+                let (selected, _total, exact_fee) = select_notes_with_fee(
+                    &notes,
+                    amount,
+                    num_outputs,
+                    ShieldedFeeKind::Base,
+                    ChangeRequirement::Optional,
+                    platform_version,
+                )
+                .expect("selection ok");
+
+                assert_eq!(
+                    selected.len(),
+                    num_spends,
+                    "test premise: the note shape must force exactly {num_spends} spends"
+                );
+                assert_eq!(
+                    exact_fee, expected_fee,
+                    "shape ({num_spends} spends, {num_outputs} outputs): the selector must \
+                     reserve the fee for the {builder_actions} actions the builder's bundle \
+                     layout actually publishes"
+                );
+            }
+        }
+    }
+
+    /// Denomination-path sibling of
+    /// [`selector_reserved_fee_matches_builder_bundle_layout_across_shapes`]: the
+    /// identity-create predictor must price the same action count
+    /// `build_identity_create_from_shielded_pool_transition` derives from the shared entry
+    /// point for its fixed 1-output shape (the change note; the key-set envelope only tightens
+    /// the size ceiling, it never changes the action count).
+    #[test]
+    fn selector_denomination_predicted_fee_matches_builder_bundle_layout() {
+        let platform_version = PlatformVersion::latest();
+        let denomination = 100_000_000_000u64; // 1 DASH — a member of the exit set
+        let num_keys = 1usize;
+
+        for num_spends in 1usize..=4 {
+            let builder_actions = shielded_bundle_action_count(num_spends, 1, 0, platform_version)
+                .expect("shape is within the size-derived action ceiling");
+            let expected_fee =
+                compute_shielded_identity_create_fee(builder_actions, num_keys, platform_version)
+                    .expect("fee computation should not overflow");
+
+            // One large note plus (num_spends - 1) small ones summing to the denomination
+            // exactly, so largest-first must take all of them.
+            let small = 1_000u64;
+            let mut notes = vec![test_note(denomination - (num_spends as u64 - 1) * small, 0)];
+            notes.extend((1..num_spends).map(|i| test_note(small, i as u64)));
+
+            let (selected, total, predicted_fee) =
+                select_notes_for_denomination(&notes, denomination, 1, num_keys, platform_version)
+                    .expect("selection ok");
+
+            assert_eq!(
+                selected.len(),
+                num_spends,
+                "test premise: the note shape must force exactly {num_spends} spends"
+            );
+            assert_eq!(total, denomination);
+            assert_eq!(
+                predicted_fee, expected_fee,
+                "shape ({num_spends} spends, 1 output): the predictor must price the \
+                 {builder_actions} actions the builder's bundle layout actually publishes"
+            );
+        }
     }
 }
