@@ -454,7 +454,7 @@ where
         let reduced_platform_state = block_execution_context
             .block_platform_state()
             .to_reduced_platform_state(
-                ReducedBlockInfoV0 {
+                Some(ReducedBlockInfoV0 {
                     basic_info: block_info,
                     app_hash: None,
                     quorum_hash: validator_set_quorum_hash.into(),
@@ -462,7 +462,7 @@ where
                     proposer_pro_tx_hash: proposer_pro_tx_hash.into(),
                     signature: None,
                     round: block_proposal.round,
-                },
+                }),
                 core_chain_locked_height,
             );
 

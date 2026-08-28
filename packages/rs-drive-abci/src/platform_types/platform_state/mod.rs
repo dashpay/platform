@@ -135,11 +135,11 @@ impl PlatformState {
     /// otherwise recoverable from Core RPC during reconstruction.
     pub fn to_reduced_platform_state(
         &self,
-        last_committed_block_info: ReducedBlockInfoV0,
+        last_committed_block_info: Option<ReducedBlockInfoV0>,
         proposed_core_chain_locked_height: u32,
     ) -> ReducedPlatformState {
         ReducedPlatformState::V0(ReducedPlatformStateV0 {
-            last_committed_block_info: Some(last_committed_block_info),
+            last_committed_block_info,
             current_protocol_version_in_consensus: self.current_protocol_version_in_consensus,
             next_epoch_protocol_version: self.next_epoch_protocol_version,
             current_validator_set_quorum_hash: self
