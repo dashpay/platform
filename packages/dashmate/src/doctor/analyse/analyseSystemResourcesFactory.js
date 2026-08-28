@@ -26,7 +26,7 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
     try {
       stateSyncSnapshotsEnabled = samples.getDashmateConfig()
         .get('platform.drive.abci.stateSync.snapshots.enabled') === true;
-    } catch (e) {
+    } catch {
       // A config collected by an older dashmate has no state sync options
     }
 

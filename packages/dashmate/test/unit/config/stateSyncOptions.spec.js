@@ -65,14 +65,14 @@ describe('state sync options', () => {
 
     // Tenderdash 1.7 rejects a statesync chunk-request-timeout below 5 seconds.
     it('should reject a chunk request timeout below the 5s Tenderdash minimum', () => {
-      for (const valid of ['5s', '15s', '1.5m', '2h', '5000ms', '30000ms']) {
+      ['5s', '15s', '1.5m', '2h', '5000ms', '30000ms'].forEach((valid) => {
         config.set('platform.drive.tenderdash.stateSync.chunkRequestTimeout', valid);
-      }
+      });
 
-      for (const invalid of ['0', '4s', '4.9s', '4999ms', '500ms', 'nonsense', 15]) {
+      ['0', '4s', '4.9s', '4999ms', '500ms', 'nonsense', 15].forEach((invalid) => {
         expect(() => config.set('platform.drive.tenderdash.stateSync.chunkRequestTimeout', invalid), String(invalid))
           .to.throw();
-      }
+      });
     });
 
     it('should reject a snapshot frequency below one minute', () => {
