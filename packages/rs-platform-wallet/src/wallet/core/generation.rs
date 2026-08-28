@@ -158,13 +158,15 @@ pub struct WalletGeneration {
     /// alternative to holding them is signing a second transaction that spends
     /// them too.
     ///
-    /// The cost is bounded and cheap: the map is per generation, never
-    /// persisted (after a restart nothing is mid-dispatch, and a transaction
-    /// that actually landed is reconciled by sync), and grows only with the
-    /// outpoints this process has actually dispatched. A stuck fence is also
-    /// self-limiting in practice — the transaction it protects is either
-    /// eventually relayed back, mined, or conflicted, and all three arrive here
-    /// as an observed spend.
+    /// The cost is bounded and cheap: the map is per wallet (see *Scoped to
+    /// the WALLET* below) and process-lifetime — never persisted — and grows
+    /// only with the outpoints this process has actually dispatched. A stuck
+    /// fence is also self-limiting in practice — the transaction it protects is
+    /// either eventually relayed back, mined, or conflicted, and all three
+    /// arrive here as an observed spend. Not persisting it is a known GAP, not
+    /// a saving: a restart genuinely can come up with a transaction still in
+    /// flight, and the restored wallet then holds the outpoint unfenced. See
+    /// [`InBroadcastFences`] for what closing that costs.
     ///
     /// The two additive shapes that could shorten the wait are LIVENESS paths,
     /// not timeouts: persist the pending transaction and query or rebroadcast

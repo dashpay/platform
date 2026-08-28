@@ -112,12 +112,17 @@ pub enum PlatformWalletError {
     /// # What actually reconciles this, and what does not
     ///
     /// The inputs are held by TWO independent things, and only one of them
-    /// expires. Key-wallet's `ReservationSet` entry is swept once the wallet's
-    /// `last_processed_height` advances `RESERVATION_MAX_AGE_BLOCKS` past the
-    /// height it was stamped at. The generation's pending-spend fence
+    /// expires. Key-wallet's `ReservationSet` entry is swept by its own TTL —
+    /// 24 blocks (`RESERVATION_TTL_BLOCKS`) on the wallet's
+    /// `last_processed_height` clock, measured from the height the reservation
+    /// was stamped at. That TTL is NOT the 20-block bound this crate refuses a
+    /// held finalized transaction / registry token at
+    /// ([`Self::StaleReservation`]); the refusal bound is deliberately the
+    /// lower of the two so a broadcast is turned away while its reservation is
+    /// still provably unswept. The generation's pending-spend fence
     /// ([`WalletGeneration`](crate::wallet::core::WalletGeneration)) is NOT
-    /// swept with it and has no bound of its own: it is released by the wallet
-    /// OBSERVING the outpoint spent, and by nothing else
+    /// swept with either: it has no bound of its own and is released by the
+    /// wallet OBSERVING the outpoint spent, and by nothing else
     /// (`dashpay/platform#4309`).
     ///
     /// So an earlier promise made here — that the reservation TTL reconciles an
@@ -125,8 +130,17 @@ pub enum PlatformWalletError {
     /// not evidence about the transaction, which stays valid and relayable no
     /// matter how long the wait. The build refusal that follows a `MaybeSent`
     /// is [`Self::InputMidBroadcast`], and it stands until a spend is observed
-    /// (this wallet's own transaction landing, or a conflicting one taking the
-    /// outpoint) or the generation is torn down.
+    /// — this wallet's own transaction landing, or a conflicting one taking the
+    /// outpoint.
+    ///
+    /// Removing the wallet and re-creating it under the same id does NOT end
+    /// the refusal: the fence map is keyed by wallet id and handed to the
+    /// replacement generation, so a recreation inherits the pending spends
+    /// rather than restoring the outpoints unprotected. Only a fresh manager —
+    /// in practice a process restart — currently loses the fence, because the
+    /// map is not persisted; see
+    /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) for what
+    /// closing that gap requires.
     ///
     /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
     #[error(
