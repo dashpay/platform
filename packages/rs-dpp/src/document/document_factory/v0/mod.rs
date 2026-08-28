@@ -1,6 +1,8 @@
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
