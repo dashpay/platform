@@ -22,6 +22,14 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
       diskIO,
     } = samples.getSystemInfo();
 
+    let stateSyncSnapshotsEnabled = false;
+    try {
+      stateSyncSnapshotsEnabled = samples.getDashmateConfig()
+        .get('platform.drive.abci.stateSync.snapshots.enabled') === true;
+    } catch (e) {
+      // A config collected by an older dashmate has no state sync options
+    }
+
     // System requirements
     const problems = verifySystemRequirements(
       {
@@ -33,6 +41,7 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
       samples.getDashmateConfig().get('platform.enable'),
       {
         diskSpace: 5,
+        stateSyncSnapshotsEnabled,
       },
     );
 
