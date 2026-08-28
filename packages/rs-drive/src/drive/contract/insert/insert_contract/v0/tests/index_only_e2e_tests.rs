@@ -932,6 +932,57 @@ fn should_refuse_by_id_queries() {
     );
 }
 
+/// Clause-field classification is the modeled answer to "where may a
+/// clause sit": roles are derived once against the doctype, and a field
+/// can hold several at once (`postId` is a prefix property of two yappr
+/// indexes AND `byLiker`'s terminal).
+#[test]
+fn should_classify_clause_fields_against_the_doctype() {
+    use crate::query::{InternalClauses, WhereClause, WhereOperator};
+    use dpp::platform_value::Value;
+
+    let (_drive, contract) = setup_likes();
+    let document_type = contract
+        .document_type_for_name(DOCTYPE)
+        .expect("like doctype exists");
+
+    // Dual role: prefix property of byHashtagPost/byPost, terminal of byLiker.
+    let post_id_roles = InternalClauses::classify_field(document_type, "postId");
+    assert!(post_id_roles.index_property && post_id_roles.terminal);
+    assert!(!post_id_roles.primary_key && !post_id_roles.unindexed());
+
+    // Terminal-only ($ownerId is byHashtagPost/byPost's terminal and
+    // byLiker's prefix property — also dual on this fixture), and a
+    // genuinely unindexed field.
+    let owner_roles = InternalClauses::classify_field(document_type, "$ownerId");
+    assert!(owner_roles.index_property && owner_roles.terminal);
+    let id_roles = InternalClauses::classify_field(document_type, "$id");
+    assert!(id_roles.primary_key && !id_roles.index_property && !id_roles.terminal);
+    assert!(InternalClauses::classify_field(document_type, "nope").unindexed());
+
+    // classify_fields covers every clause field exactly once.
+    let clauses = InternalClauses::extract_from_clauses(
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Identifier(OWNER_1),
+            },
+        ],
+        platform_version(),
+    )
+    .expect("clauses extract");
+    let classified = clauses.classify_fields(document_type);
+    assert_eq!(classified.len(), 2);
+    assert!(classified["hashtag"].index_property && !classified["hashtag"].terminal);
+    assert!(classified["$ownerId"].terminal);
+}
+
 /// A cursor (`startAt`/`startAfter`) would be resolved through the
 /// primary-key tree an indexOnly type does not have — the path
 /// constructors must refuse it with the typed `Unsupported` error before

@@ -92,6 +92,20 @@ impl DriveDocumentQuery<'_> {
             return Ok(None);
         }
 
+        // Classified once against the doctype: unless some clause or
+        // order-by field actually holds the TERMINAL role, this query has
+        // nothing for the terminal route and the generic miss stands —
+        // the modeled form of "a clause may sit on a terminal, not only
+        // on an index prefix property".
+        let clause_roles = self.internal_clauses.classify_fields(self.document_type);
+        let names_a_terminal = clause_roles.values().any(|roles| roles.terminal)
+            || self.order_by.keys().any(|field| {
+                crate::query::InternalClauses::classify_field(self.document_type, field).terminal
+            });
+        if !names_a_terminal {
+            return Ok(None);
+        }
+
         // The same field assembly the generic matcher receives.
         let mut fields = self
             .internal_clauses
