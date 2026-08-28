@@ -7292,6 +7292,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
             },
             DocumentPropertyReferenceTarget::IdentityPublicKey {
                 key_id_property: "signerKeyId".to_string(),
