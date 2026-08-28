@@ -49,6 +49,22 @@ use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
+/// A resolved indexOnly terminal route: the matcher's winning index, the
+/// clause on its terminal, and — for mixed shapes — the *prefix pivot*: a
+/// range or `in` clause sitting on one of the index's prefix properties
+/// (by position), with every property above it equality-bound and every
+/// property below it unconstrained.
+pub(crate) struct IndexOnlyTerminalRoute<'a> {
+    /// The index the entries are addressed through.
+    pub index: &'a Index,
+    /// The clause on the index's terminal property; `None` only for the
+    /// first keyset page (order-by on the terminal, no cursor clause yet).
+    pub terminal_clause: Option<&'a crate::query::WhereClause>,
+    /// `(position, clause)` of a range / `in` clause on a prefix
+    /// property. When present the terminal clause is always an equality.
+    pub prefix_pivot: Option<(usize, &'a crate::query::WhereClause)>,
+}
+
 impl DriveDocumentQuery<'_> {
     /// The terminal-clause route for indexOnly queries.
     ///
@@ -68,19 +84,26 @@ impl DriveDocumentQuery<'_> {
     /// nothing outside the index (a range or `in` on the terminal
     /// requires ordering by it, mirroring the stored-document rule).
     ///
+    /// Mixed shapes are served through a *prefix pivot*: one range or
+    /// `in` clause may sit on a prefix property instead of the terminal
+    /// (`hashtag == h AND postId > p AND $ownerId == me`), provided every
+    /// property above the pivot is equality-bound, properties below it
+    /// are unconstrained, the terminal clause is an equality, and the
+    /// pivot is ordered by (`MissingOrderByForRange` otherwise).
+    ///
     /// Returns `Ok(None)` when the matcher finds no terminal-using index
     /// (the generic route's miss error stands), `Ok(Some(..))` with the
-    /// selected index and the terminal clause — `None` for the first
-    /// keyset page, which has no cursor clause yet and scans the member
-    /// keys in `orderBy` order — and a targeted error when a terminal
-    /// index matched but the clause shape does not hold.
+    /// resolved route — `terminal_clause: None` only for the first keyset
+    /// page, which has no cursor clause yet and scans the member keys in
+    /// `orderBy` order — and a targeted error when a terminal index
+    /// matched but the clause shape does not hold.
     ///
     /// [`index_for_types_matching_including_terminal`]:
     /// dpp::data_contract::document_type::methods::DocumentTypeV0Methods::index_for_types_matching_including_terminal
     pub(crate) fn index_only_terminal_clause_selection(
         &self,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<(&Index, Option<&crate::query::WhereClause>)>, Error> {
+    ) -> Result<Option<IndexOnlyTerminalRoute<'_>>, Error> {
         use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
         // Shapes the terminal route can never serve opt out up front, so
@@ -178,80 +201,160 @@ impl DriveDocumentQuery<'_> {
                     .find(|in_clause| in_clause.field == terminal)
             });
 
-        let shape_error = || {
+        let shape_error = |message: &str| {
             Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
-                "a clause on an indexOnly terminal property requires equality clauses \
-                 on ALL of that index's properties (the path to the entries must be \
-                 fully determined), with no other clauses and orderBy limited to the \
-                 index"
-                    .to_string(),
+                message.to_string(),
             ))
         };
 
-        // Every prefix property must carry an equality clause: the path
-        // down to the entry level must be fully determined.
-        if !index.properties.iter().all(|property| {
-            self.internal_clauses
-                .equal_clauses
-                .contains_key(property.name.as_str())
-        }) {
-            return Err(shape_error());
-        }
-
-        // No clause may be left over, and any range / `in` clause must BE
-        // the terminal clause. (Field coverage is the matcher's job; the
-        // PLACEMENT of non-equality clauses is the shape rule here.)
-        if let Some(range_clause) = &self.internal_clauses.range_clause {
-            if range_clause.field != terminal {
-                return Err(shape_error());
-            }
-        }
-        if !self
+        // The one non-equality, non-terminal clause — the prefix pivot
+        // candidate. (Field coverage is the matcher's job; PLACEMENT of
+        // non-equality clauses is the shape rule here.)
+        let position_of = |field: &str| -> Option<usize> {
+            index
+                .properties
+                .iter()
+                .position(|property| property.name == field)
+        };
+        let mut prefix_pivot: Option<(usize, &crate::query::WhereClause)> = None;
+        for clause in self
             .internal_clauses
-            .in_clauses
+            .range_clause
             .iter()
-            .all(|in_clause| in_clause.field == terminal)
+            .chain(self.internal_clauses.in_clauses.iter())
         {
-            return Err(shape_error());
-        }
-
-        if let Some(terminal_clause) = terminal_clause {
-            if terminal_clause.operator.is_range() && !self.order_by.contains_key(terminal) {
-                return Err(Error::Query(
-                    crate::error::query::QuerySyntaxError::MissingOrderByForRange(
-                        "a range or `in` clause on an indexOnly terminal property \
-                         requires an orderBy on that property",
-                    ),
+            if clause.field == terminal {
+                continue;
+            }
+            let Some(position) = position_of(&clause.field) else {
+                // Not on the terminal, not on a prefix property — the
+                // matcher could not have covered it. Unreachable.
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "a matched terminal route cannot carry a clause outside the index",
+                )));
+            };
+            if prefix_pivot.is_some() {
+                return Err(shape_error(
+                    "an indexOnly terminal query supports at most one range or `in` \
+                     clause on a prefix property (the pivot)",
                 ));
             }
+            prefix_pivot = Some((position, clause));
         }
 
-        Ok(Some((index, terminal_clause)))
+        match prefix_pivot {
+            None => {
+                // Fully determined prefix: every prefix property must
+                // carry an equality clause — the path down to the entry
+                // level admits no gaps.
+                if !index.properties.iter().all(|property| {
+                    self.internal_clauses
+                        .equal_clauses
+                        .contains_key(property.name.as_str())
+                }) {
+                    return Err(shape_error(
+                        "a clause on an indexOnly terminal property requires equality \
+                         clauses on ALL of that index's properties (the path to the \
+                         entries must be fully determined), with no other clauses and \
+                         orderBy limited to the index",
+                    ));
+                }
+                if let Some(terminal_clause) = terminal_clause {
+                    if terminal_clause.operator.is_range() && !self.order_by.contains_key(terminal)
+                    {
+                        return Err(Error::Query(
+                            crate::error::query::QuerySyntaxError::MissingOrderByForRange(
+                                "a range or `in` clause on an indexOnly terminal property \
+                                 requires an orderBy on that property",
+                            ),
+                        ));
+                    }
+                }
+            }
+            Some((pivot_position, pivot_clause)) => {
+                // Mixed shape: everything above the pivot equality-bound,
+                // everything below it unconstrained, terminal clause an
+                // equality, pivot ordered by.
+                let terminal_is_equality =
+                    self.internal_clauses.equal_clauses.contains_key(terminal);
+                if !terminal_is_equality {
+                    return Err(shape_error(
+                        "a range or `in` clause on an indexOnly prefix property requires \
+                         an EQUALITY clause on the terminal: two simultaneous non-equality \
+                         levels have no single pagination order",
+                    ));
+                }
+                for (position, property) in index.properties.iter().enumerate() {
+                    let has_equality = self
+                        .internal_clauses
+                        .equal_clauses
+                        .contains_key(property.name.as_str());
+                    if position < pivot_position && !has_equality {
+                        return Err(shape_error(
+                            "every prefix property ABOVE a pivot range/`in` clause must \
+                             carry an equality clause",
+                        ));
+                    }
+                    if position > pivot_position && has_equality {
+                        return Err(shape_error(
+                            "prefix properties BELOW a pivot range/`in` clause must be \
+                             unconstrained: an equality below the pivot is not yet \
+                             supported",
+                        ));
+                    }
+                }
+                if !self.order_by.contains_key(pivot_clause.field.as_str()) {
+                    return Err(Error::Query(
+                        crate::error::query::QuerySyntaxError::MissingOrderByForRange(
+                            "a range or `in` clause on an indexOnly prefix property \
+                             requires an orderBy on that property",
+                        ),
+                    ));
+                }
+            }
+        }
+
+        Ok(Some(IndexOnlyTerminalRoute {
+            index,
+            terminal_clause,
+            prefix_pivot,
+        }))
     }
 
-    /// Build the path query for a terminal-clause indexOnly query: the
-    /// fully determined prefix path down to the `0` entry level, with the
-    /// terminal clause lowered over the member keys. One builder for the
-    /// server's execution, the prover and the verifier.
+    /// Build the path query for a terminal-clause indexOnly query. One
+    /// builder for the server's execution, the prover and the verifier.
+    ///
+    /// Without a pivot: the fully determined prefix path down to the `0`
+    /// entry level, with the terminal clause lowered over the member
+    /// keys. With a prefix pivot: the path stops at the pivot property,
+    /// the pivot clause ranges over its values, and a subquery chain
+    /// walks each selected value through the unconstrained properties
+    /// below it (`insert_all` per level) down to `0`, where the terminal
+    /// equality selects the member key.
     pub(crate) fn index_only_terminal_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
-        index: &Index,
-        terminal_clause: Option<&crate::query::WhereClause>,
+        route: &IndexOnlyTerminalRoute<'_>,
         platform_version: &PlatformVersion,
     ) -> Result<grovedb::PathQuery, Error> {
         use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
-        let terminal_direction = |field: &str| {
+        let IndexOnlyTerminalRoute {
+            index,
+            terminal_clause,
+            prefix_pivot,
+        } = route;
+
+        let direction_for = |field: &str, fallback: bool| {
             self.order_by
                 .get(field)
                 .map(|order_clause| order_clause.ascending)
-                .unwrap_or(true)
+                .unwrap_or(fallback)
         };
-        let final_query = match terminal_clause {
+        let terminal_query = match terminal_clause {
             Some(terminal_clause) => {
                 let left_to_right = if terminal_clause.operator.is_range() {
-                    terminal_direction(terminal_clause.field.as_str())
+                    direction_for(terminal_clause.field.as_str(), true)
                 } else {
                     true
                 };
@@ -270,20 +373,76 @@ impl DriveDocumentQuery<'_> {
                         "terminal-route selection guarantees an indexOnly index",
                     ),
                 ))?;
-                let mut query = grovedb::Query::new_with_direction(terminal_direction(terminal));
+                let mut query = grovedb::Query::new_with_direction(direction_for(terminal, true));
                 query.insert_all();
                 query
             }
         };
 
         let mut path = document_type_path;
-        for property in index.properties.iter() {
+        let (final_query, path_property_count) = match prefix_pivot {
+            None => {
+                // Fully determined prefix: the path descends every
+                // property's value; the terminal query runs at `0`.
+                (terminal_query, index.properties.len())
+            }
+            Some((pivot_position, pivot_clause)) => {
+                // The pivot clause ranges over its property's values;
+                // below it, one `insert_all` level per unconstrained
+                // property, then `0` and the terminal equality. Built
+                // innermost-out.
+                let mut chain = terminal_query;
+                let mut chain_is_terminal = true;
+                for position in ((pivot_position + 1)..index.properties.len()).rev() {
+                    let property = &index.properties[position];
+                    let mut values_query = grovedb::Query::new_with_direction(direction_for(
+                        &property.name,
+                        property.ascending,
+                    ));
+                    values_query.insert_all();
+                    if chain_is_terminal {
+                        values_query.set_subquery_key(vec![0]);
+                    } else {
+                        values_query.set_subquery_key(
+                            index.properties[position + 1].name.as_bytes().to_vec(),
+                        );
+                    }
+                    values_query.set_subquery(chain);
+                    chain = values_query;
+                    chain_is_terminal = false;
+                }
+
+                let mut pivot_query = pivot_clause.to_path_query(
+                    self.document_type,
+                    &None,
+                    direction_for(pivot_clause.field.as_str(), true),
+                    platform_version,
+                )?;
+                if chain_is_terminal {
+                    // The pivot is the last property: `0` sits directly
+                    // under each of its values.
+                    pivot_query.set_subquery_key(vec![0]);
+                } else {
+                    pivot_query.set_subquery_key(
+                        index.properties[pivot_position + 1]
+                            .name
+                            .as_bytes()
+                            .to_vec(),
+                    );
+                }
+                pivot_query.set_subquery(chain);
+                (pivot_query, *pivot_position)
+            }
+        };
+
+        for property in index.properties.iter().take(path_property_count) {
             let where_clause = self
                 .internal_clauses
                 .equal_clauses
                 .get(property.name.as_str())
                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "terminal-route selection guarantees an equality per prefix property",
+                    "terminal-route selection guarantees an equality per determined prefix \
+                     property",
                 )))?;
             path.push(property.name.as_bytes().to_vec());
             path.push(self.document_type.serialize_value_for_key(
@@ -292,7 +451,12 @@ impl DriveDocumentQuery<'_> {
                 platform_version,
             )?);
         }
-        path.push(vec![0]);
+        match prefix_pivot {
+            None => path.push(vec![0]),
+            Some((pivot_position, _)) => {
+                path.push(index.properties[*pivot_position].name.as_bytes().to_vec())
+            }
+        }
 
         Ok(grovedb::PathQuery::new(
             path,
@@ -313,7 +477,7 @@ impl DriveDocumentQuery<'_> {
             crate::query::BestIndexOutcome::Matched(index) => Ok(index),
             crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
                 match self.index_only_terminal_clause_selection(platform_version)? {
-                    Some((index, _)) => Ok(index),
+                    Some(route) => Ok(route.index),
                     None => Err(no_index_error),
                 }
             }
@@ -334,11 +498,10 @@ impl DriveDocumentQuery<'_> {
             crate::query::BestIndexOutcome::Matched(_) => Ok(None),
             crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
                 match self.index_only_terminal_clause_selection(platform_version)? {
-                    Some((index, terminal_clause)) => self
+                    Some(route) => self
                         .index_only_terminal_path_query(
                             document_type_path.to_vec(),
-                            index,
-                            terminal_clause,
+                            &route,
                             platform_version,
                         )
                         .map(Some),

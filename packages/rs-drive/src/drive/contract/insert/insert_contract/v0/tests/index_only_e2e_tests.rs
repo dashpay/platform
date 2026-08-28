@@ -822,6 +822,306 @@ fn should_serve_terminal_range_keyset_pagination() {
     assert_grovedb_is_consistent(&drive);
 }
 
+/// Mixed shape: a range on a PREFIX property (the pivot) with a terminal
+/// equality — `hashtag == h AND postId > p AND $ownerId == me`. The path
+/// stops at the pivot, the range selects its values, and the terminal
+/// equality runs beneath each of them. Proved and unproved paths agree.
+#[test]
+fn should_serve_prefix_pivot_with_terminal_equality() {
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    for (post, owner, seed) in [
+        (POST_A, OWNER_1, 1u64),
+        (POST_B, OWNER_1, 2),
+        (POST_B, OWNER_2, 3),
+    ] {
+        let like = build_like(&contract, "dash", post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let mut query = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Identifier(POST_A),
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+        ],
+        Some(10),
+    );
+    query.order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending: true,
+        },
+    );
+
+    let outcome = drive
+        .query_documents(query.clone(), None, false, None, None)
+        .expect("pivot query executes");
+    let documents = outcome.documents();
+    assert_eq!(documents.len(), 1, "only OWNER_1's like beyond POST_A");
+    assert_eq!(documents[0].owner_id().to_buffer(), OWNER_1);
+    assert_eq!(
+        documents[0]
+            .properties()
+            .get("postId")
+            .expect("postId recovered")
+            .to_identifier_bytes()
+            .expect("identifier"),
+        POST_B.to_vec()
+    );
+
+    let (proof, _) = query
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("pivot proof generation");
+    let (_root, verified) = query
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("pivot proof verification");
+    assert_eq!(verified.len(), 1);
+    assert_eq!(verified[0].id(), documents[0].id());
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// A pivot on the FIRST property with the one below it unconstrained:
+/// `hashtag >= h AND $ownerId == me` walks every post under each matched
+/// hashtag through an insert-all level before the terminal equality.
+#[test]
+fn should_serve_first_property_pivot_with_unconstrained_below() {
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    for (post, owner, seed) in [
+        (POST_A, OWNER_1, 1u64),
+        (POST_B, OWNER_1, 2),
+        (POST_B, OWNER_2, 3),
+    ] {
+        let like = build_like(&contract, "dash", post, owner, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
+
+    let mut query = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::GreaterThanOrEquals,
+                value: Value::Text("dash".to_string()),
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+        ],
+        Some(10),
+    );
+    query.order_by.insert(
+        "hashtag".to_string(),
+        OrderClause {
+            field: "hashtag".to_string(),
+            ascending: true,
+        },
+    );
+
+    let outcome = drive
+        .query_documents(query.clone(), None, false, None, None)
+        .expect("first-property pivot query executes");
+    let documents = outcome.documents();
+    assert_eq!(documents.len(), 2, "both of OWNER_1's likes");
+    let mut posts: Vec<Vec<u8>> = documents
+        .iter()
+        .map(|document| {
+            assert_eq!(document.owner_id().to_buffer(), OWNER_1);
+            document
+                .properties()
+                .get("postId")
+                .expect("postId recovered")
+                .to_identifier_bytes()
+                .expect("identifier")
+        })
+        .collect();
+    posts.sort();
+    assert_eq!(posts, vec![POST_A.to_vec(), POST_B.to_vec()]);
+
+    let (proof, _) = query
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("first-property pivot proof generation");
+    let (_root, verified) = query
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("first-property pivot proof verification");
+    let mut verified_ids: Vec<_> = verified.iter().map(|d| d.id()).collect();
+    let mut queried_ids: Vec<_> = documents.iter().map(|d| d.id()).collect();
+    verified_ids.sort();
+    queried_ids.sort();
+    assert_eq!(verified_ids, queried_ids);
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// A pivot demands a terminal EQUALITY — two simultaneous non-equality
+/// levels have no single pagination order.
+#[test]
+fn should_refuse_pivot_with_terminal_range() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use assert_matches::assert_matches;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    let mut query = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![Value::Identifier(POST_A), Value::Identifier(POST_B)]),
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Identifier(OWNER_1),
+            },
+        ],
+        Some(10),
+    );
+    for field in ["postId", "$ownerId"] {
+        query.order_by.insert(
+            field.to_string(),
+            OrderClause {
+                field: field.to_string(),
+                ascending: true,
+            },
+        );
+    }
+    let error = drive
+        .query_documents(query, None, false, None, None)
+        .expect_err("a pivot with a terminal range must be refused");
+    assert_matches!(
+        &error,
+        crate::error::Error::Query(QuerySyntaxError::Unsupported(message))
+            if message.contains("EQUALITY clause on the terminal"),
+        "unexpected error: {error}"
+    );
+}
+
+/// An equality BELOW the pivot is not yet supported and must be refused
+/// rather than silently scanned.
+#[test]
+fn should_refuse_equality_below_pivot() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use assert_matches::assert_matches;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    let mut query = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("c".to_string()),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(POST_A),
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+        ],
+        Some(10),
+    );
+    for field in ["hashtag", "postId"] {
+        query.order_by.insert(
+            field.to_string(),
+            OrderClause {
+                field: field.to_string(),
+                ascending: true,
+            },
+        );
+    }
+    let error = drive
+        .query_documents(query, None, false, None, None)
+        .expect_err("an equality below the pivot must be refused");
+    assert_matches!(
+        &error,
+        crate::error::Error::Query(QuerySyntaxError::Unsupported(message))
+            if message.contains("BELOW a pivot"),
+        "unexpected error: {error}"
+    );
+}
+
+/// A pivot range without an orderBy on it is refused, mirroring the
+/// stored-document rule.
+#[test]
+fn should_require_order_by_for_pivot_range() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::{WhereClause, WhereOperator};
+    use assert_matches::assert_matches;
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    let query = likes_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Identifier(POST_A),
+            },
+            WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            },
+        ],
+        Some(10),
+    );
+    let error = drive
+        .query_documents(query, None, false, None, None)
+        .expect_err("a pivot range without orderBy must be refused");
+    assert_matches!(
+        &error,
+        crate::error::Error::Query(QuerySyntaxError::MissingOrderByForRange(_)),
+        "unexpected error: {error}"
+    );
+}
+
 /// A terminal clause whose index prefix is not fully determined is
 /// refused with the shape requirement — never a wrong-answer scan.
 #[test]

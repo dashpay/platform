@@ -731,17 +731,22 @@ impl Index {
         Self::matches_over_components(&self.properties, index_names, in_field_name, order_by)
     }
 
-    /// [`Self::matches`] over an index's full component list, terminal
-    /// included: the terminal (an indexOnly index's member-key property)
-    /// participates in field coverage, the `in`-position rule and the
-    /// order-by suffix exactly as if it were the index's deepest property.
+    /// [`Self::matches`] with the index's terminal (an indexOnly index's
+    /// member-key property) as a matchable component. The terminal is the
+    /// entry level itself — ALWAYS the index's deepest component — so it
+    /// never participates in the prefix's order-by reduction: a
+    /// constrained terminal leaves prefix ordering intact (each fully
+    /// determined path holds at most one entry per member key), a
+    /// terminal named in `order_by` must be its LAST (deepest) entry, and
+    /// a terminal `in` field trivially satisfies the deepest-position
+    /// rule. The prefix properties then match through the exact
+    /// [`Self::matches`] algorithm.
     ///
     /// Returns `(difference, terminal_used)` — the difference counts
-    /// unused PREFIX properties only (an unused terminal costs nothing:
-    /// it is the entry level itself, always reachable), so scores stay
-    /// comparable with [`Self::matches`] and an index is never penalized
-    /// for merely having a terminal. On an index without a terminal this
-    /// is exactly [`Self::matches`] with `terminal_used = false`.
+    /// unused PREFIX properties only (an unused terminal costs nothing),
+    /// so scores stay comparable with [`Self::matches`]. On an index
+    /// without a terminal this is exactly [`Self::matches`] with
+    /// `terminal_used = false`.
     pub fn matches_including_terminal(
         &self,
         index_names: &[&str],
@@ -754,26 +759,32 @@ impl Index {
                 .map(|difference| (difference, false));
         };
 
-        // One extended component list, one matching algorithm. The parser
-        // rejects a terminal repeating an index property, so the synthetic
-        // component cannot shadow a prefix property.
-        let mut components = Vec::with_capacity(self.properties.len() + 1);
-        components.extend(self.properties.iter().cloned());
-        components.push(IndexProperty {
-            name: terminal.to_string(),
-            ascending: true,
-        });
-
-        let difference =
-            Self::matches_over_components(&components, index_names, in_field_name, order_by)?;
         let terminal_used = index_names.contains(&terminal);
-        // An unused terminal was counted as an unused component by the
-        // shared algorithm; take it back out of the score.
-        let difference = if terminal_used {
-            difference
-        } else {
-            difference.saturating_sub(1)
+        let prefix_fields: Vec<&str> = index_names
+            .iter()
+            .copied()
+            .filter(|field| *field != terminal)
+            .collect();
+        let prefix_order_by: &[&str] = match order_by.iter().position(|field| *field == terminal) {
+            // Ordering by the terminal is ordering the deepest level —
+            // admissible only as the ordering's last entry.
+            Some(position) if position + 1 == order_by.len() => &order_by[..position],
+            Some(_) => return None,
+            None => order_by,
         };
+        let prefix_in_field = match in_field_name {
+            // An `in` on the terminal sits at the deepest position by
+            // construction; the prefix keeps no `in` constraint.
+            Some(field) if field == terminal => None,
+            other => other,
+        };
+
+        let difference = Self::matches_over_components(
+            &self.properties,
+            &prefix_fields,
+            prefix_in_field,
+            prefix_order_by,
+        )?;
         Some((difference, terminal_used))
     }
 
