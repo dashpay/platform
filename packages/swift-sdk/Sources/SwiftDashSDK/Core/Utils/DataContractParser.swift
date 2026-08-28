@@ -165,6 +165,10 @@ public struct DataContractParser {
                 docType.documentsMutable = mutable
             }
 
+            if let indexOnly = typeDict["indexOnly"] as? Bool {
+                docType.indexOnly = indexOnly
+            }
+
             // The actual field name is just "canBeDeleted" not "documentsCanBeDeleted"
             if let canDelete = typeDict["canBeDeleted"] as? Bool {
                 docType.documentsCanBeDeleted = canDelete
@@ -276,6 +280,67 @@ public struct DataContractParser {
 
             if let nullSearchable = indexData["nullSearchable"] as? Bool {
                 index.nullSearchable = nullSearchable
+            }
+
+            // Count axis - `countable` is authored as a bool (true =
+            // "countable") or one of the string variants
+            if let countableBool = indexData["countable"] as? Bool {
+                index.countable = countableBool ? "countable" : nil
+            } else if let countableString = indexData["countable"] as? String,
+                      countableString != "notCountable" {
+                index.countable = countableString
+            }
+            if let rangeCountable = indexData["rangeCountable"] as? Bool {
+                index.rangeCountable = rangeCountable
+            }
+
+            // Sum axis, including the `averageable` sugar (shorthand for
+            // countable + summable on the same property - the same desugar
+            // DPP applies)
+            if let summable = indexData["summable"] as? String {
+                index.summable = summable
+            }
+            if let rangeSummable = indexData["rangeSummable"] as? Bool {
+                index.rangeSummable = rangeSummable
+            }
+            if let averageable = indexData["averageable"] as? String {
+                index.summable = averageable
+                if index.countable == nil {
+                    index.countable = "countable"
+                }
+            }
+            if indexData["rangeAverageable"] as? Bool == true {
+                index.rangeCountable = true
+                index.rangeSummable = true
+            }
+
+            // Ranking axes
+            if let rankedCountable = indexData["rankedCountable"] as? Bool {
+                index.rankedCountable = rankedCountable
+            }
+            if let rankedSummable = indexData["rankedSummable"] as? Bool {
+                index.rankedSummable = rankedSummable
+            }
+            if let rankedAverageable = indexData["rankedAverageable"] as? Bool {
+                index.rankedAverageable = rankedAverageable
+            }
+
+            // indexOnly member key and preallocation. On an indexOnly
+            // document type an omitted terminal defaults to $ownerId -
+            // the same normalization DPP applies at parse time.
+            if let terminal = indexData["terminal"] as? String {
+                index.terminal = terminal
+            } else if documentType.indexOnly {
+                index.terminal = "$ownerId"
+            }
+            if let preallocated = indexData["preallocated"] as? Bool {
+                index.preallocated = preallocated
+            }
+
+            // Time-range bucketing transform
+            if let timeRange = indexData["timeRange"] as? [String: Any],
+               let timeRangeData = try? JSONSerialization.data(withJSONObject: timeRange, options: []) {
+                index.timeRangeJSON = timeRangeData
             }
 
             // Handle contested - can be bool or object

@@ -14,6 +14,30 @@ public final class PersistentIndex {
     public var nullSearchable: Bool
     public var contested: Bool
 
+    // Count / sum axes (meta-schema v3, protocol version 14).
+    // `countable` is normalized to its string form ("countable" /
+    // "countableAllowingOffset"); the `averageable` sugar is desugared
+    // into `countable` + `summable` exactly as DPP does.
+    public var countable: String?
+    public var rangeCountable: Bool = false
+    public var summable: String?
+    public var rangeSummable: Bool = false
+
+    // Ranking axes (each adds one ordered secondary tree)
+    public var rankedCountable: Bool = false
+    public var rankedSummable: Bool = false
+    public var rankedAverageable: Bool = false
+
+    // indexOnly member key (the property whose value keys each entry)
+    public var terminal: String?
+
+    // Preallocation: creating the refersTo-referenced document also
+    // creates this index's trees, and deleting the last entry keeps them
+    public var preallocated: Bool = false
+
+    // Time-range bucketing transform ({on, range, step, phase}), if any
+    public var timeRangeJSON: Data?
+
     // Properties in the index with sorting
     public var propertiesJSON: Data
 
@@ -59,6 +83,13 @@ extension PersistentIndex {
 
     public var contestedDetails: [String: Any]? {
         guard let data = contestedDetailsJSON else { return nil }
+        return try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+    }
+
+    /// The timeRange transform ({on, range, step, phase}) if the index
+    /// buckets its first property into time ranges
+    public var timeRange: [String: Any]? {
+        guard let data = timeRangeJSON else { return nil }
         return try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
     }
 }

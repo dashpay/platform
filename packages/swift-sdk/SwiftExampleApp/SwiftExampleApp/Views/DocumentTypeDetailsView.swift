@@ -85,6 +85,14 @@ struct DocumentTypeDetailsView: View {
     private var documentSettingsSection: some View {
         Section("Document Settings") {
             VStack(alignment: .leading, spacing: 8) {
+                if documentType.indexOnly {
+                    HStack {
+                        Label("Index Only (entries are the documents)", systemImage: "tray.full.fill")
+                            .foregroundColor(.teal)
+                        Spacer()
+                    }
+                }
+
                 HStack {
                     Label("Keep History", systemImage: documentType.documentsKeepHistory ? "clock.fill" : "clock")
                         .foregroundColor(documentType.documentsKeepHistory ? .blue : .secondary)
@@ -211,6 +219,16 @@ struct ExpandableIndexRowView: View {
                             .cornerRadius(4)
                     }
 
+                    if index.preallocated {
+                        Text("PREALLOCATED")
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.teal.opacity(0.2))
+                            .foregroundColor(.teal)
+                            .cornerRadius(4)
+                    }
+
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -239,6 +257,17 @@ struct ExpandableIndexRowView: View {
                         }
                     }
 
+                    if let terminal = index.terminal {
+                        HStack {
+                            Text("Terminal:")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(terminal)
+                                .font(.caption)
+                                .foregroundColor(.teal)
+                        }
+                    }
+
                     HStack(spacing: 12) {
                         if index.nullSearchable {
                             Label("Null Searchable", systemImage: "magnifyingglass")
@@ -251,6 +280,34 @@ struct ExpandableIndexRowView: View {
                                 .font(.caption2)
                                 .foregroundColor(.orange)
                         }
+                    }
+
+                    // Count / sum / ranking axes (protocol version 14)
+                    let axisLabels: [String] = {
+                        var labels: [String] = []
+                        if let countable = index.countable {
+                            labels.append(countable == "countableAllowingOffset" ? "Countable (offsets)" : "Countable")
+                        }
+                        if index.rangeCountable { labels.append("Range Count") }
+                        if let summable = index.summable { labels.append("Summable (\(summable))") }
+                        if index.rangeSummable { labels.append("Range Sum") }
+                        if index.rankedCountable { labels.append("Ranked by Count") }
+                        if index.rankedSummable { labels.append("Ranked by Sum") }
+                        if index.rankedAverageable { labels.append("Ranked by Average") }
+                        return labels
+                    }()
+                    if !axisLabels.isEmpty {
+                        Text(axisLabels.joined(separator: " · "))
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    }
+
+                    if let timeRange = index.timeRange,
+                       let range = timeRange["range"] as? Int,
+                       let step = timeRange["step"] as? Int {
+                        Label("Time Range: \(range)s windows every \(step)s", systemImage: "clock.badge")
+                            .font(.caption2)
+                            .foregroundColor(.cyan)
                     }
 
                     // Show contested details if available

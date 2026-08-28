@@ -88,3 +88,45 @@ internal fun documentTypeCapabilities(
         canBeDeleted = schema?.boolField("canBeDeleted")
             ?: config?.boolField("documentsCanBeDeletedContractDefault") ?: true,
     )
+
+/**
+ * Human-readable descriptors for an index's protocol-v14 count / sum /
+ * ranking axes, in display order. Empty for a pre-v14 index. `countable`
+ * may be authored as a boolean or one of its string variants, and the
+ * `averageable` / `rangeAverageable` sugar is desugared into
+ * countable + summable exactly as DPP does.
+ */
+internal fun indexAxisDescriptors(index: JsonObject): List<String> {
+    val descriptors = mutableListOf<String>()
+    val averageable = index.stringField("averageable")
+    val countableRaw = (index["countable"] as? JsonPrimitive)?.content
+    val rangeAverageable = index.boolField("rangeAverageable") == true
+    when {
+        countableRaw == "countableAllowingOffset" -> descriptors += "Countable (offsets)"
+        countableRaw == "true" || countableRaw == "countable" -> descriptors += "Countable"
+        countableRaw == null && averageable != null -> descriptors += "Countable"
+    }
+    if (index.boolField("rangeCountable") == true || rangeAverageable) {
+        descriptors += "Range Count"
+    }
+    val summable = index.stringField("summable") ?: averageable
+    if (summable != null) {
+        descriptors += "Summable ($summable)"
+    }
+    if (index.boolField("rangeSummable") == true || rangeAverageable) {
+        descriptors += "Range Sum"
+    }
+    if (index.boolField("rankedCountable") == true) descriptors += "Ranked by Count"
+    if (index.boolField("rankedSummable") == true) descriptors += "Ranked by Sum"
+    if (index.boolField("rankedAverageable") == true) descriptors += "Ranked by Average"
+    return descriptors
+}
+
+/**
+ * The index's member-key property on an indexOnly document type: the
+ * declared `terminal`, defaulting to `$ownerId` exactly as DPP
+ * normalizes an omitted terminal. `null` on stored (non-indexOnly)
+ * document types, where entries are keyed by document id.
+ */
+internal fun indexTerminal(index: JsonObject, indexOnly: Boolean): String? =
+    index.stringField("terminal") ?: if (indexOnly) "\$ownerId" else null
