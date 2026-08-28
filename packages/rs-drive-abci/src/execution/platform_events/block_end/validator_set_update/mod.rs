@@ -971,5 +971,132 @@ mod tests {
                 "wrap-around should not trigger when last block was on different quorum"
             );
         }
+
+        /// run_block_proposal v1 (protocol v15) moves `validator_set_update` from AFTER
+        /// the root-hash computation (its v0 position) to BEFORE it, so the reduced
+        /// platform state written into the replicated state can carry the post-rotation
+        /// next validator set. The only observable differences between the two call
+        /// sites are (a) `block_state_info.app_hash` being set and (b) grovedb having
+        /// received additional writes in between. Rotation reads neither, and this test
+        /// proves it: for rotation-triggering and non-triggering scenarios alike, the
+        /// rotation outcome (returned update and resulting next validator set quorum
+        /// hash) is identical whether or not the app hash was set and grovedb was
+        /// written to before the call.
+        #[test]
+        fn v2_rotation_outcome_is_independent_of_root_hash_ordering() {
+            use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0MutableGetters;
+            use crate::execution::types::block_state_info::v0::BlockStateInfoV0Setters;
+            use dpp::reduced_platform_state::v0::ReducedBlockInfoV0;
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(57);
+            let qh1 = quorum_hash_from_seed(1);
+            let qh2 = quorum_hash_from_seed(2);
+            let vs1 = make_validator_set(qh1, &[10, 20, 30], &mut rng);
+            let vs2 = make_validator_set(qh2, &[40, 50, 60], &mut rng);
+
+            let mut validator_sets = IndexMap::new();
+            validator_sets.insert(qh1, vs1);
+            validator_sets.insert(qh2, vs2);
+
+            // Scenarios: (proposer seed, last committed proposer seed, description)
+            // - proposer 20 after 10: mid-quorum, no rotation
+            // - proposer 30 after 20: last member, rotation to qh2
+            // - proposer 10 after 20: wrap-around, rotation to qh2
+            let scenarios: [(u8, u8, &str); 3] = [
+                (20, 10, "no rotation"),
+                (30, 20, "rotation on last member"),
+                (10, 20, "rotation on wrap-around"),
+            ];
+
+            for (proposer_seed, last_proposer_seed, description) in scenarios {
+                let mut platform_state = platform.state.load().as_ref().clone();
+                platform_state.set_current_validator_set_quorum_hash(qh1);
+                platform_state.set_validator_sets(validator_sets.clone());
+                let mut last_proposer = [0u8; 32];
+                last_proposer[31] = last_proposer_seed;
+                platform_state.set_last_committed_block_info(Some(make_extended_block_info(
+                    *qh1.as_byte_array(),
+                    last_proposer,
+                    5,
+                )));
+
+                let mut proposer = [0u8; 32];
+                proposer[31] = proposer_seed;
+
+                // v1 ordering: rotation runs before the root hash exists and before any
+                // reduced-state write.
+                let mut context_before_root_hash =
+                    make_block_execution_context(platform_state.clone());
+                let update_before = platform
+                    .validator_set_update_v2(
+                        proposer,
+                        &platform_state,
+                        &mut context_before_root_hash,
+                    )
+                    .expect("should succeed before root hash");
+
+                // v0 ordering: by the time rotation runs, the app hash has been computed
+                // and set, and grovedb has received the block's writes (simulated here by
+                // a committed reduced-state write).
+                let reduced_platform_state = platform_state.to_reduced_platform_state(
+                    ReducedBlockInfoV0 {
+                        basic_info: BlockInfo::default(),
+                        app_hash: None,
+                        quorum_hash: (*qh1.as_byte_array()).into(),
+                        block_id_hash: None,
+                        proposer_pro_tx_hash: proposer.into(),
+                        signature: None,
+                        round: 0,
+                    },
+                    1,
+                );
+                platform
+                    .store_reduced_platform_state(&reduced_platform_state, None, platform_version)
+                    .expect("should store reduced platform state");
+                let mut context_after_root_hash =
+                    make_block_execution_context(platform_state.clone());
+                context_after_root_hash
+                    .block_state_info_mut()
+                    .set_app_hash(Some([9u8; 32]));
+                let update_after = platform
+                    .validator_set_update_v2(
+                        proposer,
+                        &platform_state,
+                        &mut context_after_root_hash,
+                    )
+                    .expect("should succeed after root hash");
+
+                assert_eq!(
+                    update_before, update_after,
+                    "validator set update must not depend on call ordering ({})",
+                    description
+                );
+                assert_eq!(
+                    context_before_root_hash
+                        .block_platform_state()
+                        .next_validator_set_quorum_hash(),
+                    context_after_root_hash
+                        .block_platform_state()
+                        .next_validator_set_quorum_hash(),
+                    "next validator set quorum hash must not depend on call ordering ({})",
+                    description
+                );
+                assert_eq!(
+                    context_before_root_hash
+                        .block_platform_state()
+                        .current_validator_set_quorum_hash(),
+                    context_after_root_hash
+                        .block_platform_state()
+                        .current_validator_set_quorum_hash(),
+                    "current validator set quorum hash must not depend on call ordering ({})",
+                    description
+                );
+            }
+        }
     }
 }

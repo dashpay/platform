@@ -26,6 +26,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore_rpc::json::MasternodeListItem;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::reduced_platform_state::v0::{ReducedBlockInfoV0, ReducedPlatformStateV0};
+use dpp::reduced_platform_state::ReducedPlatformState;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -121,6 +123,44 @@ impl PlatformState {
     /// Get the state fingerprint
     pub fn fingerprint(&self) -> Result<[u8; 32], Error> {
         Ok(hash_double(self.serialize_to_bytes()?))
+    }
+
+    /// Builds the reduced platform state that is written into the replicated grovedb
+    /// state each block so a state-synced node can reconstruct the full platform state.
+    ///
+    /// `last_committed_block_info` describes the block currently being processed (it
+    /// becomes the last committed block once the block finalizes); fields that are not
+    /// known during proposal processing (app hash, block id hash, signature) are `None`.
+    /// `quorum_positions` records the order of the validator sets, which is not
+    /// otherwise recoverable from Core RPC during reconstruction.
+    pub fn to_reduced_platform_state(
+        &self,
+        last_committed_block_info: ReducedBlockInfoV0,
+        proposed_core_chain_locked_height: u32,
+    ) -> ReducedPlatformState {
+        ReducedPlatformState::V0(ReducedPlatformStateV0 {
+            last_committed_block_info: Some(last_committed_block_info),
+            current_protocol_version_in_consensus: self.current_protocol_version_in_consensus,
+            next_epoch_protocol_version: self.next_epoch_protocol_version,
+            current_validator_set_quorum_hash: self
+                .current_validator_set_quorum_hash
+                .to_byte_array()
+                .into(),
+            next_validator_set_quorum_hash: self
+                .next_validator_set_quorum_hash
+                .map(|quorum_hash| quorum_hash.to_byte_array().into()),
+            previous_fee_versions: self
+                .previous_fee_versions
+                .iter()
+                .map(|(epoch_index, fee_version)| (*epoch_index, fee_version.fee_version_number))
+                .collect(),
+            quorum_positions: self
+                .validator_sets
+                .keys()
+                .map(|quorum_hash| quorum_hash.to_byte_array().into())
+                .collect(),
+            proposed_core_chain_locked_height,
+        })
     }
     /// The default state at init chain
     pub fn default_with_protocol_versions(
