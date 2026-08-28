@@ -12,7 +12,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 #[cfg(feature = "server")]
 use dpp::data_contract::document_type::DocumentTypeRef;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::Document;
 #[cfg(feature = "server")]
 use dpp::document::DocumentV0Getters;
