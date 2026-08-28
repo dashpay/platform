@@ -632,6 +632,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code
             // so hosts can distinguish it from a definitive rejection.
+            PlatformWalletError::MasternodeListUnavailable => {
+                PlatformWalletFFIResultCode::ErrorMasternodeListUnavailable
+            }
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
             }

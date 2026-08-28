@@ -320,6 +320,7 @@ mod tests {
             platform_node_id: Some([4u8; 20]),
             is_valid: true,
             is_evonode: true,
+            has_extended_net_info: false,
         }
     }
 

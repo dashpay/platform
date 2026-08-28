@@ -357,6 +357,85 @@ extension PlatformWalletManager {
             return outBalance
         }.value
     }
+
+    /// Unban / update-service: broadcast a ProUpServTx re-asserting this
+    /// wallet-owned masternode's current service values — which revives it
+    /// if it is PoSe-banned. Pure bridge — the whole orchestration (list
+    /// lookup, operator-key derive + match, payout rule, funding, BLS
+    /// payload sign, input sign, broadcast) lives in `platform-wallet`
+    /// behind this one FFI call, per CLAUDE.md.
+    ///
+    /// - `operatorKeyIndex`: the wallet's operator-key index for this
+    ///   masternode — the record's `operatorKeyIndex` join field.
+    /// - `platformP2PPort`: required for an evonode (the masternode list
+    ///   does not carry it); must be nil for a regular masternode.
+    /// - `operatorPayoutAddress`: must be nil when the masternode's
+    ///   registered `operatorReward` is 0, and must be given when it is
+    ///   not — the payload REPLACES the operator payout script on-chain.
+    ///
+    /// Returns the ProUpServTx txid (32 wire-order bytes). A
+    /// `.transactionBroadcastUnconfirmed` error means the outcome is
+    /// ambiguous — never retry; the wallet reconciles through sync.
+    public func masternodeUpdateService(
+        walletId: Data,
+        proTxHash: Data,
+        operatorKeyIndex: UInt32,
+        platformP2PPort: UInt16? = nil,
+        operatorPayoutAddress: String? = nil
+    ) async throws -> Data {
+        guard isConfigured, handle != NULL_HANDLE,
+            walletId.count == 32, proTxHash.count == 32
+        else {
+            throw PlatformWalletError.invalidParameter(
+                "Manager not configured, or wallet id / proTxHash not 32 bytes")
+        }
+
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            // Resolver-backed signer: derives the operator key (and signs
+            // the funding inputs) with the mnemonic fetched from the
+            // Keychain inside the resolver vtable Rust-side. Kept alive
+            // across the synchronous FFI call, whose callback fires during it.
+            let resolver = MnemonicResolver()
+            var txidTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
+                walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                    proTxHash.withUnsafeBytes { (ptRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                        func call(_ payoutPtr: UnsafePointer<CChar>?) -> PlatformWalletFFIResult {
+                            platform_wallet_manager_masternode_update_service(
+                                handle,
+                                widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                operatorKeyIndex,
+                                platformP2PPort != nil,
+                                platformP2PPort ?? 0,
+                                payoutPtr,
+                                resolver.handle,
+                                &txidTuple
+                            )
+                        }
+                        if let operatorPayoutAddress {
+                            return operatorPayoutAddress.withCString { call($0) }
+                        }
+                        return call(nil)
+                    }
+                }
+            }
+            let result = PlatformWalletResult(ffiResult)
+            guard result.isSuccess else {
+                throw PlatformWalletError(result: result)
+            }
+            return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
+        }.value
+    }
 }
 
 /// Which wallet key signs a masternode (evonode) credit withdrawal.
