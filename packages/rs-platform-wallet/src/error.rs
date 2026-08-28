@@ -185,18 +185,45 @@ pub enum PlatformWalletError {
     /// network and has not yet been observed spent by this wallet
     /// ([`WalletGeneration::in_broadcast_conflict`](crate::wallet::core::WalletGeneration::in_broadcast_conflict)).
     /// Completing the build would race that transaction on the wire, so it is
-    /// refused and its own fresh reservation released. NOTHING was built,
-    /// signed or broadcast.
+    /// refused: the attempted selection is DISCARDED, its fresh reservation
+    /// released, and nothing was broadcast.
+    ///
+    /// Signing, however, MAY already have happened by the time the conflict
+    /// is caught. The finalized-transaction build runs its check on the
+    /// unsigned selection, but the contact-payment build calls `build_signed`
+    /// before its conflict check, and the asset-lock build's key-wallet
+    /// builder signs as it builds — on those two paths a fully signed
+    /// transaction exists at the moment of refusal. It is discarded without
+    /// ever reaching a broadcaster, and its inputs go back to the selectable
+    /// pool with the reservation release; "nothing was broadcast" is part of
+    /// this contract, "nothing was signed" is NOT.
     ///
     /// A TRANSIENT, EXPECTED condition, and the reason it is a variant of its
     /// own rather than a [`Self::TransactionBuild`] /
-    /// [`Self::AssetLockTransaction`] string: it is the one build failure a
-    /// caller may safely retry UNCHANGED once the in-flight dispatch settles,
-    /// and telling it apart from a genuine build failure previously meant
-    /// substring-matching prose (`message.contains("mid-broadcast")`, which the
-    /// tests did too). All three selection choke points — the
+    /// [`Self::AssetLockTransaction`] string: the refusal says nothing wrong
+    /// about the request itself — the same intent can be re-attempted once
+    /// the conflict resolves (see below for what "resolves" requires) — and
+    /// telling it apart from a genuine build failure previously meant
+    /// substring-matching prose (`message.contains("mid-broadcast")`, which
+    /// the tests did too). All three selection choke points — the
     /// finalized-transaction build, the contact-payment build and the
     /// asset-lock build — now return this one variant.
+    ///
+    /// # Retrying the INTENT requires reconciling the fenced transaction first
+    ///
+    /// "Retry once the dispatch settles" must not be read as "retry
+    /// unconditionally once this error stops". The fence behind this refusal
+    /// outlives the broadcaster's return on every non-rejected dispatch and
+    /// clears only when this wallet OBSERVES the outpoint spent — and the
+    /// overwhelmingly common observation is the fenced dispatch's OWN payment
+    /// landing. At that moment the intent this build was carrying may already
+    /// be fulfilled: re-issuing it blindly then produces a second, duplicate
+    /// logical payment rather than completing the first. So a caller must
+    /// reconcile the transaction the fence was protecting — did that payment
+    /// land? — before deciding whether the retried intent is still owed.
+    /// Only when the fenced dispatch is definitively rejected (its fence
+    /// released together with its reservation) is an immediate, unchanged
+    /// retry unconditionally correct.
     ///
     /// `outpoint` is the first conflicting input, carried structurally so
     /// callers and diagnostics need not parse it back out of a message.

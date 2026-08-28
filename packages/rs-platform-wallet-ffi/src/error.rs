@@ -670,9 +670,10 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             // A coin selection that picked an input still held by an in-flight
             // broadcast dispatch. Typed on the Rust side (it carries the
-            // conflicting `OutPoint`, and is the one build refusal that is
-            // safely retryable unchanged), but DELIBERATELY mapped to the same
-            // numeric code it produced before that variant existed: all three
+            // conflicting `OutPoint`; see the variant docs for the retry
+            // contract — the intent is re-attemptable only after the fenced
+            // dispatch's outcome is reconciled), but DELIBERATELY mapped to the
+            // same numeric code it produced before that variant existed: all three
             // choke points previously returned it as
             // `TransactionBuild` / `AssetLockTransaction`, neither of which is
             // matched here, so both fell to `ErrorUnknown`.

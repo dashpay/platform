@@ -433,10 +433,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // release is exact.
             //
             // The refusal is TYPED (`InputMidBroadcast`, carrying the
-            // conflicting outpoint) rather than a build-failure string: this is
-            // the one build error that is safely retryable unchanged once the
-            // dispatch settles, and callers should not have to substring-match
-            // prose to tell it apart (`dashpay/platform#4309`).
+            // conflicting outpoint) rather than a build-failure string: the
+            // request itself is sound and can be re-attempted once the fenced
+            // dispatch's outcome is reconciled (see the variant docs for the
+            // duplicate-payment hazard in "retry unchanged"), and callers
+            // should not have to substring-match prose to tell it apart
+            // (`dashpay/platform#4309`).
             if let Some(outpoint) = info.generation.in_broadcast_conflict(&unsigned) {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(PlatformWalletError::InputMidBroadcast { outpoint });
