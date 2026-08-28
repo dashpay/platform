@@ -1141,6 +1141,91 @@ mod tests {
         core.abandon_transaction(&after).await;
     }
 
+    /// `dashpay/platform#4309` — A CONTENDED WALLETS MAP MUST DEFER A SPEND
+    /// OBSERVATION, NEVER DISCARD IT.
+    ///
+    /// `SpendObservationHandler::on_wallet_event` is synchronous, so it probes
+    /// the wallets map with `try_read`. That probe fails while wallet
+    /// registration/removal holds the map's write lock — and the handler used
+    /// to DROP the observation on that failure. For a DAPI-path dispatch the
+    /// dropped `TransactionDetected` can be the only spend-bearing event the
+    /// wallet ever gets: InstantLock promotions carry no record here by
+    /// design, and an evicted or never-confirmed transaction produces no
+    /// inserted `BlockProcessed` record. With no deadline behind the
+    /// pending-spend fence, one moment of lock contention then left the input
+    /// fenced for the manager's lifetime even though the wallet HAD observed
+    /// it spent.
+    ///
+    /// The handler now queues the observation and applies it on the next
+    /// delivered event — ANY event, including one carrying no spend at all —
+    /// so the evidence survives the contention instead of vanishing with it.
+    #[tokio::test]
+    async fn a_contended_wallets_map_defers_but_never_drops_a_spend_observation() {
+        let (core, signer, outputs) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(AlwaysOkBroadcaster),
+        )
+        .await;
+        let stamped = core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
+        let finalized = finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        let sent_tx = finalized.transaction().clone();
+
+        assert!(core
+            .broadcast_finalized_transaction(&finalized)
+            .await
+            .is_ok());
+
+        // Sweep the funding reservation, so the pending-spend fence is the
+        // only thing holding the input (see the sibling release tests).
+        advance_processed_height(&core, stamped + 17_000).await;
+        expect_mid_broadcast(
+            try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
+            "the dispatched input must be fenced before any spend is observed",
+        );
+
+        let map = wallets_map(&[&core]);
+        let handler = SpendObservationHandler::new(Arc::clone(&map));
+
+        // Wallet registration/removal holds the wallets-map WRITE lock at the
+        // instant the wallet's own spend event is delivered: `try_read` fails.
+        let contended = map.write().await;
+        dash_spv::EventHandler::on_wallet_event(&handler, &spend_event(&core, &sent_tx));
+        drop(contended);
+
+        // The observation was deferred, not applied: the fence still stands.
+        // (Pre-fix this holds too — by discarding rather than deferring — so
+        // the discriminating half is what the NEXT event does.)
+        expect_mid_broadcast(
+            try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
+            "a deferred observation must not have been applied under contention",
+        );
+
+        // The next delivered event drains the queue — even a bare watermark
+        // advance that resolves no wallet and carries no spend of its own.
+        // This does NOT retire the fence by chain progress: it applies
+        // evidence that already arrived and was queued.
+        dash_spv::EventHandler::on_wallet_event(
+            &handler,
+            &key_wallet_manager::WalletEvent::SyncHeightAdvanced {
+                wallet_id: core.wallet_id(),
+                height: stamped + 17_001,
+            },
+        );
+
+        let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
+        let after = after.unwrap_or_else(|error| {
+            panic!(
+                "an observation deferred by wallets-map contention must be \
+                 applied on the next event, not dropped — the fence never \
+                 cleared: {error:?}"
+            )
+        });
+        core.abandon_transaction(&after).await;
+    }
+
     /// The handler releases ONLY the generation registered under the event's
     /// wallet id (`dashpay/platform#4309`, review round 6). Two fenced wallets
     /// share ONE wallets map — the production shape — and: an event naming a

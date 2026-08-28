@@ -7,10 +7,11 @@
 //! network; this side takes it down when the wallet can actually see that the
 //! outpoints are spent.
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use dash_spv::EventHandler;
+use dashcore::OutPoint;
 use tokio::sync::RwLock;
 
 use crate::changeset::core_bridge::spent_outpoints;
@@ -74,47 +75,153 @@ use crate::wallet::PlatformWallet;
 /// fence then takes only the generation's `in_broadcast` `std::sync::Mutex` for
 /// a few hash operations and never awaits.
 ///
-/// A dropped observation (contended map, or a wallet not in the map) is
-/// FAIL-SAFE in the direction that matters: the fence simply stays up until
-/// another spend event for the same outpoint arrives. There is no backstop
-/// behind it — no deadline retires a pending-spend fence
-/// (`dashpay/platform#4309`) — so a dropped observation costs a wait, not
-/// safety. It can delay a release; it can never cause one.
+/// # A contended map DEFERS the observation; it never discards it
+///
+/// `try_read` can still fail — wallet registration/removal holds the map's
+/// write lock for a moment — and this handler used to drop the observation on
+/// that failure and call the drop fail-safe. The *direction* was fail-safe (a
+/// dropped observation can only delay a release, never cause one), but the
+/// cost was not a wait: `TransactionDetected` can be the ONLY spend-bearing
+/// event a dispatch ever produces (InstantLock promotions carry no record
+/// here by design, and an evicted or never-confirmed transaction inserts no
+/// `BlockProcessed` record), and the pending-spend fence has no deadline
+/// behind it. One moment of lock contention could therefore fence an input
+/// for the manager's lifetime even though the wallet HAD observed it spent
+/// (`dashpay/platform#4309`).
+///
+/// So a failed `try_read` now queues the observation in [`pending`]
+/// (per-wallet outpoint sets under a `std::sync::Mutex`), and EVERY delivered
+/// event — spend-bearing or not — first retries the queue. The evidence
+/// survives the contention and is applied at the next delivery, which during
+/// any sync activity is moments away. Draining on a spend-free event (a bare
+/// `SyncHeightAdvanced`, say) does not retire a fence by chain progress: it
+/// applies an observation that already arrived and was queued.
+///
+/// Two outcomes remain terminal, deliberately:
+///
+/// * a wallet id that resolves to NO entry in a successfully read map — the
+///   wallet is unregistered; that is a resolution, not contention, and it
+///   matches the pre-queue behaviour;
+/// * a queue already holding [`MAX_QUEUED_SPEND_OBSERVATIONS`] outpoints — a
+///   pathology no real contention window reaches (entries are deduplicated
+///   per wallet and drain on the next event), shed with a warning rather
+///   than allowed to grow without bound.
+///
+/// # Why the queue cannot deadlock
+///
+/// The handler's lock order is strictly nested and acyclic: the private
+/// `pending` mutex, then `wallets.try_read()`, then each resolved
+/// generation's `in_broadcast` mutex (inside
+/// [`observe_spent`](super::WalletGeneration::observe_spent)). Nothing else
+/// in the crate takes the `pending` mutex at all; the `in_broadcast` critical
+/// sections are pure hash operations that acquire no further lock; and the
+/// one lock another thread can hold long — the `wallets` map, on the
+/// registration/removal write path — is only ever PROBED here (`try_read`),
+/// never awaited, so this handler can never be the blocked edge in a cycle
+/// with those writers.
+///
+/// [`pending`]: Self::pending
 pub struct SpendObservationHandler {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    /// Observations whose wallets-map probe was contended, awaiting the next
+    /// delivered event — see the type docs. Keyed per wallet with the
+    /// outpoints deduplicated: observations are idempotent set-unions
+    /// ([`observe_spent`](super::WalletGeneration::observe_spent)), so
+    /// neither ordering nor multiplicity needs preserving.
+    pending: Mutex<BTreeMap<WalletId, BTreeSet<OutPoint>>>,
 }
+
+/// Upper bound on the total outpoints [`SpendObservationHandler`] will hold
+/// queued across all wallets. Queued entries drain on the very next delivered
+/// event and are deduplicated, so reaching this bound takes a wallets-map
+/// writer stalled across thousands of distinct own-spend observations — a
+/// pathology, and one worth a warning rather than unbounded growth.
+const MAX_QUEUED_SPEND_OBSERVATIONS: usize = 4096;
 
 impl SpendObservationHandler {
     pub fn new(wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
-        Self { wallets }
+        Self {
+            wallets,
+            pending: Mutex::new(BTreeMap::new()),
+        }
     }
 
-    /// Hand `outpoints` to `wallet_id`'s generation as observed spends.
-    fn release_fences(&self, wallet_id: &WalletId, outpoints: Vec<dashcore::OutPoint>) {
-        if outpoints.is_empty() {
+    /// Recovers from a poisoned mutex rather than panicking — the guarded
+    /// data is a plain outpoint-set map with no invariant a partial write
+    /// could break, and panicking here would take down SPV's event fan-out.
+    /// (Same policy as the fence map itself.)
+    fn pending_lock(&self) -> MutexGuard<'_, BTreeMap<WalletId, BTreeSet<OutPoint>>> {
+        self.pending.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Queue `observation` (if any), then apply everything queued if the
+    /// wallets map can be read right now.
+    ///
+    /// The pending mutex is held across the whole attempt; see the type docs
+    /// for why that nesting cannot deadlock. On a contended map everything —
+    /// this observation included — simply stays queued for the next event.
+    fn observe(&self, observation: Option<(WalletId, Vec<OutPoint>)>) {
+        let mut pending = self.pending_lock();
+        if let Some((wallet_id, outpoints)) = observation {
+            Self::enqueue(&mut pending, wallet_id, outpoints);
+        }
+        if pending.is_empty() {
             return;
         }
         // try_read on the wallets map, NOT the SPV-contended wallet_manager
         // lock — see the type docs.
         let Ok(wallets) = self.wallets.try_read() else {
             tracing::debug!(
-                wallet = %hex::encode(wallet_id),
-                spent = outpoints.len(),
-                "in-broadcast fence release deferred: wallets-map lock contended"
+                wallets = pending.len(),
+                "in-broadcast fence release deferred: wallets-map lock \
+                 contended; observation queued for the next event"
             );
             return;
         };
-        if let Some(wallet) = wallets.get(wallet_id) {
-            wallet.generation().observe_spent(outpoints);
+        for (wallet_id, outpoints) in std::mem::take(&mut *pending) {
+            if let Some(wallet) = wallets.get(&wallet_id) {
+                wallet.generation().observe_spent(outpoints);
+            }
+            // A wallet absent from a successfully read map is unregistered:
+            // resolved, not deferred — nothing to retry against.
+        }
+    }
+
+    /// Add one observation to the queue, shedding (with a warning) only past
+    /// [`MAX_QUEUED_SPEND_OBSERVATIONS`] total queued outpoints.
+    fn enqueue(
+        pending: &mut BTreeMap<WalletId, BTreeSet<OutPoint>>,
+        wallet_id: WalletId,
+        outpoints: Vec<OutPoint>,
+    ) {
+        let mut total: usize = pending.values().map(BTreeSet::len).sum();
+        let entry = pending.entry(wallet_id).or_default();
+        for outpoint in outpoints {
+            if total >= MAX_QUEUED_SPEND_OBSERVATIONS {
+                tracing::warn!(
+                    wallet = %hex::encode(wallet_id),
+                    %outpoint,
+                    "spend-observation queue full: shedding an observation; \
+                     any fence on this outpoint waits for its next spend event"
+                );
+                continue;
+            }
+            if entry.insert(outpoint) {
+                total += 1;
+            }
         }
     }
 }
 
 impl EventHandler for SpendObservationHandler {
     fn on_wallet_event(&self, event: &WalletEvent) {
-        if let Some(wallet_id) = observing_wallet(event) {
-            self.release_fences(wallet_id, observed_spends(event));
-        }
+        // Every delivery retries the queue, so an observation deferred by a
+        // contended wallets map is applied at the next event of ANY variant —
+        // including the spend-free ones this handler otherwise ignores.
+        let observation = observing_wallet(event)
+            .map(|wallet_id| (*wallet_id, observed_spends(event)))
+            .filter(|(_, outpoints)| !outpoints.is_empty());
+        self.observe(observation);
     }
 }
 
