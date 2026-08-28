@@ -356,6 +356,13 @@ export default function getBaseConfigFactory() {
               txProcessingTimeLimit: null,
             },
             epochTime: 788400,
+            stateSync: {
+              snapshots: {
+                enabled: true,
+                frequencySeconds: 600,
+                maxCount: 6,
+              },
+            },
           },
           tenderdash: {
             mode: 'full',
@@ -460,6 +467,16 @@ export default function getBaseConfigFactory() {
               },
             },
             moniker: null,
+            // Serving snapshots to peers is always on in Tenderdash; `enabled`
+            // only makes a fresh node bootstrap from a snapshot, and Tenderdash
+            // ignores it once the node has local state, so it is safe on by
+            // default for existing nodes.
+            stateSync: {
+              enabled: true,
+              retries: 3,
+              chunkRequestTimeout: '15s',
+              fetchersCount: 4,
+            },
           },
         },
         sourcePath: null,
