@@ -916,6 +916,18 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                         "startup: identity discovery failed for a non-network reason"
                     );
                     tally.record_discovery_failed_locally();
+                    // The scan folds each identity in as it finds it, so a
+                    // fault raised after one was inserted leaves that identity
+                    // resident and its keys in memory. The failure says
+                    // persistence broke, NOT that the wallet owns nothing —
+                    // reporting it as identity-less would exit at the
+                    // no-identity guard and skip the contact sync and drain
+                    // for an identity that is right there. Both signals are
+                    // kept: the identity is reported and the local fault stays
+                    // on record.
+                    if let Some(known) = self.local_identity_id(wallet_id).await {
+                        tally.record_local_identity(known);
+                    }
                     return;
                 }
             }
@@ -1771,5 +1783,176 @@ mod tests {
         assert!(outcome.dashpay_sync_ran);
         assert_eq!(outcome.contact_accounts_drained, 1);
         assert_eq!(outcome.elapsed, Duration::from_secs(3));
+    }
+    // ---------------------------------------------------------------------
+    // Discovery mutates identity state incrementally, so a fault raised
+    // part-way through does not mean the wallet owns nothing.
+    // ---------------------------------------------------------------------
+
+    /// Persister handing back one already-persisted wallet, the way a restored
+    /// launch hydrates. Its wallet is `ExternalSignable` — the Keychain-backed
+    /// shape whose seed lives outside the process — which is what makes the
+    /// resident-key derive inside `discover` fail with a LOCAL fault rather
+    /// than an unreachable-Platform one.
+    struct RestoredWalletPersister {
+        wallet: key_wallet::Wallet,
+        managed: key_wallet::wallet::ManagedWalletInfo,
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for RestoredWalletPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            let mut wallets = std::collections::BTreeMap::new();
+            wallets.insert(
+                self.wallet.compute_wallet_id(),
+                crate::changeset::ClientWalletStartState {
+                    wallet: self.wallet.clone(),
+                    wallet_info: self.managed.clone(),
+                    identity_manager: crate::changeset::IdentityManagerStartState::default(),
+                    unused_asset_locks: std::collections::BTreeMap::new(),
+                },
+            );
+            Ok(crate::changeset::ClientStartState {
+                wallets,
+                ..Default::default()
+            })
+        }
+    }
+
+    struct RestoreEventHandler;
+    impl crate::events::EventHandler for RestoreEventHandler {}
+    impl crate::events::PlatformEventHandler for RestoreEventHandler {}
+
+    /// A hydrated manager holding one external-signable wallet: a scan on it
+    /// cannot derive from resident key material, so `discover` returns a local
+    /// fault instead of an unanswered-probe one.
+    async fn manager_whose_scan_faults_locally() -> (
+        std::sync::Arc<crate::PlatformWalletManager<RestoredWalletPersister>>,
+        WalletId,
+    ) {
+        let ctx = key_wallet::test_utils::TestWalletContext::new_random();
+        let mut wallet = ctx.wallet;
+        wallet.downgrade_to_external_signable();
+        let wallet_id = wallet.compute_wallet_id();
+
+        let manager = std::sync::Arc::new(crate::PlatformWalletManager::new(
+            std::sync::Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+            std::sync::Arc::new(RestoredWalletPersister {
+                wallet,
+                managed: ctx.managed_wallet,
+            }),
+            std::sync::Arc::new(RestoreEventHandler)
+                as std::sync::Arc<dyn crate::events::PlatformEventHandler>,
+        ));
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the restored wallet must hydrate");
+
+        (manager, wallet_id)
+    }
+
+    /// The defect: `discover` folds each identity in as it finds it —
+    /// `add_identity` inserts it and installs its public keys in memory —
+    /// before the persist that can still fail. When that failure surfaced
+    /// here, the branch recorded only the local-fault signal and left
+    /// `identity_id` unset, so the sequence exited at the no-identity guard
+    /// and reported a wallet with no identity while one was resident. The
+    /// contact sync and the contact-account drain were skipped for it.
+    ///
+    /// Reproduced by driving the retry loop directly against a wallet whose
+    /// scan faults locally, with the identity already folded in — the exact
+    /// state the failing persist leaves behind.
+    #[tokio::test]
+    async fn a_local_scan_fault_still_reports_an_identity_the_scan_had_already_folded_in() {
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+
+        let (manager, wallet_id) = manager_whose_scan_faults_locally().await;
+
+        // What the scan had already done before its persist failed.
+        {
+            let persister =
+                WalletPersister::new(wallet_id, std::sync::Arc::new(NoPlatformPersistence));
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(test_identity(1), 0, wallet_id, &persister)
+                .expect("fold the identity in the way discovery does");
+        }
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let mut tally = StartupTally::default();
+        manager
+            .discover_identity_with_backoff(
+                &wallet_id,
+                wallet.identity(),
+                None,
+                Some(1),
+                Instant::now() + Duration::from_secs(30),
+                &mut tally,
+            )
+            .await;
+
+        assert!(
+            tally.discovery_failed_locally,
+            "precondition: this scan must fault locally, not go unanswered"
+        );
+        assert_eq!(
+            tally.identity_id,
+            Some(Identifier::from([1u8; 32])),
+            "an identity the scan already folded in must still be reported"
+        );
+        assert!(
+            tally.has_identity(),
+            "the no-identity guard is what skips the contact sync and the drain"
+        );
+        assert_ne!(
+            tally.status(),
+            WalletStartupStatus::DiscoveryFailed,
+            "a launch that HAS an identity is not a no-identity launch"
+        );
+    }
+
+    /// The other direction, and the reason the branch re-reads local state
+    /// rather than assuming: with nothing folded in, the identical local fault
+    /// still settles as `DiscoveryFailed`. Without this the test above would
+    /// keep passing if the branch reported an identity unconditionally.
+    #[tokio::test]
+    async fn a_local_scan_fault_with_nothing_folded_in_is_still_a_failed_discovery() {
+        let (manager, wallet_id) = manager_whose_scan_faults_locally().await;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let mut tally = StartupTally::default();
+        manager
+            .discover_identity_with_backoff(
+                &wallet_id,
+                wallet.identity(),
+                None,
+                Some(1),
+                Instant::now() + Duration::from_secs(30),
+                &mut tally,
+            )
+            .await;
+
+        assert!(tally.discovery_failed_locally);
+        assert!(
+            !tally.has_identity(),
+            "there is no identity to report, and none may be invented"
+        );
+        assert_eq!(tally.status(), WalletStartupStatus::DiscoveryFailed);
     }
 }
