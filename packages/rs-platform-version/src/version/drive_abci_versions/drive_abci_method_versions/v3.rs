@@ -134,5 +134,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V3: DriveAbciMethodVersions = DriveAbciMeth
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,
         store_platform_state: 0,
+        fetch_reduced_platform_state: 0,
+        store_reduced_platform_state: 0,
     },
 };

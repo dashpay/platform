@@ -15,8 +15,9 @@ use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VE
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
-use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v11::DRIVE_ABCI_METHOD_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
+use crate::version::drive_abci_versions::drive_abci_state_sync_versions::v1::DRIVE_ABCI_STATE_SYNC_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
@@ -31,20 +32,40 @@ use crate::version::ProtocolVersion;
 pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 
 /// Introduced as the activation gate for the consensus changes of the 4.3
-/// line. Functionally identical to v14 at introduction: the same component
-/// version structs, no behavior change. Each change that needs this gate
-/// lands in its own follow-up and bumps the component table it consumes here;
-/// keeping v15 == v14 until then lets mixed-version validators agree.
+/// line. Each change that needs this gate lands in its own follow-up and bumps
+/// the component table it consumes here; everything not listed below matches v14.
+///
+/// v15 enables ABCI state sync: a fresh node can bootstrap from a peer's grovedb
+/// snapshot instead of replaying the chain.
+///
+/// The consensus changes gate on `DRIVE_ABCI_METHOD_VERSIONS_V11`:
+///
+/// * `run_block_proposal` 0 -> 1: every block writes a reduced platform state
+///   (`Misc/reduced_saved_state`) into the replicated state just before the root hash is
+///   computed, and `validator_set_update` moves above the root-hash computation so the
+///   stored reduced state reflects the post-rotation validator set. The full platform
+///   state only lives in non-replicated aux storage, so without this a state-synced node
+///   would have no way to rebuild its in-memory state.
+/// * `consensus_params_update` 1 -> 2: the first block of v15 also emits evidence
+///   params sized for state-synced nodes that do not hold full history (issue #2512).
+/// * `perform_events_on_first_block_of_protocol_change` writes the initial reduced state
+///   at the v15 activation block, so every snapshot taken at or after activation is
+///   restorable. Snapshots from before activation lack the key and are not served.
+///
+/// The grovedb state sync wire protocol version used for
+/// snapshots is `DRIVE_ABCI_STATE_SYNC_VERSIONS_V1.protocol_version` (1), shared by all
+/// platform versions.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10,
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: run_block_proposal v1 (reduced state write + validator rotation above root hash) and consensus_params_update v2 (evidence params on the v15 activation block)
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
+        state_sync: DRIVE_ABCI_STATE_SYNC_VERSIONS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
@@ -69,3 +90,44 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         tenderdash_consensus_version: 1,
     },
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::version::v14::PLATFORM_V14;
+
+    /// The state sync consensus changes live in v15's own method table, so a v14 node
+    /// keeps running run_block_proposal v0 (no reduced-state write, rotation after the
+    /// root hash) and consensus_params_update v1. Making v14 non-zero here would be
+    /// consensus-breaking for already-deployed nodes.
+    #[test]
+    fn state_sync_consensus_changes_gate_at_v15() {
+        assert_eq!(PLATFORM_V14.drive_abci.methods.engine.run_block_proposal, 0);
+        assert_eq!(
+            PLATFORM_V14
+                .drive_abci
+                .methods
+                .engine
+                .consensus_params_update,
+            1
+        );
+        assert_eq!(PLATFORM_V15.drive_abci.methods.engine.run_block_proposal, 1);
+        assert_eq!(
+            PLATFORM_V15
+                .drive_abci
+                .methods
+                .engine
+                .consensus_params_update,
+            2
+        );
+    }
+
+    /// All platform versions share grovedb state sync wire protocol version 1 until a
+    /// grovedb wire v2 exists; the supported set lives next to the snapshot types in
+    /// drive-abci.
+    #[test]
+    fn state_sync_wire_protocol_version_is_one() {
+        assert_eq!(PLATFORM_V15.drive_abci.state_sync.protocol_version, 1);
+        assert_eq!(PLATFORM_V14.drive_abci.state_sync.protocol_version, 1);
+    }
+}
