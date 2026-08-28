@@ -101,8 +101,15 @@ export default class RenewalRecordRepository {
         // Created under the lock, not before it: two processes reaching an
         // unclaimed fence would otherwise both find it absent and both write
         // zero, and the loser would claim a generation already taken.
+        //
+        // Thrown rather than returned. `claimGeneration` promises a number and
+        // its callers carry the result as one; handing back a sentinel here
+        // meant a chain went on holding `false` as its generation, and every
+        // later write was fenced out by a comparison against it - recording
+        // nothing, quietly, which is the one outcome this whole record exists
+        // to prevent.
         if (!stillOurs()) {
-          return false;
+          throw new Error('The renewal fence was taken over while it was being created');
         }
 
         writeFileAtomic.sync(generationPath, '0\n', { encoding: 'utf8', mode: RECORD_FILE_MODE });

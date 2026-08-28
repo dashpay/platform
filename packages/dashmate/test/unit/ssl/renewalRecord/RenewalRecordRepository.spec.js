@@ -158,6 +158,20 @@ describe('RenewalRecordRepository', () => {
       expect(repository.claimGeneration('base')).to.equal(1);
     });
 
+    // `claimGeneration` promises a number and its callers carry the result as
+    // one. Returning a sentinel meant a chain held `false` as its generation and
+    // every later write was fenced out by comparing against it - recording
+    // nothing, quietly, which is what the record exists to prevent.
+    it('should never hand back a generation that is not a number', () => {
+      const generations = [
+        repository.claimGeneration('base'),
+        repository.claimGeneration('base'),
+      ];
+
+      generations.forEach((g) => expect(g).to.be.a('number'));
+      expect(generations).to.deep.equal([1, 2]);
+    });
+
     it('should record who holds it', () => {
       let held = null;
       const realRmSync = fs.rmSync;
