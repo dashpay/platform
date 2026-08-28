@@ -728,13 +728,79 @@ impl Index {
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<u16> {
+        Self::matches_over_components(&self.properties, index_names, in_field_name, order_by)
+    }
+
+    /// [`Self::matches`] with the index's terminal (an indexOnly index's
+    /// member-key property) as a matchable component. The terminal is the
+    /// entry level itself — ALWAYS the index's deepest component — so it
+    /// never participates in the prefix's order-by reduction: a
+    /// constrained terminal leaves prefix ordering intact (each fully
+    /// determined path holds at most one entry per member key), a
+    /// terminal named in `order_by` must be its LAST (deepest) entry, and
+    /// a terminal `in` field trivially satisfies the deepest-position
+    /// rule. The prefix properties then match through the exact
+    /// [`Self::matches`] algorithm.
+    ///
+    /// Returns `(difference, terminal_used)` — the difference counts
+    /// unused PREFIX properties only (an unused terminal costs nothing),
+    /// so scores stay comparable with [`Self::matches`]. On an index
+    /// without a terminal this is exactly [`Self::matches`] with
+    /// `terminal_used = false`.
+    pub fn matches_including_terminal(
+        &self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<(u16, bool)> {
+        let Some(terminal) = self.terminal.as_deref() else {
+            return self
+                .matches(index_names, in_field_name, order_by)
+                .map(|difference| (difference, false));
+        };
+
+        let terminal_used = index_names.contains(&terminal);
+        let prefix_fields: Vec<&str> = index_names
+            .iter()
+            .copied()
+            .filter(|field| *field != terminal)
+            .collect();
+        let prefix_order_by: &[&str] = match order_by.iter().position(|field| *field == terminal) {
+            // Ordering by the terminal is ordering the deepest level —
+            // admissible only as the ordering's last entry.
+            Some(position) if position + 1 == order_by.len() => &order_by[..position],
+            Some(_) => return None,
+            None => order_by,
+        };
+        let prefix_in_field = match in_field_name {
+            // An `in` on the terminal sits at the deepest position by
+            // construction; the prefix keeps no `in` constraint.
+            Some(field) if field == terminal => None,
+            other => other,
+        };
+
+        let difference = Self::matches_over_components(
+            &self.properties,
+            &prefix_fields,
+            prefix_in_field,
+            prefix_order_by,
+        )?;
+        Some((difference, terminal_used))
+    }
+
+    fn matches_over_components(
+        properties: &[IndexProperty],
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<u16> {
         // Here we are trying to figure out if the Index matches the order by
         // To do so we take the index and go backwards as we need the order by clauses to be
         // continuous, but they do not need to be at the end.
-        let mut reduced_properties = self.properties.as_slice();
+        let mut reduced_properties = properties;
         // let mut should_ignore: Vec<String> = order_by.iter().map(|&str| str.to_string()).collect();
         if !order_by.is_empty() {
-            for _ in 0..self.properties.len() {
+            for _ in 0..properties.len() {
                 if reduced_properties.len() < order_by.len() {
                     return None;
                 }
@@ -755,23 +821,23 @@ impl Index {
             }
         }
 
-        let last_property = self.properties.last()?;
+        let last_property = properties.last()?;
 
         // the in field can only be on the last or before last property
         if let Some(in_field_name) = in_field_name {
             if last_property.name.as_str() != in_field_name {
                 // it can also be on the before last
-                if self.properties.len() == 1 {
+                if properties.len() == 1 {
                     return None;
                 }
-                let before_last_property = self.properties.get(self.properties.len() - 2)?;
+                let before_last_property = properties.get(properties.len() - 2)?;
                 if before_last_property.name.as_str() != in_field_name {
                     return None;
                 }
             }
         }
 
-        let mut d = self.properties.len();
+        let mut d = properties.len();
 
         for search_name in index_names.iter() {
             if !reduced_properties

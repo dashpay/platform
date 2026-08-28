@@ -153,19 +153,6 @@ impl DocumentDeleteTransitionBuilder {
         self
     }
 
-    /// Signs the document delete transition
-    ///
-    /// # Arguments
-    ///
-    /// * `sdk` - The SDK instance
-    /// * `identity_public_key` - The public key of the identity
-    /// * `signer` - The signer instance
-    /// * `platform_version` - The platform version
-    ///
-    /// # Returns
-    ///
-    /// * `Result<StateTransition, Error>` - The signed state transition or an error
-    ///
     /// Resolve the document type and the document this delete will be
     /// built from, validating the builder's target. Runs BEFORE any nonce
     /// is reserved (an invalid builder must not advance the SDK's cached
@@ -239,6 +226,18 @@ impl DocumentDeleteTransitionBuilder {
         Ok((document_type, document))
     }
 
+    /// Signs the document delete transition
+    ///
+    /// # Arguments
+    ///
+    /// * `sdk` - The SDK instance
+    /// * `identity_public_key` - The public key of the identity
+    /// * `signer` - The signer instance
+    /// * `platform_version` - The platform version
+    ///
+    /// # Returns
+    ///
+    /// * `Result<StateTransition, Error>` - The signed state transition or an error
     pub async fn sign(
         &self,
         sdk: &Sdk,

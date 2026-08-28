@@ -122,9 +122,22 @@ from the transition. The outcome is always `AffectedState`, never
 `ExecutionProved`: the commitment carries neither id, entropy nor nonce,
 so a snapshot cannot bind one specific transition's execution.
 
-Not yet supported on the read surface: by-`$id` fetches (no primary tree —
-rejected with guidance), `startAt` cursors, and where clauses on the
-terminal property; ranked / count / range-aggregate queries work unchanged
+Where clauses on the **terminal property** lower directly onto the entry
+level's member keys once every prefix property carries an equality clause:
+an equality answers "did I like X" in one query, and a range ordered by
+the terminal (`terminal > <last seen>`, with a limit) walks the entries
+page by page — **keyset pagination**, the indexOnly replacement for
+id-shaped `startAt` cursors, which cannot address a position whose
+synthesized id is a one-way hash. Mixed shapes are served through a
+**prefix pivot**: one range or `in` clause may sit on a prefix property
+instead of the terminal (`hashtag == h AND postId > p AND $ownerId ==
+me`), with everything above the pivot equality-bound, everything below
+it unconstrained, and the terminal clause an equality. All shapes prove
+and verify through the same shared path-query builder.
+
+Not supported on the read surface: by-`$id` fetches (no primary tree —
+rejected with guidance) and `startAt` cursors (rejected with the keyset
+guidance above); ranked / count / range-aggregate queries work unchanged
 since they never open value trees.
 
 ## What it costs and what it saves

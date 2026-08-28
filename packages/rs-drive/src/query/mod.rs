@@ -336,13 +336,117 @@ pub struct InternalClauses {
     /// path-query lowering (protocol version 14 is the first to accept
     /// multiple in clauses, on consecutive index properties).
     pub in_clauses: Vec<WhereClause>,
-    /// Range clause
+    /// Range clause.
+    ///
+    /// On an indexOnly document type this may sit on an index's TERMINAL
+    /// (member-key) property, not only on an index prefix property — see
+    /// [`InternalClauses::classify_fields`] for the modeled roles instead
+    /// of assuming property placement.
     pub range_clause: Option<WhereClause>,
     /// Equal clause
     pub equal_clauses: BTreeMap<String, WhereClause>,
 }
 
+/// How one where-clause (or order-by) field relates to a document type's
+/// indexes — classified ONCE against the doctype instead of re-derived by
+/// every consumer. Roles are not exclusive: on the yappr fixture `postId`
+/// is a prefix property of `byHashtagPost`/`byPost` AND the terminal of
+/// `byLiker`.
+#[cfg(any(feature = "server", feature = "verify"))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ClauseFieldRoles {
+    /// The field is `$id`.
+    pub primary_key: bool,
+    /// The field is a prefix property of at least one index.
+    pub index_property: bool,
+    /// The field is the terminal (member-key property) of at least one
+    /// index — only ever true on indexOnly document types.
+    pub terminal: bool,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl ClauseFieldRoles {
+    /// The field appears in no index at all (and is not the primary key)
+    /// — a clause on it can never be served.
+    pub fn unindexed(&self) -> bool {
+        !self.primary_key && !self.index_property && !self.terminal
+    }
+}
+
+/// The outcome of generic index selection
+/// ([`DriveDocumentQuery::select_best_index`]): a match, or the fact that
+/// no index serves the query — carried as a value, not an error, so a
+/// route that may legitimately stand in for a miss (the indexOnly
+/// terminal route) never has to reconstruct that fact from error
+/// variants. Structural failures never appear here; they stay `Err`.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) enum BestIndexOutcome<'a> {
+    /// An index serves the query.
+    Matched(&'a Index),
+    /// No index matches; carries the error [`DriveDocumentQuery::find_best_index`]
+    /// reports for this query.
+    NoIndexMatches(Error),
+}
+
 impl InternalClauses {
+    /// Classify one field's index roles against `document_type`. The
+    /// single derivation site for "is this a prefix property, a terminal,
+    /// or `$id`" — consumers must branch on this instead of assuming a
+    /// clause sits on an index prefix property (on indexOnly types it may
+    /// sit on a terminal).
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn classify_field(document_type: DocumentTypeRef, field: &str) -> ClauseFieldRoles {
+        let mut roles = ClauseFieldRoles {
+            primary_key: field == "$id",
+            ..Default::default()
+        };
+        for index in document_type.indexes().values() {
+            if index
+                .properties
+                .iter()
+                .any(|property| property.name == field)
+            {
+                roles.index_property = true;
+            }
+            if index.terminal.as_deref() == Some(field) {
+                roles.terminal = true;
+            }
+            if roles.index_property && roles.terminal {
+                break;
+            }
+        }
+        roles
+    }
+
+    /// [`Self::classify_field`] over every field these clauses name —
+    /// classification happens once, at the seam between clause extraction
+    /// and routing, instead of being re-derived downstream.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn classify_fields(
+        &self,
+        document_type: DocumentTypeRef,
+    ) -> BTreeMap<String, ClauseFieldRoles> {
+        let mut classified = BTreeMap::new();
+        let mut add = |field: &str| {
+            classified
+                .entry(field.to_string())
+                .or_insert_with(|| Self::classify_field(document_type, field));
+        };
+        if self.primary_key_equal_clause.is_some() || self.primary_key_in_clause.is_some() {
+            add("$id");
+        }
+        for field in self.equal_clauses.keys() {
+            add(field);
+        }
+        if let Some(range_clause) = &self.range_clause {
+            add(&range_clause.field);
+        }
+        for in_clause in &self.in_clauses {
+            add(&in_clause.field);
+        }
+        classified
+    }
+
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if the clause is a valid format.
     pub fn verify(&self) -> bool {
@@ -1631,9 +1735,11 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             if self.document_type.index_only() && self.start_at.is_some() {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
-                    "startAt/startAfter is not yet supported for indexOnly document types: \
-                     the cursor would be resolved through the primary-key tree, which an \
-                     indexOnly type does not have"
+                    "startAt/startAfter cursors cannot address an indexOnly position (the \
+                     synthesized document id is a one-way hash of it); paginate with a \
+                     range clause on the terminal property instead — equality clauses on \
+                     the index's properties, `terminal > <last seen value>` ordered by the \
+                     terminal, and a limit"
                         .to_string(),
                 )));
             }
@@ -1646,6 +1752,21 @@ impl<'a> DriveDocumentQuery<'a> {
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
+
+        // indexOnly terminal-clause route: a clause on an index's terminal
+        // lowers onto the entry level's member keys when the generic
+        // matcher cannot serve the query. Shared with the verifier-side
+        // constructor below so prover and verifier build the same query.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                if let Some(path_query) =
+                    self.index_only_route(&document_type_path, platform_version)?
+                {
+                    return Ok(path_query);
+                }
+            }
+        }
 
         let (starts_at_document, start_at_path_query) = match &self.start_at {
             None => Ok((None, None)),
@@ -1765,9 +1886,11 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             if self.document_type.index_only() && self.start_at.is_some() {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
-                    "startAt/startAfter is not yet supported for indexOnly document types: \
-                     the cursor would be resolved through the primary-key tree, which an \
-                     indexOnly type does not have"
+                    "startAt/startAfter cursors cannot address an indexOnly position (the \
+                     synthesized document id is a one-way hash of it); paginate with a \
+                     range clause on the terminal property instead — equality clauses on \
+                     the index's properties, `terminal > <last seen value>` ordered by the \
+                     terminal, and a limit"
                         .to_string(),
                 )));
             }
@@ -1779,6 +1902,21 @@ impl<'a> DriveDocumentQuery<'a> {
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
+
+        // indexOnly terminal-clause route — the verifier-side mirror of
+        // the dispatch in `construct_path_query_operations`, so both
+        // sides build the same query.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                if let Some(path_query) =
+                    self.index_only_route(&document_type_path, platform_version)?
+                {
+                    return Ok(path_query);
+                }
+            }
+        }
+
         let starts_at_document = starts_at_document
             .map(|starts_at_document| (starts_at_document, self.start_at_included));
         if self.is_for_primary_key() {
@@ -1980,6 +2118,24 @@ impl<'a> DriveDocumentQuery<'a> {
     /// mismatch would produce a validly-proven wrong answer. The rule applies
     /// on both routes, including the multiple-`In` selection.
     pub fn find_best_index(&self, platform_version: &PlatformVersion) -> Result<&Index, Error> {
+        match self.select_best_index(platform_version)? {
+            BestIndexOutcome::Matched(index) => Ok(index),
+            BestIndexOutcome::NoIndexMatches(no_index_error) => Err(no_index_error),
+        }
+    }
+
+    /// Generic index selection with "no index matches" separated from the
+    /// structural failures, in the type instead of in error variants:
+    /// `Err` is a structural problem with the query itself (preflight,
+    /// resolved-source shape, version dispatch) and always propagates,
+    /// while `NoIndexMatches` carries the would-be [`Self::find_best_index`]
+    /// error as a value — a routing fact the indexOnly terminal route is
+    /// allowed to stand in for. [`Self::find_best_index`] collapses both
+    /// non-matches back into `Err` for every ordinary caller.
+    pub(crate) fn select_best_index(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<BestIndexOutcome<'_>, Error> {
         // A transform's source must be its index's first property, so one
         // index buckets exactly one field and no index can carry two resolved
         // equalities. Serving such a query would need a join across two
@@ -1999,7 +2155,12 @@ impl<'a> DriveDocumentQuery<'a> {
         self.validate_resolved_source_shape()?;
 
         if self.internal_clauses.in_clauses.len() > 1 {
-            return Ok(self.find_best_index_for_multiple_in_clauses()?.0);
+            // The multi-`In` machinery keeps its own error surface; its
+            // shapes are never terminal-routable, so there is nothing to
+            // classify as a plain miss.
+            return Ok(BestIndexOutcome::Matched(
+                self.find_best_index_for_multiple_in_clauses()?.0,
+            ));
         }
 
         let equal_fields = self
@@ -2039,61 +2200,67 @@ impl<'a> DriveDocumentQuery<'a> {
             })
             .collect();
 
-        let (index, difference) = self
-            .document_type
-            .index_for_types_matching(
-                fields.as_slice(),
-                in_field,
-                order_by_keys.as_slice(),
-                |index| index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges),
-                platform_version,
-            )?
-            .ok_or_else(|| match self.resolved_time_ranges.first() {
-                // A time-range query is only servable by the index that
-                // buckets the field with the resolved grid, so "no index"
-                // here is a narrower fact than the generic case: some index
-                // buckets the field (the clause could not have been resolved
-                // otherwise), but none with that grid also covers the rest
-                // of the query.
-                Some(resolved) => {
-                    Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                        "a time-range query on \"{}\" requires an index that buckets it with \
+        let Some((index, difference)) = self.document_type.index_for_types_matching(
+            fields.as_slice(),
+            in_field,
+            order_by_keys.as_slice(),
+            |index| index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges),
+            platform_version,
+        )?
+        else {
+            return Ok(BestIndexOutcome::NoIndexMatches(
+                match self.resolved_time_ranges.first() {
+                    // A time-range query is only servable by the index that
+                    // buckets the field with the resolved grid, so "no index"
+                    // here is a narrower fact than the generic case: some index
+                    // buckets the field (the clause could not have been resolved
+                    // otherwise), but none with that grid also covers the rest
+                    // of the query.
+                    Some(resolved) => {
+                        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                            "a time-range query on \"{}\" requires an index that buckets it with \
                          the resolved grid AND covers the query's other where and order-by \
                          fields; valid indexes are: {:?}",
-                        resolved.field(),
-                        self.document_type.indexes()
-                    )))
-                }
-                None => {
-                    // A raw query never binds to a bucketed index; when one
-                    // exists, say so — the caller may be holding a
-                    // time-range proof on a surface that cannot supply
-                    // resolution provenance (e.g. the standalone wasm
-                    // verifiers), where this refusal is otherwise opaque.
-                    let has_bucketed_index = self
-                        .document_type
-                        .indexes()
-                        .values()
-                        .any(|index| index.time_range.is_some());
-                    if has_bucketed_index {
-                        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                            resolved.field(),
+                            self.document_type.indexes()
+                        )))
+                    }
+                    None => {
+                        // A raw query never binds to a bucketed index; when one
+                        // exists, say so — the caller may be holding a
+                        // time-range proof on a surface that cannot supply
+                        // resolution provenance (e.g. the standalone wasm
+                        // verifiers), where this refusal is otherwise opaque.
+                        let has_bucketed_index = self
+                            .document_type
+                            .indexes()
+                            .values()
+                            .any(|index| index.time_range.is_some());
+                        if has_bucketed_index {
+                            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                                format!(
                             "query must be for valid indexes, valid indexes are: {:?}; note: \
                              this document type's time-range (timeRange) indexes only serve \
                              IN_TIME_RANGE selections carrying their resolution — a raw clause \
                              on the bucketed field never binds to them",
                             self.document_type.indexes()
-                        )))
-                    } else {
-                        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                            "query must be for valid indexes, valid indexes are: {:?}",
-                            self.document_type.indexes()
-                        )))
+                        ),
+                            ))
+                        } else {
+                            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                                format!(
+                                    "query must be for valid indexes, valid indexes are: {:?}",
+                                    self.document_type.indexes()
+                                ),
+                            ))
+                        }
                     }
-                }
-            })?;
+                },
+            ));
+        };
         if difference > defaults::MAX_INDEX_DIFFERENCE {
-            return Err(Error::Query(QuerySyntaxError::QueryTooFarFromIndex(
-                "query must better match an existing index",
+            return Ok(BestIndexOutcome::NoIndexMatches(Error::Query(
+                QuerySyntaxError::QueryTooFarFromIndex("query must better match an existing index"),
             )));
         }
 
@@ -2103,7 +2270,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // index bucketing exactly the resolved field, so guarding by
         // provenance there is equivalent to guarding by the selected index's
         // transform here.
-        Ok(index)
+        Ok(BestIndexOutcome::Matched(index))
     }
 
     /// The residual source-shape contract for a query carrying a
