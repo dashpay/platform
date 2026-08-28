@@ -274,6 +274,9 @@ fn try_from_schema_generation_3(
             // INDEX ONLY: the `terminal` index keyword, admitted from the
             // same shared generation → admission mapping as the two above.
             admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
+            // PREALLOCATED: the fourth generation-3 index keyword, from the
+            // same shared mapping.
+            admit_index_preallocated: IndexGrammarAdmissions::for_schema_generation(3).preallocated,
         },
         platform_version,
     )?;

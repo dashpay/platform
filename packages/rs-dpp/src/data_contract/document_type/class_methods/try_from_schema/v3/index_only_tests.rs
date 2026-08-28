@@ -799,3 +799,269 @@ fn index_only_flag_survives_the_dispatcher_at_latest() {
         .expect("likes schema parses through the dispatcher at PV14");
     assert!(document_type.index_only());
 }
+
+// ── preallocated indexes ────────────────────────────────────────────────
+
+/// Replaces `postId`'s `refersTo` declaration in place (`set_value` writes
+/// literal top-level keys, so nested keys need the walk).
+fn set_post_id_refers_to(schema: &mut Value, refers_to: Value) {
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .get_mut("postId")
+        .expect("postId accessible")
+        .expect("postId present")
+        .set_value("refersTo", refers_to)
+        .expect("refersTo applies");
+}
+
+/// The likes schema with `postId` carrying a same-contract
+/// permanentDocument reference to `post` agreeing on `hashtag` — the shape
+/// whose `byHashtagPost` and `byPost` paths are pure functions of the
+/// referenced post, so both may declare `preallocated`.
+fn preallocatable_likes_schema() -> Value {
+    let mut schema = likes_schema();
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "documentType": "post",
+            "propertyAgreement": { "hashtag": "hashtag" }
+        }),
+    );
+    schema
+}
+
+#[test]
+fn preallocated_accepts_a_reference_determined_index() {
+    for full_validation in [false, true] {
+        let mut schema = preallocatable_likes_schema();
+        for index_position in [0, 1] {
+            schema
+                .get_mut("indices")
+                .expect("indices accessible")
+                .expect("indices present")
+                .as_array_mut()
+                .expect("indices is an array")
+                .get_mut(index_position)
+                .expect("index exists")
+                .set_value("preallocated", Value::Bool(true))
+                .expect("index key applies");
+        }
+        let document_type = parse_with(schema, PlatformVersion::latest(), full_validation)
+            .expect("a reference-determined preallocated index parses");
+        assert!(
+            document_type
+                .indices
+                .get("byHashtagPost")
+                .unwrap()
+                .preallocated
+        );
+        assert!(document_type.indices.get("byPost").unwrap().preallocated);
+        assert!(!document_type.indices.get("byLiker").unwrap().preallocated);
+
+        // The flag is stamped onto the terminating index level, where the
+        // rs-drive delete walker reads it to skip upward pruning.
+        let hashtag_level = document_type
+            .index_structure
+            .sub_levels()
+            .get("hashtag")
+            .unwrap();
+        let post_level = hashtag_level.sub_levels().get("postId").unwrap();
+        assert!(post_level.has_index_with_type().unwrap().preallocated);
+        let owner_level = document_type
+            .index_structure
+            .sub_levels()
+            .get("$ownerId")
+            .unwrap();
+        assert!(!owner_level.has_index_with_type().unwrap().preallocated);
+    }
+}
+
+#[test]
+fn rejects_preallocated_without_a_document_reference() {
+    // The base schema's `postId` refers to an identity — no referenced
+    // document determines the path.
+    expect_structure_error(
+        parse_with(
+            likes_schema_with_index_key(0, "preallocated", Value::Bool(true)),
+            PlatformVersion::latest(),
+            false,
+        ),
+        "not determined by a reference",
+    );
+}
+
+#[test]
+fn rejects_preallocated_with_an_uncovered_property() {
+    // A permanentDocument reference WITHOUT the hashtag agreement leaves
+    // byHashtagPost's `hashtag` undetermined.
+    let mut schema = likes_schema_with_index_key(0, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "documentType": "post"
+        }),
+    );
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "not determined by a reference",
+    );
+
+    // `byPost` ([postId], terminal $ownerId) stays fully determined by the
+    // reference alone, so the same schema with the flag there parses.
+    let mut schema = likes_schema_with_index_key(1, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "documentType": "post"
+        }),
+    );
+    parse_with(schema, PlatformVersion::latest(), false)
+        .expect("an agreement-free reference still determines a [postId] index");
+}
+
+/// The preallocatable schema with `preallocated: true` on the index at
+/// `index_position` (0 = byHashtagPost, 1 = byPost, 2 = byLiker).
+fn preallocatable_likes_schema_with_flag_on(index_position: usize) -> Value {
+    let mut schema = preallocatable_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(index_position)
+        .expect("index exists")
+        .set_value("preallocated", Value::Bool(true))
+        .expect("index key applies");
+    schema
+}
+
+#[test]
+fn rejects_preallocated_on_owner_prefixed_index() {
+    // byLiker's `$ownerId` prefix can never be determined by the
+    // referenced document.
+    expect_structure_error(
+        parse_with(
+            preallocatable_likes_schema_with_flag_on(2),
+            PlatformVersion::latest(),
+            false,
+        ),
+        "not determined by a reference",
+    );
+}
+
+#[test]
+fn rejects_preallocated_on_cross_contract_reference() {
+    // The reference names a DIFFERENT contract — its document inserts
+    // happen in a subtree this contract's insert path never touches.
+    let mut schema = likes_schema_with_index_key(1, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "contractId": Value::Identifier([2; 32]),
+            "documentType": "post"
+        }),
+    );
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "not determined by a reference",
+    );
+
+    // Naming the declaring contract's own id explicitly counts as
+    // same-contract (the parse helper registers under [1; 32]).
+    let mut schema = likes_schema_with_index_key(1, "preallocated", Value::Bool(true));
+    set_post_id_refers_to(
+        &mut schema,
+        platform_value!({
+            "type": "permanentDocument",
+            "contractId": Value::Identifier([1; 32]),
+            "documentType": "post"
+        }),
+    );
+    parse_with(schema, PlatformVersion::latest(), false)
+        .expect("an own-id reference is a same-contract reference");
+}
+
+#[test]
+fn rejects_preallocated_on_non_index_only_type() {
+    let mut schema = preallocatable_likes_schema();
+    schema
+        .remove_optional_value("indexOnly")
+        .expect("removal applies");
+    for index_value in schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+    {
+        let _ = index_value.remove_optional_value("terminal");
+    }
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(1)
+        .expect("byPost exists")
+        .set_value("preallocated", Value::Bool(true))
+        .expect("index key applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares `preallocated`",
+    );
+}
+
+#[test]
+fn preallocated_keyword_is_rejected_below_generation_3_on_both_modes() {
+    let platform_version_13 = PlatformVersion::get(13).expect("PV13 exists");
+    let schema = preallocatable_likes_schema_with_flag_on(1);
+
+    for full_validation in [false, true] {
+        assert!(
+            parse_dispatched(schema.clone(), platform_version_13, full_validation).is_err(),
+            "PV13 must reject the preallocated keyword (full_validation: {full_validation}): \
+             it is not part of generation 2's index grammar"
+        );
+    }
+}
+
+#[test]
+fn rejects_preallocated_on_bucketed_index() {
+    // A bucketed level is keyed by grid-qualified bucket starts computed
+    // from a timestamp at write time — nothing a referenced document could
+    // determine, so `preallocated` + `timeRange` is rejected outright.
+    let mut schema = preallocatable_likes_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byHourHashtag",
+            "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 },
+            "countable": true,
+            "rangeCountable": true,
+            "preallocated": true
+        }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares `preallocated` together with `timeRange`",
+    );
+}

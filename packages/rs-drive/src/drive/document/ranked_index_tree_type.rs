@@ -194,6 +194,7 @@ mod tests {
             ranked_summable,
             ranked_averageable,
             terminal: None,
+            preallocated: false,
         }
     }
 

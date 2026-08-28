@@ -100,9 +100,11 @@ aggregate keywords follow:
 | indexed `$createdAt` requires `$createdAt` in `required` | creation only assigns timestamps for required system times |
 | `documentsMutable: false`, no transfers/trading/history/transient | no stored row, no revision |
 | non-unique, non-contested, `nullSearchable` default | v1 scope |
+| `preallocated` requires a fully reference-determined, non-bucketed path | see [Preallocated index paths](#preallocated-index-paths) |
 
-`indexOnly` and the index set (terminals included) are immutable across
-contract updates — a later-added index could never be backfilled.
+`indexOnly` and the index set (terminals included, `preallocated` flags
+included) are immutable across contract updates — a later-added index
+could never be backfilled.
 
 ## Lifecycle
 
@@ -131,7 +133,52 @@ contract updates — a later-added index could never be backfilled.
   software.
 - **Replace / transfer / purchase / price** are structurally impossible.
 
-## Reads
+## Preallocated index paths
+
+The first entry under a fresh value tuple pays for every tree on its path
+— for a like that is the hashtag value tree, the `postId` property-name
+tree, the post's value tree and the `0` member bucket — while the second
+entry pays for one item insert. When the index path is a pure function of
+a refersTo-referenced document, that lopsidedness is avoidable: an index
+may declare `preallocated: true` iff every index property is either the
+referring property itself (its value is the referenced document's `$id`)
+or a key of that reference's `propertyAgreement` (consensus-equal to a
+referenced-document property), and the reference targets a document type
+of the **same contract**. `byHashtagPost` (`[hashtag, postId]`) qualifies
+— `hashtag` through the agreement, `postId` as the reference;
+`byLiker` (`[$ownerId]`) cannot, since no referenced document determines
+the liker.
+
+Three things change, all bit-compatible with the fallback layout:
+
+- **Insert side** (`insert/add_preallocated_index_tree_operations`):
+  inserting the referenced document also emits if-not-exists creations of
+  the referring index's dynamic trees, down to the empty `0` member
+  bucket, derived through the same tree-type helper the entry walkers use
+  — so a preallocated tree is byte-identical to the tree the first
+  entry's create-on-insert path would have made. The poster pays for the
+  structural bytes; storage flags ride only when the contract itself is
+  deletable, because that is a preallocated tree's one deletion path —
+  entry deletes retain it by design, so entry-level flags would be
+  unrefundable dead weight. Shared prefixes (a second post under the same
+  hashtag) deduplicate through the if-not-exists semantics.
+- **Delete side**: removing the last member entry stops the
+  empty-tree-pruning climb at the member level, keeping the whole
+  apparatus — the group stays in the ranked secondaries at count 0, and a
+  re-entry is again a plain item insert. (Non-preallocated indexes of the
+  same type keep pruning as before.)
+- **Nothing else**: entry insertion keeps its create-if-missing behavior,
+  so correctness never depends on preallocation. Referenced documents
+  created before a contract update introduced a referring type simply
+  hand the first entry the old price, and their trees — created by the
+  fallback — are retained on delete exactly like preallocated ones.
+
+The economics: the referenced document's creator pays for the trees
+whether or not anyone ever references it (which is why the flag is an
+explicit opt-in, per index), every entry from the first on costs the
+same, and "no entries yet" becomes a present-but-empty member bucket —
+provable as zero results, rankable as a zero-count group — instead of an
+absent tree.
 
 An entry's proved `(path, key)` position IS the document, so queries and
 proofs **synthesize** documents through one shared builder
