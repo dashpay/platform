@@ -489,6 +489,45 @@ pub enum PlatformWalletFFIResultCode {
     /// per the error-code registry (#4318).
     ErrorMasternodeListUnavailable = 46,
 
+    /// A panic was caught inside the one-time-key (shielded invitation)
+    /// claim export, so the claim's outcome is AMBIGUOUS: the panic can
+    /// strike after the Type-20 transition reached the wire, meaning the
+    /// transition may already have executed and the new identity may
+    /// already exist on chain. `out_identity_id` is NOT written (the panic
+    /// destroyed the in-flight result, so there is no id to write —
+    /// unlike [`Self::ErrorShieldedBroadcastUnconfirmed`] (17), whose
+    /// contract writes it).
+    ///
+    /// RETRYABLE — as a RESUME, not a fresh attempt, and not immediately.
+    /// The claim's durable recovery record (the retained
+    /// `shielded_pending_spends` row, the only holder of the claim's
+    /// padded identity id) survives the unwind:
+    /// `reserve_one_time_claim_key` finds it on the next attempt and
+    /// `recover_executed_one_time_claim` recovers the identity the first
+    /// attempt created instead of creating a second one. The host MUST
+    /// therefore PRESERVE the local identity slot and re-run the SAME
+    /// invitation claim after the claim lease expires (the panic unwound
+    /// past the deterministic lease release, so admission and the
+    /// per-invitation reservation are reclaimed by expiry; an attempt
+    /// before then is refused as [`Self::ErrorShieldedLifecycleBusy`]).
+    /// Never surface this as terminal, and never release the slot —
+    /// either mistake can strand an identity that already exists on
+    /// chain, whose padded id lives nowhere but the retained row.
+    ///
+    /// Joins the ambiguous-outcome `...Unconfirmed` family (17, 18, 20,
+    /// 42), but with the opposite retry polarity: those forbid retry
+    /// because a retry would REBUILD and double-spend, while this one
+    /// requires a (delayed) retry because a rerun RESUMES the retained
+    /// record. Before this code existed, the guard reported the generic
+    /// [`Self::ErrorUnknown`] (99), which Kotlin exposes as a
+    /// non-retryable `Generic` — a host following the typed retry
+    /// contract would release the identity slot or decline the recovery
+    /// retry (#4313 review finding 4bf998e99652).
+    ///
+    /// Code 48 — the registry frontier as of 2026-08-28 (46 merged via
+    /// #4465, 47 reserved for active #4356); see ERROR_CODE_REGISTRY.md.
+    ErrorShieldedClaimUnconfirmed = 48,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1843,6 +1882,18 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy as i32,
             45
+        );
+    }
+
+    /// This PR's fourth shielded-invite code, pinned like 43-45 above. 48 is
+    /// from the registry frontier (46 merged via #4465, 47 reserved for
+    /// active #4356) — moving it silently reclassifies an ambiguous claim
+    /// outcome on every host built against the shipped numbering.
+    #[test]
+    fn shielded_claim_unconfirmed_code_is_pinned_at_48() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedClaimUnconfirmed as i32,
+            48
         );
     }
 

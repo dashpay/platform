@@ -145,6 +145,32 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(busy.errorDescription, busyMessage)
     }
 
+    /// The ambiguous-claim code added on dashpay/platform#4313 (review
+    /// finding 4bf998e99652): a panic caught inside the one-time-key claim.
+    /// The raw value is the ABI contract — a drifted number (or a missing
+    /// `init(ffi:)` arm falling to `.errorUnknown`) silently turns
+    /// "preserve the slot, resume later" into a generic failure, which is
+    /// the slot-forfeiting misclassification the code exists to end.
+    func testShieldedClaimUnconfirmedFFIResultMapping() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_CLAIM_UNCONFIRMED
+            ),
+            .errorShieldedClaimUnconfirmed
+        )
+        XCTAssertEqual(PlatformWalletResultCode.errorShieldedClaimUnconfirmed.rawValue, 48)
+
+        let unconfirmed = PlatformWalletError(
+            code: .errorShieldedClaimUnconfirmed,
+            message: "the claim may or may not have been broadcast"
+        )
+        guard case .shieldedClaimUnconfirmed(let message) = unconfirmed else {
+            return XCTFail("expected typed shieldedClaimUnconfirmed error")
+        }
+        XCTAssertEqual(message, "the claim may or may not have been broadcast")
+        XCTAssertEqual(unconfirmed.errorDescription, message)
+    }
+
     func testShieldedInsufficientBalanceFFIResultMapping() {
         XCTAssertEqual(
             PlatformWalletResultCode(

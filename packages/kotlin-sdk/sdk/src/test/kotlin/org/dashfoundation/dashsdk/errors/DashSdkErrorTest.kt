@@ -133,6 +133,23 @@ class DashSdkErrorTest {
             lifecycleBusy.isRetryable,
         )
 
+        // Code 48 (ErrorShieldedClaimUnconfirmed, dashpay/platform#4313): a
+        // panic caught inside the one-time-key claim — the outcome is
+        // ambiguous (the transition may already be on chain) and the SDK
+        // retains the recovery record, so a delayed rerun of the SAME claim
+        // RESUMES it. The retryability polarity is the entire contract: this
+        // code used to surface as native 99 → non-retryable Generic, which
+        // told hosts to release the identity slot the retained record needs.
+        val claimUnconfirmed =
+            DashSdkError.fromNative(
+                DashSDKException(offset + 48, "claim may or may not have been broadcast"),
+            )
+        assertTrue(claimUnconfirmed is DashSdkError.PlatformWallet.ShieldedClaimUnconfirmed)
+        assertTrue(
+            "ShieldedClaimUnconfirmed is RETRYABLE — the rerun resumes the retained record",
+            claimUnconfirmed.isRetryable,
+        )
+
         val broadcastUnconfirmed =
             DashSdkError.fromNative(DashSDKException(offset + 20, "ambiguous broadcast"))
         assertTrue(

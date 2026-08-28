@@ -745,9 +745,10 @@ fn catch_funding_panic(
     )
 }
 
-/// Post-panic guidance for the one-time-key invitation claim. Paired with the
-/// generic [`PlatformWalletFFIResultCode::ErrorUnknown`] in
-/// [`catch_one_time_claim_panic`].
+/// Post-panic guidance for the one-time-key invitation claim. Paired with
+/// [`PlatformWalletFFIResultCode::ErrorShieldedClaimUnconfirmed`] in
+/// [`catch_one_time_claim_panic`] — the prose restates, for humans, the
+/// contract the typed code carries for machines.
 ///
 /// Unlike [`SPEND_PANIC_GUIDANCE`], this does NOT say "do not retry": a claim's
 /// durable recovery record is retained until the created identity is durably
@@ -764,10 +765,11 @@ const ONE_TIME_CLAIM_PANIC_GUIDANCE: &str = "The claim may or may not have been 
      rather than creating a second one.";
 
 /// [`catch_panic_to_code`] specialized for the one-time-key claim export
-/// (#4313 review finding 945163f6ed5b).
+/// (#4313 review findings 945163f6ed5b, 4bf998e99652).
 ///
-/// The panic maps to the generic [`PlatformWalletFFIResultCode::ErrorUnknown`],
-/// deliberately NOT to any of this export's richer codes, none of which a panic
+/// The panic maps to the dedicated
+/// [`PlatformWalletFFIResultCode::ErrorShieldedClaimUnconfirmed`] (48),
+/// deliberately NOT to any of this export's other codes, none of which a panic
 /// can honestly promise:
 ///
 /// * `ErrorShieldedBroadcastUnconfirmed` (17) — its ABI contract says
@@ -781,18 +783,30 @@ const ONE_TIME_CLAIM_PANIC_GUIDANCE: &str = "The claim may or may not have been 
 ///   panic can strike after the broadcast.
 /// * `ErrorWalletOperation` (6) and `ErrorShieldedBroadcastFailed` (16) —
 ///   definitive failures, which this is not.
+/// * `ErrorUnknown` (99) — what this guard used to report. JNI offsets it to
+///   1099, Kotlin's `DashSdkError.fromPlatformWalletNative` has no mapping for
+///   99, so hosts saw a non-retryable `PlatformWallet.Generic` — and a host
+///   following the typed retry contract would release the identity slot or
+///   decline the recovery retry, even though the transition may already be on
+///   chain and the retained row is the only source of its padded identity id.
+///   The recovery instructions embedded in the message are not a
+///   machine-readable replacement for that contract.
 ///
-/// No dedicated panic code exists in the registry-tracked enum, and minting one
-/// here would risk the cross-branch numeric collisions the codes 28-33 comment
-/// warns about — so the generic internal code carries it, with the recovery
-/// contract spelled out in the message.
+/// Code 48's contract is exactly this outcome's: ambiguous (the transition may
+/// already have executed), `out_identity_id` untouched, and retryable AS A
+/// RESUME — the retained `shielded_pending_spends` row makes a rerun of the
+/// same claim resume the first attempt (`reserve_one_time_claim_key` finds the
+/// row; `recover_executed_one_time_claim` recovers the declared identity), so
+/// the host must preserve the identity slot and retry after the claim lease
+/// expires. [`ONE_TIME_CLAIM_PANIC_GUIDANCE`] restates that contract for
+/// humans in the message.
 fn catch_one_time_claim_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
     catch_panic_to_code(
         operation,
-        PlatformWalletFFIResultCode::ErrorUnknown,
+        PlatformWalletFFIResultCode::ErrorShieldedClaimUnconfirmed,
         ONE_TIME_CLAIM_PANIC_GUIDANCE,
         body,
     )
@@ -1091,8 +1105,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
 ///   (a `VTableSigner` with the callback variant) that outlives this call.
 /// - `out_identity_id` must point to 32 writable bytes. Written on `Success` AND
 ///   on `ErrorShieldedBroadcastUnconfirmed` only. A panic inside the claim is
-///   caught by [`catch_one_time_claim_panic`] and reported as `ErrorUnknown`
-///   with `out_identity_id` left untouched.
+///   caught by [`catch_one_time_claim_panic`] and reported as the ambiguous,
+///   retryable-as-resume `ErrorShieldedClaimUnconfirmed` (48) with
+///   `out_identity_id` left untouched — the host must preserve the identity
+///   slot and re-run the same claim after the lease expires (the rerun resumes
+///   the retained recovery record rather than creating a second identity).
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_one_time_key(
@@ -2724,9 +2741,12 @@ mod tests {
     /// signing, or SDK processing reached the C ABI and aborted the host process — the JNI
     /// `guard` is on the far side of the export and never saw it.
     ///
-    /// The code must be `ErrorUnknown`, and the ambiguity contract must survive: a panic can
-    /// strike after the broadcast, so the message must neither claim the invitation is spent
-    /// (the terminal 43) nor that nothing happened.
+    /// The code must be the dedicated `ErrorShieldedClaimUnconfirmed` (48) — NOT the generic
+    /// `ErrorUnknown`, which Kotlin exposes as a non-retryable `Generic` so a typed host would
+    /// release the identity slot the retained recovery row needs (#4313 review finding
+    /// 4bf998e99652) — and the ambiguity contract must survive: a panic can strike after the
+    /// broadcast, so the message must neither claim the invitation is spent (the terminal 43)
+    /// nor that nothing happened.
     #[test]
     fn catch_one_time_claim_panic_keeps_the_claim_ambiguity_contract() {
         let result =
@@ -2736,9 +2756,15 @@ mod tests {
 
         assert_eq!(
             result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedClaimUnconfirmed,
+            "a claim panic must map to the dedicated ambiguous-claim code — every other code \
+             this export uses promises something a panic cannot, and the generic ErrorUnknown \
+             reaches Kotlin as a non-retryable Generic that forfeits the slot"
+        );
+        assert_ne!(
+            result.code,
             PlatformWalletFFIResultCode::ErrorUnknown,
-            "a claim panic must map to the generic code — every richer code this export uses \
-             promises something a panic cannot"
+            "the pre-fix generic code must be gone — hosts have no typed mapping for it"
         );
         assert_ne!(
             result.code,
@@ -2795,8 +2821,8 @@ mod tests {
             });
         assert_eq!(
             contained.code,
-            PlatformWalletFFIResultCode::ErrorUnknown,
-            "GREEN: the guard converts the identical panic into a result the host receives"
+            PlatformWalletFFIResultCode::ErrorShieldedClaimUnconfirmed,
+            "GREEN: the guard converts the identical panic into a typed result the host receives"
         );
     }
 

@@ -470,6 +470,38 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedClaimUnconfirmed` (native code 48,
+         * dashpay/platform#4313). A panic was caught inside the
+         * one-time-key (shielded invitation) claim, so the outcome is
+         * AMBIGUOUS: the panic can strike after the Type-20 transition
+         * reached the wire, meaning the transition may already have
+         * executed and the identity may already exist on chain. No
+         * identity id is produced (unlike [ShieldedCreateUnconfirmed],
+         * whose contract delivers one).
+         *
+         * RETRYABLE ([isRetryable] `true`) — as a RESUME, not a fresh
+         * attempt, and not immediately. The claim's durable recovery
+         * record survives in the SDK (it is the only holder of the
+         * claim's padded identity id), and re-running the SAME
+         * invitation claim resumes it: the rerun recovers the identity
+         * the first attempt created rather than creating a second one.
+         * The host MUST preserve the local identity slot and retry after
+         * the claim lease expires — the panic unwound past the lease
+         * release, so an immediate attempt is refused as
+         * [ShieldedLifecycleBusy]. Never surface this as terminal and
+         * never release the slot: either mistake can strand an identity
+         * that already exists on chain. Before this code, the guard
+         * reported the generic native 99, which arrived here as a
+         * non-retryable [Generic] — exactly the slot-forfeiting
+         * misclassification this type exists to end (#4313 review
+         * finding 4bf998e99652).
+         */
+        class ShieldedClaimUnconfirmed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -658,6 +690,13 @@ sealed class DashSdkError(
             // invitation's claim-record key, or a Clear that refused to purge
             // while claims are still in flight.
             45 -> PlatformWallet.ShieldedLifecycleBusy(message, cause)
+            // ErrorShieldedClaimUnconfirmed (#4313) — a panic caught inside
+            // the one-time-key claim: outcome ambiguous (the transition may
+            // already be on chain), retryable as a RESUME of the retained
+            // recovery record once the claim lease expires. Preserve the
+            // identity slot. 48 is from the registry frontier (46 merged
+            // ErrorMasternodeListUnavailable, 47 reserved for #4356).
+            48 -> PlatformWallet.ShieldedClaimUnconfirmed(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

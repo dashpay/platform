@@ -232,6 +232,27 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// RESERVED, not reissuable). MUST match `ErrorShieldedLifecycleBusy` in
     /// packages/rs-platform-wallet-ffi/src/error.rs.
     case errorShieldedLifecycleBusy = 45
+    /// A panic was caught inside the one-time-key (shielded invitation)
+    /// claim, so the outcome is AMBIGUOUS: the panic can strike after the
+    /// Type-20 transition reached the wire, meaning the transition may
+    /// already have executed and the identity may already exist on chain. No
+    /// identity id is produced (unlike `errorShieldedBroadcastUnconfirmed`,
+    /// whose contract delivers one).
+    ///
+    /// RETRYABLE — as a RESUME, not a fresh attempt, and not immediately.
+    /// The claim's durable recovery record survives in the SDK (the only
+    /// holder of the claim's padded identity id), and re-running the SAME
+    /// invitation claim resumes it once the claim lease expires; an
+    /// immediate attempt is refused as `errorShieldedLifecycleBusy`. The
+    /// host MUST preserve the local identity slot — never surface this as
+    /// terminal and never release the slot, either mistake can strand an
+    /// identity that already exists on chain.
+    ///
+    /// Raw value 48 — the registry frontier as of 2026-08-28 (46 is the
+    /// merged `errorMasternodeListUnavailable`, 47 is reserved for active
+    /// #4356). MUST match `ErrorShieldedClaimUnconfirmed` in
+    /// packages/rs-platform-wallet-ffi/src/error.rs.
+    case errorShieldedClaimUnconfirmed = 48
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -341,6 +362,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedScanBudgetExhausted
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_LIFECYCLE_BUSY:
             self = .errorShieldedLifecycleBusy
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_CLAIM_UNCONFIRMED:
+            self = .errorShieldedClaimUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -559,6 +582,16 @@ public enum PlatformWalletError: LocalizedError {
     /// in-flight claims did not drain in time. RETRYABLE — nothing was
     /// consumed, purged or broadcast. Surface it as "busy — try again".
     case shieldedLifecycleBusy(String)
+    /// A panic was caught inside the one-time-key (shielded invitation)
+    /// claim, so the outcome is AMBIGUOUS — the transition may already be on
+    /// chain — and no identity id is produced. RETRYABLE as a RESUME: the
+    /// SDK retains the claim's durable recovery record (the only holder of
+    /// its padded identity id), so re-running the SAME claim after the claim
+    /// lease expires recovers the identity the first attempt created instead
+    /// of creating a second one. PRESERVE the local identity slot; never
+    /// surface this as terminal. Kotlin parity:
+    /// `DashSdkError.PlatformWallet.ShieldedClaimUnconfirmed`.
+    case shieldedClaimUnconfirmed(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -597,6 +630,7 @@ public enum PlatformWalletError: LocalizedError {
              .notForSale(let m),
              .shieldedInviteAlreadyClaimed(let m),
              .shieldedScanBudgetExhausted(let m), .shieldedLifecycleBusy(let m),
+             .shieldedClaimUnconfirmed(let m),
              .notFound(let m), .unknown(let m):
             return m
         // The three value-carrying marketplace rejections compose their
@@ -717,6 +751,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .shieldedScanBudgetExhausted(detail)
         case .errorShieldedLifecycleBusy:
             self = .shieldedLifecycleBusy(detail)
+        case .errorShieldedClaimUnconfirmed:
+            self = .shieldedClaimUnconfirmed(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }
