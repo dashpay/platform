@@ -2050,6 +2050,52 @@ mod tests {
         ));
     }
 
+    /// The `preallocated` keyword parses as a boolean under the
+    /// generation-3 admission, rejects every other value shape, and falls
+    /// through to the unknown-property arm without the admission — the
+    /// same two-sided gating `terminal` and the ranked keywords carry.
+    #[test]
+    fn preallocated_parses_as_boolean_and_is_gated_by_admission() {
+        let admitted = IndexGrammarAdmissions {
+            ranked: false,
+            time_range: false,
+            terminal: false,
+            preallocated: true,
+        };
+
+        let mut map = index_value_map("postId", None);
+        map.push((Value::Text("preallocated".to_string()), Value::Bool(true)));
+        let index =
+            Index::try_from_value_map(map.as_slice(), admitted).expect("boolean should parse");
+        assert!(index.preallocated);
+
+        // Any non-boolean value is a wrong type, not a silent default.
+        let mut map = index_value_map("postId", None);
+        map.push((
+            Value::Text("preallocated".to_string()),
+            Value::Text("yes".to_string()),
+        ));
+        let err = Index::try_from_value_map(map.as_slice(), admitted).unwrap_err();
+        assert!(matches!(err, DataContractError::ValueWrongType(_)));
+
+        // Without the admission the key is not part of the grammar at all
+        // and dies on the unknown-property arm, byte-identical to how a
+        // pre-generation-3 node rejects it.
+        let mut map = index_value_map("postId", None);
+        map.push((Value::Text("preallocated".to_string()), Value::Bool(true)));
+        let err = Index::try_from_value_map(
+            map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: false,
+                terminal: false,
+                preallocated: false,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, DataContractError::ValueWrongType(_)));
+    }
+
     /// `phase < step` alone is not enough: on a huge step a sub-step phase
     /// can sit years in the *future*, leaving every present-day timestamp
     /// before the grid's first bucket — unindexed, and free to bypass a

@@ -1531,4 +1531,62 @@ mod tests {
             )] if e.index_path() == "first"
         );
     }
+
+    /// The `preallocated` flag is immutable across contract updates in
+    /// either direction: turning it on leaves existing referenced
+    /// documents without preallocated trees while deletes already refuse
+    /// to prune, and turning it off lets last-entry deletes prune trees a
+    /// referenced document's creator paid for as permanent structure.
+    #[test]
+    fn should_return_invalid_result_if_preallocated_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let index_with_preallocated = |preallocated: bool| Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated,
+        };
+
+        for (old_flag, new_flag) in [(false, true), (true, false)] {
+            let old_index_structure = IndexLevel::try_from_indices(
+                &[index_with_preallocated(old_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create old index level");
+            let new_index_structure = IndexLevel::try_from_indices(
+                &[index_with_preallocated(new_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create new index level");
+
+            let result =
+                old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+            let expected_path = format!("test -> (preallocated: {} -> {})", old_flag, new_flag);
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == expected_path
+            );
+        }
+    }
 }
