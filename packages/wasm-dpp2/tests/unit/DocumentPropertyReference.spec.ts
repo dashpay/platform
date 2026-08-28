@@ -56,6 +56,7 @@ const schemas = {
       parentNoteId: identifierProperty(3, {
         type: 'permanentDocument',
         documentType: 'note',
+        propertyAgreement: { signerKeyId: 'signerKeyId' },
       }),
       otherDoc: identifierProperty(4, {
         type: 'permanentDocument',
@@ -103,6 +104,7 @@ type Reference = {
   type: string;
   contractId?: { toBase58(): string };
   documentType?: string;
+  propertyAgreement?: Record<string, string>;
   keyIdProperty?: string;
 };
 
@@ -167,6 +169,27 @@ describe('DataContract — refersTo declarations (v14)', () => {
 
       expect(other.contractId!.toBase58()).to.equal(foreignContractId);
       expect(other.documentType).to.equal('thing');
+    });
+
+    it('should carry propertyAgreement for a declaration that binds properties', () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const parent = references.find((reference) => reference.path === 'parentNoteId')!;
+
+      expect(parent.propertyAgreement).to.deep.equal({ signerKeyId: 'signerKeyId' });
+    });
+
+    /**
+     * An empty agreement is omitted from `refersTo` rather than serialized
+     * as an empty object, and the accessor keeps that shape — the module's
+     * whole contract is that its keys line up with the schema keyword's.
+     */
+    it('should omit propertyAgreement for a declaration that binds none', () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const other = references.find((reference) => reference.path === 'otherDoc')!;
+
+      expect(other).to.not.have.property('propertyAgreement');
     });
 
     it('should carry keyIdProperty for an identityPublicKey reference', () => {
