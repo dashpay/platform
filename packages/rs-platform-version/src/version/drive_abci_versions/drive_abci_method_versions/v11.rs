@@ -12,24 +12,19 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciVotingMethodVersions,
 };
 
-// Introduced in Protocol version 12 for the shielded credit pool.
-//
-// Identical to DRIVE_ABCI_METHOD_VERSIONS_V7 (the protocol-v11 method set)
-// except the four shielded-pool block-processing methods are active here.
-// These read/write the shielded credit pool subtree
-// `[RootTree::ShieldedBalances (52), MAIN_SHIELDED_CREDIT_POOL_KEY ("M")]`,
-// which only exists from protocol v12 onward (created by the v12 upgrade
-// migration `transition_to_version_12` or a v12 genesis). They MUST stay
-// inactive on v11 (see DRIVE_ABCI_METHOD_VERSIONS_V7), so the shielded
-// activation lives in this dedicated v12 struct rather than being shared
-// with v11 via V7.
-pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMethodVersions {
+/// Drive ABCI method versions 11. Introduced in protocol v15 for state sync:
+/// `run_block_proposal` 0 -> 1 (the reduced platform state is written into the replicated
+/// state each block, and `validator_set_update` moves above the root-hash computation so the
+/// stored reduced state is sufficient to reconstruct the post-rotation state), and
+/// `consensus_params_update` 1 -> 2 (emits evidence params when crossing to v15).
+/// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V10`.
+pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
         init_chain: 0,
         check_tx: 0,
-        run_block_proposal: 0,
+        run_block_proposal: 1,
         finalize_block_proposal: 0,
-        consensus_params_update: 1,
+        consensus_params_update: 2,
     },
     initialization: DriveAbciInitializationMethodVersions {
         initial_core_height_and_time: 0,
@@ -59,7 +54,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
     protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
         check_for_desired_protocol_upgrade: 1,
         upgrade_protocol_version_on_epoch_change: 0,
-        perform_events_on_first_block_of_protocol_change: Some(0),
+        perform_events_on_first_block_of_protocol_change: Some(1),
         protocol_version_upgrade_percentage_needed: 67,
     },
     block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
@@ -98,9 +93,9 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
         update_broadcasted_withdrawal_statuses: 0,
         rebroadcast_expired_withdrawal_documents: 1,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
-        cleanup_expired_locks_of_withdrawal_amounts: 0,
-        record_credit_inflows_for_withdrawals: None,
-        record_total_credits_history_for_withdrawals: None,
+        cleanup_expired_locks_of_withdrawal_amounts: 1, // changed in v14: also prunes expired entries of the credit inflows sum tree
+        record_credit_inflows_for_withdrawals: Some(0), // new in v14: the block's credit mints recorded as an inflow for the net daily withdrawal limit
+        record_total_credits_history_for_withdrawals: Some(0), // changed in v14: per-block total credits history for the day-lagged daily withdrawal limit
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
@@ -116,12 +111,15 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
         execute_event: 0,
         process_raw_state_transitions: 0,
-        process_validation_result: 0,
+        // unchanged from V9: v1 since v13 (records the balance effects of paid-INVALID /
+        // unsuccessful-paid transitions)
+        process_validation_result: 1,
         decode_raw_state_transitions: 0,
         validate_fees_of_event: 0,
         store_address_balances_to_recent_block_storage: Some(0),
         cleanup_recent_block_storage_address_balances: Some(0),
-        record_added_balance_outputs: 0,
+        // unchanged from V9: v1 since v13 (records shielded-spend transparent credits)
+        record_added_balance_outputs: 1,
     },
     epoch: DriveAbciEpochMethodVersions {
         gather_epoch_info: 0,
