@@ -136,6 +136,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 fetch_platform_state_entries_bytes: 0,
                 store_platform_state_entry_bytes: 0,
                 delete_platform_state_entry: 0,
+                fetch_reduced_platform_state_bytes: 0,
+                store_reduced_platform_state_bytes: 0,
             },
             fetch: DriveFetchMethodVersions { fetch_elements: 0 },
             prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
