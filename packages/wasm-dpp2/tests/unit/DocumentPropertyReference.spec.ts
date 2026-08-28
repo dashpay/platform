@@ -53,6 +53,8 @@ const schemas = {
       sourceContract: identifierProperty(1, { type: 'contract' }),
       paidWith: identifierProperty(2, { type: 'token' }),
       // `contractId` omitted: targets the declaring contract itself.
+      // `propertyAgreement` binds the referring document's property to
+      // the referenced document's (write-time equality, PV14 #4505).
       parentNoteId: identifierProperty(3, {
         type: 'permanentDocument',
         documentType: 'note',
@@ -104,8 +106,8 @@ type Reference = {
   type: string;
   contractId?: { toBase58(): string };
   documentType?: string;
-  propertyAgreement?: Record<string, string>;
   keyIdProperty?: string;
+  propertyAgreement?: Record<string, string>;
 };
 
 describe('DataContract — refersTo declarations (v14)', () => {
@@ -171,7 +173,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(other.documentType).to.equal('thing');
     });
 
-    it('should carry propertyAgreement for a declaration that binds properties', () => {
+    it('should carry the propertyAgreement map when declared', () => {
       const contract = buildContract(14);
       const references = contract.documentTypeReferences('note') as Reference[];
       const parent = references.find((reference) => reference.path === 'parentNoteId')!;
@@ -180,11 +182,11 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
 
     /**
-     * An empty agreement is omitted from `refersTo` rather than serialized
-     * as an empty object, and the accessor keeps that shape — the module's
-     * whole contract is that its keys line up with the schema keyword's.
+     * Absent — not `{}`-valued — when the declaration carries none,
+     * matching the schema's own omission and the absent-field convention
+     * of the other optional target fields.
      */
-    it('should omit propertyAgreement for a declaration that binds none', () => {
+    it('should omit propertyAgreement for a reference declaring none', () => {
       const contract = buildContract(14);
       const references = contract.documentTypeReferences('note') as Reference[];
       const other = references.find((reference) => reference.path === 'otherDoc')!;

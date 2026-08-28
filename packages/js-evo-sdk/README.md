@@ -161,6 +161,10 @@ const contract = await sdk.contracts.fetch(contractId);
 
 for (const ref of contract.documentTypeReferences('note')) {
   // { path: 'author', type: 'identityPublicKey', keyIdProperty: 'authorKeyId' }
+  // A permanentDocument reference may additionally carry a write-time
+  // equality binding between the two documents' properties:
+  // { path: 'postId', type: 'permanentDocument', contractId, documentType: 'post',
+  //   propertyAgreement: { hashtag: 'hashtag' } }
   console.log(ref.path, ref.type);
 }
 

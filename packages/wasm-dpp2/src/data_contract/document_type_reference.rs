@@ -54,13 +54,11 @@ export type DocumentPropertyReferenceTarget =
        */
       documentType: string;
       /**
-       * `{ referring property: referenced property }` pairs. Consensus
-       * enforces each pair as an EQUALITY between this document's value and
-       * the referenced document's value at write time.
-       *
-       * Absent when the declaration carries none, matching `refersTo` — an
-       * empty agreement is omitted from the schema rather than serialized
-       * as an empty object.
+       * Write-time equality bindings between the two documents:
+       * `{ <referring property path>: <referenced property path> }`.
+       * Consensus refuses a write whose referring property does not equal
+       * the referenced document's property (code 40127). Absent — not
+       * `{}`-valued — when the declaration carries none.
        */
       propertyAgreement?: Record<string, string>;
     }
@@ -156,20 +154,17 @@ fn reference_to_js(
                 &JsValue::from_str(document_type_name),
                 path,
             )?;
-            // Mirrors the keyword's own `skip_serializing_if`: an empty
-            // agreement never appears under `refersTo`, so it must not
-            // appear here either, or the two stop lining up key for key.
+            // `propertyAgreement` binds a referring property to a property
+            // of the referenced document (consensus-enforced equality at
+            // write time). Absent — not `{}`-valued — when the declaration
+            // carries none, matching the schema's own omission and the
+            // absent-field convention of the other optional target fields.
             if !property_agreement.is_empty() {
                 let agreement = Object::new();
-                for (referring_property, referenced_property) in property_agreement {
-                    set_field(
-                        &agreement,
-                        referring_property,
-                        &JsValue::from_str(referenced_property),
-                        path,
-                    )?;
+                for (referring, referenced) in property_agreement {
+                    set_field(&agreement, referring, &JsValue::from_str(referenced), path)?;
                 }
-                set_field(&object, "propertyAgreement", &agreement.into(), path)?;
+                set_field(&object, "propertyAgreement", &agreement, path)?;
             }
         }
         DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
