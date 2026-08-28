@@ -14,6 +14,8 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Install](#install)
 - [Usage](#usage)
 - [Facades](#facades)
+- [Ranked queries](#ranked-queries)
+- [Document references (`refersTo`)](#document-references-refersto)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -69,10 +71,13 @@ const local = EvoSDK.devnet('paloma', {
 await local.connect();
 ```
 
-Two static helpers are also exported:
+Static helpers are also exported:
 
 - `await EvoSDK.setLogLevel(filter)` — configure the underlying Wasm SDK's tracing globally.
 - `await EvoSDK.getLatestVersionNumber()` — return the latest Platform protocol version supported by the bundled Wasm SDK.
+- `await EvoSDK.maxRankedLimit()` — the hard ceiling on a [ranked / having-range](#ranked-queries) `limit`.
+- `await EvoSDK.rankedAverageScale()` — the fixed-point divisor for the `avg` axis of a ranked / having-range result.
+- `await EvoSDK.maxPrefixInBranches()` — the hard ceiling on the element count of a branching `in` [prefix pin](#ranked-queries).
 
 ## Facades
 
@@ -82,7 +87,7 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 |--------|-------------|
 | [`sdk.addresses`](src/addresses/facade.ts) | Query balances, transfer credits, withdraw to L1 |
 | [`sdk.identities`](src/identities/facade.ts) | Fetch, create, update, and top up identities |
-| [`sdk.documents`](src/documents/facade.ts) | Query, create, replace, delete, and transfer documents; aggregate `count` / `sum` / `average` over indexed fields |
+| [`sdk.documents`](src/documents/facade.ts) | Query, create, replace, delete, and transfer documents; aggregate `count` / `sum` / `average` over indexed fields; `ranked` top-K and `having` range queries over ranked indexes |
 | [`sdk.contracts`](src/contracts/facade.ts) | Fetch, publish, and update data contracts |
 | [`sdk.tokens`](src/tokens/facade.ts) | Mint, burn, transfer, freeze tokens and query balances |
 | [`sdk.dpns`](src/dpns/facade.ts) | Register and resolve Dash Platform names |
@@ -95,6 +100,89 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.shielded`](src/shielded/facade.ts) | Query shielded pool state, encrypted notes, anchors, and nullifier status |
 
 A `wallet` namespace is also exported with utilities for BIP39 mnemonic generation and validation, BIP44/DIP9/DIP13 key derivation (path helpers included), extended-key conversion (`xprvToXpub`, `deriveChildPublicKey`), key-pair generation and import (`generateKeyPair`, `keyPairFromWif`, `keyPairFromHex`), public-key-to-address conversion, address validation, message signing, and Dashpay contact-key derivation. See [`src/wallet/functions.ts`](src/wallet/functions.ts) for the full list.
+
+## Ranked queries
+
+From protocol version 14, a contract index can declare `rankedCountable`, `rankedSummable` or `rankedAverageable`. Against such an index the SDK can answer "which groups score highest?" with a proof, in `O(log n + k)`, without walking every group:
+
+```ts
+// The three best restaurants by average grade.
+const page = await sdk.documents.ranked({
+  dataContractId: RESTAURANTS,
+  documentTypeName: 'review',
+  groupBy: 'restaurantId',
+  aggregate: { type: 'avg', property: 'grade' },
+  limit: 3,
+});
+
+for (const entry of page.entries) {
+  // `value` is exact fixed point for the avg axis — divide by `page.valueScale`,
+  // never by a hardcoded constant. `valueAsNumber` is a lossy display helper.
+  console.log(entry.rank, entry.groupValue, Number(entry.value) / Number(page.valueScale));
+}
+```
+
+`limit` is required and capped at `await EvoSDK.maxRankedLimit()` (a hard reject, not a clamp). `offset` skips ranks — `{ limit: 1, offset: 4 }` is "the 5th best" — and has no ceiling, because the skipped region is attested rather than walked.
+
+### Pinning a compound index
+
+A compound ranked index keeps one ordered secondary per prefix value, with no ordering across prefixes, so a ranked read has to name the prefixes it descends into. `where` pins each leading index property:
+
+```ts
+// The best-rated restaurants in either of two cities.
+const page = await sdk.documents.ranked({
+  dataContractId: RESTAURANTS,
+  documentTypeName: 'review',
+  groupBy: 'restaurantId',
+  aggregate: { type: 'avg', property: 'grade' },
+  limit: 3,
+  where: [['city', 'in', ['Berlin', 'Hamburg']]],
+});
+
+for (const entry of page.entries) {
+  // Only set on a merged page: the same `groupKeyHex` can appear under
+  // two pinned prefixes, and this says which branch the entry came from.
+  console.log(entry.branchKeyHex, entry.groupValue);
+}
+```
+
+Each pin is a `==`, except that at most **one** may be a branching `in` carrying 2..=`await EvoSDK.maxPrefixInBranches()` elements — one secondary walk per element, merged into a single proved page. Several `in`s would multiply into a cartesian product of walks inside one proof, so they are rejected. A single-element `in` normalizes to `==` and never spends that budget. Range operators cannot pin a prefix at all.
+
+A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested from one secondary's counted commitments, and there is no counted structure over a branch union. Page one prefix at a time (`==` plus `offset`), or drop the offset.
+
+`sdk.documents.having()` bounds the same axis by value instead of by position (`{ operator: '>', value: 100 }`), and `rankedWithProof` / `havingWithProof` return the proof and block metadata alongside the result.
+
+## Document references (`refersTo`)
+
+Also from protocol version 14, an identifier property can declare what it points at. This is a write-time consensus constraint — nothing resolves a reference for a reader — but a fetched contract can be asked what it declares:
+
+```ts
+const contract = await sdk.contracts.fetch(contractId);
+
+for (const ref of contract.documentTypeReferences('note')) {
+  // { path: 'author', type: 'identityPublicKey', keyIdProperty: 'authorKeyId' }
+  console.log(ref.path, ref.type);
+}
+
+// Every document type that declares at least one reference.
+contract.documentReferences;
+```
+
+Declarations are only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports none even when its raw schema carries the keyword.
+
+When a write is rejected because a reference does not resolve, the consensus code reaches JS as `error.code`:
+
+```ts
+import { DocumentReferenceErrorCode } from '@dashevo/evo-sdk';
+
+try {
+  await sdk.documents.create({ document, identityKey, signer });
+} catch (e) {
+  if (e.code === DocumentReferenceErrorCode.ReferencedIdentityKeyDisabled) {
+    // the referenced key exists but was disabled
+  }
+}
+```
 
 ## Contributing
 
