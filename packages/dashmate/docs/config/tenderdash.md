@@ -80,6 +80,21 @@ The RPC interface is used for:
 - Submitting transactions
 - Fetching network status
 
+## State Sync
+
+State sync bootstraps a fresh node from a recent state snapshot fetched from peers instead of replaying every block. These settings control the consuming side; serving snapshots to peers is always on in Tenderdash and is fed by Drive's snapshots (see [Drive ABCI configuration](./drive-abci.md#state-sync-snapshots)).
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `platform.drive.tenderdash.stateSync.enabled` | Bootstrap a fresh node from a snapshot | `true` | `false` |
+| `platform.drive.tenderdash.stateSync.retries` | Retries before falling back to block sync, `0` disables retries | `3` | `5` |
+| `platform.drive.tenderdash.stateSync.chunkRequestTimeout` | Timeout before re-requesting a snapshot chunk, at least `5s` | `15s` | `30s` |
+| `platform.drive.tenderdash.stateSync.fetchersCount` | Concurrent chunk fetchers, 1 to 64 | `4` | `8` |
+
+- Enabling is safe for existing nodes: Tenderdash only attempts state sync when the node has no local state and disables it by itself otherwise. Only a freshly set up (or reset) node consumes a snapshot, and it ends up with a truncated block history starting at the snapshot height.
+- Snapshots are verified through the P2P layer. The alternative RPC state provider needs at least two reachable Tenderdash RPC servers, but dashmate publishes the Tenderdash RPC on loopback only, without TLS and unproxied by the gateway, so the rendered config hardcodes `use-p2p = true`.
+- The local preset disables state sync: a local network genesis starts every node from scratch, so there is no populated peer to sync from.
+
 ## Metrics and Profiling
 
 These settings control monitoring and profiling tools:
