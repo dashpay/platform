@@ -27,13 +27,14 @@ use std::sync::Arc;
 
 use dashcore::hashes::Hash;
 use platform_wallet::masternode::{
-    execute_masternode_update_service, parse_secret_for_role, LocatorSecret, MasternodeKeyRole,
-    MasternodeUpdateServiceParams,
+    execute_masternode_update_service, parse_secret_for_role, prepare_masternode_update_service,
+    LocatorSecret, MasternodeKeyRole, MasternodeUpdateServiceParams,
 };
 use platform_wallet::{PlatformWallet, ProviderKeyKind};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 use zeroize::Zeroizing;
 
+use crate::core_wallet::FFICoreSignedTransaction;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
@@ -147,6 +148,40 @@ unsafe fn wallet_operator_secret(
     Ok(bytes)
 }
 
+/// Parse a host-supplied operator key text (64-char hex or 32-byte base64)
+/// into its BLS secret, shared by the tracked broadcast and prepare externs.
+fn tracked_operator_secret(
+    key_text: &str,
+    network: dashcore::Network,
+) -> Result<Zeroizing<[u8; 32]>, PlatformWalletFFIResult> {
+    match parse_secret_for_role(key_text, MasternodeKeyRole::Operator, network) {
+        // Move the existing zeroizing container; dereferencing it would
+        // place a `Copy` of the secret on the stack.
+        Ok(LocatorSecret::Bls(secret)) => Ok(secret),
+        Ok(_) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "the operator key must be a BLS secret (64-char hex or 32-byte base64)",
+        )),
+        Err(e) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("operator key is not usable: {e}"),
+        )),
+    }
+}
+
+unsafe fn marshal_params(
+    pro_tx_hash: *const u8,
+    has_platform_p2p_port: bool,
+    platform_p2p_port: u16,
+    operator_payout_address: *const c_char,
+) -> Result<MasternodeUpdateServiceParams, PlatformWalletFFIResult> {
+    Ok(MasternodeUpdateServiceParams {
+        pro_tx_hash: std::ptr::read(pro_tx_hash as *const [u8; 32]),
+        platform_p2p_port: has_platform_p2p_port.then_some(platform_p2p_port),
+        operator_payout_address: optional_string(operator_payout_address)?,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 unsafe fn run_update_service(
     context: ResolvedContext,
@@ -158,15 +193,14 @@ unsafe fn run_update_service(
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     out_txid: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
-    let target: [u8; 32] = std::ptr::read(pro_tx_hash as *const [u8; 32]);
-    let operator_payout_address = match optional_string(operator_payout_address) {
-        Ok(text) => text,
-        Err(e) => return e,
-    };
-    let params = MasternodeUpdateServiceParams {
-        pro_tx_hash: target,
-        platform_p2p_port: has_platform_p2p_port.then_some(platform_p2p_port),
+    let params = match marshal_params(
+        pro_tx_hash,
+        has_platform_p2p_port,
+        platform_p2p_port,
         operator_payout_address,
+    ) {
+        Ok(params) => params,
+        Err(e) => return e,
     };
 
     let ResolvedContext {
@@ -188,6 +222,57 @@ unsafe fn run_update_service(
     }));
 
     *out_txid = txid.to_raw_hash().to_byte_array();
+    PlatformWalletFFIResult::ok()
+}
+
+/// Prepare-only sibling of [`run_update_service`]: identical up to the
+/// broadcast, then registers the signed transaction — holding its input
+/// reservation — as a core signed-transaction handle the host later
+/// broadcasts (`core_wallet_broadcast_signed_transaction`), abandons
+/// (`core_wallet_abandon_signed_transaction`) or frees (which abandons).
+#[allow(clippy::too_many_arguments)]
+unsafe fn run_prepare_update_service(
+    context: ResolvedContext,
+    pro_tx_hash: *const u8,
+    operator_secret: Zeroizing<[u8; 32]>,
+    has_platform_p2p_port: bool,
+    platform_p2p_port: u16,
+    operator_payout_address: *const c_char,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    out_transaction_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    let params = match marshal_params(
+        pro_tx_hash,
+        has_platform_p2p_port,
+        platform_p2p_port,
+        operator_payout_address,
+    ) {
+        Ok(params) => params,
+        Err(e) => return e,
+    };
+
+    let ResolvedContext {
+        wallet,
+        spv,
+        network,
+    } = context;
+    let wallet_id_bytes = wallet.wallet_id();
+    let signer_addr = mnemonic_resolver_handle as usize;
+    let (wallet, prepared) = unwrap_result_or_return!(block_on_worker(async move {
+        let signer = MnemonicResolverCoreSigner::new(
+            signer_addr as *mut MnemonicResolverHandle,
+            wallet_id_bytes,
+            network,
+        );
+        prepare_masternode_update_service(&wallet, &spv, params, operator_secret, &signer)
+            .await
+            .map(|prepared| (wallet, prepared))
+    }));
+
+    *out_transaction_handle = CORE_SIGNED_TRANSACTION_STORAGE.insert(FFICoreSignedTransaction {
+        wallet: wallet.core().clone(),
+        transaction: prepared,
+    });
     PlatformWalletFFIResult::ok()
 }
 
@@ -304,23 +389,9 @@ pub unsafe extern "C" fn platform_wallet_manager_tracked_masternode_update_servi
         Ok(context) => context,
         Err(e) => return e,
     };
-    let secret = match parse_secret_for_role(key_text, MasternodeKeyRole::Operator, context.network)
-    {
-        // Move the existing zeroizing container; dereferencing it would
-        // place a `Copy` of the secret on the stack.
-        Ok(LocatorSecret::Bls(secret)) => secret,
-        Ok(_) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                "the operator key must be a BLS secret (64-char hex or 32-byte base64)",
-            );
-        }
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("operator key is not usable: {e}"),
-            );
-        }
+    let secret = match tracked_operator_secret(key_text, context.network) {
+        Ok(secret) => secret,
+        Err(e) => return e,
     };
     run_update_service(
         context,
@@ -331,6 +402,126 @@ pub unsafe extern "C" fn platform_wallet_manager_tracked_masternode_update_servi
         operator_payout_address,
         mnemonic_resolver_handle,
         out_txid,
+    )
+}
+
+/// Prepare — but do NOT broadcast — the ProUpServTx that
+/// [`platform_wallet_manager_masternode_update_service`][] would send for a
+/// wallet-owned masternode, so the host can show the transaction before the
+/// user commits to it.
+///
+/// Same parameters and same preflights as the broadcasting entry point. On
+/// success `out_transaction_handle` receives a core signed-transaction
+/// handle whose inputs are RESERVED. The host must then either broadcast it
+/// (`core_wallet_broadcast_signed_transaction`), abandon it
+/// (`core_wallet_abandon_signed_transaction`), or free it
+/// (`core_wallet_signed_transaction_free`, which abandons) — the fee and the
+/// consensus-serialized bytes are readable meanwhile via
+/// `core_wallet_signed_transaction_fee` / `core_wallet_signed_transaction_bytes`.
+/// Dropping the handle without any of those strands the reservation until
+/// the TTL backstop reclaims it.
+///
+/// # Safety
+/// Pointer args must be valid for the stated sizes; `mnemonic_resolver_handle`
+/// must come from `dash_sdk_mnemonic_resolver_create` and remain valid for
+/// the duration of the call.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_masternode_prepare_update_service(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+    pro_tx_hash: *const u8,
+    operator_key_index: u32,
+    has_platform_p2p_port: bool,
+    platform_p2p_port: u16,
+    operator_payout_address: *const c_char,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    out_transaction_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    // `out_transaction_handle` first: the zero-on-every-path contract must
+    // hold even when a later required pointer is null.
+    check_ptr!(out_transaction_handle);
+    *out_transaction_handle = 0;
+    check_ptr!(wallet_id);
+    check_ptr!(pro_tx_hash);
+    check_ptr!(mnemonic_resolver_handle);
+
+    let context = match resolve_context(manager_handle, wallet_id) {
+        Ok(context) => context,
+        Err(e) => return e,
+    };
+    let operator_secret = match wallet_operator_secret(
+        &context.wallet,
+        operator_key_index,
+        mnemonic_resolver_handle,
+    ) {
+        Ok(secret) => secret,
+        Err(e) => return e,
+    };
+    run_prepare_update_service(
+        context,
+        pro_tx_hash,
+        operator_secret,
+        has_platform_p2p_port,
+        platform_p2p_port,
+        operator_payout_address,
+        mnemonic_resolver_handle,
+        out_transaction_handle,
+    )
+}
+
+/// Prepare — but do NOT broadcast — the ProUpServTx that
+/// [`platform_wallet_manager_tracked_masternode_update_service`][] would send,
+/// signed with the host-vaulted operator key text.
+///
+/// Handle ownership and the broadcast / abandon / free contract are exactly
+/// those of [`platform_wallet_manager_masternode_prepare_update_service`][].
+///
+/// # Safety
+/// Pointer args must be valid for the stated sizes; `operator_key_text` must
+/// be a NUL-terminated UTF-8 string; `mnemonic_resolver_handle` must come
+/// from `dash_sdk_mnemonic_resolver_create` and remain valid for the
+/// duration of the call.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_tracked_masternode_prepare_update_service(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+    pro_tx_hash: *const u8,
+    operator_key_text: *const c_char,
+    has_platform_p2p_port: bool,
+    platform_p2p_port: u16,
+    operator_payout_address: *const c_char,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    out_transaction_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    // `out_transaction_handle` first: the zero-on-every-path contract must
+    // hold even when a later required pointer is null.
+    check_ptr!(out_transaction_handle);
+    *out_transaction_handle = 0;
+    check_ptr!(wallet_id);
+    check_ptr!(pro_tx_hash);
+    check_ptr!(operator_key_text);
+    check_ptr!(mnemonic_resolver_handle);
+
+    let key_text = unwrap_result_or_return!(std::ffi::CStr::from_ptr(operator_key_text).to_str());
+    let context = match resolve_context(manager_handle, wallet_id) {
+        Ok(context) => context,
+        Err(e) => return e,
+    };
+    let secret = match tracked_operator_secret(key_text, context.network) {
+        Ok(secret) => secret,
+        Err(e) => return e,
+    };
+    run_prepare_update_service(
+        context,
+        pro_tx_hash,
+        secret,
+        has_platform_p2p_port,
+        platform_p2p_port,
+        operator_payout_address,
+        mnemonic_resolver_handle,
+        out_transaction_handle,
     )
 }
 
@@ -382,6 +573,53 @@ mod tests {
             );
             assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
             assert_eq!(txid, [0u8; 32], "out_txid is zeroed on every path");
+            let mut result = result;
+            platform_wallet_ffi_result_free(&mut result);
+        }
+    }
+
+    /// The prepare pair keeps the same contract: an unknown manager handle
+    /// is an invalid-handle error and the out-param is left at the null
+    /// handle, so a host can never broadcast a stale handle after a failure.
+    #[test]
+    fn prepare_unknown_handles_are_invalid_handles() {
+        unsafe {
+            let wallet_id = [0u8; 32];
+            let pro_tx_hash = [0u8; 32];
+            let resolver = std::ptr::dangling_mut::<MnemonicResolverHandle>();
+
+            let mut transaction_handle: Handle = 7;
+            let result = platform_wallet_manager_masternode_prepare_update_service(
+                Handle::MAX,
+                wallet_id.as_ptr(),
+                pro_tx_hash.as_ptr(),
+                0,
+                false,
+                0,
+                std::ptr::null(),
+                resolver,
+                &mut transaction_handle,
+            );
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+            assert_eq!(transaction_handle, 0, "no handle is handed back on failure");
+            let mut result = result;
+            platform_wallet_ffi_result_free(&mut result);
+
+            let mut transaction_handle: Handle = 7;
+            let key = std::ffi::CString::new("00").unwrap();
+            let result = platform_wallet_manager_tracked_masternode_prepare_update_service(
+                Handle::MAX,
+                wallet_id.as_ptr(),
+                pro_tx_hash.as_ptr(),
+                key.as_ptr(),
+                false,
+                0,
+                std::ptr::null(),
+                resolver,
+                &mut transaction_handle,
+            );
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+            assert_eq!(transaction_handle, 0, "no handle is handed back on failure");
             let mut result = result;
             platform_wallet_ffi_result_free(&mut result);
         }

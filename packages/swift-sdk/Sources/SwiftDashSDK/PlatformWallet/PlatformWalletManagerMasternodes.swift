@@ -436,6 +436,68 @@ extension PlatformWalletManager {
             return Swift.withUnsafeBytes(of: &txidTuple) { Data($0) }
         }.value
     }
+
+    /// Prepare — but do not broadcast — the same ProUpServTx
+    /// `masternodeUpdateService` would send, so the host can show the
+    /// transaction before the user commits to it.
+    ///
+    /// The returned token owns a signed transaction whose inputs are
+    /// reserved: broadcast it with
+    /// `ManagedCoreWallet.broadcastTransactionWithOutcome(_:)`, or let it
+    /// deinit — which abandons it and releases the reservation. Its `fee`
+    /// and `serializedData()` describe exactly what a broadcast would send.
+    public func masternodePrepareUpdateService(
+        walletId: Data,
+        proTxHash: Data,
+        operatorKeyIndex: UInt32,
+        platformP2PPort: UInt16? = nil,
+        operatorPayoutAddress: String? = nil
+    ) async throws -> FinalizedCoreTransaction {
+        guard isConfigured, handle != NULL_HANDLE,
+            walletId.count == 32, proTxHash.count == 32
+        else {
+            throw PlatformWalletError.invalidParameter(
+                "Manager not configured, or wallet id / proTxHash not 32 bytes")
+        }
+
+        let handle = self.handle
+        // Only the raw handle crosses the task boundary; the owning token is
+        // built here, so a thrown error can't strand it.
+        let transactionHandle = try await Task.detached(priority: .userInitiated) { () -> Handle in
+            let resolver = MnemonicResolver()
+            var outHandle: Handle = NULL_HANDLE
+            let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
+                walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                    proTxHash.withUnsafeBytes { (ptRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                        func call(_ payoutPtr: UnsafePointer<CChar>?) -> PlatformWalletFFIResult {
+                            platform_wallet_manager_masternode_prepare_update_service(
+                                handle,
+                                widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                operatorKeyIndex,
+                                platformP2PPort != nil,
+                                platformP2PPort ?? 0,
+                                payoutPtr,
+                                resolver.handle,
+                                &outHandle
+                            )
+                        }
+                        if let operatorPayoutAddress {
+                            return operatorPayoutAddress.withCString { call($0) }
+                        }
+                        return call(nil)
+                    }
+                }
+            }
+            let result = PlatformWalletResult(ffiResult)
+            guard result.isSuccess else {
+                throw PlatformWalletError(result: result)
+            }
+            return outHandle
+        }.value
+
+        return try FinalizedCoreTransaction(handle: transactionHandle)
+    }
 }
 
 /// Which wallet key signs a masternode (evonode) credit withdrawal.

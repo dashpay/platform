@@ -38,7 +38,7 @@ use super::locator::bls_public_keys;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::spv::SpvRuntime;
-use crate::wallet::core::{CoreWallet, SEND_FUNDING_SOURCES};
+use crate::wallet::core::{CoreWallet, SignedCoreTransaction, SEND_FUNDING_SOURCES};
 use crate::wallet::platform_wallet::PlatformWallet;
 
 /// What an update-service (unban) request lets the caller choose. Everything
@@ -83,6 +83,29 @@ pub async fn execute_masternode_update_service<S: TransactionSigner + ?Sized + S
     operator_secret: Zeroizing<[u8; 32]>,
     signer: &S,
 ) -> Result<Txid, PlatformWalletError> {
+    let signed =
+        prepare_masternode_update_service(wallet, spv, params, operator_secret, signer).await?;
+    wallet.core().broadcast_finalized_transaction(&signed).await
+}
+
+/// Everything [`execute_masternode_update_service`] does except the
+/// broadcast: the same preflights, payload, funding, operator-BLS signature
+/// and input signatures, stopping at a fully signed transaction whose inputs
+/// stay reserved.
+///
+/// For hosts that show the ProUpServTx before sending it. The returned
+/// transaction is exactly what a broadcast would put on the network, so a
+/// preview built from it cannot drift from what is sent. The caller then
+/// either broadcasts it (`CoreWallet::broadcast_finalized_transaction`) or
+/// abandons it (`CoreWallet::abandon_transaction`) — dropping it without
+/// either strands the reservation until the TTL backstop reclaims it.
+pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + Sync>(
+    wallet: &PlatformWallet,
+    spv: &SpvRuntime,
+    params: MasternodeUpdateServiceParams,
+    operator_secret: Zeroizing<[u8; 32]>,
+    signer: &S,
+) -> Result<SignedCoreTransaction, PlatformWalletError> {
     let summaries = spv
         .masternode_list_summaries()
         .await
@@ -109,7 +132,7 @@ pub async fn execute_masternode_update_service<S: TransactionSigner + ?Sized + S
     let placeholder =
         prepare_update_service_placeholder(entry, params.platform_p2p_port, script_payout)?;
 
-    build_sign_broadcast_update_service(wallet.core(), placeholder, operator_secret, signer).await
+    build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
 }
 
 /// The `operatorReward` (basis points) the masternode was registered with,
@@ -328,18 +351,20 @@ pub(crate) fn service_payload_fields(service: SocketAddr) -> (u128, u16) {
     (u128::from_le_bytes(octets), service.port())
 }
 
-/// Fund, finalize, and broadcast the ProUpServTx: input selection reserves
-/// the funding inputs, the payload finalizer writes `inputs_hash` and the
-/// operator-BLS `payload_sig` (basic scheme over `base_payload_hash()`,
-/// modern serialization — the exact convention `verify_message_digest`
-/// checks real mainnet signatures with), and only then are the inputs
-/// ECDSA-signed, since their sighashes cover the finished payload.
-pub(crate) async fn build_sign_broadcast_update_service<B, S>(
+/// Fund and finalize the ProUpServTx: input selection reserves the funding
+/// inputs, the payload finalizer writes `inputs_hash` and the operator-BLS
+/// `payload_sig` (basic scheme over `base_payload_hash()`, modern
+/// serialization — the exact convention `verify_message_digest` checks real
+/// mainnet signatures with), and only then are the inputs ECDSA-signed,
+/// since their sighashes cover the finished payload.
+///
+/// Stops at the signed transaction; the caller broadcasts or abandons it.
+pub(crate) async fn build_sign_update_service<B, S>(
     core: &CoreWallet<B>,
     placeholder: ProviderUpdateServicePayload,
     operator_secret: Zeroizing<[u8; 32]>,
     signer: &S,
-) -> Result<Txid, PlatformWalletError>
+) -> Result<SignedCoreTransaction, PlatformWalletError>
 where
     B: TransactionBroadcaster + ?Sized,
     S: TransactionSigner + ?Sized + Sync,
@@ -390,10 +415,8 @@ where
             ))
         });
 
-    let signed = core
-        .finalize_transaction(builder, &SEND_FUNDING_SOURCES, 0, signer)
-        .await?;
-    core.broadcast_finalized_transaction(&signed).await
+    core.finalize_transaction(builder, &SEND_FUNDING_SOURCES, 0, signer)
+        .await
 }
 
 fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
@@ -653,14 +676,26 @@ mod tests {
         let placeholder = prepare_update_service_placeholder(&entry, Some(26656), ScriptBuf::new())
             .expect("placeholder");
 
-        let txid = build_sign_broadcast_update_service(
-            &core,
-            placeholder,
-            Zeroizing::new(OPERATOR_SECRET),
-            &signer,
-        )
-        .await
-        .expect("update service builds and broadcasts");
+        let prepared =
+            build_sign_update_service(&core, placeholder, Zeroizing::new(OPERATOR_SECRET), &signer)
+                .await
+                .expect("update service builds and signs");
+
+        // Building signs but must not send: the preview flow shows this exact
+        // transaction before the user decides.
+        assert!(
+            broadcaster
+                .sent
+                .lock()
+                .expect("broadcaster lock")
+                .is_empty(),
+            "preparing must not broadcast"
+        );
+
+        let txid = core
+            .broadcast_finalized_transaction(&prepared)
+            .await
+            .expect("prepared transaction broadcasts");
 
         let sent = broadcaster.sent.lock().expect("broadcaster lock");
         assert_eq!(sent.len(), 1, "exactly one transaction broadcast");
