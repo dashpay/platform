@@ -345,6 +345,100 @@ fn rejects_summable_naming_non_integer_property() {
 }
 
 #[test]
+fn accepts_time_range_bucketed_index() {
+    // A bucketed indexOnly index writes one entry per containing bucket,
+    // sharing the stored types' walker fan-out. `$createdAt` must be the
+    // transform source (the prefix rule admits no other system timestamp)
+    // and must be required (shared timeRange rule).
+    let mut schema = likes_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byHourHashtag",
+            "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 },
+            "countable": true,
+            "rangeCountable": true
+        }));
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("bucketed indexOnly index admitted");
+    let bucketed = document_type
+        .indices
+        .values()
+        .find(|index| index.time_range.is_some())
+        .expect("the bucketed index parsed");
+    assert_eq!(bucketed.time_range.as_ref().unwrap().overlap_factor(), 4);
+}
+
+#[test]
+fn rejects_time_range_bucketed_index_without_required_created_at() {
+    // Same shape, but $createdAt missing from `required` — the indexOnly
+    // indexed-$createdAt rule fires (creation only assigns the timestamp
+    // for required system times, and an entry cannot represent a missing
+    // value).
+    let mut schema = likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byHourHashtag",
+            "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 }
+        }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must be listed in `required`",
+    );
+}
+
+#[test]
+fn rejects_only_bucketed_indexes() {
+    // A bucketed index involves $createdAt, so a doctype whose every index
+    // is bucketed has no $createdAt-free proof index and stays refused.
+    let mut schema = likes_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    schema
+        .set_value(
+            "indices",
+            platform_value!([{
+                "name": "byHourHashtagPost",
+                "properties": [
+                    { "$createdAt": "asc" },
+                    { "hashtag": "asc" },
+                    { "postId": "asc" }
+                ],
+                "terminal": "$ownerId",
+                "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 }
+            }]),
+        )
+        .expect("indices apply");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "does not involve $createdAt",
+    );
+}
+
+#[test]
 fn rejects_terminal_repeating_an_index_property() {
     // byLiker's prefix is [$ownerId]; making $ownerId its terminal too
     // indexes the same dimension twice.

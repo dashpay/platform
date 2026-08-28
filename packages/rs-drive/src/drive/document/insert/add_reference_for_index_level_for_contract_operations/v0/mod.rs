@@ -401,7 +401,17 @@ impl Drive {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
         } else {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_type: TreeType::NormalTree,
+                // The `0` tree's parent is the index's value tree, which
+                // aggregates whenever the index counts or sums — claiming
+                // `NormalTree` here under-estimates the parent's per-child
+                // aggregate bytes, and a time-range index's bucket fan-out
+                // multiplies the gap past the item-size padding (the
+                // `estimated_fees_upper_bound_actual_fees` e2e tests pin
+                // the invariant).
+                in_tree_type:
+                    crate::drive::document::index_level_tree_types::terminal_value_tree_type(
+                        index_type,
+                    ),
                 tree_type: member_tree_type,
                 flags_len: storage_flags
                     .map(|s| s.serialized_size())
@@ -422,16 +432,19 @@ impl Drive {
 
         index_path_info.push(Key(vec![0]))?;
 
-        // An empty-payload item plus flags is the whole element.
         // The payload is the 32-byte row commitment; the estimated per-item
         // value size is padded above it because the estimation layers
-        // under-count the serialized item envelope (enum tag, length
-        // prefix, flags option) by a handful of bytes, and estimation must
-        // UPPER-bound the applied fee — the
-        // `estimated_fees_upper_bound_actual_fees` e2e test pins the
-        // invariant.
+        // under-count each entry's chain (the serialized item envelope —
+        // enum tag, length prefix, flags option — plus the per-entry share
+        // of parent-tree aggregate bytes), and estimation must UPPER-bound
+        // the applied fee. The padding is per entry, so it scales with a
+        // time-range index's bucket fan-out (one entry chain per bucket),
+        // where the original 16-byte pad measurably under-ran — the
+        // `estimated_fees_upper_bound_actual_fees` e2e tests (like / tip /
+        // beat) pin the invariant across the plain, summable and bucketed
+        // shapes.
         const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 =
-            crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 16;
+            crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 32;
 
         // Sum-bearing entries additionally carry the i64 sum item in the
         // element envelope; 10 bytes is the worst case the sum-aware space

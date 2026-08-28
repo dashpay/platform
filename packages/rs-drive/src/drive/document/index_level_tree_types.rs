@@ -229,6 +229,24 @@ pub(crate) fn terminal_member_tree_type(index_type: &IndexLevelTypeInfo) -> Tree
     }
 }
 
+/// The value-tree type an index's terminal level lives inside, derived
+/// from the level info's four terminator flags — the tree the `0` member
+/// bucket is inserted INTO. Used by the indexOnly terminal branch's
+/// stateless apply type so estimation accounts the parent's aggregate
+/// bytes (a `NormalTree` claim under-counts a count-bearing value tree's
+/// per-child propagation, and the bucket fan-out multiplies the gap).
+/// Continuations only demote provable variants, whose stateless costs
+/// match their demoted forms at this call site, so `false` is passed.
+pub(crate) fn terminal_value_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
+    derive_value_tree_type(
+        index_type.countable.is_countable(),
+        index_type.range_countable,
+        index_type.summable.is_some(),
+        index_type.range_summable,
+        false,
+    )
+}
+
 /// Pure derivation of the value-tree type over the level's four
 /// terminator flags plus whether continuations hang beneath it. Split
 /// out so the full input space is unit-testable without constructing

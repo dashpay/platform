@@ -32,6 +32,11 @@ use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
+/// The entry paths a document's values produce under one index — one per
+/// containing bucket for a time-range index, exactly one otherwise —
+/// paired with the shared member key (the terminal property's value).
+pub type IndexOnlyEntryPathsAndKey = (Vec<Vec<Vec<u8>>>, Vec<u8>);
+
 impl Drive {
     /// Reconstruct the document an indexOnly delete's entries were written
     /// from: the carried values plus the owner, with `$createdAt` moved
@@ -83,16 +88,29 @@ impl Drive {
             )))
     }
 
-    /// The grove path and member key of `document`'s entry under `index`:
-    /// `[DataContractDocuments, contract_id, 1, doctype, (<prop>, <value
-    /// key>)*, 0]` with the terminal property's value as the key.
-    pub fn index_only_entry_path_and_key(
+    /// The grove paths and member key of `document`'s entries under
+    /// `index`: each path is `[DataContractDocuments, contract_id, 1,
+    /// doctype, (<level key>, <value key>)*, 0]` with the terminal
+    /// property's value as the member key.
+    ///
+    /// A plain index produces exactly one path. A time-range (bucketed)
+    /// index produces one path per bucket containing the document's
+    /// timestamp: the first level's segment is the grid-qualified
+    /// [`level_key`](Index::level_key) and its value keys come from
+    /// [`TimeRangeTransform::entry_keys_for_raw`] — the same derivation
+    /// the index walkers write with, so probe and write paths cannot
+    /// drift (including the edge rules: a pre-origin timestamp produces
+    /// NO entries, so it produces no probe paths either).
+    ///
+    /// [`TimeRangeTransform::entry_keys_for_raw`]:
+    /// dpp::data_contract::document_type::TimeRangeTransform::entry_keys_for_raw
+    pub fn index_only_entry_paths_and_key(
         contract_id: Identifier,
         document_type: DocumentTypeRef,
         index: &Index,
         document: &Document,
         platform_version: &PlatformVersion,
-    ) -> Result<(Vec<Vec<u8>>, Vec<u8>), Error> {
+    ) -> Result<IndexOnlyEntryPathsAndKey, Error> {
         let owner_id = Some(document.owner_id().to_buffer());
 
         let raw_value_for = |property_name: &str| -> Result<Vec<u8>, Error> {
@@ -109,28 +127,52 @@ impl Drive {
                 )))
         };
 
-        let mut path: Vec<Vec<u8>> = Vec::with_capacity(5 + index.properties.len() * 2);
-        path.push(vec![crate::drive::RootTree::DataContractDocuments as u8]);
-        path.push(contract_id.to_vec());
-        path.push(vec![1]);
-        path.push(document_type.name().as_bytes().to_vec());
-        for property in index.properties.iter() {
-            path.push(property.name.as_bytes().to_vec());
-            path.push(raw_value_for(&property.name)?);
+        let prefix: Vec<Vec<u8>> = vec![
+            vec![crate::drive::RootTree::DataContractDocuments as u8],
+            contract_id.to_vec(),
+            vec![1],
+            document_type.name().as_bytes().to_vec(),
+        ];
+        let mut paths: Vec<Vec<Vec<u8>>> = vec![prefix];
+        for (position, property) in index.properties.iter().enumerate() {
+            let level_key = index.level_key(position, &property.name);
+            let raw = raw_value_for(&property.name)?;
+            // Only a time-range index's first property fans out; every
+            // other level extends each path with its single value key.
+            let value_keys: Vec<Vec<u8>> = match index.time_range.as_ref() {
+                Some(transform) if position == 0 => transform.entry_keys_for_raw(&raw),
+                _ => vec![raw],
+            };
+            paths = paths
+                .into_iter()
+                .flat_map(|base| {
+                    value_keys
+                        .iter()
+                        .map(|value_key| {
+                            let mut path = base.clone();
+                            path.push(level_key.as_bytes().to_vec());
+                            path.push(value_key.clone());
+                            path
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect();
         }
-        path.push(vec![0]);
+        for path in paths.iter_mut() {
+            path.push(vec![0]);
+        }
 
         let terminal =
             index
                 .terminal
                 .as_deref()
                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "index_only_entry_path_and_key requires an indexOnly index (terminal is \
+                    "index_only_entry_paths_and_key requires an indexOnly index (terminal is \
                  always Some there after parse normalization)",
                 )))?;
         let member_key = raw_value_for(terminal)?;
 
-        Ok((path, member_key))
+        Ok((paths, member_key))
     }
 
     /// Whether `document`'s entry under `index` exists AND carries
@@ -154,36 +196,54 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
-        let (path, member_key) = Self::index_only_entry_path_and_key(
+        let (paths, member_key) = Self::index_only_entry_paths_and_key(
             contract_id,
             document_type,
             index,
             document,
             platform_version,
         )?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
-        let element = self.grove_get_raw_optional(
-            path_refs.as_slice().into(),
-            member_key.as_slice(),
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            drive_operations,
-            &platform_version.drive,
-        )?;
-        Ok(match element {
-            Some(grovedb::Element::Item(payload, _)) => payload == expected_commitment.as_slice(),
-            // Summable indexes store `ItemWithSumItem(commitment, amount)`;
-            // the commitment payload plays the same binding role, and the
-            // amount needs no separate check — it is one of the document's
-            // properties, so it is already covered by the commitment.
-            Some(grovedb::Element::ItemWithSumItem(payload, _, _)) => {
-                payload == expected_commitment.as_slice()
+        // ALL of the index's entries must carry the commitment — for a
+        // bucketed index that is every containing bucket's entry (the
+        // write path creates them atomically, so anything less means the
+        // values do not describe an existing row). Zero paths (a bucketed
+        // index over a pre-origin timestamp) is vacuously consistent: the
+        // write path wrote nothing there either.
+        for path in paths {
+            let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
+            let element = self.grove_get_raw_optional(
+                path_refs.as_slice().into(),
+                member_key.as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                drive_operations,
+                &platform_version.drive,
+            )?;
+            let matches = match element {
+                Some(grovedb::Element::Item(payload, _)) => {
+                    payload == expected_commitment.as_slice()
+                }
+                // Summable indexes store `ItemWithSumItem(commitment,
+                // amount)`; the commitment payload plays the same binding
+                // role, and the amount needs no separate check — it is one
+                // of the document's properties, so it is already covered
+                // by the commitment.
+                Some(grovedb::Element::ItemWithSumItem(payload, _, _)) => {
+                    payload == expected_commitment.as_slice()
+                }
+                _ => false,
+            };
+            if !matches {
+                return Ok(false);
             }
-            _ => false,
-        })
+        }
+        Ok(true)
     }
 
-    /// Whether `document`'s entry under `index` exists (stateful read).
+    /// Whether any of `document`'s entries under `index` exists (stateful
+    /// read). For a bucketed index the entries are written atomically, so
+    /// ANY existing bucket entry means the projection exists — the
+    /// duplicate-detection contract the create-side probes rely on.
     #[allow(clippy::too_many_arguments)]
     pub fn has_index_only_document_entry(
         &self,
@@ -195,21 +255,26 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
-        let (path, member_key) = Self::index_only_entry_path_and_key(
+        let (paths, member_key) = Self::index_only_entry_paths_and_key(
             contract_id,
             document_type,
             index,
             document,
             platform_version,
         )?;
-        let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
-        self.grove_has_raw(
-            path_refs.as_slice().into(),
-            member_key.as_slice(),
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            drive_operations,
-            &platform_version.drive,
-        )
+        for path in paths {
+            let path_refs: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
+            if self.grove_has_raw(
+                path_refs.as_slice().into(),
+                member_key.as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                drive_operations,
+                &platform_version.drive,
+            )? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }

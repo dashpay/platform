@@ -41,6 +41,20 @@ types unchanged: "the five most-liked posts in `#dash`" is an
 O(log n + k) read with an O(log n + k) proof, and Items count in
 count/ranked trees exactly as References do.
 
+**`timeRange` buckets** compose too: a bucketed indexOnly index writes
+one commitment entry per containing bucket under the grid-qualified
+level, exactly as stored types do — the walkers' bucket fan-out, the
+probes' path derivation (`entry_keys_for_raw`, shared so probe and write
+paths cannot drift), and the `IN_TIME_RANGE` count aggregates are all the
+same machinery ("how many likes under `#dash` this hour"). The source can
+only be `$createdAt` (the prefix rule admits no other timestamp), which
+`required` must carry, so a delete's values reproduce the exact bucket
+set. A bucketed index involves `$createdAt` and therefore never serves as
+the proof index; and document synthesis over bucketed entries is refused
+with guidance — the bucket level carries bucket-start granularity, not
+the document's timestamp, and the raw entries are served by the type's
+non-bucketed indexes.
+
 The **sum axes** compose the same way: a `summable: "<prop>"` index
 stores `ItemWithSumItem(<row commitment>, <amount>)` terminals — the same
 commitment payload, plus the summed property's value — so entries
@@ -85,7 +99,7 @@ aggregate keywords follow:
 | terminal is `$ownerId` or a single-id refersTo property | the member key must alone be a referable entity id (`identityPublicKey` is compound and rejected) |
 | indexed `$createdAt` requires `$createdAt` in `required` | creation only assigns timestamps for required system times |
 | `documentsMutable: false`, no transfers/trading/history/transient | no stored row, no revision |
-| non-unique, non-contested, `nullSearchable` default, no `timeRange` | v1 scope; buckets are a follow-up |
+| non-unique, non-contested, `nullSearchable` default | v1 scope |
 
 `indexOnly` and the index set (terminals included) are immutable across
 contract updates — a later-added index could never be backfilled.
