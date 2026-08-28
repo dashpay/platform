@@ -54,6 +54,14 @@ pub enum AbciError {
     #[error("bad commit signature: {0}")]
     BadCommitSignature(String),
 
+    /// Invalid state sync request received from Tenderdash or a peer
+    #[error("bad request state sync: {0}")]
+    StateSyncBadRequest(String),
+
+    /// Internal error during state sync
+    #[error("internal error state sync: {0}")]
+    StateSyncInternalError(String),
+
     /// The chain lock received was invalid
     #[error("invalid chain lock: {0}")]
     InvalidChainLock(String),

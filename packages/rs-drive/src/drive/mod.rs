@@ -106,6 +106,26 @@ impl Checkpoint {
         }
     }
 
+    /// Returns true if this checkpoint contains the reduced platform state
+    /// (`Misc/reduced_saved_state`), which a state-syncing node needs to reconstruct the
+    /// platform state. Checkpoints taken before the protocol version that introduced the
+    /// reduced state lack the key and cannot be offered as state sync snapshots.
+    pub fn has_reduced_platform_state(
+        &self,
+        grove_version: &grovedb_version::version::GroveVersion,
+    ) -> Result<bool, Error> {
+        self.grove_db
+            .get_raw_optional(
+                (&crate::drive::system::misc_path()).into(),
+                crate::drive::platform_state::REDUCED_PLATFORM_STATE_KEY,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .map(|maybe_element| maybe_element.is_some())
+            .map_err(Error::from)
+    }
+
     /// Marks this checkpoint for deletion when it is dropped.
     pub fn mark_for_deletion(&self) {
         self.marked_for_deletion
