@@ -30,7 +30,10 @@ pub use tracked::{
     capabilities_for_roles, snapshot_from_json, snapshot_to_json, MasternodeCapabilities,
     PlatformKeySnapshot, RegistrationDetails, TrackedMasternode, TrackedMasternodeSnapshot,
 };
-pub use update_service::{execute_masternode_update_service, MasternodeUpdateServiceParams};
+pub use update_service::{
+    execute_masternode_update_service, prepare_masternode_update_service,
+    MasternodeUpdateServiceParams,
+};
 
 use crate::changeset::PlatformWalletPersistence;
 use crate::manager::PlatformWalletManager;
