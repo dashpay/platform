@@ -41,6 +41,22 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// `platform_account_index` selects which platform-payment account the
 /// recipient addresses belong to.
 ///
+/// ## `fee_strategy` / `fee_strategy_count` are IGNORED
+///
+/// Retained for ABI compatibility only; pass `NULL` / `0`. The fee
+/// strategy for this transition is derived inside `platform-wallet`
+/// (`remainder_fee_strategy`) from the recipient map itself.
+///
+/// `ReduceOutput(i)` is positional and consensus resolves `i` against
+/// the outputs `BTreeMap`'s LEXICOGRAPHIC key order
+/// (`PlatformAddress`'s derived `Ord`: P2PKH before P2SH, then hash
+/// bytes) — never the order entries appear in `addresses`. A caller
+/// holding a flat array cannot compute that index without
+/// reimplementing a consensus ordering rule, and every binding that
+/// tried silently mis-targeted the fee whenever the remainder was not
+/// also first lexicographically. So the index is no longer the
+/// caller's to supply.
+///
 /// # Safety
 /// - `signer_address_handle` must be a valid, non-destroyed
 ///   `*mut SignerHandle` produced by `dash_sdk_signer_create_with_ctx`.
@@ -58,8 +74,8 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
     platform_account_index: u32,
     addresses: *const FundingAddressEntryFFI,
     addresses_count: usize,
-    fee_strategy: *const FeeStrategyStepFFI,
-    fee_strategy_count: usize,
+    _fee_strategy: *const FeeStrategyStepFFI,
+    _fee_strategy_count: usize,
     signer_address_handle: *mut SignerHandle,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
@@ -77,8 +93,6 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
         Ok(m) => m,
         Err(e) => return e,
     };
-
-    let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
     // Round-trip both handles through `usize` so the spawned future's
     // capture is `Send + 'static` (raw pointers are `!Send`).
@@ -111,7 +125,6 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
                     },
                     platform_account_index,
                     address_map,
-                    fee,
                     address_signer,
                     &asset_lock_signer,
                     None,
@@ -137,6 +150,22 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
 /// but the address-funding ST never completed, and the user wants
 /// to consume the lock from the "Unused Asset Locks" picker.
 ///
+/// ## `fee_strategy` / `fee_strategy_count` are IGNORED
+///
+/// Retained for ABI compatibility only; pass `NULL` / `0`. The fee
+/// strategy for this transition is derived inside `platform-wallet`
+/// (`remainder_fee_strategy`) from the recipient map itself.
+///
+/// `ReduceOutput(i)` is positional and consensus resolves `i` against
+/// the outputs `BTreeMap`'s LEXICOGRAPHIC key order
+/// (`PlatformAddress`'s derived `Ord`: P2PKH before P2SH, then hash
+/// bytes) — never the order entries appear in `addresses`. A caller
+/// holding a flat array cannot compute that index without
+/// reimplementing a consensus ordering rule, and every binding that
+/// tried silently mis-targeted the fee whenever the remainder was not
+/// also first lexicographically. So the index is no longer the
+/// caller's to supply.
+///
 /// # Safety
 /// - `out_point` must be a valid, non-null pointer to an
 ///   `OutPointFFI` (32-byte raw txid + u32 vout). The caller retains
@@ -151,8 +180,8 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_sig
     platform_account_index: u32,
     addresses: *const FundingAddressEntryFFI,
     addresses_count: usize,
-    fee_strategy: *const FeeStrategyStepFFI,
-    fee_strategy_count: usize,
+    _fee_strategy: *const FeeStrategyStepFFI,
+    _fee_strategy_count: usize,
     signer_address_handle: *mut SignerHandle,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
@@ -171,8 +200,6 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_sig
         Ok(m) => m,
         Err(e) => return e,
     };
-
-    let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
     let out_point_ffi = *out_point;
     let resume_outpoint = dashcore::OutPoint {
@@ -206,7 +233,6 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_sig
                     },
                     platform_account_index,
                     address_map,
-                    fee,
                     address_signer,
                     &asset_lock_signer,
                     None,
@@ -286,13 +312,21 @@ pub(super) unsafe fn decode_funding_addresses(
 /// rejected before anything is broadcast, whereas here it is a valid
 /// (and irreversible) payment to a stranger.
 ///
-/// `fee_strategy` is positional over the outputs map's LEXICOGRAPHIC
-/// order (`PlatformAddress`'s derived `Ord`: P2PKH before P2SH, then
-/// hash bytes), NOT over the order entries appear in `addresses` —
-/// `decode_funding_addresses` collects into a `BTreeMap`. Callers must
-/// compute `ReduceOutput(index)` against that ordering; the Swift SDK
-/// does so by sorting its recipient array into the same canonical order
-/// before marshalling.
+/// ## `fee_strategy` / `fee_strategy_count` are IGNORED
+///
+/// Retained for ABI compatibility only; pass `NULL` / `0`. The fee
+/// strategy for this transition is derived inside `platform-wallet`
+/// (`remainder_fee_strategy`) from the recipient map itself.
+///
+/// `ReduceOutput(i)` is positional and consensus resolves `i` against
+/// the outputs `BTreeMap`'s LEXICOGRAPHIC key order
+/// (`PlatformAddress`'s derived `Ord`: P2PKH before P2SH, then hash
+/// bytes) — never the order entries appear in `addresses`. A caller
+/// holding a flat array cannot compute that index without
+/// reimplementing a consensus ordering rule, and every binding that
+/// tried silently mis-targeted the fee whenever the remainder was not
+/// also first lexicographically. So the index is no longer the
+/// caller's to supply.
 ///
 /// # Safety
 /// - `signer_address_handle` / `core_signer_handle` — see
@@ -307,8 +341,8 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
     platform_account_index: u32,
     addresses: *const FundingAddressEntryFFI,
     addresses_count: usize,
-    fee_strategy: *const FeeStrategyStepFFI,
-    fee_strategy_count: usize,
+    _fee_strategy: *const FeeStrategyStepFFI,
+    _fee_strategy_count: usize,
     signer_address_handle: *mut SignerHandle,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
@@ -324,8 +358,6 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
         Ok(m) => m,
         Err(e) => return e,
     };
-
-    let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
     let signer_addr = signer_address_handle as usize;
     let core_signer_addr = core_signer_handle as usize;
@@ -353,7 +385,6 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
                     },
                     platform_account_index,
                     address_map,
-                    fee,
                     address_signer,
                     &asset_lock_signer,
                     None,
@@ -395,6 +426,22 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
 /// what `PersistentAssetLock.recipientPlatformAddressHash` /
 /// `recipientIsExternal` exist for on the Swift side).
 ///
+/// ## `fee_strategy` / `fee_strategy_count` are IGNORED
+///
+/// Retained for ABI compatibility only; pass `NULL` / `0`. The fee
+/// strategy for this transition is derived inside `platform-wallet`
+/// (`remainder_fee_strategy`) from the recipient map itself.
+///
+/// `ReduceOutput(i)` is positional and consensus resolves `i` against
+/// the outputs `BTreeMap`'s LEXICOGRAPHIC key order
+/// (`PlatformAddress`'s derived `Ord`: P2PKH before P2SH, then hash
+/// bytes) — never the order entries appear in `addresses`. A caller
+/// holding a flat array cannot compute that index without
+/// reimplementing a consensus ordering rule, and every binding that
+/// tried silently mis-targeted the fee whenever the remainder was not
+/// also first lexicographically. So the index is no longer the
+/// caller's to supply.
+///
 /// # Safety
 /// - `out_point` must be a valid, non-null pointer to an `OutPointFFI`
 ///   (32-byte raw txid + u32 vout). The caller retains ownership.
@@ -408,8 +455,8 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_ext
     platform_account_index: u32,
     addresses: *const FundingAddressEntryFFI,
     addresses_count: usize,
-    fee_strategy: *const FeeStrategyStepFFI,
-    fee_strategy_count: usize,
+    _fee_strategy: *const FeeStrategyStepFFI,
+    _fee_strategy_count: usize,
     signer_address_handle: *mut SignerHandle,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_changeset: *mut PlatformAddressChangeSetFFI,
@@ -426,8 +473,6 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_ext
         Ok(m) => m,
         Err(e) => return e,
     };
-
-    let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
     let out_point_ffi = *out_point;
     let resume_outpoint = dashcore::OutPoint {
@@ -461,7 +506,6 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_ext
                     },
                     platform_account_index,
                     address_map,
-                    fee,
                     address_signer,
                     &asset_lock_signer,
                     None,
@@ -491,78 +535,47 @@ mod tests {
         }
     }
 
-    /// Pins the contract the SDKs' fee-strategy computation depends on:
-    /// `ReduceOutput(index)` is resolved by consensus against the
-    /// outputs `BTreeMap`'s key order, and `decode_funding_addresses`
-    /// builds that map. So when the caller hands us a canonically
-    /// sorted array (P2PKH before P2SH, then hash bytes ascending — the
-    /// derived `Ord` on `PlatformAddress`), array position and
-    /// consensus output index are the SAME number.
-    ///
-    /// The hazard this guards: a caller that computes the remainder
-    /// index from its own arbitrary array order silently re-targets the
-    /// fee onto a different output whenever the remainder is not first
-    /// lexicographically. With a third-party recipient in the set, that
-    /// means the payee's explicit amount pays the fee instead of the
-    /// sender's change.
+    /// `decode_funding_addresses` is a pure marshalling step: the array
+    /// becomes a set, and the caller's listing order carries no meaning
+    /// downstream. Pinned because it is what lets every binding hand us
+    /// recipients in whatever order it has them — the fee-paying
+    /// output's consensus index is derived in `platform-wallet` from
+    /// the resulting map, not from array position.
     #[test]
-    fn decoded_map_order_matches_canonically_sorted_input() {
-        // Alice (0x0A) is the remainder; Bob (0xBB) and Carol (0xCC)
-        // take explicit amounts. Alice sorts FIRST, so the remainder
-        // index is 0 even though a caller listing "payees first" would
-        // have naively computed 2.
-        let canonical = [
-            entry(0, 0x0A, None),
+    fn decoding_is_order_insensitive() {
+        let listed_payees_first = [
             entry(0, 0xBB, Some(500)),
             entry(0, 0xCC, Some(700)),
+            entry(0, 0x0A, None),
+        ];
+        let listed_remainder_first = [
+            entry(0, 0x0A, None),
+            entry(0, 0xCC, Some(700)),
+            entry(0, 0xBB, Some(500)),
         ];
 
-        let map = unsafe { decode_funding_addresses(canonical.as_ptr(), canonical.len()) }
-            .expect("valid entries decode");
+        let a = unsafe {
+            decode_funding_addresses(listed_payees_first.as_ptr(), listed_payees_first.len())
+        }
+        .expect("valid entries decode");
+        let b = unsafe {
+            decode_funding_addresses(
+                listed_remainder_first.as_ptr(),
+                listed_remainder_first.len(),
+            )
+        }
+        .expect("valid entries decode");
 
-        let decoded_order: Vec<PlatformAddress> = map.keys().copied().collect();
-        let input_order: Vec<PlatformAddress> = canonical
-            .iter()
-            .map(|e| PlatformAddress::try_from(e.address).expect("valid address"))
-            .collect();
+        assert_eq!(a, b, "the decoded map must not depend on array order");
         assert_eq!(
-            decoded_order, input_order,
-            "a canonically sorted input array must survive the BTreeMap round trip in order"
+            a.keys().copied().collect::<Vec<_>>(),
+            vec![
+                PlatformAddress::P2pkh([0x0A; 20]),
+                PlatformAddress::P2pkh([0xBB; 20]),
+                PlatformAddress::P2pkh([0xCC; 20]),
+            ],
+            "keys land in PlatformAddress's derived Ord regardless of input order"
         );
-
-        let remainder_index = canonical
-            .iter()
-            .position(|e| !e.has_balance)
-            .expect("exactly one remainder");
-        assert_eq!(remainder_index, 0);
-        assert_eq!(
-            map.get(&decoded_order[remainder_index]),
-            Some(&None),
-            "ReduceOutput(remainder_index) must land on the None (remainder) output"
-        );
-    }
-
-    /// The inverse arrangement: the remainder sorts LAST. Pins that the
-    /// index tracks lexicographic position rather than being pinned to
-    /// 0 or to the caller's listing order.
-    #[test]
-    fn remainder_index_tracks_lexicographic_position() {
-        let canonical = [
-            entry(0, 0x0A, Some(500)),
-            entry(0, 0xBB, Some(700)),
-            entry(0, 0xCC, None),
-        ];
-
-        let map = unsafe { decode_funding_addresses(canonical.as_ptr(), canonical.len()) }
-            .expect("valid entries decode");
-        let decoded_order: Vec<PlatformAddress> = map.keys().copied().collect();
-
-        let remainder_index = canonical
-            .iter()
-            .position(|e| !e.has_balance)
-            .expect("exactly one remainder");
-        assert_eq!(remainder_index, 2);
-        assert_eq!(map.get(&decoded_order[remainder_index]), Some(&None));
     }
 
     #[test]
@@ -570,6 +583,14 @@ mod tests {
         let entries = [entry(0, 0x0A, Some(500)), entry(0, 0x0A, None)];
         let err = unsafe { decode_funding_addresses(entries.as_ptr(), entries.len()) }
             .expect_err("duplicates must be rejected");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+    }
+
+    #[test]
+    fn rejects_unknown_address_type() {
+        let entries = [entry(9, 0x0A, None)];
+        let err = unsafe { decode_funding_addresses(entries.as_ptr(), entries.len()) }
+            .expect_err("an unknown address-type discriminant must be rejected");
         assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
     }
 }

@@ -34,6 +34,7 @@ use crate::{error::is_instant_lock_proof_invalid, PlatformAddressChangeSet, Plat
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dash_sdk::query_types::AddressInfos;
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
@@ -67,8 +68,12 @@ impl PlatformAddressWallet {
     ///   amount in credits. Exactly one entry must be `None` — the
     ///   remainder-after-fees-and-explicit-outputs recipient (the lock
     ///   is consumed in full, so a remainder bucket is mandatory).
-    /// * `fee_strategy` — Per-step fee-deduction strategy applied to
-    ///   the address-funding transition.
+    ///
+    ///   The fee strategy is NOT a parameter: it is derived from this
+    ///   map by [`remainder_fee_strategy`], because the only address
+    ///   that can legitimately absorb the fee is the remainder output
+    ///   and its consensus index is a property of this map's ordering,
+    ///   not of any caller's list order.
     /// * `address_signer` — Signs per-input `AddressWitness` for any
     ///   additional inputs from existing platform addresses (today
     ///   none — combining external inputs with an asset-lock proof is
@@ -140,7 +145,6 @@ impl PlatformAddressWallet {
         funding: AssetLockFunding,
         platform_account_index: u32,
         addresses: BTreeMap<PlatformAddress, Option<Credits>>,
-        fee_strategy: AddressFundsFeeStrategy,
         address_signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
@@ -153,7 +157,6 @@ impl PlatformAddressWallet {
             funding,
             platform_account_index,
             addresses,
-            fee_strategy,
             address_signer,
             asset_lock_signer,
             settings,
@@ -211,7 +214,6 @@ impl PlatformAddressWallet {
         funding: AssetLockFunding,
         platform_account_index: u32,
         addresses: BTreeMap<PlatformAddress, Option<Credits>>,
-        fee_strategy: AddressFundsFeeStrategy,
         address_signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
@@ -224,7 +226,6 @@ impl PlatformAddressWallet {
             funding,
             platform_account_index,
             addresses,
-            fee_strategy,
             address_signer,
             asset_lock_signer,
             settings,
@@ -255,7 +256,6 @@ impl PlatformAddressWallet {
         funding: AssetLockFunding,
         platform_account_index: u32,
         addresses: BTreeMap<PlatformAddress, Option<Credits>>,
-        fee_strategy: AddressFundsFeeStrategy,
         address_signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
@@ -268,6 +268,12 @@ impl PlatformAddressWallet {
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx.
         validate_recipient_addresses(self, platform_account_index, &addresses, ownership).await?;
+
+        // Step 1b: derive the fee strategy from the recipient map. This
+        // is deliberately NOT a caller-supplied value — see
+        // `remainder_fee_strategy` for why a positional index cannot be
+        // computed correctly outside this layer.
+        let fee_strategy = remainder_fee_strategy(&addresses)?;
 
         // Step 2: resolve funding. `AssetLockAddressTopUp` selects the
         // BIP44 funding family for the Core asset-lock tx. The
@@ -527,6 +533,75 @@ pub(super) enum RecipientOwnership {
     /// The single remainder (`None`) output must still be owned,
     /// because it is the change.
     ExternalExplicitOutputs,
+}
+
+/// Derive the fee strategy for an `AddressFundingFromAssetLock`
+/// transition from the recipient map itself.
+///
+/// ## Why this cannot be a caller-supplied value
+///
+/// `AddressFundsFeeStrategyStep::ReduceOutput(i)` is POSITIONAL, and
+/// consensus resolves `i` against the transition's `outputs`
+/// `BTreeMap<PlatformAddress, Option<Credits>>` — i.e. against
+/// `PlatformAddress`'s derived `Ord` (P2PKH before P2SH, then the
+/// 20-byte hash ascending). See
+/// `deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0`, which
+/// snapshots `outputs.keys()` before mutating, and
+/// `AddressFundingFromAssetLockTransitionActionV0::resolved_outputs`,
+/// which preserves those keys verbatim.
+///
+/// A caller holding a flat array therefore cannot name the fee-paying
+/// output without reproducing `PlatformAddress`'s `Ord` exactly. Every
+/// binding that tried to do so from array position (the Swift SDK, the
+/// JNI `decode_funding_recipients`) got it wrong whenever the remainder
+/// was not also first lexicographically — silently charging the fee to
+/// an explicit-amount payee instead of the sender's change. With a
+/// third-party payee in the set that is a real misallocation, not a
+/// wash. Deriving it here, from the same map that becomes the outputs
+/// map, is the only place the answer is knowable without duplicating a
+/// consensus rule.
+///
+/// ## Why the remainder is always the right target
+///
+/// This flow never builds address inputs (`top_up_with_signers` passes
+/// `BTreeMap::new()` for them), so `DeductFromInput(_)` has nothing to
+/// resolve against and would leave the fee uncovered. Among the
+/// outputs, the explicit-amount entries are exact amounts the caller
+/// asked to deliver; only the `None` entry is a residual bucket
+/// (`total_available - Σ explicit`), so it is the one output that can
+/// absorb a fee without shortchanging a payee.
+///
+/// The `None` entry is unique — [`validate_recipient_shape`] rejects
+/// any other cardinality — so the returned strategy is a single step.
+fn remainder_fee_strategy(
+    addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
+) -> Result<AddressFundsFeeStrategy, PlatformWalletError> {
+    let index = addresses
+        .values()
+        .position(|amount| amount.is_none())
+        .ok_or_else(|| {
+            // Unreachable in the orchestrated flow: `validate_recipient_shape`
+            // runs first and requires exactly one `None`. Kept as a typed
+            // error rather than an `expect` so a future caller that skips
+            // the pre-flight gets a diagnosable failure instead of a panic
+            // across the FFI boundary.
+            PlatformWalletError::AddressOperation(
+                "fund_from_asset_lock requires exactly one remainder (None-amount) recipient to                  absorb the fee, found none"
+                    .to_string(),
+            )
+        })?;
+
+    // `ReduceOutput` carries a u16. Guard the narrowing so a
+    // pathological recipient count cannot wrap the index onto a
+    // different — and possibly third-party — output.
+    let index: u16 = index.try_into().map_err(|_| {
+        PlatformWalletError::AddressOperation(format!(
+            "Too many funding recipients: remainder index {} exceeds u16::MAX",
+            index
+        ))
+    })?;
+
+    Ok(vec![AddressFundsFeeStrategyStep::ReduceOutput(index)])
 }
 
 /// Pre-flight check for the recipient address map:
@@ -914,25 +989,27 @@ mod tests {
         }
     }
 
-    /// The FFI marshals recipients into a flat array and names the
-    /// fee-paying output POSITIONALLY (`ReduceOutput(index)`), while
-    /// consensus resolves that index against the outputs map's
-    /// lexicographic key order (`PlatformAddress`'s derived `Ord`:
-    /// P2PKH before P2SH, then hash bytes). This test pins the ordering
-    /// the SDK callers rely on when they compute the remainder index:
-    /// sorting the recipients the same way the `BTreeMap` does makes
-    /// array position and consensus index the same number, INCLUDING
-    /// when the remainder is not the first recipient the caller listed.
+    /// The consensus contract this whole flow hangs on:
+    /// `ReduceOutput(i)` is resolved by consensus against the outputs
+    /// `BTreeMap`'s key order (`PlatformAddress`'s derived `Ord`), and
+    /// `remainder_fee_strategy` must name the `None` output's position
+    /// in exactly that order.
+    ///
+    /// Both arrangements are pinned, because the hazard is asymmetric:
+    /// a caller computing the index from its own array order happens to
+    /// be right whenever the remainder is also first lexicographically,
+    /// and silently wrong otherwise. The second case below is the one
+    /// that used to misfire — with a third-party payee in the set it
+    /// charges the fee to the payee's explicit amount instead of the
+    /// sender's change.
     #[test]
-    fn remainder_index_matches_btreemap_position() {
-        // Caller-supplied order: Bob (explicit) first, Alice's change
-        // second — and Alice's hash sorts BEFORE Bob's, so the naive
-        // "position in the caller's array" answer (1) is wrong and the
-        // lexicographic answer (0) is right.
+    fn remainder_fee_strategy_targets_the_remainder_output() {
         let alice = p2pkh(0x0A);
         let bob = p2pkh(0xBB);
         let carol = p2pkh(0xCC);
 
+        // Case 1: the remainder sorts FIRST. Caller-supplied insertion
+        // order deliberately lists it LAST.
         let mut addresses = BTreeMap::new();
         addresses.insert(bob, Some(500));
         addresses.insert(carol, Some(700));
@@ -945,30 +1022,80 @@ mod tests {
             "BTreeMap must order by PlatformAddress's derived Ord"
         );
 
-        let remainder_index = addresses
-            .iter()
-            .position(|(_, amount)| amount.is_none())
-            .expect("exactly one remainder");
-        assert_eq!(
-            remainder_index, 0,
-            "the remainder index is its lexicographic position, not its position in the \
-             caller's list"
-        );
-        assert_eq!(keys[remainder_index], alice);
+        let strategy = remainder_fee_strategy(&addresses).expect("one remainder");
+        assert_eq!(strategy, vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]);
 
-        // And the inverse hazard: a remainder that is LAST
-        // lexicographically but first in the caller's list.
+        // Case 2: the remainder sorts LAST while the caller listed it
+        // FIRST — the arrangement a naive array-position index gets
+        // wrong (it would answer 0 and charge the fee to Alice's payee
+        // output).
         let mut addresses = BTreeMap::new();
         addresses.insert(carol, None);
         addresses.insert(alice, Some(500));
         addresses.insert(bob, Some(700));
+
+        let strategy = remainder_fee_strategy(&addresses).expect("one remainder");
+        assert_eq!(strategy, vec![AddressFundsFeeStrategyStep::ReduceOutput(2)]);
+
+        // Resolve the emitted index the way consensus does and confirm
+        // it lands on the `None` bucket, not on a payee.
         let keys: Vec<PlatformAddress> = addresses.keys().copied().collect();
-        let remainder_index = addresses
-            .iter()
-            .position(|(_, amount)| amount.is_none())
-            .expect("exactly one remainder");
-        assert_eq!(remainder_index, 2);
-        assert_eq!(keys[remainder_index], carol);
+        let AddressFundsFeeStrategyStep::ReduceOutput(index) = strategy[0] else {
+            panic!("expected a ReduceOutput step");
+        };
+        assert_eq!(keys[index as usize], carol);
+        assert_eq!(addresses[&keys[index as usize]], None);
+    }
+
+    /// The remainder sitting in the MIDDLE of the lexicographic order —
+    /// an index that is neither 0 nor `len - 1`, so it cannot be
+    /// produced by an off-by-one or a "first"/"last" shortcut.
+    #[test]
+    fn remainder_fee_strategy_handles_a_middle_remainder() {
+        let mut addresses = BTreeMap::new();
+        addresses.insert(p2pkh(0xCC), Some(700));
+        addresses.insert(p2pkh(0x0A), Some(500));
+        addresses.insert(p2pkh(0xBB), None);
+        addresses.insert(p2pkh(0xDD), Some(900));
+
+        let strategy = remainder_fee_strategy(&addresses).expect("one remainder");
+        assert_eq!(strategy, vec![AddressFundsFeeStrategyStep::ReduceOutput(1)]);
+
+        let keys: Vec<PlatformAddress> = addresses.keys().copied().collect();
+        assert_eq!(addresses[&keys[1]], None);
+    }
+
+    /// P2SH sorts after every P2PKH (variant discriminant first), which
+    /// is part of the ordering contract even though the pre-flight
+    /// rejects P2SH recipients today. Pinned directly on the ordering
+    /// helper so the rule survives any future relaxation of the
+    /// address-type restriction.
+    #[test]
+    fn remainder_fee_strategy_orders_p2pkh_before_p2sh() {
+        let mut addresses = BTreeMap::new();
+        addresses.insert(PlatformAddress::P2sh([0x01; 20]), Some(500));
+        addresses.insert(p2pkh(0xFF), None);
+
+        let keys: Vec<PlatformAddress> = addresses.keys().copied().collect();
+        assert_eq!(keys, vec![p2pkh(0xFF), PlatformAddress::P2sh([0x01; 20])]);
+
+        let strategy = remainder_fee_strategy(&addresses).expect("one remainder");
+        assert_eq!(strategy, vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]);
+    }
+
+    /// No remainder at all is a typed error, never a panic and never a
+    /// silent `ReduceOutput(0)` aimed at whichever payee sorts first.
+    #[test]
+    fn remainder_fee_strategy_rejects_a_map_with_no_remainder() {
+        let mut addresses = BTreeMap::new();
+        addresses.insert(p2pkh(0x0A), Some(500));
+        addresses.insert(p2pkh(0xBB), Some(700));
+
+        let err = remainder_fee_strategy(&addresses).expect_err("no remainder must be rejected");
+        assert!(
+            format!("{err}").contains("exactly one remainder"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

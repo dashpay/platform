@@ -711,25 +711,25 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
         return try await Task.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
-            let (ffiAddresses, feeRows) = Self.marshalFundingRequest(recipientRows)
+            let ffiAddresses = Self.marshalRecipients(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             let result = withExtendedLifetime((signer, coreSigner)) {
                 ffiAddresses.withUnsafeBufferPointer { addrBp in
-                    feeRows.withUnsafeBufferPointer { feeBp in
-                        platform_address_wallet_fund_from_asset_lock_signer(
-                            handle,
-                            amountDuffs,
-                            fundingAccountIndex,
-                            platformAccountIndex,
-                            addrBp.baseAddress,
-                            UInt(addrBp.count),
-                            feeBp.baseAddress,
-                            UInt(feeBp.count),
-                            signerHandle,
-                            coreSigner.handle,
-                            &changeset
-                        )
-                    }
+                    platform_address_wallet_fund_from_asset_lock_signer(
+                        handle,
+                        amountDuffs,
+                        fundingAccountIndex,
+                        platformAccountIndex,
+                        addrBp.baseAddress,
+                        UInt(addrBp.count),
+                        // Fee strategy is derived Rust-side from the
+                        // recipient map; these parameters are ignored.
+                        nil,
+                        0,
+                        signerHandle,
+                        coreSigner.handle,
+                        &changeset
+                    )
                 }
             }
             try result.check()
@@ -783,24 +783,24 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                 txid: Self.txidTuple(from: outPointTxid),
                 vout: outPointVout
             )
-            let (ffiAddresses, feeRows) = Self.marshalFundingRequest(recipientRows)
+            let ffiAddresses = Self.marshalRecipients(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             let result = withExtendedLifetime((signer, coreSigner)) {
                 ffiAddresses.withUnsafeBufferPointer { addrBp in
-                    feeRows.withUnsafeBufferPointer { feeBp in
-                        platform_address_wallet_resume_fund_from_asset_lock_signer(
-                            handle,
-                            &outPoint,
-                            platformAccountIndex,
-                            addrBp.baseAddress,
-                            UInt(addrBp.count),
-                            feeBp.baseAddress,
-                            UInt(feeBp.count),
-                            signerHandle,
-                            coreSigner.handle,
-                            &changeset
-                        )
-                    }
+                    platform_address_wallet_resume_fund_from_asset_lock_signer(
+                        handle,
+                        &outPoint,
+                        platformAccountIndex,
+                        addrBp.baseAddress,
+                        UInt(addrBp.count),
+                        // Fee strategy is derived Rust-side from the
+                        // recipient map; these parameters are ignored.
+                        nil,
+                        0,
+                        signerHandle,
+                        coreSigner.handle,
+                        &changeset
+                    )
                 }
             }
             try result.check()
@@ -867,25 +867,25 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
         return try await Task.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
-            let (ffiAddresses, feeRows) = Self.marshalFundingRequest(recipientRows)
+            let ffiAddresses = Self.marshalRecipients(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             let result = withExtendedLifetime((signer, coreSigner)) {
                 ffiAddresses.withUnsafeBufferPointer { addrBp in
-                    feeRows.withUnsafeBufferPointer { feeBp in
-                        platform_address_wallet_fund_from_asset_lock_external_signer(
-                            handle,
-                            amountDuffs,
-                            fundingAccountIndex,
-                            platformAccountIndex,
-                            addrBp.baseAddress,
-                            UInt(addrBp.count),
-                            feeBp.baseAddress,
-                            UInt(feeBp.count),
-                            signerHandle,
-                            coreSigner.handle,
-                            &changeset
-                        )
-                    }
+                    platform_address_wallet_fund_from_asset_lock_external_signer(
+                        handle,
+                        amountDuffs,
+                        fundingAccountIndex,
+                        platformAccountIndex,
+                        addrBp.baseAddress,
+                        UInt(addrBp.count),
+                        // Fee strategy is derived Rust-side from the
+                        // recipient map; these parameters are ignored.
+                        nil,
+                        0,
+                        signerHandle,
+                        coreSigner.handle,
+                        &changeset
+                    )
                 }
             }
             try result.check()
@@ -941,24 +941,24 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                 txid: Self.txidTuple(from: outPointTxid),
                 vout: outPointVout
             )
-            let (ffiAddresses, feeRows) = Self.marshalFundingRequest(recipientRows)
+            let ffiAddresses = Self.marshalRecipients(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             let result = withExtendedLifetime((signer, coreSigner)) {
                 ffiAddresses.withUnsafeBufferPointer { addrBp in
-                    feeRows.withUnsafeBufferPointer { feeBp in
-                        platform_address_wallet_resume_fund_from_asset_lock_external_signer(
-                            handle,
-                            &outPoint,
-                            platformAccountIndex,
-                            addrBp.baseAddress,
-                            UInt(addrBp.count),
-                            feeBp.baseAddress,
-                            UInt(feeBp.count),
-                            signerHandle,
-                            coreSigner.handle,
-                            &changeset
-                        )
-                    }
+                    platform_address_wallet_resume_fund_from_asset_lock_external_signer(
+                        handle,
+                        &outPoint,
+                        platformAccountIndex,
+                        addrBp.baseAddress,
+                        UInt(addrBp.count),
+                        // Fee strategy is derived Rust-side from the
+                        // recipient map; these parameters are ignored.
+                        nil,
+                        0,
+                        signerHandle,
+                        coreSigner.handle,
+                        &changeset
+                    )
                 }
             }
             try result.check()
@@ -968,59 +968,25 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         }.value
     }
 
-    /// Recipients in the order the Rust side will see them.
+    /// Marshal recipients into the FFI address array.
     ///
-    /// `decode_funding_addresses` collects the FFI array into a
-    /// `BTreeMap<PlatformAddress, Option<Credits>>`, and consensus
-    /// resolves `ReduceOutput(index)` positionally against THAT map's key
-    /// order — never against the order the caller happened to list its
-    /// recipients in. `PlatformAddress`'s derived `Ord` orders by variant
-    /// first (P2PKH before P2SH) and then by the 20-byte hash, so
-    /// reproducing it here is a two-key sort.
+    /// Pure marshalling: one `FundingAddressEntryFFI` per recipient, in
+    /// whatever order the caller supplied. The Rust side collects them
+    /// into a `BTreeMap<PlatformAddress, Option<Credits>>`, so the
+    /// caller's ordering carries no meaning — it is a set.
     ///
-    /// Sorting before marshalling makes array position and consensus
-    /// output index the same number, which is what lets
-    /// [`remainderStepIndex`] name the remainder output correctly. The
-    /// recipient SET is unaffected — a `BTreeMap` does not care what
-    /// order it was filled in.
-    static func canonicallyOrderedRecipients(
+    /// In particular, Swift does NOT compute the fee strategy. The
+    /// `ReduceOutput(index)` step that names the fee-paying output is
+    /// positional against that map's lexicographic key order, which is
+    /// a consensus rule
+    /// (`deduct_fee_from_outputs_or_remaining_balance_of_inputs`); it is
+    /// derived in `platform-wallet` (`remainder_fee_strategy`) so that
+    /// every binding gets the same answer without reimplementing
+    /// `PlatformAddress`'s `Ord`.
+    static func marshalRecipients(
         _ recipients: [FundFromAssetLockRecipient]
-    ) -> [FundFromAssetLockRecipient] {
-        recipients.sorted { lhs, rhs in
-            if lhs.addressType != rhs.addressType {
-                return lhs.addressType < rhs.addressType
-            }
-            return lhs.hash.lexicographicallyPrecedes(rhs.hash)
-        }
-    }
-
-    /// Position of the remainder (`credits == nil`) recipient within a
-    /// [`canonicallyOrderedRecipients`] list — i.e. the index consensus
-    /// will resolve `ReduceOutput` against.
-    ///
-    /// Callers never supply this index themselves. A positional index
-    /// over a lexicographically-ordered map is a live hazard: adding one
-    /// recipient can shift which output pays the fee, and with a
-    /// third-party payee in the set that means the payee's explicit
-    /// amount silently absorbs the fee instead of the sender's change.
-    /// Computing it here from the canonical order is what prevents that.
-    static func remainderStepIndex(
-        in ordered: [FundFromAssetLockRecipient]
-    ) -> UInt16 {
-        UInt16(ordered.firstIndex(where: { $0.credits == nil }) ?? 0)
-    }
-
-    /// Marshal recipients into the FFI address array plus the matching
-    /// fee strategy.
-    ///
-    /// The fee comes out of the remainder output: the `nil`-credits
-    /// recipient is structurally the "change" output — it absorbs
-    /// whatever is left after the explicit outputs and fees.
-    static func marshalFundingRequest(
-        _ recipients: [FundFromAssetLockRecipient]
-    ) -> (addresses: [FundingAddressEntryFFI], feeStrategy: [FeeStrategyStepFFI]) {
-        let ordered = canonicallyOrderedRecipients(recipients)
-        let addresses = ordered.map { r -> FundingAddressEntryFFI in
+    ) -> [FundingAddressEntryFFI] {
+        recipients.map { r -> FundingAddressEntryFFI in
             FundingAddressEntryFFI(
                 address: PlatformAddressFFI(
                     address_type: r.addressType,
@@ -1030,10 +996,6 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                 balance: r.credits ?? 0
             )
         }
-        let feeStrategy = [
-            FeeStrategyStepFFI(step_type: 1, index: remainderStepIndex(in: ordered))  // 1 = ReduceOutput
-        ]
-        return (addresses, feeStrategy)
     }
 
     /// Copy a 32-byte txid `Data` into the C tuple `OutPointFFI` wants.

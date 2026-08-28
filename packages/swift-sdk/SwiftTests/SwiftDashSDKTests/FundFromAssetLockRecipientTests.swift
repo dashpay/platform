@@ -2,24 +2,20 @@ import XCTest
 
 @testable import SwiftDashSDK
 
-/// Pins the two host-side decisions in the asset-lock funding surface:
-/// which recipient pays the fee, and which recipient lists are legal.
+/// Pins the two host-side responsibilities left in the asset-lock
+/// funding surface: marshalling recipients faithfully, and rejecting
+/// recipient lists Swift can check synchronously.
 ///
-/// The fee-strategy step (`ReduceOutput(index)`) is POSITIONAL, and
-/// consensus resolves that position against the transition's outputs
-/// map — a Rust `BTreeMap<PlatformAddress, Option<Credits>>` keyed by
-/// `PlatformAddress`'s derived `Ord` (P2PKH before P2SH, then hash
-/// bytes ascending). The caller's array order has no bearing on it.
-/// `ManagedPlatformAddressWallet` therefore sorts recipients into that
-/// canonical order before marshalling, so array position and consensus
-/// output index are the same number.
-///
-/// The hazard being guarded: computing the index from an arbitrary
-/// caller-supplied order silently re-targets the fee whenever the
-/// remainder is not first lexicographically. With a third-party payee
-/// in the set — the whole point of `fundFromAssetLockExternal` — that
-/// means the payee's explicit amount absorbs the fee instead of the
-/// sender's change.
+/// What is deliberately NOT here any more: canonical ordering and the
+/// `ReduceOutput(index)` fee step. That index is positional against the
+/// transition's outputs `BTreeMap` — a consensus ordering rule
+/// (`PlatformAddress`'s derived `Ord`) — so it is derived in
+/// `platform-wallet` (`remainder_fee_strategy`), where the map is
+/// actually built. Every binding that computed it from array position
+/// mis-targeted the fee whenever the remainder was not also first
+/// lexicographically; see the Rust tests
+/// `remainder_fee_strategy_targets_the_remainder_output` and
+/// `remainder_fee_strategy_handles_a_middle_remainder`.
 final class FundFromAssetLockRecipientTests: XCTestCase {
     private typealias Recipient = ManagedPlatformAddressWallet.FundFromAssetLockRecipient
 
@@ -31,71 +27,42 @@ final class FundFromAssetLockRecipientTests: XCTestCase {
         )
     }
 
-    // MARK: - Canonical ordering / fee targeting
+    // MARK: - Marshalling
 
-    func testRemainderIndexIsLexicographicNotCallerOrder() {
-        // Caller lists payees first; Alice's change sorts FIRST.
+    /// Marshalling is order-preserving and lossless: one FFI row per
+    /// recipient, in the caller's order, with `has_balance` carrying the
+    /// remainder discriminator. The Rust side turns this into a set, so
+    /// the order is not load-bearing — but silently dropping, reordering
+    /// or re-tagging a row would be.
+    func testMarshalPreservesRecipientsOneForOne() {
         let alice = recipient(0x0A, credits: nil)
         let bob = recipient(0xBB, credits: 500)
         let carol = recipient(0xCC, credits: 700)
 
-        let ordered = ManagedPlatformAddressWallet.canonicallyOrderedRecipients([bob, carol, alice])
-        XCTAssertEqual(ordered.map(\.hash), [alice.hash, bob.hash, carol.hash])
+        let rows = ManagedPlatformAddressWallet.marshalRecipients([bob, carol, alice])
 
-        let index = ManagedPlatformAddressWallet.remainderStepIndex(in: ordered)
-        XCTAssertEqual(
-            index, 0,
-            "the remainder's lexicographic position is 0, even though the caller listed it last"
-        )
-        XCTAssertNil(ordered[Int(index)].credits)
-    }
-
-    func testRemainderIndexWhenRemainderSortsLast() {
-        // The inverse arrangement: caller lists the remainder first, but
-        // it sorts last. A naive "position in the caller's array" answer
-        // would be 0 and would charge the fee to Alice's payee output.
-        let alice = recipient(0x0A, credits: 500)
-        let bob = recipient(0xBB, credits: 700)
-        let carol = recipient(0xCC, credits: nil)
-
-        let ordered = ManagedPlatformAddressWallet.canonicallyOrderedRecipients([carol, alice, bob])
-        let index = ManagedPlatformAddressWallet.remainderStepIndex(in: ordered)
-        XCTAssertEqual(index, 2)
-        XCTAssertNil(ordered[Int(index)].credits)
-    }
-
-    func testMarshalledFeeStrategyTargetsTheRemainderOutput() {
-        let alice = recipient(0x0A, credits: nil)
-        let bob = recipient(0xBB, credits: 500)
-        let carol = recipient(0xCC, credits: 700)
-
-        let request = ManagedPlatformAddressWallet.marshalFundingRequest([bob, carol, alice])
-
-        XCTAssertEqual(request.feeStrategy.count, 1)
-        XCTAssertEqual(request.feeStrategy[0].step_type, 1, "1 = ReduceOutput")
-
-        let index = Int(request.feeStrategy[0].index)
-        XCTAssertFalse(
-            request.addresses[index].has_balance,
-            "ReduceOutput must name the remainder output, not an explicit-amount payee"
-        )
-        // And the marshalled array is in the canonical order the Rust
-        // BTreeMap will reproduce, which is what makes the index valid.
-        let hashes = request.addresses.map { entry in
-            withUnsafeBytes(of: entry.address.hash) { Data($0) }
+        XCTAssertEqual(rows.count, 3)
+        let hashes = rows.map { row in
+            withUnsafeBytes(of: row.address.hash) { Data($0) }
         }
-        XCTAssertEqual(hashes, [alice.hash, bob.hash, carol.hash])
+        XCTAssertEqual(hashes, [bob.hash, carol.hash, alice.hash])
+        XCTAssertEqual(rows.map(\.has_balance), [true, true, false])
+        XCTAssertEqual(rows.map(\.balance), [500, 700, 0])
+        XCTAssertEqual(rows.map(\.address.address_type), [0, 0, 0])
     }
 
-    func testCanonicalOrderPutsP2PKHBeforeP2SH() {
-        // `PlatformAddress` is a Rust enum: the variant discriminant
-        // orders before the payload. (P2SH is rejected downstream, but
-        // the ordering rule is part of the contract being mirrored.)
-        let p2sh = recipient(0x01, credits: 500, type: 1)
-        let p2pkh = recipient(0xFF, credits: nil, type: 0)
-
-        let ordered = ManagedPlatformAddressWallet.canonicallyOrderedRecipients([p2sh, p2pkh])
-        XCTAssertEqual(ordered.map(\.addressType), [0, 1])
+    /// No fee-strategy derivation survives in Swift. Guards against the
+    /// helper being reintroduced by a future change that "needs the
+    /// index right here" — the index belongs to `platform-wallet`.
+    func testMarshalDoesNotProduceAFeeStrategy() {
+        let rows = ManagedPlatformAddressWallet.marshalRecipients([
+            recipient(0xCC, credits: 700),
+            recipient(0x0A, credits: nil),
+        ])
+        // The marshaller's entire output is the address array; the
+        // remainder is identified by `has_balance == false`, never by a
+        // positional index computed on this side of the boundary.
+        XCTAssertEqual(rows.filter { !$0.has_balance }.count, 1)
     }
 
     // MARK: - Preflight
