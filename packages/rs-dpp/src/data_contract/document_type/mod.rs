@@ -117,6 +117,14 @@ pub(crate) mod property_names {
     /// to be set (parallels the count/sum-individually rules: range
     /// axes require the corresponding base flag).
     pub const RANGE_AVERAGEABLE: &str = "rangeAverageable";
+    /// Doctype-level flag declaring an **indexOnly** document type: documents
+    /// are never written to primary storage — the index entries are the rows,
+    /// each terminating in an `Item` keyed by the index's `terminal` property
+    /// instead of a `Reference` keyed by the document id. Only what is in the
+    /// indexes exists and is recoverable. Meta-schema v3+ (protocol version
+    /// 14). See `apply_index_only` in `try_from_schema::common` for the
+    /// structural constraints the flag imposes.
+    pub const INDEX_ONLY: &str = "indexOnly";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

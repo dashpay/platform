@@ -88,6 +88,9 @@ impl DocumentTypeV1 {
             token_configurations,
             data_contact_config,
             full_validation,
+            // indexOnly is a generation-3 doctype keyword; below generation 3
+            // no document type can be index-only.
+            false,
             validation_operations,
             &common::ParserGeneration {
                 document_type_schema_version,
@@ -104,6 +107,8 @@ impl DocumentTypeV1 {
                 ranked_index_structure_check: common::no_ranked_index_structure_check,
                 // TIME RANGE: also a generation-3 keyword; not in this grammar.
                 admit_time_range: false,
+                // INDEX ONLY: also a generation-3 keyword; not in this grammar.
+                admit_index_terminal: false,
             },
             platform_version,
         )

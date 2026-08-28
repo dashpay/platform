@@ -27,7 +27,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::identifier::Identifier;
@@ -83,6 +83,17 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        // indexOnly documents have no primary row to fetch by id — they are
+        // deleted from their property values through
+        // `delete_index_only_document_for_contract_operations`.
+        if document_type.index_only() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "indexOnly documents cannot be deleted by id: there is no primary-storage \
+                 row; use delete_index_only_document_for_contract_operations with the \
+                 document's values",
+            )));
+        }
 
         if document_type.documents_keep_history() {
             return Err(Error::Drive(
