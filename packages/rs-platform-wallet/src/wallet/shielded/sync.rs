@@ -840,6 +840,18 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
 /// a note a from-zero scan would have found. Deliberately in-memory only (no
 /// persistence): a fresh process re-pays one full scan, which keeps this a
 /// pure work bound with no stored state to invalidate.
+///
+/// Memory is bounded on BOTH axes (#4313 review finding d6b7be21f4a4). The
+/// cache holds at most [`FOREIGN_SCAN_CHECKPOINT_CAP`] entries, and each
+/// entry retains at most [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] notes —
+/// [`ForeignScanCheckpointCache::save`] refuses an over-budget checkpoint
+/// outright rather than truncating it (a truncated note set with an intact
+/// `resume_position` would claim coverage it doesn't have and make a resumed
+/// scan MISS notes; no checkpoint at all merely costs a rescan). The notes
+/// ride an `Arc<[ShieldedNote]>` so [`ForeignScanCheckpointCache::load`]
+/// hands back a shared handle instead of deep-copying the vector — the old
+/// `Vec` clone transiently doubled an entry's memory while the cached
+/// original stayed live.
 #[derive(Clone)]
 struct ForeignScanCheckpoint {
     /// First tree position the next scan must cover; every position strictly
@@ -849,7 +861,9 @@ struct ForeignScanCheckpoint {
     /// Notes that decrypted under the key at positions strictly below
     /// `resume_position`. Positions at/above it are re-derived on resume, so
     /// buffer-chunk notes are never carried here (no duplicates on rescan).
-    notes: Vec<ShieldedNote>,
+    /// Shared (never mutated in place): `load` clones the handle, not the
+    /// notes.
+    notes: Arc<[ShieldedNote]>,
 }
 
 /// Bounded, most-recently-used-last checkpoint list keyed by
@@ -884,15 +898,34 @@ pub struct ForeignScanCheckpointCache {
 
 /// At most this many foreign keys keep a checkpoint. One claim flow touches
 /// one key, so this covers concurrent/retried claims while capping what
-/// hostile key churn can pin in memory (a one-time key funds 1–2 notes, so
-/// each entry is small; churn also cannot force rescans of OTHER keys — an
-/// evicted key merely re-pays its own full scan).
+/// hostile key churn can pin in memory (churn also cannot force rescans of
+/// OTHER keys — an evicted key merely re-pays its own full scan).
 const FOREIGN_SCAN_CHECKPOINT_CAP: usize = 8;
+
+/// At most this many notes retained per checkpoint (#4313 review finding
+/// d6b7be21f4a4). A WELL-FORMED one-time invitation key funds 1–2 notes, but
+/// nothing enforces that on chain: the invitation's Orchard address is
+/// published to the invitee, so an untrusted inviter can fund it with
+/// arbitrarily many small notes, and without this bound every one of them —
+/// each ~200 bytes of decrypted, serialized note — would be retained across
+/// budgeted retries. 16 gives legitimate multi-note funding an order of
+/// magnitude of headroom while capping the whole cache at
+/// [`FOREIGN_SCAN_CHECKPOINT_CAP`] × 16 notes (a few tens of KB).
+///
+/// Exceeding it drops the CHECKPOINT, never notes from it — see
+/// [`ForeignScanCheckpointCache::save`]. Correctness never depends on a
+/// checkpoint existing: the next attempt rescans from the last retained
+/// (bounded) position, or from zero, and merely re-pays work that the
+/// per-attempt [`FOREIGN_SCAN_BATCH_BUDGET`] keeps bounded.
+const FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET: usize = 16;
 
 impl ForeignScanCheckpointCache {
     /// Clone the checkpoint for `key`, if present, marking it most recently
     /// used. The entry stays in the cache — see the type-level concurrency
-    /// note.
+    /// note — and the clone is CHEAP: the notes are an `Arc<[ShieldedNote]>`,
+    /// so the caller shares the cached allocation instead of deep-copying it
+    /// (the old `Vec` clone transiently doubled the entry's memory, #4313
+    /// review finding d6b7be21f4a4).
     fn load(&self, key: &[u8; 32]) -> Option<ForeignScanCheckpoint> {
         let mut map = self
             .entries
@@ -911,7 +944,22 @@ impl ForeignScanCheckpointCache {
     /// [`FOREIGN_SCAN_CHECKPOINT_CAP`]. Monotonic: an existing entry is only
     /// replaced by one whose `resume_position` is at least as far along, so
     /// no writer can rewind another's progress.
+    ///
+    /// Bounded: a checkpoint retaining more than
+    /// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] notes is REFUSED — dropped
+    /// whole, never truncated, because a truncated note set under an intact
+    /// `resume_position` would claim coverage it doesn't have and make a
+    /// resumed scan MISS the dropped notes (an under-reported value could
+    /// then fail a genuinely funded claim). Any existing entry for the key
+    /// is left in place: it passed this same bound when it was stored, so
+    /// memory stays bounded and later attempts still resume from the last
+    /// bounded position instead of from zero. See
+    /// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] for the threat model (#4313
+    /// review finding d6b7be21f4a4).
     fn save(&self, key: [u8; 32], checkpoint: ForeignScanCheckpoint) {
+        if checkpoint.notes.len() > FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET {
+            return;
+        }
         let mut map = self
             .entries
             .lock()
@@ -945,17 +993,29 @@ fn foreign_scan_checkpoint_key(fvk: &grovedb_commitment_tree::FullViewingKey) ->
 /// `scanned_through`: only notes on immutable, fully-consumed chunks
 /// (position strictly below the resume point) are carried — notes inside the
 /// mutable buffer chunk are re-derived on the next pass.
+///
+/// `carried` is the note slice inherited from the loaded checkpoint (every
+/// position strictly below the pass's aligned start, hence below
+/// `scanned_through`); `new_found` is what THIS pass decrypted. When the pass
+/// found nothing on an immutable chunk the carried `Arc` is reused as-is —
+/// no allocation, and the cache keeps sharing the same slice the scan read.
 fn foreign_scan_checkpoint_below(
     scanned_through: u64,
-    found: &[ShieldedNote],
+    carried: &Arc<[ShieldedNote]>,
+    new_found: &[ShieldedNote],
 ) -> ForeignScanCheckpoint {
+    let mut new_below = new_found
+        .iter()
+        .filter(|n| n.position < scanned_through)
+        .peekable();
+    let notes: Arc<[ShieldedNote]> = if new_below.peek().is_none() {
+        Arc::clone(carried)
+    } else {
+        carried.iter().chain(new_below).cloned().collect()
+    };
     ForeignScanCheckpoint {
         resume_position: scanned_through,
-        notes: found
-            .iter()
-            .filter(|n| n.position < scanned_through)
-            .cloned()
-            .collect(),
+        notes,
     }
 }
 
@@ -999,6 +1059,13 @@ fn foreign_scan_checkpoint_below(
 /// scanning on — hosts render it as "still searching, retry", never as an
 /// invalid or unfunded invitation.
 ///
+/// Retained MEMORY is bounded independently of the work bound
+/// ([`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`], #4313 review finding
+/// d6b7be21f4a4): an inviter who floods the published invitation address
+/// with many small notes cannot pin them all in the checkpoint — an
+/// over-budget checkpoint is dropped whole, and the claim degrades to a
+/// (budgeted) rescan rather than a wrong result.
+///
 /// [`ShieldedChunkBatch`]: dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch
 pub(crate) async fn scan_notes_for_foreign_key(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -1010,26 +1077,36 @@ pub(crate) async fn scan_notes_for_foreign_key(
     use grovedb_commitment_tree::PreparedIncomingViewingKey;
 
     let checkpoint_key = foreign_scan_checkpoint_key(fvk);
-    let (mut found, resume_position) = match checkpoints.load(&checkpoint_key) {
+    let (carried, resume_position) = match checkpoints.load(&checkpoint_key) {
         Some(cp) => (cp.notes, cp.resume_position),
-        None => (Vec::new(), 0),
+        None => (Arc::from(Vec::new()), 0),
     };
 
     // The stream start must sit on an on-chain MMR chunk boundary; align DOWN
     // so a resume can only over-scan, never skip. Checkpointed notes at/above
     // the aligned start would be re-found by the rescan below — drop them so
     // they cannot duplicate (defensive: persisted resume positions are already
-    // chunk-aligned and their notes strictly below).
+    // chunk-aligned and their notes strictly below, so the filtered copy is
+    // only ever materialized on that impossible path; the ordinary path keeps
+    // sharing the cache's own allocation).
     let aligned_start = (resume_position / CHUNK_SIZE) * CHUNK_SIZE;
-    found.retain(|n| n.position < aligned_start);
-    let total: u64 = found
+    let carried: Arc<[ShieldedNote]> = if carried.iter().any(|n| n.position >= aligned_start) {
+        carried
+            .iter()
+            .filter(|n| n.position < aligned_start)
+            .cloned()
+            .collect()
+    } else {
+        carried
+    };
+    let total: u64 = carried
         .iter()
         .fold(0u64, |acc, n| acc.saturating_add(n.value));
 
     if aligned_start > 0 {
         debug!(
             aligned_start,
-            checkpointed_notes = found.len(),
+            checkpointed_notes = carried.len(),
             checkpointed_value = total,
             "Foreign-key scan resuming from coordinator-owned checkpoint"
         );
@@ -1040,12 +1117,12 @@ pub(crate) async fn scan_notes_for_foreign_key(
     // (append-only tree) and spent-ness is not decided here — the caller's
     // selection/preflight re-verifies nullifier status against the chain,
     // exactly as it does for freshly scanned notes.
-    if total >= stop_at_value && !found.is_empty() {
+    if total >= stop_at_value && !carried.is_empty() {
         checkpoints.save(
             checkpoint_key,
-            foreign_scan_checkpoint_below(aligned_start, &found),
+            foreign_scan_checkpoint_below(aligned_start, &carried, &[]),
         );
-        return Ok(found);
+        return Ok(carried.to_vec());
     }
 
     let prepared = PreparedIncomingViewingKey::new(ivk);
@@ -1057,7 +1134,7 @@ pub(crate) async fn scan_notes_for_foreign_key(
         fvk,
         stop_at_value,
         aligned_start,
-        found,
+        carried,
         total,
         FOREIGN_SCAN_BATCH_BUDGET,
     )
@@ -1077,6 +1154,14 @@ pub(crate) async fn scan_notes_for_foreign_key(
 /// (buffer) batch is end-of-stream, so it never trips the budget — an
 /// exhausted-tree scan returns `Ok` with whatever was found, exactly as
 /// before.
+///
+/// `carried` is the (shared, read-only) note slice from the loaded
+/// checkpoint; this pass's own finds accumulate in a separate vector and the
+/// two are only combined when a checkpoint is saved or the scan completes.
+/// Every save is subject to the retained-note budget — see
+/// [`ForeignScanCheckpointCache::save`]: a refused save costs the next
+/// attempt a rescan from the previous (bounded) checkpoint, never
+/// correctness.
 #[allow(clippy::too_many_arguments)]
 async fn scan_foreign_stream_with_budget<St, E>(
     stream: St,
@@ -1085,7 +1170,7 @@ async fn scan_foreign_stream_with_budget<St, E>(
     fvk: &grovedb_commitment_tree::FullViewingKey,
     stop_at_value: u64,
     aligned_start: u64,
-    mut found: Vec<ShieldedNote>,
+    carried: Arc<[ShieldedNote]>,
     mut total: u64,
     batch_budget: u64,
 ) -> Result<Vec<ShieldedNote>, PlatformWalletError>
@@ -1102,6 +1187,7 @@ where
     // `start_index` because that chunk may still receive notes.
     let mut scanned_through = aligned_start;
     let mut batches_consumed: u64 = 0;
+    let mut new_found: Vec<ShieldedNote> = Vec::new();
     while let Some(batch) = stream.next().await {
         let batch = match batch {
             Ok(batch) => batch,
@@ -1110,7 +1196,7 @@ where
                 // resumes here instead of re-paying the whole scan.
                 checkpoints.save(
                     checkpoint_key,
-                    foreign_scan_checkpoint_below(scanned_through, &found),
+                    foreign_scan_checkpoint_below(scanned_through, &carried, &new_found),
                 );
                 return Err(PlatformWalletError::ShieldedSyncFailed(e.to_string()));
             }
@@ -1124,7 +1210,7 @@ where
         for dn in batch.decrypted {
             let value = dn.note.value().inner();
             let nullifier = dn.note.nullifier(fvk).to_bytes();
-            found.push(ShieldedNote {
+            new_found.push(ShieldedNote {
                 position: dn.position,
                 cmx: dn.cmx,
                 nullifier,
@@ -1147,7 +1233,7 @@ where
         if !batch_is_partial && batches_consumed >= batch_budget {
             checkpoints.save(
                 checkpoint_key,
-                foreign_scan_checkpoint_below(scanned_through, &found),
+                foreign_scan_checkpoint_below(scanned_through, &carried, &new_found),
             );
             return Err(PlatformWalletError::ShieldedForeignScanBudgetExhausted {
                 scanned_through,
@@ -1157,8 +1243,10 @@ where
 
     checkpoints.save(
         checkpoint_key,
-        foreign_scan_checkpoint_below(scanned_through, &found),
+        foreign_scan_checkpoint_below(scanned_through, &carried, &new_found),
     );
+    let mut found = carried.to_vec();
+    found.append(&mut new_found);
     Ok(found)
 }
 
@@ -1378,12 +1466,15 @@ mod tests {
 
     /// The checkpoint carries only notes on immutable, fully-consumed chunks
     /// (position strictly below the resume point); buffer-chunk notes are
-    /// dropped so the rescan of that chunk cannot duplicate them.
+    /// dropped so the rescan of that chunk cannot duplicate them. Carried
+    /// notes (inherited from the loaded checkpoint, always below the pass's
+    /// start) pass through ahead of this pass's finds.
     #[test]
     fn foreign_scan_checkpoint_below_drops_buffer_chunk_notes() {
-        let found = vec![note_at(5, 100), note_at(2047, 200), note_at(2048, 300)];
+        let carried: std::sync::Arc<[super::ShieldedNote]> = vec![note_at(5, 100)].into();
+        let new_found = vec![note_at(2047, 200), note_at(2048, 300)];
 
-        let cp = super::foreign_scan_checkpoint_below(2048, &found);
+        let cp = super::foreign_scan_checkpoint_below(2048, &carried, &new_found);
 
         assert_eq!(cp.resume_position, 2048);
         let positions: Vec<u64> = cp.notes.iter().map(|n| n.position).collect();
@@ -1392,6 +1483,27 @@ mod tests {
             vec![5, 2047],
             "the note AT the resume position sits in the still-mutable buffer \
              chunk and must be re-derived next pass, not carried"
+        );
+    }
+
+    /// When a pass finds nothing new below the resume point, the built
+    /// checkpoint reuses the carried allocation instead of copying it — the
+    /// repeated no-hit rescans of an unfunded key allocate nothing per save.
+    #[test]
+    fn foreign_scan_checkpoint_below_reuses_the_carried_allocation_when_nothing_is_new() {
+        let carried: std::sync::Arc<[super::ShieldedNote]> =
+            vec![note_at(5, 100), note_at(7, 200)].into();
+        // The only new note sits AT the resume position (buffer chunk) and is
+        // dropped, so nothing new survives the filter.
+        let new_found = vec![note_at(4096, 300)];
+
+        let cp = super::foreign_scan_checkpoint_below(4096, &carried, &new_found);
+
+        assert_eq!(cp.resume_position, 4096);
+        assert!(
+            std::sync::Arc::ptr_eq(&cp.notes, &carried),
+            "no new below-resume note: the checkpoint must share the carried \
+             allocation, not deep-copy it"
         );
     }
 
@@ -1404,7 +1516,7 @@ mod tests {
         let key = |i: u8| -> [u8; 32] { [0xE0 + i; 32] };
         let cp = |resume: u64| super::ForeignScanCheckpoint {
             resume_position: resume,
-            notes: vec![note_at(1, 42)],
+            notes: vec![note_at(1, 42)].into(),
         };
 
         // Missing key: nothing to load.
@@ -1454,6 +1566,98 @@ mod tests {
         }
     }
 
+    /// The retained-note budget (#4313 review finding d6b7be21f4a4): an
+    /// untrusted inviter controls how many notes decrypt under a published
+    /// invitation key, so a checkpoint whose note set exceeds
+    /// [`super::FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] must be REFUSED —
+    /// dropped whole, never truncated (a truncated set under an intact
+    /// resume position would claim coverage it doesn't have, and a resumed
+    /// scan would MISS the dropped notes). An existing bounded entry for the
+    /// key survives the refusal, so retries still resume from the last
+    /// bounded position.
+    #[test]
+    fn an_over_budget_checkpoint_is_dropped_not_truncated() {
+        let budget = super::FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET;
+        let cache = super::ForeignScanCheckpointCache::default();
+        let key = [0xAA; 32];
+        let notes_of = |count: usize| -> std::sync::Arc<[super::ShieldedNote]> {
+            (0..count as u64).map(|i| note_at(i, 1)).collect()
+        };
+
+        // AT the budget: retained in full.
+        cache.save(
+            key,
+            super::ForeignScanCheckpoint {
+                resume_position: 2048,
+                notes: notes_of(budget),
+            },
+        );
+        let bounded = cache.load(&key).expect("a within-budget save is retained");
+        assert_eq!(bounded.notes.len(), budget);
+
+        // OVER the budget: the save is refused — and the existing bounded
+        // entry is what a later load still sees, at its own resume position.
+        cache.save(
+            key,
+            super::ForeignScanCheckpoint {
+                resume_position: 4096,
+                notes: notes_of(budget + 1),
+            },
+        );
+        let after = cache
+            .load(&key)
+            .expect("the previous bounded entry must survive the refusal");
+        assert_eq!(
+            after.resume_position, 2048,
+            "an over-budget checkpoint must not advance the entry"
+        );
+        assert!(
+            after.notes.len() <= budget,
+            "no cached entry may ever exceed the retained-note budget"
+        );
+
+        // A fresh key with an over-budget first checkpoint keeps NO entry:
+        // the next attempt degrades to a from-scratch scan, not a wrong
+        // result.
+        let fresh = [0xBB; 32];
+        cache.save(
+            fresh,
+            super::ForeignScanCheckpoint {
+                resume_position: 2048,
+                notes: notes_of(budget + 1),
+            },
+        );
+        assert!(
+            cache.load(&fresh).is_none(),
+            "an over-budget checkpoint must be dropped whole, not stored"
+        );
+    }
+
+    /// `load` must hand back a handle onto the CACHED allocation, not a deep
+    /// copy of it — the old `Vec` clone transiently doubled an entry's
+    /// memory while the cached original stayed live (#4313 review finding
+    /// d6b7be21f4a4). Two loads sharing one allocation pins the
+    /// representation.
+    #[test]
+    fn load_shares_the_cached_notes_allocation() {
+        let cache = super::ForeignScanCheckpointCache::default();
+        let key = [0xCC; 32];
+        cache.save(
+            key,
+            super::ForeignScanCheckpoint {
+                resume_position: 2048,
+                notes: vec![note_at(1, 42), note_at(2, 43)].into(),
+            },
+        );
+
+        let first = cache.load(&key).expect("saved checkpoint");
+        let second = cache.load(&key).expect("entry survives loads");
+        assert!(
+            std::sync::Arc::ptr_eq(&first.notes, &second.notes),
+            "load must share the cached note allocation, not deep-copy it"
+        );
+    }
+
     /// Chain isolation: the cache is an instance owned by ONE coordinator
     /// (one network, one tree store), so the same foreign key checkpointed
     /// through one coordinator must be invisible to another — a resume
@@ -1471,7 +1675,7 @@ mod tests {
             key,
             super::ForeignScanCheckpoint {
                 resume_position: 4096,
-                notes: vec![note_at(1, 42)],
+                notes: vec![note_at(1, 42)].into(),
             },
         );
 
