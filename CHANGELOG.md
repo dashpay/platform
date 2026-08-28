@@ -1,3 +1,10 @@
+## [4.2.0-dev.5](https://github.com/dashpay/platform/compare/4.2.0-dev.4...v4.2.0-dev.5) (2026-08-28)
+
+
+### Bug Fixes
+
+* **dpp:** unbreak v4.2-dev — fmt gate and propertyAgreement compile breaks ([#4515](https://github.com/dashpay/platform/issues/4515))
+
 ## [4.2.0-dev.3](https://github.com/dashpay/platform/compare/v4.2.0-dev.2...v4.2.0-dev.3) (2026-08-28)
 
 
