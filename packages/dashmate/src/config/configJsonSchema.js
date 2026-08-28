@@ -1087,9 +1087,37 @@ export default {
                   required: ['txProcessingTimeLimit'],
                   additionalProperties: false,
                 },
+                stateSync: {
+                  type: 'object',
+                  properties: {
+                    snapshots: {
+                      type: 'object',
+                      properties: {
+                        enabled: {
+                          type: 'boolean',
+                          description: 'Take state sync snapshots (GroveDB checkpoints) and serve them to peers',
+                        },
+                        frequencySeconds: {
+                          type: 'integer',
+                          minimum: 60,
+                          description: 'How often to take a snapshot, in seconds',
+                        },
+                        maxCount: {
+                          type: 'integer',
+                          minimum: 2,
+                          description: 'How many snapshots to keep before pruning the oldest',
+                        },
+                      },
+                      required: ['enabled', 'frequencySeconds', 'maxCount'],
+                      additionalProperties: false,
+                    },
+                  },
+                  required: ['snapshots'],
+                  additionalProperties: false,
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer', 'proposer'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer', 'proposer', 'stateSync'],
             },
             tenderdash: {
               type: 'object',
@@ -1337,8 +1365,45 @@ export default {
                 genesis: {
                   type: 'object',
                 },
+                stateSync: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                      description: 'Bootstrap a fresh node from a state sync snapshot instead of replaying'
+                        + ' all blocks. Ignored once the node has local state',
+                    },
+                    retries: {
+                      type: 'integer',
+                      minimum: 0,
+                      description: 'How many times to retry state sync before falling back to block sync.'
+                        + ' 0 disables retries',
+                    },
+                    chunkRequestTimeout: {
+                      description: 'Timeout before re-requesting a snapshot chunk. Tenderdash requires at least 5s',
+                      allOf: [
+                        {
+                          $ref: '#/definitions/duration',
+                        },
+                        {
+                          type: 'string',
+                          // At least 5 seconds: 5s+, 5000ms+, or any whole number of minutes/hours
+                          pattern: '^(([5-9]|[1-9][0-9]+)(\\.[0-9]+)?s|([5-9][0-9]{3}|[1-9][0-9]{4,})(\\.[0-9]+)?ms|[1-9][0-9]*(\\.[0-9]+)?[mh])$',
+                        },
+                      ],
+                    },
+                    fetchersCount: {
+                      type: 'integer',
+                      minimum: 1,
+                      maximum: 64,
+                      description: 'Number of concurrent snapshot chunk fetchers',
+                    },
+                  },
+                  required: ['enabled', 'retries', 'chunkRequestTimeout', 'fetchersCount'],
+                  additionalProperties: false,
+                },
               },
-              required: ['mode', 'docker', 'p2p', 'mempool', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
+              required: ['mode', 'docker', 'p2p', 'mempool', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics', 'stateSync'],
               additionalProperties: false,
             },
           },
