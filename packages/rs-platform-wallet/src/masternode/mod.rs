@@ -16,7 +16,9 @@ pub mod tracked;
 pub mod update_registrar;
 pub mod update_service;
 
-pub use key_candidates::{provider_key_candidates, ProviderKeyCandidate};
+pub use key_candidates::{
+    provider_key_candidates, ProviderKeyCandidate, MAX_PROVIDER_KEY_CANDIDATES,
+};
 pub use list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
 pub use locator::{
     locate_in_summaries, parse_locator_input, parse_secret_for_role, verify_masternode_key,

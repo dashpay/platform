@@ -635,6 +635,11 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_prepare_update_servi
 
 // MARK: key candidates
 
+/// Upper bound on one candidates query — mirrors
+/// `platform_wallet::masternode::MAX_PROVIDER_KEY_CANDIDATES` (asserted
+/// equal in tests); larger counts are refused before any allocation.
+pub const PLATFORM_WALLET_PROVIDER_KEY_CANDIDATES_MAX: u32 = 256;
+
 /// One wallet provider key with its network-wide usage — a rotation
 /// key-picker row.
 #[repr(C)]
@@ -765,6 +770,14 @@ pub unsafe extern "C" fn platform_wallet_manager_free_provider_key_candidates(
 mod tests {
     use super::*;
     use crate::platform_wallet_ffi_result_free;
+
+    #[test]
+    fn candidates_bound_mirrors_the_core_constant() {
+        assert_eq!(
+            PLATFORM_WALLET_PROVIDER_KEY_CANDIDATES_MAX,
+            platform_wallet::masternode::MAX_PROVIDER_KEY_CANDIDATES
+        );
+    }
 
     /// Unknown manager handles come back as invalid-handle errors with
     /// every out-param left at its zero state — the contract every

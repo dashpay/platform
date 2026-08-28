@@ -253,7 +253,9 @@ pub(crate) fn prepare_update_service_placeholder_from_values(
 ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
     if entry.has_extended_net_info {
         return Err(PlatformWalletError::InvalidParameter(
-            "this masternode advertises v3 extended network info; a version-2 update-service              payload would replace its whole endpoint map with a single address, so it cannot              be re-asserted from this wallet yet"
+            "this masternode advertises v3 extended network info; a version-2 update-service \
+             payload would replace its whole endpoint map with a single address, so it \
+             cannot be re-asserted from this wallet yet"
                 .to_string(),
         ));
     }
@@ -313,7 +315,7 @@ pub(crate) fn prepare_update_service_placeholder_from_values(
 }
 
 /// Fetch the masternode's ProRegTx via DAPI Core and return its payload,
-/// txid-bound (see [`operator_reward_from_registration`] for why the
+/// txid-bound (see [`registration_payload_from_fetched`] for why the
 /// binding matters). Shared by the payout rule here and the registrar
 /// update's owner-key verification — the ProRegTx is the one place the
 /// immutable `keyIDOwner` lives.
