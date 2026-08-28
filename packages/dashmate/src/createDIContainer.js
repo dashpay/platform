@@ -14,6 +14,7 @@ import getServiceListFactory from './docker/getServiceListFactory.js';
 import ensureFileMountExistsFactory from './docker/ensureFileMountExistsFactory.js';
 import getConnectionHostFactory from './docker/getConnectionHostFactory.js';
 import ConfigFileJsonRepository from './config/configFile/ConfigFileJsonRepository.js';
+import RenewalRecordRepository from './ssl/renewalRecord/RenewalRecordRepository.js';
 import createConfigFileFactory from './config/configFile/createConfigFileFactory.js';
 import migrateConfigFileFactory from './config/configFile/migrateConfigFileFactory.js';
 import DefaultConfigs from './config/DefaultConfigs.js';
@@ -166,6 +167,7 @@ export default async function createDIContainer(options = {}) {
     legoCaCertificatePath: asValue(null),
     legoContainerOptions: asValue({}),
     configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
+    renewalRecordRepository: asClass(RenewalRecordRepository).singleton(),
     getBaseConfig: asFunction(getBaseConfigFactory).singleton(),
     getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
     getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),

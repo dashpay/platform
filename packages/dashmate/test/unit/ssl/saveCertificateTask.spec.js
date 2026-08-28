@@ -4,8 +4,11 @@ import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import saveCertificateTaskFactory from '../../../src/listr/tasks/ssl/saveCertificateTask.js';
 import { issueCertificate } from '../../../src/test/certificateFixtures.js';
+import RenewalRecordRepository from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
+import { recordRenewalSuccess } from '../../../src/helper/record-renewal-outcome.js';
 
 describe('saveCertificateTaskFactory', () => {
+  let renewalRecordRepository;
   let homeDir;
   let config;
   let certificatesDir;
@@ -28,6 +31,7 @@ describe('saveCertificateTaskFactory', () => {
     );
     certificatePath = path.join(certificatesDir, 'bundle.crt');
     keyPath = path.join(certificatesDir, 'private.key');
+    renewalRecordRepository = new RenewalRecordRepository(homeDir);
   });
 
   afterEach(() => {
@@ -36,7 +40,7 @@ describe('saveCertificateTaskFactory', () => {
   });
 
   async function savePair(context = {}) {
-    const task = saveCertificateTaskFactory(homeDir)(config);
+    const task = saveCertificateTaskFactory(homeDir, renewalRecordRepository)(config);
 
     await task.run({
       certificateFile: pair.pem,
@@ -70,6 +74,42 @@ describe('saveCertificateTaskFactory', () => {
     expect(fs.statSync(keyPath).ino).to.equal(keyInode);
     expect(fs.readFileSync(certificatePath, 'utf8')).to.equal(pair.pem);
     expect(fs.readFileSync(keyPath, 'utf8')).to.equal(pair.keyPem);
+  });
+
+  it('should not fence a renewal out of recording the success it just achieved', async () => {
+    // This install runs inside the renewal that produced the certificate, and
+    // it clears the record. Taking a new generation here locked that renewal
+    // out of its own success write afterwards, so a node that had just renewed
+    // perfectly reported nothing at all.
+    const generation = renewalRecordRepository.claimGeneration(config.getName());
+
+    await savePair({ renewalGeneration: generation });
+
+    recordRenewalSuccess({
+      renewalRecordRepository,
+      configName: config.getName(),
+      provider: 'letsencrypt',
+    generation,
+    });
+
+    expect(renewalRecordRepository.read(config.getName()).record).to.not.equal(null);
+  });
+
+  it('should outrank an attempt still in flight when run by hand', async () => {
+    // No chain of its own: the operator is acting now, so a renewal started
+    // before this must not be able to resurrect the failure it just settled.
+    const inFlight = renewalRecordRepository.claimGeneration(config.getName());
+
+    await savePair();
+
+    recordRenewalSuccess({
+      renewalRecordRepository,
+      configName: config.getName(),
+      provider: 'letsencrypt',
+      generation: inFlight,
+    });
+
+    expect(renewalRecordRepository.read(config.getName()).record).to.equal(null);
   });
 
   it('should create a private key with mode 0600', async () => {

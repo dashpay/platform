@@ -1,5 +1,6 @@
 import UpdateCommand from '../../../src/commands/update.js';
 import HomeDir from '../../../src/config/HomeDir.js';
+import RenewalRecordRepository from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import updateNodeFactory from '../../../src/update/updateNodeFactory.js';
 import CertificateUnresolvedError from '../../../src/ssl/errors/CertificateUnresolvedError.js';
@@ -14,6 +15,7 @@ describe('Update command', () => {
   let mockDockerStream;
   let mockDockerResponse;
   let dockerCompose;
+  let homeDir;
   let stderr;
   let exitCode;
 
@@ -67,11 +69,17 @@ describe('Update command', () => {
       checkGatewayCertificate,
       gatewayCertificateTask,
       dockerCompose,
+      new RenewalRecordRepository(homeDir),
     );
   }
 
   beforeEach(function it() {
-    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    // The command reads the recorded renewal outcome from here, so it needs a
+    // real directory rather than a stub - an absent record is a state the
+    // guidance handles, and it is the one these tests are in.
+    homeDir = HomeDir.createTemp();
+
+    const getBaseConfig = getBaseConfigFactory(homeDir);
 
     config = getBaseConfig();
     config.set('network', 'mainnet');
