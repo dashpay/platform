@@ -130,6 +130,29 @@ describe('verifySystemRequirementsFactory', () => {
       expect(problems[0]).to.be.an.instanceOf(Problem);
       expect(problems[0].getDescription()).to.include('50.00GB of available disk space detected');
     });
+
+    it('should add headroom for state sync snapshots', () => {
+      const systemInfo = {
+        diskSpace: { available: 12 * 1024 ** 3 },
+      };
+
+      // 12GB clears the 5GB override on its own...
+      const problems = verifySystemRequirements(systemInfo, false, {
+        diskSpace: 5,
+      });
+
+      expect(problems).to.have.lengthOf(0);
+
+      // ...but not with the snapshot headroom on top
+      const problemsWithSnapshots = verifySystemRequirements(systemInfo, false, {
+        diskSpace: 5,
+        stateSyncSnapshotsEnabled: true,
+      });
+
+      expect(problemsWithSnapshots).to.have.lengthOf(1);
+      expect(problemsWithSnapshots[0].getDescription())
+        .to.include('At least 15GB is required (including 10GB headroom for state sync snapshots)');
+    });
   });
 
   it('should not return any problems if all requirements are met', () => {
