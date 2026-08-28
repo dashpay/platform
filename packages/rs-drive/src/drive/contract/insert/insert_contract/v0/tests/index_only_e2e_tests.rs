@@ -782,9 +782,12 @@ fn should_serve_terminal_range_keyset_pagination() {
     };
 
     // Walk the three likes one page at a time, keyed by the last owner.
+    // Bounded at four iterations (three pages + the terminating empty
+    // one) so a non-progress regression fails the walked assertion
+    // instead of hanging the suite.
     let mut cursor: Option<[u8; 32]> = None;
     let mut walked: Vec<[u8; 32]> = vec![];
-    loop {
+    for _ in 0..=3 {
         let query = page_query(cursor);
         let outcome = drive
             .query_documents(query.clone(), None, false, None, None)
@@ -957,7 +960,7 @@ fn should_refuse_cursor_queries() {
     assert_matches!(
         &error,
         crate::error::Error::Query(QuerySyntaxError::Unsupported(message))
-            if message.contains("startAt/startAfter is not yet supported"),
+            if message.contains("paginate with a range clause on the terminal property"),
         "unexpected error: {error}"
     );
 }

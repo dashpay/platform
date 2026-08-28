@@ -257,16 +257,37 @@ impl DriveDocumentQuery<'_> {
     /// by synthesis (which must decode trios against the same index the
     /// path query was built from) and by the route dispatch in the path
     /// constructors.
+    /// Whether a `find_best_index` error means "no generic index matches
+    /// this query" — the only failures the terminal route may stand in
+    /// for. Structural preflight errors (resolved-source shape, version
+    /// dispatch, multiple resolved time ranges) must propagate unchanged,
+    /// and a query carrying a resolved time range can never be served by
+    /// a terminal route (an indexOnly type cannot even declare a bucketed
+    /// index, so the preflight refusal is the true answer).
+    fn generic_route_missed(&self, error: &Error) -> bool {
+        self.resolved_time_ranges.is_empty()
+            && matches!(
+                error,
+                Error::Query(
+                    crate::error::query::QuerySyntaxError::WhereClauseOnNonIndexedProperty(_)
+                        | crate::error::query::QuerySyntaxError::QueryTooFarFromIndex(_)
+                )
+            )
+    }
+
     pub(crate) fn index_only_query_index(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<&Index, Error> {
         match self.find_best_index(platform_version) {
             Ok(index) => Ok(index),
-            Err(generic_error) => match self.index_only_terminal_clause_selection()? {
-                Some((index, _)) => Ok(index),
-                None => Err(generic_error),
-            },
+            Err(generic_error) if self.generic_route_missed(&generic_error) => {
+                match self.index_only_terminal_clause_selection()? {
+                    Some((index, _)) => Ok(index),
+                    None => Err(generic_error),
+                }
+            }
+            Err(other) => Err(other),
         }
     }
 
@@ -282,17 +303,20 @@ impl DriveDocumentQuery<'_> {
     ) -> Result<Option<grovedb::PathQuery>, Error> {
         match self.find_best_index(platform_version) {
             Ok(_) => Ok(None),
-            Err(generic_error) => match self.index_only_terminal_clause_selection()? {
-                Some((index, terminal_clause)) => self
-                    .index_only_terminal_path_query(
-                        document_type_path.to_vec(),
-                        index,
-                        terminal_clause,
-                        platform_version,
-                    )
-                    .map(Some),
-                None => Err(generic_error),
-            },
+            Err(generic_error) if self.generic_route_missed(&generic_error) => {
+                match self.index_only_terminal_clause_selection()? {
+                    Some((index, terminal_clause)) => self
+                        .index_only_terminal_path_query(
+                            document_type_path.to_vec(),
+                            index,
+                            terminal_clause,
+                            platform_version,
+                        )
+                        .map(Some),
+                    None => Err(generic_error),
+                }
+            }
+            Err(other) => Err(other),
         }
     }
 
@@ -307,7 +331,9 @@ impl DriveDocumentQuery<'_> {
         if self.start_at.is_some() {
             return Err(Error::Query(
                 crate::error::query::QuerySyntaxError::Unsupported(
-                    "startAt/startAfter is not yet supported for indexOnly document types"
+                    "startAt/startAfter cannot address an indexOnly position (the synthesized \
+                     document id is a one-way hash of it); paginate with a range clause on \
+                     the terminal property ordered by the terminal, with a limit"
                         .to_string(),
                 ),
             ));
@@ -354,7 +380,9 @@ impl DriveDocumentQuery<'_> {
         if self.start_at.is_some() {
             return Err(Error::Query(
                 crate::error::query::QuerySyntaxError::Unsupported(
-                    "startAt/startAfter is not yet supported for indexOnly document types"
+                    "startAt/startAfter cannot address an indexOnly position (the synthesized \
+                     document id is a one-way hash of it); paginate with a range clause on \
+                     the terminal property ordered by the terminal, with a limit"
                         .to_string(),
                 ),
             ));
