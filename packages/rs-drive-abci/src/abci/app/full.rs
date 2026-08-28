@@ -1,10 +1,14 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
+    TransactionalApplication,
+};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::snapshot::SnapshotManager;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs_by_round::UnsignedWithdrawalTxsByRound;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
@@ -26,6 +30,8 @@ pub struct FullAbciApplication<'a, C> {
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// The unsigned withdrawal transactions of every proposal accepted at the current height
     pub unsigned_withdrawal_txs_by_round: RwLock<UnsignedWithdrawalTxsByRound>,
+    /// The snapshot manager, pinning checkpoints that are being served to peers
+    pub snapshot_manager: SnapshotManager,
 }
 
 impl<'a, C> FullAbciApplication<'a, C> {
@@ -36,6 +42,7 @@ impl<'a, C> FullAbciApplication<'a, C> {
             transaction: Default::default(),
             block_execution_context: Default::default(),
             unsigned_withdrawal_txs_by_round: Default::default(),
+            snapshot_manager: SnapshotManager::new(),
         }
     }
 }
@@ -43,6 +50,12 @@ impl<'a, C> FullAbciApplication<'a, C> {
 impl<C> PlatformApplication<C> for FullAbciApplication<'_, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
+    }
+}
+
+impl<C> SnapshotManagerApplication for FullAbciApplication<'_, C> {
+    fn snapshot_manager(&self) -> &SnapshotManager {
+        &self.snapshot_manager
     }
 }
 
@@ -248,5 +261,19 @@ where
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
         handler::verify_vote_extension(self, request).map_err(error_into_exception)
+    }
+
+    fn list_snapshots(
+        &self,
+        request: proto::RequestListSnapshots,
+    ) -> Result<proto::ResponseListSnapshots, proto::ResponseException> {
+        handler::list_snapshots(self, request).map_err(error_into_exception)
+    }
+
+    fn load_snapshot_chunk(
+        &self,
+        request: proto::RequestLoadSnapshotChunk,
+    ) -> Result<proto::ResponseLoadSnapshotChunk, proto::ResponseException> {
+        handler::load_snapshot_chunk(self, request).map_err(error_into_exception)
     }
 }

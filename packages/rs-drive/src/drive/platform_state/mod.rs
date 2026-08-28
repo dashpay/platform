@@ -9,7 +9,7 @@ mod store_platform_state_recent_bytes;
 mod store_reduced_platform_state_bytes;
 
 const PLATFORM_STATE_KEY: &[u8; 11] = b"saved_state";
-const REDUCED_PLATFORM_STATE_KEY: &[u8; 19] = b"reduced_saved_state";
+pub(crate) const REDUCED_PLATFORM_STATE_KEY: &[u8; 19] = b"reduced_saved_state";
 
 /// The small companion to [`PLATFORM_STATE_KEY`] under saved structure 0: the
 /// fields of the platform state that change on every block. That structure's

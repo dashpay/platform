@@ -33,13 +33,19 @@ where
             return Ok(false);
         };
 
-        let keep_n = platform_version.drive_abci.checkpoints.num_checkpoints as usize;
+        // When snapshot serving is enabled, the operator-provided state sync
+        // configuration overrides the platform-version-driven checkpoint retention.
+        let state_sync_config = &self.config.abci.state_sync;
+        let keep_n = if state_sync_config.snapshots_enabled {
+            state_sync_config.max_num_snapshots
+        } else {
+            platform_version.drive_abci.checkpoints.num_checkpoints as usize
+        };
 
-        // Build the checkpoint path: db_path/checkpoints/<block_height>
-        let checkpoint_path = self
-            .config
-            .db_path
-            .join("checkpoints")
+        // Build the checkpoint path: <checkpoints_path>/<block_height>
+        // (defaults to db_path/checkpoints)
+        let checkpoint_path = state_sync_config
+            .resolved_checkpoints_path(&self.config.db_path)
             .join(block_height.to_string());
 
         // Create the checkpoints directory if it doesn't exist
