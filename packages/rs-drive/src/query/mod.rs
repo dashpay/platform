@@ -342,6 +342,21 @@ pub struct InternalClauses {
     pub equal_clauses: BTreeMap<String, WhereClause>,
 }
 
+/// The outcome of generic index selection
+/// ([`DriveDocumentQuery::select_best_index`]): a match, or the fact that
+/// no index serves the query — carried as a value, not an error, so a
+/// route that may legitimately stand in for a miss (the indexOnly
+/// terminal route) never has to reconstruct that fact from error
+/// variants. Structural failures never appear here; they stay `Err`.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) enum BestIndexOutcome<'a> {
+    /// An index serves the query.
+    Matched(&'a Index),
+    /// No index matches; carries the error [`DriveDocumentQuery::find_best_index`]
+    /// reports for this query.
+    NoIndexMatches(Error),
+}
+
 impl InternalClauses {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if the clause is a valid format.
@@ -2014,6 +2029,24 @@ impl<'a> DriveDocumentQuery<'a> {
     /// mismatch would produce a validly-proven wrong answer. The rule applies
     /// on both routes, including the multiple-`In` selection.
     pub fn find_best_index(&self, platform_version: &PlatformVersion) -> Result<&Index, Error> {
+        match self.select_best_index(platform_version)? {
+            BestIndexOutcome::Matched(index) => Ok(index),
+            BestIndexOutcome::NoIndexMatches(no_index_error) => Err(no_index_error),
+        }
+    }
+
+    /// Generic index selection with "no index matches" separated from the
+    /// structural failures, in the type instead of in error variants:
+    /// `Err` is a structural problem with the query itself (preflight,
+    /// resolved-source shape, version dispatch) and always propagates,
+    /// while `NoIndexMatches` carries the would-be [`Self::find_best_index`]
+    /// error as a value — a routing fact the indexOnly terminal route is
+    /// allowed to stand in for. [`Self::find_best_index`] collapses both
+    /// non-matches back into `Err` for every ordinary caller.
+    pub(crate) fn select_best_index(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<BestIndexOutcome<'_>, Error> {
         // A transform's source must be its index's first property, so one
         // index buckets exactly one field and no index can carry two resolved
         // equalities. Serving such a query would need a join across two
@@ -2033,7 +2066,12 @@ impl<'a> DriveDocumentQuery<'a> {
         self.validate_resolved_source_shape()?;
 
         if self.internal_clauses.in_clauses.len() > 1 {
-            return Ok(self.find_best_index_for_multiple_in_clauses()?.0);
+            // The multi-`In` machinery keeps its own error surface; its
+            // shapes are never terminal-routable, so there is nothing to
+            // classify as a plain miss.
+            return Ok(BestIndexOutcome::Matched(
+                self.find_best_index_for_multiple_in_clauses()?.0,
+            ));
         }
 
         let equal_fields = self
@@ -2073,61 +2111,67 @@ impl<'a> DriveDocumentQuery<'a> {
             })
             .collect();
 
-        let (index, difference) = self
-            .document_type
-            .index_for_types_matching(
-                fields.as_slice(),
-                in_field,
-                order_by_keys.as_slice(),
-                |index| index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges),
-                platform_version,
-            )?
-            .ok_or_else(|| match self.resolved_time_ranges.first() {
-                // A time-range query is only servable by the index that
-                // buckets the field with the resolved grid, so "no index"
-                // here is a narrower fact than the generic case: some index
-                // buckets the field (the clause could not have been resolved
-                // otherwise), but none with that grid also covers the rest
-                // of the query.
-                Some(resolved) => {
-                    Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                        "a time-range query on \"{}\" requires an index that buckets it with \
+        let Some((index, difference)) = self.document_type.index_for_types_matching(
+            fields.as_slice(),
+            in_field,
+            order_by_keys.as_slice(),
+            |index| index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges),
+            platform_version,
+        )?
+        else {
+            return Ok(BestIndexOutcome::NoIndexMatches(
+                match self.resolved_time_ranges.first() {
+                    // A time-range query is only servable by the index that
+                    // buckets the field with the resolved grid, so "no index"
+                    // here is a narrower fact than the generic case: some index
+                    // buckets the field (the clause could not have been resolved
+                    // otherwise), but none with that grid also covers the rest
+                    // of the query.
+                    Some(resolved) => {
+                        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                            "a time-range query on \"{}\" requires an index that buckets it with \
                          the resolved grid AND covers the query's other where and order-by \
                          fields; valid indexes are: {:?}",
-                        resolved.field(),
-                        self.document_type.indexes()
-                    )))
-                }
-                None => {
-                    // A raw query never binds to a bucketed index; when one
-                    // exists, say so — the caller may be holding a
-                    // time-range proof on a surface that cannot supply
-                    // resolution provenance (e.g. the standalone wasm
-                    // verifiers), where this refusal is otherwise opaque.
-                    let has_bucketed_index = self
-                        .document_type
-                        .indexes()
-                        .values()
-                        .any(|index| index.time_range.is_some());
-                    if has_bucketed_index {
-                        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                            resolved.field(),
+                            self.document_type.indexes()
+                        )))
+                    }
+                    None => {
+                        // A raw query never binds to a bucketed index; when one
+                        // exists, say so — the caller may be holding a
+                        // time-range proof on a surface that cannot supply
+                        // resolution provenance (e.g. the standalone wasm
+                        // verifiers), where this refusal is otherwise opaque.
+                        let has_bucketed_index = self
+                            .document_type
+                            .indexes()
+                            .values()
+                            .any(|index| index.time_range.is_some());
+                        if has_bucketed_index {
+                            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                                format!(
                             "query must be for valid indexes, valid indexes are: {:?}; note: \
                              this document type's time-range (timeRange) indexes only serve \
                              IN_TIME_RANGE selections carrying their resolution — a raw clause \
                              on the bucketed field never binds to them",
                             self.document_type.indexes()
-                        )))
-                    } else {
-                        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                            "query must be for valid indexes, valid indexes are: {:?}",
-                            self.document_type.indexes()
-                        )))
+                        ),
+                            ))
+                        } else {
+                            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                                format!(
+                                    "query must be for valid indexes, valid indexes are: {:?}",
+                                    self.document_type.indexes()
+                                ),
+                            ))
+                        }
                     }
-                }
-            })?;
+                },
+            ));
+        };
         if difference > defaults::MAX_INDEX_DIFFERENCE {
-            return Err(Error::Query(QuerySyntaxError::QueryTooFarFromIndex(
-                "query must better match an existing index",
+            return Ok(BestIndexOutcome::NoIndexMatches(Error::Query(
+                QuerySyntaxError::QueryTooFarFromIndex("query must better match an existing index"),
             )));
         }
 
@@ -2137,7 +2181,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // index bucketing exactly the resolved field, so guarding by
         // provenance there is equivalent to guarding by the selected index's
         // transform here.
-        Ok(index)
+        Ok(BestIndexOutcome::Matched(index))
     }
 
     /// The residual source-shape contract for a query carrying a
