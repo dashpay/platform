@@ -110,6 +110,40 @@ describe('RenewalRecordRepository', () => {
       expect(fs.readFileSync(lockPath(), 'utf8')).to.equal('another-process');
     });
 
+    // Holding the lock when the work started says nothing about holding it when
+    // the write happens. A holder suspended past the stale threshold has its
+    // lock reclaimed, and another process may already have written newer state;
+    // resuming and overwriting that is the corruption the fence exists to stop.
+    it('should refuse to write once its lock has been taken over', () => {
+      repository.claimGeneration('base');
+
+      const realReadFileSync = fs.readFileSync;
+      const realWriteFileSync = fs.writeFileSync;
+      let takenOver = false;
+
+      // Staged while the operation is under way but before it mutates: the
+      // generation is read first, and ownership is checked after that.
+      fs.readFileSync = (file, ...rest) => {
+        if (!takenOver && String(file).endsWith('.renewal-generation')) {
+          takenOver = true;
+          realWriteFileSync(lockPath(), 'another-process');
+        }
+
+        return realReadFileSync(file, ...rest);
+      };
+
+      let applied;
+
+      try {
+        applied = repository.remove('base', 1);
+      } finally {
+        fs.readFileSync = realReadFileSync;
+      }
+
+      expect(takenOver, 'the takeover happened').to.be.true();
+      expect(applied, 'the superseded holder did not apply its change').to.be.false();
+    });
+
     it('should record who holds it', () => {
       let held = null;
       const realRmSync = fs.rmSync;

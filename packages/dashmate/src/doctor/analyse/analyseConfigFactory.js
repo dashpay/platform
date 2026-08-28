@@ -38,14 +38,29 @@ function withheldRequest(samples, config) {
     ? RenewalRecord.fromObject(sample)
     : null;
 
+  // A record left by a provider this node no longer uses says nothing about the
+  // one it does. The configuration watcher hands over without clearing it, so
+  // without this a stale spent or uncertain record would suppress a request
+  // that is now perfectly valid - the renewal-aware analyser already ignores it
+  // for exactly that reason, and these two must not disagree.
+  const applicable = record?.isFailed()
+    && record.appliesTo({ provider: config.get('platform.gateway.ssl.provider') })
+    ? record
+    : null;
+
   const guidance = deriveRenewalGuidance({
-    record: record?.isFailed() ? record : null,
+    record: applicable,
     isRecordUnreadable: sample?.state === RENEWAL_RECORD_STATES.UNREADABLE
       || (sample?.state === RENEWAL_RECORD_STATES.PRESENT && record === null),
     isCertificateUsable: false,
   });
 
-  if (guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN) {
+  // A provider switch forbids these remedies just as firmly as an outright
+  // refusal: they ask this provider for another certificate, while the
+  // renewal-aware analyser in the same report says this provider will never
+  // issue one again.
+  if (guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
+    && guidance.safeAction !== SAFE_ACTION.SWITCH_PROVIDER) {
     return null;
   }
 

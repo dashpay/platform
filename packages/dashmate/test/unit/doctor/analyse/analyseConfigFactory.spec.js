@@ -248,6 +248,39 @@ describe('analyseConfigFactory', () => {
       expect(problem.getSolution()).to.not.contain('ssl obtain');
     });
 
+    // Quota and plan failures produce a provider switch, not an outright
+    // refusal. These remedies ask the same provider for another certificate,
+    // while the renewal-aware analyser in the same report says that provider
+    // will never issue one again.
+    it('should withhold its own request when the provider must be switched', () => {
+      const [problem] = analyseWithRecord({
+        state: 'PRESENT',
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code: 'QUOTA_EXHAUSTED',
+        attemptedAt: new Date().toISOString(),
+        consecutiveFailures: 1,
+      });
+
+      expect(problem.getSolution()).to.contain('--provider letsencrypt');
+    });
+
+    // The configuration watcher hands over without clearing the old provider's
+    // record, so a stale one must not suppress a request that is now valid.
+    it('should ignore a record left by a provider no longer in use', () => {
+      const [problem] = analyseWithRecord({
+        state: 'PRESENT',
+        provider: 'zerossl',
+        outcome: 'failed',
+        code: 'CERTIFICATE_ISSUED_NOT_SAVED',
+        attemptedAt: new Date().toISOString(),
+        consecutiveFailures: 1,
+        issuanceSpentAt: new Date().toISOString(),
+      });
+
+      expect(problem.getSolution()).to.contain('ssl obtain');
+    });
+
     it('should still print it when nothing forbids one', () => {
       const [problem] = analyseWithRecord({ state: 'ABSENT' });
 

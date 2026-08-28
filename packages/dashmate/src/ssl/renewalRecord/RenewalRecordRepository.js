@@ -80,19 +80,35 @@ export default class RenewalRecordRepository {
 
     fs.mkdirSync(path.dirname(generationPath), { recursive: true });
 
-    const release = this.#acquire(generationPath);
+    const { token, release } = this.#acquire(generationPath);
+    const lockPath = `${generationPath}.lock`;
+
+    // Checked immediately before every mutation, not only when the lock was
+    // taken. A holder suspended for longer than the stale threshold has its
+    // lock reclaimed and another process may already have written newer state;
+    // when it resumes it must not overwrite that. Holding the lock at the start
+    // says nothing about holding it at the moment of the write.
+    const stillOurs = () => {
+      try {
+        return fs.readFileSync(lockPath, 'utf8') === token;
+      } catch {
+        return false;
+      }
+    };
 
     try {
-      // Created under the lock, not before it. Two processes reaching an
-      // unclaimed fence at the same time would both find it absent and both
-      // write zero, and the one that lost would go on to claim a generation the
-      // other had already taken - which is the exact guarantee this fence
-      // exists to provide.
       if (!fs.existsSync(generationPath)) {
+        // Created under the lock, not before it: two processes reaching an
+        // unclaimed fence would otherwise both find it absent and both write
+        // zero, and the loser would claim a generation already taken.
+        if (!stillOurs()) {
+          return false;
+        }
+
         writeFileAtomic.sync(generationPath, '0\n', { encoding: 'utf8', mode: RECORD_FILE_MODE });
       }
 
-      return fn();
+      return fn(stillOurs);
     } finally {
       try {
         release();
@@ -113,7 +129,7 @@ export default class RenewalRecordRepository {
    * create needs no timer and no refresh.
    *
    * @param {string} generationPath
-   * @return {function} release
+   * @return {{token: string, release: function}}
    */
   #acquire(generationPath) {
     const lockPath = `${generationPath}.lock`;
@@ -134,8 +150,15 @@ export default class RenewalRecordRepository {
           fs.closeSync(handle);
         }
 
-        return () => {
+        const release = () => {
           try {
+            // Read-then-remove, which is not atomic: a contender that reclaims
+            // this lock as stale in the instant between the two would have its
+            // own lock removed. The window is microseconds and only opens after
+            // a holder has already been suspended past the stale threshold -
+            // and a mutation by either process is still refused by the
+            // ownership check above, so what remains is a lost exclusion, not
+            // corrupted state.
             if (fs.readFileSync(lockPath, 'utf8') === token) {
               fs.rmSync(lockPath, { force: true });
             }
@@ -144,6 +167,8 @@ export default class RenewalRecordRepository {
             // remove, and nothing thrown here may replace the caller's outcome.
           }
         };
+
+        return { token, release };
       } catch (e) {
         if (e.code !== 'EEXIST') {
           throw e;
@@ -211,8 +236,12 @@ export default class RenewalRecordRepository {
    * @return {number}
    */
   claimGeneration(configName) {
-    return this.#fenced(configName, () => {
+    return this.#fenced(configName, (stillOurs) => {
       const next = this.#readGeneration(configName) + 1;
+
+      if (!stillOurs()) {
+        throw new Error('The renewal fence was taken over while this claim was in progress');
+      }
 
       writeFileAtomic.sync(
         this.#generationPath(configName),
@@ -331,11 +360,11 @@ export default class RenewalRecordRepository {
    * @return {boolean} whether the write was applied
    */
   write(configName, record, generation = null) {
-    return this.#fenced(configName, () => {
+    return this.#fenced(configName, (stillOurs) => {
       // A superseded chain must not describe a node it no longer renews. Its
       // configuration changed under it, and the chain that took over has
       // already written what is true now.
-      if (!this.#isCurrent(configName, generation)) {
+      if (!this.#isCurrent(configName, generation) || !stillOurs()) {
         return false;
       }
 
@@ -380,8 +409,8 @@ export default class RenewalRecordRepository {
    * @return {boolean} whether the removal was applied
    */
   remove(configName, generation = null) {
-    return this.#fenced(configName, () => {
-      if (!this.#isCurrent(configName, generation)) {
+    return this.#fenced(configName, (stillOurs) => {
+      if (!this.#isCurrent(configName, generation) || !stillOurs()) {
         return false;
       }
 
