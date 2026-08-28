@@ -286,11 +286,27 @@ fn rejects_null_searchable_false() {
 }
 
 #[test]
-fn rejects_sum_axes() {
-    // The summable declaration itself has to survive the aggregate
-    // cross-checks (integer type, required) so that the indexOnly-specific
-    // rejection is the one that fires.
+fn accepts_summable_index() {
+    // The sum axes are admitted on indexOnly indexes: the terminal entry
+    // becomes an `ItemWithSumItem(commitment, amount)`. The summable
+    // declaration goes through the same doctype-level aggregate
+    // cross-checks as stored types (integer type, required membership),
+    // and the summed property must still satisfy the indexOnly
+    // every-property-indexed rule — here it joins byLiker's prefix.
     let mut schema = likes_schema_with_index_key(2, "summable", platform_value!("likeWeight"));
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(2)
+        .expect("index exists")
+        .set_value(
+            "properties",
+            platform_value!([{ "$ownerId": "asc" }, { "likeWeight": "asc" }]),
+        )
+        .expect("index properties apply");
     schema
         .get_mut("properties")
         .expect("properties accessible")
@@ -306,9 +322,25 @@ fn rejects_sum_axes() {
             platform_value!(["hashtag", "postId", "likeWeight"]),
         )
         .expect("required applies");
+    let document_type =
+        parse_with(schema, PlatformVersion::latest(), false).expect("summable index admitted");
+    let summable_index = document_type
+        .indices
+        .values()
+        .find(|index| index.summable.is_some())
+        .expect("an index carries the summable declaration");
+    assert_eq!(summable_index.summable.as_deref(), Some("likeWeight"));
+}
+
+#[test]
+fn rejects_summable_naming_non_integer_property() {
+    // The doctype-level aggregate cross-checks (shared with stored types)
+    // still apply to indexOnly indexes: a summable naming a string
+    // property fails the integer-type rule.
+    let schema = likes_schema_with_index_key(2, "summable", platform_value!("hashtag"));
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "sum axes",
+        "integer type",
     );
 }
 

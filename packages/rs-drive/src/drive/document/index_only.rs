@@ -172,6 +172,13 @@ impl Drive {
         )?;
         Ok(match element {
             Some(grovedb::Element::Item(payload, _)) => payload == expected_commitment.as_slice(),
+            // Summable indexes store `ItemWithSumItem(commitment, amount)`;
+            // the commitment payload plays the same binding role, and the
+            // amount needs no separate check — it is one of the document's
+            // properties, so it is already covered by the commitment.
+            Some(grovedb::Element::ItemWithSumItem(payload, _, _)) => {
+                payload == expected_commitment.as_slice()
+            }
             _ => false,
         })
     }

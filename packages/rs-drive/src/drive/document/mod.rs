@@ -188,10 +188,13 @@ pub(crate) fn make_document_reference_with_sum_item(
     )
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Read a document's `<sum_property>` field and convert it to `i64`
 /// for use as the sum contribution in
-/// [`make_document_item_with_sum_item`].
+/// [`make_document_item_with_sum_item`]. Also used on the verify side:
+/// the executed-transition verifier recomputes the expected sum
+/// contribution of a proved summable indexOnly entry from the created
+/// document.
 ///
 /// The DPP validator guarantees the named property exists and is in
 /// the document's `required` array — a missing value here means

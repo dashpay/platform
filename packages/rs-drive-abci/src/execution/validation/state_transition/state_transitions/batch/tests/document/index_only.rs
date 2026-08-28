@@ -1155,4 +1155,224 @@ mod index_only_executed_proof_tests {
             "expected the entry-still-present refusal, got: {error}"
         );
     }
+
+    /// A signed `tip` create for the given amount — the summable-type
+    /// counterpart of `signed_mark_create`. The `tip` doctype's proof index
+    /// (`byPost`) is summable, so its entries are
+    /// `ItemWithSumItem(commitment, amount)` and the executed-proof
+    /// verifier must check the proved sum contribution alongside the
+    /// commitment.
+    async fn signed_tip_create(
+        contract: &DataContract,
+        owner: Identifier,
+        post_id: Identifier,
+        amount: u64,
+        nonce: u64,
+        key: &dpp::identity::IdentityPublicKey,
+        signer: &SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> (StateTransition, Document) {
+        use dpp::document::DocumentV0Setters;
+        let tip_type = contract
+            .document_type_for_name("tip")
+            .expect("tip doctype exists");
+        let entropy = Bytes32::random_with_rng(rng);
+        let mut tip = tip_type
+            .random_document_with_identifier_and_entropy(
+                rng,
+                owner,
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random tip");
+        tip.set(
+            "postId",
+            dpp::platform_value::Value::Identifier(post_id.to_buffer()),
+        );
+        tip.set("amount", dpp::platform_value::Value::U64(amount));
+        let create = BatchTransition::new_document_creation_transition_from_document(
+            tip.clone(),
+            tip_type,
+            entropy.0,
+            key,
+            nonce,
+            0,
+            None,
+            signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the create transition");
+        (create, tip)
+    }
+
+    /// The summable lifecycle through executed proofs: a `tip` create
+    /// proves and verifies against its `ItemWithSumItem` entry, a forged
+    /// transition claiming a different amount at the same entry position
+    /// is refused on the sum contribution, and the executed delete proves
+    /// the entry absent.
+    #[tokio::test]
+    async fn test_executed_summable_tip_proofs_and_forged_amount_refused() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(4645);
+
+        let (alice, alice_signer, alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let contract = register_likes(&platform, alice.id(), platform_version);
+        let contract_arc = Arc::new(contract.clone());
+
+        let post = create_post(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            &alice_key,
+            2,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+
+        let (create, tip) = signed_tip_create(
+            &contract,
+            alice.id(),
+            post.id(),
+            150,
+            3,
+            &alice_key,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let result = process_and_commit(&platform, &platform_state, &create, platform_version);
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "the tip create must execute: {:?}",
+            result.execution_results()
+        );
+
+        // ── prove + verify the executed create ─────────────────────────
+        let proof = platform
+            .drive
+            .prove_state_transition(&create, None, platform_version)
+            .expect("expected to prove the executed create")
+            .into_data()
+            .expect("expected proof bytes");
+        let lookup = |_id: &dpp::identifier::Identifier| Ok(Some(Arc::clone(&contract_arc)));
+        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &create,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .expect("expected the executed summable create proof to verify");
+        assert_ne!(root_hash, [0u8; 32]);
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
+            panic!("expected verified documents");
+        };
+        let (_, verified_tip) = documents.into_iter().next().expect("one document");
+        let verified_tip = verified_tip.expect("the created tip is present");
+        assert_eq!(
+            verified_tip
+                .properties()
+                .get("amount")
+                .expect("amount present")
+                .to_integer::<u64>()
+                .expect("integer"),
+            150
+        );
+
+        // ── forged amount at the same entry position is refused ────────
+        // Signed but never processed: the same (post, owner) addresses the
+        // same `byPost` entry — the amount is not in that index's path —
+        // but the stored sum contribution is the real row's 150.
+        let (forged_create, _forged_tip) = signed_tip_create(
+            &contract,
+            alice.id(),
+            post.id(),
+            999,
+            4,
+            &alice_key,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let proof = platform
+            .drive
+            .prove_state_transition(&forged_create, None, platform_version)
+            .expect("expected to prove the entry position")
+            .into_data()
+            .expect("expected proof bytes");
+        let error = Drive::verify_state_transition_was_executed_with_proof(
+            &forged_create,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .expect_err("a forged amount must not verify as executed");
+        assert!(
+            error.to_string().contains("sum contribution"),
+            "expected the sum-contribution refusal, got: {error}"
+        );
+
+        // ── prove + verify the executed delete ─────────────────────────
+        let tip_type = contract
+            .document_type_for_name("tip")
+            .expect("tip doctype exists");
+        let delete = BatchTransition::new_document_deletion_transition_from_document(
+            tip,
+            tip_type,
+            &alice_key,
+            4,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the delete transition");
+        let result = process_and_commit(&platform, &platform_state, &delete, platform_version);
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "the tip delete must execute: {:?}",
+            result.execution_results()
+        );
+
+        let proof = platform
+            .drive
+            .prove_state_transition(&delete, None, platform_version)
+            .expect("expected to prove the executed delete")
+            .into_data()
+            .expect("expected proof bytes");
+        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &delete,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .expect("expected the executed summable delete proof to verify");
+        assert_ne!(root_hash, [0u8; 32]);
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
+            panic!("expected verified documents");
+        };
+        let (_, absent) = documents.into_iter().next().expect("one entry");
+        assert!(absent.is_none(), "the deleted tip must be proven absent");
+    }
 }

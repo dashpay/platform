@@ -2047,16 +2047,13 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
-        if index.summable.is_some() || index.ranked_summable || index.ranked_averageable {
-            return Err(structure_error(format!(
-                "index \"{}\" on indexOnly document type \"{}\" cannot use the sum axes \
-                 (summable / rangeSummable / rankedSummable / rankedAverageable / the \
-                 averageable sugar): indexOnly terminals are plain Items carrying no sum \
-                 contribution; only the count axes (countable / rangeCountable / \
-                 rankedCountable) are supported",
-                index_name, name,
-            )));
-        }
+        // The sum axes (summable / rangeSummable / rankedSummable /
+        // rankedAverageable / the averageable sugar) are admitted: a
+        // summable index's terminal entry is an
+        // `ItemWithSumItem(commitment, amount)` carrying the summed
+        // property's value, and the doctype-level summable cross-checks
+        // (canonical property, i64-safe integer type, `required`
+        // membership) run for every doctype, indexOnly included.
 
         let terminal = index.terminal.as_deref().expect("normalized to Some above");
 

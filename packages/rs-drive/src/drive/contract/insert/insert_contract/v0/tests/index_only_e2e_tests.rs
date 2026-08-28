@@ -15,6 +15,10 @@
 //! | `byPost`        | `[postId]`            | `$ownerId` | countable + range + ranked  |
 //! | `byLiker`       | `[$ownerId]`          | `postId`   | none                        |
 //!
+//! plus the `tip` doctype (sum axes — see the sum-axes section at the
+//! bottom) and the `mark` doctype (two single-property indexes, the
+//! splice-prone shape).
+//!
 //! Three layers are pinned. The *registration shape*: no `[0]` primary-key
 //! tree is created for the doctype, while the top-level property-name trees
 //! (including `byPost`'s `ProvableCountIndexedTree`) are. The *entry
@@ -1498,6 +1502,436 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             None,
         )
         .expect("the other real row must still delete");
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ---------------------------------------------------------------------------
+// Sum axes: ItemWithSumItem terminal entries (the `tip` doctype)
+// ---------------------------------------------------------------------------
+//
+// The `tip` doctype pins the sum-axis storage mode: `byPost` —
+// `[postId] → $ownerId` with the full count AND sum axis set
+// (`summable: "amount"` + range + ranked on both) — stores
+// `ItemWithSumItem(commitment, amount)` terminals, while
+// `byTipperAmount` — `[$ownerId, amount] → postId`, no axes — keeps
+// plain `Item(commitment)` terminals on the same rows.
+
+const TIP_DOCTYPE: &str = "tip";
+
+fn tip_doctype_path(contract: &DataContract) -> Vec<Vec<u8>> {
+    vec![
+        vec![crate::drive::RootTree::DataContractDocuments as u8],
+        contract.id().as_bytes().to_vec(),
+        vec![1],
+        TIP_DOCTYPE.as_bytes().to_vec(),
+    ]
+}
+
+/// A tip of `amount` on `post` by `owner`.
+fn build_tip(
+    contract: &DataContract,
+    post: [u8; 32],
+    owner: [u8; 32],
+    amount: u64,
+    seed: u64,
+) -> Document {
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(TIP_DOCTYPE)
+        .expect("tip doctype exists");
+    let mut doc = document_type
+        .random_document(Some(seed), pv)
+        .expect("random document");
+    let mut props = std::collections::BTreeMap::new();
+    props.insert("postId".to_string(), Value::Identifier(post));
+    props.insert("amount".to_string(), Value::U64(amount));
+    doc.set_properties(props);
+    doc.set_owner_id(Identifier::from(owner));
+    doc
+}
+
+fn insert_tip(
+    drive: &Drive,
+    contract: &DataContract,
+    doc: &Document,
+    apply: bool,
+) -> Result<FeeResult, crate::error::Error> {
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(TIP_DOCTYPE)
+        .expect("tip doctype exists");
+    drive.add_document_for_contract(
+        DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((doc, None)),
+                owner_id: None,
+            },
+            contract,
+            document_type,
+        },
+        false,
+        BlockInfo::default(),
+        apply,
+        None,
+        pv,
+        None,
+    )
+}
+
+fn delete_tip(
+    drive: &Drive,
+    contract: &DataContract,
+    doc: Document,
+    apply: bool,
+) -> Result<FeeResult, crate::error::Error> {
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(TIP_DOCTYPE)
+        .expect("tip doctype exists");
+    drive.delete_index_only_document_for_contract(
+        doc,
+        contract,
+        document_type,
+        BlockInfo::default(),
+        apply,
+        None,
+        pv,
+        None,
+    )
+}
+
+fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i64, Vec<u8>)> {
+    let path_query = grovedb::PathQuery::new_axis(
+        path.to_vec(),
+        grovedb_query::AxisQuery::top_k(grovedb_query::IndexAxis::Sum, k, 0, descending)
+            .keys_only(),
+    );
+    match drive
+        .grove
+        .run_path_query(
+            &path_query,
+            true,
+            true,
+            true,
+            grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
+            None,
+            &platform_version().drive.grove_version,
+        )
+        .unwrap()
+        .expect("the keys-only sum-axis read must succeed")
+    {
+        grovedb::PathQueryRun::AxisKeys {
+            keys: grovedb::AxisKeys::Sum(pairs),
+            ..
+        } => pairs,
+        other => panic!("expected sum keys, got {other:?}"),
+    }
+}
+
+/// The unproved point-lookup sum of `amount` over tips whose `postId`
+/// equals `post` — the query surface a "total tipped to this post"
+/// feature reads.
+fn tips_total_for_post(drive: &Drive, contract: &DataContract, post: [u8; 32]) -> i64 {
+    use crate::query::drive_document_sum_query::{
+        DocumentSumRequest, DocumentSumResponse, SumMode,
+    };
+    let document_type = contract
+        .document_type_for_name(TIP_DOCTYPE)
+        .expect("tip doctype exists");
+    let drive_config = crate::config::DriveConfig::default();
+    let request = DocumentSumRequest {
+        contract,
+        document_type,
+        sum_property: "amount".to_string(),
+        where_clauses: vec![crate::query::WhereClause {
+            field: "postId".to_string(),
+            operator: crate::query::WhereOperator::Equal,
+            value: Value::Identifier(post),
+        }],
+        resolved_time_ranges: vec![],
+        order_clauses: vec![],
+        mode: SumMode::Aggregate,
+        limit: None,
+        prove: false,
+        drive_config: &drive_config,
+    };
+    match drive
+        .execute_document_sum_request(request, None, platform_version())
+        .expect("the point-lookup sum must execute")
+    {
+        DocumentSumResponse::Aggregate(sum) => sum,
+        other => panic!("expected an aggregate sum, got {other:?}"),
+    }
+}
+
+/// A summable index's terminal entries are `ItemWithSumItem(commitment,
+/// amount)` — the same commitment every plain entry of the row carries,
+/// plus the summed property's value — while a non-summable index on the
+/// same doctype keeps plain `Item` terminals.
+#[test]
+fn tip_insert_writes_sum_bearing_terminal_items() {
+    let (drive, contract) = setup_likes();
+    let tip = build_tip(&contract, POST_A, OWNER_1, 100, 1);
+    insert_tip(&drive, &contract, &tip, true).expect("insert tip");
+
+    let document_type = contract
+        .document_type_for_name(TIP_DOCTYPE)
+        .expect("tip doctype exists");
+    let expected_commitment =
+        crate::drive::document::index_only_row_commitment(&tip, document_type, platform_version())
+            .expect("commitment computes");
+
+    // byPost (summable): [.., postId, POST_A, 0] key OWNER_1 →
+    // ItemWithSumItem(commitment, 100).
+    let mut by_post = tip_doctype_path(&contract);
+    by_post.extend([b"postId".to_vec(), POST_A.to_vec(), vec![0]]);
+    match read_grove_element(&drive, &by_post, &OWNER_1) {
+        Some(Element::ItemWithSumItem(data, sum_value, _)) => {
+            assert_eq!(
+                data,
+                expected_commitment.to_vec(),
+                "the sum-bearing terminal still carries the row commitment"
+            );
+            assert_eq!(sum_value, 100, "the sum item carries the tip's amount");
+        }
+        other => panic!("expected an ItemWithSumItem at the byPost terminal, got {other:?}"),
+    }
+
+    // byTipperAmount (no axes): [.., $ownerId, OWNER_1, amount, <100>, 0]
+    // key POST_A → plain Item(commitment). The amount path segment uses the
+    // property's key encoding.
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+    let encoded_amount = document_type
+        .serialize_value_for_key("amount", &Value::U64(100), platform_version())
+        .expect("amount encodes");
+    let mut by_tipper_amount = tip_doctype_path(&contract);
+    by_tipper_amount.extend([
+        b"$ownerId".to_vec(),
+        OWNER_1.to_vec(),
+        b"amount".to_vec(),
+        encoded_amount,
+        vec![0],
+    ]);
+    match read_grove_element(&drive, &by_tipper_amount, &POST_A) {
+        Some(Element::Item(data, _)) => assert_eq!(
+            data,
+            expected_commitment.to_vec(),
+            "the non-summable index keeps a plain commitment Item on the same row"
+        ),
+        other => panic!("expected a plain Item at the byTipperAmount terminal, got {other:?}"),
+    }
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Sum aggregation across entries: per-post totals via the point-lookup
+/// sum query (unproved and proved agree), and the ranked Sum axis orders
+/// posts by total tipped.
+#[test]
+fn tips_sum_and_rank_posts() {
+    use crate::query::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
+    use crate::query::drive_document_sum_query::{
+        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
+    };
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+    let (drive, contract) = setup_likes();
+    // POST_A: 100 + 250 = 350; POST_B: 40.
+    insert_tip(
+        &drive,
+        &contract,
+        &build_tip(&contract, POST_A, OWNER_1, 100, 1),
+        true,
+    )
+    .expect("tip 1");
+    insert_tip(
+        &drive,
+        &contract,
+        &build_tip(&contract, POST_A, OWNER_2, 250, 2),
+        true,
+    )
+    .expect("tip 2");
+    insert_tip(
+        &drive,
+        &contract,
+        &build_tip(&contract, POST_B, OWNER_1, 40, 3),
+        true,
+    )
+    .expect("tip 3");
+
+    assert_eq!(tips_total_for_post(&drive, &contract, POST_A), 350);
+    assert_eq!(tips_total_for_post(&drive, &contract, POST_B), 40);
+
+    // Proved parity: the proof of the same point lookup verifies and
+    // yields the same total.
+    let document_type = contract
+        .document_type_for_name(TIP_DOCTYPE)
+        .expect("tip doctype exists");
+    let post_a_clause = crate::query::WhereClause {
+        field: "postId".to_string(),
+        operator: crate::query::WhereOperator::Equal,
+        value: Value::Identifier(POST_A),
+    };
+    let drive_config = crate::config::DriveConfig::default();
+    let request = DocumentSumRequest {
+        contract: &contract,
+        document_type,
+        sum_property: "amount".to_string(),
+        where_clauses: vec![post_a_clause.clone()],
+        resolved_time_ranges: vec![],
+        order_clauses: vec![],
+        mode: SumMode::Aggregate,
+        limit: None,
+        prove: true,
+        drive_config: &drive_config,
+    };
+    let proof_bytes = match drive
+        .execute_document_sum_request(request, None, platform_version())
+        .expect("the proved point-lookup sum must execute")
+    {
+        DocumentSumResponse::Proof(bytes) => bytes,
+        other => panic!("expected proof bytes, got {other:?}"),
+    };
+    let index = find_summable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&post_a_clause),
+        "amount",
+        &[],
+    )
+    .expect("byPost covers `postId == POST_A`");
+    let sum_query = DriveDocumentSumQuery {
+        document_type,
+        contract_id: contract.id().to_buffer(),
+        document_type_name: TIP_DOCTYPE.to_string(),
+        index,
+        where_clauses: vec![post_a_clause],
+        sum_property: "amount".to_string(),
+    };
+    let verifier_path_query = sum_query
+        .point_lookup_sum_path_query(platform_version())
+        .expect("verifier path query builds");
+    let (_root_hash, proved) = grovedb::GroveDb::verify_query(
+        &proof_bytes,
+        &verifier_path_query,
+        &platform_version().drive.grove_version,
+    )
+    .expect("the sum proof must verify");
+    let proved_total: i64 = proved
+        .into_iter()
+        .filter_map(|(_path, _key, element)| element)
+        .map(|element| element.sum_value_or_default())
+        .sum();
+    assert_eq!(proved_total, 350, "proved and unproved totals must agree");
+
+    // Ranked Sum axis on byPost's property-name tree: POST_A (350) above
+    // POST_B (40).
+    let mut post_tree = tip_doctype_path(&contract);
+    post_tree.push(b"postId".to_vec());
+    let top = sum_top_k(&drive, &post_tree, 10, true);
+    assert_eq!(
+        top,
+        vec![(350, POST_A.to_vec()), (40, POST_B.to_vec())],
+        "the Sum axis ranks posts by total tipped"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Delete-by-values on a summable type: grovedb reads the amount off the
+/// stored element and subtracts it from every ancestor sum — totals and
+/// rankings follow, and drained groups prune.
+#[test]
+fn tip_delete_subtracts_sums_and_prunes_drained_groups() {
+    let (drive, contract) = setup_likes();
+    let tip_1 = build_tip(&contract, POST_A, OWNER_1, 100, 1);
+    let tip_2 = build_tip(&contract, POST_A, OWNER_2, 250, 2);
+    let tip_3 = build_tip(&contract, POST_B, OWNER_1, 40, 3);
+    insert_tip(&drive, &contract, &tip_1, true).expect("tip 1");
+    insert_tip(&drive, &contract, &tip_2, true).expect("tip 2");
+    insert_tip(&drive, &contract, &tip_3, true).expect("tip 3");
+
+    delete_tip(&drive, &contract, tip_2, true).expect("delete tip 2");
+    assert_eq!(
+        tips_total_for_post(&drive, &contract, POST_A),
+        100,
+        "the deleted tip's amount is subtracted from the post's total"
+    );
+
+    let mut post_tree = tip_doctype_path(&contract);
+    post_tree.push(b"postId".to_vec());
+    assert_eq!(
+        sum_top_k(&drive, &post_tree, 10, true),
+        vec![(100, POST_A.to_vec()), (40, POST_B.to_vec())],
+        "the ranking re-orders after the subtraction"
+    );
+
+    // Draining POST_A prunes its group from the ranked tree entirely.
+    delete_tip(&drive, &contract, tip_1, true).expect("delete tip 1");
+    assert_eq!(
+        sum_top_k(&drive, &post_tree, 10, true),
+        vec![(40, POST_B.to_vec())],
+        "a drained post drops out of the ranking"
+    );
+    assert!(
+        read_grove_element(&drive, &post_tree, &POST_A).is_none(),
+        "the drained post's value tree is pruned"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// The commitment probe covers the amount: a delete whose values carry a
+/// falsified amount addresses the same byPost entry (the amount is not in
+/// that index's path) but fails the row-commitment comparison.
+#[test]
+fn tip_delete_with_falsified_amount_is_refused() {
+    let (drive, contract) = setup_likes();
+    let tip = build_tip(&contract, POST_A, OWNER_1, 100, 1);
+    insert_tip(&drive, &contract, &tip, true).expect("insert tip");
+
+    let falsified = build_tip(&contract, POST_A, OWNER_1, 999, 2);
+    let error = delete_tip(&drive, &contract, falsified, true)
+        .expect_err("a falsified amount must be refused");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Drive(
+                crate::error::drive::DriveError::DeletingDocumentThatDoesNotExist(_)
+            )
+        ),
+        "expected the row-integrity refusal, got: {error}"
+    );
+
+    // The honest tuple still deletes, and the sum drains to zero.
+    delete_tip(&drive, &contract, tip, true).expect("the real tuple must still delete");
+    assert_eq!(tips_total_for_post(&drive, &contract, POST_A), 0);
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// The estimation twin covers the sum-bearing element and tree variants:
+/// dry-run fees upper-bound applied fees for a summable indexOnly type.
+#[test]
+fn tip_estimated_fees_upper_bound_actual_fees() {
+    let (drive, contract) = setup_likes();
+    let tip = build_tip(&contract, POST_A, OWNER_1, 100, 1);
+
+    let estimated_insert =
+        insert_tip(&drive, &contract, &tip, false).expect("estimated insert must work");
+    let actual_insert = insert_tip(&drive, &contract, &tip, true).expect("actual insert");
+    assert!(
+        estimated_insert.storage_fee >= actual_insert.storage_fee,
+        "estimated insert storage fee {} must upper-bound actual {}",
+        estimated_insert.storage_fee,
+        actual_insert.storage_fee
+    );
+
+    let estimated_delete =
+        delete_tip(&drive, &contract, tip.clone(), false).expect("estimated delete must work");
+    let actual_delete = delete_tip(&drive, &contract, tip, true).expect("actual delete");
+    assert!(estimated_delete.processing_fee > 0);
+    assert!(actual_delete.processing_fee > 0);
 
     assert_grovedb_is_consistent(&drive);
 }

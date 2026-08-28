@@ -33,12 +33,25 @@ refersTo-typed identifier property (identity, contract, token, permanent
 document) — is the member key, sitting exactly where a normal non-unique
 index keys by document id; the element is an `Item` instead of a
 `Reference` because there is nothing to point at. The `0` storage marker,
-value-tree types, and the count/ranked tree derivation are byte-identical
-to the ordinary non-unique layout, which is what lets the protocol v14
-ranked machinery (see [Document Ranked Trees](./document-ranked-trees.md))
-serve index-only types unchanged: "the five most-liked posts in `#dash`"
-is an O(log n + k) read with an O(log n + k) proof, and Items count in
+value-tree types, and the count/sum/ranked tree derivation are
+byte-identical to the ordinary non-unique layout, which is what lets the
+protocol v14 ranked machinery (see
+[Document Ranked Trees](./document-ranked-trees.md)) serve index-only
+types unchanged: "the five most-liked posts in `#dash`" is an
+O(log n + k) read with an O(log n + k) proof, and Items count in
 count/ranked trees exactly as References do.
+
+The **sum axes** compose the same way: a `summable: "<prop>"` index
+stores `ItemWithSumItem(<row commitment>, <amount>)` terminals — the same
+commitment payload, plus the summed property's value — so entries
+contribute to ancestor sum trees exactly as stored types'
+`ReferenceWithSumItem` references do ("total tipped to this post", "top
+posts by total tipped" via `rankedSummable`). The doctype-level summable
+cross-checks (one canonical summed property, i64-safe integer type,
+`required` membership) apply unchanged, and on delete grovedb reads the
+amount off the stored element and propagates the subtraction — the
+falsified-amount case dies on the commitment probe first, since the
+amount is one of the committed properties.
 
 **Governing principle: only what is in the indexes exists and is
 recoverable.** Prefix property values live in the path, the terminal id in
@@ -72,7 +85,7 @@ aggregate keywords follow:
 | terminal is `$ownerId` or a single-id refersTo property | the member key must alone be a referable entity id (`identityPublicKey` is compound and rejected) |
 | indexed `$createdAt` requires `$createdAt` in `required` | creation only assigns timestamps for required system times |
 | `documentsMutable: false`, no transfers/trading/history/transient | no stored row, no revision |
-| non-unique, non-contested, `nullSearchable` default, no `timeRange`, count axes only | v1 scope; sum axes and buckets are follow-ups |
+| non-unique, non-contested, `nullSearchable` default, no `timeRange` | v1 scope; buckets are a follow-up |
 
 `indexOnly` and the index set (terminals included) are immutable across
 contract updates — a later-added index could never be backfilled.
@@ -121,8 +134,9 @@ by the presence of the entry its values produce under the **proof index**
 (the first `$ownerId`-bearing index not involving `$createdAt` — contract
 admission guarantees one exists) and a delete by its absence, with the
 proved entry's payload checked against the transition-derived row
-commitment; prover and verifier build the same single-entry path query
-from the transition. The outcome is always `AffectedState`, never
+commitment (and, when the proof index is summable, the proved sum
+contribution against the created document's amount); prover and verifier
+build the same single-entry path query from the transition. The outcome is always `AffectedState`, never
 `ExecutionProved`: the commitment carries neither id, entropy nor nonce,
 so a snapshot cannot bind one specific transition's execution.
 

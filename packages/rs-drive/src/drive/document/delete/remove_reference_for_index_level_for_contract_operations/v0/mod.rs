@@ -3,15 +3,16 @@ use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
+use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
 
+use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
-use dpp::data_contract::document_type::{IndexCountability, IndexLevelTypeInfo};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::document_reference_size;
+use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::error::drive::DriveError;
 use crate::util::storage_flags::StorageFlags;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -58,7 +59,8 @@ impl Drive {
         let document_type = document_and_contract_info.document_type;
 
         // indexOnly terminal: the member key is the terminal property's
-        // value and the stored element is an empty `Item` — mirror of the
+        // value and the stored element is a commitment `Item` (an
+        // `ItemWithSumItem` under a summable index) — mirror of the
         // insert-side branch in
         // `add_reference_for_index_level_for_contract_operations_v0`.
         // `terminal` can only be `Some` on a PV14+ indexOnly contract, so
@@ -66,10 +68,18 @@ impl Drive {
         if let Some(terminal_property) = index_type.terminal.as_deref() {
             key_info_path.push(KnownKey(vec![0]));
 
-            let member_tree_type = match index_type.countable {
-                IndexCountability::NotCountable => TreeType::NormalTree,
-                IndexCountability::Countable => TreeType::CountTree,
-                IndexCountability::CountableAllowingOffset => TreeType::ProvableCountTree,
+            let member_tree_type = terminal_member_tree_type(index_type);
+
+            // Sum-bearing entries (`ItemWithSumItem`) carry the i64 sum
+            // item alongside the commitment payload; mirror the insert
+            // side's 10-byte worst case. Delete-side sum-decrement is
+            // implicit: grovedb reads the amount off the stored element
+            // and propagates the subtraction — same as stored-type
+            // `ReferenceWithSumItem` entries below.
+            let estimated_value_size = if index_type.summable.is_some() {
+                crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 10
+            } else {
+                crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE
             };
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
@@ -81,7 +91,7 @@ impl Drive {
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllItems(
                             DEFAULT_HASH_SIZE_U8,
-                            crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE,
+                            estimated_value_size,
                             storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
@@ -113,7 +123,7 @@ impl Drive {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
                 AllItems(
                     DEFAULT_HASH_SIZE_U8,
-                    crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE,
+                    estimated_value_size,
                     storage_flags.map(|s| s.serialized_size()),
                 ),
                 &key_info_path,
@@ -148,39 +158,15 @@ impl Drive {
             key_info_path.push(KnownKey(vec![0]));
 
             // Mirror the insert path: tree variant is driven by the
-            // composition of the index's countability AND summability.
-            // See the matching dispatch table in
-            // `add_reference_for_index_level_for_contract_operations_v0`
-            // — eight cases over the v3 sum-tree-expanded TreeType
-            // set (NormalTree / CountTree / ProvableCountTree /
-            // SumTree / ProvableSumTree / CountSumTree /
-            // ProvableCountSumTree / ProvableCountProvableSumTree).
-            let count_provable = matches!(
-                index_type.countable,
-                IndexCountability::CountableAllowingOffset
-            );
-            let count_root_only =
-                matches!(index_type.countable, IndexCountability::Countable) && !count_provable;
-            let sum_provable = index_type.range_summable;
-            let sum_root_only = index_type.summable.is_some() && !sum_provable;
-            let want_count = count_provable || count_root_only;
-            let want_sum = sum_provable || sum_root_only;
-            let reference_tree_type =
-                match (count_provable, count_root_only, sum_provable, sum_root_only) {
-                    (false, false, false, false) => TreeType::NormalTree,
-                    (false, true, false, false) => TreeType::CountTree,
-                    (true, _, false, false) => TreeType::ProvableCountTree,
-                    (false, false, false, true) => TreeType::SumTree,
-                    (false, false, true, _) => TreeType::ProvableSumTree,
-                    (false, true, false, true) => TreeType::CountSumTree,
-                    (true, _, false, true) => TreeType::ProvableCountSumTree,
-                    (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
-                    (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
-                };
-            let _ = (want_count, want_sum); // narrative parity with the dispatch table.
+            // composition of the index's countability AND summability —
+            // `terminal_member_tree_type` is the shared dispatch (eight
+            // cases over the v3 sum-tree-expanded TreeType set), used
+            // by both sides so the delete's estimation layers cannot
+            // drift from the trees the insert actually created.
+            let reference_tree_type = terminal_member_tree_type(index_type);
 
-            // Delete-side sum-decrement is implicit: when `want_sum`,
-            // the existing reference at `[..., 0, doc_id]` is an
+            // Delete-side sum-decrement is implicit: under a summable
+            // index, the existing reference at `[..., 0, doc_id]` is an
             // `Element::ItemWithSumItem(doc_id, amount_i64, flags)`
             // (written by the insert path). The contribution is
             // recovered from the reference element itself — Drive

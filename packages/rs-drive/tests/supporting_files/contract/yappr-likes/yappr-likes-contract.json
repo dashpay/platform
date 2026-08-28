@@ -107,6 +107,66 @@
       ],
       "additionalProperties": false
     },
+    "tip": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "summable": "amount",
+          "rangeSummable": true,
+          "rankedSummable": true
+        },
+        {
+          "name": "byTipperAmount",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "amount": "asc"
+            }
+          ],
+          "terminal": "postId"
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post"
+          },
+          "position": 0
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "position": 1
+        }
+      },
+      "required": [
+        "postId",
+        "amount"
+      ],
+      "additionalProperties": false
+    },
     "mark": {
       "type": "object",
       "indexOnly": true,
