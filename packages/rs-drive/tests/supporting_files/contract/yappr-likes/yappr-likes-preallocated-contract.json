@@ -263,6 +263,79 @@
         "b"
       ],
       "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byTopic",
+          "properties": [
+            {
+              "topic": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "topic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotation": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byNoteTopic",
+          "properties": [
+            {
+              "noteId": "asc"
+            },
+            {
+              "topic": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "preallocated": true
+        }
+      ],
+      "properties": {
+        "noteId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "note",
+            "propertyAgreement": {
+              "topic": "topic"
+            }
+          }
+        },
+        "topic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        }
+      },
+      "required": [
+        "noteId",
+        "topic"
+      ],
+      "additionalProperties": false
     }
   }
 }

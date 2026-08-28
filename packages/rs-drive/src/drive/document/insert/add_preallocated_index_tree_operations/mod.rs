@@ -28,10 +28,13 @@
 //! entry insertion cost stays uniform from the first entry on. See
 //! `remove_reference_for_index_level_for_contract_operations`.
 //!
-//! Gated in place rather than by a method version: `preallocated` can only
-//! be true on a PV14+ contract (the grammar rejects the keyword below
-//! meta-schema v3), so this code is unreachable for every historical
-//! document — the same gating the indexOnly insert branch relies on.
+//! Doubly gated: the caller is `add_document_for_contract_operations_v1`,
+//! selected only by protocol v14's method table
+//! (`DRIVE_DOCUMENT_METHOD_VERSIONS_V4`), and `preallocated` itself cannot
+//! be true below meta-schema v3 — so the platform-version snapshot names
+//! the active insert semantics AND historical documents can never reach
+//! this code. The delete-side counterpart is versioned the same way
+//! (`remove_reference_for_index_level_for_contract_operations_v1`).
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
@@ -115,12 +118,14 @@ impl Drive {
                 if !index.preallocated {
                     continue;
                 }
-                for binding in index
-                    .preallocation_bindings(referring_type.flattened_properties(), contract.id())
-                {
-                    if binding.target_document_type_name != target_name {
-                        continue;
-                    }
+                // Target-filtered derivation: candidates naming other
+                // target types are rejected before any binding plan is
+                // allocated — this runs on every document insert.
+                for binding in index.preallocation_bindings_for_target(
+                    referring_type.flattened_properties(),
+                    contract.id(),
+                    target_name,
+                ) {
                     self.add_preallocated_index_tree_operations_for_binding(
                         document_and_contract_info,
                         referring_name,
@@ -192,13 +197,15 @@ impl Drive {
             );
         }
 
+        // Resolve EVERY path key before emitting a single operation: a
+        // missing or null bound value at ANY level means no entry can ever
+        // agree with this document, so nothing must be preallocated — and
+        // bailing mid-walk would leave the earlier levels' tree inserts
+        // already sitting in the batch. Only the stateful path can skip
+        // this way; in estimation mode every key resolves to a worst-case
+        // size, so the dry-run always sweeps the full path.
+        let mut resolved_levels = Vec::with_capacity(index.properties.len());
         let mut current_level = referring_index_structure;
-        let mut index_path_info: Option<PathInfo<0>> = None;
-        // The value tree type of the level above, deciding whether the next
-        // property-name tree needs the zero-contribution wrapper — exactly
-        // the `parent_value_tree_type` the recursive walker threads through.
-        let mut parent_value_tree_type = TreeType::NormalTree;
-
         for (index_property, key_source) in index.properties.iter().zip(key_sources.iter()) {
             let property_name = index_property.name.as_str();
             let sub_level = current_level
@@ -207,16 +214,10 @@ impl Drive {
                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                     "a preallocated index's property must exist in the index structure",
                 )))?;
-            let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
-            let property_name_tree_type = tree_types.property_name_tree_type;
-            let ranked_axes = tree_types.ranked_axes.as_slice();
-            let value_tree_type = tree_types.value_tree_type;
-
-            // Resolve this level's value key from the inserted (referenced)
-            // document. `$id` for the referring property; the agreed
-            // referenced property otherwise — validated at contract
-            // registration to share one value kind with the referring side,
-            // so the encoded bytes match what an entry insert would write.
+            // `$id` for the referring property; the agreed referenced
+            // property otherwise — validated at contract registration to
+            // share one value kind with the referring side, so the encoded
+            // bytes match what an entry insert would write.
             let source_property = match *key_source {
                 PreallocatedKeySource::ReferencedDocumentId => "$id",
                 PreallocatedKeySource::ReferencedDocumentProperty(referenced) => referenced,
@@ -241,6 +242,28 @@ impl Drive {
                 // the fallback.
                 return Ok(());
             }
+            resolved_levels.push((
+                property_name,
+                sub_level,
+                source_property,
+                *key_source,
+                value_key,
+            ));
+            current_level = sub_level;
+        }
+        let terminal_level = current_level;
+
+        let mut index_path_info: Option<PathInfo<0>> = None;
+        // The value tree type of the level above, deciding whether the next
+        // property-name tree needs the zero-contribution wrapper — exactly
+        // the `parent_value_tree_type` the recursive walker threads through.
+        let mut parent_value_tree_type = TreeType::NormalTree;
+
+        for (property_name, sub_level, source_property, key_source, value_key) in resolved_levels {
+            let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
+            let property_name_tree_type = tree_types.property_name_tree_type;
+            let ranked_axes = tree_types.ranked_axes.as_slice();
+            let value_tree_type = tree_types.value_tree_type;
 
             let mut path_info = match index_path_info.take() {
                 None => {
@@ -383,7 +406,6 @@ impl Drive {
 
             index_path_info = Some(path_info);
             parent_value_tree_type = value_tree_type;
-            current_level = sub_level;
         }
 
         let mut path_info = index_path_info.ok_or(Error::Drive(
@@ -393,7 +415,7 @@ impl Drive {
         // The terminal `0` member bucket — mirror of the tree-creation half
         // of `add_index_only_terminal_item_operations` (the member entry
         // itself is each entry insert's own write).
-        let level_info = current_level.has_index_with_type().ok_or(Error::Drive(
+        let level_info = terminal_level.has_index_with_type().ok_or(Error::Drive(
             DriveError::CorruptedCodeExecution(
                 "a preallocated index must terminate at its last property",
             ),

@@ -71,6 +71,33 @@ impl Index {
         flattened_properties: &'a IndexMap<String, DocumentProperty>,
         own_contract_id: Identifier,
     ) -> Vec<PreallocationBinding<'a>> {
+        self.preallocation_bindings_impl(flattened_properties, own_contract_id, None)
+    }
+
+    /// [`Self::preallocation_bindings`] restricted to bindings whose target
+    /// is `target_document_type_name`. The write path calls this once per
+    /// document insert for every preallocated index of the contract, so
+    /// candidates naming other target types are rejected before their
+    /// key-source vectors are ever allocated.
+    pub fn preallocation_bindings_for_target<'a>(
+        &'a self,
+        flattened_properties: &'a IndexMap<String, DocumentProperty>,
+        own_contract_id: Identifier,
+        target_document_type_name: &str,
+    ) -> Vec<PreallocationBinding<'a>> {
+        self.preallocation_bindings_impl(
+            flattened_properties,
+            own_contract_id,
+            Some(target_document_type_name),
+        )
+    }
+
+    fn preallocation_bindings_impl<'a>(
+        &'a self,
+        flattened_properties: &'a IndexMap<String, DocumentProperty>,
+        own_contract_id: Identifier,
+        only_target_document_type_name: Option<&str>,
+    ) -> Vec<PreallocationBinding<'a>> {
         let mut bindings = Vec::new();
         for candidate in &self.properties {
             let Some(property) = flattened_properties.get(&candidate.name) else {
@@ -87,6 +114,11 @@ impl Index {
                 continue;
             };
             if contract_id.is_some_and(|id| id != own_contract_id) {
+                continue;
+            }
+            if only_target_document_type_name
+                .is_some_and(|target| target != document_type_name.as_str())
+            {
                 continue;
             }
             let key_sources: Option<Vec<_>> = self

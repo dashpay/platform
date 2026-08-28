@@ -390,6 +390,12 @@ fn should_upper_bound_actual_fees_with_preallocation() {
     let actual_delete = delete_like(&drive, &contract, like, true).expect("actual delete");
     assert!(estimated_delete.processing_fee > 0);
     assert!(actual_delete.processing_fee > 0);
+    assert!(
+        estimated_delete.processing_fee >= actual_delete.processing_fee,
+        "estimated delete processing fee {} must upper-bound actual {}",
+        estimated_delete.processing_fee,
+        actual_delete.processing_fee,
+    );
 
     assert_grovedb_is_consistent(&drive);
 }
@@ -607,6 +613,156 @@ fn should_not_attach_flags_to_preallocated_trees_of_a_permanent_contract() {
     assert!(
         entry.get_flags().is_some(),
         "the member entry must keep its refund-routing flags"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// The complementary flags branch: on a DELETABLE contract the
+/// preallocated trees must retain the creator's flags, so a whole-contract
+/// deletion can route the structural-byte refunds back to the poster —
+/// the one deletion path these trees have.
+#[test]
+fn should_attach_creator_flags_to_preallocated_trees_of_a_deletable_contract() {
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+    use std::borrow::Cow;
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let mut contract = json_document_to_contract(
+        "tests/supporting_files/contract/yappr-likes/yappr-likes-preallocated-contract.json",
+        false,
+        pv,
+    )
+    .expect("expected to parse the preallocated contract");
+    contract.config_mut().set_can_be_deleted(true);
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the deletable contract");
+
+    let post = build_post(&contract, "dash", 1);
+    let post_id: [u8; 32] = post.id().to_buffer();
+    let post_type = contract
+        .document_type_for_name("post")
+        .expect("post doctype exists");
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &post,
+                        Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, OWNER_POSTER))),
+                    )),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type: post_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect("insert post with owned flags");
+
+    let mut post_value_tree_path = doctype_path(&contract);
+    post_value_tree_path.extend([b"postId".to_vec(), post_id.to_vec()]);
+    let member_bucket = read_grove_element(&drive, &post_value_tree_path, &[0])
+        .expect("the member bucket must be preallocated");
+    let flags = StorageFlags::map_some_element_flags_ref(member_bucket.get_flags())
+        .expect("flags must parse")
+        .expect("a deletable contract's preallocated trees must carry flags");
+    assert_eq!(
+        flags,
+        StorageFlags::SingleEpochOwned(0, OWNER_POSTER),
+        "the poster's epoch-owned flags must ride the preallocated tree"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// A bound target property may be optional on the referenced type. When it
+/// is absent, NO part of the preallocated path may be emitted — a partial
+/// path (the levels before the unresolvable one) would be dead structure no
+/// entry can reach. The fixture's `annotation.byNoteTopic` binds
+/// `[noteId, topic]` to `note`, whose `topic` is optional, putting the
+/// unresolvable key at the SECOND level.
+#[test]
+fn should_not_emit_partial_paths_when_a_bound_property_is_absent() {
+    let (drive, contract) = setup_preallocated_likes();
+    let pv = platform_version();
+    let note_type = contract
+        .document_type_for_name("note")
+        .expect("note doctype exists");
+
+    let insert_note = |doc: &Document| {
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((doc, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: note_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("insert note")
+    };
+
+    // A note WITHOUT the optional bound `topic`: nothing preallocates —
+    // not even the first-level noteId value tree.
+    let mut bare_note = note_type.random_document(Some(1), pv).expect("random note");
+    bare_note.set_properties(std::collections::BTreeMap::new());
+    bare_note.set_owner_id(Identifier::from(OWNER_POSTER));
+    let bare_note_id: [u8; 32] = bare_note.id().to_buffer();
+    insert_note(&bare_note);
+
+    let mut annotation_by_note = vec![
+        vec![crate::drive::RootTree::DataContractDocuments as u8],
+        contract.id().as_bytes().to_vec(),
+        vec![1],
+        b"annotation".to_vec(),
+        b"noteId".to_vec(),
+    ];
+    assert!(
+        read_grove_element(&drive, &annotation_by_note, &bare_note_id).is_none(),
+        "no level of the path may be emitted when a bound property is absent"
+    );
+
+    // A note WITH the topic preallocates the full path down to the bucket.
+    let mut note = note_type.random_document(Some(2), pv).expect("random note");
+    let mut props = std::collections::BTreeMap::new();
+    props.insert("topic".to_string(), Value::Text("rust".to_string()));
+    note.set_properties(props);
+    note.set_owner_id(Identifier::from(OWNER_POSTER));
+    let note_id: [u8; 32] = note.id().to_buffer();
+    insert_note(&note);
+
+    assert!(read_grove_element(&drive, &annotation_by_note, &note_id).is_some());
+    annotation_by_note.push(note_id.to_vec());
+    assert!(read_grove_element(&drive, &annotation_by_note, b"topic").is_some());
+    annotation_by_note.push(b"topic".to_vec());
+    assert!(read_grove_element(&drive, &annotation_by_note, b"rust").is_some());
+    annotation_by_note.push(b"rust".to_vec());
+    assert!(
+        read_grove_element(&drive, &annotation_by_note, &[0]).is_some(),
+        "the full path must reach the empty member bucket"
     );
 
     assert_grovedb_is_consistent(&drive);

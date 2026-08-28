@@ -18,9 +18,16 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Gathers the operations to add a document to a contract.
+    ///
+    /// v1 (protocol version 14) is v0 plus preallocated index trees: when
+    /// any indexOnly document type of the contract carries a `preallocated`
+    /// index bound to the inserted document type through a refersTo
+    /// declaration, the insert also creates that index's dynamic trees for
+    /// entries referencing this document — see
+    /// `add_preallocated_index_tree_operations`. Everything else matches v0.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_document_for_contract_operations_v0(
+    pub(super) fn add_document_for_contract_operations_v1(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
@@ -51,6 +58,15 @@ impl Drive {
             }
 
             self.add_indices_for_top_index_level_for_contract_operations(
+                &document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+
+            self.add_preallocated_index_tree_operations_for_referring_types(
                 &document_and_contract_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
@@ -148,6 +164,21 @@ impl Drive {
         )?;
 
         self.add_indices_for_top_index_level_for_contract_operations(
+            &document_and_contract_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
+        // If any indexOnly document type of this contract carries a
+        // `preallocated` index bound to this document type through a
+        // refersTo declaration, create that index's trees for entries
+        // referencing this document now — see
+        // `add_preallocated_index_tree_operations`. A no-op for every
+        // contract without the (PV14+, indexOnly-only) flag.
+        self.add_preallocated_index_tree_operations_for_referring_types(
             &document_and_contract_info,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
