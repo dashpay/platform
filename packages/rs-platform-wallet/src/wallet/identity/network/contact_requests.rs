@@ -1739,7 +1739,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Enqueue a DIP-15 `AutoAccept` op for each inbound contact request to
     /// `identity_id` that carries a structurally-valid `autoAcceptProof` and is
-    /// not yet established — so the next signer-present [`drain_auto_accepts`]
+    /// not yet established — so the next signer-present auto-accept pass
     /// verifies + auto-accepts it. Signerless (the sweep has no signer): only a
     /// cheap structural pre-check (length + ECDSA key-type byte) runs here; the
     /// cryptographic verify happens in the drain.
@@ -2073,9 +2073,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// Drain the persisted deferred-crypto queue using `provider` for the
-    /// Keychain-derived key material. Call when a signer is available (Keychain
-    /// unlock, or any signer-present DashPay action). Returns the number of
-    /// entries completed (removed from the queue).
+    /// Keychain-derived key material, stopping once `deadline` passes
+    /// (`None` is unbounded). Returns the number of entries completed
+    /// (removed from the queue).
     ///
     /// Per entry: run the op; on success remove it and persist the removal; on
     /// unavailable/transient failure leave it for the next drain. The
@@ -2083,21 +2083,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// fetch + ECDH/contactInfo derivation) drain in a follow-up and are left
     /// queued here — so calling this is always safe, it just completes what it
     /// can.
-    pub async fn drain_pending_contact_crypto<P: ContactCryptoProvider + Sync>(
-        &self,
-        provider: &P,
-    ) -> usize {
-        self.drain_pending_contact_crypto_until(provider, None)
-            .await
-    }
-
-    /// [`Self::drain_pending_contact_crypto`], stopping once `deadline` passes.
     ///
     /// The drain ends between entries, so the count it returns and the queue
     /// removals it persists always describe work that actually completed —
     /// see [`bounded`] for why this cannot be an outer timeout. Entries it
     /// never reached stay queued for the next drain.
-    pub async fn drain_pending_contact_crypto_until<P: ContactCryptoProvider + Sync>(
+    ///
+    /// # Crate-private
+    ///
+    /// Everything this derives comes from whatever seed `provider` resolves,
+    /// and none of it is authenticated: a provider mapped to another wallet
+    /// registers contact accounts under the wrong xpub, and
+    /// `register_contact_account` keys existence on the contact tuple rather
+    /// than on the xpub, so the wrong addresses are written once and every
+    /// later correct-seed pass no-ops. The check that rules that out lives in
+    /// [`Self::drain_pending_contact_crypto_verified`], so this primitive is
+    /// reachable only from inside the crate — a caller outside it cannot name
+    /// a drain that skipped the check.
+    pub(crate) async fn drain_pending_contact_crypto_until<P: ContactCryptoProvider + Sync>(
         &self,
         provider: &P,
         deadline: Option<std::time::Instant>,
@@ -2814,31 +2817,33 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// Drain queued `AutoAccept` ops (DIP-15 QR auto-accept) — verify each
-    /// inbound request's `autoAcceptProof` and, if valid + unexpired, auto-accept
-    /// it (send the reciprocal). Requires the identity `signer` (the reciprocal is
-    /// a signed state transition) as well as the crypto `provider` (to derive our
-    /// auto-accept public key); the provider-only [`drain_pending_contact_crypto`]
-    /// deliberately skips these. Returns the number auto-accepted.
+    /// inbound request's `autoAcceptProof` and, if valid + unexpired,
+    /// auto-accept it (send the reciprocal), stopping once `deadline` passes
+    /// (`None` is unbounded). Requires the identity `signer` (the reciprocal
+    /// is a signed state transition) as well as the crypto `provider` (to
+    /// derive our auto-accept public key); the provider-only
+    /// `drain_pending_contact_crypto_until` deliberately skips these. Returns
+    /// the number auto-accepted.
     ///
     /// Anti-DoS: the cheap local checks (proof present, expiry, ECDSA verify
     /// against our own re-derived key) run **before** any network/accept, so a
     /// flood of junk proofs is cleared without per-entry round-trips. Verdict
     /// mapping: invalid / expired / malformed / bad-index ⇒ permanent (clear);
     /// provider-unavailable / accept-send failure ⇒ transient (leave queued).
-    pub async fn drain_auto_accepts<S, P>(&self, signer: &S, provider: &P) -> usize
-    where
-        S: Signer<IdentityPublicKey> + Send + Sync,
-        P: ContactCryptoProvider + Sync,
-    {
-        self.drain_auto_accepts_until(signer, provider, None).await
-    }
-
-    /// [`Self::drain_auto_accepts`], stopping once `deadline` passes.
     ///
     /// Ends between entries, so a reciprocal that was sent is always recorded
     /// as accepted — see [`bounded`] for why an outer timeout would not hold
     /// that. Entries it never reached stay queued.
-    pub async fn drain_auto_accepts_until<S, P>(
+    ///
+    /// # Crate-private
+    ///
+    /// A provider resolving another wallet's seed re-derives the wrong
+    /// auto-accept key, so a valid proof fails to verify — and the verdict
+    /// mapping calls a verify failure *permanent*, clearing the entry. The
+    /// damage is a contact request silently dropped and never offered again,
+    /// which is why this primitive is reachable only through
+    /// [`Self::drain_auto_accepts_verified`] and only from inside the crate.
+    pub(crate) async fn drain_auto_accepts_until<S, P>(
         &self,
         signer: &S,
         provider: &P,

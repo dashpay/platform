@@ -234,10 +234,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Drain the deferred contact-crypto queue, but only through a provider
     /// that has been shown to resolve this wallet's seed.
     ///
-    /// Runs the provider-only ops ([`Self::drain_pending_contact_crypto_until`])
-    /// behind the gate and returns the completed count. `deadline` bounds the
-    /// gate and the drain alike, so neither can hold a caller past its budget;
-    /// `None` is unbounded.
+    /// Runs the provider-only ops behind the gate — the crate-private
+    /// `drain_pending_contact_crypto_until` primitive — and returns the
+    /// completed count. `deadline` bounds the gate and the drain alike, so
+    /// neither can hold a caller past its budget; `None` is unbounded.
     ///
     /// This is the **innermost** gated primitive — the one every drain reaches,
     /// whatever handle the caller is holding. The startup sequence and the FFI
@@ -285,6 +285,80 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// that is not recoverable — the queue is untouched, so the next
     /// signer-present drain completes exactly the work this one declined to
     /// guess at.
+    ///
+    /// # Why the raw drain cannot be reached from outside this crate
+    ///
+    /// `DashPayView` is publicly re-exported, so "the gate is the only way in"
+    /// has to be a property of the type rather than a convention the callers
+    /// keep. The two unchecked primitives —
+    /// `drain_pending_contact_crypto_until` and `drain_auto_accepts_until` —
+    /// are therefore crate-private, and a downstream crate cannot name either
+    /// of them:
+    ///
+    /// ```compile_fail,E0624
+    /// use platform_wallet::wallet::identity::network::DashPayView;
+    /// use platform_wallet::ContactCryptoProvider;
+    ///
+    /// async fn bypass<P: ContactCryptoProvider + Sync>(
+    ///     view: &DashPayView<'_>,
+    ///     provider: &P,
+    /// ) -> usize {
+    ///     view.drain_pending_contact_crypto_until(provider, None).await
+    /// }
+    /// ```
+    ///
+    /// ```compile_fail,E0624
+    /// use dpp::identity::signer::Signer;
+    /// use dpp::identity::IdentityPublicKey;
+    /// use platform_wallet::wallet::identity::network::DashPayView;
+    /// use platform_wallet::ContactCryptoProvider;
+    ///
+    /// async fn bypass<S, P>(view: &DashPayView<'_>, signer: &S, provider: &P) -> usize
+    /// where
+    ///     S: Signer<IdentityPublicKey> + Send + Sync,
+    ///     P: ContactCryptoProvider + Sync,
+    /// {
+    ///     view.drain_auto_accepts_until(signer, provider, None).await
+    /// }
+    /// ```
+    ///
+    /// The refusals above are about visibility and not about the shape of the
+    /// call: the same downstream crate reaches both gated boundaries — this
+    /// one, and the whole-wallet wrapper that adds the auto-accept pass —
+    /// without trouble.
+    ///
+    /// ```
+    /// use platform_wallet::wallet::identity::network::DashPayView;
+    /// use platform_wallet::ContactCryptoProvider;
+    /// use platform_wallet::PlatformWalletError;
+    ///
+    /// async fn gated<P: ContactCryptoProvider + Sync>(
+    ///     view: &DashPayView<'_>,
+    ///     provider: &P,
+    /// ) -> Result<usize, PlatformWalletError> {
+    ///     view.drain_pending_contact_crypto_verified(provider, None).await
+    /// }
+    /// ```
+    ///
+    /// ```
+    /// use dpp::identity::signer::Signer;
+    /// use dpp::identity::IdentityPublicKey;
+    /// use platform_wallet::{ContactCryptoProvider, PlatformWallet, PlatformWalletError};
+    ///
+    /// async fn gated<S, P>(
+    ///     wallet: &PlatformWallet,
+    ///     signer: &S,
+    ///     provider: &P,
+    /// ) -> Result<usize, PlatformWalletError>
+    /// where
+    ///     S: Signer<IdentityPublicKey> + Send + Sync,
+    ///     P: ContactCryptoProvider + Sync,
+    /// {
+    ///     wallet
+    ///         .drain_pending_contact_crypto_verified(provider, Some(signer), None)
+    ///         .await
+    /// }
+    /// ```
     pub async fn drain_pending_contact_crypto_verified<C>(
         &self,
         crypto: &C,
@@ -353,9 +427,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// not getting.
     ///
     /// There is deliberately **no** empty-queue early-out here. The queue this
-    /// would probe is re-snapshotted inside
-    /// [`Self::drain_auto_accepts_until`] anyway, so a probe here would only
-    /// re-open the same window: seeing it empty and skipping the check would
+    /// would probe is re-snapshotted inside `drain_auto_accepts_until` anyway,
+    /// so a probe here would only re-open the same window: seeing it empty
+    /// and skipping the check would
     /// leave the pass unverified for an entry enqueued a moment later. The
     /// check is cheap next to the risk, and it only runs at all once the
     /// wrapper has already seen work queued.

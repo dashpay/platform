@@ -1051,7 +1051,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// * `provider`         - [`ContactCryptoProvider`] used to drain any
     ///   deferred contact-crypto build for this contact before the send. The
     ///   original sender's external-account build is enqueued by the signerless
-    ///   sweep and completed only by a later `drain_pending_contact_crypto`;
+    ///   sweep and completed only by a later contact-crypto drain;
     ///   draining here (with a signer present) builds the account on demand so
     ///   the very first send after establishing a contact succeeds instead of
     ///   failing the external-account lookup below. The drain runs behind the
@@ -4983,7 +4983,10 @@ mod tests {
         }
 
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
+        let drained = iw
+            .dashpay()
+            .drain_pending_contact_crypto_until(&provider, None)
+            .await;
         assert_eq!(drained, 1, "the RegisterReceiving entry must be drained");
 
         let wm = iw.wallet_manager.read().await;
@@ -5120,7 +5123,10 @@ mod tests {
         }
 
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
+        let drained = iw
+            .dashpay()
+            .drain_pending_contact_crypto_until(&provider, None)
+            .await;
         assert_eq!(
             drained, 1,
             "the drain must snapshot the out-of-wallet bucket and process its entry"
@@ -5264,7 +5270,10 @@ mod tests {
 
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
         for pass in 1..=2 {
-            let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
+            let drained = iw
+                .dashpay()
+                .drain_pending_contact_crypto_until(&provider, None)
+                .await;
             assert_eq!(
                 drained, 0,
                 "pass {pass}: a purpose-rejected entry must stay queued, not be cleared"
@@ -5365,7 +5374,10 @@ mod tests {
                 .to_seed(""),
             Network::Testnet,
         );
-        let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
+        let drained = iw
+            .dashpay()
+            .drain_pending_contact_crypto_until(&provider, None)
+            .await;
 
         assert_eq!(
             drained, 1,
@@ -5627,7 +5639,10 @@ mod tests {
         }
 
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let drained = iw.dashpay().drain_pending_contact_crypto(&provider).await;
+        let drained = iw
+            .dashpay()
+            .drain_pending_contact_crypto_until(&provider, None)
+            .await;
         assert_eq!(
             drained, 0,
             "a legacy-cohort decrypt failure must leave the entry queued, not clear it"
@@ -5778,7 +5793,7 @@ mod tests {
 
         let drained = iw
             .dashpay()
-            .drain_pending_contact_crypto(&UnusedProvider)
+            .drain_pending_contact_crypto_until(&UnusedProvider, None)
             .await;
         assert_eq!(
             drained, 0,
@@ -5870,7 +5885,7 @@ mod tests {
     // -----------------------------------------------------------------------
     //
     // The original sender's external-account build is enqueued by the
-    // signerless sweep and completed by `drain_pending_contact_crypto`. The
+    // signerless sweep and completed by the contact-crypto drain. The
     // drain runs at the start of `send_payment` (with the signer-backed
     // provider) so the external account is built before the send resolves it —
     // otherwise the first `send_payment` after establishing a contact fails the
