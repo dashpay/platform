@@ -213,8 +213,20 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
 ///   second signer (`dashpay/platform#4309`, review round 8). With the fence
 ///   held across the call, such a build meets it and rolls back instead.
 ///
-/// Both halves are exercised end to end by
-/// `payments::tests::the_contact_send_fence_outlives_its_rejected_broadcast_reservation_cleanup`.
+/// The fence coming down after this call must not mean the pin still carries
+/// its pending-on-drop DEFAULT through it: this call awaits, and awaiting is
+/// where cancellation strikes. Every caller that has already ESTABLISHED the
+/// released verdict (a definitive rejection, an abort before the broadcaster)
+/// records it on the pin —
+/// [`InBroadcastPin::settle_released_on_drop`](crate::wallet::core::InBroadcastPin::settle_released_on_drop)
+/// — synchronously before awaiting this call, so a cancellation inside it
+/// settles the fence as released rather than opening a pending-spend fence no
+/// observed spend could ever clear (`dashpay/platform#4309`).
+///
+/// Both ordering halves are exercised end to end by
+/// `payments::tests::the_contact_send_fence_outlives_its_rejected_broadcast_reservation_cleanup`,
+/// and the cancellation half by
+/// `payments::tests::cancelling_the_rejected_broadcast_cleanup_leaves_no_fence`.
 pub(crate) async fn release_reservation_after_rejected_broadcast(
     wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
     wallet_id: &WalletId,

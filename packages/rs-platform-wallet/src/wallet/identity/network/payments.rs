@@ -1422,6 +1422,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 // Provably nothing on the wire: free the fence alongside the
                 // reservation, so the instructed immediate retry can reselect.
                 //
+                // The verdict is recorded on the pin FIRST, synchronously —
+                // before the cleanup await below gives cancellation its first
+                // opportunity. The pin itself stays live across that cleanup
+                // (its dispatching hold is what keeps the fence up), but a
+                // drop anywhere after this line settles the fence as
+                // RELEASED. The pin's pending-on-drop default is correct only
+                // while the outcome is unknown; here rejection is ESTABLISHED,
+                // and settling a cancelled cleanup as a pending spend would
+                // fence inputs of a transaction proven never sent — a fence no
+                // observed spend could ever clear, held for the manager's
+                // lifetime since the pending phase carries no deadline by
+                // design (`dashpay/platform#4309`).
+                let mut in_broadcast_pin = in_broadcast_pin;
+                in_broadcast_pin.settle_released_on_drop();
+                //
                 // ORDER MATTERS — the cleanup runs FIRST, under the still-live
                 // fence, and only then does the pin come down
                 // (`dashpay/platform#4309`, review round 8). The cleanup is an
@@ -6933,6 +6948,130 @@ mod tests {
             wallet_arc.generation().in_broadcast_fence_state(&funded),
             None,
             "after the cleanup completes the rejected send must free its fence"
+        );
+    }
+
+    /// `dashpay/platform#4309` — CANCELLATION DURING THE REJECTED-BROADCAST
+    /// CLEANUP MUST NOT LEAVE A PERMANENT FENCE.
+    ///
+    /// After `broadcast()` definitively returns `Rejected`, the send awaits
+    /// the token-less reservation cleanup under the still-raised fence (the
+    /// round-8 ordering, proven by the sibling test above). The pin used to
+    /// carry its DEFAULT pending-on-drop verdict through that await, so
+    /// cancelling the send future while the cleanup waited on the manager
+    /// lock dropped the pin as `Pending`: a pending-spend fence over the
+    /// inputs of a transaction PROVEN never sent. No spend of it can ever be
+    /// observed, and the pending phase has no deadline by design, so the
+    /// outpoint stayed fenced for the manager's lifetime.
+    ///
+    /// The rejection verdict is now recorded on the pin synchronously, before
+    /// the cleanup's first await gives cancellation its first opportunity, so
+    /// a drop ANYWHERE afterwards settles the fence as released.
+    ///
+    /// The test drives the send future by hand (noop waker) so every step is
+    /// deterministic: park it inside the broadcaster, pin the cleanup behind
+    /// a held manager WRITE lock, poll the rejection through to the cleanup
+    /// await, then DROP the future there — the cancellation the finding
+    /// describes — and require the outpoint to be left unfenced.
+    #[tokio::test]
+    async fn cancelling_the_rejected_broadcast_cleanup_leaves_no_fence() {
+        use std::task::{Context, Poll, Waker};
+
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        /// One manual poll of `future` with a waker that wakes nothing — the
+        /// test itself decides when to poll again, which is what makes the
+        /// interleaving deterministic rather than scheduled.
+        fn poll_now<F: std::future::Future>(mut future: std::pin::Pin<&mut F>) -> Poll<F::Output> {
+            future
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+        }
+
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        fund_bip44_account_0(&manager, wallet_id, 0xD3, 1_000_000).await;
+        let funded = dashcore::OutPoint {
+            txid: <dashcore::Txid as dashcore::hashes::Hash>::from_slice(&[0xD3; 32])
+                .expect("txid"),
+            vout: 0,
+        };
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let gated =
+            with_gated_rejecting_broadcaster(iw, Arc::clone(&entered), Arc::clone(&release));
+
+        let dashpay = gated.dashpay();
+        // Box the future so dropping the binding genuinely drops — cancels —
+        // the send itself (`tokio::pin!` would leave the future alive on the
+        // stack behind the dropped `Pin` reference).
+        let mut send = Box::pin(dashpay.send_payment(
+            &owner_id,
+            &contact_id,
+            100_000,
+            None,
+            &signer,
+            &provider,
+        ));
+
+        // 1. Drive the send until it parks inside the broadcaster: built,
+        //    signed, fence pinned, build guard released.
+        assert!(
+            poll_now(send.as_mut()).is_pending(),
+            "the send must park inside the gated broadcaster"
+        );
+        entered.wait().await;
+
+        // 2. Take the manager WRITE lock and keep it: the rejection cleanup
+        //    below needs the READ side, so it cannot complete while this is
+        //    held — the await cancellation will strike inside.
+        let held = iw.wallet_manager.write().await;
+
+        // 3. Let the broadcaster's rejection through, and drive the send into
+        //    its rejection arm until it parks on the cleanup's manager-lock
+        //    acquisition.
+        assert!(
+            poll_now(send.as_mut()).is_pending(),
+            "the send must reach the release barrier"
+        );
+        release.wait().await;
+        assert!(
+            poll_now(send.as_mut()).is_pending(),
+            "the rejected send must park on its reservation cleanup, which is \
+             pinned behind the held write lock"
+        );
+
+        // Sanity: rejection established, cleanup pending, fence still raised
+        // by the live pin — the exact state the finding starts from.
+        assert_eq!(
+            wallet_arc.generation().in_broadcast_fence_state(&funded),
+            Some((1, false, false)),
+            "the dispatching pin must still hold the input while the cleanup waits"
+        );
+
+        // 4. CANCELLATION: drop the send future mid-cleanup-await.
+        drop(send);
+        drop(held);
+
+        // The rejection was established before the cleanup began, so the
+        // cancelled cleanup must not settle the fence as a pending spend —
+        // nothing was sent, so nothing could ever be observed spent to clear
+        // it. The outpoint must be left unfenced.
+        assert_eq!(
+            wallet_arc.generation().in_broadcast_fence_state(&funded),
+            None,
+            "cancelling the known-rejected cleanup must not leave a \
+             non-expiring pending-spend fence on an input that was never sent"
         );
     }
 

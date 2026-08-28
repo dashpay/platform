@@ -1004,6 +1004,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // reservation cannot be clobbered here even so; the ordering is
                 // uniform across every settle-with-cleanup site rather than
                 // resting on that one argument.
+                //
+                // The RELEASED verdict is recorded before the cleanup's first
+                // await, so cancellation inside it still settles the fence as
+                // released on drop: the abort is established and nothing was
+                // sent, so a pending-spend settle there would fence inputs no
+                // observed spend could ever clear — same shape as the
+                // contact-send rejection arm (`dashpay/platform#4309`).
+                let mut in_broadcast_pin = in_broadcast_pin;
+                in_broadcast_pin.settle_released_on_drop();
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
@@ -1055,8 +1064,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // leaving it would block the retry the release exists to enable.
                 // It comes down AFTER the cleanup, not before — see the
                 // drain-floor branch above for why every settle-with-cleanup
-                // site keeps that order (`dashpay/platform#4309`, round 8).
+                // site keeps that order (`dashpay/platform#4309`, round 8) —
+                // and the released verdict is recorded BEFORE the cleanup's
+                // first await, so a cancellation inside it settles released
+                // rather than opening an uncleanable pending-spend fence over
+                // inputs that provably never went to the wire (same shape as
+                // the drain-floor branch).
                 drop(build_persist_guard);
+                let mut in_broadcast_pin = in_broadcast_pin;
+                in_broadcast_pin.settle_released_on_drop();
                 crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                     &self.wallet_manager,
                     &self.wallet_id,
@@ -1119,6 +1135,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let broadcast_outcome = self.broadcaster.broadcast(&tx).await;
         if let Err(e) = broadcast_outcome {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
+                // The rejection alone does NOT establish the released verdict
+                // on this path — that is what the untrack guard below decides
+                // — so nothing can be recorded on the pin before this await.
+                // A cancellation inside it settles the pin as pending, which
+                // is the correct least-informed state here: the `Built` row is
+                // then still tracked (`untrack_asset_lock`'s only await is its
+                // lock acquisition, before the removal — a cancelled call
+                // cannot have half-removed the row), so `resume_asset_lock`
+                // can still re-drive the transaction and the fence's observed
+                // spend can still arrive.
                 let cs_untrack = self.untrack_asset_lock(&out_point).await;
                 // Release only when the Built row was actually removed. If
                 // the untrack guard fired instead — a concurrent
@@ -1136,6 +1162,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // the input is never unfenced while still reusable
                     // (`dashpay/platform#4309`, round 8; see the drain-floor
                     // branch for the full window).
+                    //
+                    // The released verdict IS established now — rejected AND
+                    // unresumable — so it is recorded before the cleanup's
+                    // first await: a cancellation inside the cleanup must
+                    // settle released, not fence inputs whose transaction was
+                    // never sent and can no longer be resumed (same shape as
+                    // the contact-send rejection arm).
+                    let mut in_broadcast_pin = in_broadcast_pin;
+                    in_broadcast_pin.settle_released_on_drop();
                     crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                         &self.wallet_manager,
                         &self.wallet_id,

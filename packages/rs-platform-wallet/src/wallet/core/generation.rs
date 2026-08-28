@@ -893,8 +893,35 @@ impl InBroadcastPin {
     /// accepted send, an ambiguous `MaybeSent`, a cancellation, an unwind —
     /// leaves the pending-spend fence in place to await an observed spend.
     pub(crate) fn settle_released(mut self) {
-        self.settle = PendingSpendSettle::Released;
+        self.settle_released_on_drop();
         drop(self);
+    }
+
+    /// Record the released verdict on the pin WITHOUT dropping it — the
+    /// cancellation-safe half of [`settle_released`](Self::settle_released).
+    ///
+    /// Call it the moment a definitive pre-send failure is ESTABLISHED (the
+    /// same two shapes `settle_released` names), synchronously, BEFORE the
+    /// first `.await` of any cleanup that must still run under the raised
+    /// fence. The pin stays live, so its dispatching hold keeps the outpoints
+    /// fenced through that cleanup — the round-8 ordering is untouched — but
+    /// every exit after this call, the cleanup future being dropped mid-await
+    /// included, now settles the fence as released.
+    ///
+    /// Without it, a rejection arm that awaited its reservation cleanup
+    /// before settling would, on cancellation inside that await, drop the pin
+    /// with its DEFAULT pending verdict. The default is correct only while
+    /// the outcome is unknown; here the outcome is proven — nothing reached
+    /// the network — so the pending-spend fence it opened could never be
+    /// cleared by an observed spend and held the inputs for the manager's
+    /// lifetime (`dashpay/platform#4309`).
+    ///
+    /// Once recorded, the verdict is FINAL for this pin: rejection is
+    /// established by the broadcaster's definitive answer (or by the
+    /// broadcaster never being reached), and nothing later in the dispatch
+    /// can un-establish it.
+    pub(crate) fn settle_released_on_drop(&mut self) {
+        self.settle = PendingSpendSettle::Released;
     }
 }
 
@@ -998,6 +1025,44 @@ mod tests {
             generation.in_broadcast_conflict(&tx),
             Some(a),
             "an un-released pin must leave the outpoint fenced on drop"
+        );
+    }
+
+    /// `dashpay/platform#4309`: once a definitive pre-send failure is
+    /// ESTABLISHED, recording it on the pin makes every later exit settle
+    /// released — the cancellation-safe half of `settle_released`. A
+    /// rejection arm awaits its reservation cleanup under the still-raised
+    /// fence (round-8 ordering); if that future is dropped inside the await,
+    /// the pin must not fall back to its pending default and fence a
+    /// transaction proven never sent — nothing could ever observe that spend,
+    /// so nothing could ever clear the fence.
+    #[test]
+    fn a_recorded_release_verdict_survives_a_plain_drop() {
+        let generation = Arc::new(WalletGeneration::new());
+        let a = outpoint(20, 0);
+        let tx = spending(&[a]);
+
+        let mut pin = generation.pin_in_broadcast(&tx);
+        pin.settle_released_on_drop();
+
+        // The pin is still live: its dispatching hold keeps the fence raised
+        // across the cleanup the caller is awaiting.
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx),
+            Some(a),
+            "recording the verdict must not lower the fence early — the \
+             cleanup still runs under it"
+        );
+
+        // Cancellation strikes: the dispatch future is dropped mid-cleanup,
+        // so the pin drops without reaching its explicit settle call.
+        drop(pin);
+
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx),
+            None,
+            "a pin whose released verdict was recorded must free its \
+             outpoints on drop, not re-fence them as a pending spend"
         );
     }
 
