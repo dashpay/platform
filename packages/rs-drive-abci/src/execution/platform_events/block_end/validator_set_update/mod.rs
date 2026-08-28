@@ -1044,7 +1044,7 @@ mod tests {
                 // and set, and grovedb has received the block's writes (simulated here by
                 // a committed reduced-state write).
                 let reduced_platform_state = platform_state.to_reduced_platform_state(
-                    ReducedBlockInfoV0 {
+                    Some(ReducedBlockInfoV0 {
                         basic_info: BlockInfo::default(),
                         app_hash: None,
                         quorum_hash: (*qh1.as_byte_array()).into(),
@@ -1052,7 +1052,7 @@ mod tests {
                         proposer_pro_tx_hash: proposer.into(),
                         signature: None,
                         round: 0,
-                    },
+                    }),
                     1,
                 );
                 platform
