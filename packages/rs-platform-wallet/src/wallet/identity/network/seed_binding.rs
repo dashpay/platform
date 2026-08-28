@@ -237,7 +237,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Runs the provider-only ops behind the gate — the crate-private
     /// `drain_pending_contact_crypto_until` primitive — and returns the
     /// completed count. `deadline` bounds the gate and the drain alike, so
-    /// neither can hold a caller past its budget; `None` is unbounded.
+    /// neither can hold a caller past its budget; `None` is unbounded. The
+    /// bound is on async waiting only — a host resolver callback that blocks
+    /// synchronously inside one poll is not interruptible, see
+    /// `establish_provider_binding`.
     ///
     /// This is the **innermost** gated primitive — the one every drain reaches,
     /// whatever handle the caller is holding. The startup sequence and the FFI
@@ -435,7 +438,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// wrapper has already seen work queued.
     ///
     /// `deadline` bounds the check it may have to run as well as the pass
-    /// itself; `None` is unbounded.
+    /// itself; `None` is unbounded — with the same limit the check carries,
+    /// that a synchronously-blocking host resolver callback cannot be
+    /// interrupted (see `establish_provider_binding`).
     ///
     /// # Errors
     ///
@@ -476,6 +481,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// dropping the future strands no work and leaves the queue exactly as it
     /// found it. A deadline already spent refuses without consulting the
     /// provider at all.
+    ///
+    /// # What the deadline does not bound
+    ///
+    /// It bounds the *await*, not the host. The timer only fires while the
+    /// wrapped future yields, and the production provider resolves the
+    /// mnemonic by calling out through the host's resolver — Keychain on iOS,
+    /// Keystore on Android — synchronously inside a single poll. A host
+    /// callback that blocks there blocks the whole task, timer included, so
+    /// the caller can be held past the budget this advertises. Bounding that
+    /// too would need an interruptible resolver protocol, which the current
+    /// pass-unretained handle cannot offer safely: detaching it to a worker
+    /// would open a use-after-free window. Callers that must not be held at
+    /// all should keep the check off their critical thread rather than trust
+    /// the deadline alone.
     async fn establish_provider_binding<'c, C>(
         &self,
         crypto: &'c C,
@@ -553,7 +572,10 @@ impl PlatformWallet {
     ///
     /// Returns the combined completed count; `deadline` bounds both passes and
     /// the seed-binding check in front of each, `None` is unbounded. Errors
-    /// exactly as the inner primitives do.
+    /// exactly as the inner primitives do. The bound covers async waiting
+    /// only: a host resolver callback that blocks synchronously within a
+    /// single poll cannot be interrupted, so this can still be held past the
+    /// budget by the Keychain / Keystore round trip behind the provider.
     pub async fn drain_pending_contact_crypto_verified<C, S>(
         &self,
         crypto: &C,
