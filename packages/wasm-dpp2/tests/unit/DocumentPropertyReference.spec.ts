@@ -53,9 +53,12 @@ const schemas = {
       sourceContract: identifierProperty(1, { type: 'contract' }),
       paidWith: identifierProperty(2, { type: 'token' }),
       // `contractId` omitted: targets the declaring contract itself.
+      // `propertyAgreement` binds the referring document's property to
+      // the referenced document's (write-time equality, PV14 #4505).
       parentNoteId: identifierProperty(3, {
         type: 'permanentDocument',
         documentType: 'note',
+        propertyAgreement: { signerKeyId: 'signerKeyId' },
       }),
       otherDoc: identifierProperty(4, {
         type: 'permanentDocument',
@@ -104,6 +107,7 @@ type Reference = {
   contractId?: { toBase58(): string };
   documentType?: string;
   keyIdProperty?: string;
+  propertyAgreement?: Record<string, string>;
 };
 
 describe('DataContract — refersTo declarations (v14)', () => {
@@ -167,6 +171,27 @@ describe('DataContract — refersTo declarations (v14)', () => {
 
       expect(other.contractId!.toBase58()).to.equal(foreignContractId);
       expect(other.documentType).to.equal('thing');
+    });
+
+    it('should carry the propertyAgreement map when declared', () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const parent = references.find((reference) => reference.path === 'parentNoteId')!;
+
+      expect(parent.propertyAgreement).to.deep.equal({ signerKeyId: 'signerKeyId' });
+    });
+
+    /**
+     * Absent — not `{}`-valued — when the declaration carries none,
+     * matching the schema's own omission and the absent-field convention
+     * of the other optional target fields.
+     */
+    it('should omit propertyAgreement for a reference declaring none', () => {
+      const contract = buildContract(14);
+      const references = contract.documentTypeReferences('note') as Reference[];
+      const other = references.find((reference) => reference.path === 'otherDoc')!;
+
+      expect(other).to.not.have.property('propertyAgreement');
     });
 
     it('should carry keyIdProperty for an identityPublicKey reference', () => {
