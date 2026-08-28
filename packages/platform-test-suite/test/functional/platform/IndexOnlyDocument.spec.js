@@ -264,26 +264,12 @@ describe('Platform', () => {
       expect(broadcastError.code).to.equal(40105);
     });
 
-    it('should synthesize likes from index entries when queried through an index', async () => {
-      // A query through the subset index [postId] yields a projection:
-      // only what the entry position stores (postId in the path, the
-      // $ownerId terminal in the member key)
-      const projectedLikes = await client.platform.documents.get(
-        'yappr.like',
-        { where: [['postId', '==', post.getId()]] },
-      );
-
-      expect(projectedLikes).to.have.lengthOf(1);
-
-      const [projectedLike] = projectedLikes;
-
-      expect(projectedLike.getOwnerId().toString()).to.equal(identity.getId().toString());
-      expect(projectedLike.get('postId').toString()).to.equal(post.getId().toString());
-      expect(projectedLike.get('hashtag')).to.be.undefined();
-
+    it('should synthesize likes from index entries when queried through a covering index', async () => {
       // A query through the [hashtag, postId] index covers every property
-      // of the like, so the synthesized document is complete
-      const [fullLike] = await client.platform.documents.get(
+      // of the like (prefix properties from the path, the $ownerId
+      // terminal from the member key), so the synthesized document is
+      // complete
+      const likes = await client.platform.documents.get(
         'yappr.like',
         {
           where: [
@@ -293,7 +279,10 @@ describe('Platform', () => {
         },
       );
 
-      expect(fullLike).to.exist();
+      expect(likes).to.have.lengthOf(1);
+
+      const [fullLike] = likes;
+
       expect(fullLike.getOwnerId().toString()).to.equal(identity.getId().toString());
       expect(fullLike.get('hashtag')).to.equal(POST_HASHTAG);
       expect(fullLike.get('postId').toString()).to.equal(post.getId().toString());
@@ -304,6 +293,26 @@ describe('Platform', () => {
       expect(fullLike.getId().toString()).to.not.equal(like.getId().toString());
 
       fetchedLike = fullLike;
+    });
+
+    it('should fail to query a subset-index projection without proofs', async () => {
+      // The subset index [postId] synthesizes a projection without the
+      // required hashtag; a partial document cannot be expressed in the
+      // serialized non-proof response, so it only travels the proved read
+      // surface (where the client synthesizes it from the proof itself)
+      let fetchError;
+
+      try {
+        await client.platform.documents.get(
+          'yappr.like',
+          { where: [['postId', '==', post.getId()]] },
+        );
+      } catch (e) {
+        fetchError = e;
+      }
+
+      expect(fetchError).to.exist();
+      expect(fetchError.message).to.match(/does not cover every required property/);
     });
 
     it('should fail to fetch an indexOnly document by id', async () => {
@@ -335,7 +344,12 @@ describe('Platform', () => {
 
       const likes = await client.platform.documents.get(
         'yappr.like',
-        { where: [['postId', '==', post.getId()]] },
+        {
+          where: [
+            ['hashtag', '==', POST_HASHTAG],
+            ['postId', '==', post.getId()],
+          ],
+        },
       );
 
       expect(likes).to.have.lengthOf(0);
@@ -409,7 +423,12 @@ describe('Platform', () => {
 
       const likes = await client.platform.documents.get(
         'yappr.like',
-        { where: [['postId', '==', post.getId()]] },
+        {
+          where: [
+            ['hashtag', '==', POST_HASHTAG],
+            ['postId', '==', post.getId()],
+          ],
+        },
       );
 
       expect(likes).to.have.lengthOf(2);

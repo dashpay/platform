@@ -2520,6 +2520,45 @@ impl<'a> DriveDocumentQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        // indexOnly documents have no stored bodies — the raw elements under
+        // the entries are row commitments, not documents. Synthesize the
+        // documents from their (path, key) positions and serialize them into
+        // the wire shape this path's callers return. An index that does not
+        // cover every required property cannot produce a serializable
+        // document: partial projections only travel the proved read surface,
+        // where the client synthesizes them itself from the proof.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                let (documents, skipped) = self.execute_index_only_documents_no_proof_internal(
+                    drive,
+                    transaction,
+                    drive_operations,
+                    platform_version,
+                )?;
+                let serialized = documents
+                    .into_iter()
+                    .map(|document| {
+                        document
+                            .serialize(self.document_type, self.contract, platform_version)
+                            .map_err(|error| match error {
+                                ProtocolError::DataContractError(
+                                    dpp::data_contract::errors::DataContractError::MissingRequiredKey(_),
+                                ) => Error::Query(QuerySyntaxError::Unsupported(
+                                    "this indexOnly query's index does not cover every required \
+                                     property, so the documents it synthesizes cannot be \
+                                     serialized into a non-proof response; query through an \
+                                     index covering all properties, or use a proved query"
+                                        .to_string(),
+                                )),
+                                other => other.into(),
+                            })
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+                return Ok((serialized, skipped));
+            }
+        }
+
         let path_query = self.construct_path_query_operations(
             drive,
             false,

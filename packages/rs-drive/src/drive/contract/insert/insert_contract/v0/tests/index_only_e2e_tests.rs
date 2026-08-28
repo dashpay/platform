@@ -650,6 +650,89 @@ fn should_synthesize_query_documents_with_proof_parity() {
     assert_grovedb_is_consistent(&drive);
 }
 
+/// The raw serialized read — the wire the non-proof GetDocuments endpoint
+/// returns — must carry the synthesized documents' serialized bytes when
+/// the queried index covers every property, and refuse a subset
+/// projection with guidance: the serialized document format has no way to
+/// express a missing required property, so partial projections only
+/// travel the proved read surface, where the client synthesizes them
+/// itself.
+#[test]
+fn should_serialize_synthesized_documents_on_raw_no_proof_reads() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::{WhereClause, WhereOperator};
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::document::{Document, DocumentV0Getters};
+    use dpp::platform_value::Value;
+
+    let (drive, contract) = setup_likes();
+    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
+    insert_like(&drive, &contract, &like, true).expect("insert like");
+
+    let document_type = contract
+        .document_type_for_name(DOCTYPE)
+        .expect("like doctype exists");
+
+    // Covering index ([hashtag, postId] → $ownerId): the synthesized
+    // document is complete and must round-trip through the wire bytes.
+    let covering = likes_query(
+        &contract,
+        vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("dash".to_string()),
+        }],
+        Some(10),
+    );
+    let (serialized, _, _) = covering
+        .execute_raw_results_no_proof(&drive, None, None, platform_version())
+        .expect("covering raw read executes");
+    assert_eq!(serialized.len(), 1, "one like under #dash");
+    let document = Document::from_bytes(&serialized[0], document_type, platform_version())
+        .expect("wire bytes must round-trip through from_bytes");
+    assert_eq!(
+        document.properties().get("hashtag"),
+        Some(&Value::Text("dash".to_string()))
+    );
+    assert_eq!(
+        document
+            .properties()
+            .get("postId")
+            .expect("postId recovered")
+            .to_identifier_bytes()
+            .expect("identifier"),
+        POST_A.to_vec()
+    );
+    assert_eq!(document.owner_id().to_buffer(), OWNER_1);
+
+    // Subset index ([$ownerId] → postId): the projection has no hashtag,
+    // which is required — it cannot be serialized, so the raw read must
+    // refuse with guidance instead of returning bytes no client can parse.
+    let subset = likes_query(
+        &contract,
+        vec![WhereClause {
+            field: "$ownerId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(OWNER_1),
+        }],
+        Some(10),
+    );
+    let error = subset
+        .execute_raw_results_no_proof(&drive, None, None, platform_version())
+        .expect_err("a subset projection cannot travel the serialized wire");
+    assert!(
+        matches!(
+            &error,
+            Error::Query(QuerySyntaxError::Unsupported(message))
+                if message.contains("does not cover every required property")
+        ),
+        "expected covering guidance, got: {error}"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
 /// "Did I like X" as a single query: equality on the terminal property
 /// through `byLiker` ([$ownerId] → postId) — the prefix equality fixes the
 /// path, the terminal equality selects one member key. Proved and
