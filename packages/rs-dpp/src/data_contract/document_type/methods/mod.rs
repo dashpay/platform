@@ -130,6 +130,44 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         }
     }
 
+    /// [`Self::index_for_types_matching`] with terminals (an indexOnly
+    /// index's member-key property) as matchable deepest components. The
+    /// returned bool says whether the winning index consumed its terminal;
+    /// generic (non-terminal) matches always take precedence, so on any
+    /// document type without terminals this is exactly
+    /// [`Self::index_for_types_matching`]. Shares the `index_for_types`
+    /// feature-version gate: terminal participation only changes outcomes
+    /// on indexOnly document types, which cannot exist below protocol
+    /// version 14.
+    fn index_for_types_matching_including_terminal(
+        &self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+        filter: impl Fn(&Index) -> bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(&Index, u16, bool)>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .index_for_types
+        {
+            0 => Ok(self.index_for_types_matching_including_terminal_v0(
+                index_names,
+                in_field_name,
+                order_by,
+                filter,
+            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "index_for_types_matching_including_terminal".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
     fn serialize_value_for_key(
         &self,
         key: &str,

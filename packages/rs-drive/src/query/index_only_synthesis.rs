@@ -56,37 +56,32 @@ impl DriveDocumentQuery<'_> {
     /// value, so a clause on the terminal lowers directly onto the final
     /// key level — the shape behind both "did I like X" (equality on the
     /// terminal) and keyset pagination (range on the terminal after the
-    /// last seen value, with a limit). The shape requirement: every one of
-    /// the index's prefix properties carries an equality clause (the path
-    /// down to the `0` level must be fully determined), the terminal
-    /// carries the one remaining clause, and `orderBy` names nothing
-    /// outside the index (a range or `in` on the terminal requires
-    /// ordering by it, mirroring the stored-document rule).
+    /// last seen value, with a limit). Index selection is the SAME dpp
+    /// matcher the generic route uses
+    /// ([`index_for_types_matching_including_terminal`]), with terminals
+    /// as matchable deepest components and difference-scored best-match
+    /// semantics — generic matches keep absolute precedence inside the
+    /// matcher itself. What remains here is clause-shape validation on
+    /// the matcher's winner: every prefix property must carry an equality
+    /// clause (the path down to the `0` level must be fully determined),
+    /// the terminal carries the one remaining clause, and `orderBy` names
+    /// nothing outside the index (a range or `in` on the terminal
+    /// requires ordering by it, mirroring the stored-document rule).
     ///
-    /// Returns `Ok(None)` when no index's terminal is named by any clause
-    /// or orderBy (the generic index route owns the query), `Ok(Some(..))`
-    /// with the selected index and the terminal clause — `None` for the
-    /// first keyset page, which has no cursor clause yet and scans the
-    /// member keys in `orderBy` order — and a targeted error when a
-    /// terminal was named but no index satisfies the shape.
+    /// Returns `Ok(None)` when the matcher finds no terminal-using index
+    /// (the generic route's miss error stands), `Ok(Some(..))` with the
+    /// selected index and the terminal clause — `None` for the first
+    /// keyset page, which has no cursor clause yet and scans the member
+    /// keys in `orderBy` order — and a targeted error when a terminal
+    /// index matched but the clause shape does not hold.
+    ///
+    /// [`index_for_types_matching_including_terminal`]:
+    /// dpp::data_contract::document_type::methods::DocumentTypeV0Methods::index_for_types_matching_including_terminal
     pub(crate) fn index_only_terminal_clause_selection(
         &self,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<(&Index, Option<&crate::query::WhereClause>)>, Error> {
-        let terminal_clause_for = |terminal: &str| -> Option<&crate::query::WhereClause> {
-            self.internal_clauses
-                .equal_clauses
-                .get(terminal)
-                .or(match &self.internal_clauses.range_clause {
-                    Some(range_clause) if range_clause.field == terminal => Some(range_clause),
-                    _ => None,
-                })
-                .or_else(|| {
-                    self.internal_clauses
-                        .in_clauses
-                        .iter()
-                        .find(|in_clause| in_clause.field == terminal)
-                })
-        };
+        use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
         // Shapes the terminal route can never serve opt out up front, so
         // their generic-route miss errors propagate untouched: a resolved
@@ -97,97 +92,127 @@ impl DriveDocumentQuery<'_> {
             return Ok(None);
         }
 
-        let mut candidate_seen = false;
-        for index in self.document_type.indexes().values() {
-            let Some(terminal) = index.terminal.as_deref() else {
-                continue;
-            };
-            let terminal_clause = terminal_clause_for(terminal);
-            // The index is only a terminal-route candidate when the query
-            // actually names its terminal — through a clause, or through
-            // an orderBy alone (the first keyset page: full prefix
-            // equalities, ordered member-key scan, no cursor clause yet).
-            if terminal_clause.is_none() && !self.order_by.contains_key(terminal) {
-                continue;
-            }
-            candidate_seen = true;
+        // The same field assembly the generic matcher receives.
+        let mut fields = self
+            .internal_clauses
+            .equal_clauses
+            .keys()
+            .map(|field| field.as_str())
+            .collect::<Vec<&str>>();
+        if let Some(range_clause) = &self.internal_clauses.range_clause {
+            fields.push(range_clause.field.as_str());
+        }
+        let in_field = self
+            .internal_clauses
+            .in_clauses
+            .first()
+            .map(|in_clause| in_clause.field.as_str());
+        if let Some(in_field) = in_field {
+            fields.push(in_field);
+        }
+        let order_by_keys: Vec<&str> = self
+            .order_by
+            .keys()
+            .map(|key: &String| {
+                let field = key.as_str();
+                if !fields.contains(&field) {
+                    fields.push(field);
+                }
+                field
+            })
+            .collect();
 
-            // Every prefix property must carry an equality clause: the
-            // path down to the entry level must be fully determined.
-            if !index.properties.iter().all(|property| {
+        let Some((index, _difference, terminal_used)) = self
+            .document_type
+            .index_for_types_matching_including_terminal(
+                fields.as_slice(),
+                in_field,
+                order_by_keys.as_slice(),
+                |_| true,
+                platform_version,
+            )
+            .map_err(|e| Error::Protocol(Box::new(e)))?
+        else {
+            return Ok(None);
+        };
+        if !terminal_used {
+            // A generic cover exists after all — the generic route owns
+            // it (unreachable when this runs after a generic miss, since
+            // both share one matching algorithm).
+            return Ok(None);
+        }
+
+        let terminal =
+            index
+                .terminal
+                .as_deref()
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "a terminal-using match implies an indexOnly index",
+                )))?;
+        let terminal_clause = self
+            .internal_clauses
+            .equal_clauses
+            .get(terminal)
+            .or(match &self.internal_clauses.range_clause {
+                Some(range_clause) if range_clause.field == terminal => Some(range_clause),
+                _ => None,
+            })
+            .or_else(|| {
                 self.internal_clauses
-                    .equal_clauses
-                    .contains_key(property.name.as_str())
-            }) {
-                continue;
-            }
+                    .in_clauses
+                    .iter()
+                    .find(|in_clause| in_clause.field == terminal)
+            });
 
-            // No clause may be left over: equalities must all sit on the
-            // index's properties (or be the terminal equality), and any
-            // range / `in` clause must BE the terminal clause.
-            let within_index = |field: &str| {
-                field == terminal
-                    || index
-                        .properties
-                        .iter()
-                        .any(|property| property.name == field)
-            };
-            if !self
-                .internal_clauses
+        let shape_error = || {
+            Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
+                "a clause on an indexOnly terminal property requires equality clauses \
+                 on ALL of that index's properties (the path to the entries must be \
+                 fully determined), with no other clauses and orderBy limited to the \
+                 index"
+                    .to_string(),
+            ))
+        };
+
+        // Every prefix property must carry an equality clause: the path
+        // down to the entry level must be fully determined.
+        if !index.properties.iter().all(|property| {
+            self.internal_clauses
                 .equal_clauses
-                .keys()
-                .all(|field| within_index(field))
-            {
-                continue;
-            }
-            if let Some(range_clause) = &self.internal_clauses.range_clause {
-                if range_clause.field != terminal {
-                    continue;
-                }
-            }
-            if !self
-                .internal_clauses
-                .in_clauses
-                .iter()
-                .all(|in_clause| in_clause.field == terminal)
-                || self.internal_clauses.in_clauses.len() > 1
-            {
-                continue;
-            }
-
-            // orderBy must stay within the index; ordering a fully
-            // determined prefix is a no-op, so only the terminal's
-            // direction matters — and a range or `in` terminal clause
-            // requires it, same as the stored-document rule.
-            if !self.order_by.keys().all(|field| within_index(field)) {
-                continue;
-            }
-            if let Some(terminal_clause) = terminal_clause {
-                if terminal_clause.operator.is_range() && !self.order_by.contains_key(terminal) {
-                    return Err(Error::Query(
-                        crate::error::query::QuerySyntaxError::MissingOrderByForRange(
-                            "a range or `in` clause on an indexOnly terminal property \
-                             requires an orderBy on that property",
-                        ),
-                    ));
-                }
-            }
-
-            return Ok(Some((index, terminal_clause)));
+                .contains_key(property.name.as_str())
+        }) {
+            return Err(shape_error());
         }
 
-        if candidate_seen {
-            return Err(Error::Query(
-                crate::error::query::QuerySyntaxError::Unsupported(
-                    "a clause on an indexOnly terminal property requires equality clauses \
-                     on ALL of that index's properties (the path to the entries must be \
-                     fully determined), with no other clauses and orderBy limited to the \
-                     index"
-                        .to_string(),
-                ),
-            ));
+        // No clause may be left over, and any range / `in` clause must BE
+        // the terminal clause. (Field coverage is the matcher's job; the
+        // PLACEMENT of non-equality clauses is the shape rule here.)
+        if let Some(range_clause) = &self.internal_clauses.range_clause {
+            if range_clause.field != terminal {
+                return Err(shape_error());
+            }
         }
-        Ok(None)
+        if !self
+            .internal_clauses
+            .in_clauses
+            .iter()
+            .all(|in_clause| in_clause.field == terminal)
+        {
+            return Err(shape_error());
+        }
+
+        if let Some(terminal_clause) = terminal_clause {
+            if terminal_clause.operator.is_range() && !self.order_by.contains_key(terminal) {
+                return Err(Error::Query(
+                    crate::error::query::QuerySyntaxError::MissingOrderByForRange(
+                        "a range or `in` clause on an indexOnly terminal property \
+                         requires an orderBy on that property",
+                    ),
+                ));
+            }
+        }
+
+        Ok(Some((index, terminal_clause)))
     }
 
     /// Build the path query for a terminal-clause indexOnly query: the
@@ -273,7 +298,7 @@ impl DriveDocumentQuery<'_> {
         match self.select_best_index(platform_version)? {
             crate::query::BestIndexOutcome::Matched(index) => Ok(index),
             crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
-                match self.index_only_terminal_clause_selection()? {
+                match self.index_only_terminal_clause_selection(platform_version)? {
                     Some((index, _)) => Ok(index),
                     None => Err(no_index_error),
                 }
@@ -294,7 +319,7 @@ impl DriveDocumentQuery<'_> {
         match self.select_best_index(platform_version)? {
             crate::query::BestIndexOutcome::Matched(_) => Ok(None),
             crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
-                match self.index_only_terminal_clause_selection()? {
+                match self.index_only_terminal_clause_selection(platform_version)? {
                     Some((index, terminal_clause)) => self
                         .index_only_terminal_path_query(
                             document_type_path.to_vec(),

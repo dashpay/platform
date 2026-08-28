@@ -728,13 +728,68 @@ impl Index {
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<u16> {
+        Self::matches_over_components(&self.properties, index_names, in_field_name, order_by)
+    }
+
+    /// [`Self::matches`] over an index's full component list, terminal
+    /// included: the terminal (an indexOnly index's member-key property)
+    /// participates in field coverage, the `in`-position rule and the
+    /// order-by suffix exactly as if it were the index's deepest property.
+    ///
+    /// Returns `(difference, terminal_used)` — the difference counts
+    /// unused PREFIX properties only (an unused terminal costs nothing:
+    /// it is the entry level itself, always reachable), so scores stay
+    /// comparable with [`Self::matches`] and an index is never penalized
+    /// for merely having a terminal. On an index without a terminal this
+    /// is exactly [`Self::matches`] with `terminal_used = false`.
+    pub fn matches_including_terminal(
+        &self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<(u16, bool)> {
+        let Some(terminal) = self.terminal.as_deref() else {
+            return self
+                .matches(index_names, in_field_name, order_by)
+                .map(|difference| (difference, false));
+        };
+
+        // One extended component list, one matching algorithm. The parser
+        // rejects a terminal repeating an index property, so the synthetic
+        // component cannot shadow a prefix property.
+        let mut components = Vec::with_capacity(self.properties.len() + 1);
+        components.extend(self.properties.iter().cloned());
+        components.push(IndexProperty {
+            name: terminal.to_string(),
+            ascending: true,
+        });
+
+        let difference =
+            Self::matches_over_components(&components, index_names, in_field_name, order_by)?;
+        let terminal_used = index_names.contains(&terminal);
+        // An unused terminal was counted as an unused component by the
+        // shared algorithm; take it back out of the score.
+        let difference = if terminal_used {
+            difference
+        } else {
+            difference.saturating_sub(1)
+        };
+        Some((difference, terminal_used))
+    }
+
+    fn matches_over_components(
+        properties: &[IndexProperty],
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<u16> {
         // Here we are trying to figure out if the Index matches the order by
         // To do so we take the index and go backwards as we need the order by clauses to be
         // continuous, but they do not need to be at the end.
-        let mut reduced_properties = self.properties.as_slice();
+        let mut reduced_properties = properties;
         // let mut should_ignore: Vec<String> = order_by.iter().map(|&str| str.to_string()).collect();
         if !order_by.is_empty() {
-            for _ in 0..self.properties.len() {
+            for _ in 0..properties.len() {
                 if reduced_properties.len() < order_by.len() {
                     return None;
                 }
@@ -755,23 +810,23 @@ impl Index {
             }
         }
 
-        let last_property = self.properties.last()?;
+        let last_property = properties.last()?;
 
         // the in field can only be on the last or before last property
         if let Some(in_field_name) = in_field_name {
             if last_property.name.as_str() != in_field_name {
                 // it can also be on the before last
-                if self.properties.len() == 1 {
+                if properties.len() == 1 {
                     return None;
                 }
-                let before_last_property = self.properties.get(self.properties.len() - 2)?;
+                let before_last_property = properties.get(properties.len() - 2)?;
                 if before_last_property.name.as_str() != in_field_name {
                     return None;
                 }
             }
         }
 
-        let mut d = self.properties.len();
+        let mut d = properties.len();
 
         for search_name in index_names.iter() {
             if !reduced_properties

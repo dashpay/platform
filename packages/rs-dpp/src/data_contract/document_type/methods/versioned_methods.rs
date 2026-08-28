@@ -416,6 +416,55 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// the winner among equally-good candidates is decided by the index map's
     /// name ordering, and a post-check can only reject the winner — never
     /// promote the index that was actually required.
+    /// [`Self::index_for_types_matching_v0`] with the terminal (an
+    /// indexOnly index's member-key property) participating as the
+    /// index's deepest matchable component. Generic matches keep absolute
+    /// precedence: a candidate that covers the query WITHOUT its terminal
+    /// always beats every terminal-using candidate, regardless of score —
+    /// the terminal route is a stand-in for "no ordinary index serves
+    /// this", never a competitor to one that does. Within each class the
+    /// difference scoring (and its index-map-order tie-break) is exactly
+    /// the generic matcher's.
+    fn index_for_types_matching_including_terminal_v0(
+        &self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+        filter: impl Fn(&Index) -> bool,
+    ) -> Option<(&Index, u16, bool)> {
+        let mut best_generic: Option<(&Index, u16)> = None;
+        let mut best_generic_difference = u16::MAX;
+        let mut best_terminal: Option<(&Index, u16)> = None;
+        let mut best_terminal_difference = u16::MAX;
+        for (_, index) in self.indexes().iter() {
+            if !filter(index) {
+                continue;
+            }
+            let Some((difference, terminal_used)) =
+                index.matches_including_terminal(index_names, in_field_name, order_by)
+            else {
+                continue;
+            };
+            if terminal_used {
+                if difference < best_terminal_difference {
+                    best_terminal_difference = difference;
+                    best_terminal = Some((index, difference));
+                }
+            } else {
+                if difference == 0 {
+                    return Some((index, 0, false));
+                }
+                if difference < best_generic_difference {
+                    best_generic_difference = difference;
+                    best_generic = Some((index, difference));
+                }
+            }
+        }
+        best_generic
+            .map(|(index, difference)| (index, difference, false))
+            .or(best_terminal.map(|(index, difference)| (index, difference, true)))
+    }
+
     fn index_for_types_matching_v0(
         &self,
         index_names: &[&str],
