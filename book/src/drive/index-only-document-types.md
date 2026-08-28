@@ -156,9 +156,11 @@ Three things change, all bit-compatible with the fallback layout:
   the referring index's dynamic trees, down to the empty `0` member
   bucket, derived through the same tree-type helper the entry walkers use
   — so a preallocated tree is byte-identical to the tree the first
-  entry's create-on-insert path would have made. The trees carry the
-  referenced document creator's storage flags: the poster owns the
-  structural bytes. Shared prefixes (a second post under the same
+  entry's create-on-insert path would have made. The poster pays for the
+  structural bytes; storage flags ride only when the contract itself is
+  deletable, because that is a preallocated tree's one deletion path —
+  entry deletes retain it by design, so entry-level flags would be
+  unrefundable dead weight. Shared prefixes (a second post under the same
   hashtag) deduplicate through the if-not-exists semantics.
 - **Delete side**: removing the last member entry stops the
   empty-tree-pruning climb at the member level, keeping the whole

@@ -92,15 +92,18 @@ impl Drive {
             if !referring_type.index_only() {
                 continue;
             }
-            // Same flag rule the entry-insert top-level walker applies to
-            // the referring type — a fallback-created tree carries flags
-            // under exactly this condition — except the flags are the
-            // inserted (referenced) document's: its creator owns the
-            // structural storage and receives any refunds.
-            let storage_flags = if referring_type.documents_mutable()
-                || contract.config().can_be_deleted()
-                || (referring_type.index_only() && referring_type.documents_can_be_deleted())
-            {
+            // Flags exist to route refunds when an element is deleted, and
+            // a preallocated tree has exactly one deletion path: the
+            // contract's own — entry deletes retain it by design (the
+            // delete walker's no-prune rule), and entry-level deletability
+            // (`documents_can_be_deleted`) never reaches it. So unlike the
+            // entry walkers' rule, flags ride only when the contract is
+            // deletable; on a permanent contract they would be dead bytes
+            // charged to the referenced document's creator on every tree.
+            // (Fallback-created trees may carry entry-rule flags from
+            // before the no-prune retention — harmless: unrefundable flags
+            // are inert, and if-not-exists inserts never rewrite them.)
+            let storage_flags = if contract.config().can_be_deleted() {
                 document_and_contract_info
                     .owned_document_info
                     .document_info

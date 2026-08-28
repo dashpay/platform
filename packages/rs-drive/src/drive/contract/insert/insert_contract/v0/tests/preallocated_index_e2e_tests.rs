@@ -136,7 +136,7 @@ fn insert_post(
 /// `byLiker` subtree stays untouched. The ranked secondaries see the post
 /// as a real group with count 0.
 #[test]
-fn post_insert_preallocates_referring_like_trees() {
+fn should_preallocate_referring_like_trees_on_post_insert() {
     let (drive, contract) = setup_preallocated_likes();
     let post = build_post(&contract, "dash", 1);
     let post_id = post.id().to_buffer();
@@ -196,7 +196,7 @@ fn post_insert_preallocates_referring_like_trees() {
 /// — a present-but-empty member bucket, a state the pruning delete path
 /// never used to leave behind.
 #[test]
-fn empty_preallocated_index_serves_queries_with_proof_parity() {
+fn should_serve_queries_with_proof_parity_on_empty_preallocated_index() {
     use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
     use crate::query::{WhereClause, WhereOperator};
 
@@ -249,7 +249,7 @@ fn empty_preallocated_index_serves_queries_with_proof_parity() {
 /// same delete still prunes the non-preallocated byLiker subtree. Repeated
 /// like/unlike cycles stay consistent.
 #[test]
-fn unlike_keeps_preallocated_trees_and_relike_works() {
+fn should_keep_preallocated_trees_on_unlike_and_serve_relikes() {
     let (drive, contract) = setup_preallocated_likes();
     let post = build_post(&contract, "dash", 1);
     let post_id: [u8; 32] = post.id().to_buffer();
@@ -319,7 +319,7 @@ fn unlike_keeps_preallocated_trees_and_relike_works() {
 /// like costs LESS (it creates nothing) than the byte-identical plain
 /// contract charges for the same two inserts.
 #[test]
-fn preallocation_moves_tree_costs_from_first_liker_to_poster() {
+fn should_move_tree_costs_from_first_liker_to_poster() {
     let (preallocated_drive, preallocated_contract) = setup_preallocated_likes();
     let (plain_drive, plain_contract) = setup_plain_likes();
 
@@ -357,7 +357,7 @@ fn preallocation_moves_tree_costs_from_first_liker_to_poster() {
 /// invariant consensus fee validation depends on. Same for the (still
 /// tree-free) first like against preallocated state.
 #[test]
-fn estimated_fees_upper_bound_actual_fees_with_preallocation() {
+fn should_upper_bound_actual_fees_with_preallocation() {
     let (drive, contract) = setup_preallocated_likes();
 
     let post = build_post(&contract, "dash", 1);
@@ -399,7 +399,7 @@ fn estimated_fees_upper_bound_actual_fees_with_preallocation() {
 /// only pays for its own subtrees; likes on both posts land in their own
 /// buckets; unliking one post's like never disturbs the other's trees.
 #[test]
-fn shared_hashtag_prefix_preallocates_idempotently() {
+fn should_preallocate_shared_hashtag_prefixes_idempotently() {
     let (drive, contract) = setup_preallocated_likes();
 
     let post_a = build_post(&contract, "dash", 1);
@@ -454,7 +454,7 @@ fn shared_hashtag_prefix_preallocates_idempotently() {
 /// track tips, and the drained group survives the last untip at sum 0 —
 /// the sum-surface mirror of the count assertions above.
 #[test]
-fn summable_preallocated_index_preallocates_and_survives_drain() {
+fn should_preallocate_summable_index_and_survive_drain() {
     use super::index_only_e2e_tests::{
         build_tip, delete_tip, insert_tip, sum_top_k, tip_doctype_path,
     };
@@ -519,6 +519,94 @@ fn summable_preallocated_index_preallocates_and_survives_drain() {
     assert_eq!(
         sum_top_k(&drive, &by_post_level, 10, true),
         vec![(250, post_id.to_vec())]
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// A preallocated tree's one deletion path is the contract's own — entry
+/// deletes retain it by design — so on a non-deletable contract the trees
+/// carry NO storage flags even when the post insert supplies them (flags
+/// would be unrefundable dead bytes charged to the poster), while a like's
+/// member ENTRY inserted with flags carries them as always (entries delete
+/// and refund through their element flags).
+#[test]
+fn should_not_attach_flags_to_preallocated_trees_of_a_permanent_contract() {
+    use std::borrow::Cow;
+
+    let (drive, contract) = setup_preallocated_likes();
+    let pv = platform_version();
+    let post = build_post(&contract, "dash", 1);
+    let post_id: [u8; 32] = post.id().to_buffer();
+
+    let post_type = contract
+        .document_type_for_name("post")
+        .expect("post doctype exists");
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &post,
+                        Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, OWNER_POSTER))),
+                    )),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type: post_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect("insert post with owned flags");
+
+    let mut post_value_tree_path = doctype_path(&contract);
+    post_value_tree_path.extend([b"postId".to_vec(), post_id.to_vec()]);
+    let member_bucket = read_grove_element(&drive, &post_value_tree_path, &[0])
+        .expect("the member bucket must be preallocated");
+    assert!(
+        member_bucket.get_flags().is_none(),
+        "a preallocated tree of a non-deletable contract must carry no flags, got {:?}",
+        member_bucket.get_flags()
+    );
+
+    let like = build_like(&contract, "dash", post_id, OWNER_1, 1);
+    let like_type = contract
+        .document_type_for_name("like")
+        .expect("like doctype exists");
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &like,
+                        Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, OWNER_1))),
+                    )),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type: like_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect("insert like with owned flags");
+
+    let mut member_bucket_path = post_value_tree_path.clone();
+    member_bucket_path.push(vec![0]);
+    let entry = read_grove_element(&drive, &member_bucket_path, &OWNER_1)
+        .expect("the like's member entry exists");
+    assert!(
+        entry.get_flags().is_some(),
+        "the member entry must keep its refund-routing flags"
     );
 
     assert_grovedb_is_consistent(&drive);
