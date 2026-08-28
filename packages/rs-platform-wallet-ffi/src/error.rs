@@ -290,7 +290,8 @@ pub enum PlatformWalletFFIResultCode {
     //   42  ErrorMasternodeWithdrawalUnconfirmed masternode withdrawal status
     //   43-45 RESERVED by open dashpay/platform#4313 (shielded-invite claim)
     //   46  ErrorMasternodeListUnavailable  masternode list source
-    //   47  ErrorAssetLockInputConflict     asset-lock double-spend detection (terminal)
+    //   47  ErrorAssetLockInputConflict     asset-lock double-spend detection
+    //                                       (terminal; RESERVED, no emitter yet)
     //   48  ErrorAssetLockInputContested    asset-lock double-spend detection (provisional)
     //
     // 38/39/40 carry a STABLE JSON detail object in the result `message`
@@ -418,58 +419,65 @@ pub enum PlatformWalletFFIResultCode {
     /// per the error-code registry (#4318).
     ErrorMasternodeListUnavailable = 46,
 
-    /// Maps `PlatformWalletError::AssetLockInputConflict`. The tracked
-    /// asset-lock transaction spends an outpoint that a different,
-    /// already-confirmed transaction of the same wallet spent first — the
-    /// classic restored-wallet failure, where a rescan resurrects a UTXO
-    /// the wallet's own earlier asset lock had long since consumed. Such a
-    /// transaction is a double spend: peers drop it at the mempool
-    /// boundary and send nothing back (no BIP61 `reject`), so it can never
-    /// be mined or IS-locked and the resume's proof wait would hang
-    /// indefinitely.
+    /// Maps `PlatformWalletError::AssetLockInputConflict`. **RESERVED —
+    /// no wallet code path currently produces it**, so this code does not
+    /// cross the boundary today.
     ///
-    /// TERMINAL, and the only code here that authorises a host to discard
-    /// a tracked asset lock: this resume performed no additional broadcast
-    /// (a `Broadcast`-status lock was sent on an earlier call), and the
-    /// spender that took the input has reached ChainLock finality — its
-    /// block can never be reorganised away, so no retry of this outpoint
-    /// can ever succeed. The remedy is to drop the lock and build a new
-    /// one from currently-unspent inputs — fund-safe, because the
-    /// conflicting spender is necessarily this wallet's own transaction
-    /// (only this wallet can sign its outpoints): the value lives on in
-    /// the sibling. Contrast `ErrorTransactionBroadcastUnconfirmed`, where
-    /// the tx may well be alive and discarding it would strand real funds.
+    /// It is the terminal form of the double-spend verdict: a tracked
+    /// asset-lock transaction spending an outpoint that a different,
+    /// already-confirmed transaction of the same wallet spent first, where
+    /// that spender's block is PROVEN to be on the finalized chain. That
+    /// proof is what is missing. The wallet can see a confirmed spender,
+    /// a chainlocked record context and the applied chainlock height, but
+    /// all of those are height-based promotion artifacts rather than
+    /// evidence of finalized ancestry (the SPV chainlock manager counts a
+    /// missing header as a passing block-hash check, so a chainlock on a
+    /// replacement branch can promote losing-branch records). Until the
+    /// SPV layer exposes an ancestry predicate, every hit — chainlocked
+    /// spenders included — reports
+    /// [`Self::ErrorAssetLockInputContested`] (48) instead.
     ///
-    /// A confirmed-but-not-chainlocked spender reports
-    /// [`Self::ErrorAssetLockInputContested`] (48) instead — same
-    /// stopped-wait, NO discard licence — so this code's finality claim
-    /// is structural, not advisory.
+    /// The code number and this variant are kept pinned so the reserved
+    /// slot stays stable for hosts and for the future emitter. A host must
+    /// read NOTHING into its absence: it is not a liveness signal, not a
+    /// "not final yet" signal, and not a statement about any lock. Hosts
+    /// that already branch on it may keep doing so — if it ever ships, it
+    /// keeps its meaning: the one code that authorises discarding a
+    /// tracked asset lock and rebuilding from currently-unspent inputs.
+    ///
+    /// Message (when it ships): the typed `Display` rendering, which names
+    /// the asset-lock outpoint, the conflicting input, the confirmed
+    /// spender's txid, and the spender's finality (always chainlocked for
+    /// this code).
+    ErrorAssetLockInputConflict = 47,
+
+    /// Maps `PlatformWalletError::AssetLockInputContested`. The double-spend
+    /// screen's ONLY verdict: a confirmed transaction of this wallet
+    /// already spent one of the tracked lock's inputs, so the resume
+    /// stopped without a further broadcast or a wait that cannot return.
+    /// PROVISIONAL — the wallet cannot prove the spender's block is on the
+    /// finalized branch (see [`Self::ErrorAssetLockInputConflict`] (47),
+    /// the reserved terminal form), so this is what a chainlocked-looking
+    /// spender reports too.
+    ///
+    /// NOT a discard licence. The host keeps the tracked lock and retries
+    /// later (next launch, or after the next chainlock) — but note that a
+    /// chainlock does NOT upgrade this to 47 today; what a retry can
+    /// resolve is the other direction, a reorg dropping the sibling so the
+    /// next resume proceeds normally. A conflict that persists across
+    /// sessions is in practice permanent, and a host may reasonably stop
+    /// retrying and offer the user a discard — that is host policy, which
+    /// this code does not grant and does not withhold funds for: the
+    /// conflicting spender is this wallet's own transaction, so the value
+    /// lives on in the sibling either way. What the SDK will not do is
+    /// authorise the discard on this evidence, because a lock whose
+    /// sibling sits on a losing branch can still be replayed and confirm.
     ///
     /// Raised only on a positive detection; its ABSENCE is not a liveness
     /// signal. The wallet-side scan reads confirmed records still held in
     /// memory, and under the default `keep-finalized-transactions = OFF`
     /// build those are pruned once chainlocked, so an old conflict can go
     /// unseen and surface as the usual finality timeout instead.
-    ///
-    /// Message: the typed `Display` rendering, which names the asset-lock
-    /// outpoint, the conflicting input, the confirmed spender's txid, and
-    /// the spender's finality (always chainlocked for this code).
-    ErrorAssetLockInputConflict = 47,
-
-    /// Maps `PlatformWalletError::AssetLockInputContested`. Same detection
-    /// as [`Self::ErrorAssetLockInputConflict`] — a confirmed transaction
-    /// of this wallet already spent one of the tracked lock's inputs, so
-    /// the resume stopped without a further broadcast or a wait that cannot
-    /// return — but the spender sits in an ordinary block a
-    /// reorganisation can still drop, so the verdict is PROVISIONAL.
-    ///
-    /// NOT a discard licence. The host keeps the tracked lock and retries
-    /// later (next launch, or after the next chainlock). The situation
-    /// resolves itself: either the sibling gets buried by a chainlock and
-    /// the next resume reports the terminal 47, or a reorg drops the
-    /// sibling and the next resume proceeds normally. Discarding tracking
-    /// state on this code risks stranding a lock that a replayed
-    /// broadcast could still confirm.
     ///
     /// Message: the typed `Display` rendering, which names the asset-lock
     /// outpoint, the conflicting input, the confirmed spender's txid and
@@ -736,10 +744,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
             }
-            // Terminal double spend. Distinct from every other asset-lock
-            // code because it is the one that tells a host the lock is dead
-            // rather than pending: without it this reached `ErrorUnknown`,
-            // which no host may act on destructively.
+            // Double-spend verdicts. `AssetLockInputContested` is the one
+            // the wallet actually raises — without this arm it reached
+            // `ErrorUnknown` and a host could only render a spinner. The
+            // terminal `AssetLockInputConflict` has no emitter today (it
+            // needs a finalized-ancestry proof the SPV layer does not
+            // expose); its arm is kept so the reserved code stays wired
+            // for the future emitter and for direct constructions.
             PlatformWalletError::AssetLockInputConflict { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
             }
@@ -1772,13 +1783,14 @@ mod tests {
         );
     }
 
-    /// The terminal double-spend verdict is the one code a host may act on
-    /// destructively (discard the tracked lock), so both halves of the
-    /// contract are pinned: the number the Swift/Kotlin mirrors decode, and
-    /// the conversion that keeps it from flattening to `ErrorUnknown`. The
-    /// message must carry the typed `Display` — including the spender's
-    /// finality — since that is the only detail channel the frozen
-    /// `{ code, message }` ABI has.
+    /// The terminal double-spend verdict is RESERVED — no wallet path
+    /// constructs it today — but its slot stays pinned, so this builds the
+    /// error directly and checks both halves of the contract: the number
+    /// the Swift/Kotlin mirrors decode, and the conversion that keeps it
+    /// from flattening to `ErrorUnknown` if a future ancestry predicate
+    /// starts emitting it. The message must carry the typed `Display` —
+    /// including the spender's finality — since that is the only detail
+    /// channel the frozen `{ code, message }` ABI has.
     #[test]
     fn asset_lock_input_conflict_code_is_pinned_at_47() {
         use dashcore::OutPoint;

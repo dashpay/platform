@@ -185,28 +185,32 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// amount plus input 0's retained fee reserve. Refresh the shield
     /// preflight and ask the user to confirm the new capacity.
     case errorShieldedInsufficientBalance = 41
-    /// The tracked asset-lock transaction spends an outpoint that a different,
-    /// already-confirmed transaction of the same wallet spent first — typically
-    /// a restored wallet whose rescan resurrected a UTXO one of its own earlier
-    /// asset locks had already consumed. Peers drop such a double spend without
-    /// replying, so the lock can never confirm and its proof wait would hang.
-    /// The conflict screen stops the current resume before it broadcasts again
-    /// or enters the proof wait (a `Broadcast`-status lock was sent on an
-    /// earlier call). TERMINAL: this is the one code that lets a host offer to
-    /// discard the asset lock and rebuild it from currently-unspent inputs — a
-    /// fund-safe action, because the confirmed spender is this wallet's own
-    /// transaction, so the value either stays in the sibling or (after a freak
-    /// reorg) returns to the spendable set. Its absence is not proof of
-    /// liveness — the Rust-side scan cannot see conflicts whose spender was
-    /// already pruned.
+    /// RESERVED — the Rust side has no code path that produces this today, so
+    /// it does not currently cross the boundary. It is the TERMINAL form of
+    /// the double-spend verdict: the tracked asset-lock transaction spends an
+    /// outpoint a different, already-confirmed transaction of the same wallet
+    /// spent first, AND that spender's block is proven to be on the finalized
+    /// chain. The proof is what is missing — chainlock contexts and the
+    /// wallet's applied chainlock height are height-based promotion artifacts,
+    /// not evidence of finalized ancestry — so every detection reports
+    /// `errorAssetLockInputContested` (48) instead, chainlocked-looking
+    /// spenders included. Kept pinned so the slot stays stable for hosts and
+    /// for the future emitter, which would carry the same meaning: the one
+    /// code that lets a host discard the asset lock and rebuild from
+    /// currently-unspent inputs. Read nothing into its absence.
     case errorAssetLockInputConflict = 47
-    /// The provisional sibling of `errorAssetLockInputConflict`: a confirmed
-    /// transaction of this wallet already spent one of the tracked lock's
-    /// inputs, so the resume stopped before broadcasting into a wait that
-    /// cannot return — but that spender sits in an ordinary block a reorg can
-    /// still drop, so the verdict is NOT final. No discard licence: keep the
-    /// lock tracked and retry later; the next chainlock either upgrades this
-    /// to the terminal 42 or the conflict disappears with the reorg.
+    /// A confirmed transaction of this wallet already spent one of the tracked
+    /// lock's inputs — typically a restored wallet whose rescan resurrected a
+    /// UTXO one of its own earlier asset locks had already consumed. Peers drop
+    /// such a double spend without replying, so the lock cannot confirm while
+    /// that spender stands and its proof wait would hang; the screen stops the
+    /// resume before it broadcasts again or enters the wait (a
+    /// `Broadcast`-status lock was sent on an earlier call). This is the ONLY
+    /// double-spend code the SDK emits, and it is PROVISIONAL: no discard
+    /// licence, keep the lock tracked and retry later. A later chainlock does
+    /// not upgrade it to 47 today; what a retry can resolve is a reorg dropping
+    /// the sibling. Its absence is not proof of liveness — the Rust-side scan
+    /// cannot see conflicts whose spender was already pruned.
     case errorAssetLockInputContested = 48
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
@@ -513,27 +517,36 @@ public enum PlatformWalletError: LocalizedError {
     /// `endsAtMs == 0` means the vote's end time was unavailable — show it
     /// as unknown rather than as "ends at the epoch".
     case contestedNameNotTradable(label: String, endsAtMs: UInt64)
+    /// RESERVED, and never produced today: the TERMINAL double-spend verdict,
+    /// which would additionally attest that the confirmed spender's block is
+    /// on the finalized chain. The wallet cannot prove that (chainlock
+    /// contexts and the applied chainlock height are height-based promotion
+    /// artifacts, not ancestry proofs), so every detection arrives as
+    /// `assetLockInputContested`. The case is kept so the FFI code stays
+    /// mapped and hosts that already branch on it keep compiling; if it ever
+    /// ships it means what it always meant — unlike
+    /// `transactionBroadcastUnconfirmed`, where the transaction may well be
+    /// alive and discarding it would strand real funds, this is the one
+    /// asset-lock error that lets a host discard the lock and rebuild it from
+    /// currently-unspent inputs. The message names the lock's outpoint, the
+    /// conflicting input, the confirmed spender, and that spender's finality.
+    case assetLockInputConflict(String)
     /// The tracked asset lock spends an outpoint a different,
-    /// already-confirmed transaction spent first, so it is a double spend no
-    /// peer will relay and it can never confirm. The screen stops the current
+    /// already-confirmed transaction of this wallet spent first, so no peer
+    /// will relay it while that spender stands. The screen stops the current
     /// resume before it broadcasts again or enters the proof wait — a
     /// `Broadcast`-status lock was already sent on an earlier call, so this is
-    /// not a claim that nothing ever reached the network. TERMINAL: unlike
-    /// `transactionBroadcastUnconfirmed` — where the transaction may well be
-    /// alive and discarding it would strand real funds — this is the one
-    /// asset-lock error that lets a host offer to discard the lock and rebuild
-    /// it from currently-unspent inputs, because the confirmed spender is this
-    /// wallet's own transaction and the value therefore stays reachable either
-    /// way. The message names the lock's outpoint, the conflicting input, the
-    /// confirmed spender, and whether that spender is chainlocked, so a host
-    /// can say *which* lock died and how firmly.
-    case assetLockInputConflict(String)
-    /// The keep-and-retry sibling of `assetLockInputConflict`: the confirmed
-    /// spender is not yet chainlocked, so its block can still reorg away and
-    /// the verdict is provisional. The resume stopped (no broadcast, no
-    /// wait), but the tracked lock must NOT be discarded on this error —
-    /// retry on a later launch or after the next chainlock, when it either
-    /// upgrades to the terminal `assetLockInputConflict` or resolves clean.
+    /// not a claim that nothing ever reached the network.
+    ///
+    /// The only double-spend verdict the SDK emits, and PROVISIONAL: the
+    /// tracked lock must NOT be discarded on this error. Retry on a later
+    /// launch; a chainlock over the sibling does not upgrade this to
+    /// `assetLockInputConflict` today, while a reorg that drops the sibling
+    /// clears it. A conflict that survives session after session is in
+    /// practice permanent, and a host may decide to stop retrying and offer
+    /// the user a discard — that is a host/user policy call this error does
+    /// not make, and it is fund-safe either way because the confirmed spender
+    /// is this wallet's own transaction.
     case assetLockInputContested(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
@@ -687,13 +700,14 @@ public enum PlatformWalletError: LocalizedError {
             } else {
                 self = .unknown(detail)
             }
-        // Code 47 carries the typed `Display` rendering, not a JSON detail
-        // object: it already names the asset-lock outpoint, the conflicting
-        // input, the confirmed spender's txid and that spender's finality, and
-        // reads as a sentence, so it passes through like the other
-        // prose-message codes. The terminal "discard and rebuild" verdict is
-        // the CODE's meaning, not the string's — hosts must key their discard
-        // affordance off the case, not off text matching.
+        // Both double-spend codes carry the typed `Display` rendering, not a
+        // JSON detail object: it already names the asset-lock outpoint, the
+        // conflicting input, the confirmed spender's txid and that spender's
+        // finality, and reads as a sentence, so they pass through like the
+        // other prose-message codes. Which verdict was reached is the CODE's
+        // meaning, not the string's — hosts must branch on the case, not on
+        // text matching. In practice only 48 arrives; 47 is reserved and has
+        // no emitter, and is mapped here so it stays typed if that changes.
         case .errorAssetLockInputConflict:
             self = .assetLockInputConflict(detail)
         case .errorAssetLockInputContested:

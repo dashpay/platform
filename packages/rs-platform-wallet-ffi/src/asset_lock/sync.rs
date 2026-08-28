@@ -225,11 +225,14 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
             );
             match e {
                 // Double-spend verdicts route through the typed conversion
-                // so the host receives the real code: terminal
-                // ErrorAssetLockInputConflict (47) — the one code that
-                // authorises discarding a tracked lock — or the
-                // provisional ErrorAssetLockInputContested (48), which
-                // stops the wait but keeps the lock for a later retry.
+                // so the host receives the real code. In practice that is
+                // always the provisional ErrorAssetLockInputContested
+                // (48), which stops the wait but keeps the lock for a
+                // later retry: the resume never raises the terminal
+                // ErrorAssetLockInputConflict (47), which stays reserved
+                // for a finalized-ancestry proof the wallet cannot make.
+                // 47 is matched anyway so the reserved code would cross
+                // intact rather than flattening the day it ships.
                 // Flattening either to ErrorWalletOperation would leave
                 // the host with a spinner it can never resolve.
                 conflict @ (PlatformWalletError::AssetLockInputConflict { .. }

@@ -1835,10 +1835,11 @@ public class PlatformWalletManager: ObservableObject {
                     // moment its own task returns. A sibling catch-up
                     // can legitimately sit in its 300s proof wait, and
                     // the host must not wait on that drain to learn a
-                    // lock is dead. `lastError` is the manager's one
-                    // public error surface; a UI that offers discard
-                    // (47) or explains the pending retry (48) reads it
-                    // from here.
+                    // lock is stuck. `lastError` is the manager's one
+                    // public error surface; a UI that explains the
+                    // stalled lock and its pending retry (48 — the only
+                    // verdict emitted; 47 stays reserved) reads it from
+                    // here.
                     while let outcome = await group.next() {
                         if !published, let verdict = outcome {
                             published = true
@@ -1870,11 +1871,13 @@ public class PlatformWalletManager: ObservableObject {
     /// `@MainActor`-isolated by default and the detached task body
     /// runs off the main actor — the FFI call is synchronous and
     /// reads no `PlatformWalletManager` state.
-    /// Returns the typed double-spend verdict when the catch-up hits one
-    /// (terminal `assetLockInputConflict` / provisional
-    /// `assetLockInputContested`) — the one outcome a host must see so its
-    /// UI can offer discard-and-rebuild or explain the retry — and `nil`
-    /// for every expected failure.
+    /// Returns the typed double-spend verdict when the catch-up hits one —
+    /// the one outcome a host must see so its UI can explain why the lock
+    /// is stuck instead of spinning — and `nil` for every expected failure.
+    /// In practice that verdict is always the provisional
+    /// `assetLockInputContested`; the terminal `assetLockInputConflict` is
+    /// reserved with no emitter and is matched so it would surface intact
+    /// if that ever changes.
     nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.

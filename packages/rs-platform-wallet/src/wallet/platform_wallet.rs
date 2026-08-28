@@ -229,38 +229,29 @@ fn plan_shield_inputs(
     })
 }
 
-/// One in-block spend of a tracked asset lock's input, as the double-spend
-/// screen last saw it in live transaction history.
+/// One confirmed spend of a tracked asset lock's input, as the
+/// double-spend screen last saw it in live transaction history.
 ///
 /// Session-scoped memory, never persisted and never restored: it exists
 /// because `apply_chain_lock` EVICTS a record from history the moment a
-/// chainlock buries it (default `keep-finalized-transactions = OFF`), which
-/// is precisely the moment a provisional conflict becomes terminal — a
-/// retry after the chainlock would otherwise find nothing and fall back
-/// into the proof wait. The screen writes entries when it observes an
-/// in-block spender, retracts them when live history re-observes that
-/// spender unconfirmed (a reorg demotes the record in place), and converts
-/// an entry whose record has LEFT history under a covering boundary into
-/// the terminal verdict: promotion-eviction is the only path that removes
-/// a record, so the disappearance itself attests the chainlock.
+/// chainlock buries it (default `keep-finalized-transactions = OFF`), and
+/// a retry after that eviction would otherwise find nothing and fall back
+/// into the proof wait the screen exists to prevent. The screen writes
+/// entries when it observes a confirmed spender, retracts them when live
+/// history re-observes that spender unconfirmed (a reorg demotes the
+/// record in place), and keeps reporting an entry whose record has LEFT
+/// history: promotion-eviction is the only path that removes a record.
+///
+/// The entry carries no finality: an eviction attests a height-based
+/// promotion, not that the spender's block is on the finalized branch, so
+/// every verdict the screen builds from this memory is the provisional
+/// one. See `wallet::asset_lock::sync::recovery`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObservedInputConflict {
     /// The confirmed transaction the screen saw spending the input.
     pub spender: Txid,
     /// The block height it was seen at.
     pub height: CoreBlockHeight,
-    /// Provenance: `true` when the sighting traces to a RESTORED record
-    /// rather than one this session observed on the live chain. Restored
-    /// evidence never claims chainlock finality from a height-only
-    /// boundary — the wallet can persist a spender in an ordinary block,
-    /// sit offline through the reorg that drops it, and restore the stale
-    /// record; a later chainlock at or above the old height on the
-    /// REPLACEMENT chain would satisfy a height check without the
-    /// recorded block ever having been on the finalized chain. Restored
-    /// entries therefore stay provisional until the evidence is verified
-    /// live (or the mirror itself restores a chainlocked context next
-    /// session).
-    pub restored: bool,
 }
 
 /// Consolidated mutable state for a platform wallet.
@@ -298,10 +289,17 @@ pub struct PlatformWalletInfo {
     /// "no memory" rather than failing a resume.
     pub observed_input_conflicts: std::sync::Mutex<BTreeMap<OutPoint, ObservedInputConflict>>,
     /// Txids of the transaction records the load path restored into the
-    /// in-memory history, captured once at load. The double-spend screen
-    /// consults this to withhold height-only chainlock promotion from
-    /// restored records (see [`ObservedInputConflict::restored`]). Session
-    /// state, never persisted.
+    /// in-memory history, captured once at load. Session state, never
+    /// persisted.
+    ///
+    /// The double-spend screen no longer reads this: it used to withhold
+    /// height-only chainlock promotion from restored records, but that
+    /// guard was unsound (under `keep-finalized-transactions` the key
+    /// wallet height-mutates a stale restored `InBlock` record straight to
+    /// `InChainLockedBlock`, bypassing it) and the screen now emits one
+    /// provenance-independent verdict. Kept as load-path provenance for a
+    /// future consumer that can pair it with a real finalized-ancestry
+    /// predicate; classification must not be rebuilt on it alone.
     pub restored_record_txids: BTreeSet<Txid>,
     /// DPNS name states with sale price (username marketplace), keyed by
     /// domain document id. Session-lifetime working set for the

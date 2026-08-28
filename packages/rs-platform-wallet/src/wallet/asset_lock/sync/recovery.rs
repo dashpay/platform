@@ -195,15 +195,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
 /// Find the first outpoint of `lock`'s transaction that some **other,
 /// confirmed** transaction of this wallet already spent, returning
-/// `(conflicting_input, spending_txid, spender_height,
-/// spender_chain_locked)`.
+/// `(conflicting_input, spending_txid, spender_height)`.
 ///
 /// A hit means the asset lock is a double spend of a settled outpoint.
 /// Peers reject such a transaction at the mempool boundary and relay
 /// nothing back — Core has not sent BIP61 `reject` messages by default
 /// since 0.17 — so the lock can neither be mined nor IS-locked, and a
 /// proof wait on it never terminates. Callers turn a hit into
-/// [`PlatformWalletError::AssetLockInputConflict`] instead of
+/// [`PlatformWalletError::AssetLockInputContested`] instead of
 /// (re-)broadcasting into that void.
 ///
 /// **The gate is `is_confirmed()`, deliberately not `is_chain_locked()`.**
@@ -215,19 +214,30 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// the very failure it exists for — an old, long-settled spender — reported
 /// as an unbounded proof wait.
 ///
-/// Reporting the conflict on a merely-`InBlock` sibling is fund-safe:
+/// **The verdict is always provisional, so no finality travels out of
+/// here.** Reporting the conflict on a confirmed sibling is fund-safe:
 /// that sibling is necessarily one of this wallet's own transactions
 /// (nobody else can sign this wallet's outpoints), so the value it
 /// carries is already the wallet's, and stopping the doomed wait costs
 /// nothing — the lock is unrelayable for as long as the sibling stands.
-/// What an in-block sibling does NOT justify is *discarding* the tracked
-/// lock: its block can still reorg out, at which point a peer can replay
-/// the already-broadcast lock and it can confirm — with its tracking
-/// state gone, the confirmed lock's credits would be stranded.
-/// `spender_chain_locked` therefore selects WHICH error the caller
-/// raises — the terminal, discard-licensing conflict for a chainlocked
-/// spender, the provisional keep-and-retry contested variant otherwise —
-/// it is never a gate on raising one at all.
+/// What no evidence reachable here justifies is *discarding* the tracked
+/// lock: the sibling's block can still reorg out, at which point a peer
+/// can replay the already-broadcast lock and it can confirm — with its
+/// tracking state gone, the confirmed lock's credits would be stranded.
+///
+/// A terminal verdict would need proof that the spender's block is an
+/// ancestor of the FINALIZED chain, and the wallet layer cannot produce
+/// one. A record's `is_chain_locked()` context and the wallet's applied
+/// chainlock height are both promotion artifacts, not ancestry proofs:
+/// promotion is height-based, and the pinned SPV chainlock manager
+/// counts a missing header as a passing block-hash check, so a chainlock
+/// arriving on a replacement branch ahead of its headers promotes
+/// records that sit on the losing branch. Provenance does not rescue the
+/// check either — under `keep-finalized-transactions` the key wallet
+/// height-mutates a stale RESTORED `InBlock` record straight to
+/// `InChainLockedBlock`, so a restored-record guard is bypassed by the
+/// same flaw. Until SPV exposes a finalized-ancestry predicate, this
+/// helper reports the conflict and nothing about its finality.
 ///
 /// **Best-effort in one direction only.** A hit is conclusive: the
 /// spender is a confirmed transaction sitting in this wallet's own
@@ -246,7 +256,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 fn first_confirmed_input_conflict(
     info: &PlatformWalletInfo,
     lock: &TrackedAssetLock,
-) -> Option<(OutPoint, Txid, Option<CoreBlockHeight>, bool)> {
+) -> Option<(OutPoint, Txid, Option<CoreBlockHeight>)> {
     let lock_txid = lock.transaction.txid();
     let lock_inputs: BTreeSet<OutPoint> = lock
         .transaction
@@ -254,15 +264,6 @@ fn first_confirmed_input_conflict(
         .iter()
         .map(|input| input.previous_output)
         .collect();
-    // A record surviving in history is usually still `InBlock` even when
-    // the wallet's chainlock boundary has moved past its height — the
-    // promotion is what evicts it. Consulting the boundary as well as the
-    // record's own context is what keeps the reported finality honest for
-    // the window between the two.
-    let chain_locked_height = info
-        .core_wallet
-        .last_applied_chain_lock()
-        .map(|chain_lock| chain_lock.block_height);
 
     let history = info.core_wallet.transaction_history();
 
@@ -284,63 +285,38 @@ fn first_confirmed_input_conflict(
                 .iter()
                 .map(|input| input.previous_output)
                 .find(|outpoint| lock_inputs.contains(outpoint))?;
-            let height = record.height();
-            // The boundary promotion is height-only, so it is withheld
-            // from RESTORED records: their block was never shown to be on
-            // the chain the chainlock covers (the wallet can restore a
-            // record whose block a reorg dropped while it was offline).
-            // A record this session observed live is promotable — a reorg
-            // would re-observe and demote it — and a restored record with
-            // a mirror-observed chainlocked context is final on its own.
-            let restored = info.restored_record_txids.contains(&record.txid);
-            let spender_chain_locked = record.context.is_chain_locked()
-                || (!restored
-                    && chain_locked_height
-                        .zip(height)
-                        .is_some_and(|(boundary, spender_height)| spender_height <= boundary));
-            Some((
-                conflicting_input,
-                record.txid,
-                height,
-                spender_chain_locked,
-                restored,
-            ))
+            Some((conflicting_input, record.txid, record.height()))
         })
     {
         // Remember the observation before returning it. Promotion is also
         // EVICTION under the default `keep-finalized-transactions = OFF`
         // build: the moment a chainlock buries the spender's block,
-        // `apply_chain_lock` removes the record this scan just read — which
-        // is exactly the moment the provisional verdict becomes terminal,
-        // and a retry would otherwise find nothing at all. The session
-        // memory below converts that disappearance into the terminal
-        // verdict. A poisoned mutex degrades to no memory, never a failure.
-        let (input, spender, height, spender_chain_locked, restored) = hit;
+        // `apply_chain_lock` removes the record this scan just read, and a
+        // retry would otherwise find nothing at all and fall back into the
+        // proof wait. The session memory below keeps the conflict visible
+        // across that disappearance. A poisoned mutex degrades to no
+        // memory, never a failure.
+        let (input, spender, height) = hit;
         if let (Some(h), Ok(mut cache)) = (height, info.observed_input_conflicts.lock()) {
             cache.insert(
                 input,
-                crate::wallet::platform_wallet::ObservedInputConflict {
-                    spender,
-                    height: h,
-                    restored,
-                },
+                crate::wallet::platform_wallet::ObservedInputConflict { spender, height: h },
             );
         }
-        return Some((input, spender, height, spender_chain_locked));
+        return Some((input, spender, height));
     }
 
-    // No live record — consult the session memory. Three cases per
+    // No live record — consult the session memory. Two cases per
     // remembered input:
     //  * the remembered spender is back in history UNCONFIRMED: its block
     //    was reorged away and the record demoted in place — the memory is
     //    stale, retract it;
     //  * the spender has LEFT history: promotion-eviction is the only path
     //    that removes a record (a reorg demotes, nothing deletes), so the
-    //    remembered in-block spend was buried by a chainlock — terminal,
-    //    provided the applied boundary actually covers the remembered
-    //    height;
-    //  * eviction without a covering boundary should be impossible — stay
-    //    on the provisional verdict rather than inventing finality.
+    //    remembered in-block spend still stands and still makes the proof
+    //    wait pointless. The eviction attests a height-based promotion,
+    //    not finalized ancestry, so the verdict it feeds stays the
+    //    provisional one — as it does everywhere else here.
     let Ok(mut cache) = info.observed_input_conflicts.lock() else {
         return None;
     };
@@ -349,12 +325,11 @@ fn first_confirmed_input_conflict(
             continue;
         };
         // Same invariant as the live scan's `record.txid != lock_txid`:
-        // a lock's own spend of its input is not a conflict with itself.
-        // Two tracked locks sharing an input can cross-remember each
-        // other, and after the winner's record is promotion-evicted a
+        // a lock's own spend of its input is not a conflict with itself,
+        // full stop. Two tracked locks sharing an input can cross-remember
+        // each other, and after the winner's record is promotion-evicted a
         // resume of the WINNER must not read the memory as evidence
-        // against it — code 47 licenses a discard, and discarding the
-        // chainlocked winner would strand its credits.
+        // against it.
         if observed.spender == lock_txid {
             continue;
         }
@@ -369,18 +344,7 @@ fn first_confirmed_input_conflict(
             // scan's hit above; nothing to add here either way.
             continue;
         }
-        // Restored provenance never upgrades on a height-only boundary —
-        // see `ObservedInputConflict::restored`. Live provenance may: the
-        // record was seen in-block on this session's chain, and
-        // promotion-eviction is the only path that removes it.
-        let spender_chain_locked = !observed.restored
-            && chain_locked_height.is_some_and(|boundary| observed.height <= boundary);
-        return Some((
-            *input,
-            observed.spender,
-            Some(observed.height),
-            spender_chain_locked,
-        ));
+        return Some((*input, observed.spender, Some(observed.height)));
     }
     None
 }
@@ -393,9 +357,9 @@ fn first_confirmed_input_conflict(
 /// promotion-evict a restored spender record before the first catch-up
 /// resume ever reads it, leaving neither a record nor a memory: the silent
 /// proof-wait hang all of this exists to prevent. Seeding at load closes
-/// that window. Entries seeded here carry restored provenance, so a later
-/// eviction can only ever surface them as the provisional verdict; the
-/// terminal claim still requires evidence verified on the live chain.
+/// that window. Seeding decides only whether the screen fires at all:
+/// entries seeded here surface as the same provisional verdict every
+/// other sighting does.
 pub(crate) fn seed_observed_input_conflicts(info: &PlatformWalletInfo) {
     let Ok(mut cache) = info.observed_input_conflicts.lock() else {
         return;
@@ -429,7 +393,6 @@ pub(crate) fn seed_observed_input_conflicts(info: &PlatformWalletInfo) {
                 crate::wallet::platform_wallet::ObservedInputConflict {
                     spender: record.txid,
                     height,
-                    restored: true,
                 },
             );
         }
@@ -476,12 +439,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// A `Built` / `Broadcast` lock is first screened by
     /// [`first_confirmed_input_conflict`]; a hit short-circuits without
     /// broadcasting or waiting, because such a lock is a double spend that
-    /// no peer will relay while the spender stands. A chainlocked spender
-    /// raises the terminal
-    /// [`PlatformWalletError::AssetLockInputConflict`]; a merely-in-block
-    /// one raises the provisional
-    /// [`PlatformWalletError::AssetLockInputContested`], which keeps the
-    /// lock tracked for a later retry. The screen is one-sided — read its
+    /// no peer will relay while the spender stands. The hit ALWAYS raises
+    /// the provisional [`PlatformWalletError::AssetLockInputContested`],
+    /// which keeps the lock tracked for a later retry: stopping the doomed
+    /// broadcast-and-wait is all this evidence supports. Proving the
+    /// spender's block is on the finalized branch would take an ancestry
+    /// predicate the wallet does not have — chainlock contexts and applied
+    /// chainlock heights are promotion artifacts, not ancestry proofs — so
+    /// the terminal [`PlatformWalletError::AssetLockInputConflict`] is
+    /// never constructed here. A conflict that persists across sessions is
+    /// in practice permanent, but acting on that (discarding the tracked
+    /// lock) is host and user policy; the SDK does not license it
+    /// unilaterally on this evidence. The screen is one-sided — read its
     /// docs before treating a clean pass as evidence the lock is alive.
     pub async fn resume_asset_lock(
         &self,
@@ -542,43 +511,32 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // spend of a settled outpoint, so the broadcast is discarded
         // without a reply and the wait — unbounded for the user-facing
         // funding flows — would never return. The typed error is what lets
-        // a host offer to discard the lock instead of showing a spinner
-        // forever.
-        if let Some((input, spent_by, height, spender_chain_locked)) = input_conflict {
+        // a host explain the stalled funding attempt instead of showing a
+        // spinner forever.
+        if let Some((input, spent_by, height)) = input_conflict {
             tracing::warn!(
                 outpoint = %out_point,
                 %input,
                 %spent_by,
                 ?height,
-                spender_chain_locked,
                 "resume_asset_lock: asset lock double-spends an outpoint \
                  already consumed by a confirmed transaction; it cannot \
                  confirm while that spender stands"
             );
-            // The finality of the spender decides WHICH verdict, not
-            // whether one is raised. A chainlocked spender can never be
-            // reorganised away, so the terminal variant — the one that
-            // licenses the host to discard the tracked lock — is sound.
-            // A merely-in-block spender stops the doomed wait all the
-            // same, but its block can still drop in a reorg (and a peer
-            // can then replay the already-broadcast lock), so the
-            // contested variant keeps the lock tracked for a later
-            // retry: the next chainlock either buries the sibling and
-            // upgrades the verdict, or the reorg clears the conflict.
-            return Err(if spender_chain_locked {
-                PlatformWalletError::AssetLockInputConflict {
-                    out_point: *out_point,
-                    input,
-                    spent_by,
-                    height,
-                }
-            } else {
-                PlatformWalletError::AssetLockInputContested {
-                    out_point: *out_point,
-                    input,
-                    spent_by,
-                    height,
-                }
+            // One verdict, always provisional. The screen proves the
+            // broadcast-and-wait is doomed while the spender stands; it
+            // cannot prove the spender's block is on the finalized branch
+            // (see `first_confirmed_input_conflict` for why every finality
+            // signal reachable from here is a promotion artifact). The
+            // terminal variant is the one that licenses discarding tracked
+            // state, and discarding a lock whose sibling turns out to sit
+            // on a losing branch would strand the credits of a lock a peer
+            // can still replay — so it is never raised here.
+            return Err(PlatformWalletError::AssetLockInputContested {
+                out_point: *out_point,
+                input,
+                spent_by,
+                height,
             });
         }
 
@@ -1653,7 +1611,7 @@ mod tests {
 
         /// Prime the screen's session memory directly, the way the load
         /// seeder or a prior resume would.
-        async fn remember_conflict(&self, spender: Txid, height: u32, restored: bool) {
+        async fn remember_conflict(&self, spender: Txid, height: u32) {
             let wm = self.manager.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -1663,11 +1621,7 @@ mod tests {
                 .expect("test cache")
                 .insert(
                     self.funded_input(),
-                    crate::wallet::platform_wallet::ObservedInputConflict {
-                        spender,
-                        height,
-                        restored,
-                    },
+                    crate::wallet::platform_wallet::ObservedInputConflict { spender, height },
                 );
         }
 
@@ -1745,11 +1699,10 @@ mod tests {
         ))
     }
 
-    /// The spender here is merely `InBlock` with no applied chainlock
-    /// covering it, so the verdict is provisional: the resume still stops
-    /// before broadcasting or waiting, but through the contested variant,
-    /// which carries no licence to discard the tracked lock — that block
-    /// can still reorg out and the lock become viable again.
+    /// The base case: a confirmed sibling spending the lock's input stops
+    /// the resume before it broadcasts or waits, and it does so through the
+    /// contested variant — the screen's one verdict, which carries no
+    /// licence to discard the tracked lock.
     #[tokio::test]
     async fn broadcast_resume_reports_a_contested_input_for_a_merely_in_block_spender() {
         let fixture = ConflictFixture::new().await;
@@ -1787,11 +1740,13 @@ mod tests {
         );
     }
 
-    /// A RESTORED in-block spender never earns the terminal verdict from a
-    /// height-only boundary: its block was never shown to be on the chain
-    /// the chainlock covers (the wallet can restore a record whose block a
-    /// reorg dropped while it was offline). The conflict still fires —
-    /// provisionally.
+    /// Restored provenance changes nothing, in either direction. It used
+    /// to gate a height-only promotion to the terminal verdict; that
+    /// promotion is gone (and the guard was bypassable anyway — under
+    /// `keep-finalized-transactions` the key wallet height-mutates a stale
+    /// restored `InBlock` record straight to `InChainLockedBlock`), so a
+    /// restored spender under a covering boundary reports exactly what
+    /// every other sighting does.
     #[tokio::test]
     async fn a_restored_spender_below_the_boundary_stays_provisional() {
         let fixture = ConflictFixture::new().await;
@@ -1812,21 +1767,22 @@ mod tests {
             .expect_err("a currently double-spent asset lock must fail, not wait");
         assert!(
             matches!(error, PlatformWalletError::AssetLockInputContested { .. }),
-            "restored evidence must stay provisional under a height-only boundary, got {error:?}"
+            "a restored spender under the boundary must stay provisional, got {error:?}"
         );
     }
 
-    /// The same provenance rule survives promotion-eviction: a seeded /
-    /// remembered RESTORED sighting whose record has left history under a
-    /// covering boundary still reports the provisional verdict, never the
-    /// discard-licensing terminal one.
+    /// The same on the memory path: a remembered sighting whose record has
+    /// left history under a covering boundary still reports the
+    /// provisional verdict, never the discard-licensing terminal one. The
+    /// eviction attests a height-based promotion, not that the spender's
+    /// block is on the finalized branch.
     #[tokio::test]
-    async fn a_restored_spender_evicted_under_the_boundary_stays_provisional() {
+    async fn a_remembered_spender_evicted_under_the_boundary_stays_provisional() {
         let fixture = ConflictFixture::new().await;
         fixture.track(AssetLockStatus::Broadcast, None).await;
 
         let spender_txid = transaction_spending(fixture.funded_input()).txid();
-        fixture.remember_conflict(spender_txid, 1_234, true).await;
+        fixture.remember_conflict(spender_txid, 1_234).await;
         fixture.set_chain_lock_boundary(1_300).await;
 
         let error = fixture
@@ -1836,22 +1792,22 @@ mod tests {
             .expect_err("the remembered conflict still stops the wait");
         assert!(
             matches!(error, PlatformWalletError::AssetLockInputContested { .. }),
-            "restored provenance must not upgrade on the boundary, got {error:?}"
+            "a remembered sighting must not upgrade on the boundary, got {error:?}"
         );
     }
 
     /// The memory must never condemn a lock with its own txid: two tracked
     /// locks sharing an input cross-remember each other, and after the
     /// winner's record is promotion-evicted a resume of the WINNER must
-    /// not read the memory as evidence against it — discarding the
-    /// chainlocked winner would strand its credits.
+    /// not read the memory as evidence against it — a lock's own spend is
+    /// not a conflict with itself.
     #[tokio::test]
     async fn remembered_evidence_never_condemns_the_lock_itself() {
         let fixture = ConflictFixture::new().await;
         fixture.track(AssetLockStatus::Broadcast, None).await;
 
         fixture
-            .remember_conflict(fixture.transaction.txid(), 1_234, false)
+            .remember_conflict(fixture.transaction.txid(), 1_234)
             .await;
         fixture.set_chain_lock_boundary(1_300).await;
 
@@ -1873,7 +1829,7 @@ mod tests {
     /// The load-time seeder primes the memory before any resume runs, so
     /// a chainlock dispatcher that promotion-evicts the restored spender
     /// before the first catch-up still leaves the screen with evidence —
-    /// provisional evidence, per its restored provenance.
+    /// reported, like every other sighting, as the provisional verdict.
     #[tokio::test]
     async fn seeding_survives_a_pre_resume_promotion_eviction() {
         let fixture = ConflictFixture::new().await;
@@ -1910,12 +1866,14 @@ mod tests {
     }
 
     /// Promotion is eviction: once a chainlock buries the spender's block,
-    /// `apply_chain_lock` removes its record from history — at exactly the
-    /// moment the verdict becomes terminal. The screen's session memory
-    /// must convert that disappearance into the terminal conflict instead
-    /// of letting the resume fall back into the proof wait.
+    /// `apply_chain_lock` removes its record from history. The screen's
+    /// session memory must carry the conflict across that disappearance
+    /// instead of letting the resume fall back into the proof wait — and it
+    /// must carry it as the SAME provisional verdict, because a
+    /// height-based promotion is not proof that the spender's block is on
+    /// the finalized branch.
     #[tokio::test]
-    async fn a_chainlock_evicted_spender_upgrades_the_remembered_verdict_to_terminal() {
+    async fn a_chainlock_evicted_spender_keeps_the_remembered_verdict_provisional() {
         let fixture = ConflictFixture::new().await;
         fixture.track(AssetLockStatus::Broadcast, None).await;
 
@@ -1925,7 +1883,7 @@ mod tests {
             .file_record(record_for(spender, confirmed_at(1_234)))
             .await;
 
-        // First resume: provisional, and the screen remembers the sighting.
+        // First resume: the screen reports and remembers the sighting.
         let first = fixture
             .manager
             .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
@@ -1933,7 +1891,7 @@ mod tests {
             .expect_err("a currently double-spent asset lock must fail, not wait");
         assert!(
             matches!(first, PlatformWalletError::AssetLockInputContested { .. }),
-            "before the chainlock the verdict is provisional, got {first:?}"
+            "the screen's one verdict is provisional, got {first:?}"
         );
 
         // The chainlock lands: boundary moves past the spender's height and
@@ -1947,10 +1905,10 @@ mod tests {
             .await
             .expect_err("a chainlock-settled double spend must fail, not wait");
         match second {
-            PlatformWalletError::AssetLockInputConflict { spent_by, .. } => {
-                assert_eq!(spent_by, spender_txid, "the remembered spender, upgraded");
+            PlatformWalletError::AssetLockInputContested { spent_by, .. } => {
+                assert_eq!(spent_by, spender_txid, "the remembered spender, unchanged");
             }
-            other => panic!("expected the terminal AssetLockInputConflict, got {other:?}"),
+            other => panic!("expected AssetLockInputContested, got {other:?}"),
         }
     }
 
@@ -1996,9 +1954,10 @@ mod tests {
         );
     }
 
-    /// Eviction without a covering boundary should be impossible; if it
-    /// ever happens, the screen stays on the provisional verdict rather
-    /// than inventing chainlock finality it cannot attest.
+    /// The memory outlives the record with no applied chainlock in sight:
+    /// the conflict is still reported, still provisionally. The boundary
+    /// is not consulted at all — with or without one, the screen has the
+    /// same evidence and gives the same answer.
     #[tokio::test]
     async fn an_evicted_spender_without_a_covering_boundary_stays_provisional() {
         let fixture = ConflictFixture::new().await;
@@ -2026,14 +1985,14 @@ mod tests {
         );
     }
 
-    /// A live in-block record sitting at or below the applied chainlock
-    /// boundary IS final — the record's presence in live history attests
-    /// the block survived to be buried — so the boundary promotion holds
-    /// for live evidence and the verdict is the terminal, discard-licensing
-    /// conflict. (The restored snapshot deliberately gets no such
-    /// promotion; see `restored_spend_below_the_chainlock_boundary_stays_unpromoted`.)
+    /// The applied chainlock watermark is NOT an ancestry proof, so a live
+    /// in-block record sitting at or below it earns no promotion. The
+    /// watermark is height-based, and the SPV chainlock manager counts a
+    /// missing header as a passing block-hash check, so a chainlock landing
+    /// on a replacement branch ahead of its headers can move it past a
+    /// record that sits on the losing branch. The verdict stays contested.
     #[tokio::test]
-    async fn a_live_spender_below_the_boundary_reports_the_terminal_conflict() {
+    async fn a_live_spender_below_the_boundary_stays_contested() {
         let fixture = ConflictFixture::new().await;
         fixture.track(AssetLockStatus::Broadcast, None).await;
 
@@ -2050,21 +2009,21 @@ mod tests {
             .await
             .expect_err("a double-spent asset lock must fail, not wait");
         match error {
-            PlatformWalletError::AssetLockInputConflict { spent_by, .. } => {
-                // The terminal variant IS the finality assertion: it is
-                // only constructed for a chainlock-final spender.
+            PlatformWalletError::AssetLockInputContested { spent_by, .. } => {
                 assert_eq!(spent_by, spender_txid);
             }
-            other => panic!("expected the terminal AssetLockInputConflict, got {other:?}"),
+            other => panic!("expected AssetLockInputContested, got {other:?}"),
         }
     }
 
-    /// The same verdict with the strongest available evidence behind it: a
-    /// spender sitting in a chain-locked block. Hosts render the difference
-    /// as confidence, so the flag has to travel out with the error rather
-    /// than being re-derived from the message.
+    /// The strongest evidence the wallet can hold — a spender whose own
+    /// record carries a chain-locked context — still buys no upgrade. That
+    /// context is set by the same height-based promotion, so it attests a
+    /// chainlock at the record's height, not that the record's block is on
+    /// the branch the chainlock covers. The terminal variant has no
+    /// emitter; the resume reports the provisional one here too.
     #[tokio::test]
-    async fn input_conflict_reports_a_chain_locked_spender_as_chain_locked() {
+    async fn a_chain_locked_spender_still_reports_only_the_contested_verdict() {
         let fixture = ConflictFixture::new().await;
         fixture.track(AssetLockStatus::Broadcast, None).await;
 
@@ -2081,17 +2040,17 @@ mod tests {
             .expect_err("a double-spent asset lock must fail, not wait");
         let rendered = error.to_string();
         match error {
-            PlatformWalletError::AssetLockInputConflict {
+            PlatformWalletError::AssetLockInputContested {
                 spent_by, height, ..
             } => {
                 assert_eq!(spent_by, spender_txid);
                 assert_eq!(height, Some(1_234));
             }
-            other => panic!("expected AssetLockInputConflict, got {other:?}"),
+            other => panic!("expected AssetLockInputContested, got {other:?}"),
         }
         assert!(
-            rendered.contains("chainlocked: true"),
-            "the rendered Display must carry the spender's finality: {rendered}"
+            rendered.contains("provisional"),
+            "the rendered Display must say the verdict is provisional: {rendered}"
         );
         assert_eq!(
             fixture.broadcast_count(),
@@ -2123,7 +2082,11 @@ mod tests {
             .await
             .expect_err("no proof event should arrive within the deadline");
         assert!(
-            !matches!(error, PlatformWalletError::AssetLockInputConflict { .. }),
+            !matches!(
+                error,
+                PlatformWalletError::AssetLockInputConflict { .. }
+                    | PlatformWalletError::AssetLockInputContested { .. }
+            ),
             "an unconfirmed conflict must not condemn the lock, got {error:?}"
         );
         assert_eq!(

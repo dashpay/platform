@@ -110,12 +110,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             };
             // Everything in history at this point WAS restored — the load
             // path starts from an empty map and only the selective record
-            // restore has run. Recording those txids lets the double-spend
-            // screen withhold height-only chainlock promotion from them
-            // (a restored block was never shown to be on the finalized
-            // chain), and seeding the screen's session memory here closes
-            // the race where SPV's chainlock dispatcher promotion-evicts a
-            // restored spender before the first catch-up resume reads it.
+            // restore has run. Recording those txids preserves that
+            // provenance for the session (the double-spend screen no
+            // longer classifies on it; see `restored_record_txids`), and
+            // seeding the screen's session memory here closes the race
+            // where SPV's chainlock dispatcher promotion-evicts a restored
+            // spender before the first catch-up resume reads it.
             use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
             platform_info.restored_record_txids = platform_info
                 .core_wallet

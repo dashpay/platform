@@ -116,48 +116,59 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorAssetLockInputConflict` (native code 47). The tracked
-         * asset-lock transaction spends an outpoint that a different,
-         * already-confirmed transaction of the same wallet spent first —
-         * typically a restored wallet whose rescan resurrected a UTXO one of
-         * its own earlier asset locks had already consumed. Peers drop such a
-         * double spend without replying, so the lock can never confirm and its
-         * proof wait would hang. The conflict screen stops the current resume
-         * before it broadcasts again or enters the proof wait (a
-         * `Broadcast`-status lock was sent on an earlier call).
+         * `ErrorAssetLockInputConflict` (native code 47). RESERVED — the
+         * native side has no code path that produces it today, so this class
+         * is never instantiated from a real result.
          *
-         * TERMINAL and NOT retryable: this is the one code that lets a host
-         * offer to discard the asset lock and rebuild it from currently-unspent
-         * inputs — a fund-safe action, because the confirmed spender is this
-         * wallet's own transaction, so the value either stays in the sibling
-         * or (after a freak reorg) returns to the spendable set. Its absence is
-         * not proof of liveness: the Rust-side scan cannot see conflicts whose
-         * spender was already pruned. The Android analog of Swift's
+         * It is the TERMINAL form of the double-spend verdict: the tracked
+         * asset-lock transaction spends an outpoint a different,
+         * already-confirmed transaction of the same wallet spent first, AND
+         * that spender's block is proven to be on the finalized chain. The
+         * proof is what is missing — chainlock contexts and the wallet's
+         * applied chainlock height are height-based promotion artifacts, not
+         * evidence of finalized ancestry — so every detection arrives as
+         * [AssetLockInputContested] (48) instead, chainlocked-looking
+         * spenders included.
+         *
+         * Kept (with its mapping arm) so the reserved code stays wired and
+         * hosts branching on it keep compiling. If it ever ships it keeps its
+         * meaning: NOT retryable, and the one code that lets a host discard
+         * the asset lock and rebuild it from currently-unspent inputs. Read
+         * nothing into its absence. The Android analog of Swift's
          * `PlatformWalletError.assetLockInputConflict`.
          */
         class AssetLockInputConflict(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorAssetLockInputContested` (native code 48). The provisional
-         * sibling of [AssetLockInputConflict]: a confirmed transaction of
-         * this wallet already spent one of the tracked lock's inputs, so
-         * the resume stopped before broadcasting into a wait that cannot
-         * return — but that spender sits in an ordinary block a
-         * reorganization can still drop, so the verdict is NOT final.
+         * `ErrorAssetLockInputContested` (native code 48). A confirmed
+         * transaction of this wallet already spent one of the tracked lock's
+         * inputs — typically a restored wallet whose rescan resurrected a
+         * UTXO one of its own earlier asset locks had already consumed. Peers
+         * drop such a double spend without replying, so the lock cannot
+         * confirm while that spender stands and its proof wait would hang;
+         * the screen stops the resume before it broadcasts again or enters
+         * the wait (a `Broadcast`-status lock was sent on an earlier call).
          *
-         * NO discard licence: keep the tracked lock and retry later (next
-         * launch, or after the next chainlock). The situation resolves
-         * itself — the sibling gets chainlock-buried and the next resume
-         * reports the terminal code 47, or a reorg drops the sibling and
-         * the next resume proceeds normally. The Android analog of Swift's
-         * `PlatformWalletError.assetLockInputContested`.
+         * The ONLY double-spend verdict the native side emits, and it is
+         * PROVISIONAL. NO discard licence: keep the tracked lock and retry
+         * later (next launch, or after the next chainlock) — but note a
+         * chainlock does NOT upgrade this to code 47 today; what a retry can
+         * resolve is a reorg dropping the sibling. A conflict that survives
+         * session after session is in practice permanent, and a host may
+         * reasonably stop retrying and offer the user a discard: that is a
+         * host/user policy call this error does not make, and it is fund-safe
+         * either way because the confirmed spender is this wallet's own
+         * transaction. Its absence is not proof of liveness — the native scan
+         * cannot see conflicts whose spender was already pruned. The Android
+         * analog of Swift's `PlatformWalletError.assetLockInputContested`.
          */
         class AssetLockInputContested(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
         }
 
+        /**
          * `ErrorAssetLockInsufficientFunds` (native code 29). Asset-lock coin
          * selection came up short over the build's *permitted funding set*.
          * What that set is depends on the funding form: an exact-amount build
@@ -614,8 +625,13 @@ sealed class DashSdkError(
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
             41 -> PlatformWallet.PlatformShieldCapacityExceeded(message, cause)
-            47 -> PlatformWallet.AssetLockInputConflict(message, cause) // ErrorAssetLockInputConflict
-            48 -> PlatformWallet.AssetLockInputContested(message, cause) // ErrorAssetLockInputContested
+            // ErrorAssetLockInputConflict — RESERVED, no native emitter yet;
+            // the arm stays so the code would not fall through to Generic if
+            // a finalized-ancestry proof ever starts raising it.
+            47 -> PlatformWallet.AssetLockInputConflict(message, cause)
+            // ErrorAssetLockInputContested — the double-spend verdict the
+            // native side actually emits.
+            48 -> PlatformWallet.AssetLockInputContested(message, cause)
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message

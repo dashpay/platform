@@ -282,47 +282,39 @@ pub enum PlatformWalletError {
         actual_identity_index: u32,
     },
 
-    /// The tracked asset-lock transaction spends an outpoint that a
-    /// **different, already-confirmed** transaction of this same wallet
-    /// spent first. The lock is permanently dead: every peer rejects it
-    /// as a double spend at the mempool boundary and therefore relays
-    /// nothing, so no IS-lock and no ChainLock can ever be produced for
-    /// it. Peers do not answer with BIP61 `reject` (Core stopped sending
-    /// those by default in 0.17), so the drop is silent — without this
-    /// variant the condition is indistinguishable from "the network is
-    /// slow", and the wallet's proof wait (unbounded for the user-facing
-    /// funding flows) simply never returns.
+    /// **RESERVED — the wallet never constructs this variant today.**
     ///
-    /// The typical origin is a restored wallet: a rescan repopulates the
-    /// UTXO set from chain data, an asset-lock build selects an input the
-    /// restored view still believes is unspent, and the transaction that
-    /// actually spent it — often one of the wallet's own earlier asset
-    /// locks — has been confirmed for a long time.
+    /// It describes a tracked asset-lock transaction that spends an
+    /// outpoint a **different, already-confirmed** transaction of this
+    /// same wallet spent first, where that spender's block is proven to
+    /// be on the FINALIZED chain. Such a lock is permanently dead: every
+    /// peer rejects it as a double spend at the mempool boundary and
+    /// therefore relays nothing, so no IS-lock and no ChainLock can ever
+    /// be produced for it, and the only recovery is to discard the lock
+    /// and build a new one from currently-unspent inputs.
     ///
-    /// Terminal, not retryable: this variant is raised only when the
-    /// spender has reached ChainLock finality — its block can never be
-    /// reorganised away — so the funds behind `input` are definitively
-    /// gone into `spent_by`, and the only recovery is to discard this lock
-    /// and build a new one from currently-unspent inputs. `height` is the
-    /// block height of the confirmed spender when the record carries block
-    /// info. The variant carries no finality flag on purpose: finality IS
-    /// the variant — a constructor cannot produce a terminal error that
-    /// renders anything but chainlocked finality.
+    /// The missing piece is the finalized-ancestry proof. The wallet layer
+    /// can see that a spender is confirmed, and it can see chainlock
+    /// contexts and the applied chainlock height, but both of those are
+    /// artifacts of a height-based promotion rather than evidence that the
+    /// spender's block belongs to the branch the chainlock covers (the SPV
+    /// chainlock manager counts a missing header as a passing block-hash
+    /// check, so a chainlock landing on a replacement branch ahead of its
+    /// headers promotes losing-branch records). Until the SPV layer
+    /// exposes an ancestry predicate, no code path may raise this variant:
+    /// the double-spend screen reports [`Self::AssetLockInputContested`]
+    /// for every hit, chainlocked-looking spenders included.
     ///
-    /// A confirmed-but-not-yet-chainlocked spender raises
-    /// [`Self::AssetLockInputContested`] instead: it equally stops the
-    /// doomed broadcast-and-wait, but it does NOT authorise discarding the
-    /// tracked lock, because an ordinary block can still be reorganised
-    /// out — at which point the sibling no longer spends the input, a peer
-    /// can replay the already-broadcast lock, and it can confirm. Deleting
-    /// the tracking state on that evidence would strand the confirmed
-    /// lock's credits. Splitting the verdict is what keeps this variant's
-    /// discard licence sound.
+    /// Kept in the enum — with its fields and its FFI code — so the
+    /// reserved code stays stable for hosts across the change and for the
+    /// future emitter. Hosts must read nothing into its absence: it is not
+    /// a liveness signal, not a "not yet final" signal, and not a
+    /// statement about any particular lock.
     ///
-    /// Raising this error is a definite verdict; NOT raising it proves
-    /// nothing — see the detection helper in
-    /// `wallet::asset_lock::sync::recovery` for why the scan is
-    /// best-effort.
+    /// `height` is the block height of the confirmed spender when the
+    /// record carries block info. The variant carries no finality flag on
+    /// purpose: finality IS the variant — a constructor cannot produce a
+    /// terminal error that renders anything but chainlocked finality.
     #[error(
         "Asset lock {out_point} can never confirm: it spends {input}, which was \
          already spent by confirmed transaction {spent_by} (block height \
@@ -336,27 +328,52 @@ pub enum PlatformWalletError {
         height: Option<CoreBlockHeight>,
     },
 
-    /// As [`Self::AssetLockInputConflict`], but the confirmed spender has
-    /// NOT reached ChainLock finality: it sits in an ordinary block that a
-    /// reorganisation can still drop.
+    /// The tracked asset-lock transaction spends an outpoint a
+    /// **different, already-confirmed** transaction of this same wallet
+    /// spent first. This is the verdict the double-spend screen always
+    /// emits on a hit — [`Self::AssetLockInputConflict`] has no emitter.
     ///
-    /// The immediate consequence is the same — while the sibling stands,
-    /// peers reject the lock as a double spend and a proof wait would hang
-    /// unboundedly, so the resume stops here without a further broadcast
-    /// or wait (a `Broadcast`-status lock was already sent on an earlier
-    /// call). The verdict, however, is provisional, and this variant
-    /// carries NO licence to discard the tracked lock. The host keeps the
-    /// lock and retries later; the situation resolves itself in one of two
-    /// ways: the sibling reaches a chainlock and the next resume reports
-    /// the terminal [`Self::AssetLockInputConflict`], or a reorg drops the
-    /// sibling and the next resume proceeds normally. Both signed
-    /// transactions are this wallet's own, so no outcome loses funds —
-    /// but only the chainlocked verdict makes *discarding state* safe.
+    /// The typical origin is a restored wallet: a rescan repopulates the
+    /// UTXO set from chain data, an asset-lock build selects an input the
+    /// restored view still believes is unspent, and the transaction that
+    /// actually spent it — often one of the wallet's own earlier asset
+    /// locks — has been confirmed for a long time.
+    ///
+    /// While the sibling stands, peers reject the lock as a double spend
+    /// and a proof wait would hang unboundedly (Core stopped sending BIP61
+    /// `reject` by default in 0.17, so the drop is silent and looks
+    /// exactly like a slow network), so the resume stops here without a
+    /// further broadcast or wait — a `Broadcast`-status lock was already
+    /// sent on an earlier call.
+    ///
+    /// The verdict is PROVISIONAL and carries NO licence to discard the
+    /// tracked lock. Keep the lock and retry later. Note what a retry can
+    /// and cannot do: a chainlock arriving over the sibling does NOT
+    /// upgrade this to the terminal variant today, because the wallet
+    /// cannot prove the sibling's block is on the finalized branch (see
+    /// [`Self::AssetLockInputConflict`]). What a retry resolves is the
+    /// other direction — a reorg drops the sibling and the resume proceeds
+    /// normally.
+    ///
+    /// In practice a conflict that persists across sessions is permanent,
+    /// and a host may well decide to stop retrying and drop the lock. That
+    /// is a host/user policy call, not something this error licenses: the
+    /// SDK does not authorise discarding tracked state on evidence this
+    /// weak. Either way no funds are lost — both signed transactions are
+    /// this wallet's own, so the value behind `input` lives on in
+    /// `spent_by` — but discarding a lock whose sibling turns out to sit
+    /// on a losing branch strands the credits of a lock a peer can still
+    /// replay.
+    ///
+    /// Raising this error is a definite verdict about the CONFLICT; NOT
+    /// raising it proves nothing — see the detection helper in
+    /// `wallet::asset_lock::sync::recovery` for why the scan is
+    /// best-effort.
     #[error(
         "Asset lock {out_point} cannot currently confirm: it spends {input}, \
          which confirmed transaction {spent_by} (block height {height:?}) has \
-         taken — but that spender is not yet chainlocked, so the verdict is \
-         provisional; keep the lock and retry after the next chainlock"
+         taken — the verdict is provisional (the wallet cannot prove the \
+         spender's finality); keep the lock and retry later"
     )]
     AssetLockInputContested {
         out_point: dashcore::OutPoint,

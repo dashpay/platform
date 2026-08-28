@@ -218,12 +218,12 @@ class DashSdkErrorTest {
     }
 
     @Test
-    fun assetLockInputConflictCode42MapsTyped() {
-        // TERMINAL: the one platform-wallet code that authorises a host to
-        // discard a tracked asset lock (fund-safe — the confirmed spender is
-        // the wallet's own transaction). It must never fall through to
-        // Generic, or the host is left waiting on a lock that can never
-        // confirm.
+    fun assetLockInputConflictCode47MapsTyped() {
+        // TERMINAL and RESERVED: no native path emits it today (that needs a
+        // finalized-ancestry proof the wallet cannot make), so this drives
+        // the mapping with a hand-built exception. The arm must stay wired —
+        // if a future emitter ships, the code must not fall through to
+        // Generic and leave the host unable to classify a dead lock.
         val message =
             "Asset lock a:0 can never confirm: it spends b:1, which was already spent by " +
                 "confirmed transaction c (block height Some(1234), chainlocked: true) — " +
@@ -247,16 +247,17 @@ class DashSdkErrorTest {
     }
 
     @Test
-    fun assetLockInputContestedCode43MapsTypedAndRetryable() {
-        // PROVISIONAL: the confirmed spender is not yet chainlocked, so its
-        // block can still reorg away. The host keeps the tracked lock and
-        // retries later — it must never treat this as the terminal 42's
-        // discard licence, and it must never fall through to Generic.
+    fun assetLockInputContestedCode48MapsTypedAndRetryable() {
+        // PROVISIONAL, and the ONLY double-spend verdict the native side
+        // emits: the wallet cannot prove the confirmed spender's block is on
+        // the finalized chain, so the host keeps the tracked lock and retries
+        // later. It must never be treated as the reserved 47's discard
+        // licence, and it must never fall through to Generic.
         val message =
             "Asset lock a:0 cannot currently confirm: it spends b:1, which confirmed " +
-                "transaction c (block height Some(1234)) has taken — but that spender is " +
-                "not yet chainlocked, so the verdict is provisional; keep the lock and " +
-                "retry after the next chainlock"
+                "transaction c (block height Some(1234)) has taken — the verdict is " +
+                "provisional (the wallet cannot prove the spender's finality); keep " +
+                "the lock and retry later"
         val mapped = DashSdkError.fromNative(
             DashSDKException(
                 DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 48,
