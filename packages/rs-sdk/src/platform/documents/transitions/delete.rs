@@ -165,6 +165,7 @@ impl DocumentDeleteTransitionBuilder {
     /// # Returns
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
+    ///
     /// Resolve the document type and the document this delete will be
     /// built from, validating the builder's target. Runs BEFORE any nonce
     /// is reserved (an invalid builder must not advance the SDK's cached
