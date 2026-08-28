@@ -9,6 +9,11 @@
 
 use dashcore::hashes::{hash160, Hash};
 
+/// Upper bound on one candidates query. Far above any realistic provider
+/// pool, and small enough that `count` can never drive an allocation
+/// failure — the FFI re-exports the same value for hosts.
+pub const MAX_PROVIDER_KEY_CANDIDATES: u32 = 256;
+
 use super::list::MasternodeListSummary;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::PlatformWallet;
@@ -48,6 +53,12 @@ pub fn provider_key_candidates(
                 "key candidates are available for operator and voting keys only".to_string(),
             ));
         }
+    }
+    if count > MAX_PROVIDER_KEY_CANDIDATES {
+        return Err(PlatformWalletError::InvalidParameter(format!(
+            "at most {MAX_PROVIDER_KEY_CANDIDATES} key candidates can be listed per call, \
+             {count} were requested"
+        )));
     }
 
     let mut candidates = Vec::with_capacity(count as usize);

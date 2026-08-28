@@ -46,9 +46,11 @@ extension PlatformWalletManager {
         kind: RotationKeyKind,
         count: UInt32 = 20
     ) async throws -> [ProviderKeyCandidate] {
-        guard isConfigured, handle != NULL_HANDLE, walletId.count == 32 else {
+        guard isConfigured, handle != NULL_HANDLE, walletId.count == 32,
+            count <= UInt32(PLATFORM_WALLET_PROVIDER_KEY_CANDIDATES_MAX)
+        else {
             throw PlatformWalletError.invalidParameter(
-                "Manager not configured, or wallet id not 32 bytes")
+                "Manager not configured, wallet id not 32 bytes, or count above the candidates maximum")
         }
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { () -> [ProviderKeyCandidate] in
