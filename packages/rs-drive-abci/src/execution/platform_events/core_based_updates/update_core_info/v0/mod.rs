@@ -59,11 +59,18 @@ where
             platform_version,
         )?;
 
+        // `is_init_chain` doubles as `start_from_scratch`: on init chain and on state
+        // sync reconstruction the quorums must be built even if the (freshly
+        // constructed) block state happens to already report the requested core height.
+        // The flag's only effect inside update_quorum_info is to skip that
+        // same-core-height short-circuit; on the normal block path (`is_init_chain =
+        // false`) behavior is unchanged. The previous hardcoded `false` only worked
+        // because those flows start from a state whose derived core height is 0.
         self.update_quorum_info(
             platform_state,
             block_platform_state,
             core_block_height,
-            false,
+            is_init_chain,
             platform_version,
         )
     }
