@@ -108,9 +108,10 @@ impl DriveDocumentQuery<'_> {
 
         // Shapes the terminal route can never serve opt out up front, so
         // their generic-route miss errors propagate untouched: a resolved
-        // time range needs a bucketed index (which an indexOnly type
-        // cannot even declare), and the multi-`In` machinery has its own
-        // error surface.
+        // time range binds to a bucketed index (whose entries serve only
+        // the aggregate surfaces — see
+        // `refuse_bucketed_index_only_synthesis`), and the multi-`In`
+        // machinery has its own error surface.
         if !self.resolved_time_ranges.is_empty() || self.internal_clauses.in_clauses.len() > 1 {
             return Ok(None);
         }
@@ -165,7 +166,11 @@ impl DriveDocumentQuery<'_> {
                 fields.as_slice(),
                 in_field,
                 order_by_keys.as_slice(),
-                |_| true,
+                // Bucketed indexes never serve the terminal route: only
+                // resolved time ranges may bind to bucket keys, and those
+                // opted out above — a raw query name-matching a bucketed
+                // index's properties must not walk its grid-keyed levels.
+                |index| index.time_range.is_none(),
                 platform_version,
             )
             .map_err(|e| Error::Protocol(Box::new(e)))?
@@ -474,7 +479,10 @@ impl DriveDocumentQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<&Index, Error> {
         match self.select_best_index(platform_version)? {
-            crate::query::BestIndexOutcome::Matched(index) => Ok(index),
+            crate::query::BestIndexOutcome::Matched(index) => {
+                Self::refuse_bucketed_index_only_synthesis(index)?;
+                Ok(index)
+            }
             crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
                 match self.index_only_terminal_clause_selection(platform_version)? {
                     Some(route) => Ok(route.index),
@@ -482,6 +490,32 @@ impl DriveDocumentQuery<'_> {
                 }
             }
         }
+    }
+
+    /// Document synthesis over a bucketed indexOnly index is not
+    /// supported: the bucket level is a derived value — the synthesized
+    /// `$createdAt` would carry bucket-start granularity, not the
+    /// document's timestamp — and the type's non-bucketed indexes (the
+    /// proof-index rule guarantees at least one exists) serve the raw
+    /// entries. Bucketed indexOnly indexes exist for the aggregate
+    /// surfaces (`IN_TIME_RANGE` count / range count), which never open
+    /// value trees. Only a resolved `IN_TIME_RANGE` query can select a
+    /// bucketed index (raw queries are inadmissible against them), so this
+    /// fires exactly on "documents in this time bucket" requests.
+    fn refuse_bucketed_index_only_synthesis(index: &Index) -> Result<(), Error> {
+        if index.time_range.is_some() {
+            return Err(Error::Query(
+                crate::error::query::QuerySyntaxError::Unsupported(
+                    "IN_TIME_RANGE document queries are not supported on an indexOnly type: \
+                     the bucketed entries carry bucket-start time granularity, so documents \
+                     cannot be synthesized from them; use the count aggregate surfaces over \
+                     the bucketed index, or query the raw entries through a non-bucketed \
+                     index"
+                        .to_string(),
+                ),
+            ));
+        }
+        Ok(())
     }
 
     /// Route an indexOnly query: `Ok(Some(..))` with the terminal-route
@@ -495,7 +529,13 @@ impl DriveDocumentQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Option<grovedb::PathQuery>, Error> {
         match self.select_best_index(platform_version)? {
-            crate::query::BestIndexOutcome::Matched(_) => Ok(None),
+            crate::query::BestIndexOutcome::Matched(index) => {
+                // Refused here as well as in `index_only_query_index` so
+                // the prover and the no-proof executor fail before
+                // building a path query the synthesis side would refuse.
+                Self::refuse_bucketed_index_only_synthesis(index)?;
+                Ok(None)
+            }
             crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
                 match self.index_only_terminal_clause_selection(platform_version)? {
                     Some(route) => self
@@ -690,6 +730,18 @@ pub fn index_only_entry_path_and_key_from_values(
             .serialize_value_for_key(property_name, value, platform_version)
             .map_err(|e| Error::Protocol(Box::new(e)))
     };
+
+    // Bare property names are correct here because a bucketed index can
+    // never reach this builder: it is used with the proof index (which by
+    // the contract-admission rule involves no $createdAt, so it cannot be
+    // bucketed) and with terminal-route indexes (which exclude bucketed
+    // indexes at selection). Guarded rather than assumed.
+    if index.time_range.is_some() {
+        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+            "index_only_entry_path_and_key_from_values cannot address a bucketed index: \
+             its levels are keyed by the grid-qualified storage key, not the property name",
+        )));
+    }
 
     let mut path: Vec<Vec<u8>> = Vec::with_capacity(5 + index.properties.len() * 2);
     path.push(vec![crate::drive::RootTree::DataContractDocuments as u8]);

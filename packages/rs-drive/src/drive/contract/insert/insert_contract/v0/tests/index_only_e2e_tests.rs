@@ -15,9 +15,9 @@
 //! | `byPost`        | `[postId]`            | `$ownerId` | countable + range + ranked  |
 //! | `byLiker`       | `[$ownerId]`          | `postId`   | none                        |
 //!
-//! plus the `tip` doctype (sum axes — see the sum-axes section at the
-//! bottom) and the `mark` doctype (two single-property indexes, the
-//! splice-prone shape).
+//! plus the `tip` doctype (sum axes), the `beat` doctype (timeRange
+//! buckets) — see their sections at the bottom — and the `mark` doctype
+//! (two single-property indexes, the splice-prone shape).
 //!
 //! Three layers are pinned. The *registration shape*: no `[0]` primary-key
 //! tree is created for the doctype, while the top-level property-name trees
@@ -1932,6 +1932,484 @@ fn tip_estimated_fees_upper_bound_actual_fees() {
     let actual_delete = delete_tip(&drive, &contract, tip, true).expect("actual delete");
     assert!(estimated_delete.processing_fee > 0);
     assert!(actual_delete.processing_fee > 0);
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ---------------------------------------------------------------------------
+// timeRange buckets: bucketed entries (the `beat` doctype)
+// ---------------------------------------------------------------------------
+//
+// The `beat` doctype pins the bucketed storage mode: `byHourHashtag` —
+// `[$createdAt, hashtag] → $ownerId` with `timeRange { on: $createdAt,
+// range: 3600, step: 900 }` (overlap factor 4) plus the count axes — writes
+// one commitment entry per containing bucket under the grid-qualified
+// level, while `byHashtag` — `[hashtag] → $ownerId`, no transform — is the
+// $createdAt-free proof index. Bucketed entries serve the count aggregate
+// surfaces only; document synthesis over them is refused.
+
+const BEAT_DOCTYPE: &str = "beat";
+
+/// A real timestamp and the four bucket starts (ms) containing it on the
+/// 3600s/900s grid — pinned by arithmetic, independent of
+/// `containing_buckets`.
+const BEAT_T_MS: u64 = 1_700_000_000_000;
+const BEAT_BUCKET_STARTS_MS: [u64; 4] = [
+    1_699_996_500_000,
+    1_699_997_400_000,
+    1_699_998_300_000,
+    1_699_999_200_000,
+];
+/// `TimeRangeTransform::storage_key("$createdAt")` for the fixture grid.
+const BEAT_GRID_LEVEL: &[u8] = b"$createdAt#3600#900";
+
+fn beat_doctype_path(contract: &DataContract) -> Vec<Vec<u8>> {
+    vec![
+        vec![crate::drive::RootTree::DataContractDocuments as u8],
+        contract.id().as_bytes().to_vec(),
+        vec![1],
+        BEAT_DOCTYPE.as_bytes().to_vec(),
+    ]
+}
+
+fn encode_timestamp(ms: u64) -> Vec<u8> {
+    dpp::data_contract::document_type::DocumentPropertyType::encode_date_timestamp(ms)
+}
+
+/// A beat under `hashtag` by `owner` created at `created_at_ms`.
+fn build_beat(
+    contract: &DataContract,
+    hashtag: &str,
+    owner: [u8; 32],
+    created_at_ms: u64,
+    seed: u64,
+) -> Document {
+    use dpp::document::DocumentV0Setters;
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(BEAT_DOCTYPE)
+        .expect("beat doctype exists");
+    let mut doc = document_type
+        .random_document(Some(seed), pv)
+        .expect("random document");
+    let mut props = std::collections::BTreeMap::new();
+    props.insert("hashtag".to_string(), Value::Text(hashtag.to_string()));
+    doc.set_properties(props);
+    doc.set_owner_id(Identifier::from(owner));
+    doc.set_created_at(Some(created_at_ms));
+    doc
+}
+
+fn insert_beat(
+    drive: &Drive,
+    contract: &DataContract,
+    doc: &Document,
+    apply: bool,
+) -> Result<FeeResult, crate::error::Error> {
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(BEAT_DOCTYPE)
+        .expect("beat doctype exists");
+    drive.add_document_for_contract(
+        DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((doc, None)),
+                owner_id: None,
+            },
+            contract,
+            document_type,
+        },
+        false,
+        BlockInfo::default(),
+        apply,
+        None,
+        pv,
+        None,
+    )
+}
+
+fn delete_beat(
+    drive: &Drive,
+    contract: &DataContract,
+    doc: Document,
+    apply: bool,
+) -> Result<FeeResult, crate::error::Error> {
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(BEAT_DOCTYPE)
+        .expect("beat doctype exists");
+    drive.delete_index_only_document_for_contract(
+        doc,
+        contract,
+        document_type,
+        BlockInfo::default(),
+        apply,
+        None,
+        pv,
+        None,
+    )
+}
+
+/// One commitment entry per containing bucket, under the grid-qualified
+/// level key, at bucket starts pinned by arithmetic — plus the plain
+/// `byHashtag` entry on the same row.
+#[test]
+fn beat_insert_writes_one_entry_per_containing_bucket() {
+    let (drive, contract) = setup_likes();
+    let beat = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS, 1);
+    insert_beat(&drive, &contract, &beat, true).expect("insert beat");
+
+    let document_type = contract
+        .document_type_for_name(BEAT_DOCTYPE)
+        .expect("beat doctype exists");
+    let expected_commitment =
+        crate::drive::document::index_only_row_commitment(&beat, document_type, platform_version())
+            .expect("commitment computes");
+
+    for bucket_start in BEAT_BUCKET_STARTS_MS {
+        let mut bucket_entry = beat_doctype_path(&contract);
+        bucket_entry.extend([
+            BEAT_GRID_LEVEL.to_vec(),
+            encode_timestamp(bucket_start),
+            b"hashtag".to_vec(),
+            b"dash".to_vec(),
+            vec![0],
+        ]);
+        match read_grove_element(&drive, &bucket_entry, &OWNER_1) {
+            Some(Element::Item(data, _)) => assert_eq!(
+                data,
+                expected_commitment.to_vec(),
+                "bucket {bucket_start}: every bucket's entry carries the row commitment"
+            ),
+            other => panic!("expected the entry in bucket {bucket_start}, got {other:?}"),
+        }
+    }
+
+    // No entry exists one step below the earliest containing bucket.
+    let mut outside = beat_doctype_path(&contract);
+    outside.extend([
+        BEAT_GRID_LEVEL.to_vec(),
+        encode_timestamp(BEAT_BUCKET_STARTS_MS[0] - 900_000),
+        b"hashtag".to_vec(),
+        b"dash".to_vec(),
+        vec![0],
+    ]);
+    assert!(
+        read_grove_element(&drive, &outside, &OWNER_1).is_none(),
+        "no entry outside the containing buckets"
+    );
+
+    // The plain proof index holds the same row's commitment.
+    let mut by_hashtag = beat_doctype_path(&contract);
+    by_hashtag.extend([b"hashtag".to_vec(), b"dash".to_vec(), vec![0]]);
+    match read_grove_element(&drive, &by_hashtag, &OWNER_1) {
+        Some(Element::Item(data, _)) => assert_eq!(data, expected_commitment.to_vec()),
+        other => panic!("expected the byHashtag entry, got {other:?}"),
+    }
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// The trending surface: a resolved `IN_TIME_RANGE` count over one bucket
+/// counts the bucket's entries per hashtag, unproved and proved agreeing.
+#[test]
+fn beat_bucket_counts_serve_trending() {
+    use crate::query::drive_document_count_query::{
+        CountMode, DocumentCountRequest, DocumentCountResponse, DriveDocumentCountQuery,
+    };
+    use crate::query::ResolvedTimeRange;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::TimeRangeTransform;
+
+    let (drive, contract) = setup_likes();
+    // Two dash beats and one btc beat, all at BEAT_T_MS.
+    for (owner, hashtag, seed) in [
+        (OWNER_1, "dash", 1u64),
+        (OWNER_2, "dash", 2),
+        (OWNER_3, "btc", 3),
+    ] {
+        let beat = build_beat(&contract, hashtag, owner, BEAT_T_MS, seed);
+        insert_beat(&drive, &contract, &beat, true).expect("insert beat");
+    }
+
+    let document_type = contract
+        .document_type_for_name(BEAT_DOCTYPE)
+        .expect("beat doctype exists");
+    let transform = TimeRangeTransform {
+        source: "$createdAt".to_string(),
+        range_seconds: 3600,
+        step_seconds: 900,
+        phase_seconds: 0,
+    };
+    let resolved = vec![ResolvedTimeRange {
+        transform: transform.clone(),
+    }];
+    let bucket = BEAT_BUCKET_STARTS_MS[3];
+    let count_in_bucket = |hashtag: &str, prove: bool| {
+        let drive_config = crate::config::DriveConfig::default();
+        let request = DocumentCountRequest {
+            contract: &contract,
+            document_type,
+            where_clauses: vec![
+                crate::query::WhereClause {
+                    field: "$createdAt".to_string(),
+                    operator: crate::query::WhereOperator::Equal,
+                    value: Value::U64(bucket),
+                },
+                crate::query::WhereClause {
+                    field: "hashtag".to_string(),
+                    operator: crate::query::WhereOperator::Equal,
+                    value: Value::Text(hashtag.to_string()),
+                },
+            ],
+            resolved_time_ranges: resolved.clone(),
+            order_clauses: Vec::new(),
+            mode: CountMode::Aggregate,
+            limit: None,
+            prove,
+            drive_config: &drive_config,
+        };
+        drive
+            .execute_document_count_request(request, None, platform_version())
+            .expect("the bucketed count must execute")
+    };
+
+    match count_in_bucket("dash", false) {
+        DocumentCountResponse::Aggregate(count) => {
+            assert_eq!(count, 2, "two dash beats in the bucket")
+        }
+        other => panic!("expected an aggregate count, got {other:?}"),
+    }
+    match count_in_bucket("btc", false) {
+        DocumentCountResponse::Aggregate(count) => {
+            assert_eq!(count, 1, "one btc beat in the bucket")
+        }
+        other => panic!("expected an aggregate count, got {other:?}"),
+    }
+
+    // Proved parity for the dash count.
+    let proof_bytes = match count_in_bucket("dash", true) {
+        DocumentCountResponse::Proof(bytes) => bytes,
+        other => panic!("expected proof bytes, got {other:?}"),
+    };
+    let where_clauses = vec![
+        crate::query::WhereClause {
+            field: "$createdAt".to_string(),
+            operator: crate::query::WhereOperator::Equal,
+            value: Value::U64(bucket),
+        },
+        crate::query::WhereClause {
+            field: "hashtag".to_string(),
+            operator: crate::query::WhereOperator::Equal,
+            value: Value::Text("dash".to_string()),
+        },
+    ];
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &where_clauses,
+        &resolved,
+    )
+    .expect("byHourHashtag covers the resolved bucket count");
+    let count_query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: contract.id().to_buffer(),
+        document_type_name: BEAT_DOCTYPE.to_string(),
+        index,
+        where_clauses,
+    };
+    let verifier_path_query = count_query
+        .point_lookup_count_path_query(platform_version())
+        .expect("verifier path query builds");
+    let (_root_hash, proved) = grovedb::GroveDb::verify_query(
+        &proof_bytes,
+        &verifier_path_query,
+        &platform_version().drive.grove_version,
+    )
+    .expect("the count proof must verify");
+    let proved_count: u64 = proved
+        .into_iter()
+        .filter_map(|(_path, _key, element)| element)
+        .map(|element| element.count_value_or_default())
+        .sum();
+    assert_eq!(proved_count, 2, "proved and unproved counts must agree");
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Document synthesis over the bucketed index is refused with guidance —
+/// the bucket level carries bucket-start granularity, not the document's
+/// timestamp.
+#[test]
+fn beat_synthesis_over_bucketed_index_is_refused() {
+    use crate::query::{DriveDocumentQuery, InternalClauses, ResolvedTimeRange};
+    use dpp::data_contract::document_type::TimeRangeTransform;
+
+    let (drive, contract) = setup_likes();
+    let beat = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS, 1);
+    insert_beat(&drive, &contract, &beat, true).expect("insert beat");
+
+    let document_type = contract
+        .document_type_for_name(BEAT_DOCTYPE)
+        .expect("beat doctype exists");
+    let query = DriveDocumentQuery {
+        contract: &contract,
+        document_type,
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![
+                crate::query::WhereClause {
+                    field: "$createdAt".to_string(),
+                    operator: crate::query::WhereOperator::Equal,
+                    value: Value::U64(BEAT_BUCKET_STARTS_MS[3]),
+                },
+                crate::query::WhereClause {
+                    field: "hashtag".to_string(),
+                    operator: crate::query::WhereOperator::Equal,
+                    value: Value::Text("dash".to_string()),
+                },
+            ],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(10),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![ResolvedTimeRange {
+            transform: TimeRangeTransform {
+                source: "$createdAt".to_string(),
+                range_seconds: 3600,
+                step_seconds: 900,
+                phase_seconds: 0,
+            },
+        }],
+    };
+    let error = drive
+        .query_documents(query, None, false, None, None)
+        .expect_err("document synthesis over a bucketed indexOnly index must be refused");
+    assert!(
+        error
+            .to_string()
+            .contains("IN_TIME_RANGE document queries are not supported on an indexOnly type"),
+        "expected the bucketed-synthesis refusal, got: {error}"
+    );
+}
+
+/// Delete-by-values removes every bucket entry (the carried `$createdAt`
+/// reproduces the exact bucket set), drained groups prune, and a falsified
+/// timestamp addressing the same buckets dies on the commitment probe.
+#[test]
+fn beat_delete_removes_every_bucket_entry() {
+    let (drive, contract) = setup_likes();
+    let beat = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS, 1);
+    insert_beat(&drive, &contract, &beat, true).expect("insert beat");
+
+    // A tuple whose timestamp differs by 1ms lands in the SAME buckets —
+    // its entries exist — but the commitment binds the exact timestamp.
+    let falsified = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS + 1, 2);
+    let error = delete_beat(&drive, &contract, falsified, true)
+        .expect_err("a falsified timestamp must be refused");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Drive(
+                crate::error::drive::DriveError::DeletingDocumentThatDoesNotExist(_)
+            )
+        ),
+        "expected the row-integrity refusal, got: {error}"
+    );
+
+    delete_beat(&drive, &contract, beat, true).expect("delete beat");
+
+    let mut grid_tree = beat_doctype_path(&contract);
+    grid_tree.push(BEAT_GRID_LEVEL.to_vec());
+    for bucket_start in BEAT_BUCKET_STARTS_MS {
+        assert!(
+            read_grove_element(&drive, &grid_tree, &encode_timestamp(bucket_start)).is_none(),
+            "bucket {bucket_start} must be pruned after the last entry leaves"
+        );
+    }
+    let mut hashtag_tree = beat_doctype_path(&contract);
+    hashtag_tree.push(b"hashtag".to_vec());
+    assert!(
+        read_grove_element(&drive, &hashtag_tree, b"dash").is_none(),
+        "the plain index's group prunes too"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// The estimation twin fans out identically: dry-run fees upper-bound
+/// applied fees across the bucket fan-out.
+#[test]
+fn beat_estimated_fees_upper_bound_actual_fees() {
+    let (drive, contract) = setup_likes();
+    let beat = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS, 1);
+
+    let estimated_insert =
+        insert_beat(&drive, &contract, &beat, false).expect("estimated insert must work");
+    let actual_insert = insert_beat(&drive, &contract, &beat, true).expect("actual insert");
+    assert!(
+        estimated_insert.storage_fee >= actual_insert.storage_fee,
+        "estimated insert storage fee {} must upper-bound actual {}",
+        estimated_insert.storage_fee,
+        actual_insert.storage_fee
+    );
+
+    let estimated_delete =
+        delete_beat(&drive, &contract, beat.clone(), false).expect("estimated delete must work");
+    let actual_delete = delete_beat(&drive, &contract, beat, true).expect("actual delete");
+    assert!(estimated_delete.processing_fee > 0);
+    assert!(actual_delete.processing_fee > 0);
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Duplicate detection probes the bucketed index too: re-creating the same
+/// beat is refused, and a beat one step-width later shares three of four
+/// buckets yet is a distinct row.
+#[test]
+fn beat_duplicate_and_overlapping_rows() {
+    let (drive, contract) = setup_likes();
+    let beat = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS, 1);
+    insert_beat(&drive, &contract, &beat, true).expect("first insert");
+
+    let error =
+        insert_beat(&drive, &contract, &beat, true).expect_err("the identical beat must refuse");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Drive(crate::error::drive::DriveError::CorruptedContractIndexes(
+                _
+            ))
+        ),
+        "expected the CorruptedContractIndexes backstop, got: {error}"
+    );
+
+    // Same owner and hashtag one step later is a different value tuple,
+    // but it still collides: its bucketed entries share three of four
+    // bucket positions with the first beat (same member key), and the
+    // plain byHashtag entry collides outright — ANY colliding entry
+    // refuses the create, which is the structural-uniqueness rule
+    // (here: one beat per (hashtag, owner), and per shared bucket).
+    let overlapping = build_beat(&contract, "dash", OWNER_1, BEAT_T_MS + 900_000, 2);
+    let error = insert_beat(&drive, &contract, &overlapping, true)
+        .expect_err("an overlapping beat by the same owner must refuse");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Drive(crate::error::drive::DriveError::CorruptedContractIndexes(
+                _
+            ))
+        ),
+        "expected the duplicate refusal on the shared buckets, got: {error}"
+    );
+
+    // A different owner in the same buckets is a different member key.
+    let other_owner = build_beat(&contract, "dash", OWNER_2, BEAT_T_MS, 3);
+    insert_beat(&drive, &contract, &other_owner, true)
+        .expect("another owner may beat in the same buckets");
 
     assert_grovedb_is_consistent(&drive);
 }

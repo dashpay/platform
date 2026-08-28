@@ -107,6 +107,55 @@
       ],
       "additionalProperties": false
     },
+    "beat": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byHourHashtag",
+          "properties": [
+            {
+              "$createdAt": "asc"
+            },
+            {
+              "hashtag": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "timeRange": {
+            "on": "$createdAt",
+            "range": 3600,
+            "step": 900
+          },
+          "countable": "countable",
+          "rangeCountable": true
+        },
+        {
+          "name": "byHashtag",
+          "properties": [
+            {
+              "hashtag": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        }
+      },
+      "required": [
+        "hashtag",
+        "$createdAt"
+      ],
+      "additionalProperties": false
+    },
     "tip": {
       "type": "object",
       "indexOnly": true,

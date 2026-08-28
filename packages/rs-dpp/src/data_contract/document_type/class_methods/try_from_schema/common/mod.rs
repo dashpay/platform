@@ -2040,13 +2040,20 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
-        if index.time_range.is_some() {
-            return Err(structure_error(format!(
-                "index \"{}\" on indexOnly document type \"{}\" cannot declare a timeRange: \
-                 bucketed indexOnly indexes are not yet supported",
-                index_name, name,
-            )));
-        }
+        // `timeRange` is admitted: a bucketed indexOnly index writes one
+        // entry per containing bucket, exactly as stored types do (the
+        // walkers' bucket fan-out is shared). No indexOnly-specific
+        // source rule is needed — the transform's source must be a
+        // system timestamp (the shared timeRange rules), it must be the
+        // index's first property, and the prefix rule below admits only
+        // `$ownerId` and `$createdAt` as system properties, which pins
+        // the source to `$createdAt` (the only timestamp an immutable,
+        // create-once document carries). Delete-by-values stays
+        // deterministic: `$createdAt` is forced into `required` (rule
+        // below), so the carried value reproduces the exact bucket set
+        // the create wrote. A bucketed index involves `$createdAt` and
+        // therefore never counts as the required `$createdAt`-free
+        // proof index.
         // The sum axes (summable / rangeSummable / rankedSummable /
         // rankedAverageable / the averageable sugar) are admitted: a
         // summable index's terminal entry is an

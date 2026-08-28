@@ -1156,6 +1156,197 @@ mod index_only_executed_proof_tests {
         );
     }
 
+    /// A signed `beat` create — the bucketed-type counterpart of
+    /// `signed_mark_create`. The `beat` doctype's `byHourHashtag` index
+    /// buckets `$createdAt` on a 3600s/900s grid, so a create fans out one
+    /// entry per containing bucket, while the plain `byHashtag` index is
+    /// the `$createdAt`-free proof index the executed proofs run against.
+    async fn signed_beat_create(
+        contract: &DataContract,
+        owner: Identifier,
+        hashtag: &str,
+        nonce: u64,
+        key: &dpp::identity::IdentityPublicKey,
+        signer: &SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> (StateTransition, Document) {
+        use dpp::document::DocumentV0Setters;
+        let beat_type = contract
+            .document_type_for_name("beat")
+            .expect("beat doctype exists");
+        let entropy = Bytes32::random_with_rng(rng);
+        let mut beat = beat_type
+            .random_document_with_identifier_and_entropy(
+                rng,
+                owner,
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random beat");
+        beat.set("hashtag", hashtag.into());
+        // Consensus assigns `$createdAt` from the block time at create
+        // (BlockInfo::default() in this suite), and the delete-by-values
+        // must carry that committed value to reproduce the bucket set.
+        beat.set_created_at(Some(0));
+        let create = BatchTransition::new_document_creation_transition_from_document(
+            beat.clone(),
+            beat_type,
+            entropy.0,
+            key,
+            nonce,
+            0,
+            None,
+            signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the create transition");
+        (create, beat)
+    }
+
+    /// The bucketed lifecycle through the pipeline: a `beat` create fans
+    /// out per bucket and executes, its executed proof verifies against
+    /// the non-bucketed proof index, a duplicate collides on the probes,
+    /// and the delete removes every bucket entry and proves absence.
+    #[tokio::test]
+    async fn test_bucketed_beat_lifecycle_and_executed_proofs() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(9099);
+
+        let (alice, alice_signer, alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let contract = register_likes(&platform, alice.id(), platform_version);
+        let contract_arc = Arc::new(contract.clone());
+
+        let (create, beat) = signed_beat_create(
+            &contract,
+            alice.id(),
+            "dash",
+            2,
+            &alice_key,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let result = process_and_commit(&platform, &platform_state, &create, platform_version);
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "the beat create must execute: {:?}",
+            result.execution_results()
+        );
+
+        // ── executed-create proof (via the non-bucketed proof index) ───
+        let proof = platform
+            .drive
+            .prove_state_transition(&create, None, platform_version)
+            .expect("expected to prove the executed create")
+            .into_data()
+            .expect("expected proof bytes");
+        let lookup = |_id: &dpp::identifier::Identifier| Ok(Some(Arc::clone(&contract_arc)));
+        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &create,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .expect("expected the executed bucketed create proof to verify");
+        assert_ne!(root_hash, [0u8; 32]);
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
+            panic!("expected verified documents");
+        };
+        assert!(
+            documents
+                .into_iter()
+                .next()
+                .expect("one document")
+                .1
+                .is_some(),
+            "the created beat is present"
+        );
+
+        // ── a duplicate collides on the probes ─────────────────────────
+        let (duplicate, _) = signed_beat_create(
+            &contract,
+            alice.id(),
+            "dash",
+            3,
+            &alice_key,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let result = process_and_commit(&platform, &platform_state, &duplicate, platform_version);
+        assert_eq!(result.invalid_paid_count(), 1);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DuplicateUniqueIndexError(_)),
+                ..
+            }],
+            "a second beat by the same owner under the same hashtag must collide"
+        );
+
+        // ── delete removes every bucket entry and proves absence ───────
+        let beat_type = contract
+            .document_type_for_name("beat")
+            .expect("beat doctype exists");
+        let delete = BatchTransition::new_document_deletion_transition_from_document(
+            beat,
+            beat_type,
+            &alice_key,
+            4,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the delete transition");
+        let result = process_and_commit(&platform, &platform_state, &delete, platform_version);
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "the beat delete must execute: {:?}",
+            result.execution_results()
+        );
+
+        let proof = platform
+            .drive
+            .prove_state_transition(&delete, None, platform_version)
+            .expect("expected to prove the executed delete")
+            .into_data()
+            .expect("expected proof bytes");
+        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &delete,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .expect("expected the executed bucketed delete proof to verify");
+        assert_ne!(root_hash, [0u8; 32]);
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
+            panic!("expected verified documents");
+        };
+        assert!(
+            documents.into_iter().next().expect("one entry").1.is_none(),
+            "the deleted beat must be proven absent"
+        );
+    }
+
     /// A signed `tip` create for the given amount — the summable-type
     /// counterpart of `signed_mark_create`. The `tip` doctype's proof index
     /// (`byPost`) is summable, so its entries are
