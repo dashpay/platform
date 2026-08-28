@@ -25,9 +25,11 @@ use std::cmp::Ordering;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
+pub mod preallocation;
 pub mod random_index;
 pub mod time_range;
 
+pub use preallocation::{PreallocatedKeySource, PreallocationBinding};
 pub use time_range::TimeRangeTransform;
 
 /// Index-level keyword opting the index's terminal property-name tree into the
@@ -78,6 +80,20 @@ pub const MAX_TIME_RANGE_PHASE_SECONDS: u64 = 31_536_000;
 /// doc-type-level validation rejects it elsewhere. Meta-schema v3+ (protocol
 /// version 14).
 pub const TERMINAL: &str = "terminal";
+/// Index-level keyword opting the index into **path preallocation**: when a
+/// document of the refersTo-referenced type is created, the index's dynamic
+/// trees for entries referencing that document — every value tree down to the
+/// empty `0` member bucket — are created right then, paid by the referenced
+/// document's creator, so the FIRST index entry costs the same as every later
+/// one (an item insert into existing trees). Only meaningful when the whole
+/// index path is a pure function of the referenced document: every index
+/// property must be either the referring property itself (it equals the
+/// referenced document's `$id`) or a key of that property's `refersTo`
+/// `propertyAgreement` (consensus-enforced equal to a referenced-document
+/// property). Only allowed on indexOnly document types with a same-contract
+/// `permanentDocument` reference; the doc-type-level validation rejects every
+/// other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
+pub const PREALLOCATED: &str = "preallocated";
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -537,6 +553,19 @@ pub struct Index {
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub terminal: Option<String>,
+    /// On an indexOnly document type whose index path is fully determined by
+    /// a same-contract `permanentDocument` reference (see [`PREALLOCATED`]):
+    /// when `true`, inserting a referenced document also creates this index's
+    /// dynamic trees for entries referencing it, and deleting the last entry
+    /// keeps them (the delete walker skips upward pruning for this index), so
+    /// entry insertion cost is uniform from the first entry on and the
+    /// referenced document's creator owns the structural storage.
+    //
+    // `serde(default)`: added after the struct's serde shape was in the wild
+    // (see the note on `countable` above), so pre-existing JSON must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub preallocated: bool,
 }
 
 /// Which grammar keywords a document meta-schema generation admits for
@@ -555,6 +584,9 @@ pub(crate) struct IndexGrammarAdmissions {
     /// The `terminal` keyword (indexOnly document types; generation 3 and
     /// later).
     pub(crate) terminal: bool,
+    /// The `preallocated` keyword (indexOnly document types with a
+    /// determining refersTo; generation 3 and later).
+    pub(crate) preallocated: bool,
 }
 
 impl IndexGrammarAdmissions {
@@ -567,6 +599,7 @@ impl IndexGrammarAdmissions {
             ranked: generation >= 3,
             time_range: generation >= 3,
             terminal: generation >= 3,
+            preallocated: generation >= 3,
         }
     }
 }
@@ -870,6 +903,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 ranked: false,
                 time_range: false,
                 terminal: false,
+                preallocated: false,
             },
         )
     }
@@ -907,6 +941,7 @@ impl Index {
             ranked: ranked_aggregates_allowed,
             time_range: time_range_allowed,
             terminal: terminal_allowed,
+            preallocated: preallocated_allowed,
         } = admissions;
         // Decouple the map
         // It contains properties and a unique key
@@ -962,6 +997,7 @@ impl Index {
         let mut ranked_averageable = false;
         let mut time_range: Option<TimeRangeTransform> = None;
         let mut terminal: Option<String> = None;
+        let mut preallocated = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -1322,6 +1358,21 @@ impl Index {
                         ));
                     }
                     terminal = Some(terminal_name.to_owned());
+                }
+                // `preallocated` is guarded the same way as `terminal` above:
+                // it joined the grammar at meta-schema v3, so below that the
+                // key falls through to the unknown-property arm. Whether the
+                // declaring document type is indexOnly and the index path is
+                // actually determined by a refersTo declaration are doc-type
+                // facts this parser cannot see; `apply_index_only` in
+                // `try_from_schema::common` enforces both.
+                PREALLOCATED if preallocated_allowed => {
+                    preallocated =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "preallocated value must be a boolean".to_string(),
+                            ))?;
                 }
                 "properties" => {
                     let properties =
@@ -1803,6 +1854,7 @@ impl Index {
             ranked_averageable,
             time_range,
             terminal,
+            preallocated,
         })
     }
 }
@@ -1875,6 +1927,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }
     }
 
@@ -1955,6 +2008,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .expect("should parse");
@@ -1970,6 +2024,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -1985,6 +2040,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2017,6 +2073,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2038,6 +2095,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .expect("should parse");
@@ -2059,6 +2117,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2081,6 +2140,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2104,6 +2164,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .expect("should parse");
@@ -2123,6 +2184,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .expect("should parse");
@@ -2147,6 +2209,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .expect("should parse");
@@ -2171,6 +2234,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2193,6 +2257,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2220,6 +2285,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .expect("the parser applies structural rules only");
@@ -2242,6 +2308,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2260,6 +2327,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2282,6 +2350,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2335,6 +2404,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2370,6 +2440,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .expect("should parse");
@@ -2398,6 +2469,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2428,6 +2500,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -2452,6 +2525,7 @@ mod tests {
                 ranked: false,
                 time_range: true,
                 terminal: false,
+                preallocated: false,
             },
         )
         .expect("a non-unique $updatedAt bucketing stays legal");
@@ -2471,6 +2545,7 @@ mod tests {
                 ranked: true,
                 time_range: false,
                 terminal: false,
+                preallocated: false,
             },
         )
         .unwrap_err();
@@ -3452,6 +3527,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         )
         .expect("all three ranked keywords must parse when the grammar allows them");
@@ -3477,6 +3553,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         )
         .expect("index without ranked keywords must parse");
@@ -3518,6 +3595,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         )
         .expect("ranked flags on a compound index must be accepted");
@@ -3547,6 +3625,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         );
         assert!(
@@ -3577,6 +3656,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         );
         assert!(
@@ -3605,6 +3685,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         );
         assert!(
@@ -3630,6 +3711,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         );
         assert!(
@@ -3657,6 +3739,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         );
         assert!(
@@ -3684,6 +3767,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         );
         assert!(
@@ -3713,6 +3797,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         )
         .expect("rankedAverageable on the averageable sugar form must parse");
@@ -3748,6 +3833,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         )
         .expect("rankedAverageable on the explicit longhand form must parse");
@@ -3773,6 +3859,7 @@ mod tests {
                     ranked: true,
                     time_range: true,
                     terminal: true,
+                    preallocated: false,
                 },
             );
             assert!(result.is_err(), "{key} must reject a non-boolean value");
@@ -3804,6 +3891,7 @@ mod tests {
                         ranked: false,
                         time_range: false,
                         terminal: false,
+                        preallocated: false,
                     },
                 );
                 assert!(
@@ -3884,6 +3972,7 @@ mod tests {
                     ranked: true,
                     time_range: true,
                     terminal: true,
+                    preallocated: false,
                 },
             );
             assert!(
@@ -3911,6 +4000,7 @@ mod tests {
                     ranked: true,
                     time_range: true,
                     terminal: true,
+                    preallocated: false,
                 },
             )
             .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
@@ -3934,6 +4024,7 @@ mod tests {
                     ranked: true,
                     time_range: true,
                     terminal: true,
+                    preallocated: false,
                 },
             )
             .unwrap_or_else(|e| {
@@ -3955,6 +4046,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         )
         .expect("nullSearchable: false on a plain index must still parse");
@@ -3971,6 +4063,7 @@ mod tests {
                 ranked: true,
                 time_range: true,
                 terminal: true,
+                preallocated: false,
             },
         )
         .expect("nullSearchable: false on a range-averageable index must still parse");
@@ -4457,6 +4550,7 @@ mod json_convertible_tests {
             ranked_averageable: true,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }
     }
 

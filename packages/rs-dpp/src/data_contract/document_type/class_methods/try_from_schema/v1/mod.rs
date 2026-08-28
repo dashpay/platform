@@ -109,6 +109,8 @@ impl DocumentTypeV1 {
                 admit_time_range: false,
                 // INDEX ONLY: also a generation-3 keyword; not in this grammar.
                 admit_index_terminal: false,
+                // PREALLOCATED: also a generation-3 keyword; not in this grammar.
+                admit_index_preallocated: false,
             },
             platform_version,
         )

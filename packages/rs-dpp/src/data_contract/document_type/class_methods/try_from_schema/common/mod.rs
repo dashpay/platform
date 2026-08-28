@@ -209,6 +209,10 @@ pub(super) struct ParserGeneration {
     /// earlier generations ignore it exactly as they ignore every other
     /// doctype-level keyword they predate.
     pub admit_index_terminal: bool,
+    /// Whether the index grammar admits the `preallocated` keyword
+    /// (refersTo-determined indexOnly indexes). Forwarded to
+    /// [`Index::try_from_value_map`] exactly like the admissions above.
+    pub admit_index_preallocated: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -848,6 +852,7 @@ fn parse_indices(
                             ranked: ctx.generation.admit_ranked,
                             time_range: ctx.generation.admit_time_range,
                             terminal: ctx.generation.admit_index_terminal,
+                            preallocated: ctx.generation.admit_index_preallocated,
                         },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -1926,6 +1931,22 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // Same for `preallocated`: only an indexOnly index's trees are cheap
+        // permanent structure whose member entries carry the data — on a
+        // normal document type the trees hold references to stored rows and
+        // the preallocation/no-prune contract has no meaning.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.preallocated)
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" declares `preallocated`, which is only \
+                 allowed on indexOnly document types (set `indexOnly: true` on the document \
+                 type, or remove the flag)",
+                index_name, name,
+            )));
+        }
         return Ok(());
     }
 
@@ -2182,6 +2203,49 @@ pub(super) fn apply_index_only(
                  \"$createdAt\" must be listed in `required`: document creation only \
                  assigns the timestamp for required system times, and an indexOnly entry \
                  cannot represent a missing value",
+                index_name, name,
+            )));
+        }
+
+        // `preallocated` promises that the whole index path is a pure
+        // function of one same-contract refersTo-referenced document, so the
+        // referenced document's insert can create the trees. A bucketed
+        // index breaks that promise structurally: its leading level is
+        // keyed by grid-qualified bucket starts fanned out from a
+        // timestamp, not by a stored property value the binding could
+        // resolve — and its `$createdAt` source can never be
+        // reference-bound anyway.
+        if index.preallocated && index.time_range.is_some() {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" declares `preallocated` \
+                 together with `timeRange`: a bucketed level is keyed by bucket starts \
+                 computed from a timestamp at write time, so its path cannot be \
+                 preallocated from a referenced document",
+                index_name, name,
+            )));
+        }
+
+        // The binding derivation is shared with the rs-drive insert path
+        // (see `index::preallocation`); rejecting a flag with no binding
+        // here is what lets that path trust every `preallocated: true` it
+        // sees.
+        if index.preallocated
+            && index
+                .preallocation_bindings(
+                    &document_type.flattened_properties,
+                    document_type.data_contract_id,
+                )
+                .is_empty()
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" declares `preallocated`, \
+                 but its path is not determined by a reference: every index property must \
+                 be either a property with a same-contract permanentDocument `refersTo` \
+                 declaration (the referring property — its value is the referenced \
+                 document's $id) or a key of that declaration's `propertyAgreement` \
+                 (consensus-equal to a referenced-document property). System properties \
+                 like $ownerId cannot be determined by the referenced document, so a \
+                 preallocated index may carry $ownerId only as its terminal",
                 index_name, name,
             )));
         }

@@ -59,6 +59,15 @@ impl Drive {
                 platform_version,
             )?;
 
+            self.add_preallocated_index_tree_operations_for_referring_types(
+                &document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+
             return Ok(batch_operations);
         }
 
@@ -148,6 +157,21 @@ impl Drive {
         )?;
 
         self.add_indices_for_top_index_level_for_contract_operations(
+            &document_and_contract_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
+        // If any indexOnly document type of this contract carries a
+        // `preallocated` index bound to this document type through a
+        // refersTo declaration, create that index's trees for entries
+        // referencing this document now — see
+        // `add_preallocated_index_tree_operations`. A no-op for every
+        // contract without the (PV14+, indexOnly-only) flag.
+        self.add_preallocated_index_tree_operations_for_referring_types(
             &document_and_contract_info,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,

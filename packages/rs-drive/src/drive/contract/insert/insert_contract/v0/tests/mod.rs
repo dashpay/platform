@@ -28,6 +28,7 @@
 
 mod countable_e2e_tests;
 mod index_only_e2e_tests;
+mod preallocated_index_e2e_tests;
 mod range_countable_index_e2e_tests;
 mod range_summable_index_e2e_tests;
 mod ranked_index_e2e_tests;

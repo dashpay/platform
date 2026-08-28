@@ -320,6 +320,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             terminal: None,
+            preallocated: false,
         }
     }
 
@@ -451,6 +452,7 @@ mod tests {
             ranked_averageable: true,
             time_range: None,
             terminal: None,
+            preallocated: false,
         };
         let compound = Index {
             name: "byRestaurantChef".to_string(),
@@ -476,6 +478,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         };
 
         let index_structure =

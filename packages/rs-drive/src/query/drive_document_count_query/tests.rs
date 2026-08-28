@@ -2171,6 +2171,7 @@ mod range_countable_picker_tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }
     }
 
@@ -3544,6 +3545,7 @@ mod time_range_picker_tests {
             ranked_averageable: false,
             time_range,
             terminal: None,
+            preallocated: false,
         }
     }
 

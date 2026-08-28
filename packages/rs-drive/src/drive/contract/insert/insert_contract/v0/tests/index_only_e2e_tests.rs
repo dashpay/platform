@@ -48,7 +48,7 @@ use grovedb::Element;
 
 const DOCTYPE: &str = "like";
 
-fn platform_version() -> &'static PlatformVersion {
+pub(super) fn platform_version() -> &'static PlatformVersion {
     PlatformVersion::latest()
 }
 
@@ -75,7 +75,7 @@ fn setup_likes() -> (Drive, DataContract) {
 }
 
 /// `[DataContractDocuments, contract_id, 1, "like"]` — the doctype tree.
-fn doctype_path(contract: &DataContract) -> Vec<Vec<u8>> {
+pub(super) fn doctype_path(contract: &DataContract) -> Vec<Vec<u8>> {
     vec![
         vec![crate::drive::RootTree::DataContractDocuments as u8],
         contract.id().as_bytes().to_vec(),
@@ -84,7 +84,7 @@ fn doctype_path(contract: &DataContract) -> Vec<Vec<u8>> {
     ]
 }
 
-fn read_grove_element(drive: &Drive, path: &[Vec<u8>], key: &[u8]) -> Option<Element> {
+pub(super) fn read_grove_element(drive: &Drive, path: &[Vec<u8>], key: &[u8]) -> Option<Element> {
     let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
     drive
         .grove_get_raw_optional(
@@ -98,7 +98,7 @@ fn read_grove_element(drive: &Drive, path: &[Vec<u8>], key: &[u8]) -> Option<Ele
         .expect("grove_get_raw_optional should succeed")
 }
 
-fn assert_grovedb_is_consistent(drive: &Drive) {
+pub(super) fn assert_grovedb_is_consistent(drive: &Drive) {
     let issues = drive
         .grove
         .verify_grovedb(None, true, false, &platform_version().drive.grove_version)
@@ -110,7 +110,7 @@ fn assert_grovedb_is_consistent(drive: &Drive) {
 }
 
 /// A like on `post` under `hashtag` by `owner`.
-fn build_like(
+pub(super) fn build_like(
     contract: &DataContract,
     hashtag: &str,
     post: [u8; 32],
@@ -132,7 +132,7 @@ fn build_like(
     doc
 }
 
-fn insert_like(
+pub(super) fn insert_like(
     drive: &Drive,
     contract: &DataContract,
     doc: &Document,
@@ -160,7 +160,7 @@ fn insert_like(
     )
 }
 
-fn delete_like(
+pub(super) fn delete_like(
     drive: &Drive,
     contract: &DataContract,
     doc: Document,
@@ -182,7 +182,12 @@ fn delete_like(
     )
 }
 
-fn count_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(u64, Vec<u8>)> {
+pub(super) fn count_top_k(
+    drive: &Drive,
+    path: &[Vec<u8>],
+    k: u16,
+    descending: bool,
+) -> Vec<(u64, Vec<u8>)> {
     let path_query = grovedb::PathQuery::new_axis(
         path.to_vec(),
         grovedb_query::AxisQuery::top_k(grovedb_query::IndexAxis::Count, k, 0, descending)
@@ -502,7 +507,7 @@ fn estimated_fees_upper_bound_actual_fees() {
 
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 
-fn likes_query<'a>(
+pub(super) fn likes_query<'a>(
     contract: &'a dpp::prelude::DataContract,
     clauses: Vec<crate::query::WhereClause>,
     limit: Option<u16>,
@@ -1519,7 +1524,7 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
 
 const TIP_DOCTYPE: &str = "tip";
 
-fn tip_doctype_path(contract: &DataContract) -> Vec<Vec<u8>> {
+pub(super) fn tip_doctype_path(contract: &DataContract) -> Vec<Vec<u8>> {
     vec![
         vec![crate::drive::RootTree::DataContractDocuments as u8],
         contract.id().as_bytes().to_vec(),
@@ -1529,7 +1534,7 @@ fn tip_doctype_path(contract: &DataContract) -> Vec<Vec<u8>> {
 }
 
 /// A tip of `amount` on `post` by `owner`.
-fn build_tip(
+pub(super) fn build_tip(
     contract: &DataContract,
     post: [u8; 32],
     owner: [u8; 32],
@@ -1551,7 +1556,7 @@ fn build_tip(
     doc
 }
 
-fn insert_tip(
+pub(super) fn insert_tip(
     drive: &Drive,
     contract: &DataContract,
     doc: &Document,
@@ -1579,7 +1584,7 @@ fn insert_tip(
     )
 }
 
-fn delete_tip(
+pub(super) fn delete_tip(
     drive: &Drive,
     contract: &DataContract,
     doc: Document,
@@ -1601,7 +1606,12 @@ fn delete_tip(
     )
 }
 
-fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i64, Vec<u8>)> {
+pub(super) fn sum_top_k(
+    drive: &Drive,
+    path: &[Vec<u8>],
+    k: u16,
+    descending: bool,
+) -> Vec<(i64, Vec<u8>)> {
     let path_query = grovedb::PathQuery::new_axis(
         path.to_vec(),
         grovedb_query::AxisQuery::top_k(grovedb_query::IndexAxis::Sum, k, 0, descending)

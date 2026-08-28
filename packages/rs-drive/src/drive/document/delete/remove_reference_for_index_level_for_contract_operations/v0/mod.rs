@@ -134,11 +134,28 @@ impl Drive {
             )?;
 
             // Drained groups prune upward exactly as with references, so
-            // ranked secondaries drop the group when its last member goes.
+            // ranked secondaries drop the group when its last member goes —
+            // EXCEPT on a preallocated index, whose trees are permanent
+            // structure the referenced document's creator paid for at its
+            // insert (see `add_preallocated_index_tree_operations`): there
+            // the member entry is the whole delete, and stopping the climb
+            // one level above it (at the emptied `0` bucket's own path)
+            // keeps every tree, so a later entry costs the same as this one
+            // did. Trees a pre-flag fallback created are kept the same way
+            // — if-not-exists inserts make the two histories converge.
+            let stop_path_height = if index_type.preallocated {
+                u16::try_from(key_info_path.len() - 1).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "index path height must fit in u16",
+                    ))
+                })?
+            } else {
+                CONTRACT_DOCUMENTS_PATH_HEIGHT
+            };
             self.batch_delete_up_tree_while_empty(
                 key_info_path,
                 member_key.as_slice(),
-                Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
+                Some(stop_path_height),
                 delete_apply_type,
                 transaction,
                 previous_batch_operations,
