@@ -374,6 +374,67 @@ fn accepts_created_at_in_prefix_when_required() {
         .expect("$createdAt in an index prefix should be accepted when required");
 }
 
+/// The unified matcher: terminals participate as an index's deepest
+/// matchable component, with generic (non-terminal) matches keeping
+/// absolute precedence and difference-scored best-match inside each
+/// class.
+#[test]
+fn terminal_aware_matching_prefers_generic_and_scores_candidates() {
+    use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+
+    let document_type_ref =
+        &parse_with(likes_schema(), PlatformVersion::latest(), false).expect("likes schema parses");
+
+    // A pure-property cover exists (`byPost` = [postId] → $ownerId used
+    // generically): it must win over `byLiker`'s terminal cover of the
+    // same field, and report the terminal unused.
+    let (index, difference, terminal_used) = document_type_ref
+        .index_for_types_matching_including_terminal(
+            &["postId"],
+            None,
+            &[],
+            |_| true,
+            PlatformVersion::latest(),
+        )
+        .expect("matcher runs")
+        .expect("an index matches");
+    assert_eq!(index.name, "byPost");
+    assert_eq!((difference, terminal_used), (0, false));
+
+    // No pure-property cover for {$ownerId, postId}: `byLiker`
+    // ([$ownerId] → postId) covers it exactly through its terminal
+    // (difference 0) and must beat `byHashtagPost`'s costlier terminal
+    // cover (hashtag unused, difference 1).
+    let (index, difference, terminal_used) = document_type_ref
+        .index_for_types_matching_including_terminal(
+            &["$ownerId", "postId"],
+            None,
+            &[],
+            |_| true,
+            PlatformVersion::latest(),
+        )
+        .expect("matcher runs")
+        .expect("an index matches");
+    assert_eq!(index.name, "byLiker");
+    assert_eq!((difference, terminal_used), (0, true));
+
+    // The full tuple {hashtag, postId, $ownerId} is only coverable with
+    // `byHashtagPost`'s terminal; an unused terminal never costs score,
+    // so the exact cover reports difference 0.
+    let (index, difference, terminal_used) = document_type_ref
+        .index_for_types_matching_including_terminal(
+            &["hashtag", "postId", "$ownerId"],
+            None,
+            &[],
+            |_| true,
+            PlatformVersion::latest(),
+        )
+        .expect("matcher runs")
+        .expect("an index matches");
+    assert_eq!(index.name, "byHashtagPost");
+    assert_eq!((difference, terminal_used), (0, true));
+}
+
 #[test]
 fn rejects_when_every_index_involves_created_at() {
     // Executed-transition proofs locate an entry from the transition's
