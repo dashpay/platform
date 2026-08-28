@@ -65,11 +65,11 @@ describe('state sync options', () => {
 
     // Tenderdash 1.7 rejects a statesync chunk-request-timeout below 5 seconds.
     it('should reject a chunk request timeout below the 5s Tenderdash minimum', () => {
-      ['5s', '15s', '1.5m', '2h', '5000ms', '30000ms'].forEach((valid) => {
+      ['5s', '15s', '1.5m', '0.5m', '2h', '0.1h', '5000ms', '30000ms'].forEach((valid) => {
         config.set('platform.drive.tenderdash.stateSync.chunkRequestTimeout', valid);
       });
 
-      ['0', '4s', '4.9s', '4999ms', '500ms', 'nonsense', 15].forEach((invalid) => {
+      ['0', '4s', '4.9s', '4999ms', '500ms', '0.05m', 'nonsense', 15].forEach((invalid) => {
         expect(() => config.set('platform.drive.tenderdash.stateSync.chunkRequestTimeout', invalid), String(invalid))
           .to.throw();
       });

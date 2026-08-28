@@ -1387,8 +1387,8 @@ export default {
                         },
                         {
                           type: 'string',
-                          // At least 5 seconds: 5s+, 5000ms+, or any whole number of minutes/hours
-                          pattern: '^(([5-9]|[1-9][0-9]+)(\\.[0-9]+)?s|([5-9][0-9]{3}|[1-9][0-9]{4,})(\\.[0-9]+)?ms|[1-9][0-9]*(\\.[0-9]+)?[mh])$',
+                          // At least 5 seconds: 5s+, 5000ms+, or minutes/hours down to 0.1
+                          pattern: '^(([5-9]|[1-9][0-9]+)(\\.[0-9]+)?s|([5-9][0-9]{3}|[1-9][0-9]{4,})(\\.[0-9]+)?ms|([1-9][0-9]*(\\.[0-9]+)?|0\\.[1-9][0-9]*)[mh])$',
                         },
                       ],
                     },
