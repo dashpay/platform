@@ -254,12 +254,28 @@ function renderPortEightyHint(code, cfg, isShortLived) {
 command below now will fail and does not make it clear any sooner.`;
   }
 
+  // dashmate's own check answers the same way for nothing replying and for
+  // something replying wrongly, so its hint has to cover both. Routing it
+  // through the firewall instructions below sent an operator to open a port
+  // that was already open and answering.
+  if (code === RENEWAL_FAILURE_CODES.PORT_80_CHECK_FAILED) {
+    return chalk`Either nothing reached this node on port 80, or something else answered.
+Check what is listening here first:
+{bold.cyanBright sudo ss -lntp 'sport = :80'}
+Nothing listed? Open inbound port 80 - on the machine's firewall, at your
+hosting provider, and on your router. Something listed that is not dashmate?
+Move it off that port.
+{underline.cyanBright ${DOCS_LINKS.CERTIFICATE_TROUBLESHOOTING}}`;
+  }
+
   if (code === RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER) {
     return chalk`Another web server, a proxy, or your router is answering on port 80 instead
 of this node. Check this machine first:
 {bold.cyanBright sudo ss -lntp 'sport = :80'}
 Nothing listed? Then it is answered before it reaches this machine - check
-your router's port forwarding and your hosting provider.
+your router's port forwarding and your hosting provider, and check the port
+is open there too: which of the two this is comes from what the authority
+reported, and that report quotes back whatever answered.
 {underline.cyanBright ${DOCS_LINKS.CERTIFICATE_TROUBLESHOOTING}}`;
   }
 
@@ -275,6 +291,8 @@ your router's port forwarding and your hosting provider.
 and on your router if this node is behind one.${isShortLived
   ? '\nIt has to stay open: the certificate is renewed every few days.'
   : ''}
+Already open? Then something else is answering there - find it with
+{bold.cyanBright sudo ss -lntp 'sport = :80'}
 {underline.cyanBright ${DOCS_LINKS.CERTIFICATE_TROUBLESHOOTING}}`;
 }
 
@@ -532,8 +550,14 @@ export default function analyseGatewayCertificateFactory() {
       // issuance is outstanding. Update already refused to spend a certificate
       // on evidence nobody could inspect; the doctor has to as well, or the two
       // disagree again about the same node.
+      // A sample that says PRESENT and does not parse is unreadable too. Only
+      // the state was checked before, so a malformed, damaged or hostile
+      // archive produced a null record with nothing marking it unreadable -
+      // and the derivation then read that as "nothing recorded" and allowed a
+      // request, which is the fail-open this guard exists to prevent.
       isRecordUnreadable: isRenewalManaged(config)
-        && renewalSample?.state === RENEWAL_RECORD_STATES.UNREADABLE,
+        && (renewalSample?.state === RENEWAL_RECORD_STATES.UNREADABLE
+          || (renewalSample?.state === RENEWAL_RECORD_STATES.PRESENT && renewalRecord === null)),
       // Decided here, once, and never again by a renderer: whether waiting for
       // the next automatic attempt is affordable depends on whether this node
       // still has a working certificate, and both surfaces have to agree.

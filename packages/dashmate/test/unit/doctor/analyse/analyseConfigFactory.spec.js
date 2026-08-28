@@ -208,4 +208,50 @@ describe('analyseConfigFactory', () => {
 
     expect(problems).to.be.empty();
   });
+
+  // These checks predate the renewal record and each ends in its own request.
+  // They run before the renewal-aware analyser in the same report, so a node
+  // whose recorded cause forbids asking again would read "do not obtain" from
+  // one and a runnable command from the other - and follow the command.
+  describe('when the renewal record forbids another request', () => {
+    /**
+     * @param {Object} renewal
+     * @return {Problem[]}
+     */
+    function analyseWithRecord(renewal) {
+      samples.setServiceInfo('gateway', 'certificateRenewal', renewal);
+
+      return analyseSslSample({
+        error: 'CERTIFICATE_EXPIRES_SOON',
+        data: { certificate: { expires: '2026-01-01' } },
+      }, 'letsencrypt');
+    }
+
+    it('should withhold its own request when an issuance is outstanding', () => {
+      const [problem] = analyseWithRecord({
+        state: 'PRESENT',
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code: 'CERTIFICATE_ISSUED_NOT_SAVED',
+        attemptedAt: new Date().toISOString(),
+        consecutiveFailures: 1,
+        issuanceSpentAt: new Date().toISOString(),
+      });
+
+      expect(problem.getSolution()).to.not.contain('ssl obtain');
+      expect(problem.getSolution()).to.contain('could not be saved');
+    });
+
+    it('should withhold it when the record cannot be read', () => {
+      const [problem] = analyseWithRecord({ state: 'UNREADABLE', error: 'not json' });
+
+      expect(problem.getSolution()).to.not.contain('ssl obtain');
+    });
+
+    it('should still print it when nothing forbids one', () => {
+      const [problem] = analyseWithRecord({ state: 'ABSENT' });
+
+      expect(problem.getSolution()).to.contain('ssl obtain');
+    });
+  });
 });

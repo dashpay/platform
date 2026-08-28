@@ -826,6 +826,63 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getSolution()).to.not.contain('ssl obtain');
     });
 
+    // A sample can say PRESENT and still not parse - a damaged archive, a
+    // format from a later build, or one supplied by someone else. Checking only
+    // the state left the record null with nothing marking it unreadable, and
+    // the derivation then read that as "nothing recorded" and allowed a request.
+    it('should withhold when a present record does not parse', () => {
+      installedValid({
+        status: 'INVALID',
+        validTo: validTo(-1),
+        reasons: [{ code: 'EXPIRED', message: 'The installed certificate expired' }],
+      });
+      samples.setServiceInfo('gateway', 'certificateRenewal', {
+        state: 'PRESENT',
+        path: '~/.dashmate/base/platform/gateway/ssl/renewal.json',
+        error: null,
+        // No outcome and no attemptedAt: nothing a record can be built from.
+        provider: 'letsencrypt',
+      });
+
+      const problems = analyse(served());
+      const solutions = problems.map((p) => p.getSolution()).join('\n');
+
+      expect(solutions).to.not.contain('ssl obtain');
+    });
+
+    // Which of the two port-80 causes gets named comes from text the authority
+    // quotes back, and it quotes whatever answered on that port. The action is
+    // the same either way, but the instructions were not: one said open the
+    // firewall, the other said find the proxy. Each now names the other, so a
+    // misread costs a sentence rather than an afternoon.
+    [
+      ['an unreachable port', 'PORT_80_UNREACHABLE', 'something else is answering'],
+      ['a wrong responder', 'PORT_80_WRONG_RESPONDER', 'check the port'],
+    ].forEach(([name, code, alternative]) => {
+      it(`should name the other possibility for ${name}`, () => {
+        installedValid();
+        renewalFailed({ code });
+
+        const [renewal] = analyse(served())
+          .filter((p) => p.getDescription().includes('not being renewed'));
+
+        expect(renewal.getSolution()).to.contain(alternative);
+      });
+    });
+
+    // dashmate's own check answers the same way for nothing replying and for
+    // something replying wrongly, so it must not prescribe one of them.
+    it('should not prescribe a firewall repair for a check that cannot tell', () => {
+      installedValid();
+      renewalFailed({ code: 'PORT_80_CHECK_FAILED' });
+
+      const [renewal] = analyse(served())
+        .filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('Either nothing reached this node');
+      expect(renewal.getSolution()).to.contain("ss -lntp");
+    });
+
     it('should offer the check that tells an operator whether their repair worked', () => {
       // There is no other way to find out. dashmate cannot test its own
       // inbound port 80, because nothing listens there except during a

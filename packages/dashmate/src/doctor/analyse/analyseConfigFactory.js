@@ -6,6 +6,10 @@ import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
 import renderConfigFlag from '../../util/renderConfigFlag.js';
 import { DOCS_LINKS } from '../../docsLinks.js';
+import { RENEWAL_RECORD_STATES } from '../../ssl/renewalRecord/RenewalRecordRepository.js';
+import RenewalRecord from '../../ssl/renewalRecord/RenewalRecord.js';
+import deriveRenewalGuidance, { SAFE_ACTION } from '../../ssl/renewalGuidance.js';
+import renderObtainCommand from '../../ssl/renderObtainCommand.js';
 
 /**
  * Whether a ZeroSSL certificate can be renewed depends on the operator's plan, which dashmate
@@ -16,6 +20,37 @@ of charge:
   {bold.cyanBright dashmate config set platform.gateway.ssl.provider letsencrypt}
   {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email EMAIL}
   {bold.cyanBright dashmate ssl obtain}`;
+
+/**
+ * What to say instead of a certificate request, when the renewal record forbids
+ * one - or nothing, when it does not.
+ *
+ * The legacy checks below cannot be left to decide this for themselves. They
+ * predate the record entirely, and each one ends in its own command.
+ *
+ * @param {Samples} samples
+ * @param {Config} config
+ * @return {string|null}
+ */
+function withheldRequest(samples, config) {
+  const sample = samples.getServiceInfo('gateway', 'certificateRenewal');
+  const record = sample?.state === RENEWAL_RECORD_STATES.PRESENT
+    ? RenewalRecord.fromObject(sample)
+    : null;
+
+  const guidance = deriveRenewalGuidance({
+    record: record?.isFailed() ? record : null,
+    isRecordUnreadable: sample?.state === RENEWAL_RECORD_STATES.UNREADABLE
+      || (sample?.state === RENEWAL_RECORD_STATES.PRESENT && record === null),
+    isCertificateUsable: false,
+  });
+
+  if (guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN) {
+    return null;
+  }
+
+  return renderObtainCommand({ configName: config.getName(), guidance });
+}
 
 export default function analyseConfigFactory() {
   /**
@@ -212,9 +247,14 @@ a working certificate.`,
             }[ssl.error] ?? {};
 
             if (description) {
+              // These checks predate the renewal record and each ends in its
+              // own request. They run before the renewal-aware analyser in the
+              // same report, so a node whose recorded cause forbids asking
+              // again would read "do not obtain" from one and a runnable
+              // command from the other - and follow the command.
               const problem = new Problem(
                 description,
-                solution,
+                withheldRequest(samples, config) ?? solution,
                 severity,
               );
 

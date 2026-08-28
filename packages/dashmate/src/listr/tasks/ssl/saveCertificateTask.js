@@ -84,7 +84,12 @@ export default function saveCertificateTaskFactory(homeDir, renewalRecordReposit
             throw new Error(`The certificate and private key written for the gateway do not match:`
               + ` ${detail}.\n`
               + `Certificate: ${crtFile}\nPrivate key: ${keyFile}\n`
-              + 'The gateway will not start with these files. Obtain the certificate again:\n'
+              + 'The gateway will not start with these files.\n\n'
+              + 'A certificate was already issued for this node, and it counts against\n'
+              + "the authority's weekly limit whether or not these files are usable.\n"
+              + 'Asking for another spends a second one, so check free space and the\n'
+              + 'permissions on this directory first. Then, if the files are still\n'
+              + 'wrong:\n'
               + `    dashmate ssl obtain ${renderConfigFlag(config.getName())} --force`);
           }
 
