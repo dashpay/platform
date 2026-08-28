@@ -44,7 +44,7 @@ describe('getPlatformScopeFactory', () => {
       mockCreateRpcClient = () => mockRpcClient;
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
-      // eslint-disable-next-line
+
       mockFetch = this.sinon.stub(globalThis, 'fetch');
       mockGetConnectionHost = this.sinon.stub();
 

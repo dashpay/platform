@@ -277,6 +277,7 @@ impl WasmSdk {
                 operator: WhereOperator::Equal,
                 value: Value::Identifier(identity_id.to_buffer()),
             }],
+            time_range_clauses: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![],

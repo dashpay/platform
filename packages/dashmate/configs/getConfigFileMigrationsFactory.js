@@ -1702,11 +1702,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '4.2.0': (configFile) => {
-        // The ACME directory certificates are requested from became
-        // configurable. Existing configs have no value for it, and the schema
-        // requires one, so fill in the directory they were already using.
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            // Repeated from the 4.1.1 migration: a config written by a
+            // development build is stamped above that key and skips it.
+            delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
+
             const providerConfigs = options.platform?.gateway?.ssl?.providerConfigs;
 
             if (providerConfigs?.letsencrypt
@@ -1756,10 +1757,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
             }
 
-            // The Commit timeout and BypassCommitTimeout overrides no longer
-            // exist in Tenderdash, which now only warns when they are set.
-            // Drop them: the config schema accepts no properties it does not
-            // define, so a config that kept them would fail validation.
+            // The schema no longer defines this and accepts no undefined
+            // property, so a config still carrying it cannot be loaded.
             delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
           });
 

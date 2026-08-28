@@ -4,8 +4,18 @@ import crypto from 'crypto';
 import Docker from 'dockerode';
 import { asValue } from 'awilix';
 import createDIContainer from '../../../src/createDIContainer.js';
+import Config from '../../../src/config/Config.js';
+import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
+import ConfigFileJsonRepository from '../../../src/config/configFile/ConfigFileJsonRepository.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
+import isCertificatePairInstalled from '../../../src/ssl/letsencrypt/isCertificatePairInstalled.js';
+import renewCertificate from '../../../src/helper/renewCertificate.js';
+import classifyRenewalFailure, {
+  MAX_DETAIL_CHARS,
+  RENEWAL_FAILURE_CODES,
+} from '../../../src/ssl/renewal-failure.js';
+import { recordRenewalFailure } from '../../../src/helper/record-renewal-outcome.js';
 
 /**
  * Obtain a certificate from a real ACME server.
@@ -147,7 +157,11 @@ describe('Pebble candidate network selection', () => {
 });
 
 describe('Let\'s Encrypt certificate against a local ACME server', function main() {
-  this.timeout(5 * 60 * 1000);
+  // `lego renew` sleeps a random delay of up to about eight minutes when the
+  // authority's renewalInfo endpoint says renewal is not yet due, which the
+  // renewal case below always hits: the certificate it renews was issued
+  // moments earlier. The budget covers that sleep rather than racing it.
+  this.timeout(15 * 60 * 1000);
 
   const docker = new Docker();
   const networkName = `dashmate-acme-test-${crypto.randomBytes(4).toString('hex')}`;
@@ -230,8 +244,17 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     pebbleContainer = await docker.createContainer({
       Image: PEBBLE_IMAGE,
       Cmd: ['-config', '/test/config/pebble-config.json'],
-      // Without this Pebble sleeps before validating, for no benefit here.
-      Env: ['PEBBLE_VA_NOSLEEP=1'],
+      Env: [
+        // Without this Pebble sleeps before validating, for no benefit here.
+        'PEBBLE_VA_NOSLEEP=1',
+        // Pebble rejects a share of nonces on purpose, to exercise a client's
+        // retry. lego retries and usually survives it - but when it does not,
+        // the attempt fails on the nonce and never reaches validation, so a
+        // case written to exercise a port-80 failure silently tests something
+        // else. What happens when a survived nonce sits beside a real failure
+        // is pinned deterministically in the unit tests instead.
+        'PEBBLE_WFE_NONCEREJECT=0',
+      ],
       HostConfig: {
         AutoRemove: true,
         NetworkMode: networkName,
@@ -373,5 +396,343 @@ describe('Let\'s Encrypt certificate against a local ACME server', function main
     // Rewriting an unchanged configuration is what made read-only commands
     // clobber concurrent edits, and a renewal check runs unattended.
     expect(config.isChanged()).to.be.false();
+  });
+
+  /**
+   * Nothing prompts for a contact address any more, so every fresh setup and
+   * every migration from another provider issues without one. If contactless
+   * issuance does not work, the feature does not work - which is why this is a
+   * gate rather than a nice-to-have.
+   *
+   * The client half is already measured: lego does not require --email and
+   * substitutes noemail@example.com as a local directory name. What is proved
+   * here is the CA half - that registration without a contact is accepted and
+   * the certificate that comes back is the same certificate.
+   */
+  describe('issuance without a contact address', () => {
+    /**
+     * @param {string} name
+     * @param {string|null} email
+     * @return {Config}
+     */
+    function createConfig(name, email) {
+      const created = new Config(name, getBaseConfigFactory(homeDir)().getOptions());
+
+      created.set('externalIp', legoIp);
+      created.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', email);
+      created.set(
+        'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+        `https://${PEBBLE_HOSTNAME}:${PEBBLE_ACME_PORT}/dir`,
+      );
+
+      return created;
+    }
+
+    /**
+     * @param {Config} target
+     * @return {{certificate: crypto.X509Certificate, paired: boolean, accounts: string[]}}
+     */
+    function inspect(target) {
+      const dir = homeDir.joinPath(target.getName(), 'platform', 'gateway', 'ssl');
+      const legoDir = homeDir.joinPath(target.getName(), 'platform', 'gateway', 'lego');
+      const bundlePath = path.join(dir, 'bundle.crt');
+      const keyPath = path.join(dir, 'private.key');
+
+      return {
+        certificate: new crypto.X509Certificate(fs.readFileSync(bundlePath)),
+        paired: isCertificatePairInstalled(
+          path.join(legoDir, 'certificates', `${legoIp}.crt`),
+          path.join(legoDir, 'certificates', `${legoIp}.key`),
+          bundlePath,
+          keyPath,
+        ),
+        accounts: fs.readdirSync(path.join(legoDir, 'accounts'), { recursive: true })
+          .map((entry) => entry.toString()),
+      };
+    }
+
+    let contactless;
+    let withContact;
+
+    // The renewal below refuses to run unless the provider says letsencrypt, so
+    // a test that leaves it changed - including one that fails part way through
+    // - would take the renewal down with it and hide which of the two broke.
+    afterEach(() => {
+      if (contactless) {
+        contactless.set('platform.gateway.ssl.provider', 'letsencrypt');
+      }
+    });
+
+    before(async () => {
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+
+      contactless = createConfig('contactless', null);
+      withContact = createConfig('withcontact', 'operator@example.org');
+
+      await obtainLetsEncryptCertificateTask(contactless).run({ force: true });
+      await obtainLetsEncryptCertificateTask(withContact).run({ force: true });
+    });
+
+    it('should produce the same certificate with and without a contact address', () => {
+      const a = inspect(contactless);
+      const b = inspect(withContact);
+
+      // Same identifier, same validity window length, same subject alternative
+      // name. A contact address buys nothing from the authority.
+      expect(a.certificate.subjectAltName).to.equal(`IP Address:${legoIp}`);
+      expect(b.certificate.subjectAltName).to.equal(a.certificate.subjectAltName);
+
+      const window = (certificate) => new Date(certificate.validTo).getTime()
+        - new Date(certificate.validFrom).getTime();
+
+      expect(window(a.certificate)).to.equal(window(b.certificate));
+
+      // Both have to be installed as a matching pair, or the gateway cannot
+      // serve either of them.
+      expect(a.paired).to.be.true();
+      expect(b.paired).to.be.true();
+    });
+
+    it('should record the provider for a node that has no contact address', () => {
+      expect(contactless.get('platform.gateway.ssl.enabled')).to.be.true();
+      expect(contactless.get('platform.gateway.ssl.provider')).to.equal('letsencrypt');
+      expect(contactless.get('platform.gateway.ssl.providerConfigs.letsencrypt.email')).to.be.null();
+    });
+
+    // The account directory lego uses is named after the contact address, so a
+    // contactless node's account lives somewhere else entirely. `lego renew`
+    // needs the account that issued, which makes this the half of contactless
+    // operation that issuance alone does not prove.
+    it('should keep the two accounts apart on disk', () => {
+      expect(inspect(contactless).accounts.some((entry) => entry.includes('noemail@example.com')))
+        .to.be.true();
+      expect(inspect(withContact).accounts.some((entry) => entry.includes('operator@example.org')))
+        .to.be.true();
+    });
+
+    // A node that already has an address on file must keep using the account
+    // that address names. Nothing may quietly move it: a new account means a
+    // new account key and a reset failed-authorization budget, spent against
+    // the per-address registration limit.
+    //
+    // Issued rather than renewed, so this does not pay lego's renewal delay
+    // twice. The renewal path is covered below, and the property under test -
+    // which account directory the address resolves to - is the same either way.
+    it('should reissue for a node with a contact address against its original account', async () => {
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+      const accountsBefore = inspect(withContact).accounts;
+      const serialBefore = inspect(withContact).certificate.serialNumber;
+
+      await obtainLetsEncryptCertificateTask(withContact).run({ force: true });
+
+      const after = inspect(withContact);
+
+      expect(after.certificate.serialNumber).to.not.equal(serialBefore);
+      expect(after.accounts).to.deep.equal(accountsBefore);
+      expect(withContact.get('platform.gateway.ssl.providerConfigs.letsencrypt.email'))
+        .to.equal('operator@example.org');
+    });
+
+    // The window between installing the pair and saving the provider. Left as
+    // a warning this never repairs itself - the helper keeps renewing the old
+    // provider while the installed six-day certificate runs out - so it has to
+    // block, and the block has to name a repair that needs no new certificate.
+    it('should detect a switch interrupted before the provider was saved', () => {
+      const checkGatewayCertificate = container.resolve('checkGatewayCertificate');
+
+      expect(checkGatewayCertificate(contactless).status).to.equal('CHECKS_PASSED');
+
+      // Exactly what a kill between the two steps leaves behind: the pair lego
+      // produced is installed for the gateway, the setting still names the
+      // provider it was switched away from.
+      contactless.set('platform.gateway.ssl.provider', 'zerossl');
+
+      const verdict = checkGatewayCertificate(contactless);
+
+      expect(verdict.status).to.equal('INVALID');
+      expect(verdict.reasons.map(({ code }) => code)).to.deep.equal(['SWITCH_INCOMPLETE']);
+    });
+
+    // Renewal is where a missing account would surface, and it runs unattended
+    // inside the helper - the one place a failure goes unnoticed for months.
+    it('should renew a contactless certificate through the helper entry point', async () => {
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+      const before = inspect(contactless).certificate.serialNumber;
+
+      const configFile = new ConfigFile(
+        [contactless],
+        '4.2.0',
+        'abcdef12',
+        contactless.getName(),
+        null,
+      );
+      const configFileRepository = new ConfigFileJsonRepository(
+        (data) => data,
+        homeDir,
+        () => null,
+      );
+      configFileRepository.write(configFile);
+
+      const { renewed } = await renewCertificate({
+        configName: contactless.getName(),
+        provider: 'letsencrypt',
+        // Well past the certificate's own six-day life, so renewal is due.
+        expirationDays: 60,
+        obtainCertificateTask: obtainLetsEncryptCertificateTask,
+        configFileRepository,
+        writeConfigTemplates: () => {},
+      });
+
+      expect(renewed).to.be.true();
+
+      const after = inspect(contactless);
+      expect(after.certificate.serialNumber).to.not.equal(before);
+      expect(after.certificate.subjectAltName).to.equal(`IP Address:${legoIp}`);
+      expect(after.paired).to.be.true();
+    });
+  });
+
+  /**
+   * The two causes an operator actually meets, produced by a real authority.
+   *
+   * The classifier branches on the ACME problem type, and every test that
+   * pinned that branch until now supplied the problem document itself - so
+   * they proved the mapping and assumed the input. These obtain the input by
+   * breaking validation the same two ways a node breaks it: nothing answers on
+   * port 80, and something answers that is not this node.
+   *
+   * Pebble is not Boulder. What this establishes is that a server implementing
+   * RFC 8555 produces these types for these two conditions and that dashmate
+   * reads them, not that Let's Encrypt phrases every refusal the same way.
+   */
+  describe('failures produced by a real authority', () => {
+    // Small, and its httpd needs no configuration file to answer wrongly.
+    const DECOY_IMAGE = 'busybox:latest';
+
+    let decoyContainer;
+    let unreachableIp;
+    let decoyIp;
+
+    before(async () => {
+      const octets = legoIp.split('.').slice(0, 3);
+
+      unreachableIp = [...octets, '9'].join('.');
+      decoyIp = [...octets, '4'].join('.');
+
+      await new Promise((resolve, reject) => {
+        docker.pull(DECOY_IMAGE, (err, stream) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          docker.modem.followProgress(stream, (e) => (e ? reject(e) : resolve()));
+        });
+      });
+
+      decoyContainer = await docker.createContainer({
+        Image: DECOY_IMAGE,
+        // An empty document root, so the challenge path gets a 404 - the shape
+        // of a router page or an unrelated web server holding this address.
+        Cmd: ['httpd', '-f', '-p', '80', '-h', '/tmp'],
+        HostConfig: {
+          AutoRemove: true,
+          NetworkMode: networkName,
+        },
+        NetworkingConfig: {
+          EndpointsConfig: {
+            [networkName]: { IPAMConfig: { IPv4Address: decoyIp } },
+          },
+        },
+      });
+
+      await decoyContainer.start();
+    });
+
+    after(async () => {
+      if (decoyContainer) {
+        await decoyContainer.stop().catch(() => {});
+      }
+    });
+
+    /**
+     * Ask for a certificate covering an address validation cannot succeed for.
+     *
+     * @param {string} name
+     * @param {string} externalIp
+     * @return {Promise<Error>}
+     */
+    async function failObtaining(name, externalIp) {
+      const target = new Config(name, getBaseConfigFactory(homeDir)().getOptions());
+
+      target.set('externalIp', externalIp);
+      target.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', null);
+      target.set(
+        'platform.gateway.ssl.providerConfigs.letsencrypt.acmeDirectoryUrl',
+        `https://${PEBBLE_HOSTNAME}:${PEBBLE_ACME_PORT}/dir`,
+      );
+
+      const obtainLetsEncryptCertificateTask = container.resolve('obtainLetsEncryptCertificateTask');
+
+      try {
+        await obtainLetsEncryptCertificateTask(target).run({ force: true });
+      } catch (e) {
+        return e;
+      }
+
+      throw new Error(`Obtaining a certificate for ${externalIp} was expected to fail`);
+    }
+
+    it('should read nothing answering on port 80 as an unreachable port', async () => {
+      const error = await failObtaining('unreachable', unreachableIp);
+
+      // The branch keys on this token. Asserting it is what makes the mapping
+      // below evidence rather than a restatement of the fixture behind it.
+      expect(error.message).to.include('urn:ietf:params:acme:error:connection');
+
+      expect(classifyRenewalFailure(error, { provider: 'letsencrypt' }).code)
+        .to.equal(RENEWAL_FAILURE_CODES.PORT_80_UNREACHABLE);
+    });
+
+    it('should read the wrong thing answering on port 80 as a wrong responder', async () => {
+      const error = await failObtaining('wrongresponder', decoyIp);
+
+      expect(error.message).to.include('urn:ietf:params:acme:error:unauthorized');
+
+      expect(classifyRenewalFailure(error, { provider: 'letsencrypt' }).code)
+        .to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
+    });
+
+    // The whole write path on a real error: two thousand characters of lego
+    // output, across a dozen lines, reduced to the one bounded line a reader
+    // is shown. Redaction is measured in the unit tests, which can supply the
+    // inputs worth redacting; what this adds is that a real authority's output
+    // survives the reduction with its verdict intact.
+    it('should reduce a real failure to one bounded line that still carries the verdict', async () => {
+      const error = await failObtaining('recorded', decoyIp);
+      const renewalRecordRepository = container.resolve('renewalRecordRepository');
+
+      recordRenewalFailure({
+        renewalRecordRepository,
+        homeDir,
+        configName: 'recorded',
+        provider: 'letsencrypt',
+        error,
+      });
+
+      const { record } = renewalRecordRepository.read('recorded');
+
+      expect(record.getCode()).to.equal(RENEWAL_FAILURE_CODES.PORT_80_WRONG_RESPONDER);
+
+      const detail = record.getDetail();
+
+      // Something has to survive, or the record answers nothing.
+      expect(detail).to.include('urn:ietf:params:acme:error:unauthorized');
+      expect(detail).to.not.include(homeDir.getPath());
+      expect(detail.length).to.be.at.most(MAX_DETAIL_CHARS);
+      // One line: the reduction is what keeps a record readable, and lego's
+      // output is a dozen lines of banner and progress around the verdict.
+      expect(detail.split('\n')).to.have.lengthOf(1);
+      expect(error.message.length).to.be.above(MAX_DETAIL_CHARS);
+    });
   });
 });

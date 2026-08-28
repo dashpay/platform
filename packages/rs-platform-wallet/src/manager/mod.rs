@@ -391,6 +391,13 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     #[cfg(feature = "shielded")]
     pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
+    /// Tracked (wallet-independent) masternodes for this manager's
+    /// network, keyed by wire proTxHash, plus the per-node gates that
+    /// serialize their refreshes. Hydrated from the persister at
+    /// `load_from_persistor`; every mutation writes the whole set back
+    /// (see `masternode::tracked`).
+    pub(crate) tracked_masternodes:
+        std::sync::Arc<crate::masternode::tracked::TrackedMasternodeRegistry>,
     /// Cancellation token + join handle for the wallet-event adapter
     /// task. Held so [`shutdown`] can stop it cleanly when the manager
     /// is torn down.
@@ -538,6 +545,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             #[cfg(feature = "shielded")]
             event_manager,
             persister,
+            tracked_masternodes: std::sync::Arc::new(Default::default()),
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
             registry,

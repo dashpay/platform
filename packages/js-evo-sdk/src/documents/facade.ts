@@ -50,7 +50,13 @@ export class DocumentsFacade {
     return w.getDocumentWithProofInfo(contractId, type, documentId);
   }
 
-  async create(options: wasm.DocumentCreateOptions): Promise<void> {
+  /**
+   * Creates a document and resolves to the confirmed Document as Platform
+   * committed it, consensus-populated system fields included — keep this
+   * instance when you later intend to delete an indexOnly document whose
+   * type requires `$createdAt`.
+   */
+  async create(options: wasm.DocumentCreateOptions): Promise<wasm.Document> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentCreate(options);
   }
@@ -122,5 +128,38 @@ export class DocumentsFacade {
   ): Promise<wasm.ProofMetadataResponseTyped<Map<string, { count: bigint; sum: bigint }>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentsAverageWithProofInfo(query, averageProperty);
+  }
+
+  /**
+   * Rank groups by an aggregate and return the top (or bottom) `limit` of
+   * them. Requires protocol version 14 and a contract index declaring the
+   * matching ranked keyword.
+   */
+  async ranked(query: wasm.DocumentsRankedQuery): Promise<wasm.DocumentsRankedResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsRanked(query);
+  }
+
+  async rankedWithProof(
+    query: wasm.DocumentsRankedQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.DocumentsRankedResult>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsRankedWithProofInfo(query);
+  }
+
+  /**
+   * Return the groups whose aggregate falls inside a bound. Same ranked
+   * indexes as {@link ranked}, bounded by value rather than by position.
+   */
+  async having(query: wasm.DocumentsHavingQuery): Promise<wasm.DocumentsHavingResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsHaving(query);
+  }
+
+  async havingWithProof(
+    query: wasm.DocumentsHavingQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.DocumentsHavingResult>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsHavingWithProofInfo(query);
   }
 }

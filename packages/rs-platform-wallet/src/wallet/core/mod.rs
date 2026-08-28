@@ -4,6 +4,7 @@ mod broadcast;
 pub mod generation;
 // Inherent `CoreWallet::sign_message` only — no types to re-export.
 mod sign_message;
+pub(crate) use sign_message::is_signable_funding_account;
 mod transaction;
 pub mod wallet;
 

@@ -5155,7 +5155,7 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         "Equal\000GreaterThan\000GreaterThanOrEquals\000Le"
         "ssThan\000LessThanOrEquals\000Between\000BetweenE"
         "xcludeBounds\000BetweenExcludeLeft\000BetweenE"
-        "xcludeRight\000In\000StartsWith\000";
+        "xcludeRight\000In\000StartsWith\000InTimeRange\000";
     static const int32_t values[] = {
         GetDocumentsRequest_WhereOperator_Equal,
         GetDocumentsRequest_WhereOperator_GreaterThan,
@@ -5168,6 +5168,7 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         GetDocumentsRequest_WhereOperator_BetweenExcludeRight,
         GetDocumentsRequest_WhereOperator_In,
         GetDocumentsRequest_WhereOperator_StartsWith,
+        GetDocumentsRequest_WhereOperator_InTimeRange,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_WhereOperator)
@@ -5196,6 +5197,7 @@ BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value__) {
     case GetDocumentsRequest_WhereOperator_BetweenExcludeRight:
     case GetDocumentsRequest_WhereOperator_In:
     case GetDocumentsRequest_WhereOperator_StartsWith:
+    case GetDocumentsRequest_WhereOperator_InTimeRange:
       return YES;
     default:
       return NO;
@@ -7164,10 +7166,12 @@ void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneO
 @dynamic count;
 @dynamic sum;
 @dynamic avg;
+@dynamic hasInKey, inKey;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_ {
   uint32_t _has_storage_[2];
   NSData *key;
+  NSData *inKey;
   uint64_t count;
   int64_t sum;
   double avg;
@@ -7214,6 +7218,15 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_
         .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, avg),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeDouble,
+      },
+      {
+        .name = "inKey",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_InKey,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, inKey),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =

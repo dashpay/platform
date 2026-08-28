@@ -136,6 +136,16 @@ class SendViewModel: ObservableObject {
     /// core/shielded flows are unaffected.
     @Published var platformMinOutputAmount: UInt64?
 
+    /// Consensus-pinned shielded fee estimates (credits, 2 actions) per fee
+    /// kind, resolved through the wallet manager's network-tracked platform
+    /// version and pushed in by the VIEW
+    /// (`SendTransactionView.resolveShieldedFees()`) on appear, when the
+    /// async protocol-version refresh publishes, and again from the Send
+    /// action — the view model has no wallet handle of its own, same as
+    /// `platformMinOutputAmount` above. A missing entry falls back to the
+    /// static `SendFlow.estimatedFee` placeholder in `estimateFee(for:)`.
+    @Published var shieldedFeeEstimates: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
+
     private let network: Network
 
     init(network: Network) {
@@ -437,16 +447,20 @@ class SendViewModel: ObservableObject {
 
     /// Resolve the estimated fee (in the flow's settlement unit) for the
     /// active flow. The shielded flows are consensus-pinned and computed
-    /// in Rust (`compute_*_shielded_fee` via the FFI estimator), so this
-    /// bridges to that rather than re-deriving the constants in Swift.
+    /// in Rust (`compute_*_shielded_fee` via the FFI estimator, at the
+    /// manager's network-tracked platform version), so this reads the
+    /// view-pushed `shieldedFeeEstimates` rather than re-deriving the
+    /// constants in Swift.
     ///
-    /// `numActions: 2` — the exact action count isn't known until the
-    /// builder selects notes; a single-note spend with change (the common
-    /// case) serializes to 2 Orchard actions. The transparent `Shield`
-    /// (`platformToShielded`) reserves the same `compute_minimum_shielded_fee(2)`
-    /// base as its structure-check minimum, so it shares the transfer kind.
-    /// On an FFI error we fall back to the static enum placeholder rather
-    /// than surfacing a fee of nil for a flow we can otherwise send.
+    /// The estimates are for 2 Orchard actions — the exact action count
+    /// isn't known until the builder selects notes; a single-note spend
+    /// with change (the common case) serializes to 2 actions. The
+    /// transparent `Shield` (`platformToShielded`) reserves the same
+    /// `compute_minimum_shielded_fee(2)` base as its structure-check
+    /// minimum, so it shares the transfer kind. When the view hasn't
+    /// resolved a fee (or the FFI errored) we fall back to the static enum
+    /// placeholder rather than surfacing a fee of nil for a flow we can
+    /// otherwise send.
     private func estimateFee(for flow: SendFlow) -> UInt64 {
         let kind: PlatformWalletManager.ShieldedFeeKind?
         switch flow {
@@ -464,8 +478,7 @@ class SendViewModel: ObservableObject {
             kind = nil
         }
         guard let kind else { return flow.estimatedFee }
-        return (try? PlatformWalletManager.estimateShieldedFee(kind: kind, numActions: 2))
-            ?? flow.estimatedFee
+        return shieldedFeeEstimates[kind] ?? flow.estimatedFee
     }
 
     // MARK: - Send Execution

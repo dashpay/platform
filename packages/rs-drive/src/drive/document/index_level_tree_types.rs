@@ -75,7 +75,11 @@
 
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use crate::error::Error;
-use dpp::data_contract::document_type::IndexLevel;
+use crate::util::object_size_info::DriveKeyInfo;
+use dpp::data_contract::document_type::{
+    IndexCountability, IndexLevel, IndexLevelTypeInfo, TimeRangeTransform,
+};
+use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
 use grovedb::TreeType;
 
@@ -126,6 +130,121 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
         ranked_axes,
         value_tree_type,
     })
+}
+
+/// Expands a document's raw top-field key into the set of index-entry keys a
+/// time-range first-property node stores it under. For a node without a
+/// transform the single key passes through untouched.
+///
+/// Shared by the insert and delete v2 walkers (same must-not-drift contract
+/// as the tree-type derivation above); the entry-key rule itself — null keeps
+/// its single null entry, epoch-sliver timestamps produce no entries,
+/// undecodable values keep their raw key — lives in
+/// [`TimeRangeTransform::entry_keys_for_raw`], which the update walker also
+/// calls.
+///
+/// On the estimated-cost path (`KeySize`) the real timestamp isn't available,
+/// so this assumes the worst case of `overlap_factor` overlapping buckets —
+/// and makes each worst-case key **distinct** by suffixing an ordinal:
+/// identical `(path, key)` operations collapse inside grovedb's batch
+/// structure, so `overlap` copies of one key would silently estimate a single
+/// bucket's cost.
+///
+/// `max_overlap_factor` is the platform version's
+/// `SystemLimits::max_time_range_overlap_factor` — a validated contract can
+/// never exceed it, so the clamp only bounds estimation work for a transform
+/// built outside validation, and reading it from the version keeps the
+/// estimated fan-out in step with whatever a future protocol version allows.
+pub(crate) fn time_range_index_keys<'a>(
+    transform: Option<&TimeRangeTransform>,
+    document_top_field: DriveKeyInfo<'a>,
+    max_overlap_factor: u64,
+) -> Vec<DriveKeyInfo<'a>> {
+    let Some(transform) = transform else {
+        return vec![document_top_field];
+    };
+    match &document_top_field {
+        DriveKeyInfo::KeySize(key_info) => {
+            // Not `clamp(1, max)`: `Ord::clamp` asserts `min <= max`, so a
+            // future limits table carrying `Some(0)` would panic here.
+            let overlap = transform.overlap_factor().min(max_overlap_factor).max(1) as usize;
+            (0..overlap)
+                .map(|ordinal| {
+                    let mut key_info = key_info.clone();
+                    let suffix = (ordinal as u16).to_be_bytes();
+                    match &mut key_info {
+                        KeyInfo::KnownKey(bytes) => bytes.extend_from_slice(&suffix),
+                        KeyInfo::MaxKeySize { unique_id, .. } => {
+                            unique_id.extend_from_slice(&suffix)
+                        }
+                    }
+                    DriveKeyInfo::KeySize(key_info)
+                })
+                .collect()
+        }
+        DriveKeyInfo::Key(raw) => transform
+            .entry_keys_for_raw(raw)
+            .into_iter()
+            .map(DriveKeyInfo::Key)
+            .collect(),
+        DriveKeyInfo::KeyRef(raw) => transform
+            .entry_keys_for_raw(raw)
+            .into_iter()
+            .map(DriveKeyInfo::Key)
+            .collect(),
+    }
+}
+
+/// The tree type of the `0` member bucket at an index's terminal level
+/// — the tree holding one member per document (stored types: references
+/// keyed by document id; indexOnly types: entry items keyed by the
+/// terminal property's value). Composed from the index's countability
+/// and summability axes, per-axis provable vs root-only (grovedb PR
+/// 670's expanded `TreeType` set) — see the dispatch commentary in
+/// `add_reference_for_index_level_for_contract_operations`.
+///
+/// Single source of truth for the four terminal branches (insert/delete
+/// × stored/indexOnly): the insert side creates the tree and the delete
+/// side emits `EstimatedLayerInformation` describing it, and any drift
+/// produces dry-run fees that disagree with applied fees.
+pub(crate) fn terminal_member_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
+    let count_provable = matches!(
+        index_type.countable,
+        IndexCountability::CountableAllowingOffset
+    );
+    let count_root_only =
+        matches!(index_type.countable, IndexCountability::Countable) && !count_provable;
+    let sum_provable = index_type.range_summable;
+    let sum_root_only = index_type.summable.is_some() && !sum_provable;
+    match (count_provable, count_root_only, sum_provable, sum_root_only) {
+        (false, false, false, false) => TreeType::NormalTree,
+        (false, true, false, false) => TreeType::CountTree,
+        (true, _, false, false) => TreeType::ProvableCountTree,
+        (false, false, false, true) => TreeType::SumTree,
+        (false, false, true, _) => TreeType::ProvableSumTree,
+        (false, true, false, true) => TreeType::CountSumTree,
+        (true, _, false, true) => TreeType::ProvableCountSumTree,
+        (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
+        (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
+    }
+}
+
+/// The value-tree type an index's terminal level lives inside, derived
+/// from the level info's four terminator flags — the tree the `0` member
+/// bucket is inserted INTO. Used by the indexOnly terminal branch's
+/// stateless apply type so estimation accounts the parent's aggregate
+/// bytes (a `NormalTree` claim under-counts a count-bearing value tree's
+/// per-child propagation, and the bucket fan-out multiplies the gap).
+/// Continuations only demote provable variants, whose stateless costs
+/// match their demoted forms at this call site, so `false` is passed.
+pub(crate) fn terminal_value_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
+    derive_value_tree_type(
+        index_type.countable.is_countable(),
+        index_type.range_countable,
+        index_type.summable.is_some(),
+        index_type.range_summable,
+        false,
+    )
 }
 
 /// Pure derivation of the value-tree type over the level's four
@@ -200,6 +319,8 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            terminal: None,
+            preallocated: false,
         }
     }
 
@@ -329,6 +450,9 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: true,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
         };
         let compound = Index {
             name: "byRestaurantChef".to_string(),
@@ -352,6 +476,9 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
         };
 
         let index_structure =
@@ -393,5 +520,67 @@ mod tests {
             None,
         )
         .expect("the continuation must be insertable under the demoted value tree");
+    }
+    /// The estimated-cost (`KeySize`) branch of [`time_range_index_keys`] is
+    /// consensus-sensitive fee math: it must emit exactly the bounded
+    /// overlap count, keep every synthetic key's `max_size` untouched, and
+    /// make each `unique_id` distinct — grovedb's batch structure collapses
+    /// identical `(path, key)` operations, so `overlap` copies of one key
+    /// would silently estimate a single bucket's cost.
+    #[test]
+    fn estimated_time_range_fan_out_emits_distinct_worst_case_keys() {
+        use super::time_range_index_keys;
+        use crate::util::object_size_info::DriveKeyInfo;
+        use dpp::data_contract::document_type::TimeRangeTransform;
+        use grovedb::batch::key_info::KeyInfo;
+
+        // 6h window sliding every 2h — overlap factor 3.
+        let transform = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 21_600,
+            step_seconds: 7_200,
+            phase_seconds: 0,
+        };
+        let key = DriveKeyInfo::KeySize(KeyInfo::MaxKeySize {
+            unique_id: vec![7u8; 4],
+            max_size: 8,
+        });
+
+        let keys = time_range_index_keys(Some(&transform), key.clone(), 24);
+        assert_eq!(keys.len(), 3, "one worst-case key per overlapping bucket");
+        let mut unique_ids = Vec::new();
+        for entry in &keys {
+            let DriveKeyInfo::KeySize(KeyInfo::MaxKeySize {
+                unique_id,
+                max_size,
+            }) = entry
+            else {
+                panic!("the KeySize branch must stay on the estimation path");
+            };
+            assert_eq!(
+                *max_size, 8,
+                "the ordinal suffix disambiguates unique_id only; the estimated \
+                 key size must be the timestamp key's"
+            );
+            unique_ids.push(unique_id.clone());
+        }
+        let distinct: std::collections::BTreeSet<_> = unique_ids.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            3,
+            "identical unique_ids would collapse in the batch and under-estimate"
+        );
+
+        // An unvalidated transform above the version's cap is clamped: the
+        // estimation work stays bounded by what the protocol version allows.
+        let oversized = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 100 * 3_600,
+            step_seconds: 3_600,
+            phase_seconds: 0,
+        };
+        assert_eq!(oversized.overlap_factor(), 100);
+        let keys = time_range_index_keys(Some(&oversized), key, 24);
+        assert_eq!(keys.len(), 24, "fan-out must clamp to the versioned cap");
     }
 }

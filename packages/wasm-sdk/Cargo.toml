@@ -99,6 +99,13 @@ wasm-dpp2 = { path = "../wasm-dpp2" }
 # and silently defeat the tests that assert an uncompiled one is fetched.
 wasm-sdk = { path = ".", features = ["mocks"] }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+# wasm32-only test harness. Host tests cover every decision that can regress;
+# this covers the one thing they cannot observe — that a wide integer group
+# key really crosses as an exact JS BigInt. Run with:
+#   CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner \
+#     cargo test -p wasm-sdk --target wasm32-unknown-unknown
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3.58"
 
 [package.metadata.wasm-pack]
 wasm-opt = false

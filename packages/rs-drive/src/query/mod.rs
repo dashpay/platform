@@ -1,3 +1,4 @@
+use dpp::data_contract::document_type::TimeRangeTransform;
 use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -142,6 +143,10 @@ use crate::util::grove_operations::QueryType::StatefulQuery;
 
 // Module declarations that are conditional on either "server" or "verify" features
 #[cfg(any(feature = "server", feature = "verify"))]
+pub mod canonicalize;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use canonicalize::validate_and_canonicalize_where_clauses;
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
 mod defaults;
@@ -275,6 +280,13 @@ pub mod drive_document_having_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_ranked_query;
 
+/// Document synthesis for indexOnly queries: an indexOnly entry's proved
+/// `(path, key)` position IS the document, and this module is the single
+/// builder both the server's no-proof execution and the proof verifier
+/// call to turn one back into a `Document`.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod index_only_synthesis;
+
 /// Joint count-and-sum no-prove executor surface — backs the AVG
 /// no-prove path's unified single-walk dispatch. See its module
 /// docstring for the perf / atomicity contract. Server-only because
@@ -324,13 +336,117 @@ pub struct InternalClauses {
     /// path-query lowering (protocol version 14 is the first to accept
     /// multiple in clauses, on consecutive index properties).
     pub in_clauses: Vec<WhereClause>,
-    /// Range clause
+    /// Range clause.
+    ///
+    /// On an indexOnly document type this may sit on an index's TERMINAL
+    /// (member-key) property, not only on an index prefix property — see
+    /// [`InternalClauses::classify_fields`] for the modeled roles instead
+    /// of assuming property placement.
     pub range_clause: Option<WhereClause>,
     /// Equal clause
     pub equal_clauses: BTreeMap<String, WhereClause>,
 }
 
+/// How one where-clause (or order-by) field relates to a document type's
+/// indexes — classified ONCE against the doctype instead of re-derived by
+/// every consumer. Roles are not exclusive: on the yappr fixture `postId`
+/// is a prefix property of `byHashtagPost`/`byPost` AND the terminal of
+/// `byLiker`.
+#[cfg(any(feature = "server", feature = "verify"))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ClauseFieldRoles {
+    /// The field is `$id`.
+    pub primary_key: bool,
+    /// The field is a prefix property of at least one index.
+    pub index_property: bool,
+    /// The field is the terminal (member-key property) of at least one
+    /// index — only ever true on indexOnly document types.
+    pub terminal: bool,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl ClauseFieldRoles {
+    /// The field appears in no index at all (and is not the primary key)
+    /// — a clause on it can never be served.
+    pub fn unindexed(&self) -> bool {
+        !self.primary_key && !self.index_property && !self.terminal
+    }
+}
+
+/// The outcome of generic index selection
+/// ([`DriveDocumentQuery::select_best_index`]): a match, or the fact that
+/// no index serves the query — carried as a value, not an error, so a
+/// route that may legitimately stand in for a miss (the indexOnly
+/// terminal route) never has to reconstruct that fact from error
+/// variants. Structural failures never appear here; they stay `Err`.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) enum BestIndexOutcome<'a> {
+    /// An index serves the query.
+    Matched(&'a Index),
+    /// No index matches; carries the error [`DriveDocumentQuery::find_best_index`]
+    /// reports for this query.
+    NoIndexMatches(Error),
+}
+
 impl InternalClauses {
+    /// Classify one field's index roles against `document_type`. The
+    /// single derivation site for "is this a prefix property, a terminal,
+    /// or `$id`" — consumers must branch on this instead of assuming a
+    /// clause sits on an index prefix property (on indexOnly types it may
+    /// sit on a terminal).
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn classify_field(document_type: DocumentTypeRef, field: &str) -> ClauseFieldRoles {
+        let mut roles = ClauseFieldRoles {
+            primary_key: field == "$id",
+            ..Default::default()
+        };
+        for index in document_type.indexes().values() {
+            if index
+                .properties
+                .iter()
+                .any(|property| property.name == field)
+            {
+                roles.index_property = true;
+            }
+            if index.terminal.as_deref() == Some(field) {
+                roles.terminal = true;
+            }
+            if roles.index_property && roles.terminal {
+                break;
+            }
+        }
+        roles
+    }
+
+    /// [`Self::classify_field`] over every field these clauses name —
+    /// classification happens once, at the seam between clause extraction
+    /// and routing, instead of being re-derived downstream.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn classify_fields(
+        &self,
+        document_type: DocumentTypeRef,
+    ) -> BTreeMap<String, ClauseFieldRoles> {
+        let mut classified = BTreeMap::new();
+        let mut add = |field: &str| {
+            classified
+                .entry(field.to_string())
+                .or_insert_with(|| Self::classify_field(document_type, field));
+        };
+        if self.primary_key_equal_clause.is_some() || self.primary_key_in_clause.is_some() {
+            add("$id");
+        }
+        for field in self.equal_clauses.keys() {
+            add(field);
+        }
+        if let Some(range_clause) = &self.range_clause {
+            add(&range_clause.field);
+        }
+        for in_clause in &self.in_clauses {
+            add(&in_clause.field);
+        }
+        classified
+    }
+
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if the clause is a valid format.
     pub fn verify(&self) -> bool {
@@ -570,6 +686,292 @@ impl From<InternalClauses> for Vec<WhereClause> {
     }
 }
 
+/// Which active time range a `TOP(timeRange(...))` selection resolves to,
+/// when the index's ranges overlap (`range > step`). Time-range queries are a
+/// v1-only feature; the v0 query surface is unaffected.
+#[cfg(any(feature = "server", feature = "verify"))]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
+pub enum TimeRangeSelector {
+    /// The freshest started range (largest start ≤ now). Covers the latest
+    /// partial slice (0..step of history).
+    Newest,
+    /// The oldest range still active at now. Covers a near-full trailing
+    /// window of ~range of history. Best for "trending over the last window".
+    Oldest,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl TimeRangeSelector {
+    /// The selector's wire spelling — the `IN_TIME_RANGE` clause's operand on
+    /// the v1 `getDocuments` wire. The single source of truth for the string
+    /// form: the SDK encoder, the drive-abci decoder and the wasm-sdk JSON
+    /// parser all go through these two functions (and the serde derive above
+    /// is renamed to match), so the spellings cannot drift apart.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TimeRangeSelector::Newest => "newest",
+            TimeRangeSelector::Oldest => "oldest",
+        }
+    }
+
+    /// Parses the wire spelling. Returns `None` for anything but the exact
+    /// strings [`Self::as_str`] produces.
+    pub fn from_string(value: &str) -> Option<Self> {
+        match value {
+            "newest" => Some(TimeRangeSelector::Newest),
+            "oldest" => Some(TimeRangeSelector::Oldest),
+            _ => None,
+        }
+    }
+}
+
+/// A concrete grid specification, matching a contract's `timeRange`
+/// declaration verbatim (`range` / `step` / `phase`, in seconds).
+///
+/// The structured `IN_TIME_RANGE` operand carries one of these when the
+/// queried field is bucketed by more than one grid: the bare selector
+/// (`"newest"` / `"oldest"`) is unambiguous only while exactly one time-range
+/// index exists on the field, so a multi-grid field requires the query to
+/// name the grid it wants.
+#[cfg(any(feature = "server", feature = "verify"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TimeRangeGridSpec {
+    /// Window length in seconds, as the contract declares it.
+    pub range_seconds: u64,
+    /// Interval between window starts in seconds, as the contract declares it.
+    pub step_seconds: u64,
+    /// Grid alignment phase in seconds (0 when the contract omits `phase`).
+    pub phase_seconds: u64,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl TimeRangeGridSpec {
+    /// Whether this spec names exactly the given transform's grid.
+    pub fn matches(&self, transform: &TimeRangeTransform) -> bool {
+        self.range_seconds == transform.range_seconds
+            && self.step_seconds == transform.step_seconds
+            && self.phase_seconds == transform.phase_seconds
+    }
+}
+
+/// Resolution provenance for one `IN_TIME_RANGE` clause: the field the
+/// selector named and the exact grid the resolution used. Recorded by the
+/// resolver's caller on the query (see
+/// [`DriveDocumentQuery::resolved_time_ranges`]) and consumed by the index
+/// pickers through [`index_admissible_for_resolved_time_range`], which pins
+/// selection to the index carrying exactly this grid — a field may be
+/// bucketed by several grids, so the field name alone no longer identifies
+/// the index the resolution was computed against.
+#[cfg(any(feature = "server", feature = "verify"))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedTimeRange {
+    /// The grid the bucket start was computed from. The transform carries its
+    /// own source field, so the provenance cannot name a field the grid does
+    /// not bucket — [`Self::field`] reads it from here.
+    pub transform: TimeRangeTransform,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl ResolvedTimeRange {
+    /// The bucketed source field the resolved equality is on — always the
+    /// transform's own source.
+    pub fn field(&self) -> &str {
+        &self.transform.source
+    }
+}
+
+/// Resolves a time-range selection on `field` into a concrete equality
+/// [`WhereClause`] on the bucketed source field, using the named grid's
+/// `timeRange` transform and an authoritative `block_time_ms`.
+///
+/// The server supplies `block_time_ms` from current block time and the
+/// verifier re-derives it from the quorum-signed response metadata `time_ms`,
+/// so both produce the identical concrete equality query — the existing
+/// index/count proofs apply unchanged and the engine never needs a dedicated
+/// time-range operator.
+///
+/// `grid` selects among several time-range indexes on the same field: `None`
+/// is accepted only while exactly one grid buckets the field (the common
+/// case); with two or more grids the caller must name one, and naming a grid
+/// no index declares is an error either way.
+///
+/// What comes back is an ordinary equality clause, byte-identical to one a
+/// client could have written by hand against a raw timestamp, plus the
+/// [`ResolvedTimeRange`] provenance callers must record on the query (see
+/// [`DriveDocumentQuery::resolved_time_ranges`]), which
+/// [`DriveDocumentQuery::find_best_index`] and the aggregate index pickers
+/// consume through [`index_admissible_for_resolved_time_range`] to pin
+/// selection to the grid's index — and to keep raw queries off it.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn resolve_time_range_bucket_clause(
+    field: &str,
+    selector: TimeRangeSelector,
+    grid: Option<TimeRangeGridSpec>,
+    document_type: DocumentTypeRef,
+    block_time_ms: u64,
+) -> Result<(WhereClause, ResolvedTimeRange), Error> {
+    // Distinct grids bucketing `field` — several indexes may share one grid
+    // (they share the storage level too), so dedupe by transform.
+    let mut grids: Vec<&TimeRangeTransform> = Vec::new();
+    for index in document_type.indexes().values() {
+        if let Some(transform) = index
+            .time_range
+            .as_ref()
+            .filter(|transform| transform.source == field)
+        {
+            if !grids.contains(&transform) {
+                grids.push(transform);
+            }
+        }
+    }
+    if grids.is_empty() {
+        return Err(Error::Query(
+            QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                "no time-range index is defined on field \"{}\"",
+                field
+            )),
+        ));
+    }
+
+    let transform = match grid {
+        Some(spec) => *grids
+            .iter()
+            .find(|transform| spec.matches(transform))
+            .ok_or(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "no time-range index on \"{}\" declares the grid range={}s step={}s phase={}s",
+                field, spec.range_seconds, spec.step_seconds, spec.phase_seconds
+            ))))?,
+        None => {
+            if grids.len() > 1 {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "field \"{}\" is bucketed by {} different grids; the IN_TIME_RANGE operand \
+                     must name one as [selector, range, step] or [selector, range, step, phase] \
+                     (seconds, as the contract declares them)",
+                    field,
+                    grids.len()
+                ))));
+            }
+            grids[0]
+        }
+    };
+
+    let bucket_start = match selector {
+        TimeRangeSelector::Newest => transform.newest_active_start(block_time_ms),
+        TimeRangeSelector::Oldest => transform.oldest_active_start(block_time_ms),
+    }
+    .ok_or(Error::Query(QuerySyntaxError::Unsupported(format!(
+        "no time range on \"{}\" is active yet: the block time predates the grid's phase \
+         anchor (only possible within the first step after the epoch)",
+        field
+    ))))?;
+
+    Ok((
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::U64(bucket_start),
+        },
+        ResolvedTimeRange {
+            transform: transform.clone(),
+        },
+    ))
+}
+
+/// Whether `index` may serve a query whose equality clauses on
+/// `resolved_time_ranges` were produced by
+/// [`resolve_time_range_bucket_clause`].
+///
+/// A time-range index does not store the source field's raw values: under its
+/// grid-qualified first level it stores bucket *starts*, and one document is
+/// stored once per bucket that contains its timestamp. So a bucketed index, a
+/// raw index and another grid's bucketed index are never interchangeable, and
+/// every mismatch is silent — a validly-proven wrong answer rather than an
+/// error:
+///
+/// - A raw query (`resolved_time_ranges` empty) that landed on a bucketed
+///   index would compare a real timestamp against bucket starts and see
+///   nothing (or, for range/IN shapes, walk overlapping buckets and count the
+///   same document up to `overlap_factor` times).
+/// - A resolved query that landed on a raw index would compare a bucket start
+///   against real timestamps and see nothing.
+/// - A resolved query that landed on a *different grid's* index would compare
+///   one grid's bucket start against another grid's — every 6-hour start is
+///   also a 3-hour start, so this can silently return the wrong window.
+///
+/// Hence the rule: with no resolution only non-bucketed indexes are
+/// admissible, and with one resolution only an index bucketing exactly that
+/// field *with exactly that grid* is. Two resolutions can never be served by
+/// a single index — a transform's source must be its index's first property,
+/// so one index buckets exactly one field — and are rejected by the caller.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_admissible_for_resolved_time_range(
+    index: &Index,
+    resolved_time_ranges: &[ResolvedTimeRange],
+) -> bool {
+    match resolved_time_ranges {
+        [] => index.time_range.is_none(),
+        // The provenance's transform must equal the candidate's — grid AND
+        // source field, since the transform carries its own source. The
+        // provenance cannot name a field its grid does not bucket
+        // ([`ResolvedTimeRange::field`] is derived from the transform), so a
+        // fabricated field/transform pair is unrepresentable rather than
+        // guarded against.
+        [resolved] => index
+            .time_range
+            .as_ref()
+            .is_some_and(|transform| *transform == resolved.transform),
+        _ => false,
+    }
+}
+
+/// Rejects a query whose resolution provenance and clause shapes disagree:
+/// every field in `resolved_time_ranges` must appear in the where
+/// clauses as exactly one `Equal` clause — the only shape
+/// [`resolve_time_range_bucket_clause`] produces.
+///
+/// A range or `In` clause on a resolved field means the caller attached
+/// provenance to a clause the resolver never built. Executors that fan a
+/// clause out per value (the per-`In`-value count/sum paths rewrite each `In`
+/// value into an equality) would then present raw client values to the index
+/// pickers as if they were resolved bucket starts, and the pickers would
+/// admit the bucketed index for them. The wire path can never produce the
+/// mismatch — provenance is not parseable from the wire, and the abci handler
+/// pushes the resolved equality itself — so this guards direct API callers,
+/// and it runs identically under `server` and `verify`.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn validate_resolved_time_range_clause_shapes(
+    where_clauses: &[WhereClause],
+    resolved_time_ranges: &[ResolvedTimeRange],
+) -> Result<(), Error> {
+    for field in resolved_time_ranges.iter().map(|resolved| resolved.field()) {
+        let mut equalities = 0usize;
+        for clause in where_clauses.iter().filter(|c| c.field == field) {
+            if clause.operator == WhereOperator::Equal {
+                equalities += 1;
+            } else {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "a time-range-resolved field may only carry the single equality its \
+                         resolution produced, not a range or In clause",
+                    ),
+                ));
+            }
+        }
+        if equalities != 1 {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "a time-range-resolved field must carry exactly one equality clause — the \
+                     one its resolution produced",
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Drive query struct
 #[derive(Debug, PartialEq, Clone)]
@@ -592,6 +994,22 @@ pub struct DriveDocumentQuery<'a> {
     pub start_at_included: bool,
     /// Block time
     pub block_time_ms: Option<u64>,
+    /// The fields whose equality clause in `internal_clauses` was produced by
+    /// `IN_TIME_RANGE` resolution — i.e. by
+    /// [`resolve_time_range_bucket_clause`], on the server from committed
+    /// block time and in the verifier from the quorum-signed response metadata
+    /// time.
+    ///
+    /// Never parsed from the wire: every `from_cbor` / `from_value` /
+    /// `from_typed_clauses` entry point leaves this empty, so a client cannot
+    /// claim resolution it did not go through. It is what
+    /// [`Self::find_best_index`] uses to pin index selection to the index that
+    /// buckets the field (see [`index_admissible_for_resolved_time_range`]),
+    /// which is required because the resolved clause is an ordinary equality
+    /// and cannot be told apart from a raw-timestamp lookup once built.
+    ///
+    /// Empty for every raw query.
+    pub resolved_time_ranges: Vec<ResolvedTimeRange>,
 }
 
 impl<'a> DriveDocumentQuery<'a> {
@@ -622,6 +1040,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         }
     }
 
@@ -638,6 +1057,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at: None,
             start_at_included: true,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         }
     }
 
@@ -658,6 +1078,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at: None,
             start_at_included: true,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         }
     }
 
@@ -884,6 +1305,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at,
             start_at_included,
             block_time_ms,
+            resolved_time_ranges: vec![],
         })
     }
 
@@ -1030,6 +1452,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at,
             start_at_included,
             block_time_ms,
+            resolved_time_ranges: vec![],
         })
     }
 
@@ -1194,6 +1617,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at,
             start_at_included,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         })
     }
 
@@ -1298,6 +1722,28 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_in_clause_shape(platform_version)?;
+        // indexOnly documents have no primary-key tree: nothing is ever
+        // addressed by document id, so a by-id query has no tree to land on.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() && self.is_for_primary_key() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "indexOnly documents cannot be fetched by id: there is no primary-key \
+                     tree; query through one of the type's indexes"
+                        .to_string(),
+                )));
+            }
+            if self.document_type.index_only() && self.start_at.is_some() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "startAt/startAfter cursors cannot address an indexOnly position (the \
+                     synthesized document id is a one-way hash of it); paginate with a \
+                     range clause on the terminal property instead — equality clauses on \
+                     the index's properties, `terminal > <last seen value>` ordered by the \
+                     terminal, and a limit"
+                        .to_string(),
+                )));
+            }
+        }
         let drive_version = &platform_version.drive;
         // First we should get the overall document_type_path
         let document_type_path = self
@@ -1306,6 +1752,21 @@ impl<'a> DriveDocumentQuery<'a> {
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
+
+        // indexOnly terminal-clause route: a clause on an index's terminal
+        // lowers onto the entry level's member keys when the generic
+        // matcher cannot serve the query. Shared with the verifier-side
+        // constructor below so prover and verifier build the same query.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                if let Some(path_query) =
+                    self.index_only_route(&document_type_path, platform_version)?
+                {
+                    return Ok(path_query);
+                }
+            }
+        }
 
         let (starts_at_document, start_at_path_query) = match &self.start_at {
             None => Ok((None, None)),
@@ -1381,7 +1842,16 @@ impl<'a> DriveDocumentQuery<'a> {
             return Ok(main_path_query);
         }
 
-        if let Some(start_at_path_query) = start_at_path_query {
+        if let Some(mut start_at_path_query) = start_at_path_query {
+            // The cursor query selects exactly one key, so its walk
+            // direction carries no meaning — but grovedb's merge (V4+)
+            // requires every input to agree on direction and propagates
+            // the shared one to the merged root. Align it to the main
+            // query's `orderBy` direction so a descending page merges,
+            // and so the merged root keeps the direction the verifier
+            // will rebuild through this same path.
+            start_at_path_query.query.query.left_to_right =
+                main_path_query.query.query.left_to_right;
             let limit = main_path_query.query.limit.take();
             let mut merged = PathQuery::merge(
                 vec![&start_at_path_query, &main_path_query],
@@ -1403,6 +1873,28 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_in_clause_shape(platform_version)?;
+        // indexOnly documents have no primary-key tree: nothing is ever
+        // addressed by document id, so a by-id query has no tree to land on.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() && self.is_for_primary_key() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "indexOnly documents cannot be fetched by id: there is no primary-key \
+                     tree; query through one of the type's indexes"
+                        .to_string(),
+                )));
+            }
+            if self.document_type.index_only() && self.start_at.is_some() {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "startAt/startAfter cursors cannot address an indexOnly position (the \
+                     synthesized document id is a one-way hash of it); paginate with a \
+                     range clause on the terminal property instead — equality clauses on \
+                     the index's properties, `terminal > <last seen value>` ordered by the \
+                     terminal, and a limit"
+                        .to_string(),
+                )));
+            }
+        }
         // First we should get the overall document_type_path
         let document_type_path = self
             .contract
@@ -1410,6 +1902,21 @@ impl<'a> DriveDocumentQuery<'a> {
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
+
+        // indexOnly terminal-clause route — the verifier-side mirror of
+        // the dispatch in `construct_path_query_operations`, so both
+        // sides build the same query.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                if let Some(path_query) =
+                    self.index_only_route(&document_type_path, platform_version)?
+                {
+                    return Ok(path_query);
+                }
+            }
+        }
+
         let starts_at_document = starts_at_document
             .map(|starts_at_document| (starts_at_document, self.start_at_included));
         if self.is_for_primary_key() {
@@ -1602,10 +2109,60 @@ impl<'a> DriveDocumentQuery<'a> {
     /// ([`Self::find_best_index_for_multiple_in_clauses`]); they only
     /// reach it through the v1 (protocol version 14+) path-query
     /// lowering, since the v0 lowering rejects them first.
+    ///
+    /// Selection is restricted to the indexes admissible for this query's
+    /// [`Self::resolved_time_ranges`]: a query carrying an
+    /// `IN_TIME_RANGE`-resolved equality may only be served by the index that
+    /// buckets that field, and a raw query may never be served by a bucketed
+    /// index. See [`index_admissible_for_resolved_time_range`] for why either
+    /// mismatch would produce a validly-proven wrong answer. The rule applies
+    /// on both routes, including the multiple-`In` selection.
     pub fn find_best_index(&self, platform_version: &PlatformVersion) -> Result<&Index, Error> {
-        if self.internal_clauses.in_clauses.len() > 1 {
-            return Ok(self.find_best_index_for_multiple_in_clauses()?.0);
+        match self.select_best_index(platform_version)? {
+            BestIndexOutcome::Matched(index) => Ok(index),
+            BestIndexOutcome::NoIndexMatches(no_index_error) => Err(no_index_error),
         }
+    }
+
+    /// Generic index selection with "no index matches" separated from the
+    /// structural failures, in the type instead of in error variants:
+    /// `Err` is a structural problem with the query itself (preflight,
+    /// resolved-source shape, version dispatch) and always propagates,
+    /// while `NoIndexMatches` carries the would-be [`Self::find_best_index`]
+    /// error as a value — a routing fact the indexOnly terminal route is
+    /// allowed to stand in for. [`Self::find_best_index`] collapses both
+    /// non-matches back into `Err` for every ordinary caller.
+    pub(crate) fn select_best_index(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<BestIndexOutcome<'_>, Error> {
+        // A transform's source must be its index's first property, so one
+        // index buckets exactly one field and no index can carry two resolved
+        // equalities. Serving such a query would need a join across two
+        // bucketed indexes, which the engine has no shape for. This runs
+        // before any routing so the multiple-`In` path cannot bypass it.
+        if self.resolved_time_ranges.len() > 1 {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "at most one time-range selection (IN_TIME_RANGE) is supported per query; this \
+                 one resolves {:?}, and no single index can bucket more than one field",
+                self.resolved_time_ranges
+            ))));
+        }
+
+        // One shared source-shape guard for every selection route — see its
+        // doc for the contract. Running it before routing keeps the single-
+        // and multiple-`In` routes rejecting the same shapes.
+        self.validate_resolved_source_shape()?;
+
+        if self.internal_clauses.in_clauses.len() > 1 {
+            // The multi-`In` machinery keeps its own error surface; its
+            // shapes are never terminal-routable, so there is nothing to
+            // classify as a plain miss.
+            return Ok(BestIndexOutcome::Matched(
+                self.find_best_index_for_multiple_in_clauses()?.0,
+            ));
+        }
+
         let equal_fields = self
             .internal_clauses
             .equal_clauses
@@ -1643,26 +2200,121 @@ impl<'a> DriveDocumentQuery<'a> {
             })
             .collect();
 
-        let (index, difference) = self
-            .document_type
-            .index_for_types(
-                fields.as_slice(),
-                in_field,
-                order_by_keys.as_slice(),
-                platform_version,
-            )?
-            .ok_or(Error::Query(
-                QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                    "query must be for valid indexes, valid indexes are: {:?}",
-                    self.document_type.indexes()
-                )),
-            ))?;
+        let Some((index, difference)) = self.document_type.index_for_types_matching(
+            fields.as_slice(),
+            in_field,
+            order_by_keys.as_slice(),
+            |index| index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges),
+            platform_version,
+        )?
+        else {
+            return Ok(BestIndexOutcome::NoIndexMatches(
+                match self.resolved_time_ranges.first() {
+                    // A time-range query is only servable by the index that
+                    // buckets the field with the resolved grid, so "no index"
+                    // here is a narrower fact than the generic case: some index
+                    // buckets the field (the clause could not have been resolved
+                    // otherwise), but none with that grid also covers the rest
+                    // of the query.
+                    Some(resolved) => {
+                        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                            "a time-range query on \"{}\" requires an index that buckets it with \
+                         the resolved grid AND covers the query's other where and order-by \
+                         fields; valid indexes are: {:?}",
+                            resolved.field(),
+                            self.document_type.indexes()
+                        )))
+                    }
+                    None => {
+                        // A raw query never binds to a bucketed index; when one
+                        // exists, say so — the caller may be holding a
+                        // time-range proof on a surface that cannot supply
+                        // resolution provenance (e.g. the standalone wasm
+                        // verifiers), where this refusal is otherwise opaque.
+                        let has_bucketed_index = self
+                            .document_type
+                            .indexes()
+                            .values()
+                            .any(|index| index.time_range.is_some());
+                        if has_bucketed_index {
+                            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                                format!(
+                            "query must be for valid indexes, valid indexes are: {:?}; note: \
+                             this document type's time-range (timeRange) indexes only serve \
+                             IN_TIME_RANGE selections carrying their resolution — a raw clause \
+                             on the bucketed field never binds to them",
+                            self.document_type.indexes()
+                        ),
+                            ))
+                        } else {
+                            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                                format!(
+                                    "query must be for valid indexes, valid indexes are: {:?}",
+                                    self.document_type.indexes()
+                                ),
+                            ))
+                        }
+                    }
+                },
+            ));
+        };
         if difference > defaults::MAX_INDEX_DIFFERENCE {
-            return Err(Error::Query(QuerySyntaxError::QueryTooFarFromIndex(
-                "query must better match an existing index",
+            return Ok(BestIndexOutcome::NoIndexMatches(Error::Query(
+                QuerySyntaxError::QueryTooFarFromIndex("query must better match an existing index"),
             )));
         }
-        Ok(index)
+
+        // The residual source-shape contract already ran at the top of this
+        // function ([`Self::validate_resolved_source_shape`]) — with a
+        // resolution present, admissibility restricts candidates to the one
+        // index bucketing exactly the resolved field, so guarding by
+        // provenance there is equivalent to guarding by the selected index's
+        // transform here.
+        Ok(BestIndexOutcome::Matched(index))
+    }
+
+    /// The residual source-shape contract for a query carrying a
+    /// time-range resolution: the resolved equality must be present on the
+    /// bucketed source, and the source must not ALSO carry an `In`, a
+    /// range, or an ordering — those walk overlapping bucket keys and
+    /// return each document up to `overlap_factor` times with a perfectly
+    /// valid proof. The `!has_equality_on_source` arm is defensive:
+    /// resolution always pushes the equality, so reaching it means the
+    /// provenance and the clauses disagree.
+    ///
+    /// Runs identically on the server and in proof verification, and on
+    /// every selection route: [`Self::find_best_index`] calls it before
+    /// routing, and [`Self::find_best_index_for_multiple_in_clauses`]
+    /// calls it itself because the multiple-`In` execution lowering picks
+    /// its index directly, without going through `find_best_index`.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub(crate) fn validate_resolved_source_shape(&self) -> Result<(), Error> {
+        let Some(source) = self
+            .resolved_time_ranges
+            .first()
+            .map(|resolved| resolved.field())
+        else {
+            return Ok(());
+        };
+        let has_equality_on_source = self.internal_clauses.equal_clauses.contains_key(source);
+        let range_or_in_on_source = self
+            .internal_clauses
+            .range_clause
+            .as_ref()
+            .is_some_and(|clause| clause.field == source)
+            || self
+                .internal_clauses
+                .in_clauses
+                .iter()
+                .any(|clause| clause.field == source);
+        if !has_equality_on_source || range_or_in_on_source || self.order_by.contains_key(source) {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "the index on \"{source}\" buckets it into time ranges: it can only be queried \
+                 through a time-range selection (IN_TIME_RANGE, which resolves to an exact \
+                 bucket equality), not with ranges, IN, or ordering on that property"
+            ))));
+        }
+        Ok(())
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -1868,6 +2520,45 @@ impl<'a> DriveDocumentQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        // indexOnly documents have no stored bodies — the raw elements under
+        // the entries are row commitments, not documents. Synthesize the
+        // documents from their (path, key) positions and serialize them into
+        // the wire shape this path's callers return. An index that does not
+        // cover every required property cannot produce a serializable
+        // document: partial projections only travel the proved read surface,
+        // where the client synthesizes them itself from the proof.
+        {
+            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+            if self.document_type.index_only() {
+                let (documents, skipped) = self.execute_index_only_documents_no_proof_internal(
+                    drive,
+                    transaction,
+                    drive_operations,
+                    platform_version,
+                )?;
+                let serialized = documents
+                    .into_iter()
+                    .map(|document| {
+                        document
+                            .serialize(self.document_type, self.contract, platform_version)
+                            .map_err(|error| match error {
+                                ProtocolError::DataContractError(
+                                    dpp::data_contract::errors::DataContractError::MissingRequiredKey(_),
+                                ) => Error::Query(QuerySyntaxError::Unsupported(
+                                    "this indexOnly query's index does not cover every required \
+                                     property, so the documents it synthesizes cannot be \
+                                     serialized into a non-proof response; query through an \
+                                     index covering all properties, or use a proved query"
+                                        .to_string(),
+                                )),
+                                other => other.into(),
+                            })
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+                return Ok((serialized, skipped));
+            }
+        }
+
         let path_query = self.construct_path_query_operations(
             drive,
             false,
@@ -2390,6 +3081,7 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         let path_query = query_asc
@@ -2771,6 +3463,55 @@ mod tests {
     }
 
     #[test]
+    fn resolved_time_range_shape_guard_accepts_only_the_single_resolution_equality() {
+        use crate::query::{validate_resolved_time_range_clause_shapes, ResolvedTimeRange};
+        use dpp::data_contract::document_type::TimeRangeTransform;
+
+        let resolved = vec![ResolvedTimeRange {
+            transform: TimeRangeTransform {
+                source: "$createdAt".to_string(),
+                range_seconds: 21_600,
+                step_seconds: 7_200,
+                phase_seconds: 0,
+            },
+        }];
+        let equality = WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::U64(21_600_000),
+        };
+        let other = WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("ibiza".to_string()),
+        };
+
+        validate_resolved_time_range_clause_shapes(&[equality.clone(), other.clone()], &resolved)
+            .expect("one equality on the resolved field is the resolution shape");
+
+        // An `In` on the resolved field would be fanned out per raw value by
+        // the aggregate executors and admitted against bucket keys.
+        let in_clause = WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(0), Value::U64(7_200_000)]),
+        };
+        validate_resolved_time_range_clause_shapes(&[in_clause, other.clone()], &resolved)
+            .expect_err("an In clause on a resolved field must be rejected");
+
+        let range_clause = WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::U64(0),
+        };
+        validate_resolved_time_range_clause_shapes(&[equality.clone(), range_clause], &resolved)
+            .expect_err("a range clause riding along on a resolved field must be rejected");
+
+        validate_resolved_time_range_clause_shapes(&[other], &resolved)
+            .expect_err("a resolved field with no equality at all must be rejected");
+    }
+
+    #[test]
     fn test_withdrawal_query_with_missing_transaction_index() {
         // Setup the withdrawal contract
         let (_, contract) = setup_withdrawal_contract();
@@ -2823,6 +3564,7 @@ mod tests {
             start_at: Some([3u8; 32]),
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         // Create a document that we are starting at, which may be missing 'transactionIndex'
@@ -2831,6 +3573,7 @@ mod tests {
         // We intentionally omit 'transactionIndex' to simulate missing field
 
         let starts_at_document = DocumentV0 {
+            contract_version: None,
             id: Identifier::from([3u8; 32]), // The same as start_at
             owner_id: Identifier::random(),
             properties,
@@ -2938,6 +3681,7 @@ mod tests {
                 start_at: None,
                 start_at_included: false,
                 block_time_ms: None,
+                resolved_time_ranges: vec![],
             }
         }
 

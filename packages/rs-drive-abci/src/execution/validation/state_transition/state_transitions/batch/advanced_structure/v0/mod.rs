@@ -20,10 +20,12 @@ use dpp::version::PlatformVersion;
 use drive::state_transition_action::batch::BatchTransitionAction;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
+use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_index_only_delete_transition_action::v0::DocumentIndexOnlyDeleteTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
@@ -207,6 +209,20 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                                     BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(purchase_action.base(), self.owner_id(), self.user_fee_increase()),
+                                );
+
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                bump_action,
+                                result.errors,
+                            ));
+                        }
+                    }
+                    DocumentTransitionAction::IndexOnlyDeleteAction(index_only_delete_action) => {
+                        let result =
+                            index_only_delete_action.validate_structure(platform_version)?;
+                        if !result.is_valid() {
+                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(index_only_delete_action.base(), self.owner_id(), self.user_fee_increase()),
                                 );
 
                             return Ok(ConsensusValidationResult::new_with_data_and_errors(

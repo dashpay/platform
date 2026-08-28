@@ -68,7 +68,8 @@ where
                 errors,
                 state_read_guard.last_block_info(),
                 transaction,
-                None, // address_balances_in_update not needed for check_tx
+                None,   // address_balances_in_update not needed for check_tx
+                &mut 0, // check_tx's transaction is discarded, its mints are never recorded
                 platform_ref.state.current_platform_version()?,
                 platform_ref.state.previous_fee_versions(),
             )

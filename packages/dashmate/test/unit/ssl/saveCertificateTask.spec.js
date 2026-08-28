@@ -3,16 +3,22 @@ import path from 'path';
 import HomeDir from '../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import saveCertificateTaskFactory from '../../../src/listr/tasks/ssl/saveCertificateTask.js';
+import { issueCertificate } from '../../../src/test/certificateFixtures.js';
+import RenewalRecordRepository from '../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
+import { recordRenewalSuccess } from '../../../src/helper/record-renewal-outcome.js';
 
 describe('saveCertificateTaskFactory', () => {
+  let renewalRecordRepository;
   let homeDir;
   let config;
   let certificatesDir;
   let certificatePath;
   let keyPath;
   let previousUmask;
+  let pair;
 
   beforeEach(() => {
+    pair = issueCertificate({ ip: '1.2.3.4' });
     previousUmask = process.umask(0o022);
     homeDir = HomeDir.createTemp();
     config = getBaseConfigFactory(homeDir)();
@@ -25,6 +31,7 @@ describe('saveCertificateTaskFactory', () => {
     );
     certificatePath = path.join(certificatesDir, 'bundle.crt');
     keyPath = path.join(certificatesDir, 'private.key');
+    renewalRecordRepository = new RenewalRecordRepository(homeDir);
   });
 
   afterEach(() => {
@@ -32,12 +39,13 @@ describe('saveCertificateTaskFactory', () => {
     homeDir.remove();
   });
 
-  async function savePair() {
-    const task = saveCertificateTaskFactory(homeDir)(config);
+  async function savePair(context = {}) {
+    const task = saveCertificateTaskFactory(homeDir, renewalRecordRepository)(config);
 
     await task.run({
-      certificateFile: 'new-certificate',
-      privateKeyFile: 'new-key',
+      certificateFile: pair.pem,
+      privateKeyFile: pair.keyPem,
+      ...context,
     });
   }
 
@@ -64,8 +72,44 @@ describe('saveCertificateTaskFactory', () => {
 
     expect(fs.statSync(certificatePath).ino).to.equal(certificateInode);
     expect(fs.statSync(keyPath).ino).to.equal(keyInode);
-    expect(fs.readFileSync(certificatePath, 'utf8')).to.equal('new-certificate');
-    expect(fs.readFileSync(keyPath, 'utf8')).to.equal('new-key');
+    expect(fs.readFileSync(certificatePath, 'utf8')).to.equal(pair.pem);
+    expect(fs.readFileSync(keyPath, 'utf8')).to.equal(pair.keyPem);
+  });
+
+  it('should not fence a renewal out of recording the success it just achieved', async () => {
+    // This install runs inside the renewal that produced the certificate, and
+    // it clears the record. Taking a new generation here locked that renewal
+    // out of its own success write afterwards, so a node that had just renewed
+    // perfectly reported nothing at all.
+    const generation = renewalRecordRepository.claimGeneration(config.getName());
+
+    await savePair({ renewalGeneration: generation });
+
+    recordRenewalSuccess({
+      renewalRecordRepository,
+      configName: config.getName(),
+      provider: 'letsencrypt',
+    generation,
+    });
+
+    expect(renewalRecordRepository.read(config.getName()).record).to.not.equal(null);
+  });
+
+  it('should outrank an attempt still in flight when run by hand', async () => {
+    // No chain of its own: the operator is acting now, so a renewal started
+    // before this must not be able to resurrect the failure it just settled.
+    const inFlight = renewalRecordRepository.claimGeneration(config.getName());
+
+    await savePair();
+
+    recordRenewalSuccess({
+      renewalRecordRepository,
+      configName: config.getName(),
+      provider: 'letsencrypt',
+      generation: inFlight,
+    });
+
+    expect(renewalRecordRepository.read(config.getName()).record).to.equal(null);
   });
 
   it('should create a private key with mode 0600', async () => {
@@ -133,5 +177,44 @@ describe('saveCertificateTaskFactory', () => {
     await savePair();
 
     expect(mode(keyPath)).to.equal(0o400);
+  });
+
+  // The bundle and the key are two separate in-place writes - in place because
+  // the bind mount follows the inode - so a full disk, a failed chmod or a
+  // power loss between them leaves a new certificate paired with the old key.
+  // With the gateway stopped, as the documented upgrade procedure leaves it,
+  // nothing else would notice: the command reports success and the node simply
+  // fails to come back up at the next `dashmate start`, a step removed from
+  // whatever caused it.
+  it('should refuse to report success when the written pair does not match', async function it() {
+    const other = issueCertificate({ ip: '1.2.3.4' });
+
+    await expect(savePair({ privateKeyFile: other.keyPem }))
+      .to.be.rejectedWith(/do not match/i);
+  });
+
+  it('should name the repair when the written pair does not match', async function it() {
+    const other = issueCertificate({ ip: '1.2.3.4' });
+
+    const error = await savePair({ privateKeyFile: other.keyPem }).catch((e) => e);
+
+    expect(error.message).to.contain(`--config ${config.getName()}`);
+    expect(error.message).to.contain('dashmate ssl obtain');
+  });
+
+  // Models the write that fails without throwing: the certificate lands, the
+  // key never does, and the old key is left in place.
+  it('should catch a key that never reached the disk', async function it() {
+    await savePair();
+
+    const renewed = issueCertificate({ ip: '1.2.3.4' });
+    const writeFileSync = this.sinon.stub(fs, 'writeFileSync');
+    writeFileSync.callThrough();
+    writeFileSync.withArgs(keyPath).returns(undefined);
+
+    await expect(savePair({
+      certificateFile: renewed.pem,
+      privateKeyFile: renewed.keyPem,
+    })).to.be.rejectedWith(/do not match/i);
   });
 });

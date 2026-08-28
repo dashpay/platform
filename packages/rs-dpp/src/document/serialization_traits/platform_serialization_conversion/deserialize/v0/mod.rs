@@ -35,6 +35,18 @@ pub(in crate::document) trait DocumentPlatformDeserializationMethodsV0 {
     ) -> Result<Self, DataContractError>
     where
         Self: Sized;
+
+    /// Reads a serialized document and creates a Document from it.
+    /// Version 3 has the contract version stamp, which selects each
+    /// `requiredSince` property's byte layout (raw when the stamp reaches the
+    /// property's `requiredSince`, presence-flagged otherwise).
+    fn from_bytes_v3(
+        serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DataContractError>
+    where
+        Self: Sized;
 }
 
 #[cfg(feature = "extended-document")]
