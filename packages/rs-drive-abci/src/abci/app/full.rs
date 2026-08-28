@@ -1,6 +1,6 @@
 use crate::abci::app::{
     BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
-    TransactionalApplication,
+    StateSyncApplication, TransactionalApplication,
 };
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
@@ -8,7 +8,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::snapshot::SnapshotManager;
+use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -29,6 +29,8 @@ pub struct FullAbciApplication<'a, C> {
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// The snapshot manager, pinning checkpoints that are being served to peers
     pub snapshot_manager: SnapshotManager,
+    /// The state sync transfer currently in progress, if any
+    pub snapshot_fetching_session: RwLock<Option<SnapshotFetchingSession<'a>>>,
 }
 
 impl<'a, C> FullAbciApplication<'a, C> {
@@ -39,6 +41,7 @@ impl<'a, C> FullAbciApplication<'a, C> {
             transaction: Default::default(),
             block_execution_context: Default::default(),
             snapshot_manager: SnapshotManager::new(),
+            snapshot_fetching_session: Default::default(),
         }
     }
 }
@@ -52,6 +55,16 @@ impl<C> PlatformApplication<C> for FullAbciApplication<'_, C> {
 impl<C> SnapshotManagerApplication for FullAbciApplication<'_, C> {
     fn snapshot_manager(&self) -> &SnapshotManager {
         &self.snapshot_manager
+    }
+}
+
+impl<'a, C> StateSyncApplication<'a, C> for FullAbciApplication<'a, C> {
+    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'a>>> {
+        &self.snapshot_fetching_session
+    }
+
+    fn platform(&self) -> &'a Platform<C> {
+        self.platform
     }
 }
 
@@ -118,7 +131,7 @@ mod tests {
             crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
 
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let _platform_ref = app.platform();
+        let _platform_ref = PlatformApplication::platform(&app);
     }
 
     #[test]
@@ -267,5 +280,19 @@ where
         request: proto::RequestLoadSnapshotChunk,
     ) -> Result<proto::ResponseLoadSnapshotChunk, proto::ResponseException> {
         handler::load_snapshot_chunk(self, request).map_err(error_into_exception)
+    }
+
+    fn offer_snapshot(
+        &self,
+        request: proto::RequestOfferSnapshot,
+    ) -> Result<proto::ResponseOfferSnapshot, proto::ResponseException> {
+        handler::offer_snapshot(self, request).map_err(error_into_exception)
+    }
+
+    fn apply_snapshot_chunk(
+        &self,
+        request: proto::RequestApplySnapshotChunk,
+    ) -> Result<proto::ResponseApplySnapshotChunk, proto::ResponseException> {
+        handler::apply_snapshot_chunk(self, request).map_err(error_into_exception)
     }
 }

@@ -5,9 +5,12 @@
 //! block is committed); there is no separate snapshot store.
 
 use drive::drive::Checkpoint;
+use drive::grovedb::replication::MultiStateSyncSession;
 use std::collections::BTreeMap;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
+use tenderdash_abci::proto::abci;
 
 /// The grovedb state sync wire protocol versions this node can serve and consume.
 ///
@@ -25,6 +28,25 @@ pub const MAX_STATE_SYNC_CHUNK_SIZE: usize = 16 * 1024 * 1024;
 /// of peer-supplied data (issue #3773). Chunk ids are packed vectors of 32-byte subtree
 /// prefixes plus short traversal instructions, so well-formed ids stay far below this.
 pub const MAX_STATE_SYNC_CHUNK_ID_SIZE: usize = 64 * 1024;
+
+/// Maximum number of subtrees processed in a single batch of a grovedb state sync
+/// session on the consuming side.
+pub const STATE_SYNC_SUBTREES_BATCH_SIZE: usize = 64;
+
+/// A state sync transfer in progress on the consuming side.
+pub struct SnapshotFetchingSession<'db> {
+    /// The snapshot being restored
+    pub snapshot: abci::Snapshot,
+    /// The light-client-verified app hash for the snapshot height, from Tenderdash
+    pub app_hash: [u8; 32],
+    /// The grovedb state sync wire protocol version this transfer speaks — taken from
+    /// the offered snapshot's `version`, validated against
+    /// [`SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS`], and used for every chunk of the
+    /// transfer.
+    pub wire_version: u16,
+    /// The grovedb state sync session
+    pub state_sync_info: Pin<Box<MultiStateSyncSession<'db>>>,
+}
 
 /// How long a served checkpoint stays pinned after the last chunk request for it.
 ///
