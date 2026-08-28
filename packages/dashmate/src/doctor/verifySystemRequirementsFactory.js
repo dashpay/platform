@@ -35,8 +35,8 @@ export default function verifySystemRequirementsFactory() {
     // State sync snapshots are GroveDB checkpoints stored next to the database.
     // They share unchanged data with it, so a small fixed headroom is enough.
     const SNAPSHOTS_DISK_HEADROOM = overrideRequirements.stateSyncSnapshotsEnabled ? 10 : 0; // GB
-    const MINIMUM_DISK_SPACE = (overrideRequirements.diskSpace ?? (isHP ? 200 : 100))
-      + SNAPSHOTS_DISK_HEADROOM; // GB
+    const BASE_MINIMUM_DISK_SPACE = overrideRequirements.diskSpace ?? (isHP ? 200 : 100); // GB
+    const MINIMUM_DISK_SPACE = BASE_MINIMUM_DISK_SPACE + SNAPSHOTS_DISK_HEADROOM; // GB
 
     const problems = [];
 
@@ -126,7 +126,9 @@ for required network services and avoid Proof-of-Service bans`,
           `${availableDiskSpace.toFixed(2)}GB of available disk space detected. At least ${MINIMUM_DISK_SPACE}GB is required${headroomNote}`,
           `Consider increasing disk space to make sure the node can provide timely responses
 for required network services and avoid Proof-of-Service bans`,
-          MINIMUM_DISK_SPACE - availableDiskSpace < 5 ? SEVERITY.HIGH : SEVERITY.MEDIUM,
+          // Judged against the base minimum so that enabling snapshots can
+          // widen when a problem is raised but never downgrade its severity
+          BASE_MINIMUM_DISK_SPACE - availableDiskSpace < 5 ? SEVERITY.HIGH : SEVERITY.MEDIUM,
         );
 
         problems.push(problem);
