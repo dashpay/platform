@@ -61,7 +61,10 @@
           "contentMediaType": "application/x.dash.dpp.identifier",
           "refersTo": {
             "type": "permanentDocument",
-            "documentType": "post"
+            "documentType": "post",
+            "propertyAgreement": {
+              "hashtag": "hashtag"
+            }
           },
           "position": 1
         }

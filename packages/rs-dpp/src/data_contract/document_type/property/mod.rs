@@ -102,6 +102,15 @@ pub enum DocumentPropertyReferenceTarget {
         /// the declaring contract itself
         contract_id: Option<Identifier>,
         document_type_name: String,
+        /// Property agreement: each `{referring property: referenced
+        /// property}` pair must hold as an EQUALITY between the referring
+        /// document's value and the referenced document's value, checked by
+        /// consensus at document write time (the referenced document is
+        /// already fetched for existence validation, so agreement adds no
+        /// reads). Declarations are validated at contract registration:
+        /// both properties must exist and share one property type.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        property_agreement: BTreeMap<String, String>,
     },
     /// A specific public key of an identity: the property value holds the
     /// identity id and the named sibling property of the same document type
@@ -125,6 +134,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: Some(contract_id),
                 document_type_name,
+                ..
             } => write!(
                 f,
                 "permanent document (contract {contract_id}, document type {document_type_name})"
@@ -132,6 +142,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name,
+                ..
             } => write!(
                 f,
                 "permanent document (own contract, document type {document_type_name})"
@@ -7247,6 +7258,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: Some(contract_id),
                 document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
             }
             .to_string(),
             format!("permanent document (contract {contract_id}, document type note)")
@@ -7255,6 +7267,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                property_agreement: Default::default(),
             }
             .to_string(),
             "permanent document (own contract, document type note)"

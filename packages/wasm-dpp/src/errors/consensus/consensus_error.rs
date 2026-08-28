@@ -95,6 +95,8 @@ use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressInva
 use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
+use dpp::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
+use dpp::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
@@ -494,6 +496,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedKeyIdPropertyInvalidError(e) => {
             generic_consensus_error!(ReferencedKeyIdPropertyInvalidError, e).into()
+        }
+        StateError::ReferencedDocumentPropertyAgreementInvalidError(e) => {
+            generic_consensus_error!(ReferencedDocumentPropertyAgreementInvalidError, e).into()
+        }
+        StateError::ReferencedDocumentPropertyMismatchError(e) => {
+            generic_consensus_error!(ReferencedDocumentPropertyMismatchError, e).into()
         }
     }
 }
