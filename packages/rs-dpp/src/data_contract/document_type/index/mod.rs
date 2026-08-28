@@ -4582,6 +4582,7 @@ mod json_convertible_tests {
                 "ranked_averageable": true,
                 "time_range": serde_json::Value::Null,
                 "terminal": serde_json::Value::Null,
+                "preallocated": false,
             })
         );
         let recovered = Index::from_json(json).expect("from_json");
