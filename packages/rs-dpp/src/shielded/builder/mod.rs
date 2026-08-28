@@ -215,7 +215,13 @@ pub fn shielded_bundle_action_count(
 /// signature a key type can produce (BLS12-381, 96 bytes) plus its one-byte
 /// length prefix; ECDSA (65) and EdDSA (64) keys under-fill the allowance,
 /// which errs on the conservative (smaller-ceiling) side.
-pub const PER_KEY_SIGNATURE_ALLOWANCE_BYTES: u64 = 97;
+///
+/// Crate-private on purpose: this is a calibration detail of how the unsigned
+/// identity-create envelope is measured for the pre-proving size gate, and it
+/// cannot be applied safely outside the surrounding envelope model — keeping
+/// it out of the public API avoids committing a conservative BLS sizing
+/// assumption as a semver-visible implementation detail.
+pub(crate) const PER_KEY_SIGNATURE_ALLOWANCE_BYTES: u64 = 97;
 
 /// Serialized size of one variable-length transition envelope field, measured
 /// with the same bincode configuration the transition's own wire serialization
