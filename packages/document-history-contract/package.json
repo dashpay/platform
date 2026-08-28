@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/document-history-contract",
-  "version": "4.2.0-dev.2",
+  "version": "4.2.0-dev.3",
   "description": "The document history contract",
   "scripts": {
     "lint": "eslint .",
