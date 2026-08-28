@@ -1,4 +1,5 @@
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
+use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::{
     document_reference_size, make_document_reference, make_document_reference_with_sum_item,
     read_document_sum_contribution,
@@ -21,7 +22,7 @@ use crate::util::object_size_info::{
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::{IndexCountability, IndexLevelTypeInfo};
+use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
 use dpp::document::DocumentV0Getters;
@@ -98,35 +99,14 @@ impl Drive {
         //   per-node)
         //
         // Same dispatch shape as the primary-key tree dispatcher's v1
-        // arm in `primary_key_tree_type.rs` — see that file for the
-        // full table. The `IndexLevelTypeInfo`'s `summable` carries
-        // the property name the reference's sum-item will contribute
-        // (read below to construct the `Element::ReferenceWithSumItem`
-        // that replaces a plain `Element::Reference` under summable
-        // indexes).
-        let count_provable = matches!(
-            index_type.countable,
-            IndexCountability::CountableAllowingOffset
-        );
-        let count_root_only =
-            matches!(index_type.countable, IndexCountability::Countable) && !count_provable;
-        let sum_provable = index_type.range_summable;
-        let sum_root_only = index_type.summable.is_some() && !sum_provable;
-        let want_count = count_provable || count_root_only;
-        let want_sum = sum_provable || sum_root_only;
-        let reference_tree_type =
-            match (count_provable, count_root_only, sum_provable, sum_root_only) {
-                (false, false, false, false) => TreeType::NormalTree,
-                (false, true, false, false) => TreeType::CountTree,
-                (true, _, false, false) => TreeType::ProvableCountTree,
-                (false, false, false, true) => TreeType::SumTree,
-                (false, false, true, _) => TreeType::ProvableSumTree,
-                (false, true, false, true) => TreeType::CountSumTree,
-                (true, _, false, true) => TreeType::ProvableCountSumTree,
-                (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
-                (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
-            };
-        let _ = (want_count, want_sum); // computed for narrative parity with the dispatch table; no longer used after exhaustive match.
+        // arm in `primary_key_tree_type.rs` — see
+        // `terminal_member_tree_type` for the full table (shared with
+        // the delete side and the indexOnly terminal branches). The
+        // `IndexLevelTypeInfo`'s `summable` carries the property name
+        // the reference's sum-item will contribute (read below to
+        // construct the `Element::ReferenceWithSumItem` that replaces a
+        // plain `Element::Reference` under summable indexes).
+        let reference_tree_type = terminal_member_tree_type(index_type);
 
         // Element-shape selector. Under a summable index path the
         // reference element MUST be
@@ -367,11 +347,12 @@ impl Drive {
     }
 
     /// The indexOnly terminal: writes `[…index path, 0, <terminal value>] →
-    /// Item(b"", flags)` — the member key is the terminal property's value
-    /// (`$ownerId` or a refersTo-typed identifier) sitting exactly where a
-    /// normal non-unique index keys by document id, and the element is an
-    /// empty `Item` because the entry IS the row. Storage flags ride the
-    /// element flags for epoch/owner refunds, exactly as on references.
+    /// Item(commitment, flags)` — the member key is the terminal property's
+    /// value (`$ownerId` or a refersTo-typed identifier) sitting exactly
+    /// where a normal non-unique index keys by document id, and the element
+    /// payload is the row commitment because the entry IS the row. Storage
+    /// flags ride the element flags for epoch/owner refunds, exactly as on
+    /// references.
     ///
     /// Existence check semantics: the entry is inserted with
     /// `if_not_exists`, and an existing entry is an error. ABCI state
@@ -380,8 +361,16 @@ impl Drive {
     /// the same backstop role the unique-index "reference already exists"
     /// above plays.
     ///
-    /// Only count axes reach here: the parser rejects sum axes on indexOnly
-    /// indexes, so the `0` tree type never carries a sum.
+    /// Under a summable index the element is
+    /// `ItemWithSumItem(commitment, amount, flags)` instead — the same
+    /// payload, plus the summed property's value read off the document, so
+    /// the entry contributes to the ancestor sum trees exactly as a
+    /// `ReferenceWithSumItem` does for stored types. On delete, grovedb
+    /// reads the amount off the stored element and propagates the
+    /// subtraction — the delete path needs no sum-specific logic. The
+    /// amount is one of the document's properties, so it is already covered
+    /// by the row commitment: a delete carrying a falsified amount fails
+    /// the commitment probe before anything is removed.
     #[allow(clippy::too_many_arguments)]
     fn add_index_only_terminal_item_operations(
         &self,
@@ -400,11 +389,8 @@ impl Drive {
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
 
-        let member_tree_type = match index_type.countable {
-            IndexCountability::NotCountable => TreeType::NormalTree,
-            IndexCountability::Countable => TreeType::CountTree,
-            IndexCountability::CountableAllowingOffset => TreeType::ProvableCountTree,
-        };
+        let member_tree_type = terminal_member_tree_type(index_type);
+        let sum_property_name: Option<&str> = index_type.summable.as_deref();
 
         // The `0` storage-marker tree, byte-identical in position to the
         // non-unique layout above.
@@ -447,11 +433,28 @@ impl Drive {
         const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 =
             crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 16;
 
-        let item_space = Element::required_item_space(
-            INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE,
-            STORAGE_FLAGS_SIZE,
-            &drive_version.grove_version,
-        )?;
+        // Sum-bearing entries additionally carry the i64 sum item in the
+        // element envelope; 10 bytes is the worst case the sum-aware space
+        // helpers reserve.
+        let estimated_value_size = if sum_property_name.is_some() {
+            INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE + 10
+        } else {
+            INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE
+        };
+
+        let item_space = if sum_property_name.is_some() {
+            Element::required_item_with_sum_item_space(
+                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE,
+                STORAGE_FLAGS_SIZE,
+                &drive_version.grove_version,
+            )?
+        } else {
+            Element::required_item_space(
+                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE,
+                STORAGE_FLAGS_SIZE,
+                &drive_version.grove_version,
+            )?
+        };
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             estimated_costs_only_with_layer_info.insert(
@@ -461,7 +464,7 @@ impl Drive {
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
                         DEFAULT_HASH_SIZE_U8,
-                        INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE,
+                        estimated_value_size,
                         storage_flags.map(|s| s.serialized_size()),
                     ),
                 },
@@ -519,10 +522,26 @@ impl Drive {
 
         let key_element_info = match &member_key {
             Some(member_key) => {
-                let item = Element::new_item_with_flags(
-                    item_value,
-                    StorageFlags::map_to_some_element_flags(*storage_flags),
-                );
+                let element_flags = StorageFlags::map_to_some_element_flags(*storage_flags);
+                let item = match sum_property_name {
+                    Some(prop_name) => {
+                        let (document, _) = document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_borrowed_document_and_storage_flags()
+                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "indexOnly summable terminal insert needs a document to read \
+                                 the sum contribution from",
+                            )))?;
+                        let sum_value = read_document_sum_contribution(document, prop_name)?;
+                        Element::new_item_with_sum_item_with_flags(
+                            item_value,
+                            sum_value,
+                            element_flags,
+                        )
+                    }
+                    None => Element::new_item_with_flags(item_value, element_flags),
+                };
                 KeyElement((member_key.as_slice(), item))
             }
             None => KeyUnknownElementSize((
@@ -546,7 +565,7 @@ impl Drive {
             BatchInsertApplyType::StatelessBatchInsert {
                 in_tree_type: member_tree_type,
                 target: QueryTargetValue(
-                    INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE
+                    estimated_value_size
                         + storage_flags
                             .map(|s| s.serialized_size())
                             .unwrap_or_default(),

@@ -76,7 +76,9 @@
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use crate::error::Error;
 use crate::util::object_size_info::DriveKeyInfo;
-use dpp::data_contract::document_type::{IndexLevel, TimeRangeTransform};
+use dpp::data_contract::document_type::{
+    IndexCountability, IndexLevel, IndexLevelTypeInfo, TimeRangeTransform,
+};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
 use grovedb::TreeType;
@@ -190,6 +192,40 @@ pub(crate) fn time_range_index_keys<'a>(
             .into_iter()
             .map(DriveKeyInfo::Key)
             .collect(),
+    }
+}
+
+/// The tree type of the `0` member bucket at an index's terminal level
+/// — the tree holding one member per document (stored types: references
+/// keyed by document id; indexOnly types: entry items keyed by the
+/// terminal property's value). Composed from the index's countability
+/// and summability axes, per-axis provable vs root-only (grovedb PR
+/// 670's expanded `TreeType` set) — see the dispatch commentary in
+/// `add_reference_for_index_level_for_contract_operations`.
+///
+/// Single source of truth for the four terminal branches (insert/delete
+/// × stored/indexOnly): the insert side creates the tree and the delete
+/// side emits `EstimatedLayerInformation` describing it, and any drift
+/// produces dry-run fees that disagree with applied fees.
+pub(crate) fn terminal_member_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
+    let count_provable = matches!(
+        index_type.countable,
+        IndexCountability::CountableAllowingOffset
+    );
+    let count_root_only =
+        matches!(index_type.countable, IndexCountability::Countable) && !count_provable;
+    let sum_provable = index_type.range_summable;
+    let sum_root_only = index_type.summable.is_some() && !sum_provable;
+    match (count_provable, count_root_only, sum_provable, sum_root_only) {
+        (false, false, false, false) => TreeType::NormalTree,
+        (false, true, false, false) => TreeType::CountTree,
+        (true, _, false, false) => TreeType::ProvableCountTree,
+        (false, false, false, true) => TreeType::SumTree,
+        (false, false, true, _) => TreeType::ProvableSumTree,
+        (false, true, false, true) => TreeType::CountSumTree,
+        (true, _, false, true) => TreeType::ProvableCountSumTree,
+        (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
+        (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
     }
 }
 
