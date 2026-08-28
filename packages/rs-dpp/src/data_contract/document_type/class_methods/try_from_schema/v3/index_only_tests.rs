@@ -286,11 +286,27 @@ fn rejects_null_searchable_false() {
 }
 
 #[test]
-fn rejects_sum_axes() {
-    // The summable declaration itself has to survive the aggregate
-    // cross-checks (integer type, required) so that the indexOnly-specific
-    // rejection is the one that fires.
+fn accepts_summable_index() {
+    // The sum axes are admitted on indexOnly indexes: the terminal entry
+    // becomes an `ItemWithSumItem(commitment, amount)`. The summable
+    // declaration goes through the same doctype-level aggregate
+    // cross-checks as stored types (integer type, required membership),
+    // and the summed property must still satisfy the indexOnly
+    // every-property-indexed rule — here it joins byLiker's prefix.
     let mut schema = likes_schema_with_index_key(2, "summable", platform_value!("likeWeight"));
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(2)
+        .expect("index exists")
+        .set_value(
+            "properties",
+            platform_value!([{ "$ownerId": "asc" }, { "likeWeight": "asc" }]),
+        )
+        .expect("index properties apply");
     schema
         .get_mut("properties")
         .expect("properties accessible")
@@ -306,9 +322,119 @@ fn rejects_sum_axes() {
             platform_value!(["hashtag", "postId", "likeWeight"]),
         )
         .expect("required applies");
+    let document_type =
+        parse_with(schema, PlatformVersion::latest(), false).expect("summable index admitted");
+    let summable_index = document_type
+        .indices
+        .values()
+        .find(|index| index.summable.is_some())
+        .expect("an index carries the summable declaration");
+    assert_eq!(summable_index.summable.as_deref(), Some("likeWeight"));
+}
+
+#[test]
+fn rejects_summable_naming_non_integer_property() {
+    // The doctype-level aggregate cross-checks (shared with stored types)
+    // still apply to indexOnly indexes: a summable naming a string
+    // property fails the integer-type rule.
+    let schema = likes_schema_with_index_key(2, "summable", platform_value!("hashtag"));
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "sum axes",
+        "integer type",
+    );
+}
+
+#[test]
+fn accepts_time_range_bucketed_index() {
+    // A bucketed indexOnly index writes one entry per containing bucket,
+    // sharing the stored types' walker fan-out. `$createdAt` must be the
+    // transform source (the prefix rule admits no other system timestamp)
+    // and must be required (shared timeRange rule).
+    let mut schema = likes_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byHourHashtag",
+            "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 },
+            "countable": true,
+            "rangeCountable": true
+        }));
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("bucketed indexOnly index admitted");
+    let bucketed = document_type
+        .indices
+        .values()
+        .find(|index| index.time_range.is_some())
+        .expect("the bucketed index parsed");
+    assert_eq!(bucketed.time_range.as_ref().unwrap().overlap_factor(), 4);
+}
+
+#[test]
+fn rejects_time_range_bucketed_index_without_required_created_at() {
+    // Same shape, but $createdAt missing from `required` — the indexOnly
+    // indexed-$createdAt rule fires (creation only assigns the timestamp
+    // for required system times, and an entry cannot represent a missing
+    // value).
+    let mut schema = likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byHourHashtag",
+            "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 }
+        }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "must be listed in `required`",
+    );
+}
+
+#[test]
+fn rejects_only_bucketed_indexes() {
+    // A bucketed index involves $createdAt, so a doctype whose every index
+    // is bucketed has no $createdAt-free proof index and stays refused.
+    let mut schema = likes_schema();
+    schema
+        .set_value(
+            "required",
+            platform_value!(["hashtag", "postId", "$createdAt"]),
+        )
+        .expect("required applies");
+    schema
+        .set_value(
+            "indices",
+            platform_value!([{
+                "name": "byHourHashtagPost",
+                "properties": [
+                    { "$createdAt": "asc" },
+                    { "hashtag": "asc" },
+                    { "postId": "asc" }
+                ],
+                "terminal": "$ownerId",
+                "timeRange": { "on": "$createdAt", "range": 3600u64, "step": 900u64 }
+            }]),
+        )
+        .expect("indices apply");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "does not involve $createdAt",
     );
 }
 
@@ -372,6 +498,67 @@ fn accepts_created_at_in_prefix_when_required() {
         .expect("required applies");
     parse_with(schema, PlatformVersion::latest(), false)
         .expect("$createdAt in an index prefix should be accepted when required");
+}
+
+/// The unified matcher: terminals participate as an index's deepest
+/// matchable component, with generic (non-terminal) matches keeping
+/// absolute precedence and difference-scored best-match inside each
+/// class.
+#[test]
+fn terminal_aware_matching_prefers_generic_and_scores_candidates() {
+    use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+
+    let document_type_ref =
+        &parse_with(likes_schema(), PlatformVersion::latest(), false).expect("likes schema parses");
+
+    // A pure-property cover exists (`byPost` = [postId] → $ownerId used
+    // generically): it must win over `byLiker`'s terminal cover of the
+    // same field, and report the terminal unused.
+    let (index, difference, terminal_used) = document_type_ref
+        .index_for_types_matching_including_terminal(
+            &["postId"],
+            None,
+            &[],
+            |_| true,
+            PlatformVersion::latest(),
+        )
+        .expect("matcher runs")
+        .expect("an index matches");
+    assert_eq!(index.name, "byPost");
+    assert_eq!((difference, terminal_used), (0, false));
+
+    // No pure-property cover for {$ownerId, postId}: `byLiker`
+    // ([$ownerId] → postId) covers it exactly through its terminal
+    // (difference 0) and must beat `byHashtagPost`'s costlier terminal
+    // cover (hashtag unused, difference 1).
+    let (index, difference, terminal_used) = document_type_ref
+        .index_for_types_matching_including_terminal(
+            &["$ownerId", "postId"],
+            None,
+            &[],
+            |_| true,
+            PlatformVersion::latest(),
+        )
+        .expect("matcher runs")
+        .expect("an index matches");
+    assert_eq!(index.name, "byLiker");
+    assert_eq!((difference, terminal_used), (0, true));
+
+    // The full tuple {hashtag, postId, $ownerId} is only coverable with
+    // `byHashtagPost`'s terminal; an unused terminal never costs score,
+    // so the exact cover reports difference 0.
+    let (index, difference, terminal_used) = document_type_ref
+        .index_for_types_matching_including_terminal(
+            &["hashtag", "postId", "$ownerId"],
+            None,
+            &[],
+            |_| true,
+            PlatformVersion::latest(),
+        )
+        .expect("matcher runs")
+        .expect("an index matches");
+    assert_eq!(index.name, "byHashtagPost");
+    assert_eq!((difference, terminal_used), (0, true));
 }
 
 #[test]

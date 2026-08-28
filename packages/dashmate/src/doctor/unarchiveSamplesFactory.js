@@ -149,7 +149,16 @@ export default function unarchiveSamplesFactory(getServiceList) {
       const samples = new Samples();
       const dateFilePath = path.join(extractDir, 'date.txt');
       if (fs.existsSync(dateFilePath)) {
-        samples.date = readSampleFile(dateFilePath);
+        // Archived as an ISO string, but analysers compare it as an instant -
+        // a report is read long after it was collected, so certificate dates
+        // are judged against this rather than the current time. An unparseable
+        // value is left unset rather than kept as an Invalid Date, so those
+        // comparisons fall back to now instead of silently yielding NaN.
+        const collectedAt = new Date(readSampleFile(dateFilePath));
+
+        if (!Number.isNaN(collectedAt.getTime())) {
+          samples.date = collectedAt;
+        }
       }
 
       const systemInfoFilePath = path.join(extractDir, 'systemInfo.json');
