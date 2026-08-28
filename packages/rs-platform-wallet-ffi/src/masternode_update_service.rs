@@ -43,13 +43,13 @@ use crate::{check_ptr, unwrap_result_or_return};
 
 /// Everything both externs snapshot from the manager before releasing the
 /// handle-storage guard, so the network work runs unguarded.
-struct ResolvedContext {
-    wallet: Arc<PlatformWallet>,
-    spv: Arc<platform_wallet::SpvRuntime>,
-    network: dashcore::Network,
+pub(crate) struct ResolvedContext {
+    pub(crate) wallet: Arc<PlatformWallet>,
+    pub(crate) spv: Arc<platform_wallet::SpvRuntime>,
+    pub(crate) network: dashcore::Network,
 }
 
-unsafe fn resolve_context(
+pub(crate) unsafe fn resolve_context(
     manager_handle: Handle,
     wallet_id: *const u8,
 ) -> Result<ResolvedContext, PlatformWalletFFIResult> {
@@ -75,13 +75,15 @@ unsafe fn resolve_context(
     }
 }
 
-/// Derive the wallet's operator BLS secret (big-endian scalar) at `index`,
-/// resolving the raw BIP39 seed through the mnemonic resolver when the
-/// wallet has no resident keys — the same three phases as
+/// Derive a wallet provider secret (32-byte scalar — big-endian BLS for
+/// operator keys, raw secp256k1 for owner keys) at `index`, resolving the
+/// raw BIP39 seed through the mnemonic resolver when the wallet has no
+/// resident keys — the same three phases as
 /// `platform_wallet_provider_key_at_index`, with the resolver never invoked
-/// under a wallet guard.
-unsafe fn wallet_operator_secret(
+/// under a wallet guard. Shared with the registrar-update module.
+pub(crate) unsafe fn wallet_provider_secret(
     wallet: &Arc<PlatformWallet>,
+    kind: ProviderKeyKind,
     index: u32,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
 ) -> Result<Zeroizing<[u8; 32]>, PlatformWalletFFIResult> {
@@ -109,7 +111,7 @@ unsafe fn wallet_operator_secret(
             return Err(PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorWalletOperation,
                 "this wallet has no resident private keys (external-signable / watch-only); \
-                 a mnemonic resolver handle is required to derive the operator key",
+                 a mnemonic resolver handle is required to derive the provider key",
             ));
         }
         let wallet_id = wallet.wallet_id();
@@ -121,17 +123,12 @@ unsafe fn wallet_operator_secret(
 
     // Phase 3 — library derive; the resolver, if any, has already run.
     let derived = wallet
-        .derive_provider_key_at_index(
-            ProviderKeyKind::Operator,
-            index,
-            seed_opt.as_deref().map(|s| &s[..]),
-            true,
-        )
+        .derive_provider_key_at_index(kind, index, seed_opt.as_deref().map(|s| &s[..]), true)
         .map_err(PlatformWalletFFIResult::from)?;
     let private = derived.private_key.ok_or_else(|| {
         PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            "the wallet did not return the operator private key",
+            "the wallet did not return the provider private key",
         )
     })?;
     // Copy straight into zeroizing storage — a plain `[u8; 32]` intermediate
@@ -139,7 +136,7 @@ unsafe fn wallet_operator_secret(
     if private.len() != 32 {
         return Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            "the derived operator private key is not 32 bytes",
+            "the derived provider private key is not 32 bytes",
         ));
     }
     let mut bytes = Zeroizing::new([0u8; 32]);
@@ -149,7 +146,7 @@ unsafe fn wallet_operator_secret(
 
 /// Parse a host-supplied operator key text (64-char hex or 32-byte base64)
 /// into its BLS secret, shared by the tracked broadcast and prepare externs.
-fn tracked_operator_secret(
+pub(crate) fn tracked_operator_secret(
     key_text: &str,
     network: dashcore::Network,
 ) -> Result<Zeroizing<[u8; 32]>, PlatformWalletFFIResult> {
@@ -327,8 +324,9 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_update_service(
         Ok(context) => context,
         Err(e) => return e,
     };
-    let operator_secret = match wallet_operator_secret(
+    let operator_secret = match wallet_provider_secret(
         &context.wallet,
+        ProviderKeyKind::Operator,
         operator_key_index,
         mnemonic_resolver_handle,
     ) {
@@ -453,8 +451,9 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_prepare_update_servi
         Ok(context) => context,
         Err(e) => return e,
     };
-    let operator_secret = match wallet_operator_secret(
+    let operator_secret = match wallet_provider_secret(
         &context.wallet,
+        ProviderKeyKind::Operator,
         operator_key_index,
         mnemonic_resolver_handle,
     ) {
