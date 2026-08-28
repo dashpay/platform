@@ -43,8 +43,16 @@ function withheldRequest(samples, config) {
   // without this a stale spent or uncertain record would suppress a request
   // that is now perfectly valid - the renewal-aware analyser already ignores it
   // for exactly that reason, and these two must not disagree.
+  // The same two inputs the renewal-aware analyser uses. Without the installed
+  // certificate's date, a failure that a newer certificate has already overtaken
+  // still counts here - so this analyser would replace a valid repair with stale
+  // no-obtain guidance while the other one correctly ignored the same record.
   const applicable = record?.isFailed()
-    && record.appliesTo({ provider: config.get('platform.gateway.ssl.provider') })
+    && record.appliesTo({
+      provider: config.get('platform.gateway.ssl.provider'),
+      certificateValidFrom: samples.getServiceInfo('gateway', 'installedCertificate')?.validFrom
+        ?? null,
+    })
     ? record
     : null;
 

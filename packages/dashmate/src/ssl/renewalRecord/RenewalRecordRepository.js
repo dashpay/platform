@@ -28,21 +28,43 @@ export const RENEWAL_RECORD_STATES = {
 const RECORD_FILE_MODE = 0o644;
 
 /**
- * How long a held fence may go unrefreshed before another process may break it.
- *
- * Every holder does a few synchronous filesystem calls, so this is generous by
- * orders of magnitude; it exists so a process killed mid-claim cannot block
- * renewal bookkeeping for good.
- */
-const LOCK_STALE_MS = 10000;
-
-/**
  * How long to wait for another holder before giving up. Every holder keeps the
  * fence for a handful of filesystem calls, so contention clears quickly.
  */
 const LOCK_ACQUIRE_TIMEOUT_MS = 5000;
 
 const LOCK_RETRY_INTERVAL_MS = 10;
+
+/**
+ * Whether the process that wrote this lock is still running.
+ *
+ * `process.kill(pid, 0)` sends no signal; it asks the kernel whether the
+ * process exists and may be signalled. EPERM means it exists and belongs to
+ * someone else, which is still alive for this purpose.
+ *
+ * An unreadable or unrecognisable lock is treated as dead: it cannot be
+ * attributed to anyone, and leaving it would block every later renewal from
+ * recording anything at all.
+ *
+ * @param {string} lockPath
+ * @return {boolean}
+ */
+function isHolderAlive(lockPath) {
+  const [pid] = fs.readFileSync(lockPath, 'utf8').split('.');
+  const holder = Number.parseInt(pid, 10);
+
+  if (!Number.isInteger(holder) || holder <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(holder, 0);
+
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
 
 export default class RenewalRecordRepository {
   /**
@@ -152,13 +174,11 @@ export default class RenewalRecordRepository {
 
         const release = () => {
           try {
-            // Read-then-remove, which is not atomic: a contender that reclaims
-            // this lock as stale in the instant between the two would have its
-            // own lock removed. The window is microseconds and only opens after
-            // a holder has already been suspended past the stale threshold -
-            // and a mutation by either process is still refused by the
-            // ownership check above, so what remains is a lost exclusion, not
-            // corrupted state.
+            // Read-then-remove, which is not atomic. It matters far less now
+            // that a lock is only reclaimed from a process that no longer
+            // exists: a holder that reaches this line is running, so nothing
+            // has taken its lock away, and the contender it could once have
+            // raced does not exist.
             if (fs.readFileSync(lockPath, 'utf8') === token) {
               fs.rmSync(lockPath, { force: true });
             }
@@ -174,9 +194,16 @@ export default class RenewalRecordRepository {
           throw e;
         }
 
-        // A holder killed mid-claim would otherwise block bookkeeping for good.
+        // Reclaimed only from a holder that is gone, never from one that is
+        // merely slow. A lease measured by age alone takes the lock away from a
+        // process that is still running and still about to write - it resumes,
+        // finds its ownership check has nothing to say about the moment of the
+        // write, and overwrites state a newer holder has already committed.
+        // Asking whether the recorded process still exists answers the question
+        // the lease was approximating, and a holder that no longer exists
+        // cannot resume to overwrite anything.
         try {
-          if (Date.now() - fs.statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
+          if (!isHolderAlive(lockPath)) {
             fs.rmSync(lockPath, { force: true });
 
             continue;

@@ -281,6 +281,29 @@ describe('analyseConfigFactory', () => {
       expect(problem.getSolution()).to.contain('ssl obtain');
     });
 
+    // A certificate installed after the recorded failure overtakes it. The
+    // renewal-aware analyser already ignores such a record; without the same
+    // input here, this one would replace a valid repair with stale guidance
+    // and the two would contradict each other in the same report.
+    it('should ignore a failure a newer certificate has overtaken', () => {
+      samples.setServiceInfo('gateway', 'installedCertificate', {
+        validFrom: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      });
+
+      const [problem] = analyseWithRecord({
+        state: 'PRESENT',
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code: 'CERTIFICATE_ISSUED_NOT_SAVED',
+        // Two hours ago, so the installed certificate came after it.
+        attemptedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        consecutiveFailures: 1,
+        issuanceSpentAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      });
+
+      expect(problem.getSolution()).to.contain('ssl obtain');
+    });
+
     it('should still print it when nothing forbids one', () => {
       const [problem] = analyseWithRecord({ state: 'ABSENT' });
 
