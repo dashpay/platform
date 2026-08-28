@@ -41,16 +41,20 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if let Some(last_committed_block_info) =
-            block_platform_state.last_committed_block_info().as_ref()
-        {
-            if core_block_height == last_committed_block_info.basic_info().core_height {
-                tracing::debug!(
-                    method = "update_masternode_list_v0",
-                    "no update mnl at height {}",
-                    core_block_height,
-                );
-                return Ok(()); // no need to do anything
+        // On init chain and on state sync reconstruction the masternode list must be
+        // built from scratch even if the block state already reports this core height.
+        if !is_init_chain {
+            if let Some(last_committed_block_info) =
+                block_platform_state.last_committed_block_info().as_ref()
+            {
+                if core_block_height == last_committed_block_info.basic_info().core_height {
+                    tracing::debug!(
+                        method = "update_masternode_list_v0",
+                        "no update mnl at height {}",
+                        core_block_height,
+                    );
+                    return Ok(()); // no need to do anything
+                }
             }
         }
         tracing::debug!(
