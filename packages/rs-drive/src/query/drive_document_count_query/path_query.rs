@@ -223,7 +223,7 @@ impl DriveDocumentCountQuery<'_> {
                     ),
                 ));
             }
-            path.push(prop.name.as_bytes().to_vec());
+            path.push(self.index.level_key_for_property(&prop.name).into_bytes());
             path.push(self.document_type.serialize_value_for_key(
                 prop.name.as_str(),
                 &clause.value,
@@ -240,7 +240,11 @@ impl DriveDocumentCountQuery<'_> {
                 ),
             ))?
             .name;
-        path.push(range_prop_name.as_bytes().to_vec());
+        path.push(
+            self.index
+                .level_key_for_property(range_prop_name)
+                .into_bytes(),
+        );
 
         Ok(PathQuery::new_aggregate_count_on_range(path, query_item))
     }
@@ -363,7 +367,7 @@ impl DriveDocumentCountQuery<'_> {
             )?;
             match (&carrier, clause.operator) {
                 (Carrier::Pending, WhereOperator::Equal) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     base_path.push(self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         &clause.value,
@@ -371,15 +375,16 @@ impl DriveDocumentCountQuery<'_> {
                     )?);
                 }
                 (Carrier::Pending, WhereOperator::In) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     carrier = Carrier::In(clause.clone());
                 }
                 (Carrier::Pending, op) if Self::is_range_operator(op) => {
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     carrier = Carrier::Range(clause.clone());
                 }
                 (Carrier::In(_) | Carrier::Range(_), WhereOperator::Equal) => {
-                    subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                    subquery_path_extension
+                        .push(self.index.level_key_for_property(&prop.name).into_bytes());
                     subquery_path_extension.push(self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         &clause.value,
@@ -404,7 +409,11 @@ impl DriveDocumentCountQuery<'_> {
                 }
             }
         }
-        subquery_path_extension.push(terminator_prop_name.as_bytes().to_vec());
+        subquery_path_extension.push(
+            self.index
+                .level_key_for_property(terminator_prop_name)
+                .into_bytes(),
+        );
 
         let mut outer_query = Query::new_with_direction(left_to_right);
         match carrier {
@@ -582,10 +591,11 @@ impl DriveDocumentCountQuery<'_> {
                         platform_version,
                     )?;
                     if in_outer_keys.is_some() {
-                        subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                        subquery_path_extension
+                            .push(self.index.level_key_for_property(&prop.name).into_bytes());
                         subquery_path_extension.push(serialized);
                     } else {
-                        base_path.push(prop.name.as_bytes().to_vec());
+                        base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                         base_path.push(serialized);
                     }
                 }
@@ -600,7 +610,7 @@ impl DriveDocumentCountQuery<'_> {
                     }
                     // Path stops at the In-bearing prop's property-
                     // name subtree; outer Query lives at that level.
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     let in_values = clause.in_values().into_data_with_error()??;
                     let mut keys: Vec<Vec<u8>> = in_values
                         .iter()
@@ -843,7 +853,11 @@ impl DriveDocumentCountQuery<'_> {
         let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
         let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
 
-        for prop in self.index.properties.iter() {
+        for (position, prop) in self.index.properties.iter().enumerate() {
+            // The path segment is the level key — grid-qualified for a
+            // time-range index's first property — while the clause lookup
+            // and value serialization stay on the bare property name.
+            let level_key = self.index.level_key(position, &prop.name);
             let clause = self
                 .where_clauses
                 .iter()
@@ -871,10 +885,10 @@ impl DriveDocumentCountQuery<'_> {
                         // path. Any number of these may accumulate —
                         // one for each Equal that sits *after* the In
                         // in the index ordering.
-                        subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                        subquery_path_extension.push(level_key.as_bytes().to_vec());
                         subquery_path_extension.push(serialized);
                     } else {
-                        base_path.push(prop.name.as_bytes().to_vec());
+                        base_path.push(level_key.as_bytes().to_vec());
                         base_path.push(serialized);
                     }
                 }
@@ -891,7 +905,7 @@ impl DriveDocumentCountQuery<'_> {
                     // property-name subtree; outer Query lives at
                     // that level. Any trailing Equal property then
                     // routes through `subquery_path_extension`.
-                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.index.level_key_for_property(&prop.name).into_bytes());
                     let in_values = clause.in_values().into_data_with_error()??;
                     let mut keys: Vec<Vec<u8>> = in_values
                         .iter()

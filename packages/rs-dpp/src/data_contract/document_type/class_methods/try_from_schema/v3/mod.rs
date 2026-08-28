@@ -15,9 +15,10 @@
 //! index-key length ceilings, and the constants they are derived from.
 
 use crate::data_contract::config::DataContractConfig;
-// Only the ranked key-length rule below names these, and it is validation-only.
+// Only the ranked key-length rule below names `Index`, and it is validation-only.
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::IndexGrammarAdmissions;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -225,8 +226,10 @@ fn try_from_schema_generation_3(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
-    // Read the aggregate keywords before the core parser consumes `schema`.
+    // Read the aggregate and indexOnly keywords before the core parser
+    // consumes `schema`.
     let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
+    let index_only = common::parse_index_only_keyword(&schema)?;
 
     let v1 = common::parse_document_type_core(
         data_contract_id,
@@ -238,6 +241,11 @@ fn try_from_schema_generation_3(
         token_configurations,
         data_contact_config,
         full_validation,
+        // Lets the core default omitted index terminals to `$ownerId` before
+        // it builds the index structure, so the structure's level info is
+        // born normalized (`apply_index_only` below validates the
+        // already-normalized set).
+        index_only,
         validation_operations,
         &common::ParserGeneration {
             // Generation 3 exists if and only if `document_type_schema` is 3 —
@@ -255,16 +263,30 @@ fn try_from_schema_generation_3(
             // generation is far past that boundary.
             admit_count_indexes: true,
             meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
-            // RANKED: the constants that make this generation 3.
-            admit_ranked: true,
+            // RANKED / TIME RANGE: the keyword admissions that make this
+            // generation 3, read from the shared generation → admission
+            // mapping so the registration-cost re-parse can never drift
+            // from what this parser accepts.
+            admit_ranked: IndexGrammarAdmissions::for_schema_generation(3).ranked,
             ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
             ranked_index_structure_check: validate_no_ranked_prefix_overlap,
+            admit_time_range: IndexGrammarAdmissions::for_schema_generation(3).time_range,
+            // INDEX ONLY: the `terminal` index keyword, admitted from the
+            // same shared generation → admission mapping as the two above.
+            admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
+            // PREALLOCATED: the fourth generation-3 index keyword, from the
+            // same shared mapping.
+            admit_index_preallocated: IndexGrammarAdmissions::for_schema_generation(3).preallocated,
         },
         platform_version,
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
     common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
+    // After the aggregates: `apply_index_only` rejects the doctype-level
+    // aggregate flags (they describe the primary-key tree, which an
+    // indexOnly type does not have), so it has to see them already applied.
+    common::apply_index_only(&mut v2, index_only, name)?;
 
     Ok(v2)
 }
@@ -301,6 +323,9 @@ impl DocumentType {
         .map(DocumentType::V2)
     }
 }
+
+#[cfg(test)]
+mod index_only_tests;
 
 #[cfg(test)]
 mod tests {

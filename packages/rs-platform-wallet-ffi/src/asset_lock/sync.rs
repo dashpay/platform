@@ -43,6 +43,46 @@ fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
 /// the already-tracked lock state; signing the consume transition is
 /// the next stage's responsibility (e.g.
 /// [`crate::platform_wallet_register_identity_with_funding_signer`]).
+///
+/// # Timeouts
+///
+/// `timeout_secs` bounds only the stages that still have to WAIT for a
+/// proof (`Built` / `Broadcast`, plus the defensive proof-less
+/// `RecoveredFromChain` fallback). `InstantSendLocked` / `ChainLocked`
+/// already carry a proof and return without ever consulting it.
+///
+/// `timeout_secs == 0` does **not** request an unbounded wait — it
+/// declines to specify one, and `resume_asset_lock` then applies the
+/// recovery policy's own state-dependent default:
+///
+/// - An ambiguous `Built` re-broadcast (the broadcaster reports
+///   `MaybeSent` for an accepted and a rejected transaction alike),
+///   a `Broadcast` row, and the defensive proof-less
+///   `RecoveredFromChain` fallback all substitute the 180s
+///   `UNCONFIRMED_BROADCAST_PROOF_TIMEOUT` bound (sized to
+///   comfortably cover a ~2.5min ChainLock): none of them can
+///   establish that the transaction is live on the network, and
+///   waiting without a bound on that signal is a `Notify` loop with
+///   no terminating event — under the `runtime().block_on(...)`
+///   below it pins the calling host thread permanently rather than
+///   merely delaying an answer.
+/// - The one exception: a `Built` re-broadcast the broadcaster
+///   positively ACCEPTED (`Ok`) keeps the unbounded wait — the same
+///   positive-evidence wait the initial funding path performs after
+///   its own successful broadcast. The proof arrives with the
+///   transaction's ChainLock (~2.5min) in normal operation, but the
+///   wait is not time-bounded: a caller that needs a hard upper
+///   bound on this thread must pass a non-zero `timeout_secs`.
+///
+/// Expiry is non-destructive: the tracked row keeps its status, so a
+/// proof arriving afterwards is returned by the very next resume
+/// straight from the record, without waiting at all. On the `Built` /
+/// `Broadcast` arms the expiry surfaces as
+/// `TransactionBroadcastUnconfirmed`.
+///
+/// A non-zero `timeout_secs` keeps its exact semantics,
+/// `FinalityTimeout` included — the substitution above is gated on the
+/// caller having declined to choose.
 #[no_mangle]
 pub unsafe extern "C" fn asset_lock_manager_resume(
     handle: Handle,
@@ -59,8 +99,13 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     check_ptr!(out_derivation_path);
 
     let out_point = parse_outpoint(txid, vout);
-    // `timeout_secs == 0` requests an unbounded wait (a ChainLock is
-    // guaranteed finality; a broadcast lock is pending, never failed).
+    // `timeout_secs == 0` declines to specify a bound. `resume_asset_lock`
+    // reads the resulting `None` as "apply the recovery policy's
+    // state-dependent default": the 180s
+    // `UNCONFIRMED_BROADCAST_PROOF_TIMEOUT` on every proof-waiting arm
+    // except a `Built` re-broadcast the broadcaster positively accepted,
+    // which keeps the unbounded initial-funding wait. See this
+    // function's `# Timeouts` section.
     let timeout = (timeout_secs != 0).then(|| Duration::from_secs(timeout_secs));
 
     let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
@@ -95,8 +140,34 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
 /// Returns `ok` on a successful proof resolution, an error on
 /// timeout / wait failure. The Swift caller is expected to schedule
 /// this on a background queue — `runtime().block_on(...)` parks the
-/// calling thread for up to `timeout_secs` (or **indefinitely** when
-/// `timeout_secs == 0`, since a ChainLock is guaranteed finality).
+/// calling thread for the duration of the wait.
+///
+/// # Timeouts
+///
+/// Identical contract to [`asset_lock_manager_resume`], which this
+/// delegates to: `timeout_secs == 0` selects the recovery policy's
+/// state-dependent default rather than an unbounded wait. That
+/// default is the 180s `UNCONFIRMED_BROADCAST_PROOF_TIMEOUT` on every
+/// arm that waits for a proof without positive evidence the
+/// transaction is on the network — an ambiguous `Built` re-broadcast,
+/// a `Broadcast` row, the defensive proof-less `RecoveredFromChain`
+/// fallback. The one exception is a `Built` re-broadcast the
+/// broadcaster positively accepted (`Ok`): that arm keeps the
+/// unbounded initial-funding wait, so the thread is parked until the
+/// accepted transaction's proof arrives (its ChainLock, ~2.5min in
+/// normal operation) rather than for a fixed bound. Pass a non-zero
+/// `timeout_secs` for a hard upper bound.
+///
+/// That policy is what makes this entry point safe to fan out at
+/// launch. The catch-up sweep starts one call per stuck lock; when
+/// zero meant "wait forever" on EVERY waiting arm, a device that was
+/// offline (or an SPV session that never connected) turned each of
+/// those into a permanently parked worker thread. An unconnected or
+/// undeliverable broadcast can only take the bounded arms now (a
+/// broadcaster that never dispatched reports `Rejected` /
+/// `MaybeSent`, not `Ok`), expiry simply ends the pass, leaving the
+/// row tracked and resumable, and the next sweep picks up a proof
+/// that landed in between straight from the record.
 #[no_mangle]
 pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
     handle: Handle,
@@ -107,8 +178,13 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
     check_ptr!(txid);
 
     let out_point = parse_outpoint(txid, vout);
-    // `timeout_secs == 0` requests an unbounded wait (a ChainLock is
-    // guaranteed finality; a broadcast lock is pending, never failed).
+    // `timeout_secs == 0` declines to specify a bound. `resume_asset_lock`
+    // reads the resulting `None` as "apply the recovery policy's
+    // state-dependent default": the 180s
+    // `UNCONFIRMED_BROADCAST_PROOF_TIMEOUT` on every proof-waiting arm
+    // except a `Built` re-broadcast the broadcaster positively accepted,
+    // which keeps the unbounded initial-funding wait. See this
+    // function's `# Timeouts` section.
     let timeout = (timeout_secs != 0).then(|| Duration::from_secs(timeout_secs));
 
     tracing::info!(
@@ -150,9 +226,9 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
             match e {
                 // Double-spend verdicts route through the typed conversion
                 // so the host receives the real code: terminal
-                // ErrorAssetLockInputConflict (42) — the one code that
+                // ErrorAssetLockInputConflict (47) — the one code that
                 // authorises discarding a tracked lock — or the
-                // provisional ErrorAssetLockInputContested (43), which
+                // provisional ErrorAssetLockInputContested (48), which
                 // stops the wait but keeps the lock for a later retry.
                 // Flattening either to ErrorWalletOperation would leave
                 // the host with a spinner it can never resolve.

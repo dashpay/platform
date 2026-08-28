@@ -67,6 +67,51 @@ use crate::wallet::asset_lock::manager::AssetLockManager;
 #[cfg(feature = "shielded")]
 pub(crate) const CL_FALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 
+/// Bounded ChainLock wait for the **already-consumed reconciliation** path
+/// ([`AssetLockManager::reconcile_asset_lock_submit_result`]).
+///
+/// Reconciliation is not a funding flow, so the "a ChainLock always
+/// eventually arrives, therefore wait forever" reasoning behind
+/// `upgrade_to_chain_lock_proof(None)` does not transfer to it. The
+/// operation Platform was asked to perform has already terminated with an
+/// unauthenticated `already consumed` report; the ChainLock is wanted only
+/// as *evidence to durably record alongside that report*, and the caller is
+/// blocked the whole time it is being fetched.
+///
+/// Every production call site reaches this through an FFI entry point that
+/// drives the future with `runtime().block_on(...)`, so an unbounded wait
+/// here does not merely delay a result — it pins the host thread that made
+/// the call. The realistic trigger is routine: an IS-locked lock consumed
+/// seconds after broadcast reports `already consumed` while its ChainLock
+/// is still ~2.5 minutes out, and never arrives at all when the device is
+/// offline or SPV is not connected.
+///
+/// On expiry the reconciliation still returns the typed
+/// [`PlatformWalletError::AssetLockAlreadyConsumed`] — the code-24 signal
+/// hosts branch on — having simply failed to attach the chain proof. That
+/// matches the pre-#4357 behavior (typed error, no proof retained) while
+/// keeping #4357's proof retention whenever the ChainLock is reachable
+/// inside the bound.
+pub(crate) const RECONCILIATION_CHAIN_LOCK_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Bounded proof wait applied after a resume re-broadcast came back
+/// `MaybeSent` (see `sync::recovery::resume_asset_lock`).
+///
+/// The unbounded `wait_for_proof(None)` used by the funding flows is
+/// justified by the transaction being *known* broadcast — finality is then
+/// only a matter of time. A `MaybeSent` verdict does not establish that:
+/// `DapiBroadcaster` classifies every failure as `MaybeSent`, and the SPV
+/// broadcaster reports `Rejected` only for `NotConnected`, so a genuinely
+/// rejected transaction is indistinguishable from an accepted one. Waiting
+/// without a bound on that signal converts a ~30s broadcast failure into a
+/// permanent hang at the `resume_asset_lock(.., None)` call sites.
+///
+/// Sized to comfortably cover a ChainLock (~2.5 min) so a transaction that
+/// really was accepted still resolves inside the bound; on expiry the
+/// caller gets `TransactionBroadcastUnconfirmed`, which is what the
+/// pre-#4367 code returned immediately.
+pub(crate) const UNCONFIRMED_BROADCAST_PROOF_TIMEOUT: Duration = Duration::from_secs(180);
+
 /// Delay between retries when Platform rejected with CL-height-too-low.
 /// Each retry bumps `PutSettings::user_fee_increase` so the ST hash
 /// changes (Tenderdash caches rejected ST hashes for ~24h on
@@ -397,6 +442,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// lock to an SPV-backed ChainLock proof, durably retain it as
     /// consumption-unknown, and preserve the typed host signal. Successful and
     /// unrelated results pass through unchanged.
+    ///
+    /// `chain_lock_timeout` bounds the IS→CL promotion. `None` does **not**
+    /// mean "wait forever" here: it selects
+    /// [`RECONCILIATION_CHAIN_LOCK_TIMEOUT`]. Reconciliation always
+    /// terminates, because the promotion is a best-effort attempt to attach
+    /// evidence to an operation that has *already* finished, and every
+    /// production caller reaches it under an FFI `block_on` that would
+    /// otherwise pin the host thread for as long as the ChainLock is
+    /// missing (offline / unconnected SPV: forever).
+    ///
+    /// Failing to obtain the proof therefore degrades rather than
+    /// propagates: the lock keeps its current status and the typed
+    /// [`PlatformWalletError::AssetLockAlreadyConsumed`] is still returned,
+    /// so the host's code-24 branch is reached either way and the caller
+    /// may retry to pick the proof up later.
     pub(crate) async fn reconcile_asset_lock_submit_result<T>(
         &self,
         result: Result<T, dash_sdk::Error>,
@@ -413,18 +473,54 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
 
         let chain_proof = match effective_proof {
-            AssetLockProof::Chain(_) => effective_proof.clone(),
+            AssetLockProof::Chain(_) => Some(effective_proof.clone()),
             AssetLockProof::Instant(_) => {
-                self.upgrade_to_chain_lock_proof(out_point, chain_lock_timeout)
-                    .await?
+                let bounded = chain_lock_timeout.or(Some(RECONCILIATION_CHAIN_LOCK_TIMEOUT));
+                match self.upgrade_to_chain_lock_proof(out_point, bounded).await {
+                    Ok(proof) => Some(proof),
+                    // Bounded, so this arm is reachable in normal operation
+                    // (an IS-locked lock consumed seconds after broadcast has
+                    // no ChainLock yet). Record nothing, keep the code-24
+                    // signal, let the caller retry.
+                    //
+                    // Deliberately a catch-all, not `FinalityTimeout`-only.
+                    // The code-24 classification above came from Platform's
+                    // outpoint-matched consensus error, not from this local
+                    // lookup, so a `WalletNotFound` / `AssetLockProofWait`
+                    // (lock untracked after a restore, persister failure,
+                    // record-map mismatch) does not invalidate it — the
+                    // promotion is best-effort evidence-attachment either
+                    // way. Propagating those errors instead would swap the
+                    // host's actionable already-consumed branch for a
+                    // generic local error in exactly the degraded-state
+                    // scenarios where that branch is the only path that can
+                    // still resolve the operation from Platform-side
+                    // evidence. Failures on the RECORDING path below do
+                    // propagate (`mark_asset_lock_consumption_unknown` keeps
+                    // its `?`).
+                    Err(e) => {
+                        tracing::warn!(
+                            outpoint = %out_point,
+                            error = %e,
+                            timeout = ?bounded,
+                            "could not obtain a ChainLock proof for an unauthenticated \
+                             already-consumed report within the bound; reporting the lock \
+                             as already consumed without retaining consumption-unknown state"
+                        );
+                        None
+                    }
+                }
             }
         };
-        self.mark_asset_lock_consumption_unknown(out_point, chain_proof)
-            .await?;
-        tracing::warn!(
-            outpoint = %out_point,
-            "recorded unauthenticated already-consumed report as consumption unknown"
-        );
+
+        if let Some(chain_proof) = chain_proof {
+            self.mark_asset_lock_consumption_unknown(out_point, chain_proof)
+                .await?;
+            tracing::warn!(
+                outpoint = %out_point,
+                "recorded unauthenticated already-consumed report as consumption unknown"
+            );
+        }
 
         Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
     }
@@ -864,5 +960,311 @@ mod tests {
                 "attempt #{i} (1-indexed retry) must carry user_fee_increase = {expected:?}, got {val:?}"
             );
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Reconciliation promotion-failure regressions
+    //
+    // Two tests pin the two failure shapes of the IS→CL promotion inside
+    // `reconcile_asset_lock_submit_result`, one per arm of the deliberate
+    // catch-all on its `Err` branch:
+    //   - `already_consumed_reconciliation_terminates_without_a_chainlock`
+    //     pins the BOUNDED-WAIT shape (`FinalityTimeout`);
+    //   - `already_consumed_reconciliation_downgrades_non_timeout_promotion_failure`
+    //     pins the DEGRADED-LOCAL-STATE shape (`AssetLockProofWait`).
+    // Each first asserts the promotion error variant DIRECTLY, so the two
+    // scenarios cannot silently collapse onto the same path, then asserts
+    // the shared downgrade outcome.
+    // -----------------------------------------------------------------
+
+    use crate::test_support::{
+        funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
+    };
+    use crate::wallet::asset_lock::manager::AssetLockManager;
+    use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+    use crate::wallet::persister::WalletPersister;
+    use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+    use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
+    use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+    use std::sync::Arc;
+
+    /// Shared fixture: a funded wallet with ONE tracked, IS-locked asset
+    /// lock whose effective proof is an Instant proof — the shape that
+    /// routes `reconcile_asset_lock_submit_result` through the
+    /// `upgrade_to_chain_lock_proof` promotion (a Chain proof would
+    /// short-circuit past it).
+    ///
+    /// The built funding transaction is deliberately NOT registered as a
+    /// `TransactionRecord` anywhere: `build_asset_lock_transaction` only
+    /// reserves inputs, nothing is broadcast, and `NoopTestPersister`
+    /// keeps the persistence trait's `Ok(None)` record lookup. Out of the
+    /// box the promotion therefore fast-fails with `AssetLockProofWait`
+    /// ("transaction not found"); a test that wants the bounded-wait
+    /// `FinalityTimeout` shape instead must register a (non-chain-locked)
+    /// record for `transaction` first.
+    struct InstantReconciliationContext {
+        manager: AssetLockManager<AlwaysRejectedBroadcaster>,
+        wallet_manager:
+            Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        transaction: dashcore::Transaction,
+        out_point: OutPoint,
+        instant_proof: AssetLockProof,
+    }
+
+    async fn instant_reconciliation_context() -> InstantReconciliationContext {
+        use dashcore::{InstantLock, Network};
+        use key_wallet::account::account_type::StandardAccountType;
+        use tokio::sync::Notify;
+
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(wallet_id, Arc::new(NoopTestPersister)),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+
+        // An INSTANT proof: this is what selects the `upgrade_to_chain_lock_proof`
+        // arm. A Chain proof would short-circuit and never exercise the wait.
+        let instant_proof = AssetLockProof::Instant(InstantAssetLockProof::new(
+            InstantLock::default(),
+            transaction.clone(),
+            0,
+        ));
+        {
+            let mut wm = wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered")
+                .tracked_asset_locks
+                .insert(
+                    out_point,
+                    TrackedAssetLock {
+                        out_point,
+                        transaction: transaction.clone(),
+                        account_index: 0,
+                        funding_type: AssetLockFundingType::IdentityRegistration,
+                        identity_index: 0,
+                        amount: 1_000_000,
+                        status: AssetLockStatus::InstantSendLocked,
+                        proof: Some(instant_proof.clone()),
+                    },
+                );
+        }
+
+        InstantReconciliationContext {
+            manager,
+            wallet_manager,
+            wallet_id,
+            transaction,
+            out_point,
+            instant_proof,
+        }
+    }
+
+    /// The unauthenticated code-24 consensus response that puts
+    /// `reconcile_asset_lock_submit_result` on the reconciliation path.
+    fn already_consumed_error(out_point: OutPoint) -> dash_sdk::Error {
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
+                out_point.txid,
+                out_point.vout as usize,
+            )
+            .into(),
+        )))
+    }
+
+    /// The downgrade outcome both promotion-failure shapes must share:
+    /// `reconcile_asset_lock_submit_result` (called with `None`, exactly
+    /// what every production call site passes) still returns the typed
+    /// code-24 `AssetLockAlreadyConsumed`, and the tracked row keeps what
+    /// it had — no ChainLock proof was obtainable, so nothing may claim
+    /// consumption-unknown state, and a later retry can still pick the
+    /// proof up.
+    async fn assert_downgraded_to_already_consumed(ctx: &InstantReconciliationContext) {
+        let error = ctx
+            .manager
+            .reconcile_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &ctx.instant_proof,
+                None,
+            )
+            .await
+            .expect_err("an already-consumed report always ends as a typed error");
+
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == ctx.out_point
+            ),
+            "a failed IS→CL promotion must DOWNGRADE to the code-24 signal the hosts \
+             branch on — not propagate the promotion's own error, got {error:?}"
+        );
+
+        let wm = ctx.wallet_manager.read().await;
+        let lock = wm
+            .get_wallet_info(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&ctx.out_point)
+            .expect("lock stays tracked");
+        assert_eq!(
+            lock.status,
+            AssetLockStatus::InstantSendLocked,
+            "without a chain proof the lock must NOT be promoted to RecoveredFromChain"
+        );
+        assert_eq!(
+            lock.proof,
+            Some(ctx.instant_proof.clone()),
+            "the tracked proof must be untouched by a failed promotion"
+        );
+    }
+
+    /// Regression: the already-consumed reconciliation must TERMINATE when
+    /// the ChainLock it wants never arrives.
+    ///
+    /// Shape: the funding transaction is present and tracked and its record
+    /// is registered but not in a chain-locked block, the effective proof
+    /// is an InstantSend proof (so the IS→CL promotion runs and dispatches
+    /// to `wait_for_chain_lock`), and no SPV chainlock is ever delivered.
+    ///
+    /// Before the fix a `None` reconciliation timeout meant "wait forever"
+    /// and this future never resolved. Under FFI that is a permanently
+    /// pinned host thread, since every production call site is reached
+    /// through `runtime().block_on(...)`. The realistic trigger is
+    /// ordinary: a lock consumed seconds after broadcast is IS-locked but
+    /// not yet chain-locked (~2.5 min away), and never chain-locked at all
+    /// when the device is offline.
+    ///
+    /// `start_paused` lets the runtime auto-advance the bounded sleep, so
+    /// the assertion is that the call resolves at all — and resolves as the
+    /// typed code-24 `AssetLockAlreadyConsumed` the hosts branch on, not as
+    /// the `FinalityTimeout` of the failed promotion.
+    #[tokio::test(start_paused = true)]
+    async fn already_consumed_reconciliation_terminates_without_a_chainlock() {
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+
+        let ctx = instant_reconciliation_context().await;
+
+        // Register the funding tx's record (mempool context, NOT chain-
+        // locked) under BIP44 account 0, so the promotion's record lookup
+        // succeeds and it genuinely dispatches to `wait_for_chain_lock`.
+        // Without this the lookup misses and the promotion fast-fails with
+        // `AssetLockProofWait` before any waiting — the OTHER regression's
+        // scenario, which must stay distinct from this one.
+        {
+            let record = TransactionRecord::new(
+                ctx.transaction.clone(),
+                AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+                TransactionContext::Mempool,
+                TransactionType::Standard,
+                TransactionDirection::Outgoing,
+                Vec::new(),
+                Vec::new(),
+                0,
+            );
+            let mut wm = ctx.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&ctx.wallet_id)
+                .expect("wallet must remain registered")
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("funded fixture has BIP44 account 0")
+                .transactions_mut()
+                .insert(ctx.out_point.txid, record);
+        }
+
+        // Pin the SCENARIO, not just the outcome: the promotion itself must
+        // burn the bound and report `FinalityTimeout` (auto-advanced under
+        // `start_paused`), proving this test exercises the timeout arm of
+        // the reconciliation catch-all and not the fast-fail one.
+        let promotion_err = ctx
+            .manager
+            .upgrade_to_chain_lock_proof(&ctx.out_point, Some(RECONCILIATION_CHAIN_LOCK_TIMEOUT))
+            .await
+            .expect_err("no ChainLock ever arrives: the promotion must fail");
+        assert!(
+            matches!(
+                promotion_err,
+                PlatformWalletError::FinalityTimeout(actual) if actual == ctx.out_point
+            ),
+            "expected the promotion to time out waiting for a ChainLock, got {promotion_err:?}"
+        );
+
+        assert_downgraded_to_already_consumed(&ctx).await;
+    }
+
+    /// Companion regression pinning the DELIBERATE breadth of the
+    /// promotion's `Err` catch-all in `reconcile_asset_lock_submit_result`
+    /// (see the comment on that arm): a NON-timeout promotion failure must
+    /// be downgraded to the code-24 signal exactly like a timeout, because
+    /// the already-consumed classification came from Platform's
+    /// outpoint-matched consensus error — a failed local lookup does not
+    /// invalidate it, and the non-timeout failures occur precisely in the
+    /// degraded-local-state scenarios where the host's code-24 branch is
+    /// the only path that can still resolve the operation.
+    ///
+    /// Shape: the lock is tracked, but its transaction record is
+    /// unavailable — never registered in any account's in-memory map (the
+    /// fixture never broadcasts) and unknown to the persister
+    /// (`NoopTestPersister` keeps the trait's `Ok(None)` default). That is
+    /// the post-restore / wallet-state-mismatch shape, and the promotion
+    /// fast-fails with `AssetLockProofWait` instead of waiting.
+    ///
+    /// "Fixing" the catch-all to propagate everything but
+    /// `FinalityTimeout` turns the reconcile result below into
+    /// `AssetLockProofWait` and fails this test — that narrowing was
+    /// proposed and declined in review (finding 9237664c50df); this test
+    /// keeps the decision from silently regressing.
+    #[tokio::test(start_paused = true)]
+    async fn already_consumed_reconciliation_downgrades_non_timeout_promotion_failure() {
+        let ctx = instant_reconciliation_context().await;
+
+        // Pin the SCENARIO first: with the record unavailable, the
+        // promotion must fail with the NON-timeout `AssetLockProofWait`
+        // fast-fail. If a future fixture change made the record findable,
+        // this assertion — not a silently green downgrade check — fails.
+        let promotion_err = ctx
+            .manager
+            .upgrade_to_chain_lock_proof(&ctx.out_point, Some(RECONCILIATION_CHAIN_LOCK_TIMEOUT))
+            .await
+            .expect_err("record unavailable: the promotion must fail");
+        assert!(
+            matches!(promotion_err, PlatformWalletError::AssetLockProofWait(_)),
+            "expected the non-timeout AssetLockProofWait fast-fail, got {promotion_err:?}"
+        );
+
+        assert_downgraded_to_already_consumed(&ctx).await;
     }
 }

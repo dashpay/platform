@@ -317,6 +317,7 @@ fn run(
                 offset: Some(0),
                 has_start_at: false,
                 prove,
+                resolved_time_ranges: &[],
             },
             None,
             platform_version(),
@@ -375,7 +376,7 @@ fn verified_page(
         )
         .expect("the fixture declares this axis"),
         axis: axis.ranked,
-        equality_prefix_values: Vec::new(),
+        prefix_branches: vec![Vec::new()],
         descending: !ascending,
         k: 100,
         offset: 0,

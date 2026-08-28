@@ -4,6 +4,76 @@ import { ERRORS as LETSENCRYPT_ERRORS } from '../../ssl/letsencrypt/validateLets
 import { ERRORS as ZEROSSL_ERRORS } from '../../ssl/zerossl/validateZeroSslCertificateFactory.js';
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
+import renderConfigFlag from '../../util/renderConfigFlag.js';
+import { DOCS_LINKS } from '../../docsLinks.js';
+import { RENEWAL_RECORD_STATES } from '../../ssl/renewalRecord/RenewalRecordRepository.js';
+import RenewalRecord from '../../ssl/renewalRecord/RenewalRecord.js';
+import deriveRenewalGuidance, { SAFE_ACTION } from '../../ssl/renewalGuidance.js';
+import renderObtainCommand from '../../ssl/renderObtainCommand.js';
+
+/**
+ * Whether a ZeroSSL certificate can be renewed depends on the operator's plan, which dashmate
+ * cannot see, so both routes are offered rather than assuming which one applies.
+ */
+const LETSENCRYPT_ALTERNATIVE = chalk`Or switch to Let's Encrypt, which issues certificates for IP addresses free
+of charge:
+  {bold.cyanBright dashmate config set platform.gateway.ssl.provider letsencrypt}
+  {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email EMAIL}
+  {bold.cyanBright dashmate ssl obtain}`;
+
+/**
+ * What to say instead of a certificate request, when the renewal record forbids
+ * one - or nothing, when it does not.
+ *
+ * The legacy checks below cannot be left to decide this for themselves. They
+ * predate the record entirely, and each one ends in its own command.
+ *
+ * @param {Samples} samples
+ * @param {Config} config
+ * @return {string|null}
+ */
+function withheldRequest(samples, config) {
+  const sample = samples.getServiceInfo('gateway', 'certificateRenewal');
+  const record = sample?.state === RENEWAL_RECORD_STATES.PRESENT
+    ? RenewalRecord.fromObject(sample)
+    : null;
+
+  // A record left by a provider this node no longer uses says nothing about the
+  // one it does. The configuration watcher hands over without clearing it, so
+  // without this a stale spent or uncertain record would suppress a request
+  // that is now perfectly valid - the renewal-aware analyser already ignores it
+  // for exactly that reason, and these two must not disagree.
+  // The same two inputs the renewal-aware analyser uses. Without the installed
+  // certificate's date, a failure that a newer certificate has already overtaken
+  // still counts here - so this analyser would replace a valid repair with stale
+  // no-obtain guidance while the other one correctly ignored the same record.
+  const applicable = record?.isFailed()
+    && record.appliesTo({
+      provider: config.get('platform.gateway.ssl.provider'),
+      certificateValidFrom: samples.getServiceInfo('gateway', 'installedCertificate')?.validFrom
+        ?? null,
+    })
+    ? record
+    : null;
+
+  const guidance = deriveRenewalGuidance({
+    record: applicable,
+    isRecordUnreadable: sample?.state === RENEWAL_RECORD_STATES.UNREADABLE
+      || (sample?.state === RENEWAL_RECORD_STATES.PRESENT && record === null),
+    isCertificateUsable: false,
+  });
+
+  // A provider switch forbids these remedies just as firmly as an outright
+  // refusal: they ask this provider for another certificate, while the
+  // renewal-aware analyser in the same report says this provider will never
+  // issue one again.
+  if (guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
+    && guidance.safeAction !== SAFE_ACTION.SWITCH_PROVIDER) {
+    return null;
+  }
+
+  return renderObtainCommand({ configName: config.getName(), guidance });
+}
 
 export default function analyseConfigFactory() {
   /**
@@ -41,7 +111,7 @@ export default function analyseConfigFactory() {
             if (config.get('network') !== NETWORK_LOCAL) {
               const problem = new Problem(
                 'SSL certificates are disabled. Clients won\'t be able to connect securely',
-                chalk`Please enable and set up SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate}`,
+                chalk`Please enable and set up SSL certificates {bold.cyanBright ${DOCS_LINKS.SSL_CERTIFICATES}}`,
                 SEVERITY.HIGH,
               );
 
@@ -52,7 +122,7 @@ export default function analyseConfigFactory() {
             if (config.get('network') === NETWORK_MAINNET) {
               const problem = new Problem(
                 'Self-signed SSL certificate is used on mainnet. Clients won\'t be able to connect securely',
-                chalk`Please use valid SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate}`,
+                chalk`Please use valid SSL certificates {bold.cyanBright ${DOCS_LINKS.SSL_CERTIFICATES}}`,
                 SEVERITY.HIGH,
               );
 
@@ -60,10 +130,7 @@ export default function analyseConfigFactory() {
             }
             break;
           default: {
-            const {
-              description,
-              solution,
-            } = {
+            const fileProblems = {
               // File provider error
               'not-valid': {
                 description: 'SSL certificate files are not valid',
@@ -80,17 +147,19 @@ Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}`,
 Certificate chain file path: {bold.cyanBright ${ssl?.data?.chainFilePath}}
 Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}
 
-Or use ZeroSSL https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate`,
+Or use ZeroSSL ${DOCS_LINKS.SSL_CERTIFICATES}`,
               },
-              // ZeroSSL validation errors
+            };
+
+            const zeroSslProblems = {
               [ZEROSSL_ERRORS.API_KEY_IS_NOT_SET]: {
                 description: 'ZeroSSL API key is not set.',
                 solution: chalk`Please obtain your API key from {underline.cyanBright https://app.zerossl.com/developer}
-And then update your configuration with {block.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.zerossl.apiKey [KEY]}`,
+And then update your configuration with {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.zerossl.apiKey [KEY]}`,
               },
               [ZEROSSL_ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
                 description: 'External IP is not set.',
-                solution: chalk`Please update your configuration to include your external IP using {block.cyanBright dashmate config set externalIp [IP]}`,
+                solution: chalk`Please update your configuration to include your external IP using {bold.cyanBright dashmate config set externalIp [IP]}`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_ID_IS_NOT_SET]: {
                 description: 'ZeroSSL certificate is not configured',
@@ -102,7 +171,7 @@ And then update your configuration with {block.cyanBright dashmate config set pl
 and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ZEROSSL_ERRORS.EXTERNAL_IP_MISMATCH]: {
-                description: chalk`ZeroSSL IP ${ssl?.data?.certificate.common_name} does not match external IP ${ssl?.data?.externalIp}.`,
+                description: chalk`ZeroSSL IP ${ssl?.data?.certificate?.common_name} does not match external IP ${ssl?.data?.externalIp}.`,
                 solution: chalk`Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
             and revoke the previous certificate in the ZeroSSL dashboard`,
               },
@@ -113,8 +182,11 @@ This makes auto-renewal impossible.`,
 and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_EXPIRES_SOON]: {
-                description: chalk`ZeroSSL certificate expires at ${ssl?.data?.certificate.expires}.`,
-                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new one`,
+                description: chalk`ZeroSSL certificate expires at ${ssl?.data?.certificate?.expires}.`,
+                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new one, which needs an
+available certificate on your ZeroSSL plan.
+
+${LETSENCRYPT_ALTERNATIVE}`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_IS_NOT_VALIDATED]: {
                 description: chalk`ZeroSSL certificate is not approved.`,
@@ -122,17 +194,26 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ZEROSSL_ERRORS.CERTIFICATE_IS_NOT_VALID]: {
                 description: chalk`ZeroSSL certificate is not valid.`,
-                solution: chalk`Please run {bold.cyanBright dashmate ssl zerossl obtain} to get a new one.`,
+                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new one.
+
+${LETSENCRYPT_ALTERNATIVE}`,
               },
               [ZEROSSL_ERRORS.ZERO_SSL_API_ERROR]: {
-                description: ssl?.data?.error?.message,
-                solution: chalk`Please contact ZeroSSL support if needed.`,
+                // ZeroSSL's own wording is the most accurate account of what went wrong - it
+                // names an exhausted certificate limit, an unpaid invoice or a rejected key
+                // directly. The fallback keeps the problem reported when it sends none, since
+                // an empty description would otherwise drop it silently.
+                description: ssl?.data?.error?.message
+                  ? chalk`ZeroSSL rejected the request: ${ssl.data.error.message}`
+                  : chalk`The ZeroSSL API could not be reached, so the certificate cannot be checked or renewed.`,
+                solution: chalk`If this is something you can resolve with ZeroSSL, such as an expired plan or a
+rejected API key, fix it there and run {bold.cyanBright dashmate ssl obtain}.
+
+${LETSENCRYPT_ALTERNATIVE}`,
               },
-              // Let's Encrypt validation errors
-              [LETSENCRYPT_ERRORS.EMAIL_IS_NOT_SET]: {
-                description: 'Let\'s Encrypt email is not set.',
-                solution: chalk`Please update your configuration with {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email [EMAIL]}`,
-              },
+            };
+
+            const letsEncryptProblems = {
               [LETSENCRYPT_ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
                 description: 'External IP is not set.',
                 solution: chalk`Please update your configuration to include your external IP using {bold.cyanBright dashmate config set externalIp [IP]}`,
@@ -153,17 +234,51 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
                 description: chalk`Let's Encrypt certificate expires at ${ssl?.data?.certificate?.expires}.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt} to renew`,
               },
+              // Never a restart. This fires because the issued certificate was not
+              // copied to where the gateway loads from, so a restart makes the gateway
+              // re-read the copy it already has - the out-of-date one. On a node still
+              // serving a valid certificate that is what takes it off the network.
+              [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_INSTALLED]: {
+                description: chalk`A renewed Let's Encrypt certificate has not been installed for the gateway.`,
+                solution: chalk`The issued certificate was never copied to where the gateway loads
+from. Install it - no restart needed:
+{bold.cyanBright dashmate ssl obtain ${renderConfigFlag(config.getName())} --provider=letsencrypt}
+
+Do not restart Platform. That reloads the out-of-date copy and may throw away
+a working certificate.`,
+              },
               [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_VALID]: {
                 description: chalk`Let's Encrypt certificate is not valid.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt --force} to get a new one.`,
               },
+            };
+
+            // Both providers report some errors under the same name, so only the
+            // configured provider's messages are considered. Otherwise one provider's
+            // message would describe a problem found by the other one.
+            const providerProblems = config.get('platform.gateway.ssl.provider') === 'letsencrypt'
+              ? letsEncryptProblems
+              : zeroSslProblems;
+
+            const {
+              description,
+              solution,
+              severity = SEVERITY.HIGH,
+            } = {
+              ...fileProblems,
+              ...providerProblems,
             }[ssl.error] ?? {};
 
             if (description) {
+              // These checks predate the renewal record and each ends in its
+              // own request. They run before the renewal-aware analyser in the
+              // same report, so a node whose recorded cause forbids asking
+              // again would read "do not obtain" from one and a runnable
+              // command from the other - and follow the command.
               const problem = new Problem(
                 description,
-                solution,
-                SEVERITY.HIGH,
+                withheldRequest(samples, config) ?? solution,
+                severity,
               );
 
               problems.push(problem);

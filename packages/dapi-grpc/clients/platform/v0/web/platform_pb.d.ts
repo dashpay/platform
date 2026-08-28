@@ -2739,6 +2739,7 @@ export namespace GetDocumentsRequest {
     BETWEEN_EXCLUDE_RIGHT: 8;
     IN: 9;
     STARTS_WITH: 10;
+    IN_TIME_RANGE: 11;
   }
 
   export const WhereOperator: WhereOperatorMap;
@@ -3223,6 +3224,13 @@ export namespace GetDocumentsResponse {
       getAvg(): number;
       setAvg(value: number): void;
 
+      hasInKey(): boolean;
+      clearInKey(): void;
+      getInKey(): Uint8Array | string;
+      getInKey_asU8(): Uint8Array;
+      getInKey_asB64(): string;
+      setInKey(value: Uint8Array | string): void;
+
       getValueCase(): RankedEntry.ValueCase;
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): RankedEntry.AsObject;
@@ -3240,6 +3248,7 @@ export namespace GetDocumentsResponse {
         count: string,
         sum: string,
         avg: number,
+        inKey: Uint8Array | string,
       }
 
       export enum ValueCase {

@@ -116,7 +116,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorAssetLockInputConflict` (native code 42). The tracked
+         * `ErrorAssetLockInputConflict` (native code 47). The tracked
          * asset-lock transaction spends an outpoint that a different,
          * already-confirmed transaction of the same wallet spent first —
          * typically a restored wallet whose rescan resurrected a UTXO one of
@@ -139,7 +139,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorAssetLockInputContested` (native code 43). The provisional
+         * `ErrorAssetLockInputContested` (native code 48). The provisional
          * sibling of [AssetLockInputConflict]: a confirmed transaction of
          * this wallet already spent one of the tracked lock's inputs, so
          * the resume stopped before broadcasting into a wait that cannot
@@ -149,7 +149,7 @@ sealed class DashSdkError(
          * NO discard licence: keep the tracked lock and retry later (next
          * launch, or after the next chainlock). The situation resolves
          * itself — the sibling gets chainlock-buried and the next resume
-         * reports the terminal code 42, or a reorg drops the sibling and
+         * reports the terminal code 47, or a reorg drops the sibling and
          * the next resume proceeds normally. The Android analog of Swift's
          * `PlatformWalletError.assetLockInputContested`.
          */
@@ -157,6 +157,32 @@ sealed class DashSdkError(
             PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
         }
+
+         * `ErrorAssetLockInsufficientFunds` (native code 29). Asset-lock coin
+         * selection came up short over the build's *permitted funding set*.
+         * What that set is depends on the funding form: an exact-amount build
+         * POOLS the default source list (the BIP44 and BIP32 accounts plus
+         * every DashPay contact-receiving account), so its shortfall
+         * describes that whole union rather than any single account; only a
+         * whole-account *drain* build — CoinJoin's only form, since mixed
+         * coins are never pooled with transparent ones — names a single
+         * account's shortfall.
+         *
+         * Distinct from [CoreInsufficientFunds] (22), which is the atomic
+         * Core-send selector rather than the asset-lock builder. The shortfall
+         * figures travel in [message] as `available {n} duffs, required {n}
+         * duffs` — the native result is ABI-frozen to code + message, so there
+         * are no structured fields to read.
+         *
+         * Raised by
+         * [shieldedFundFromCoinJoinDrain][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromCoinJoinDrain]
+         * when the CoinJoin account has nothing to drain (single-account
+         * drain), and by
+         * [shieldedFundFromAssetLock][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromAssetLock]
+         * when the pooled funding sources cannot cover the requested lock.
+         */
+        class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
 
         /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
@@ -188,6 +214,23 @@ sealed class DashSdkError(
                 "$message (do NOT retry: the spend may already be on chain; " +
                     "the wallet keeps the spent notes reserved until the next " +
                     "shielded sync reconciles the outcome)",
+                cause,
+            )
+
+        /**
+         * `ErrorMasternodeWithdrawalUnconfirmed` (native code 42). A
+         * masternode (evonode) identity credit withdrawal was broadcast and
+         * accepted, but its execution result couldn't be confirmed — it may
+         * already have executed, and the identity nonce was consumed for it,
+         * so a blind retry could submit a SECOND withdrawal. Do NOT retry;
+         * re-read the identity's claimable balance and reconcile first. The
+         * Android analog of Swift's
+         * `PlatformWalletError.masternodeWithdrawalUnconfirmed`.
+         */
+        class MasternodeWithdrawalUnconfirmed(message: String, cause: Throwable? = null) :
+            PlatformWallet(
+                "$message (do NOT retry: the withdrawal may already have executed; " +
+                    "re-read the claimable balance first)",
                 cause,
             )
 
@@ -524,15 +567,17 @@ sealed class DashSdkError(
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
+            42 -> PlatformWallet.MasternodeWithdrawalUnconfirmed(message, cause) // ErrorMasternodeWithdrawalUnconfirmed
             22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
+            29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
-            // (#4184), 31 ErrorSigningKeyUnavailable (#4183/#4259), 32
+            // (mapped above), 31 ErrorSigningKeyUnavailable (#4183/#4259), 32
             // ErrorTransactionBuild (#4247/#4256), 33 ErrorTransactionSigning
             // (#4256). See packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
             34 -> PlatformWallet.StaleReservationToken(message, cause) // ErrorStaleReservationToken
@@ -569,8 +614,8 @@ sealed class DashSdkError(
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
             41 -> PlatformWallet.PlatformShieldCapacityExceeded(message, cause)
-            42 -> PlatformWallet.AssetLockInputConflict(message, cause) // ErrorAssetLockInputConflict
-            43 -> PlatformWallet.AssetLockInputContested(message, cause) // ErrorAssetLockInputContested
+            47 -> PlatformWallet.AssetLockInputConflict(message, cause) // ErrorAssetLockInputConflict
+            48 -> PlatformWallet.AssetLockInputContested(message, cause) // ErrorAssetLockInputContested
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message

@@ -5,13 +5,13 @@ import LegoCertificate from './LegoCertificate.js';
 import isCertificatePairInstalled from './isCertificatePairInstalled.js';
 
 export const ERRORS = {
-  EMAIL_IS_NOT_SET: 'EMAIL_IS_NOT_SET',
   EXTERNAL_IP_IS_NOT_SET: 'EXTERNAL_IP_IS_NOT_SET',
   CERTIFICATE_NOT_FOUND: 'CERTIFICATE_NOT_FOUND',
   PRIVATE_KEY_NOT_FOUND: 'PRIVATE_KEY_NOT_FOUND',
   CERTIFICATE_EXPIRES_SOON: 'CERTIFICATE_EXPIRES_SOON',
   CERTIFICATE_IP_MISMATCH: 'CERTIFICATE_IP_MISMATCH',
   CERTIFICATE_NOT_VALID: 'CERTIFICATE_NOT_VALID',
+  CERTIFICATE_NOT_INSTALLED: 'CERTIFICATE_NOT_INSTALLED',
 };
 
 /**
@@ -39,14 +39,11 @@ export default function validateLetsEncryptCertificateFactory(homeDir) {
     // Lego data directory (where lego stores its state)
     data.legoDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'lego');
 
+    // Reported for the caller's information only. A contact address is optional
+    // under RFC 8555, Let's Encrypt stopped sending expiry notifications in
+    // 2025, and nothing in dashmate asks for one - so no new node has one and
+    // refusing here would fail every check on every new node.
     data.email = config.get('platform.gateway.ssl.providerConfigs.letsencrypt.email');
-
-    if (!data.email) {
-      return {
-        error: ERRORS.EMAIL_IS_NOT_SET,
-        data,
-      };
-    }
 
     data.externalIp = config.get('externalIp');
 
@@ -102,13 +99,15 @@ export default function validateLetsEncryptCertificateFactory(homeDir) {
     data.isExpiresSoon = data.certificate.isExpiredInDays(expirationDays);
     data.expirationDays = expirationDays;
 
-    // Check if certificate IP matches external IP
-    // First check SANs (preferred for IP certificates with --disable-cn)
-    // Fall back to commonName if no IP SANs present
-    const certIpAddresses = data.certificate.ipAddresses;
-    const hasMatchingIp = certIpAddresses.length > 0
-      ? certIpAddresses.includes(data.externalIp)
-      : data.certificate.commonName === data.externalIp;
+    // The address has to be in a subject alternative name. No standards-compliant
+    // client reads a common name to verify an IP - Node's tls.checkServerIdentity
+    // does not, and neither do browsers - so a certificate carrying the address
+    // there and nowhere else is not usable, however well it matches.
+    //
+    // The gateway check judges it the same way. Accepting more here than that
+    // check accepts is what let a repair reuse the certificate it had just
+    // rejected, leaving the operator exactly where they started.
+    const hasMatchingIp = data.certificate.ipAddresses.includes(data.externalIp);
 
     if (!hasMatchingIp) {
       return {
@@ -129,6 +128,16 @@ export default function validateLetsEncryptCertificateFactory(homeDir) {
     if (data.isExpiresSoon) {
       return {
         error: ERRORS.CERTIFICATE_EXPIRES_SOON,
+        data,
+      };
+    }
+
+    // The certificate is valid, but the gateway loads its own copy rather than the issued
+    // file. Until the two match the node keeps serving whatever was installed last, which
+    // stays invisible to every check that only looks at the issued certificate.
+    if (!data.isCertificatePairInstalled) {
+      return {
+        error: ERRORS.CERTIFICATE_NOT_INSTALLED,
         data,
       };
     }

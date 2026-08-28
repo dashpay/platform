@@ -20,6 +20,7 @@ use key_wallet_manager::WalletManager;
 use crate::broadcaster::BroadcastError;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
+use crate::masternode::list::MasternodeListSummary;
 use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -476,6 +477,36 @@ impl SpvRuntime {
         };
 
         masternodes_by_voting_key(list, voting_key_id)
+    }
+
+    /// Snapshot of the current-tip deterministic masternode list as typed
+    /// summaries. `None` when the list isn't available (SPV client not
+    /// running, engine not initialized, or masternode sync not complete).
+    /// Clones the engine `Arc` out under the client lock and reads the
+    /// engine without it — the two never nest, same as
+    /// [`Self::masternode_validity_snapshot_blocking`].
+    pub async fn masternode_list_summaries(&self) -> Option<Vec<MasternodeListSummary>> {
+        let engine = {
+            let client_guard = self.client.read().await;
+            let client = client_guard.as_ref()?;
+            client.masternode_list_engine().ok()?
+        };
+        let engine_guard = engine.read().await;
+        let list = engine_guard.latest_masternode_list()?;
+        Some(MasternodeListSummary::all_from_list(list))
+    }
+
+    /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads
+    /// (`blocking_read`; never call from the async runtime).
+    pub fn masternode_list_summaries_blocking(&self) -> Option<Vec<MasternodeListSummary>> {
+        let engine = {
+            let client_guard = self.client.blocking_read();
+            let client = client_guard.as_ref()?;
+            client.masternode_list_engine().ok()?
+        };
+        let engine_guard = engine.blocking_read();
+        let list = engine_guard.latest_masternode_list()?;
+        Some(MasternodeListSummary::all_from_list(list))
     }
 
     /// Get the current sync progress.

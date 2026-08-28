@@ -278,7 +278,20 @@ struct WalletDetailView: View {
             WithdrawPlatformAddressView(wallet: wallet)
         }
         .sheet(item: $resumingAssetLock) { lock in
-            FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+            // Route by funding type. Both top-up types reach this sheet from
+            // `PendingPlatformFundFromAssetLocksList`, and they consume their
+            // locks through DIFFERENT transitions: type 4 resumes via
+            // `resumeFundFromAssetLock` (credit a Platform address), type 5
+            // via `shieldedResumeFundFromAssetLock` (Type 18 shield into the
+            // Orchard pool). Sending a shielded lock to the address view
+            // would submit the wrong transition against it, so surfacing the
+            // row without this branch would only move the dead end one tap
+            // later.
+            if lock.fundingTypeRaw == 5 {
+                ShieldedFundFromAssetLockView(wallet: wallet, resumeFromLock: lock)
+            } else {
+                FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+            }
         }
         .sheet(isPresented: $showShieldFromAssetLock) {
             ShieldedFundFromAssetLockView(wallet: wallet)
@@ -834,11 +847,6 @@ struct WalletInfoView: View {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
 
-        // `createWallet` below is a synchronous @MainActor FFI call that
-        // blocks the main thread, so without yielding first SwiftUI never
-        // paints the overlay. Let it render one frame before we block.
-        try? await Task.sleep(nanoseconds: 50_000_000) // ~50ms, one frame
-
         // Add the existing wallet to another network by re-creating it
         // from the stored mnemonic in that network's manager. The
         // `walletId` is now network-scoped — the same mnemonic produces
@@ -864,7 +872,7 @@ struct WalletInfoView: View {
             // Enabling an existing wallet on another network: the mnemonic is
             // pre-existing and may already have on-chain history there — scan
             // from genesis (birthHeight 0) so prior funds/payments are seen.
-            let created = try mgr.createWallet(
+            let created = try await mgr.createWallet(
                 mnemonic: mnemonic,
                 network: network,
                 name: wallet.name ?? wallet.label,

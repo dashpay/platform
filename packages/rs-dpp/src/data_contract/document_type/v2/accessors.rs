@@ -226,6 +226,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
     fn range_summable(&self) -> bool {
         self.range_summable
     }
+
+    fn index_only(&self) -> bool {
+        self.index_only
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentTypeV2 {

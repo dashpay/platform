@@ -4,7 +4,8 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
-    DocumentPropertyType, DocumentType, DocumentTypeRef, Index, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
+    DocumentPropertyType, DocumentType, DocumentTypeRef, Index, CONTRACT_VERSION_STAMP_MAX_SIZE,
+    DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -166,6 +167,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         {
             0 => {
                 let mut document = DocumentV0 {
+                    contract_version: None,
                     id: document_id,
                     owner_id,
                     properties: data
@@ -328,6 +330,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
             .document_structure_version
         {
             0 => Ok(DocumentV0 {
+                contract_version: None,
                 id,
                 owner_id,
                 properties,
@@ -401,9 +404,80 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<(&Index, u16)> {
+        self.index_for_types_matching_v0(index_names, in_field_name, order_by, |_| true)
+    }
+
+    /// [`Self::index_for_types_v0`] restricted to the indexes `filter` admits.
+    ///
+    /// The filter is applied before `Index::matches`, so a rejected index can
+    /// never win the difference comparison. Callers that need selection pinned
+    /// to a class of index must use this rather than post-checking whatever the
+    /// unrestricted search returned: several indexes can cover the same fields,
+    /// the winner among equally-good candidates is decided by the index map's
+    /// name ordering, and a post-check can only reject the winner — never
+    /// promote the index that was actually required.
+    /// [`Self::index_for_types_matching_v0`] with the terminal (an
+    /// indexOnly index's member-key property) participating as the
+    /// index's deepest matchable component. Generic matches keep absolute
+    /// precedence: a candidate that covers the query WITHOUT its terminal
+    /// always beats every terminal-using candidate, regardless of score —
+    /// the terminal route is a stand-in for "no ordinary index serves
+    /// this", never a competitor to one that does. Within each class the
+    /// difference scoring (and its index-map-order tie-break) is exactly
+    /// the generic matcher's.
+    fn index_for_types_matching_including_terminal_v0(
+        &self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+        filter: impl Fn(&Index) -> bool,
+    ) -> Option<(&Index, u16, bool)> {
+        let mut best_generic: Option<(&Index, u16)> = None;
+        let mut best_generic_difference = u16::MAX;
+        let mut best_terminal: Option<(&Index, u16)> = None;
+        let mut best_terminal_difference = u16::MAX;
+        for (_, index) in self.indexes().iter() {
+            if !filter(index) {
+                continue;
+            }
+            let Some((difference, terminal_used)) =
+                index.matches_including_terminal(index_names, in_field_name, order_by)
+            else {
+                continue;
+            };
+            if terminal_used {
+                if difference < best_terminal_difference {
+                    best_terminal_difference = difference;
+                    best_terminal = Some((index, difference));
+                }
+            } else {
+                if difference == 0 {
+                    return Some((index, 0, false));
+                }
+                if difference < best_generic_difference {
+                    best_generic_difference = difference;
+                    best_generic = Some((index, difference));
+                }
+            }
+        }
+        best_generic
+            .map(|(index, difference)| (index, difference, false))
+            .or(best_terminal.map(|(index, difference)| (index, difference, true)))
+    }
+
+    fn index_for_types_matching_v0(
+        &self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+        filter: impl Fn(&Index) -> bool,
+    ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
         for (_, index) in self.indexes().iter() {
+            if !filter(index) {
+                continue;
+            }
             let difference_option = index.matches(index_names, in_field_name, order_by);
             if let Some(difference) = difference_option {
                 if difference == 0 {
@@ -438,6 +512,15 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         }
 
         Ok(total_size)
+    }
+
+    /// Generation 0 plus the document serialization format 3
+    /// contract-version stamp varint. Selected together with format 3 by
+    /// the version table.
+    fn estimated_size_v1(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
+        Ok(self
+            .estimated_size_v0(platform_version)?
+            .saturating_add(CONTRACT_VERSION_STAMP_MAX_SIZE))
     }
 
     fn max_size_v0(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {

@@ -113,7 +113,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
-                &platform_version.drive,
+                platform_version,
             )?;
         }
 

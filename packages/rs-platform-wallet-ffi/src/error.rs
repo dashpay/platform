@@ -217,6 +217,24 @@ pub enum PlatformWalletFFIResultCode {
     /// join instead of erroring. Swift mirror:
     /// `PlatformWalletResultCode.errorShutdownIncomplete`.
     ErrorShutdownIncomplete = 27,
+    /// Asset-lock coin selection came up short over the *permitted* funding
+    /// set (dashpay/platform#4073). Carries the structured
+    /// `available`/`required` duff amounts in the message string — the
+    /// by-value `PlatformWalletFFIResult` is ABI-frozen (code + message only),
+    /// so the figures ride the typed `Display` rendering or not at all.
+    ///
+    /// Distinct from [`Self::ErrorCoreInsufficientFunds`] (22), which is the
+    /// atomic Core-send selector rather than the asset-lock builder. What the
+    /// figures cover depends on the build's funding form: an exact-amount
+    /// build pools the default source list (BIP44 + BIP32 + every DashPay
+    /// contact-receiving account), so its shortfall describes that whole
+    /// permitted union — not any single account — while a whole-account
+    /// *drain* build names exactly one account's shortfall. CoinJoin funds
+    /// only through the drain form (never pooled).
+    ///
+    /// Reached by the CoinJoin → shielded migration when the mixed account
+    /// cannot cover the lock, which is why the Android binding needs it typed.
+    ErrorAssetLockInsufficientFunds = 29,
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — the stored blob is
     /// missing, stranded, or written under a different Keystore/Keychain
@@ -249,7 +267,10 @@ pub enum PlatformWalletFFIResultCode {
     //
     //   27  ErrorShutdownIncomplete         MERGED on v4.2-dev (dashpay/platform#4268)
     //   28  (free — vacated by this PR)
-    //   29  ErrorAssetLockInsufficientFunds dashpay/platform#4184
+    //   29  ErrorAssetLockInsufficientFunds ALLOCATED above. Claimed by
+    //       dashpay/platform#4184, which was closed unmerged along with its
+    //       successor #4316; this PR salvages the code at its reserved number
+    //       so the ABI matches what every host mirror already documents.
     //   30  (free — vacated by this PR)
     //   31  ErrorSigningKeyUnavailable      dashpay/platform#4183, #4259
     //   32  ErrorTransactionBuild           dashpay/platform#4247, #4256
@@ -266,8 +287,11 @@ pub enum PlatformWalletFFIResultCode {
     //   39  ErrorInsufficientIdentityCredits DPNS username marketplace
     //   40  ErrorContestedNameNotTradable   DPNS username marketplace
     //   41  ErrorShieldedInsufficientBalance Platform→Shielded capacity preflight
-    //   42  ErrorAssetLockInputConflict     asset-lock double-spend detection (terminal)
-    //   43  ErrorAssetLockInputContested    asset-lock double-spend detection (provisional)
+    //   42  ErrorMasternodeWithdrawalUnconfirmed masternode withdrawal status
+    //   43-45 RESERVED by open dashpay/platform#4313 (shielded-invite claim)
+    //   46  ErrorMasternodeListUnavailable  masternode list source
+    //   47  ErrorAssetLockInputConflict     asset-lock double-spend detection (terminal)
+    //   48  ErrorAssetLockInputContested    asset-lock double-spend detection (provisional)
     //
     // 38/39/40 carry a STABLE JSON detail object in the result `message`
     // instead of the typed `Display` rendering — see each variant's doc for
@@ -371,6 +395,28 @@ pub enum PlatformWalletFFIResultCode {
     /// language-surface compatibility; it is a Platform Payment-account
     /// shortfall, not a shielded-note shortfall.
     ErrorShieldedInsufficientBalance = 41,
+    /// Maps `PlatformWalletError::MasternodeWithdrawalUnconfirmed`. A
+    /// masternode (evonode) identity credit withdrawal was broadcast and
+    /// accepted, but its execution result could not be confirmed — it may
+    /// already have executed, and the identity nonce was consumed for it, so
+    /// a blind retry could submit a SECOND withdrawal. The host must NOT
+    /// retry; it must re-read the identity's claimable balance (and the
+    /// payout) and let the user decide from the reconciled state. Definitive
+    /// rejections (consensus errors, transport verdicts) keep their ordinary
+    /// codes and stay retryable. Siblings: [`Self::ErrorShieldedSpendUnconfirmed`],
+    /// [`Self::ErrorTransactionBroadcastUnconfirmed`].
+    ErrorMasternodeWithdrawalUnconfirmed = 42,
+    /// The deterministic masternode list isn't available yet (SPV not
+    /// running or masternode sync incomplete), so a list-backed query —
+    /// `platform_wallet_manager_locate_masternode` — has nothing to search.
+    /// Transient: retry once `platform_wallet_manager_sync_progress` reports
+    /// the masternode list synced.
+    ///
+    /// Allocated 46 — 43/44/45 are held by the shielded-invite trio on the
+    /// in-flight #4313 (`ErrorShieldedInviteAlreadyClaimed` /
+    /// `ErrorShieldedScanBudgetExhausted` / `ErrorShieldedLifecycleBusy`),
+    /// per the error-code registry (#4318).
+    ErrorMasternodeListUnavailable = 46,
 
     /// Maps `PlatformWalletError::AssetLockInputConflict`. The tracked
     /// asset-lock transaction spends an outpoint that a different,
@@ -395,7 +441,7 @@ pub enum PlatformWalletFFIResultCode {
     /// the tx may well be alive and discarding it would strand real funds.
     ///
     /// A confirmed-but-not-chainlocked spender reports
-    /// [`Self::ErrorAssetLockInputContested`] (43) instead — same
+    /// [`Self::ErrorAssetLockInputContested`] (48) instead — same
     /// stopped-wait, NO discard licence — so this code's finality claim
     /// is structural, not advisory.
     ///
@@ -408,7 +454,7 @@ pub enum PlatformWalletFFIResultCode {
     /// Message: the typed `Display` rendering, which names the asset-lock
     /// outpoint, the conflicting input, the confirmed spender's txid, and
     /// the spender's finality (always chainlocked for this code).
-    ErrorAssetLockInputConflict = 42,
+    ErrorAssetLockInputConflict = 47,
 
     /// Maps `PlatformWalletError::AssetLockInputContested`. Same detection
     /// as [`Self::ErrorAssetLockInputConflict`] — a confirmed transaction
@@ -420,7 +466,7 @@ pub enum PlatformWalletFFIResultCode {
     /// NOT a discard licence. The host keeps the tracked lock and retries
     /// later (next launch, or after the next chainlock). The situation
     /// resolves itself: either the sibling gets buried by a chainlock and
-    /// the next resume reports the terminal 42, or a reorg drops the
+    /// the next resume reports the terminal 47, or a reorg drops the
     /// sibling and the next resume proceeds normally. Discarding tracking
     /// state on this code risks stranding a lock that a replayed
     /// broadcast could still confirm.
@@ -428,7 +474,7 @@ pub enum PlatformWalletFFIResultCode {
     /// Message: the typed `Display` rendering, which names the asset-lock
     /// outpoint, the conflicting input, the confirmed spender's txid and
     /// height, and says the verdict is provisional.
-    ErrorAssetLockInputContested = 43,
+    ErrorAssetLockInputContested = 48,
 
     /// The named thing does not exist.
     ///
@@ -650,8 +696,16 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code
             // so hosts can distinguish it from a definitive rejection.
+            PlatformWalletError::MasternodeListUnavailable => {
+                PlatformWalletFFIResultCode::ErrorMasternodeListUnavailable
+            }
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+            }
+            // Evonode claim sibling: the ambiguous "may have executed, nonce
+            // consumed" outcome must reach the host as a typed do-not-retry code.
+            PlatformWalletError::MasternodeWithdrawalUnconfirmed { .. } => {
+                PlatformWalletFFIResultCode::ErrorMasternodeWithdrawalUnconfirmed
             }
             PlatformWalletError::TransactionBroadcast(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
@@ -691,6 +745,16 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::AssetLockInputContested { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockInputContested
+            }
+            // The asset-lock coin-selection shortfall (dashpay/platform#4073).
+            // Without this arm it flattens to `ErrorUnknown` (99), hiding a
+            // typed shortfall behind the catch-all and forcing hosts to
+            // string-match the Display text. The structured
+            // `available`/`required` duff amounts still travel in the message
+            // (there are no out-params for them), but the code now lets a host
+            // branch on the shortfall without parsing text.
+            PlatformWalletError::AssetLockInsufficientFunds { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
@@ -1161,6 +1225,59 @@ mod tests {
             let result: PlatformWalletFFIResult = error.into();
             assert_eq!(result.code, expected);
         }
+    }
+
+    /// The asset-lock coin-selection shortfall must cross the FFI boundary as
+    /// the dedicated `ErrorAssetLockInsufficientFunds` (29) code — NOT
+    /// `ErrorUnknown` (99) as it did before this arm existed
+    /// (dashpay/platform#4073) — and its structured `available`/`required`
+    /// duffs must survive verbatim in the message so hosts can parse the
+    /// amounts.
+    #[test]
+    fn asset_lock_insufficient_funds_maps_to_dedicated_code() {
+        let err = PlatformWalletError::AssetLockInsufficientFunds {
+            available: 18_000_000,
+            required: 100_000_000,
+        };
+        let rendered = err.to_string();
+        // Guard the exact text hosts (dash-wallet) substring-match on.
+        assert!(
+            rendered.contains("asset lock coin selection is short"),
+            "shortfall Display text changed — coordinate dash-wallet's matcher \
+             (rendered: {rendered})"
+        );
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds,
+            "must not flatten to ErrorUnknown(99) (rendered: {rendered})"
+        );
+        assert_ne!(
+            result.code as i32,
+            PlatformWalletFFIResultCode::ErrorUnknown as i32
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            msg, rendered,
+            "structured available/required duffs must survive the FFI boundary verbatim"
+        );
+    }
+
+    /// The numeric value of `ErrorAssetLockInsufficientFunds` is ABI, mirrored
+    /// by hand in the Swift and Kotlin host enums. Pin it so a future
+    /// renumbering of the surrounding block cannot silently re-point a host's
+    /// shortfall branch at some other error.
+    #[test]
+    fn asset_lock_insufficient_funds_code_is_pinned_at_29() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds as i32,
+            29,
+            "code 29 is reserved for the asset-lock shortfall in the FFI \
+             error-code registry; hosts mirror the number, not the name"
+        );
     }
 
     /// `WalletAlreadyExists` maps to the dedicated
@@ -1663,12 +1780,12 @@ mod tests {
     /// finality — since that is the only detail channel the frozen
     /// `{ code, message }` ABI has.
     #[test]
-    fn asset_lock_input_conflict_code_is_pinned_at_42() {
+    fn asset_lock_input_conflict_code_is_pinned_at_47() {
         use dashcore::OutPoint;
 
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorAssetLockInputConflict as i32,
-            42
+            47
         );
 
         let out_point = OutPoint::null();

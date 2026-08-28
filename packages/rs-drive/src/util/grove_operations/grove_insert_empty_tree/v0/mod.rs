@@ -56,6 +56,14 @@ impl Drive {
                      batch_insert_empty_provable_count_provable_sum_indexed_tree instead.",
                 )))
             }
+            // The private document store's entry size is not carried by
+            // `TreeType` either (see `fees::op`); no generic creation path.
+            TreeType::PrivateDocumentStore(_) => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "grove_insert_empty_tree cannot create a PrivateDocumentStore — the entry \
+                     size is not carried by TreeType",
+                )))
+            }
         };
         let cost_context = self.grove.insert(
             path,
