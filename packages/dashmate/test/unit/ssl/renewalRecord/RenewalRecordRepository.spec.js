@@ -144,24 +144,16 @@ describe('RenewalRecordRepository', () => {
       expect(applied, 'the superseded holder did not apply its change').to.be.false();
     });
 
-    // A lease measured by age alone takes the lock from a process that is only
-    // slow, and that process then resumes and writes over state a newer holder
-    // already committed. Asking whether the recorded holder still exists
-    // answers what the age was approximating.
-    it('should wait for a lock whose holder is still running', () => {
+    // Reclamation is by age, not by asking whether the holder still exists.
+    // That question cannot be asked here: the helper holds this lock from
+    // inside a container that bind-mounts the same home directory, so its pids
+    // and the host CLI's come from different namespaces.
+    it('should eventually reclaim a lock nobody released', () => {
       fs.mkdirSync(path.dirname(lockPath()), { recursive: true });
-      // This process, which is very much alive.
-      fs.writeFileSync(lockPath(), `${process.pid}.someone-else`);
-
-      expect(() => repository.claimGeneration('base')).to.throw('Timed out');
-      expect(fs.existsSync(lockPath()), "the live holder's lock survives").to.be.true();
-    });
-
-    it('should reclaim a lock whose holder is gone', () => {
-      fs.mkdirSync(path.dirname(lockPath()), { recursive: true });
-      // A pid that cannot be running: the kernel reserves 0 for the scheduler
-      // and never hands it to a userland process.
-      fs.writeFileSync(lockPath(), '2147483646.long-dead');
+      fs.writeFileSync(lockPath(), 'a-holder-that-never-came-back');
+      // Older than the stale threshold.
+      const old = new Date(Date.now() - 60 * 1000);
+      fs.utimesSync(lockPath(), old, old);
 
       expect(repository.claimGeneration('base')).to.equal(1);
     });
