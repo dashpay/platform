@@ -14,21 +14,29 @@ public final class PersistentIndex {
     public var nullSearchable: Bool
     public var contested: Bool
 
-    // Count / sum axes (meta-schema v3, protocol version 14).
-    // `countable` is normalized to its string form ("countable" /
-    // "countableAllowingOffset"); the `averageable` sugar is desugared
-    // into `countable` + `summable` exactly as DPP does.
+    // Count / sum axes (meta-schema v3, protocol version 14). Every
+    // keyword is persisted VERBATIM as authored in the contract JSON —
+    // `countable` keeps its boolean-or-string spelling ("true" /
+    // "countable" / "countableAllowingOffset"), and the `averageable` /
+    // `rangeAverageable` sugar is stored as-is rather than desugared.
+    // Interpreting the spellings (DPP's normalization rules) is protocol
+    // logic and stays out of the SDK; display layers map them for
+    // presentation.
     public var countable: String?
     public var rangeCountable: Bool = false
     public var summable: String?
     public var rangeSummable: Bool = false
+    public var averageable: String?
+    public var rangeAverageable: Bool = false
 
     // Ranking axes (each adds one ordered secondary tree)
     public var rankedCountable: Bool = false
     public var rankedSummable: Bool = false
     public var rankedAverageable: Bool = false
 
-    // indexOnly member key (the property whose value keys each entry)
+    // indexOnly member key (the property whose value keys each entry).
+    // Persisted only when declared; an omitted terminal on an indexOnly
+    // type means $ownerId per DPP, a default display layers apply.
     public var terminal: String?
 
     // Preallocation: creating the refersTo-referenced document also

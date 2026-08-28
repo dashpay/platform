@@ -1203,10 +1203,11 @@ struct IndexStorageDetailView: View {
                 FieldRow(label: "Null Searchable", value: record.nullSearchable ? "Yes" : "No")
                 FieldRow(label: "Contested", value: record.contested ? "Yes" : "No")
             }
-            // Protocol v14 index keywords - rows appear only when set, so
-            // pre-v14 indexes render exactly as before
-            if record.countable != nil || record.summable != nil || record.terminal != nil
-                || record.preallocated || record.timeRangeJSON != nil {
+            // Protocol v14 index keywords - persisted verbatim as authored
+            // and rendered raw here (this is the storage debug view); rows
+            // appear only when set, so pre-v14 indexes render as before
+            if record.countable != nil || record.summable != nil || record.averageable != nil
+                || record.terminal != nil || record.preallocated || record.timeRangeJSON != nil {
                 Section("Axes & Storage Mode") {
                     if let countable = record.countable {
                         FieldRow(label: "Countable", value: countable)
@@ -1219,6 +1220,12 @@ struct IndexStorageDetailView: View {
                     }
                     if record.rangeSummable {
                         FieldRow(label: "Range Summable", value: "Yes")
+                    }
+                    if let averageable = record.averageable {
+                        FieldRow(label: "Averageable", value: averageable)
+                    }
+                    if record.rangeAverageable {
+                        FieldRow(label: "Range Averageable", value: "Yes")
                     }
                     if record.rankedCountable {
                         FieldRow(label: "Ranked by Count", value: "Yes")

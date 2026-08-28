@@ -257,7 +257,12 @@ struct ExpandableIndexRowView: View {
                         }
                     }
 
-                    if let terminal = index.terminal {
+                    // An omitted terminal on an indexOnly type means
+                    // $ownerId per DPP; the SDK persists verbatim, so the
+                    // display default is applied here.
+                    let displayTerminal = index.terminal
+                        ?? (index.documentType?.indexOnly == true ? "$ownerId" : nil)
+                    if let terminal = displayTerminal {
                         HStack {
                             Text("Terminal:")
                                 .font(.caption)
@@ -282,15 +287,26 @@ struct ExpandableIndexRowView: View {
                         }
                     }
 
-                    // Count / sum / ranking axes (protocol version 14)
+                    // Count / sum / ranking axes (protocol version 14).
+                    // The SDK persists the keywords verbatim, so the
+                    // display mapping - countable's bool-or-string
+                    // spellings and the averageable sugar (shorthand for
+                    // countable + summable, per DPP's desugar) - lives
+                    // here, mirroring the Kotlin example app's
+                    // indexAxisDescriptors helper.
                     let axisLabels: [String] = {
                         var labels: [String] = []
-                        if let countable = index.countable {
-                            labels.append(countable == "countableAllowingOffset" ? "Countable (offsets)" : "Countable")
+                        if index.countable == "countableAllowingOffset" {
+                            labels.append("Countable (offsets)")
+                        } else if index.countable == "true" || index.countable == "countable"
+                            || (index.countable == nil && index.averageable != nil) {
+                            labels.append("Countable")
                         }
-                        if index.rangeCountable { labels.append("Range Count") }
-                        if let summable = index.summable { labels.append("Summable (\(summable))") }
-                        if index.rangeSummable { labels.append("Range Sum") }
+                        if index.rangeCountable || index.rangeAverageable { labels.append("Range Count") }
+                        if let summable = index.summable ?? index.averageable {
+                            labels.append("Summable (\(summable))")
+                        }
+                        if index.rangeSummable || index.rangeAverageable { labels.append("Range Sum") }
                         if index.rankedCountable { labels.append("Ranked by Count") }
                         if index.rankedSummable { labels.append("Ranked by Sum") }
                         if index.rankedAverageable { labels.append("Ranked by Average") }

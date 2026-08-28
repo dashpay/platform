@@ -282,21 +282,19 @@ public struct DataContractParser {
                 index.nullSearchable = nullSearchable
             }
 
-            // Count axis - `countable` is authored as a bool (true =
-            // "countable") or one of the string variants
+            // Protocol v14 index keywords, persisted VERBATIM as authored.
+            // Interpreting the spellings (countable's bool-or-string forms,
+            // the averageable desugar, the indexOnly $ownerId terminal
+            // default) is DPP protocol logic that stays out of the SDK -
+            // display layers apply it for presentation.
             if let countableBool = indexData["countable"] as? Bool {
-                index.countable = countableBool ? "countable" : nil
-            } else if let countableString = indexData["countable"] as? String,
-                      countableString != "notCountable" {
+                index.countable = countableBool ? "true" : "false"
+            } else if let countableString = indexData["countable"] as? String {
                 index.countable = countableString
             }
             if let rangeCountable = indexData["rangeCountable"] as? Bool {
                 index.rangeCountable = rangeCountable
             }
-
-            // Sum axis, including the `averageable` sugar (shorthand for
-            // countable + summable on the same property - the same desugar
-            // DPP applies)
             if let summable = indexData["summable"] as? String {
                 index.summable = summable
             }
@@ -304,17 +302,11 @@ public struct DataContractParser {
                 index.rangeSummable = rangeSummable
             }
             if let averageable = indexData["averageable"] as? String {
-                index.summable = averageable
-                if index.countable == nil {
-                    index.countable = "countable"
-                }
+                index.averageable = averageable
             }
-            if indexData["rangeAverageable"] as? Bool == true {
-                index.rangeCountable = true
-                index.rangeSummable = true
+            if let rangeAverageable = indexData["rangeAverageable"] as? Bool {
+                index.rangeAverageable = rangeAverageable
             }
-
-            // Ranking axes
             if let rankedCountable = indexData["rankedCountable"] as? Bool {
                 index.rankedCountable = rankedCountable
             }
@@ -324,14 +316,8 @@ public struct DataContractParser {
             if let rankedAverageable = indexData["rankedAverageable"] as? Bool {
                 index.rankedAverageable = rankedAverageable
             }
-
-            // indexOnly member key and preallocation. On an indexOnly
-            // document type an omitted terminal defaults to $ownerId -
-            // the same normalization DPP applies at parse time.
             if let terminal = indexData["terminal"] as? String {
                 index.terminal = terminal
-            } else if documentType.indexOnly {
-                index.terminal = "$ownerId"
             }
             if let preallocated = indexData["preallocated"] as? Bool {
                 index.preallocated = preallocated

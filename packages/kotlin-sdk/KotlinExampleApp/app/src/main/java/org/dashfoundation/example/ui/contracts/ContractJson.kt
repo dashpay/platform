@@ -52,6 +52,10 @@ internal fun JsonObject.stringField(key: String): String? =
 internal fun JsonObject.intField(key: String): Int? =
     (this[key] as? JsonPrimitive)?.content?.toIntOrNull()
 
+/** For u64-ranged schema fields (e.g. timeRange seconds) that can exceed Int.MAX_VALUE. */
+internal fun JsonObject.longField(key: String): Long? =
+    (this[key] as? JsonPrimitive)?.content?.toLongOrNull()
+
 internal fun JsonObject.boolField(key: String): Boolean? =
     (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
 

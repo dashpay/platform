@@ -261,8 +261,8 @@ fun DocumentTypeDetailsScreen(
                                     )
                                 }
                                 index.objectField("timeRange")?.let { timeRange ->
-                                    val range = timeRange.intField("range")
-                                    val step = timeRange.intField("step")
+                                    val range = timeRange.longField("range")
+                                    val step = timeRange.longField("step")
                                     if (range != null && step != null) {
                                         Text(
                                             "Time Range: ${range}s windows every ${step}s",
