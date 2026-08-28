@@ -316,24 +316,55 @@ impl WalletChangeSetFFI {
         // order (matters for the `inserted` -> `updated` transition
         // ordering inside a single BlockProcessed event).
         //
+        // Two record sources fill each account's bucket:
+        //  - transaction rows come from `records` — wallet-level,
+        //    same-txid slices folded, attributed to the funding
+        //    account (dashpay/platform#4387);
+        //  - TXO deltas come from `account_records` — the raw
+        //    per-account slices — so every UTXO lands in its OWNING
+        //    account's bucket. Deriving TXOs from the folded record
+        //    filed a sibling account's change under the funding
+        //    account (`OutputDetail` carries no owning account), and
+        //    the Swift/Kotlin stores then restored it into the wrong
+        //    account's map. Changesets whose producer doesn't
+        //    populate `account_records` fall back to `records`.
+        //
         // `AccountType` doesn't implement `Ord` upstream (the
         // 256-bit `[u8; 32]` fields on the Dashpay variants would make
-        // a derived ordering arbitrary), so a `Vec<(key, bucket)>`
+        // a derived ordering arbitrary), so a `Vec<(key, rows, slices)>`
         // with a linear "find or insert" walk is the path of least
         // resistance. Wallets typically have well under a hundred
         // accounts, so the linear search is cheap.
+        let utxo_source: &Vec<key_wallet::managed_account::transaction_record::TransactionRecord> =
+            if cs.account_records.is_empty() {
+                &cs.records
+            } else {
+                &cs.account_records
+            };
+        #[allow(clippy::type_complexity)]
         let mut by_account: Vec<(
             AccountType,
+            Vec<&key_wallet::managed_account::transaction_record::TransactionRecord>,
             Vec<&key_wallet::managed_account::transaction_record::TransactionRecord>,
         )> = Vec::new();
         for rec in &cs.records {
             if let Some(bucket) = by_account
                 .iter_mut()
-                .find(|(at, _)| at == &rec.account_type)
+                .find(|(at, _, _)| at == &rec.account_type)
             {
                 bucket.1.push(rec);
             } else {
-                by_account.push((rec.account_type, vec![rec]));
+                by_account.push((rec.account_type, vec![rec], Vec::new()));
+            }
+        }
+        for rec in utxo_source {
+            if let Some(bucket) = by_account
+                .iter_mut()
+                .find(|(at, _, _)| at == &rec.account_type)
+            {
+                bucket.2.push(rec);
+            } else {
+                by_account.push((rec.account_type, Vec::new(), vec![rec]));
             }
         }
 
@@ -346,31 +377,32 @@ impl WalletChangeSetFFI {
         // category. Without an empty bucket the watermark would be
         // silently dropped below.
         for account_type in cs.account_highest_used.keys() {
-            if !by_account.iter().any(|(at, _)| at == account_type) {
-                by_account.push((*account_type, Vec::new()));
+            if !by_account.iter().any(|(at, _, _)| at == account_type) {
+                by_account.push((*account_type, Vec::new(), Vec::new()));
             }
         }
 
         let mut ffi_accounts = Vec::with_capacity(by_account.len());
-        for (account_type, recs) in by_account {
+        for (account_type, tx_rows, utxo_slices) in by_account {
             let type_name = CString::new(format!("{:?}", account_type))
                 .unwrap_or_else(|_| CString::new("Unknown").unwrap());
             let account_index = account_index_of(&account_type);
 
-            // Derive UTXO add/spend lists from this account's records.
-            // Each record carries its own input_details and
+            // Derive UTXO add/spend lists from this account's SLICES.
+            // Each slice carries its own account's input_details and
             // output_details; we walk them once per record to project
             // the UTXOs the persister should add or remove.
             let mut utxos_added: Vec<UtxoEntryFFI> = Vec::new();
             let mut utxos_spent: Vec<SpentOutPointFFI> = Vec::new();
-            for rec in &recs {
+            for rec in &utxo_slices {
                 utxos_added.extend(record_new_utxos_ffi(rec));
                 utxos_spent.extend(record_spent_outpoints_ffi(rec));
             }
 
-            // Transactions for this account.
+            // Transaction rows for this account (wallet-level,
+            // folded — see the bucketing comment above).
             let transactions: Vec<TransactionRecordFFI> =
-                recs.into_iter().map(tx_record_to_ffi).collect();
+                tx_rows.into_iter().map(tx_record_to_ffi).collect();
 
             let utxos_added_count = utxos_added.len();
             let utxos_spent_count = utxos_spent.len();
@@ -1840,6 +1872,151 @@ mod tests {
         let cs = CoreChangeSet::default();
         let ffi = WalletChangeSetFFI::from_changeset(&cs);
         assert_eq!(ffi.accounts_count, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// A folded wallet-level record files the transaction row under the
+    /// FUNDING account while carrying the sibling account's owned
+    /// outputs (dashpay/platform#4387), and `OutputDetail` has no
+    /// owning-account field — so deriving TXOs from the folded record
+    /// persisted the sibling's change under the funding account, and
+    /// the Swift/Kotlin stores restored it into the wrong account's
+    /// map. TXO deltas must instead come from `account_records` (the
+    /// raw per-account slices), with only the transaction rows read
+    /// from the folded `records`.
+    #[test]
+    fn txos_route_to_their_owning_accounts_bucket() {
+        use dashcore::{Address, Network, OutPoint, ScriptBuf, TxIn, TxOut, Witness};
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let coinjoin = AccountType::CoinJoin { index: 0 };
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let dest = Address::dummy(Network::Testnet, 1);
+        let change_addr = Address::dummy(Network::Testnet, 2);
+        let funded_addr = Address::dummy(Network::Testnet, 3);
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::default(),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![
+                TxOut {
+                    value: 900_000,
+                    script_pubkey: dest.script_pubkey(),
+                },
+                TxOut {
+                    value: 99_000,
+                    script_pubkey: change_addr.script_pubkey(),
+                },
+            ],
+            special_transaction_payload: None,
+        };
+        let our_input = InputDetail {
+            index: 0,
+            value: 1_000_000,
+            address: funded_addr.clone(),
+        };
+        let sent = OutputDetail {
+            index: 0,
+            role: OutputRole::Sent,
+            address: Some(dest.clone()),
+            value: 900_000,
+        };
+        let change = OutputDetail {
+            index: 1,
+            role: OutputRole::Change,
+            address: Some(change_addr.clone()),
+            value: 99_000,
+        };
+        let rec = |account, direction, inputs: Vec<InputDetail>, outputs, net| {
+            TransactionRecord::new(
+                tx.clone(),
+                account,
+                TransactionContext::Mempool,
+                TransactionType::Standard,
+                direction,
+                inputs,
+                outputs,
+                net,
+            )
+        };
+        // The CoinJoin slice funds the spend; its account-local view of
+        // the sibling's change is `Sent`. The BIP44 slice owns the
+        // change. The folded row carries the union with the owned role.
+        let coinjoin_slice = rec(
+            coinjoin,
+            TransactionDirection::Outgoing,
+            vec![our_input.clone()],
+            vec![
+                sent.clone(),
+                OutputDetail {
+                    role: OutputRole::Sent,
+                    ..change.clone()
+                },
+            ],
+            -1_000_000,
+        );
+        let bip44_slice = rec(
+            bip44,
+            TransactionDirection::Incoming,
+            vec![],
+            vec![change.clone()],
+            99_000,
+        );
+        let folded = rec(
+            coinjoin,
+            TransactionDirection::Outgoing,
+            vec![our_input],
+            vec![sent, change],
+            -901_000,
+        );
+
+        let cs = CoreChangeSet {
+            records: vec![folded],
+            account_records: vec![coinjoin_slice, bip44_slice],
+            ..CoreChangeSet::default()
+        };
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 2, "one bucket per involved account");
+        let buckets = unsafe { std::slice::from_raw_parts(ffi.accounts, ffi.accounts_count) };
+        let coinjoin_bucket = buckets
+            .iter()
+            .find(|b| b.type_tag == account_type_to_tags(&coinjoin).type_tag)
+            .expect("coinjoin bucket");
+        let bip44_bucket = buckets
+            .iter()
+            .find(|b| b.type_tag == account_type_to_tags(&bip44).type_tag)
+            .expect("bip44 bucket");
+
+        assert_eq!(
+            coinjoin_bucket.transactions_count, 1,
+            "the folded wallet-level row files under the funding account"
+        );
+        assert_eq!(
+            coinjoin_bucket.utxos_added_count, 0,
+            "the funding slice owns no outputs — the sibling's change \
+             must NOT be derived from the folded record into this bucket"
+        );
+        assert_eq!(
+            coinjoin_bucket.utxos_spent_count, 1,
+            "the spend stays with the account that owned the coin"
+        );
+        assert_eq!(bip44_bucket.transactions_count, 0);
+        assert_eq!(
+            bip44_bucket.utxos_added_count, 1,
+            "the change TXO lands in its OWNING account's bucket"
+        );
         unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 
