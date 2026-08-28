@@ -142,6 +142,185 @@ async fn fetch_operator_reward(
     wallet: &PlatformWallet,
     pro_tx_hash: &[u8; 32],
 ) -> Result<u16, PlatformWalletError> {
+    fetch_registration_payload(wallet, pro_tx_hash)
+        .await
+        .map(|registration| registration.operator_reward)
+}
+
+/// The explicit service values a stage-two reactivation re-asserts —
+/// captured from the list entry BEFORE a registrar update erased them,
+/// since a ProUpRegTx that changes the operator key resets the entry's
+/// service fields. For an evonode all three platform values are required;
+/// for a regular masternode all must be `None`.
+#[derive(Debug, Clone)]
+pub struct UpdateServiceValues {
+    /// Core P2P endpoint as `"ip:port"`.
+    pub service_address: String,
+    pub platform_node_id: Option<[u8; 20]>,
+    pub platform_p2p_port: Option<u16>,
+    pub platform_http_port: Option<u16>,
+}
+
+/// [`execute_masternode_update_service`] with caller-supplied service
+/// values instead of copying the live list entry — the reactivation half of
+/// an operator-key rotation, whose ProUpRegTx left the entry banned with
+/// its service fields reset (so there is nothing to copy).
+///
+/// Every other preflight is unchanged: the entry must still exist, the
+/// operator secret must match ITS operator key (after a rotation confirms,
+/// that is the new wallet key), and the payout rule reads the ProRegTx's
+/// `operatorReward`. The v3 extended-net-info guard also still applies —
+/// naturally passing post-reset, since a reset entry no longer advertises
+/// an endpoint map.
+pub async fn execute_masternode_update_service_with_values<S: TransactionSigner + ?Sized + Sync>(
+    wallet: &PlatformWallet,
+    spv: &SpvRuntime,
+    params: MasternodeUpdateServiceParams,
+    values: UpdateServiceValues,
+    operator_secret: Zeroizing<[u8; 32]>,
+    signer: &S,
+) -> Result<Txid, PlatformWalletError> {
+    let signed = prepare_masternode_update_service_with_values(
+        wallet,
+        spv,
+        params,
+        values,
+        operator_secret,
+        signer,
+    )
+    .await?;
+    wallet.core().broadcast_finalized_transaction(&signed).await
+}
+
+/// Prepare-only sibling of
+/// [`execute_masternode_update_service_with_values`]; ownership contract as
+/// [`prepare_masternode_update_service`].
+pub async fn prepare_masternode_update_service_with_values<S: TransactionSigner + ?Sized + Sync>(
+    wallet: &PlatformWallet,
+    spv: &SpvRuntime,
+    params: MasternodeUpdateServiceParams,
+    values: UpdateServiceValues,
+    operator_secret: Zeroizing<[u8; 32]>,
+    signer: &S,
+) -> Result<SignedCoreTransaction, PlatformWalletError> {
+    let summaries = spv
+        .masternode_list_summaries()
+        .await
+        .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
+    let entry = summaries
+        .iter()
+        .find(|entry| entry.pro_tx_hash == params.pro_tx_hash)
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidParameter(format!(
+                "masternode {} is not in the masternode list",
+                display_hex(&params.pro_tx_hash)
+            ))
+        })?;
+
+    verify_operator_secret(&entry.operator_public_key, &operator_secret)?;
+
+    let operator_reward = fetch_operator_reward(wallet, &params.pro_tx_hash).await?;
+    let script_payout = resolve_operator_payout_script(
+        operator_reward,
+        params.operator_payout_address.as_deref(),
+        wallet.network(),
+    )?;
+
+    // The values struct is the single source of platform values here — a
+    // params-level P2P port would be a second one.
+    if params.platform_p2p_port.is_some() {
+        return Err(PlatformWalletError::InvalidParameter(
+            "pass the platform P2P port inside the service values, not the params".to_string(),
+        ));
+    }
+
+    let placeholder =
+        prepare_update_service_placeholder_from_values(entry, &values, script_payout)?;
+
+    build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
+}
+
+/// Build the placeholder payload from caller-supplied values. The same
+/// evonode/regular gating as the entry-copy path: `mn_type` set explicitly
+/// so the serializer cannot silently drop the platform triplet, all three
+/// platform values required for an evonode and forbidden for a regular
+/// masternode — and the same v3 extended-net-info refusal, which a
+/// post-reset entry passes naturally.
+pub(crate) fn prepare_update_service_placeholder_from_values(
+    entry: &MasternodeListSummary,
+    values: &UpdateServiceValues,
+    script_payout: ScriptBuf,
+) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+    if entry.has_extended_net_info {
+        return Err(PlatformWalletError::InvalidParameter(
+            "this masternode advertises v3 extended network info; a version-2 update-service              payload would replace its whole endpoint map with a single address, so it cannot              be re-asserted from this wallet yet"
+                .to_string(),
+        ));
+    }
+    let service: SocketAddr = values.service_address.parse().map_err(|e| {
+        PlatformWalletError::InvalidParameter(format!(
+            "service address is not a valid ip:port: {e}"
+        ))
+    })?;
+    let (ip_address, port) = service_payload_fields(service);
+
+    let (mn_type, platform_node_id, platform_p2p_port, platform_http_port) = if entry.is_evonode {
+        let (Some(node_id), Some(p2p), Some(http)) = (
+            values.platform_node_id,
+            values.platform_p2p_port,
+            values.platform_http_port,
+        ) else {
+            return Err(PlatformWalletError::InvalidParameter(
+                "an evonode payload requires the platform node id, P2P port and HTTP port"
+                    .to_string(),
+            ));
+        };
+        (
+            Some(ProviderMasternodeType::HighPerformance as u16),
+            Some(PlatformNodeId::from_byte_array(node_id)),
+            Some(p2p),
+            Some(http),
+        )
+    } else {
+        if values.platform_node_id.is_some()
+            || values.platform_p2p_port.is_some()
+            || values.platform_http_port.is_some()
+        {
+            return Err(PlatformWalletError::InvalidParameter(
+                "platform values were given, but this masternode is not an evonode".to_string(),
+            ));
+        }
+        (
+            Some(ProviderMasternodeType::Regular as u16),
+            None,
+            None,
+            None,
+        )
+    };
+
+    Ok(ProviderUpdateServicePayload::new(
+        mn_type,
+        Txid::from_byte_array(entry.pro_tx_hash),
+        ip_address,
+        port,
+        script_payout,
+        InputsHash::all_zeros(),
+        platform_node_id,
+        platform_p2p_port,
+        platform_http_port,
+        BLSSignature::from([0u8; 96]),
+    ))
+}
+
+/// Fetch the masternode's ProRegTx via DAPI Core and return its payload,
+/// txid-bound (see [`operator_reward_from_registration`] for why the
+/// binding matters). Shared by the payout rule here and the registrar
+/// update's owner-key verification — the ProRegTx is the one place the
+/// immutable `keyIDOwner` lives.
+pub(crate) async fn fetch_registration_payload(
+    wallet: &PlatformWallet,
+    pro_tx_hash: &[u8; 32],
+) -> Result<dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderRegistrationPayload, PlatformWalletError>{
     let display = display_hex(pro_tx_hash);
     let fetched = wallet
         .sdk()
@@ -154,24 +333,17 @@ async fn fetch_operator_reward(
         })?
         .ok_or_else(|| {
             PlatformWalletError::InvalidParameter(format!(
-                "registration transaction {display} was not found; cannot determine the \
-                 operator reward"
+                "registration transaction {display} was not found"
             ))
         })?;
-    operator_reward_from_registration(pro_tx_hash, &fetched.transaction)
+    registration_payload_from_fetched(pro_tx_hash, fetched.transaction)
 }
 
-/// Read `operatorReward` out of a fetched registration transaction —
-/// binding the response to the request first: DAPI's get-transaction reply
-/// is not authenticated, so the decoded transaction must hash to the
-/// SPV-authenticated proTxHash before its payload is trusted. Without this
-/// check a faulty or malicious endpoint could answer with an unrelated
-/// zero-reward ProRegTx and steer [`resolve_operator_payout_script`] into
-/// clearing a real operator payout.
-pub(crate) fn operator_reward_from_registration(
+/// Txid-bind and unwrap a fetched registration transaction's payload.
+pub(crate) fn registration_payload_from_fetched(
     pro_tx_hash: &[u8; 32],
-    transaction: &dashcore::Transaction,
-) -> Result<u16, PlatformWalletError> {
+    transaction: dashcore::Transaction,
+) -> Result<dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderRegistrationPayload, PlatformWalletError>{
     let expected = Txid::from_byte_array(*pro_tx_hash);
     let actual = transaction.txid();
     if actual != expected {
@@ -180,10 +352,8 @@ pub(crate) fn operator_reward_from_registration(
              {expected}"
         )));
     }
-    match &transaction.special_transaction_payload {
-        Some(TransactionPayload::ProviderRegistrationPayloadType(registration)) => {
-            Ok(registration.operator_reward)
-        }
+    match transaction.special_transaction_payload {
+        Some(TransactionPayload::ProviderRegistrationPayloadType(registration)) => Ok(registration),
         _ => Err(PlatformWalletError::InvalidParameter(format!(
             "transaction {expected} is not a provider registration transaction"
         ))),
@@ -419,7 +589,7 @@ where
         .await
 }
 
-fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
+pub(crate) fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
     let mut display = *pro_tx_hash;
     display.reverse();
     hex::encode(display)
@@ -632,11 +802,11 @@ mod tests {
         let transaction = registration_transaction(500);
         let matching = transaction.txid().to_byte_array();
 
-        let reward = operator_reward_from_registration(&matching, &transaction)
+        let registration = registration_payload_from_fetched(&matching, transaction.clone())
             .expect("a matching registration transaction is accepted");
-        assert_eq!(reward, 500);
+        assert_eq!(registration.operator_reward, 500);
 
-        let err = operator_reward_from_registration(&[0x99; 32], &transaction)
+        let err = registration_payload_from_fetched(&[0x99; 32], transaction)
             .expect_err("a transaction that does not hash to the request must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidIdentityData(_)));
 
@@ -644,7 +814,7 @@ mod tests {
         let mut not_registration = registration_transaction(0);
         not_registration.special_transaction_payload = None;
         let plain_txid = not_registration.txid().to_byte_array();
-        let err = operator_reward_from_registration(&plain_txid, &not_registration)
+        let err = registration_payload_from_fetched(&plain_txid, not_registration)
             .expect_err("a non-registration transaction must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
@@ -655,6 +825,73 @@ mod tests {
         entry.service_address = None;
         let err = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
             .expect_err("no service address to re-assert");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    /// Stage two of a rotation supplies values explicitly — the entry's own
+    /// service state was reset by the registrar update, so nothing is copied.
+    #[test]
+    fn values_placeholder_builds_from_supplied_values_not_the_entry() {
+        let mut entry = operator_entry(0x66, true);
+        // Post-registrar-reset shape: no service address on the entry.
+        entry.service_address = None;
+        let values = UpdateServiceValues {
+            service_address: "203.0.113.66:9999".to_string(),
+            platform_node_id: Some([0x77; 20]),
+            platform_p2p_port: Some(26656),
+            platform_http_port: Some(443),
+        };
+        let payload =
+            prepare_update_service_placeholder_from_values(&entry, &values, ScriptBuf::new())
+                .expect("values placeholder");
+        assert_eq!(payload.port, 9999);
+        assert_eq!(
+            payload.mn_type,
+            Some(ProviderMasternodeType::HighPerformance as u16)
+        );
+        assert_eq!(
+            payload.platform_node_id,
+            Some(PlatformNodeId::from_byte_array([0x77; 20]))
+        );
+        assert_eq!(payload.platform_p2p_port, Some(26656));
+        assert_eq!(payload.platform_http_port, Some(443));
+
+        let incomplete = UpdateServiceValues {
+            platform_p2p_port: None,
+            ..values.clone()
+        };
+        let err =
+            prepare_update_service_placeholder_from_values(&entry, &incomplete, ScriptBuf::new())
+                .expect_err("an evonode needs the full platform triplet");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        let mut regular = operator_entry(0x67, false);
+        regular.service_address = None;
+        let err =
+            prepare_update_service_placeholder_from_values(&regular, &values, ScriptBuf::new())
+                .expect_err("platform values on a regular masternode are refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        let plain = UpdateServiceValues {
+            service_address: "203.0.113.67:9999".to_string(),
+            platform_node_id: None,
+            platform_p2p_port: None,
+            platform_http_port: None,
+        };
+        let payload =
+            prepare_update_service_placeholder_from_values(&regular, &plain, ScriptBuf::new())
+                .expect("regular values placeholder");
+        assert_eq!(
+            payload.mn_type,
+            Some(ProviderMasternodeType::Regular as u16)
+        );
+        assert_eq!(payload.platform_node_id, None);
+
+        let mut extended = operator_entry(0x68, true);
+        extended.has_extended_net_info = true;
+        let err =
+            prepare_update_service_placeholder_from_values(&extended, &values, ScriptBuf::new())
+                .expect_err("a live extended entry is still refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
 

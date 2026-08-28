@@ -8,12 +8,15 @@
 //!   the operator / platform-node keys. Both FFI crates and the withdrawal
 //!   path read through it, so every host renders the same records.
 
+pub mod key_candidates;
 pub mod list;
 pub mod locator;
 pub mod record;
 pub mod tracked;
+pub mod update_registrar;
 pub mod update_service;
 
+pub use key_candidates::{provider_key_candidates, ProviderKeyCandidate};
 pub use list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
 pub use locator::{
     locate_in_summaries, parse_locator_input, parse_secret_for_role, verify_masternode_key,
@@ -30,9 +33,14 @@ pub use tracked::{
     capabilities_for_roles, snapshot_from_json, snapshot_to_json, MasternodeCapabilities,
     PlatformKeySnapshot, RegistrationDetails, TrackedMasternode, TrackedMasternodeSnapshot,
 };
+pub use update_registrar::{
+    execute_masternode_update_registrar, prepare_masternode_update_registrar,
+    MasternodeUpdateRegistrarParams, OwnerSecret,
+};
 pub use update_service::{
-    execute_masternode_update_service, prepare_masternode_update_service,
-    MasternodeUpdateServiceParams,
+    execute_masternode_update_service, execute_masternode_update_service_with_values,
+    prepare_masternode_update_service, prepare_masternode_update_service_with_values,
+    MasternodeUpdateServiceParams, UpdateServiceValues,
 };
 
 use crate::changeset::PlatformWalletPersistence;
