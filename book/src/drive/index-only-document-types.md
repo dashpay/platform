@@ -85,7 +85,11 @@ contract updates — a later-added index could never be backfilled.
   uniqueness constraint over its value projection plus owner — for likes,
   the `[postId]` index is the one-like-per-(post, owner) rule. `refersTo`
   validation runs unchanged (it reads transition values, not storage), so a
-  like on a nonexistent post is rejected.
+  like on a nonexistent post is rejected — and a `propertyAgreement`
+  declaration on the reference (`{ "hashtag": "hashtag" }`) binds the
+  like's own property to the referenced post's: the referenced document is
+  already fetched for the existence check, so the equality comparison adds
+  no reads, and a like whose hashtag disagrees with its post's is refused.
 - **Delete** is its own transition kind,
   `DocumentIndexOnlyDeleteTransition { base, data }` (`$action:
   "indexOnlyDelete"`), carrying the full value tuple (`$createdAt` under

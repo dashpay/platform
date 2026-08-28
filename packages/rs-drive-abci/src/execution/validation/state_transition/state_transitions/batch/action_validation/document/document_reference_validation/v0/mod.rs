@@ -11,6 +11,7 @@ use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
+use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -109,17 +110,28 @@ fn validate_document_type_references_v0(
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     for (path, property) in document_type.flattened_properties() {
-        if let Some(changed) = changed_fields {
-            if !is_changed_field(changed, path) {
-                continue;
-            }
-        }
-
         let DocumentPropertyType::IdentifierWithReference(reference_target) =
             &property.property_type
         else {
             continue;
         };
+
+        if let Some(changed) = changed_fields {
+            // A propertyAgreement pair binds the referring property too:
+            // replacing it must re-validate the reference even when the
+            // reference property itself is untouched.
+            let agreement_property_changed = match reference_target {
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    property_agreement, ..
+                } => property_agreement
+                    .keys()
+                    .any(|referring_property| is_changed_field(changed, referring_property)),
+                _ => false,
+            };
+            if !is_changed_field(changed, path) && !agreement_property_changed {
+                continue;
+            }
+        }
 
         let referenced_id = match document_data.get_optional_identifier_at_path(path) {
             Ok(Some(referenced_id)) => referenced_id,
@@ -182,6 +194,7 @@ fn validate_document_type_references_v0(
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: referenced_contract_id,
                 document_type_name,
+                property_agreement,
             } => {
                 // An absent contract id targets the declaring contract itself; the
                 // declaring contract may also name its own id explicitly. Either
@@ -254,7 +267,7 @@ fn validate_document_type_references_v0(
                     ));
                 }
 
-                fetch_document_with_id(
+                let referenced_document = fetch_document_with_id(
                     platform.drive,
                     referenced_contract,
                     referenced_document_type,
@@ -263,8 +276,63 @@ fn validate_document_type_references_v0(
                     execution_context,
                     transaction,
                     platform_version,
-                )?
-                .is_some()
+                )?;
+
+                // Property agreement: the referenced document is already in
+                // hand for the existence check, so comparing the declared
+                // pairs adds no reads. Each side is normalized through its
+                // OWN document type's key encoding — one deterministic
+                // normal form per value kind, so an identifier stored as
+                // bytes and one carried as an identifier compare equal.
+                if let Some(referenced_document) = &referenced_document {
+                    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+                    use dpp::document::DocumentV0Getters;
+
+                    for (referring_property, referenced_property) in property_agreement {
+                        let mismatch = || {
+                            SimpleConsensusValidationResult::new_with_error(
+                                ReferencedDocumentPropertyMismatchError::new(
+                                    path.to_string(),
+                                    referring_property.clone(),
+                                    referenced_property.clone(),
+                                )
+                                .into(),
+                            )
+                        };
+                        let Ok(Some(referring_value)) =
+                            document_data.get_optional_at_path(referring_property)
+                        else {
+                            return Ok(mismatch());
+                        };
+                        let Ok(Some(referenced_value)) = referenced_document
+                            .properties()
+                            .get_optional_at_path(referenced_property)
+                        else {
+                            return Ok(mismatch());
+                        };
+                        let Ok(referring_encoded) = document_type.serialize_value_for_key(
+                            referring_property,
+                            referring_value,
+                            platform_version,
+                        ) else {
+                            return Ok(mismatch());
+                        };
+                        let Ok(referenced_encoded) = referenced_document_type
+                            .serialize_value_for_key(
+                                referenced_property,
+                                referenced_value,
+                                platform_version,
+                            )
+                        else {
+                            return Ok(mismatch());
+                        };
+                        if referring_encoded != referenced_encoded {
+                            return Ok(mismatch());
+                        }
+                    }
+                }
+
+                referenced_document.is_some()
             }
             DocumentPropertyReferenceTarget::IdentityPublicKey { key_id_property } => {
                 // The referenced key id is carried by the named sibling property
