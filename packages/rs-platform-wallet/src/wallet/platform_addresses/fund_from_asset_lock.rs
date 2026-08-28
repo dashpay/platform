@@ -68,12 +68,24 @@ impl PlatformAddressWallet {
     ///   amount in credits. Exactly one entry must be `None` — the
     ///   remainder-after-fees-and-explicit-outputs recipient (the lock
     ///   is consumed in full, so a remainder bucket is mandatory).
+    /// * `_fee_strategy` — **IGNORED.** Retained so the pre-derivation
+    ///   signature still compiles for out-of-tree callers; pass
+    ///   whatever you passed before (`vec![]` is fine). The strategy
+    ///   actually used is derived from `addresses` by
+    ///   [`remainder_fee_strategy`], because the only address that can
+    ///   legitimately absorb the fee is the remainder output and its
+    ///   consensus index is a property of that map's ordering, not of
+    ///   any caller's list order. Every binding that computed the index
+    ///   from its own list order silently mis-targeted the fee whenever
+    ///   the remainder was not also first lexicographically, so the
+    ///   index is no longer the caller's to supply. This mirrors the C
+    ///   ABI, where `fee_strategy` / `fee_strategy_count` are likewise
+    ///   still accepted and ignored.
     ///
-    ///   The fee strategy is NOT a parameter: it is derived from this
-    ///   map by [`remainder_fee_strategy`], because the only address
-    ///   that can legitimately absorb the fee is the remainder output
-    ///   and its consensus index is a property of this map's ordering,
-    ///   not of any caller's list order.
+    ///   [`PlatformAddressWallet::fund_from_asset_lock_external`] has no
+    ///   such compatibility obligation (it is new in this release) and
+    ///   therefore omits the argument rather than carrying the vestige
+    ///   forward.
     /// * `address_signer` — Signs per-input `AddressWitness` for any
     ///   additional inputs from existing platform addresses (today
     ///   none — combining external inputs with an asset-lock proof is
@@ -145,6 +157,7 @@ impl PlatformAddressWallet {
         funding: AssetLockFunding,
         platform_account_index: u32,
         addresses: BTreeMap<PlatformAddress, Option<Credits>>,
+        _fee_strategy: AddressFundsFeeStrategy,
         address_signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
@@ -170,8 +183,11 @@ impl PlatformAddressWallet {
     /// (change) and the fee.
     ///
     /// Sibling to [`PlatformAddressWallet::fund_from_asset_lock`]:
-    /// identical pipeline, identical arguments, identical bookkeeping —
-    /// the ONLY delta is the recipient pre-flight.
+    /// identical pipeline, identical bookkeeping — the ONLY behavioural
+    /// delta is the recipient pre-flight. The one signature difference
+    /// is that this entry point omits the vestigial `_fee_strategy`
+    /// argument: it is new here, so it has no source-compatibility debt
+    /// to carry (see that method's `_fee_strategy` note).
     ///
     /// | | `fund_from_asset_lock` | `fund_from_asset_lock_external` |
     /// |---|---|---|
@@ -586,7 +602,7 @@ fn remainder_fee_strategy(
             // the pre-flight gets a diagnosable failure instead of a panic
             // across the FFI boundary.
             PlatformWalletError::AddressOperation(
-                "fund_from_asset_lock requires exactly one remainder (None-amount) recipient to                  absorb the fee, found none"
+                "fund_from_asset_lock requires exactly one remainder (None-amount) recipient to absorb the fee, found none"
                     .to_string(),
             )
         })?;

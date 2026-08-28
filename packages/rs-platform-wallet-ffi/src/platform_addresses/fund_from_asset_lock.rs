@@ -125,6 +125,10 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
                     },
                     platform_account_index,
                     address_map,
+                    // Vestigial: the Rust method retains this argument
+                    // for source compatibility and ignores it, deriving
+                    // the remainder strategy from `address_map`.
+                    Vec::new(),
                     address_signer,
                     &asset_lock_signer,
                     None,
@@ -233,6 +237,8 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_sig
                     },
                     platform_account_index,
                     address_map,
+                    // Vestigial: see the sibling call site above.
+                    Vec::new(),
                     address_signer,
                     &asset_lock_signer,
                     None,
@@ -329,9 +335,36 @@ pub(super) unsafe fn decode_funding_addresses(
 /// caller's to supply.
 ///
 /// # Safety
-/// - `signer_address_handle` / `core_signer_handle` — see
-///   [`platform_address_wallet_fund_from_asset_lock_signer`]. Same
-///   ownership and validity contract.
+/// - `addresses` must be non-null. When `addresses_count > 0` it must
+///   point to `addresses_count` consecutive, properly aligned and
+///   initialized `FundingAddressEntryFFI` values inside a single
+///   allocation, and stay readable and unmutated for the whole call.
+///   `addresses_count` must not exceed `isize::MAX` bytes' worth of
+///   entries. A `0` count is short-circuited before any dereference, so
+///   a dangling non-null sentinel is sound in that case only.
+/// - `fee_strategy` / `fee_strategy_count` are never read (see above),
+///   so they carry no validity obligation at all — any value, including
+///   a dangling or misaligned pointer, is sound. Pass `NULL` / `0`.
+/// - `out_changeset` must be non-null, properly aligned and valid for
+///   writes of one `PlatformAddressChangeSetFFI`. It is overwritten
+///   unconditionally (with an empty sentinel first, then the result),
+///   so it need not be initialized on entry, but any changeset already
+///   stored there is leaked rather than freed — pass a fresh slot.
+///   Ownership of the written changeset transfers to the caller, which
+///   must release it with `platform_address_wallet_free_changeset`.
+/// - `signer_address_handle` must be a valid, non-destroyed
+///   `*mut SignerHandle` produced by `dash_sdk_signer_create_with_ctx`.
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle` produced by
+///   [`crate::dash_sdk_mnemonic_resolver_create`].
+/// - The caller retains ownership of both handles, and both must stay
+///   alive — and must not be destroyed, moved or otherwise mutated from
+///   another thread — until this call returns. The call blocks on a
+///   worker until the flow completes, so "until this returns" spans the
+///   entire build/broadcast/submit pipeline, not just the marshalling.
+/// - `handle` must be a live `PlatformAddressWallet` handle; a stale or
+///   already-destroyed one is rejected by the handle table rather than
+///   dereferenced.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_signer(
@@ -443,10 +476,41 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_external_s
 /// caller's to supply.
 ///
 /// # Safety
-/// - `out_point` must be a valid, non-null pointer to an `OutPointFFI`
-///   (32-byte raw txid + u32 vout). The caller retains ownership.
-/// - `signer_address_handle` / `core_signer_handle` — see
-///   [`platform_address_wallet_fund_from_asset_lock_signer`].
+/// - `out_point` must be non-null, properly aligned, and point to one
+///   fully initialized `OutPointFFI` (32-byte raw txid + `u32` vout)
+///   that stays readable until this call returns. It is read once, by
+///   value, before the worker is spawned; the caller retains ownership
+///   and may free it once the call returns.
+/// - `addresses` must be non-null. When `addresses_count > 0` it must
+///   point to `addresses_count` consecutive, properly aligned and
+///   initialized `FundingAddressEntryFFI` values inside a single
+///   allocation, and stay readable and unmutated for the whole call.
+///   `addresses_count` must not exceed `isize::MAX` bytes' worth of
+///   entries. A `0` count is short-circuited before any dereference, so
+///   a dangling non-null sentinel is sound in that case only.
+/// - `fee_strategy` / `fee_strategy_count` are never read (see above),
+///   so they carry no validity obligation at all — any value, including
+///   a dangling or misaligned pointer, is sound. Pass `NULL` / `0`.
+/// - `out_changeset` must be non-null, properly aligned and valid for
+///   writes of one `PlatformAddressChangeSetFFI`. It is overwritten
+///   unconditionally (with an empty sentinel first, then the result),
+///   so it need not be initialized on entry, but any changeset already
+///   stored there is leaked rather than freed — pass a fresh slot.
+///   Ownership of the written changeset transfers to the caller, which
+///   must release it with `platform_address_wallet_free_changeset`.
+/// - `signer_address_handle` must be a valid, non-destroyed
+///   `*mut SignerHandle` produced by `dash_sdk_signer_create_with_ctx`.
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle` produced by
+///   [`crate::dash_sdk_mnemonic_resolver_create`].
+/// - The caller retains ownership of both handles, and both must stay
+///   alive — and must not be destroyed, moved or otherwise mutated from
+///   another thread — until this call returns. The call blocks on a
+///   worker until the flow completes, so "until this returns" spans the
+///   entire build/broadcast/submit pipeline, not just the marshalling.
+/// - `handle` must be a live `PlatformAddressWallet` handle; a stale or
+///   already-destroyed one is rejected by the handle table rather than
+///   dereferenced.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_external_signer(
