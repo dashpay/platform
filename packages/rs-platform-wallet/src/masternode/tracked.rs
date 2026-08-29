@@ -306,6 +306,7 @@ fn list_to_json(list: &MasternodeListSummary) -> Value {
         "isValid": list.is_valid,
         "isEvonode": list.is_evonode,
         "hasExtendedNetInfo": list.has_extended_net_info,
+        "operatorKeyIsLegacy": list.operator_key_is_legacy,
     })
 }
 
@@ -324,6 +325,7 @@ fn list_from_json(value: &Value) -> Option<MasternodeListSummary> {
         // Absent on snapshots persisted before the field existed; the
         // next refresh rewrites it from the live entry.
         has_extended_net_info: value["hasExtendedNetInfo"].as_bool().unwrap_or(false),
+        operator_key_is_legacy: value["operatorKeyIsLegacy"].as_bool().unwrap_or(false),
     })
 }
 

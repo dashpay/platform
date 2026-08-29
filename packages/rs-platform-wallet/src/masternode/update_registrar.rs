@@ -32,7 +32,10 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
 use zeroize::Zeroizing;
 
 use super::list::MasternodeListSummary;
-use super::update_service::{display_hex, fetch_registration_payload};
+use super::locator::p2pkh_script_hash;
+use super::update_service::{
+    display_hex, fetch_registration_payload, require_standard_payout_script,
+};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::spv::SpvRuntime;
@@ -160,7 +163,10 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
             ensure_operator_key_unused(&summaries, &bytes, legacy.as_ref())?;
             bytes
         }
-        None => entry.operator_public_key,
+        None => normalize_operator_key_to_basic(
+            &entry.operator_public_key,
+            entry.operator_key_is_legacy,
+        )?,
     };
     let voting_key_hash = match params.new_voting_key_index {
         Some(index) => {
@@ -170,6 +176,14 @@ pub async fn prepare_masternode_update_registrar<S: TransactionSigner + ?Sized +
         }
         None => entry.voting_key_id,
     };
+
+    // Consensus rejects a payout paid to the owner key or the payload's
+    // (final) voting key (`bad-protx-payee-reuse`) — refuse before funding.
+    ensure_payout_not_reusing_keys(
+        &script_payout,
+        &registration.owner_key_hash,
+        &voting_key_hash,
+    )?;
 
     let placeholder = ProviderUpdateRegistrarPayload::new(
         Txid::from_byte_array(params.pro_tx_hash),
@@ -239,7 +253,9 @@ pub(crate) fn resolve_owner_payout_script(
                 "payout address is for another network: {e}"
             ))
         })?;
-    Ok(address.script_pubkey())
+    let script = address.script_pubkey();
+    require_standard_payout_script(&script)?;
+    Ok(script)
 }
 
 /// Refuse a candidate operator key already registered to any masternode —
@@ -263,6 +279,69 @@ pub(crate) fn ensure_operator_key_unused(
         )));
     }
     Ok(())
+}
+
+/// Consensus rejects a P2PKH payout paid to the owner key or the payload's
+/// final voting key (`bad-protx-payee-reuse`). Both hashes are known before
+/// funding — the immutable owner hash from the ProRegTx, the voting hash
+/// from the payload being built — so a doomed transaction is refused here.
+/// (P2SH payouts carry a script hash, not a key id, and cannot collide.)
+pub(crate) fn ensure_payout_not_reusing_keys(
+    script_payout: &ScriptBuf,
+    owner_key_hash: &PubkeyHash,
+    final_voting_key_hash: &[u8; 20],
+) -> Result<(), PlatformWalletError> {
+    let Some(payee) = p2pkh_script_hash(script_payout.as_bytes()) else {
+        return Ok(());
+    };
+    if payee == owner_key_hash.to_byte_array() {
+        return Err(PlatformWalletError::InvalidParameter(
+            "the payout address is the masternode's owner address — consensus rejects paying \
+             the payout to the owner key; pick a different payout address"
+                .to_string(),
+        ));
+    }
+    if payee == *final_voting_key_hash {
+        return Err(PlatformWalletError::InvalidParameter(
+            "the payout address is the masternode's voting address — consensus rejects paying \
+             the payout to the voting key; pick a different payout address"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// A kept (not rotated) operator key re-enters a version-2 payload, which
+/// Core deserializes under the BASIC scheme — but a version-1 (pre-v19)
+/// list entry carries the key in the LEGACY serialization. The two
+/// serializations of one point differ only in flag bits (legacy bytes can
+/// even parse "successfully" under the basic scheme as a different
+/// reading), so the entry's version — not the bytes — decides: a legacy
+/// key is parsed under Legacy and reserialized to basic; a basic key is
+/// validated and passed through.
+pub(crate) fn normalize_operator_key_to_basic(
+    bytes: &[u8; 48],
+    is_legacy: bool,
+) -> Result<[u8; 48], PlatformWalletError> {
+    use dashcore::blsful::{Bls12381G2Impl, PublicKey as BlsPubKey, SerializationFormat};
+    let format = if is_legacy {
+        SerializationFormat::Legacy
+    } else {
+        SerializationFormat::Modern
+    };
+    let key = BlsPubKey::<Bls12381G2Impl>::from_bytes_with_mode(bytes, format).map_err(|_| {
+        PlatformWalletError::InvalidParameter(
+            "the masternode's current operator key could not be parsed in the entry's BLS \
+             serialization"
+                .to_string(),
+        )
+    })?;
+    if !is_legacy {
+        return Ok(*bytes);
+    }
+    key.to_bytes().as_slice().try_into().map_err(|_| {
+        PlatformWalletError::KeyDerivation("reserialized operator key is not 48 bytes".to_string())
+    })
 }
 
 /// Compact recoverable ECDSA over `base_payload_hash`, in Core's
@@ -592,5 +671,98 @@ mod tests {
             hash160::Hash::hash(&recovered.serialize()).to_byte_array(),
             owner_key_hash().to_byte_array()
         );
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::super::locator::bls_public_keys;
+    use super::*;
+    use dashcore::secp256k1::PublicKey as SecpPublicKey;
+
+    /// Consensus accepts only P2PKH / P2SH payouts (`bad-protx-payee`): a
+    /// witness-program address must be refused before funding.
+    #[test]
+    fn witness_payout_addresses_are_refused() {
+        let secp = Secp256k1::new();
+        let secret = SecretKey::from_byte_array(&[7u8; 32]).expect("valid scalar");
+        let public = dashcore::PublicKey::new(SecpPublicKey::from_secret_key(&secp, &secret));
+        let witness = DashAddress::p2wpkh(&public, Network::Testnet).expect("p2wpkh address");
+
+        let err = resolve_owner_payout_script(&witness.to_string(), Network::Testnet)
+            .expect_err("a witness payout must be refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        // The operator-payout resolver in the update-service path applies
+        // the same restriction to a non-empty payout.
+        let err = super::super::update_service::resolve_operator_payout_script(
+            500,
+            Some(&witness.to_string()),
+            Network::Testnet,
+        )
+        .expect_err("a witness operator payout must be refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        // P2SH remains accepted.
+        let p2sh = DashAddress::p2sh(
+            &ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([9; 20])),
+            Network::Testnet,
+        )
+        .expect("p2sh address");
+        resolve_owner_payout_script(&p2sh.to_string(), Network::Testnet)
+            .expect("a P2SH payout is accepted");
+    }
+
+    /// Consensus rejects a payout paid to the owner or final voting key
+    /// (`bad-protx-payee-reuse`).
+    #[test]
+    fn payouts_reusing_owner_or_voting_keys_are_refused() {
+        let owner = PubkeyHash::from_byte_array([0x11; 20]);
+        let voting = [0x22u8; 20];
+
+        let owner_payout = ScriptBuf::new_p2pkh(&owner);
+        let err = ensure_payout_not_reusing_keys(&owner_payout, &owner, &voting)
+            .expect_err("owner-address payout refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        let voting_payout = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array(voting));
+        let err = ensure_payout_not_reusing_keys(&voting_payout, &owner, &voting)
+            .expect_err("voting-address payout refused — including a newly selected candidate");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+
+        let other = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0x33; 20]));
+        ensure_payout_not_reusing_keys(&other, &owner, &voting)
+            .expect("an unrelated payout passes");
+
+        // P2SH carries a script hash, not a key id — never a collision.
+        let p2sh = ScriptBuf::new_p2sh(&dashcore::ScriptHash::from_byte_array([0x11; 20]));
+        ensure_payout_not_reusing_keys(&p2sh, &owner, &voting)
+            .expect("a P2SH payout cannot reuse a key id");
+    }
+
+    /// A kept operator key from a version-1 (legacy-serialized) entry is
+    /// reserialized to the basic scheme a v2 payload requires; a v2 entry's
+    /// key passes through; garbage is refused. The entry version — not the
+    /// bytes — picks the scheme: legacy bytes also "parse" under basic (the
+    /// serializations differ only in flag bits), so sniffing is unsound.
+    #[test]
+    fn kept_operator_keys_are_normalized_to_basic() {
+        let (basic, legacy) = bls_public_keys(&[7u8; 32]).expect("valid scalar");
+
+        assert_eq!(
+            normalize_operator_key_to_basic(&basic, false).expect("basic passes through"),
+            basic
+        );
+        assert_eq!(
+            normalize_operator_key_to_basic(&legacy, true).expect("legacy is reserialized"),
+            basic,
+            "the same G1 point re-emerges in basic serialization"
+        );
+        let err = normalize_operator_key_to_basic(&[0xFF; 48], false)
+            .expect_err("invalid basic bytes are refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+        let err = normalize_operator_key_to_basic(&[0xFF; 48], true)
+            .expect_err("invalid legacy bytes are refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
 }

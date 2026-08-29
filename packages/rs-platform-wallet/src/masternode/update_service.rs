@@ -175,16 +175,18 @@ pub struct UpdateServiceValues {
 pub async fn execute_masternode_update_service_with_values<S: TransactionSigner + ?Sized + Sync>(
     wallet: &PlatformWallet,
     spv: &SpvRuntime,
-    params: MasternodeUpdateServiceParams,
+    pro_tx_hash: [u8; 32],
     values: UpdateServiceValues,
+    operator_payout_address: Option<String>,
     operator_secret: Zeroizing<[u8; 32]>,
     signer: &S,
 ) -> Result<Txid, PlatformWalletError> {
     let signed = prepare_masternode_update_service_with_values(
         wallet,
         spv,
-        params,
+        pro_tx_hash,
         values,
+        operator_payout_address,
         operator_secret,
         signer,
     )
@@ -198,8 +200,9 @@ pub async fn execute_masternode_update_service_with_values<S: TransactionSigner 
 pub async fn prepare_masternode_update_service_with_values<S: TransactionSigner + ?Sized + Sync>(
     wallet: &PlatformWallet,
     spv: &SpvRuntime,
-    params: MasternodeUpdateServiceParams,
+    pro_tx_hash: [u8; 32],
     values: UpdateServiceValues,
+    operator_payout_address: Option<String>,
     operator_secret: Zeroizing<[u8; 32]>,
     signer: &S,
 ) -> Result<SignedCoreTransaction, PlatformWalletError> {
@@ -209,30 +212,22 @@ pub async fn prepare_masternode_update_service_with_values<S: TransactionSigner 
         .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
     let entry = summaries
         .iter()
-        .find(|entry| entry.pro_tx_hash == params.pro_tx_hash)
+        .find(|entry| entry.pro_tx_hash == pro_tx_hash)
         .ok_or_else(|| {
             PlatformWalletError::InvalidParameter(format!(
                 "masternode {} is not in the masternode list",
-                display_hex(&params.pro_tx_hash)
+                display_hex(&pro_tx_hash)
             ))
         })?;
 
     verify_operator_secret(&entry.operator_public_key, &operator_secret)?;
 
-    let operator_reward = fetch_operator_reward(wallet, &params.pro_tx_hash).await?;
+    let operator_reward = fetch_operator_reward(wallet, &pro_tx_hash).await?;
     let script_payout = resolve_operator_payout_script(
         operator_reward,
-        params.operator_payout_address.as_deref(),
+        operator_payout_address.as_deref(),
         wallet.network(),
     )?;
-
-    // The values struct is the single source of platform values here — a
-    // params-level P2P port would be a second one.
-    if params.platform_p2p_port.is_some() {
-        return Err(PlatformWalletError::InvalidParameter(
-            "pass the platform P2P port inside the service values, not the params".to_string(),
-        ));
-    }
 
     let placeholder =
         prepare_update_service_placeholder_from_values(entry, &values, script_payout)?;
@@ -362,6 +357,23 @@ pub(crate) fn registration_payload_from_fetched(
     }
 }
 
+/// Consensus accepts only P2PKH and P2SH payout scripts in provider
+/// transactions (`bad-protx-payee`) — anything else (a witness program,
+/// say) would fund and sign a transaction the mempool refuses.
+pub(crate) fn require_standard_payout_script(
+    script: &dashcore::blockdata::script::Script,
+) -> Result<(), PlatformWalletError> {
+    if script.is_p2pkh() || script.is_p2sh() {
+        Ok(())
+    } else {
+        Err(PlatformWalletError::InvalidParameter(
+            "the payout address must be a standard P2PKH or P2SH address — consensus rejects \
+             every other payout script type"
+                .to_string(),
+        ))
+    }
+}
+
 /// The operator payout rule, decided with the wallet owner (2026-08-27):
 /// the payload's payout script REPLACES the current one at consensus level
 /// and an empty script clears it, while consensus also forbids a payout
@@ -401,7 +413,9 @@ pub(crate) fn resolve_operator_payout_script(
                         "operator payout address is for another network: {e}"
                     ))
                 })?;
-            Ok(address.script_pubkey())
+            let script = address.script_pubkey();
+            require_standard_payout_script(&script)?;
+            Ok(script)
         }
     }
 }
