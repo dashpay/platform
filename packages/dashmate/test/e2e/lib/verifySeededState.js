@@ -9,7 +9,10 @@
  * of returning plausible-looking data.
  */
 
+import systemIds from '@dashevo/dpns-contract/lib/systemIds.js';
 import { getEvoSdk } from './platformSdk.js';
+
+const { contractId: dpnsContractId } = systemIds;
 
 /**
  * Unwrap a `ProofMetadataResponseTyped`, which carries the value alongside the
@@ -59,6 +62,17 @@ export default async function verifySeededState(config, quorumListConfig, manife
       checks.push({ name, present: false, detail: error.message });
     }
   };
+
+  // Baseline, independent of whether seeding managed to write anything: DPNS
+  // is created in the genesis state, so every node that holds a correctly
+  // restored Drive can serve it under proof, and a node that restored nothing
+  // cannot. This keeps the check meaningful even on a run where seeding was
+  // blocked.
+  await check(
+    `DPNS system data contract ${dpnsContractId}`,
+    () => sdk.contracts.fetchWithProof(dpnsContractId),
+    (value) => Boolean(value),
+  );
 
   for (const identity of manifest.identities) {
     await check(

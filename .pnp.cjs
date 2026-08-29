@@ -9661,6 +9661,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/docker-compose", "npm:0.24.4"],\
+          ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/evo-sdk", "workspace:packages/js-evo-sdk"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\

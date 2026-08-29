@@ -7315,6 +7315,7 @@ __metadata:
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dashd-rpc": "npm:^19.0.0"
     "@dashevo/docker-compose": "npm:^0.24.4"
+    "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/evo-sdk": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"

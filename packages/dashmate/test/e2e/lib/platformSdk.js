@@ -1,4 +1,9 @@
 import Dash from 'dash';
+import DashCoreLib from '@dashevo/dashcore-lib';
+import CoreService from '../../../src/core/CoreService.js';
+import wait from '../../../src/util/wait.js';
+
+const { PrivateKey } = DashCoreLib;
 
 /**
  * SDK plumbing for e2e specs that need to talk Platform to a node of a local
@@ -173,51 +178,119 @@ export function createPlatformProofVerifier(config, quorumListConfig) {
 }
 
 /**
- * Create a `Dash.Client` whose wallet holds the faucet key, so it can fund
- * other wallets.
+ * Create a `Dash.Client` with a fresh, empty wallet.
+ *
+ * `skipSyncBeforeHeight` matters more than it looks: a local network has
+ * already mined thousands of blocks registering masternodes by the time this
+ * runs, and a wallet that scans all of them for a key created seconds ago
+ * spends minutes finding nothing. Starting the transaction scan at the current
+ * tip is what the platform-test-suite does for the same reason.
  *
  * @param {Config} config - node to talk to
  * @param {Config} quorumListConfig
- * @param {string} faucetPrivateKey - WIF private key holding mined coins
+ * @param {Object} [options]
+ * @param {number} [options.skipSyncBeforeHeight]
  * @return {Client}
  */
-export function createFaucetClient(config, quorumListConfig, faucetPrivateKey) {
+export function createClient(config, quorumListConfig, { skipSyncBeforeHeight } = {}) {
+  const wallet = {
+    mnemonic: null,
+    waitForInstantLockTimeout: 120000,
+  };
+
+  if (skipSyncBeforeHeight) {
+    wallet.unsafeOptions = {
+      skipSynchronizationBeforeHeight: skipSyncBeforeHeight,
+    };
+  }
+
   return new Dash.Client({
     network: 'regtest',
     dapiAddresses: [getDapiAddress(config)],
     platformProofVerifier: createPlatformProofVerifier(config, quorumListConfig),
-    wallet: {
-      privateKey: faucetPrivateKey,
-      waitForInstantLockTimeout: 120000,
-    },
+    wallet,
   });
 }
 
 /**
- * Create a `Dash.Client` with a fresh wallet funded from the faucet client.
+ * Current Core block height.
  *
- * @param {Config} config - node to talk to
- * @param {Config} quorumListConfig
- * @param {Client} faucetClient
- * @param {number} amount - duffs to fund the new wallet with
- * @return {Promise<Client>}
+ * @param {CoreService} coreService
+ * @return {Promise<number>}
  */
-export async function createFundedClient(config, quorumListConfig, faucetClient, amount) {
-  const { default: fundWallet } = await import('@dashevo/wallet-lib/src/utils/fundWallet.js');
+export async function getCoreHeight(coreService) {
+  const { result } = await coreService.getRpcClient().getBlockCount();
 
-  const client = new Dash.Client({
-    network: 'regtest',
-    dapiAddresses: [getDapiAddress(config)],
-    platformProofVerifier: createPlatformProofVerifier(config, quorumListConfig),
-    wallet: {
-      mnemonic: null,
-      waitForInstantLockTimeout: 120000,
-    },
-  });
+  return result;
+}
 
-  await fundWallet(faucetClient.wallet, client.wallet, amount);
+/**
+ * Fund a client's wallet straight from the seed node's Core wallet.
+ *
+ * The platform-test-suite funds through a second wallet-lib wallet holding the
+ * faucet key, but that wallet has to rediscover a coinbase output that was
+ * mined before it existed, over a DAPI whose validators carry no address
+ * index. Paying the client's address from Core instead means the only thing
+ * the wallet has to see is a transaction that arrives while it is already
+ * listening, which is the path wallet-lib is reliable on.
+ *
+ * @param {CoreService} coreService - Core of the seed node
+ * @param {Client} client
+ * @param {number} amount - duffs to send
+ * @param {Object} [options]
+ * @param {number} [options.timeoutMs]
+ * @param {function(string): void} [options.log]
+ * @return {Promise<{ address: string, balance: number }>}
+ */
+export async function fundClientFromCore(coreService, client, amount, {
+  timeoutMs = 600000,
+  log = () => {},
+} = {}) {
+  const account = await client.getWalletAccount();
+  const { address } = account.getAddress();
 
-  return client;
+  const rpcClient = coreService.getRpcClient();
+
+  // sendToAddress takes DASH, and the wallet reports duffs
+  const { result: transactionId } = await rpcClient.sendToAddress(address, amount / 1e8);
+
+  log(`sent ${amount} duffs to ${address} in ${transactionId}`);
+
+  const privateKey = new PrivateKey();
+  const throwawayAddress = privateKey.toAddress('regtest').toString();
+
+  // Confirm the payment. Mining is deliberately not done on every poll: each
+  // new block is one more the wallet has to catch up on, so a tight loop can
+  // outrun the sync it is waiting for.
+  await rpcClient.generateToAddress(2, throwawayAddress, 10000000);
+
+  const deadline = Date.now() + timeoutMs;
+
+  let balance = 0;
+  let polls = 0;
+
+  while (Date.now() < deadline) {
+    balance = account.getTotalBalance();
+
+    if (balance >= amount) {
+      return { address, balance };
+    }
+
+    polls += 1;
+
+    if (polls % 10 === 0) {
+      log(`waiting for wallet ${address}: ${balance} of ${amount} duffs`);
+
+      // Nudge the chain occasionally in case the payment is still unconfirmed
+      await rpcClient.generateToAddress(1, throwawayAddress, 10000000);
+    }
+
+    await wait(3000);
+  }
+
+  throw new Error(
+    `wallet at ${address} only saw ${balance} of ${amount} duffs within ${timeoutMs}ms`,
+  );
 }
 
 /**
@@ -226,15 +299,46 @@ export async function createFundedClient(config, quorumListConfig, faucetClient,
  * Reuses dashmate's own `wallet mint` task rather than shelling out to the
  * CLI, so the isolated home dir and per-suite ports are honoured.
  *
- * @param {Object} container - awilix DI container
+ * The task would otherwise start its own Core service, which fails once the
+ * network is up ("Service core is already running"). Handing it a CoreService
+ * wrapping the seed's running container makes it mine through that instead,
+ * and also stops it from tearing the container down afterwards.
+ *
+ * @param {Object} diContainer - awilix DI container
  * @param {Config} seedConfig - the `local_seed` config
  * @param {number} amount - dash to mine
- * @return {Promise<{ address: string, privateKey: string }>}
+ * @return {Promise<{ address: string, privateKey: string, coreService: CoreService }>}
  */
-export async function mintToNewAddress(container, seedConfig, amount) {
-  const generateToAddressTask = container.resolve('generateToAddressTask');
+export async function mintToNewAddress(diContainer, seedConfig, amount) {
+  const generateToAddressTask = diContainer.resolve('generateToAddressTask');
+  const createRpcClient = diContainer.resolve('createRpcClient');
+  const getConnectionHost = diContainer.resolve('getConnectionHost');
+  const dockerCompose = diContainer.resolve('dockerCompose');
+  const docker = diContainer.resolve('docker');
+
+  const [containerId] = await dockerCompose.getContainerIds(seedConfig, {
+    filterServiceNames: 'core',
+  });
+
+  if (!containerId) {
+    throw new Error(`Core is not running on ${seedConfig.getName()}`);
+  }
+
+  const rpcClient = createRpcClient({
+    port: seedConfig.get('core.rpc.port'),
+    user: 'dashmate',
+    pass: seedConfig.get('core.rpc.users.dashmate.password'),
+    host: await getConnectionHost(seedConfig, 'core', 'core.rpc.host'),
+  });
+
+  const coreService = new CoreService(
+    seedConfig,
+    rpcClient,
+    docker.getContainer(containerId),
+  );
 
   const context = await generateToAddressTask(seedConfig, amount).run({
+    coreService,
     address: null,
     network: seedConfig.get('network'),
   });
@@ -246,5 +350,6 @@ export async function mintToNewAddress(container, seedConfig, amount) {
   return {
     address: context.address,
     privateKey: context.privateKey,
+    coreService,
   };
 }

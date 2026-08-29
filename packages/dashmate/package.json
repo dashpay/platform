@@ -102,6 +102,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.26.10",
+    "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/evo-sdk": "workspace:*",
     "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",
