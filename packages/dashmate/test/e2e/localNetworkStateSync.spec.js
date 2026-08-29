@@ -21,6 +21,7 @@ import {
   getStateSyncLogExcerpt,
   getStateSyncRestoreHeight,
   getTenderdashSyncInfo,
+  waitForDapiReady,
   waitForStateSyncActivity,
   watchStateSync,
 } from './lib/stateSyncStatus.js';
@@ -666,8 +667,10 @@ describe('Local Network State Sync', function main() {
       await assertLocalServicesRunning([joinConfig]);
 
       // Drive serves the restored state: DAPI can fetch a system contract
-      const waitForNodeToBeReadyTask = container.resolve('waitForNodeToBeReadyTask');
-      await waitForNodeToBeReadyTask(joinConfig).run();
+      const ready = await waitForDapiReady(joinConfig);
+
+      record(`joined node DAPI is serving: ${JSON.stringify(ready.chain)}`);
+      record(`joined node DAPI StateSync fields: ${JSON.stringify(ready.stateSync)}`);
     });
 
     it('should serve the seeded state from the joined node with proofs', async () => {
@@ -910,8 +913,7 @@ describe('Local Network State Sync', function main() {
     });
 
     it('should still serve the seeded state after block syncing', async () => {
-      const waitForNodeToBeReadyTask = container.resolve('waitForNodeToBeReadyTask');
-      await waitForNodeToBeReadyTask(fallbackConfig).run();
+      await waitForDapiReady(fallbackConfig);
 
       const checks = await verifySeededState(fallbackConfig, configGroup[0], seedManifest);
 

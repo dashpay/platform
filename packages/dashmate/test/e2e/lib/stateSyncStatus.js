@@ -93,19 +93,19 @@ export async function getDapiStatus(config) {
   try {
     const response = await client.platform.getStatus();
 
-    const stateSync = response.getStateSync();
-    const chain = response.getChain();
+    const stateSync = response.getStateSyncStatus();
+    const chain = response.getChainStatus();
 
     return {
       ok: true,
       stateSync: {
         snapshotHeight: stateSync.getSnapshotHeight().toString(),
-        snapshotChunksCount: stateSync.getSnapshotChunksCount().toString(),
+        snapshotChunkCount: stateSync.getSnapshotChunkCount().toString(),
         totalSnapshots: stateSync.getTotalSnapshots(),
         totalSyncedTime: stateSync.getTotalSyncedTime().toString(),
         chunkProcessAverageTime: stateSync.getChunkProcessAverageTime().toString(),
         backfilledBlocks: stateSync.getBackfilledBlocks().toString(),
-        backfillBlocksTotal: stateSync.getBackfillBlocksTotal().toString(),
+        backfilledBlockTotal: stateSync.getBackfilledBlockTotal().toString(),
       },
       chain: {
         catchingUp: chain.isCatchingUp(),
@@ -253,6 +253,47 @@ export async function getStateSyncLogExcerpt(dockerCompose, config, tail = 4000)
     lines: all.filter((line) => LIFECYCLE_LOG_PATTERN.test(line)),
     stateSyncLines: all.filter((line) => STATE_SYNC_LOG_PATTERN.test(line)),
   };
+}
+
+/**
+ * Wait until a node's DAPI answers, i.e. Drive is serving the restored state.
+ *
+ * dashmate's own `waitForNodeToBeReadyTask` cannot be used here: it hardcodes
+ * `no-ssl` when building its DAPI address, while the local preset obtains a
+ * self-signed certificate and `saveCertificateTask` sets
+ * `platform.gateway.ssl.enabled`, so the gateway speaks TLS. A plain HTTP
+ * request to it never succeeds, and that task retries forever with no
+ * deadline, so using it hangs the suite instead of failing it.
+ *
+ * @param {Config} config
+ * @param {Object} [options]
+ * @param {number} [options.timeoutMs]
+ * @param {number} [options.intervalMs]
+ * @return {Promise<Object>} the first successful status
+ */
+export async function waitForDapiReady(config, {
+  timeoutMs = 5 * 60 * 1000,
+  intervalMs = 2000,
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
+
+  let lastError = 'never attempted';
+
+  while (Date.now() < deadline) {
+    const status = await getDapiStatus(config);
+
+    if (status.ok) {
+      return status;
+    }
+
+    lastError = status.error;
+
+    await wait(intervalMs);
+  }
+
+  throw new Error(
+    `${config.getName()} DAPI did not become ready within ${timeoutMs}ms: ${lastError}`,
+  );
 }
 
 /**
