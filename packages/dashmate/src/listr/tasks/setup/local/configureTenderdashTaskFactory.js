@@ -1,4 +1,5 @@
 import { Listr } from 'listr2';
+import wireLocalTenderdashNode from './wireLocalTenderdashNode.js';
 
 /**
  * @return {configureTenderdashTask}
@@ -23,28 +24,8 @@ export default function configureTenderdashTaskFactory() {
               const randomChainIdPart = Math.floor(Math.random() * 60) + 1;
               const chainId = `dashmate_local_${randomChainIdPart}`;
 
-              platformConfigs.forEach((config, index) => {
-                config.set('platform.drive.tenderdash.genesis.chain_id', chainId);
-
-                const p2pPeers = platformConfigs
-                  .filter((_, i) => i !== index)
-                  .map((innerConfig) => {
-                    const nodeId = innerConfig.get('platform.drive.tenderdash.node.id');
-                    const port = innerConfig.get('platform.drive.tenderdash.p2p.port');
-
-                    return {
-                      id: nodeId,
-                      host: config.get('externalIp'),
-                      port,
-                    };
-                  });
-
-                config.set('platform.drive.tenderdash.p2p.persistentPeers', p2pPeers);
-
-                config.set(
-                  'platform.drive.tenderdash.genesis.validator_quorum_type',
-                  config.get('platform.drive.abci.validatorSet.quorum.llmqType'),
-                );
+              platformConfigs.forEach((config) => {
+                wireLocalTenderdashNode(config, chainId, platformConfigs);
               });
             },
           });

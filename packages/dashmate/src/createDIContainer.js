@@ -75,6 +75,7 @@ import startNodeTaskFactory from './listr/tasks/startNodeTaskFactory.js';
 
 import createTenderdashRpcClient from './tenderdash/createTenderdashRpcClient.js';
 import setupLocalPresetTaskFactory from './listr/tasks/setup/setupLocalPresetTaskFactory.js';
+import setupLocalJoinNodeTaskFactory from './listr/tasks/setup/local/setupLocalJoinNodeTaskFactory.js';
 import setupRegularPresetTaskFactory from './listr/tasks/setup/setupRegularPresetTaskFactory.js';
 import stopNodeTaskFactory from './listr/tasks/stopNodeTaskFactory.js';
 import restartNodeTaskFactory from './listr/tasks/restartNodeTaskFactory.js';
@@ -322,6 +323,7 @@ export default async function createDIContainer(options = {}) {
     restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),
     resetNodeTask: asFunction(resetNodeTaskFactory).singleton(),
     setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton(),
+    setupLocalJoinNodeTask: asFunction(setupLocalJoinNodeTaskFactory).singleton(),
     setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
