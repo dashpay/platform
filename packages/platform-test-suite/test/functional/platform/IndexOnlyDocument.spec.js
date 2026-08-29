@@ -54,7 +54,6 @@ describe('Platform', () => {
               position: 1,
             },
           },
-          required: ['hashtag'],
           additionalProperties: false,
         },
         like: {
@@ -70,6 +69,9 @@ describe('Platform', () => {
               countable: 'countable',
               rangeCountable: true,
               rankedCountable: true,
+              // hashtag is this index's skip trigger: a like that omits
+              // it writes no byHashtagPost entry at all
+              skipIfAbsent: true,
             },
             {
               name: 'byPost',
@@ -104,7 +106,7 @@ describe('Platform', () => {
               position: 1,
             },
           },
-          required: ['hashtag', 'postId'],
+          required: ['postId'],
           additionalProperties: false,
         },
       };
@@ -297,9 +299,10 @@ describe('Platform', () => {
 
     it('should fail to query a subset-index projection without proofs', async () => {
       // The subset index [postId] synthesizes a projection without the
-      // required hashtag; a partial document cannot be expressed in the
-      // serialized non-proof response, so it only travels the proved read
-      // surface (where the client synthesizes it from the proof itself)
+      // hashtag — and with hashtag optional, serializing it would assert
+      // an absence the index cannot know; partial documents only travel
+      // the proved read surface (where the client synthesizes them from
+      // the proof itself)
       let fetchError;
 
       try {
@@ -312,7 +315,7 @@ describe('Platform', () => {
       }
 
       expect(fetchError).to.exist();
-      expect(fetchError.message).to.match(/does not cover every required property/);
+      expect(fetchError.message).to.match(/does not cover every property/);
     });
 
     it('should fail to fetch an indexOnly document by id', async () => {
@@ -436,6 +439,143 @@ describe('Platform', () => {
         identity.getId().toString(),
         secondIdentity.getId().toString(),
       ]);
+    });
+
+    describe('skipIfAbsent', () => {
+      let untaggedPost;
+      let untaggedLike;
+
+      it('should create an untagged post and an untagged like under the absence agreement', async () => {
+        // post.hashtag is optional; a post may carry no tag at all
+        untaggedPost = await client.platform.documents.create(
+          'yappr.post',
+          identity,
+          {
+            message: 'a post with no hashtag',
+          },
+        );
+
+        await client.platform.documents.broadcast({
+          create: [untaggedPost],
+        }, identity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
+        // Both sides of the propertyAgreement absent: the like may omit
+        // its hashtag exactly because the post has none — and the
+        // skipIfAbsent byHashtagPost index writes nothing for it
+        untaggedLike = await client.platform.documents.create(
+          'yappr.like',
+          identity,
+          {
+            postId: untaggedPost.getId(),
+          },
+        );
+
+        await client.platform.documents.broadcast({
+          create: [untaggedLike],
+        }, identity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+      });
+
+      it('should refuse a hashtag-less like on a tagged post', async () => {
+        // Referring absent, referenced present: the absence agreement is
+        // strict — a like on a tagged post must carry the tag, or per-tag
+        // aggregates would silently deflate
+        const hashtagLessLike = await client.platform.documents.create(
+          'yappr.like',
+          secondIdentity,
+          {
+            postId: post.getId(),
+          },
+        );
+
+        let broadcastError;
+
+        try {
+          await client.platform.documents.broadcast({
+            create: [hashtagLessLike],
+          }, secondIdentity);
+        } catch (e) {
+          broadcastError = e;
+        }
+
+        expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+        // ReferencedDocumentPropertyMismatchError
+        expect(broadcastError.code).to.equal(40127);
+      });
+
+      it('should refuse a tagged like on an untagged post', async () => {
+        // Referring present, referenced absent: the mirror mismatch
+        const taggedLike = await client.platform.documents.create(
+          'yappr.like',
+          secondIdentity,
+          {
+            hashtag: POST_HASHTAG,
+            postId: untaggedPost.getId(),
+          },
+        );
+
+        let broadcastError;
+
+        try {
+          await client.platform.documents.broadcast({
+            create: [taggedLike],
+          }, secondIdentity);
+        } catch (e) {
+          broadcastError = e;
+        }
+
+        expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+        // ReferencedDocumentPropertyMismatchError
+        expect(broadcastError.code).to.equal(40127);
+      });
+
+      it('should keep untagged likes out of the hashtag index', async () => {
+        // The skip index is a sparse projection: it holds exactly the
+        // likes that carry a hashtag, so the untagged like is invisible
+        // to per-hashtag queries (which must bind the trigger)
+        const likes = await client.platform.documents.get(
+          'yappr.like',
+          {
+            where: [
+              ['hashtag', '==', POST_HASHTAG],
+              ['postId', '==', untaggedPost.getId()],
+            ],
+          },
+        );
+
+        expect(likes).to.have.lengthOf(0);
+      });
+
+      it('should delete an untagged like by its values', async () => {
+        // The locally created document carries the exact value tuple
+        // (postId only) — the delete recomputes the same skip, removing
+        // entries from the non-skip indexes alone
+        await client.platform.documents.broadcast({
+          delete: [untaggedLike],
+        }, identity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
+        let broadcastError;
+
+        try {
+          await client.platform.documents.broadcast({
+            delete: [untaggedLike],
+          }, identity);
+        } catch (e) {
+          broadcastError = e;
+        }
+
+        expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+        // DocumentNotFoundError: the first delete was exact
+        expect(broadcastError.code).to.equal(40101);
+      });
     });
   });
 });
