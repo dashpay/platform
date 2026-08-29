@@ -530,6 +530,9 @@ jobs:
           - name: Local network
             test-pattern: test/e2e/localNetwork.spec.js
             restore_local_network_data: true
+          - name: Local network state sync
+            test-pattern: test/e2e/localNetworkStateSync.spec.js
+            restore_local_network_data: true
           - name: Testnet fullnode
             test-pattern: test/e2e/testnetFullnode.spec.js
             restore_local_network_data: false
