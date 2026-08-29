@@ -17,17 +17,49 @@ use super::DriveDocumentRankedQuery;
 use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::data_contract::document_type::Index;
+use dpp::data_contract::document_type::{Index, IndexProperty};
 
-/// Path of an index's terminal property-name tree — shared by the
-/// ranked and having-range query surfaces, which read the same indexed
-/// tree. See [`DriveDocumentRankedQuery::indexed_property_name_tree_path`]
+/// The property whose level hosts the index's ranking secondaries, plus
+/// the leading properties a ranked / having-range request must pin: the
+/// `at` property for a prefix-level `rankedCountable` (which excludes
+/// every other ranking axis, so it is the index's ONLY ranked level),
+/// the last property otherwise.
+///
+/// Shared by the path builder and the prefix encoder — and, through
+/// them, by the server executors and the SDK verifier — so both sides
+/// agree on where an index's secondary lives without re-deriving it.
+pub(crate) fn ranked_level_split(
+    index: &Index,
+) -> Result<(&[IndexProperty], &IndexProperty), Error> {
+    if let Some(at) = index.ranked_countable_at.as_deref() {
+        let Some(position) = index.properties.iter().position(|p| p.name == at) else {
+            return Err(Error::Drive(DriveError::NotSupported(
+                "the index's rankedCountable.at property is not among its properties — the \
+                 contract should never have validated",
+            )));
+        };
+        return Ok((&index.properties[..position], &index.properties[position]));
+    }
+    let Some((terminal_property, leading_properties)) = index.properties.split_last() else {
+        return Err(Error::Drive(DriveError::NotSupported(
+            "ranked and having-range queries require an index with at least one \
+             property",
+        )));
+    };
+    Ok((leading_properties, terminal_property))
+}
+
+/// Path of an index's **ranked-level** property-name tree — the terminal
+/// one for the boolean ranking axes, the `at` level for a prefix-level
+/// `rankedCountable`. Shared by the ranked and having-range query
+/// surfaces, which read the same indexed tree. See
+/// [`DriveDocumentRankedQuery::indexed_property_name_tree_path`]
 /// for the segment layout.
 ///
 /// The branch's prefix segments carry the **encoded index-key bytes** of
 /// each leading property's pinned value, in index-property order — one
-/// per property before the terminal one. Empty for a single-property
-/// index. The arity must match exactly: a compound index's terminal
+/// per property before the ranked one. Empty for an index ranked at its
+/// first property. The arity must match exactly: the ranked level's
 /// tree sits under one prefix value tree per leading property, and only
 /// a `where` pin (an equality, or one element of the single permitted
 /// `IN`) can name those values, so a missing or surplus value means the
@@ -38,12 +70,7 @@ pub(crate) fn indexed_property_name_tree_path_for_index(
     index: &Index,
     equality_prefix_values: &[Vec<u8>],
 ) -> Result<Vec<Vec<u8>>, Error> {
-    let Some((terminal_property, leading_properties)) = index.properties.split_last() else {
-        return Err(Error::Drive(DriveError::NotSupported(
-            "ranked and having-range queries require an index with at least one \
-             property",
-        )));
-    };
+    let (leading_properties, terminal_property) = ranked_level_split(index)?;
     if leading_properties.len() != equality_prefix_values.len() {
         return Err(Error::Drive(DriveError::NotSupported(
             "ranked and having-range queries over a compound index require exactly one \
