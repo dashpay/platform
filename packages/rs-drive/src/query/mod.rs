@@ -1,4 +1,4 @@
-use dpp::data_contract::document_type::TimeRangeTransform;
+use dpp::data_contract::document_type::{DocumentPropertyType, TimeRangeTransform};
 use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -2555,12 +2555,41 @@ impl<'a> DriveDocumentQuery<'a> {
         // the entries are row commitments, not documents. Synthesize the
         // documents from their (path, key) positions and serialize them into
         // the wire shape this path's callers return. An index that does not
-        // cover every required property cannot produce a serializable
+        // cover EVERY property cannot produce a faithful serialized
         // document: partial projections only travel the proved read surface,
-        // where the client synthesizes them itself from the proof.
+        // where the client synthesizes them itself from the proof. The check
+        // includes optional properties (skipIfAbsent triggers) — the wire
+        // encodes absent-vs-present, and a projection that does not carry an
+        // optional property cannot distinguish "absent on the row" from
+        // "not in this index", so serializing it would assert an absence the
+        // index cannot know.
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
             if self.document_type.index_only() {
+                let index = self.index_only_query_index(platform_version)?;
+                let covers_every_property = self
+                    .document_type
+                    .flattened_properties()
+                    .iter()
+                    .filter(|(_, property)| {
+                        !matches!(property.property_type, DocumentPropertyType::Object(_))
+                    })
+                    .all(|(name, _)| {
+                        index.terminal.as_deref() == Some(name.as_str())
+                            || index
+                                .properties
+                                .iter()
+                                .any(|index_property| index_property.name == *name)
+                    });
+                if !covers_every_property {
+                    return Err(Error::Query(QuerySyntaxError::Unsupported(
+                        "this indexOnly query's index does not cover every property, so the \
+                         documents it synthesizes cannot be serialized into a non-proof \
+                         response; query through an index covering all properties, or use a \
+                         proved query"
+                            .to_string(),
+                    )));
+                }
                 let (documents, skipped) = self.execute_index_only_documents_no_proof_internal(
                     drive,
                     transaction,

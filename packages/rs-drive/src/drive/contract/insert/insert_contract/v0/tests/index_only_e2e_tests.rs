@@ -711,9 +711,10 @@ fn should_serialize_synthesized_documents_on_raw_no_proof_reads() {
     );
     assert_eq!(document.owner_id().to_buffer(), OWNER_1);
 
-    // Subset index ([$ownerId] → postId): the projection has no hashtag,
-    // which is required — it cannot be serialized, so the raw read must
-    // refuse with guidance instead of returning bytes no client can parse.
+    // Subset index ([$ownerId] → postId): the projection has no hashtag —
+    // and with hashtag optional, serializing the projection would assert
+    // an absence the index cannot know (this like HAS a hashtag). The raw
+    // read must refuse with guidance instead of misrepresenting the row.
     let subset = likes_query(
         &contract,
         vec![WhereClause {
@@ -730,7 +731,7 @@ fn should_serialize_synthesized_documents_on_raw_no_proof_reads() {
         matches!(
             &error,
             Error::Query(QuerySyntaxError::Unsupported(message))
-                if message.contains("does not cover every required property")
+                if message.contains("does not cover every property")
         ),
         "expected covering guidance, got: {error}"
     );
@@ -3108,6 +3109,86 @@ fn empty_byte_array_trigger_takes_the_value_lane_not_the_skip_lane() {
         "the empty-lane entry must be gone"
     );
     delete_pin(&drive, &contract, absent_tag, true).expect("delete absent-tag pin");
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ── the real payoff shape: the untagged like ────────────────────────────
+
+/// A like carrying no hashtag — `byHashtagPost` is `skipIfAbsent` with
+/// `hashtag` as its trigger, so this form writes only `byPost` and
+/// `byLiker` entries. Shared with the preallocated suite.
+pub(super) fn build_untagged_like(
+    contract: &DataContract,
+    post: [u8; 32],
+    owner: [u8; 32],
+    seed: u64,
+) -> Document {
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(DOCTYPE)
+        .expect("like doctype exists");
+    let mut doc = document_type
+        .random_document(Some(seed), pv)
+        .expect("random document");
+    let mut props = std::collections::BTreeMap::new();
+    props.insert("postId".to_string(), Value::Identifier(post));
+    doc.set_properties(props);
+    doc.set_owner_id(Identifier::from(owner));
+    doc
+}
+
+/// The measured payoff, end-to-end on the real shape: an untagged like
+/// writes only the two non-skip indexes' entries, costs less than a
+/// tagged like (no ranked hashtag chain), and deletes cleanly.
+#[test]
+fn untagged_like_skips_the_hashtag_index_and_prices_lower() {
+    let (drive, contract) = setup_likes();
+    let base = doctype_path(&contract);
+
+    let untagged = build_untagged_like(&contract, POST_A, OWNER_1, 1);
+    let untagged_fee =
+        insert_like(&drive, &contract, &untagged, true).expect("insert untagged like");
+
+    // byHashtagPost holds nothing: the top-level hashtag tree stays the
+    // empty registration-time tree.
+    assert!(
+        matches!(
+            read_grove_element(&drive, &base, b"hashtag"),
+            Some(Element::Tree(None, _))
+        ),
+        "the skip index must hold nothing for an untagged like"
+    );
+
+    // byPost and byLiker carry the row.
+    let mut by_post = base.clone();
+    by_post.extend([b"postId".to_vec(), POST_A.to_vec(), vec![0]]);
+    assert!(matches!(
+        read_grove_element(&drive, &by_post, &OWNER_1),
+        Some(Element::Item(..))
+    ));
+    let mut by_liker = base.clone();
+    by_liker.extend([b"$ownerId".to_vec(), OWNER_1.to_vec(), vec![0]]);
+    assert!(matches!(
+        read_grove_element(&drive, &by_liker, &POST_A),
+        Some(Element::Item(..))
+    ));
+
+    // A tagged like by another owner on another post pays for the ranked
+    // hashtag chain the untagged one skipped.
+    let tagged = build_like(&contract, "dash", POST_B, OWNER_2, 2);
+    let tagged_fee = insert_like(&drive, &contract, &tagged, true).expect("insert tagged like");
+    assert!(
+        tagged_fee.storage_fee > untagged_fee.storage_fee,
+        "a tagged like ({}) must cost more than an untagged one ({})",
+        tagged_fee.storage_fee,
+        untagged_fee.storage_fee
+    );
+
+    // The untagged like deletes cleanly through the same skip.
+    delete_like(&drive, &contract, untagged, true).expect("delete untagged like");
+    assert!(read_grove_element(&drive, &by_post, &OWNER_1).is_none());
+    assert!(read_grove_element(&drive, &by_liker, &POST_A).is_none());
 
     assert_grovedb_is_consistent(&drive);
 }
