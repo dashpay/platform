@@ -167,7 +167,7 @@ impl DriveDocumentQuery<'_> {
                 // [`index_admissible_for_skip_if_absent`]).
                 |index| {
                     index.time_range.is_none()
-                        && index_admissible_for_skip_if_absent(index, &fields)
+                        && index_admissible_for_skip_if_absent(index, &equal_fields)
                 },
                 platform_version,
             )

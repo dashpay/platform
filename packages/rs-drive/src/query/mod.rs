@@ -2216,7 +2216,7 @@ impl<'a> DriveDocumentQuery<'a> {
             order_by_keys.as_slice(),
             |index| {
                 index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges)
-                    && index_admissible_for_skip_if_absent(index, &fields)
+                    && index_admissible_for_skip_if_absent(index, &equal_fields)
             },
             platform_version,
         )?
