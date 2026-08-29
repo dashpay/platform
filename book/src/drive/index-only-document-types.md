@@ -79,7 +79,7 @@ Each entry's 32-byte payload is
 over the document's PRESENT properties in sorted-name order
 (`index_only_row_commitment`) — every required property must be present,
 and an optional property (a `skipIfAbsent` trigger, the only optional
-kind) contributes nothing when absent, its name included. It binds the
+kind) contributes nothing when absent, not even its name. It binds the
 independently stored index projections of one document back into one
 logical row: a delete recomputes the commitment from its submitted
 values, and every probed entry must carry it. A values tuple spliced from

@@ -310,13 +310,22 @@ fn validate_document_type_references_v0(
                                 .into(),
                             )
                         };
-                        let referring_value = document_data
-                            .get_optional_at_path(referring_property)
-                            .unwrap_or(None);
-                        let referenced_value = referenced_document
+                        // A lookup ERROR (a non-map value where the dotted
+                        // path expects an intermediate object) is a
+                        // mismatch, never absence — folding it into `None`
+                        // would let two malformed sides "agree" as
+                        // both-absent.
+                        let Ok(referring_value) =
+                            document_data.get_optional_at_path(referring_property)
+                        else {
+                            return Ok(mismatch());
+                        };
+                        let Ok(referenced_value) = referenced_document
                             .properties()
                             .get_optional_at_path(referenced_property)
-                            .unwrap_or(None);
+                        else {
+                            return Ok(mismatch());
+                        };
                         let (referring_value, referenced_value) =
                             match (referring_value, referenced_value) {
                                 (Some(referring_value), Some(referenced_value)) => {
