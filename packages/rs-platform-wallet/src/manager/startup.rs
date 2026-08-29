@@ -831,16 +831,6 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         let opts = IdentityDiscoveryOptions {
             start_index: Some(0),
             gap_limit: gap_limit.unwrap_or(IdentityDiscoveryOptions::default().gap_limit),
-            // The scan's own budget stays the outer `within_budget` below; this
-            // bounds only the DPNS enrichment that runs after the verdict is
-            // published. Without it the outer timeout is the only thing that
-            // can stop the enrichment, and it stops it by cancelling the whole
-            // call — which arrives here as a scan that recorded no verdict,
-            // sending `record_identity_scan_cut_off` to overwrite the complete
-            // verdict the scan just published. That sets a sticky
-            // `unlocated_gap`, so every later launch pays a from-zero rescan
-            // and re-sets the flag as soon as DPNS runs long again.
-            enrichment_deadline: Some(deadline),
         };
 
         for (attempt, backoff) in DISCOVERY_BACKOFF.iter().map(Some).chain([None]).enumerate() {
@@ -850,8 +840,21 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             // this call promises.
             let attempt_future = async {
                 match master.as_ref() {
-                    Some(master) => identity_wallet.discover_from_master(opts, master).await,
-                    None => identity_wallet.discover(opts).await,
+                    // `Some(deadline)` bounds the DPNS enrichment tail only,
+                    // never the scan. The outer `within_budget` below still
+                    // owns the scan's ceiling; what this adds is a way for
+                    // enrichment to stop on its own, so a slow DPNS pass no
+                    // longer gets the whole call cancelled out from under a
+                    // scan that already published a complete verdict — which
+                    // arrives here as a scan that recorded nothing, sending
+                    // `record_identity_scan_cut_off` to overwrite it and set a
+                    // sticky `unlocated_gap`.
+                    Some(master) => {
+                        identity_wallet
+                            .discover_from_master_until(opts, master, Some(deadline))
+                            .await
+                    }
+                    None => identity_wallet.discover_until(opts, Some(deadline)).await,
                 }
             };
             let Some(result) = within_budget(deadline, attempt_future).await else {

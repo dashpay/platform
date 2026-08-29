@@ -139,19 +139,6 @@ pub struct IdentityDiscoveryOptions {
     /// How many consecutive empty identity indices to tolerate before
     /// stopping. Defaults to [`IDENTITY_GAP_LIMIT`].
     pub gap_limit: u32,
-    /// Deadline for the best-effort DPNS enrichment tail only. `None` is
-    /// unbounded (the default).
-    ///
-    /// The scan itself is never cut here: enrichment runs *after* the scan
-    /// verdict is published, so stopping in it costs a username lookup and
-    /// never a verdict. That separation is the whole point. A caller that
-    /// wraps this entire call in one outer timeout instead cannot tell "the
-    /// scan was abandoned mid-walk" from "the scan finished and its enrichment
-    /// ran long", and has to assume the former — recording an abandoned-scan
-    /// verdict over a scan that answered every index, which sets a sticky
-    /// `unlocated_gap` and forces a from-zero rescan on every launch for as
-    /// long as DPNS stays slow.
-    pub enrichment_deadline: Option<std::time::Instant>,
 }
 
 impl Default for IdentityDiscoveryOptions {
@@ -159,7 +146,6 @@ impl Default for IdentityDiscoveryOptions {
         Self {
             start_index: None,
             gap_limit: IDENTITY_GAP_LIMIT,
-            enrichment_deadline: None,
         }
     }
 }
@@ -197,7 +183,31 @@ impl IdentityWallet {
         &self,
         opts: IdentityDiscoveryOptions,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
-        self.discover_inner(opts, KeyHashSource::ResidentWallet)
+        self.discover_inner(opts, KeyHashSource::ResidentWallet, None)
+            .await
+    }
+
+    /// [`Self::discover`], bounding the best-effort DPNS enrichment tail.
+    ///
+    /// Crate-private on purpose. The deadline is a property of the one caller
+    /// that owns a budget — the startup sequence, which gates Core SPV — not
+    /// of the discovery options every client passes, so it does not belong on
+    /// the public [`IdentityDiscoveryOptions`].
+    ///
+    /// It bounds the enrichment only, never the scan: enrichment runs *after*
+    /// the scan verdict is published, so stopping in it costs a username
+    /// lookup and never a verdict. A caller that instead wraps the whole call
+    /// in one outer timeout cannot tell "the scan was abandoned mid-walk" from
+    /// "the scan finished and its enrichment ran long", and has to assume the
+    /// former — recording an abandoned-scan verdict over a scan that answered
+    /// every index, which sets a sticky `unlocated_gap` and forces a from-zero
+    /// rescan on every launch for as long as DPNS stays slow.
+    pub(crate) async fn discover_until(
+        &self,
+        opts: IdentityDiscoveryOptions,
+        enrichment_deadline: Option<std::time::Instant>,
+    ) -> Result<Vec<Identity>, PlatformWalletError> {
+        self.discover_inner(opts, KeyHashSource::ResidentWallet, enrichment_deadline)
             .await
     }
 
@@ -224,7 +234,21 @@ impl IdentityWallet {
         opts: IdentityDiscoveryOptions,
         master: &ExtendedPrivKey,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
-        self.discover_inner(opts, KeyHashSource::Master(master))
+        self.discover_inner(opts, KeyHashSource::Master(master), None)
+            .await
+    }
+
+    /// [`Self::discover_from_master`], bounding the DPNS enrichment tail.
+    ///
+    /// Crate-private sibling of [`Self::discover_until`]; see there for why
+    /// the deadline is not an option field.
+    pub(crate) async fn discover_from_master_until(
+        &self,
+        opts: IdentityDiscoveryOptions,
+        master: &ExtendedPrivKey,
+        enrichment_deadline: Option<std::time::Instant>,
+    ) -> Result<Vec<Identity>, PlatformWalletError> {
+        self.discover_inner(opts, KeyHashSource::Master(master), enrichment_deadline)
             .await
     }
 
@@ -315,6 +339,7 @@ impl IdentityWallet {
         &self,
         opts: IdentityDiscoveryOptions,
         source: KeyHashSource<'_>,
+        enrichment_deadline: Option<std::time::Instant>,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
         use super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
         use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
@@ -552,7 +577,7 @@ impl IdentityWallet {
             // verdict wrongly overwritten with "abandoned" costs a from-zero
             // rescan on every launch until a clean scan gets all the way
             // through.
-            if budget_spent(opts.enrichment_deadline) {
+            if budget_spent(enrichment_deadline) {
                 tracing::info!(
                     enriched,
                     total = discovered.len(),
@@ -1365,7 +1390,6 @@ mod tests {
             .discover(IdentityDiscoveryOptions {
                 start_index: Some(0),
                 gap_limit: 5,
-                enrichment_deadline: None,
             })
             .await
             .expect_err("the resident derive cannot work for a seedless wallet");
@@ -1422,11 +1446,13 @@ mod tests {
         // scan recorded on its way through.
         let _ = wallet
             .identity()
-            .discover(IdentityDiscoveryOptions {
-                start_index: Some(0),
-                gap_limit: 2,
-                enrichment_deadline: Some(spent),
-            })
+            .discover_until(
+                IdentityDiscoveryOptions {
+                    start_index: Some(0),
+                    gap_limit: 2,
+                },
+                Some(spent),
+            )
             .await;
 
         let wm = manager.wallet_manager.read().await;
