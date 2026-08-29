@@ -335,7 +335,9 @@ fn build_chain_info(
 ///
 /// Emitting an all-zero message therefore asserts "state sync happened and did nothing",
 /// which an operator cannot distinguish from "this node never state synced". Report the
-/// message only when Tenderdash actually gave us something, and omit it otherwise.
+/// message only when one of the six genuinely state-sync-specific counters is non-zero, which
+/// on Tenderdash 1.7 means never - block-sync progress alone must not raise a section named
+/// after state sync.
 ///
 /// To tell after the fact that a node was state synced, use `chain.earliest_block_height`:
 /// on a state-synced node the block store starts at the backfill floor rather than at the
@@ -364,11 +366,17 @@ fn build_state_sync_info(
         backfill_blocks_total: parse_or_default(&sync_info.backfill_blocks_total),
     };
 
-    if state_sync == get_status_response_v0::StateSync::default() {
-        None
-    } else {
-        Some(state_sync)
-    }
+    // `total_synced_time` / `remaining_time` are deliberately excluded: they are block sync
+    // values and are set on any node merely replaying blocks, which says nothing about a
+    // snapshot restore.
+    let has_state_sync_data = state_sync.total_snapshots != 0
+        || state_sync.chunk_process_avg_time != 0
+        || state_sync.snapshot_height != 0
+        || state_sync.snapshot_chunks_count != 0
+        || state_sync.backfilled_blocks != 0
+        || state_sync.backfill_blocks_total != 0;
+
+    has_state_sync_data.then_some(state_sync)
 }
 
 /// Build network-related stats such as peers and listening state.
@@ -499,8 +507,27 @@ mod tests {
         assert!(build_state_sync_info(&TenderdashStatusResponse::default()).is_none());
     }
 
+    /// A node replaying blocks sets `total_synced_time` / `remaining_time` through the block
+    /// sync reactor without ever touching a snapshot, so those two alone must not raise a
+    /// section named after state sync.
     #[test]
-    fn state_sync_is_reported_while_the_node_is_syncing() {
+    fn state_sync_is_omitted_when_only_block_sync_progress_is_reported() {
+        let tenderdash_status: TenderdashStatusResponse = serde_json::from_str(&status_json(
+            r#"
+            "total_synced_time": "123456789",
+            "remaining_time": "9876543",
+            "total_snapshots": "0",
+            "snapshot_height": "0",
+            "backfilled_blocks": "0",
+            "#,
+        ))
+        .expect("parse tenderdash status");
+
+        assert!(build_state_sync_info(&tenderdash_status).is_none());
+    }
+
+    #[test]
+    fn state_sync_is_reported_while_the_node_is_state_syncing() {
         let tenderdash_status: TenderdashStatusResponse = serde_json::from_str(&status_json(
             r#"
             "total_synced_time": "123456789",

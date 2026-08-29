@@ -23,16 +23,6 @@ function readOptional(message, read) {
   return message ? read(message) : undefined;
 }
 
-/**
- * Convert an optional numeric protobuf field to BigInt, preserving absence.
- *
- * @param {string|number|undefined} value
- * @returns {bigint|undefined}
- */
-function toOptionalBigInt(value) {
-  return value === undefined || value === null ? undefined : BigInt(value);
-}
-
 class GetStatusResponse {
   /**
    * @param {VersionStatus} version - status versions
@@ -40,7 +30,7 @@ class GetStatusResponse {
    * @param {ChainStatus|null} chain - chain status, null if unavailable
    * @param {NetworkStatus|null} network - network status, null if unavailable
    * @param {StateSyncStatus|null} stateSync - state sync status, null if not state syncing
-   * @param {TimeStatus} time - time status
+   * @param {TimeStatus|null} time - time status, null if unavailable
    */
   constructor(version, node, chain, network, stateSync, time) {
     this.version = version;
@@ -87,7 +77,7 @@ class GetStatusResponse {
   }
 
   /**
-   * @returns {TimeStatus} time status
+   * @returns {TimeStatus|null} time status, null if unavailable
    */
   getTimeStatus() {
     return this.time;
@@ -163,12 +153,12 @@ class GetStatusResponse {
 
     const timeProto = v0.getTime();
 
-    const time = new TimeStatus(
-      toOptionalBigInt(readOptional(timeProto, (t) => t.getLocal())),
-      toOptionalBigInt(readOptional(timeProto, (t) => t.getBlock())),
-      toOptionalBigInt(readOptional(timeProto, (t) => t.getGenesis())),
-      readOptional(timeProto, (t) => t.getEpoch()),
-    );
+    const time = timeProto ? new TimeStatus(
+      BigInt(timeProto.getLocal()),
+      BigInt(timeProto.getBlock()),
+      BigInt(timeProto.getGenesis()),
+      timeProto.getEpoch(),
+    ) : null;
 
     return new GetStatusResponse(
       version,
