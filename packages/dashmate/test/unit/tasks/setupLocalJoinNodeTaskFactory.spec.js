@@ -194,6 +194,37 @@ describe('setupLocalJoinNodeTaskFactory', () => {
     });
   });
 
+  describe('additional join nodes', () => {
+    it('should honour an explicit config name and port offset', async () => {
+      await setupLocalJoinNodeTask(groupConfigs).run();
+
+      await setupLocalJoinNodeTask(groupConfigs, {
+        configName: 'local_join_second',
+        offsetIndex: groupConfigs.length + 1,
+      }).run();
+
+      const first = configFile.getConfig('local_join');
+      const second = configFile.getConfig('local_join_second');
+
+      // A second joiner must not land on the first one's host ports
+      expect(second.get('platform.gateway.listeners.dapiAndDrive.port'))
+        .to.equal(templateConfig.get('platform.gateway.listeners.dapiAndDrive.port') + 500);
+      expect(second.get('platform.drive.tenderdash.rpc.port'))
+        .to.equal(templateConfig.get('platform.drive.tenderdash.rpc.port') + 500);
+
+      expect(second.get('platform.gateway.listeners.dapiAndDrive.port'))
+        .to.not.equal(first.get('platform.gateway.listeners.dapiAndDrive.port'));
+
+      expect(second.get('docker.network.subnet').split('.')[2]).to.equal('6');
+
+      // ...and must be a distinct Tenderdash node
+      expect(second.get('platform.drive.tenderdash.node.id'))
+        .to.not.equal(first.get('platform.drive.tenderdash.node.id'));
+
+      expect(second.get('platform.drive.tenderdash.stateSync.enabled')).to.be.true();
+    });
+  });
+
   describe('invalid groups', () => {
     it('should fail clearly when the group has no seed node', async () => {
       const groupWithoutSeed = groupConfigs

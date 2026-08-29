@@ -47,7 +47,7 @@ export default function setupLocalJoinNodeTaskFactory(
   obtainSelfSignedCertificateTask,
 ) {
   /**
-   * Create a `local_join` config for a platform-enabled full node (not a
+   * Create a `local_join` config (or `configName`) for a full node (not a
    * masternode, so no collateral registration) that joins an already set up
    * local network and bootstraps Drive from a state sync snapshot. Kept as a
    * DI task rather than a `group join` CLI command while the state sync e2e
@@ -55,19 +55,28 @@ export default function setupLocalJoinNodeTaskFactory(
    *
    * @typedef {setupLocalJoinNodeTask}
    * @param {Config[]} groupConfigs - configs of the existing local group
+   * @param {Object} [options]
+   * @param {string} [options.configName] - name for the new config
+   * @param {number} [options.offsetIndex] - host port offset slot to occupy
    * @return {Listr}
    */
-  function setupLocalJoinNodeTask(groupConfigs) {
+  function setupLocalJoinNodeTask(groupConfigs, options = {}) {
+    const {
+      configName = 'local_join',
+      // Local nodes local_1..local_N occupy offset indexes 0..N-1 and
+      // local_seed occupies N, so the first joining node continues at N + 1.
+      // A caller adding a second joiner passes the next slot explicitly so the
+      // two do not land on the same host ports.
+      offsetIndex = groupConfigs.length,
+    } = options;
+
     return new Listr([
       {
         title: 'Create join node config',
         task: async (ctx) => {
-          // Local nodes local_1..local_N occupy offset indexes 0..N-1 and
-          // local_seed occupies N, so the joining node continues at N + 1
-          const offsetIndex = groupConfigs.length;
           const nodeIndex = offsetIndex + 1;
 
-          const config = configFile.createConfig('local_join', PRESET_LOCAL);
+          const config = configFile.createConfig(configName, PRESET_LOCAL);
 
           config.set('group', 'local');
           config.set('description', 'full node joining the local network');
@@ -79,9 +88,9 @@ export default function setupLocalJoinNodeTaskFactory(
           // Reads hand back a frozen snapshot, so build the new value and set
           // it back rather than writing through the object get() returned.
           const rpcUsers = lodashCloneDeep(config.get('core.rpc.users'));
-          Object.values(rpcUsers).forEach((options) => {
+          Object.values(rpcUsers).forEach((rpcUser) => {
             // eslint-disable-next-line no-param-reassign
-            options.password = generateRandomString(12);
+            rpcUser.password = generateRandomString(12);
           });
           config.set('core.rpc.users', rpcUsers);
 
