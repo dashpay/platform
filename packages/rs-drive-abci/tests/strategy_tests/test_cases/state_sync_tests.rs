@@ -2,17 +2,17 @@
 //! its checkpoint registry and a fresh target restores one chunk by chunk, then
 //! reconstructs its platform state.
 //!
-//! KNOWN LIMITATION at the pinned grovedb revision (6c882c3): state sync wire protocol
-//! version 1 does not faithfully restore SumTree subtrees — the copied node hashes
-//! reproduce the source root hash, but re-opening a restored sum tree recomputes a
-//! different root (latent corruption), which the strict `verify_grovedb` call in
-//! `apply_snapshot_chunk` correctly refuses. See `tests/sum_tree_sync_probe.rs` for the
-//! minimal upstream reproducer. The full happy-path test below is therefore `#[ignore]`d
-//! until the grovedb pin gains the fixed wire version, and an active test pins today's
-//! refusal behavior instead.
+//! KNOWN LIMITATION at the pinned grovedb revision (6c882c3): state sync does not
+//! faithfully restore SumTree subtrees — the copied node hashes reproduce the source
+//! root hash, but re-opening a restored sum tree recomputes a different root (latent
+//! corruption), which the strict `verify_grovedb` call in `apply_snapshot_chunk`
+//! correctly refuses. See `tests/sum_tree_sync_probe.rs` for the minimal upstream
+//! reproducer. The full happy-path test below is therefore `#[ignore]`d until the
+//! grovedb pin includes the sum-tree restore fix (dashpay/grovedb#840), and an active
+//! test pins today's refusal behavior instead.
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::{ChainExecutionOutcome, NetworkStrategy};
     use dpp::dashcore::hashes::Hash;
@@ -101,7 +101,7 @@ mod tests {
     /// Installs on a fresh target the Core RPC answers its platform state
     /// reconstruction will ask for: the full masternode list (the target requests it
     /// from scratch, base height None) and the same quorums the source ran with.
-    fn install_reconstruction_core_mocks(
+    pub(crate) fn install_reconstruction_core_mocks(
         platform: &mut Platform<MockCoreRPCLike>,
         masternodes: Vec<MasternodeListItem>,
         validator_quorums: &BTreeMap<QuorumHash, TestQuorumInfo>,
@@ -177,12 +177,25 @@ mod tests {
     /// chunk id from its pending set before processing), so the target then answers
     /// RETRY_SNAPSHOT; the driver handles that the way Tenderdash would, by
     /// re-offering the same snapshot and restarting the transfer.
-    fn sync_snapshot(
+    /// How a snapshot transfer ended.
+    ///
+    /// `Rejected` is not an error: the target restored the snapshot, found it unusable,
+    /// wiped itself back to a clean slate and asked Tenderdash for a different one. The
+    /// driver reports it so tests can tell a clean refusal from a transport failure.
+    #[derive(Debug, PartialEq, Eq)]
+    pub(crate) enum SnapshotSyncOutcome {
+        /// The target restored and accepted the snapshot.
+        Completed,
+        /// The target answered REJECT_SNAPSHOT; Tenderdash would move on to the next one.
+        Rejected,
+    }
+
+    pub(crate) fn sync_snapshot(
         source_app: &FullAbciApplication<MockCoreRPCLike>,
         target_app: &FullAbciApplication<MockCoreRPCLike>,
         snapshot: &proto::Snapshot,
         tamper_with_first_chunk: bool,
-    ) -> Result<(), proto::ResponseException> {
+    ) -> Result<SnapshotSyncOutcome, proto::ResponseException> {
         let mut tamper_next = tamper_with_first_chunk;
         let mut restarts = 0usize;
 
@@ -264,7 +277,24 @@ mod tests {
                             chunk_queue.is_empty(),
                             "transfer completed with chunks still queued"
                         );
-                        return Ok(());
+                        return Ok(SnapshotSyncOutcome::Completed);
+                    }
+                    result
+                        if result
+                            == i32::from(response_apply_snapshot_chunk::Result::RejectSnapshot) =>
+                    {
+                        // The target restored the snapshot, found it unusable and wiped
+                        // itself back to a clean slate. Tenderdash would try the next
+                        // snapshot; there is nothing more for this driver to do.
+                        assert!(
+                            target_app
+                                .snapshot_fetching_session
+                                .read()
+                                .unwrap()
+                                .is_none(),
+                            "a rejected snapshot must not leave a session open"
+                        );
+                        return Ok(SnapshotSyncOutcome::Rejected);
                     }
                     result
                         if result
@@ -341,8 +371,8 @@ mod tests {
     /// along the way to prove refetch/restart recovery), reconstruct the target
     /// platform state, and verify the target matches the source checkpoint exactly.
     #[tokio::test]
-    #[ignore = "grovedb state sync wire v1 (rev 6c882c3) cannot faithfully restore sum trees; \
-                unignore when the grovedb pin gains the fixed wire version — see \
+    #[ignore = "the pinned grovedb (6c882c3) cannot faithfully restore sum trees; un-ignore \
+                when the pin includes the sum-tree restore fix (dashpay/grovedb#840) — see \
                 tests/sum_tree_sync_probe.rs and state_sync_transfer_detects_sum_tree_restore_defect"]
     async fn run_state_sync_between_two_platforms() {
         let config = state_sync_platform_config();
@@ -373,8 +403,12 @@ mod tests {
         );
         let target_app = FullAbciApplication::new(&target_platform);
 
-        sync_snapshot(&source.source_app, &target_app, snapshot, true)
-            .expect("state sync must complete");
+        assert_eq!(
+            sync_snapshot(&source.source_app, &target_app, snapshot, true)
+                .expect("state sync must not error"),
+            SnapshotSyncOutcome::Completed,
+            "state sync must complete"
+        );
 
         let platform_version = PlatformVersion::latest();
         let grove_version = &platform_version.drive.grove_version;
@@ -472,7 +506,7 @@ mod tests {
 
     /// Pins today's behavior at the pinned grovedb revision: the transfer itself
     /// completes (including recovery from a tampered chunk via RETRY and a snapshot
-    /// restart), but the strict post-restore verification detects that wire v1 did not
+    /// restart), but the strict post-restore verification detects that grovedb did not
     /// faithfully restore the sum trees and refuses the snapshot instead of accepting
     /// latent corruption. When this test starts failing because the sync SUCCEEDS,
     /// grovedb has been fixed: un-ignore `run_state_sync_between_two_platforms` and
@@ -495,22 +529,33 @@ mod tests {
         );
         let target_app = FullAbciApplication::new(&target_platform);
 
-        let error = sync_snapshot(&source.source_app, &target_app, &source.snapshot, true)
-            .expect_err(
-                "at grovedb rev 6c882c3 the restored sum trees must fail verification — if \
-                 this now succeeds, grovedb is fixed: un-ignore \
-                 run_state_sync_between_two_platforms and remove this pin",
-            );
-        assert!(
-            error.error.contains("incorrect hashes"),
-            "the refusal must come from the post-restore grovedb verification, got: {}",
-            error.error
+        let outcome = sync_snapshot(&source.source_app, &target_app, &source.snapshot, true)
+            .expect("a refused snapshot is answered, not errored");
+        assert_eq!(
+            outcome,
+            SnapshotSyncOutcome::Rejected,
+            "at grovedb rev 6c882c3 the restored sum trees must fail verification — if this \
+             now completes, grovedb is fixed: un-ignore run_state_sync_between_two_platforms \
+             and remove this pin"
         );
 
-        // The target refused the snapshot: it never advanced past genesis
+        // The target refused the snapshot: it never advanced past genesis, and — since the
+        // refusal happens after the session was already committed — it wiped itself back to
+        // a clean slate rather than keeping the unusable state.
         assert_eq!(
             target_platform.state.load().last_committed_block_height(),
             0
+        );
+        assert_ne!(
+            target_platform
+                .drive
+                .grove
+                .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+                .unwrap()
+                .expect("target root hash")
+                .to_vec(),
+            source.snapshot.hash,
+            "a refused snapshot must not be left on disk"
         );
     }
 
@@ -718,13 +763,31 @@ mod tests {
         );
         let target_app = FullAbciApplication::new(&target_platform);
 
-        sync_snapshot(&source_app, &target_app, &forged_snapshot, false)
-            .expect_err("a snapshot without the reduced platform state must be refused");
+        let outcome = sync_snapshot(&source_app, &target_app, &forged_snapshot, false)
+            .expect("a refused snapshot is answered, not errored");
+        assert_eq!(
+            outcome,
+            SnapshotSyncOutcome::Rejected,
+            "a snapshot without the reduced platform state must be refused"
+        );
 
         // The target holds no usable platform state: it never advanced past genesis
         assert_eq!(
             target_platform.state.load().last_committed_block_height(),
             0
+        );
+        // ...and it did not keep the state it could not use: the refusal wipes back to a
+        // clean slate so Tenderdash can offer another snapshot or fall back to block sync.
+        assert_ne!(
+            target_platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("target root hash")
+                .to_vec(),
+            forged_snapshot.hash,
+            "a refused snapshot must not be left on disk"
         );
     }
 }

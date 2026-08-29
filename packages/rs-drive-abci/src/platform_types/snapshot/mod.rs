@@ -4,20 +4,145 @@
 //! (`drive.checkpoints`, populated by `create_grovedb_checkpoint` after each qualifying
 //! block is committed); there is no separate snapshot store.
 
-use drive::drive::Checkpoint;
+use drive::drive::{Checkpoint, Drive};
 use drive::grovedb::replication::MultiStateSyncSession;
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tenderdash_abci::proto::abci;
 
-/// The grovedb state sync wire protocol versions this node can serve and consume.
+/// Name of the marker file that records "a state sync restore is in progress".
 ///
-/// This is THE single supported-set constant: when grovedb wire version 2 lands, add it
-/// here and add a `DriveAbciStateSyncVersions` const selecting it in rs-platform-version
-/// (`drive_abci.state_sync.protocol_version` is the version stamped on snapshots this
-/// node offers).
+/// ## Why a plain file, and not aux storage
+///
+/// The obvious home would be grovedb's aux column family, which is not part of the
+/// provable tree. It cannot be used here: `GroveDb::wipe()` clears the aux column family
+/// along with `default`, `roots` and `meta`
+/// (`grovedb/storage/src/rocksdb_storage/storage.rs`, `wipe()` iterates all four). Since
+/// wiping is exactly what both the offer path and the recovery path do, a sentinel living
+/// in aux would be destroyed by the very operations it exists to survive, and its
+/// lifetime would depend on subtle ordering between the write and the wipe.
+///
+/// A file next to the database has none of those problems: it is outside everything
+/// grovedb touches, it survives any wipe, it costs one `stat` at startup, and an operator
+/// can see it. It is deliberately NOT in the provable tree either — it is node-local
+/// recovery bookkeeping and must never affect the app hash.
+pub const RESTORE_IN_PROGRESS_FILE_NAME: &str = "state_sync_restore_in_progress";
+
+/// Path of the restore sentinel for a given database directory.
+pub fn restore_sentinel_path(db_path: &Path) -> PathBuf {
+    db_path.join(RESTORE_IN_PROGRESS_FILE_NAME)
+}
+
+/// Records that a state sync restore has started and the database is therefore allowed to
+/// be inconsistent until it finishes.
+///
+/// Written BEFORE the wipe, so the window in which the database has been destroyed but
+/// nothing marks it as such is empty. The contents are for operators only; the code cares
+/// solely about the file's presence.
+pub fn write_restore_sentinel(
+    db_path: &Path,
+    app_hash: &[u8; 32],
+    height: u64,
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(db_path)?;
+    std::fs::write(
+        restore_sentinel_path(db_path),
+        format!(
+            "state sync restore in progress\nheight: {}\napp_hash: {}\n",
+            height,
+            hex::encode(app_hash)
+        ),
+    )
+}
+
+/// Clears the restore sentinel at a point where the node is already self-consistent —
+/// after a completed restore, or after a genesis initialization — WITHOUT being able to
+/// fail the operation that got it there.
+///
+/// Propagating an I/O error from here would turn a fully successful restore (or a working
+/// genesis) into a hard ABCI error over nothing but a `remove_file` hiccup. The cost of
+/// failing to remove it is bounded and safe in the other direction: the next startup sees
+/// a sentinel, wipes, and re-syncs. Loud, but never a wedge.
+pub fn clear_restore_sentinel_best_effort(db_path: &Path) {
+    if let Err(error) = clear_restore_sentinel(db_path) {
+        tracing::error!(
+            ?error,
+            path = ?restore_sentinel_path(db_path),
+            "[state_sync] could not clear the state sync restore sentinel; the node is \
+             consistent, but the next restart will wipe and re-sync unnecessarily. Remove \
+             the file by hand to avoid that.",
+        );
+    }
+}
+
+/// Clears the restore sentinel. Only ever called once the node is in a self-consistent
+/// state: after a restore has fully completed, after startup recovery has wiped, or after
+/// a genesis initialization.
+pub fn clear_restore_sentinel(db_path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(restore_sentinel_path(db_path)) {
+        Ok(()) => Ok(()),
+        // Absent is the normal case on every path that clears defensively.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether a restore was in progress when this node last stopped.
+pub fn restore_sentinel_exists(db_path: &Path) -> bool {
+    restore_sentinel_path(db_path).exists()
+}
+
+/// Drops every Drive cache that was derived from grovedb.
+///
+/// A wipe destroys the state these caches were built from. Left in place they would be
+/// silently merged into whatever replaces it: `ProtocolVersionsCache` in particular keeps
+/// a `loaded` flag, so `load_if_needed` would never re-read the new version counters and
+/// the next block would write vote counts derived from the wiped chain — an immediate app
+/// hash fork. Resetting the counter wholesale (rather than `clear_global_cache`) is
+/// deliberate: it clears that flag too, so the cache reloads on first use.
+///
+/// `system_data_contracts` is deliberately NOT cleared — those are compiled-in,
+/// version-keyed contracts that never come from grovedb.
+///
+/// The checkpoint registry goes too, and it is not merely a cache: `Drive::open` populates
+/// `drive.checkpoints` before any wipe can run, and `list_snapshots` serves whatever is in
+/// it to peers. Left alone, a node that wiped and re-synced would keep offering snapshots
+/// of the chain it just discarded. The entries are marked for deletion first so their
+/// directories are removed when the last `Arc` drops, rather than leaking on disk.
+pub fn reset_drive_caches_after_wipe(drive: &Drive) {
+    *drive.cache.protocol_versions_counter.write() = Default::default();
+    drive.cache.data_contracts.clear();
+    *drive.cache.genesis_time_ms.write() = None;
+
+    let checkpoints = drive.checkpoints.load();
+    for checkpoint_info in checkpoints.values() {
+        checkpoint_info.checkpoint.mark_for_deletion();
+    }
+    drive.checkpoints.store(Arc::new(BTreeMap::new()));
+}
+
+/// Wipes grovedb and drops the caches derived from it, leaving the node an empty but
+/// entirely self-consistent slate.
+///
+/// This is the single place both the offer path and the crash-recovery path go through,
+/// so the two can never drift apart.
+pub fn wipe_drive_for_restore(drive: &Drive) -> Result<(), drive::error::Error> {
+    drive.grove.wipe()?;
+    reset_drive_caches_after_wipe(drive);
+    Ok(())
+}
+
+/// The grovedb state sync protocol versions this node can serve and consume.
+///
+/// Exactly one protocol version exists: state sync never shipped, so grovedb updates
+/// its replication protocol in place and stays at version 1. This single supported-set
+/// constant and the offered-snapshot validation against it exist so that any future
+/// incompatible protocol change fails fast on both the serving and consuming side
+/// instead of producing a corrupt restore. (`drive_abci.state_sync.protocol_version`
+/// is the version stamped on snapshots this node offers.)
 pub const SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS: &[u16] = &[1];
 
 /// Maximum accepted size (in bytes) of a single snapshot chunk, enforced before any

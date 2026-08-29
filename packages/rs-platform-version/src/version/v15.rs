@@ -48,9 +48,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///   at the v15 activation block, so every snapshot taken at or after activation is
 ///   restorable. Snapshots from before activation lack the key and are not served.
 ///
-/// Everything else matches v14. The grovedb state sync wire protocol version used for
+/// Everything else matches v14. The grovedb state sync protocol version used for
 /// snapshots is `DRIVE_ABCI_STATE_SYNC_VERSIONS_V1.protocol_version` (1), shared by all
-/// platform versions.
+/// platform versions; grovedb updates its replication protocol in place, so exactly one
+/// version exists.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,
@@ -118,9 +119,9 @@ mod tests {
         );
     }
 
-    /// All platform versions share grovedb state sync wire protocol version 1 until a
-    /// grovedb wire v2 exists; the supported set lives next to the snapshot types in
-    /// drive-abci.
+    /// All platform versions share grovedb state sync protocol version 1 — the only
+    /// version that exists, since grovedb updates its replication protocol in place.
+    /// The supported set lives next to the snapshot types in drive-abci.
     #[test]
     fn state_sync_wire_protocol_version_is_one() {
         assert_eq!(PLATFORM_V15.drive_abci.state_sync.protocol_version, 1);

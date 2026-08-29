@@ -1,5 +1,6 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::error::Error;
+use crate::platform_types::snapshot::clear_restore_sentinel_best_effort;
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
 
@@ -31,6 +32,16 @@ where
     transaction.set_savepoint();
 
     let app_hash = hex::encode(&response.app_hash);
+
+    // Genesis has just been created, so the node is self-consistent again. If a state sync
+    // restore had been abandoned (every offered snapshot rejected, Tenderdash falling back
+    // to block sync), its marker is still on disk and would make the NEXT restart wipe this
+    // perfectly good chain. Clear it here — this is the block-sync arm of the same recovery
+    // that `Platform::open_with_client` performs for an interrupted restore.
+    // Best-effort: failing to remove a marker file must not turn a working genesis into a
+    // failed init_chain. The worst case is one unnecessary wipe-and-resync on a later
+    // restart, which is loud but safe.
+    clear_restore_sentinel_best_effort(&app.platform().config.db_path);
 
     tracing::info!(
         app_hash,

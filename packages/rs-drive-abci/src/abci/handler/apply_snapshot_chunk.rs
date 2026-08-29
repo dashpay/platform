@@ -2,7 +2,10 @@ use crate::abci::app::StateSyncApplication;
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
-use crate::platform_types::snapshot::{MAX_STATE_SYNC_CHUNK_ID_SIZE, MAX_STATE_SYNC_CHUNK_SIZE};
+use crate::platform_types::snapshot::{
+    clear_restore_sentinel_best_effort, wipe_drive_for_restore, MAX_STATE_SYNC_CHUNK_ID_SIZE,
+    MAX_STATE_SYNC_CHUNK_SIZE,
+};
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_apply_snapshot_chunk;
@@ -142,62 +145,93 @@ where
         .take()
         .expect("session presence was just checked");
 
-    app.platform()
-        .drive
-        .grove
-        .commit_session(session.state_sync_info, grove_version)
-        .map_err(|e| {
-            AbciError::StateSyncInternalError(format!(
-                "apply_snapshot_chunk unable to commit session: {}",
-                e
-            ))
-        })?;
-
-    tracing::debug!("[state_sync] transfer complete, verifying grovedb");
-
-    let incorrect_hashes = app
+    // grovedb only makes the session durable once its own root-hash check passes, so a
+    // failure here leaves nothing committed — but the database is still WIPED from the
+    // offer, so the node cannot be left as it is. Route it through the same recovery path
+    // as every later failure, which also keeps Tenderdash's snapshot ladder moving instead
+    // of aborting state sync with an exception.
+    if let Err(e) = app
         .platform()
         .drive
         .grove
-        .verify_grovedb(None, true, false, grove_version)
-        .map_err(|e| {
-            AbciError::StateSyncInternalError(format!(
-                "apply_snapshot_chunk unable to verify grovedb: {}",
-                e
-            ))
-        })?;
+        .commit_session(session.state_sync_info, grove_version)
+    {
+        return reject_restored_snapshot(app, &format!("unable to commit the session: {}", e));
+    }
+
+    tracing::debug!("[state_sync] transfer complete, verifying grovedb");
+
+    // From here on the session is COMMITTED: grovedb durably holds the restored state
+    // while the platform state still describes the node from before the sync. Every
+    // failure below must therefore go through `reject_restored_snapshot`, which puts the
+    // node back to an empty, self-consistent slate and asks Tenderdash for another
+    // snapshot. Returning an error instead would leave the node holding a database its
+    // platform state knows nothing about, and the `info` handler panics on exactly that
+    // mismatch — a crash loop that no restart can clear.
+    let incorrect_hashes =
+        match app
+            .platform()
+            .drive
+            .grove
+            .verify_grovedb(None, true, false, grove_version)
+        {
+            Ok(incorrect_hashes) => incorrect_hashes,
+            Err(e) => {
+                return reject_restored_snapshot(
+                    app,
+                    &format!("unable to verify the restored grovedb: {}", e),
+                );
+            }
+        };
     if !incorrect_hashes.is_empty() {
         let paths: Vec<String> = incorrect_hashes
             .keys()
             .take(5)
             .map(|path| path.iter().map(hex::encode).collect::<Vec<_>>().join("/"))
             .collect();
-        return Err(AbciError::StateSyncInternalError(format!(
-            "apply_snapshot_chunk grovedb verification failed with {} incorrect hashes, first paths: [{}]",
-            incorrect_hashes.len(),
-            paths.join(", ")
-        ))
-        .into());
+        return reject_restored_snapshot(
+            app,
+            &format!(
+                "grovedb verification failed with {} incorrect hashes, first paths: [{}]",
+                incorrect_hashes.len(),
+                paths.join(", ")
+            ),
+        );
     }
 
     // Rebuild the in-memory platform state from the reduced platform state contained in
     // the restored snapshot. This re-derives masternode lists and quorums from Core and
     // must leave the grovedb root hash untouched; the equality check below proves it.
-    app.platform()
-        .reconstruct_platform_state(&session.app_hash, platform_version)?;
+    //
+    // This is also where a snapshot taken before the reduced platform state existed
+    // (pre-v15) is refused. Refusing earlier would be better, but grovedb does not expose
+    // the session's transaction, so the Misc tree cannot be probed before the commit —
+    // see the note on `reject_restored_snapshot`.
+    if let Err(e) = app
+        .platform()
+        .reconstruct_platform_state(&session.app_hash, platform_version)
+    {
+        return reject_restored_snapshot(
+            app,
+            &format!("unable to reconstruct the platform state: {}", e),
+        );
+    }
 
-    let drive_app_hash = app
+    let drive_app_hash = match app
         .platform()
         .drive
         .grove
         .root_hash(None, grove_version)
         .unwrap()
-        .map_err(|e| {
-            AbciError::StateSyncInternalError(format!(
-                "apply_snapshot_chunk unable to get app hash: {}",
-                e
-            ))
-        })?;
+    {
+        Ok(drive_app_hash) => drive_app_hash,
+        Err(e) => {
+            return reject_restored_snapshot(
+                app,
+                &format!("unable to get the restored app hash: {}", e),
+            );
+        }
+    };
 
     if drive_app_hash != session.app_hash {
         tracing::error!(
@@ -205,12 +239,21 @@ where
             drive_app_hash = hex::encode(drive_app_hash),
             "[state_sync] restored grovedb root hash does not match the snapshot app hash",
         );
-        return Err(AbciError::StateSyncInternalError(format!(
-            "apply_snapshot_chunk grovedb verification failed with incorrect app hash: {}",
-            hex::encode(drive_app_hash)
-        ))
-        .into());
+        return reject_restored_snapshot(
+            app,
+            &format!(
+                "grovedb verification failed with incorrect app hash: {}",
+                hex::encode(drive_app_hash)
+            ),
+        );
     }
+
+    // The restore is complete and the node is self-consistent again, so the marker that
+    // tells a restarting process to wipe can go. This is deliberately the LAST step, after
+    // `reconstruct_platform_state` has committed the platform state to aux storage, and
+    // deliberately best-effort: a successful restore must not be turned into an ABCI error
+    // by a `remove_file` hiccup.
+    clear_restore_sentinel_best_effort(&app.platform().config.db_path);
 
     tracing::info!(
         height = session.snapshot.height,
@@ -220,6 +263,53 @@ where
 
     Ok(proto::ResponseApplySnapshotChunk {
         result: response_apply_snapshot_chunk::Result::CompleteSnapshot.into(),
+        refetch_chunks: vec![],
+        reject_senders: vec![],
+        next_chunks: vec![],
+    })
+}
+
+/// Puts the node back to an empty, self-consistent slate after a restore that was already
+/// committed to grovedb turned out to be unusable, and asks Tenderdash to try a different
+/// snapshot.
+///
+/// Ideally an unusable snapshot would be detected BEFORE `commit_session`, by probing the
+/// Misc tree through the session's still-open transaction. grovedb keeps that transaction
+/// private (`MultiStateSyncSession::transaction`, no accessor), so there is no way to read
+/// the restored state before it lands. Until grovedb exposes it, this is the containment:
+/// undo the commit by wiping, and let Tenderdash pick another snapshot.
+///
+/// The restore sentinel is deliberately LEFT IN PLACE. The database is empty, but the
+/// in-memory platform state may still describe the chain the offer wiped, so the node is
+/// not yet provably consistent. Everything that can happen next resolves it: another
+/// `offer_snapshot` re-wipes and re-marks, a successful restore clears it, an `init_chain`
+/// clears it, and a restart before any of those wipes and comes up empty.
+///
+/// `REJECT_SNAPSHOT` rather than an error is what keeps Tenderdash walking its ladder: it
+/// discards this snapshot, tries the next, and falls back to block sync when it runs out.
+/// An ABCI exception here would abort state sync altogether.
+fn reject_restored_snapshot<'a, 'db: 'a, A, C>(
+    app: &'a A,
+    reason: &str,
+) -> Result<proto::ResponseApplySnapshotChunk, Error>
+where
+    A: StateSyncApplication<'db, C> + 'db,
+    C: CoreRPCLike + 'db,
+{
+    tracing::error!(
+        reason,
+        "[state_sync] restored snapshot is unusable, wiping and asking for another one",
+    );
+
+    wipe_drive_for_restore(&app.platform().drive).map_err(|e| {
+        AbciError::StateSyncInternalError(format!(
+            "apply_snapshot_chunk unable to wipe after rejecting a snapshot ({}): {}",
+            reason, e
+        ))
+    })?;
+
+    Ok(proto::ResponseApplySnapshotChunk {
+        result: response_apply_snapshot_chunk::Result::RejectSnapshot.into(),
         refetch_chunks: vec![],
         reject_senders: vec![],
         next_chunks: vec![],

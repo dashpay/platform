@@ -3,7 +3,8 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::snapshot::{
-    SnapshotFetchingSession, STATE_SYNC_SUBTREES_BATCH_SIZE, SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
+    wipe_drive_for_restore, write_restore_sentinel, SnapshotFetchingSession,
+    STATE_SYNC_SUBTREES_BATCH_SIZE, SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
 };
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
@@ -80,9 +81,26 @@ where
         );
     }
 
-    // Both the fresh-session and the replace-session paths wipe grovedb, start a new
-    // grovedb sync session, and answer Accept.
-    app.platform().drive.grove.wipe().map_err(|e| {
+    // Mark the database as under restore BEFORE destroying it. From here until the
+    // restore completes, the node may be in a state that cannot serve consensus, and the
+    // only thing that can tell a restarted process so is this marker: without it, startup
+    // finds a database that disagrees with its platform state and cannot distinguish an
+    // interrupted restore from corruption. See `Platform::open_with_client`.
+    write_restore_sentinel(
+        &app.platform().config.db_path,
+        &request_app_hash,
+        offered_snapshot.height,
+    )
+    .map_err(|e| {
+        AbciError::StateSyncInternalError(format!(
+            "offer_snapshot unable to record the restore sentinel: {}",
+            e
+        ))
+    })?;
+
+    // Both the fresh-session and the replace-session paths wipe grovedb (dropping the
+    // caches derived from it), start a new grovedb sync session, and answer Accept.
+    wipe_drive_for_restore(&app.platform().drive).map_err(|e| {
         AbciError::StateSyncInternalError(format!("offer_snapshot unable to wipe grovedb: {}", e))
     })?;
 
