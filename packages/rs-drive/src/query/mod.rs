@@ -2563,29 +2563,35 @@ impl<'a> DriveDocumentQuery<'a> {
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
             if self.document_type.index_only() {
-                let index = self.index_only_query_index(platform_version)?;
-                let covers_every_property = self
-                    .document_type
-                    .flattened_properties()
-                    .iter()
-                    .filter(|(_, property)| {
-                        !matches!(property.property_type, DocumentPropertyType::Object(_))
-                    })
-                    .all(|(name, _)| {
-                        index.terminal.as_deref() == Some(name.as_str())
-                            || index
-                                .properties
-                                .iter()
-                                .any(|index_property| index_property.name == *name)
-                    });
-                if !covers_every_property {
-                    return Err(Error::Query(QuerySyntaxError::Unsupported(
-                        "this indexOnly query's index does not cover every property, so the \
-                         documents it synthesizes cannot be serialized into a non-proof \
-                         response; query through an index covering all properties, or use a \
-                         proved query"
-                            .to_string(),
-                    )));
+                // By-id and cursor shapes carry dedicated guidance deeper in
+                // the route (no primary-key tree; keyset pagination) — let
+                // them reach it instead of preempting with the coverage
+                // refusal below, which would misdescribe the problem.
+                if !self.is_for_primary_key() && self.start_at.is_none() {
+                    let index = self.index_only_query_index(platform_version)?;
+                    let covers_every_property = self
+                        .document_type
+                        .flattened_properties()
+                        .iter()
+                        .filter(|(_, property)| {
+                            !matches!(property.property_type, DocumentPropertyType::Object(_))
+                        })
+                        .all(|(name, _)| {
+                            index.terminal.as_deref() == Some(name.as_str())
+                                || index
+                                    .properties
+                                    .iter()
+                                    .any(|index_property| index_property.name == *name)
+                        });
+                    if !covers_every_property {
+                        return Err(Error::Query(QuerySyntaxError::Unsupported(
+                            "this indexOnly query's index does not cover every property, so \
+                             the documents it synthesizes cannot be serialized into a \
+                             non-proof response; query through an index covering all \
+                             properties, or use a proved query"
+                                .to_string(),
+                        )));
+                    }
                 }
                 let (documents, skipped) = self.execute_index_only_documents_no_proof_internal(
                     drive,

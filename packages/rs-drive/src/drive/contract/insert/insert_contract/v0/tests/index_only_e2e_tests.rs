@@ -736,6 +736,29 @@ fn should_serialize_synthesized_documents_on_raw_no_proof_reads() {
         "expected covering guidance, got: {error}"
     );
 
+    // A by-id raw read keeps its DEDICATED guidance: the coverage refusal
+    // must not preempt it (the wire clients' test suite pins the message).
+    let by_id = likes_query(
+        &contract,
+        vec![WhereClause {
+            field: "$id".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier([7u8; 32]),
+        }],
+        Some(1),
+    );
+    let error = by_id
+        .execute_raw_results_no_proof(&drive, None, None, platform_version())
+        .expect_err("a by-id raw read must be refused");
+    assert!(
+        matches!(
+            &error,
+            Error::Query(QuerySyntaxError::Unsupported(message))
+                if message.contains("cannot be fetched by id")
+        ),
+        "expected the by-id guidance, got: {error}"
+    );
+
     assert_grovedb_is_consistent(&drive);
 }
 
