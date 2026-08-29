@@ -86,6 +86,21 @@ where
         AbciError::StateSyncInternalError(format!("offer_snapshot unable to wipe grovedb: {}", e))
     })?;
 
+    // The wipe destroyed the state every lazily-loaded Drive cache was built from. Left
+    // in place, those caches would be silently merged into the RESTORED state and fork the
+    // node: `ProtocolVersionsCache` in particular keeps a `loaded` flag, so
+    // `load_if_needed` would never re-read the restored version counters and the next block
+    // would write vote counts derived from the wiped chain instead. Resetting the counter
+    // wholesale (rather than `clear_global_cache`) is deliberate — it also clears that
+    // flag, so the cache reloads from the restored state on first use.
+    //
+    // `system_data_contracts` is deliberately NOT cleared: those are compiled-in,
+    // version-keyed contracts that never come from grovedb.
+    let drive = &app.platform().drive;
+    *drive.cache.protocol_versions_counter.write() = Default::default();
+    drive.cache.data_contracts.clear();
+    *drive.cache.genesis_time_ms.write() = None;
+
     let state_sync_info = app
         .platform()
         .drive
