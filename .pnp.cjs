@@ -9661,6 +9661,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/docker-compose", "npm:0.24.4"],\
+          ["@dashevo/evo-sdk", "workspace:packages/js-evo-sdk"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
           ["@oclif/core", "npm:3.26.5"],\
@@ -9674,6 +9675,7 @@ const RAW_RUNTIME_STATE =
           ["chai-as-promised", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:7.1.1"],\
           ["chalk", "npm:4.1.2"],\
           ["cron", "npm:2.1.0"],\
+          ["dash", "workspace:packages/js-dash-sdk"],\
           ["dashmate", "workspace:packages/dashmate"],\
           ["dirty-chai", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.0.1"],\
           ["diskusage-ng", "npm:1.0.4"],\
