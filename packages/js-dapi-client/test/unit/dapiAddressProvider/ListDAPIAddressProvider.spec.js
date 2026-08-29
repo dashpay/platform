@@ -116,6 +116,28 @@ describe('ListDAPIAddressProvider', () => {
       expect(liveAddress.protocol).to.equal('https');
       expect(liveAddress.allowSelfSignedCertificate).to.be.true();
     });
+
+    it('should not modify an explicitly configured loopback address', async () => {
+      options = {
+        network: 'local',
+      };
+
+      // A local network that moved its ports off the stock 2443 range
+      // (dashmate e2e suites do) is addressed explicitly; rewriting the port
+      // would redirect every request to whatever squats the stock ports.
+      const loopbackAddress = new DAPIAddress('127.0.0.1:45003:self-signed');
+
+      listDAPIAddressProvider = new ListDAPIAddressProvider(
+        [loopbackAddress],
+        options,
+      );
+
+      const liveAddress = await listDAPIAddressProvider.getLiveAddress();
+
+      expect(liveAddress.host).to.equal('127.0.0.1');
+      expect(liveAddress.port).to.equal(45003);
+      expect(liveAddress.allowSelfSignedCertificate).to.be.true();
+    });
   });
 
   describe('#hasLiveAddresses', () => {
