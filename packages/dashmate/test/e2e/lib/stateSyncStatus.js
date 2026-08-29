@@ -209,13 +209,31 @@ export async function watchStateSync(config, {
 }
 
 /**
+ * Lines worth putting in the run report: the whole sync lifecycle, including
+ * the peering and consensus handover around it.
+ *
+ * @type {RegExp}
+ */
+const LIFECYCLE_LOG_PATTERN = /snapshot|statesync|state sync|state_sync|chunk|backfill|switching to consensus|added peer|handshake/i;
+
+/**
+ * Lines only a node that actually state synced can emit. `added peer`,
+ * `handshake` and `switching to consensus` appear on every Tenderdash start
+ * regardless of how the node caught up, so they must not back an assertion
+ * that a state sync happened.
+ *
+ * @type {RegExp}
+ */
+const STATE_SYNC_LOG_PATTERN = /snapshot|statesync|state_sync|state sync|chunk|backfill/i;
+
+/**
  * Pull the Tenderdash log lines that trace a state sync from offer to
  * completion, for the run report.
  *
  * @param {DockerCompose} dockerCompose
  * @param {Config} config
  * @param {number} [tail]
- * @return {Promise<string[]>}
+ * @return {Promise<{ lines: string[], stateSyncLines: string[] }>}
  */
 export async function getStateSyncLogExcerpt(dockerCompose, config, tail = 4000) {
   let output;
@@ -223,13 +241,66 @@ export async function getStateSyncLogExcerpt(dockerCompose, config, tail = 4000)
   try {
     ({ out: output } = await dockerCompose.logs(config, ['drive_tenderdash'], { tail }));
   } catch (error) {
-    return [`unable to read drive_tenderdash logs: ${error.message}`];
+    return {
+      lines: [`unable to read drive_tenderdash logs: ${error.message}`],
+      stateSyncLines: [],
+    };
   }
 
-  const interesting = /snapshot|statesync|state sync|state_sync|chunk|backfill|switching to consensus|added peer|handshake/i;
+  const all = output.split('\n').map((line) => line.trimEnd());
 
-  return output
-    .split('\n')
-    .filter((line) => interesting.test(line))
-    .map((line) => line.trimEnd());
+  return {
+    lines: all.filter((line) => LIFECYCLE_LOG_PATTERN.test(line)),
+    stateSyncLines: all.filter((line) => STATE_SYNC_LOG_PATTERN.test(line)),
+  };
+}
+
+/**
+ * Block until a joining node reports that a snapshot restore is genuinely
+ * under way, so a caller can disturb the network at a moment that matters.
+ *
+ * Returns the observation that proved it, or undefined when the node finished
+ * (or never started) syncing first — the caller decides whether that makes
+ * its scenario inconclusive rather than failed.
+ *
+ * @param {Config} config
+ * @param {Object} [options]
+ * @param {number} [options.timeoutMs]
+ * @param {number} [options.intervalMs]
+ * @return {Promise<Object|undefined>}
+ */
+export async function waitForStateSyncActivity(config, {
+  timeoutMs = 10 * 60 * 1000,
+  intervalMs = 1000,
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const syncInfo = await getTenderdashSyncInfo(config);
+
+      if (syncInfo) {
+        const populated = pickStateSyncFields(syncInfo);
+
+        // A snapshot height means an offer was accepted; the chunk counters
+        // mean data is actually moving.
+        if (populated.snapshot_height
+          || populated.snapshot_chunks_count
+          || populated.chunk_process_avg_time) {
+          return populated;
+        }
+
+        if (syncInfo.catching_up === false
+          && parseInt(syncInfo.latest_block_height, 10) > 0) {
+          return undefined;
+        }
+      }
+    } catch {
+      // Tenderdash RPC is not reachable yet
+    }
+
+    await wait(intervalMs);
+  }
+
+  return undefined;
 }

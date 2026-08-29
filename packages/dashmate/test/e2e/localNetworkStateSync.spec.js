@@ -8,10 +8,14 @@ import {
   mintToNewAddress,
   resetEvoSdkCache,
 } from './lib/platformSdk.js';
-import seedPlatformState, { describeSeedManifest } from './lib/seedPlatformState.js';
+import seedPlatformState, {
+  describeSeedManifest,
+  getUnexpectedSkips,
+} from './lib/seedPlatformState.js';
 import verifySeededState, { describeVerification } from './lib/verifySeededState.js';
 import {
   getStateSyncLogExcerpt,
+  waitForStateSyncActivity,
   watchStateSync,
 } from './lib/stateSyncStatus.js';
 
@@ -254,13 +258,55 @@ describe('Local Network State Sync', function main() {
     docker = container.resolve('docker');
   });
 
-  after(() => {
-    if (report.length === 0) {
-      return;
+  // Teardown lives here rather than in a trailing `it()` because the suite
+  // bails on first failure, and Mocha never enters a describe block it has
+  // not reached yet. A failure — the thing this suite exists to catch — would
+  // otherwise strand three validators, up to three join nodes, their volumes
+  // and the docker network, which the next run then collides with on the same
+  // subnet and ports. Every step is best-effort so one failure cannot stop the
+  // rest of the cleanup.
+  after(async function teardown() {
+    this.timeout(30 * 60 * 1000);
+
+    const joinConfigs = [joinConfig, churnConfig, fallbackConfig].filter(Boolean);
+    const allConfigs = [...joinConfigs, ...(configGroup || []).slice().reverse()];
+
+    if (allConfigs.length > 0) {
+      const stopNodeTask = container.resolve('stopNodeTask');
+
+      for (const config of allConfigs) {
+        try {
+          await stopNodeTask(config).run({ isForce: true });
+        } catch (error) {
+          record(`teardown: could not stop ${config.getName()}: ${error.message}`);
+        }
+      }
+
+      // Removes the containers and their volumes
+      const resetNodeTask = container.resolve('resetNodeTask');
+
+      for (const config of configFile.getGroupConfigs(groupName)) {
+        try {
+          await resetNodeTask(config).run({
+            isHardReset: false,
+            isForce: true,
+          });
+        } catch (error) {
+          record(`teardown: could not reset ${config.getName()}: ${error.message}`);
+        }
+      }
     }
 
-    // eslint-disable-next-line no-console
-    console.log(`\n[state-sync-qa] run report\n${report.map((line) => `  ${line}`).join('\n')}\n`);
+    try {
+      homeDir.remove();
+    } catch (error) {
+      record(`teardown: could not remove home dir: ${error.message}`);
+    }
+
+    if (report.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(`\n[state-sync-qa] run report\n${report.map((line) => `  ${line}`).join('\n')}\n`);
+    }
   });
 
   describe('setup', () => {
@@ -367,8 +413,6 @@ describe('Local Network State Sync', function main() {
 
       record(`seeding outcomes:\n${describeSeedManifest(seedManifest)}`);
 
-      const failed = seedManifest.steps.filter(({ status }) => status !== 'ok');
-
       // Individual steps are allowed to skip (tokens have no JS SDK path at
       // all), but a run where nothing landed would make every later state
       // assertion vacuous.
@@ -387,7 +431,17 @@ describe('Local Network State Sync', function main() {
         `no document was seeded; outcomes:\n${describeSeedManifest(seedManifest)}`,
       ).to.be.above(0);
 
-      record(`seeding skipped ${failed.length} of ${seedManifest.steps.length} steps`);
+      // A step that failed for a reason this suite does not already know about
+      // is the interesting kind: it may be a real regression wearing a skip's
+      // clothing, so it is called out separately from the known token gap.
+      const unexpected = getUnexpectedSkips(seedManifest);
+
+      if (unexpected.length > 0) {
+        record(`UNEXPECTED seeding skips (${unexpected.length}), review these:`);
+        unexpected.forEach(({ name, reason }) => record(`  ${name} — ${reason}`));
+      } else {
+        record('no unexpected seeding skips');
+      }
     });
   });
 
@@ -497,55 +551,79 @@ describe('Local Network State Sync', function main() {
     });
 
     it('should capture the sync lifecycle from the joiner logs', async () => {
-      const lines = await getStateSyncLogExcerpt(dockerCompose, joinConfig);
+      const { lines, stateSyncLines } = await getStateSyncLogExcerpt(dockerCompose, joinConfig);
 
-      record(`joiner Tenderdash state sync log excerpt (${lines.length} lines):`);
+      record(`joiner Tenderdash sync lifecycle log excerpt (${lines.length} lines):`);
       lines.forEach((line) => record(`  ${line}`));
 
-      expect(lines.length, 'no state sync related lines in the joiner logs').to.be.above(0);
+      // Peering and consensus handover lines appear on every Tenderdash start,
+      // so only the snapshot/chunk ones can back this assertion.
+      expect(
+        stateSyncLines.length,
+        'no snapshot or chunk lines in the joiner logs',
+      ).to.be.above(0);
     });
   });
 
   describe('serving-side churn', () => {
     it('should complete a sync while the serving validator restarts', async () => {
-      const validatorConfig = configGroup.find((config) => config.get('platform.enable'));
-
       churnConfig = await startJoinNode(churnConfigName, configGroup.length + 1);
 
-      // Restart the serving validator's platform containers once while the
-      // new node is pulling chunks. Tenderdash should re-peer and either
-      // resume from another validator or retry the offer.
-      const restart = (async () => {
-        const containerIds = await dockerCompose.getContainerIds(validatorConfig, {
+      // Wait until the joiner is demonstrably restoring a snapshot before
+      // disturbing anything. Firing the restart at an arbitrary moment could
+      // land before the transfer starts or after it finished, and the
+      // scenario would pass having tested nothing.
+      const activity = await waitForStateSyncActivity(churnConfig);
+
+      if (activity) {
+        record(`churn joiner is mid-restore: ${JSON.stringify(activity)}`);
+      } else {
+        record('INCONCLUSIVE: the churn joiner never reported an in-progress restore,'
+          + ' so the restart below did not interrupt a chunk transfer');
+      }
+
+      // Which validator serves the snapshot is decided by Tenderdash's own
+      // peer discovery, so restarting one picked at random would leave open
+      // whether the serving node was ever touched. Restart them all, one at a
+      // time: every candidate server is bounced while the other two keep the
+      // chain producing blocks.
+      let restarted = 0;
+
+      for (const config of configGroup) {
+        if (!config.get('platform.enable')) {
+          continue;
+        }
+
+        const containerIds = await dockerCompose.getContainerIds(config, {
           filterServiceNames: ['drive_abci', 'drive_tenderdash'],
         });
 
-        await Promise.all(containerIds.map(async (id) => {
+        for (const id of containerIds) {
           await docker.getContainer(id).restart({ t: 5 });
-        }));
+          restarted += 1;
+        }
 
-        record(`restarted ${containerIds.length} containers on ${validatorConfig.getName()}`);
-
-        return containerIds.length;
-      })();
-
-      const [restarted, watch] = await Promise.all([
-        restart,
-        watchStateSync(churnConfig, { log: record }),
-      ]);
+        record(`restarted ${containerIds.length} platform containers on ${config.getName()}`);
+      }
 
       expect(restarted, 'no validator containers were restarted').to.be.above(0);
 
-      const { syncInfo } = watch;
+      const { syncInfo } = await watchStateSync(churnConfig, { log: record });
 
       expect(syncInfo, 'churn join node Tenderdash never responded on RPC').to.exist();
       expect(
         syncInfo.catching_up,
-        'churn join node did not finish syncing after the serving validator restarted',
+        'churn join node did not finish syncing after the serving validators restarted',
       ).to.be.false();
 
+      // Recorded, not asserted: a restart harsh enough to exhaust the state
+      // sync retries legitimately leaves the joiner block syncing instead,
+      // which is still a completed sync but a different path.
+      const earliest = parseInt(syncInfo.earliest_block_height, 10);
+
       record(`churn joiner reached earliest_block_height=${syncInfo.earliest_block_height},`
-        + ` latest_block_height=${syncInfo.latest_block_height}`);
+        + ` latest_block_height=${syncInfo.latest_block_height}`
+        + ` (${earliest > 1 ? 'state synced' : 'fell back to block sync'})`);
 
       await assertLocalServicesRunning([churnConfig]);
     });
@@ -655,7 +733,7 @@ describe('Local Network State Sync', function main() {
       record(`fallback joiner block synced to latest_block_height=${syncInfo.latest_block_height}`
         + ` with earliest_block_height=${syncInfo.earliest_block_height}`);
 
-      const lines = await getStateSyncLogExcerpt(dockerCompose, fallbackConfig);
+      const { lines } = await getStateSyncLogExcerpt(dockerCompose, fallbackConfig);
 
       record(`fallback joiner log excerpt (${lines.length} lines):`);
       lines.slice(-40).forEach((line) => record(`  ${line}`));
@@ -693,25 +771,6 @@ describe('Local Network State Sync', function main() {
       }
 
       await assertLocalServicesRunning([...configGroup, ...joinConfigs], false);
-    });
-  });
-
-  describe('reset', () => {
-    it('should reset local network', async () => {
-      const resetNodeTask = await container.resolve('resetNodeTask');
-
-      // The join nodes carry the same group name, so they are included
-      for (const config of configFile.getGroupConfigs(groupName)) {
-        const resetTask = resetNodeTask(config);
-
-        await resetTask.run({
-          isVerbose: true,
-          isHardReset: false,
-          isForce: true,
-        });
-      }
-
-      homeDir.remove();
     });
   });
 });

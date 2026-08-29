@@ -282,10 +282,12 @@ export default async function seedPlatformState(client, { log = () => {} } = {})
   // js-dash-sdk exposes no token factories at all: wasm-dpp's token bindings
   // are getter-only and `contracts.create` forwards document schemas alone, so
   // a token contract cannot be declared, minted or transferred from this
-  // stack. Recorded rather than silently dropped.
+  // stack. Recorded as a known gap rather than silently dropped, and kept
+  // distinct from `skipped` so an unexpected failure elsewhere still stands
+  // out in the report.
   manifest.steps.push({
     name: 'token contract mint + transfer',
-    status: 'skipped',
+    status: 'unsupported',
     reason: 'js-dash-sdk has no token support (wasm-dpp token bindings are read-only '
       + 'and contracts.create forwards only document schemas)',
   });
@@ -345,7 +347,21 @@ export default async function seedPlatformState(client, { log = () => {} } = {})
 export function describeSeedManifest(manifest) {
   return manifest.steps
     .map(({ name, status, reason }) => (
-      `  ${status === 'ok' ? 'ok     ' : 'skipped'} ${name}${reason ? ` — ${reason}` : ''}`
+      `  ${status.padEnd(11)} ${name}${reason ? ` — ${reason}` : ''}`
     ))
     .join('\n');
+}
+
+/**
+ * Steps that failed for a reason this suite does not already know about.
+ *
+ * A blanket "skipped" would let a real regression in, say, credit top-up look
+ * exactly like the token gap that can never work here, so the two are kept
+ * apart and the unexpected ones are surfaced.
+ *
+ * @param {Object} manifest
+ * @return {Object[]}
+ */
+export function getUnexpectedSkips(manifest) {
+  return manifest.steps.filter(({ status }) => status === 'skipped');
 }

@@ -96,6 +96,11 @@ export default async function verifySeededState(config, quorumListConfig, manife
     );
   }
 
+  // `ranked` rather than `rankedWithProof`: verification is a property of the
+  // SDK (built with `proofs: true`), not of the method name. The `WithProof`
+  // suffix only decides whether the proof bytes come back to the caller — both
+  // variants verify before returning.
+  //
   // A ranked index keeps ordered secondary trees beside the index itself.
   // They are part of the snapshot and are not rebuilt by replaying blocks the
   // joiner never saw, so answering a ranked query is a sharper check on the
