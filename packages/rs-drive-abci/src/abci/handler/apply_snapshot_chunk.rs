@@ -71,6 +71,32 @@ where
         ) {
             Ok(next_chunk_ids) => next_chunk_ids,
             Err(e) => {
+                let reject_senders = if request.sender.is_empty() {
+                    vec![]
+                } else {
+                    vec![request.sender.clone()]
+                };
+
+                // grovedb removes a chunk id from its pending set before processing it,
+                // so a chunk it has already seen (e.g. the refetch of one it rejected)
+                // cannot be re-applied within this session: ask Tenderdash to restart
+                // the snapshot instead (a same-height re-offer, which we accept).
+                if matches!(&e, drive::grovedb::Error::InternalError(message) if message.contains("not expected"))
+                {
+                    tracing::warn!(
+                        chunk_id = hex::encode(&request.chunk_id),
+                        sender = request.sender,
+                        error = ?e,
+                        "[state_sync] apply_snapshot_chunk cannot re-apply a chunk in this session, requesting snapshot restart",
+                    );
+                    return Ok(proto::ResponseApplySnapshotChunk {
+                        result: response_apply_snapshot_chunk::Result::RetrySnapshot.into(),
+                        refetch_chunks: vec![],
+                        reject_senders,
+                        next_chunks: vec![],
+                    });
+                }
+
                 // A chunk grovedb cannot apply (corrupted or tampered data) is
                 // recoverable: keep the session and ask Tenderdash to refetch the chunk,
                 // banning the peer that sent it so the refetch goes elsewhere.
@@ -80,11 +106,6 @@ where
                     error = ?e,
                     "[state_sync] apply_snapshot_chunk rejected a chunk, requesting refetch",
                 );
-                let reject_senders = if request.sender.is_empty() {
-                    vec![]
-                } else {
-                    vec![request.sender]
-                };
                 return Ok(proto::ResponseApplySnapshotChunk {
                     result: response_apply_snapshot_chunk::Result::Retry.into(),
                     refetch_chunks: vec![request.chunk_id],
@@ -142,9 +163,15 @@ where
             ))
         })?;
     if !incorrect_hashes.is_empty() {
+        let paths: Vec<String> = incorrect_hashes
+            .keys()
+            .take(5)
+            .map(|path| path.iter().map(hex::encode).collect::<Vec<_>>().join("/"))
+            .collect();
         return Err(AbciError::StateSyncInternalError(format!(
-            "apply_snapshot_chunk grovedb verification failed with {} incorrect hashes",
-            incorrect_hashes.len()
+            "apply_snapshot_chunk grovedb verification failed with {} incorrect hashes, first paths: [{}]",
+            incorrect_hashes.len(),
+            paths.join(", ")
         ))
         .into());
     }

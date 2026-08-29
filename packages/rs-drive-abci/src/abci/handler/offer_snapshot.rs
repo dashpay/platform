@@ -63,9 +63,12 @@ where
     })?;
 
     if let Some(session) = session_write_guard.as_ref() {
-        if offered_snapshot.height <= session.snapshot.height {
+        // An offer at the same height is a legitimate snapshot restart (Tenderdash's
+        // RETRY_SNAPSHOT flow) and replaces the session; only strictly older offers are
+        // rejected.
+        if offered_snapshot.height < session.snapshot.height {
             return Err(AbciError::StateSyncBadRequest(format!(
-                "offer_snapshot already syncing snapshot at height {}, offered height {} is not newer",
+                "offer_snapshot already syncing snapshot at height {}, offered height {} is older",
                 session.snapshot.height, offered_snapshot.height
             ))
             .into());
@@ -73,7 +76,7 @@ where
         tracing::warn!(
             current_height = session.snapshot.height,
             offered_height = offered_snapshot.height,
-            "[state_sync] offer_snapshot replacing session in progress with newer snapshot",
+            "[state_sync] offer_snapshot replacing session in progress",
         );
     }
 
@@ -159,9 +162,16 @@ mod tests {
             i32::from(response_offer_snapshot::Result::Accept)
         );
 
-        // A lower-or-equal height while syncing is rejected
-        assert!(offer_snapshot(&app, offer_at(100, 1)).is_err());
+        // A strictly lower height while syncing is rejected
         assert!(offer_snapshot(&app, offer_at(50, 1)).is_err());
+
+        // A same-height re-offer is a snapshot restart (Tenderdash RETRY_SNAPSHOT):
+        // the session is replaced and the offer accepted
+        let response = offer_snapshot(&app, offer_at(100, 1)).expect("should accept restart");
+        assert_eq!(
+            response.result,
+            i32::from(response_offer_snapshot::Result::Accept)
+        );
 
         // A newer snapshot replaces the session and MUST also answer Accept
         // (the old prototype returned the default UNKNOWN result here)
