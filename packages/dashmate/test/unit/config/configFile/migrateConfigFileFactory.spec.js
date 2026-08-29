@@ -234,6 +234,51 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should add state sync options to a config stamped before they existed', async () => {
+    // The schema now requires the state sync options, so a config written
+    // before they existed cannot be loaded until the migration adds them.
+    const fromVersion = '4.2.0-dev.5';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    for (const options of Object.values(configFileData.configs)) {
+      delete options.platform.drive.tenderdash.stateSync;
+      delete options.platform.drive.abci.stateSync;
+    }
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      // A local network genesis starts every node from scratch, so the local
+      // preset neither consumes nor serves snapshots.
+      const enabled = !(name === 'local' || options.group === 'local');
+
+      expect(options.platform.drive.tenderdash.stateSync).to.deep.equal(
+        {
+          enabled,
+          retries: 3,
+          chunkRequestTimeout: '15s',
+          fetchersCount: 4,
+        },
+        `tenderdash state sync options not added for ${name}`,
+      );
+      expect(options.platform.drive.abci.stateSync).to.deep.equal(
+        {
+          snapshots: {
+            enabled,
+            frequencySeconds: 600,
+            maxCount: 6,
+          },
+        },
+        `drive snapshot options not added for ${name}`,
+      );
+
+      expect(() => new Config(name, options), `migrated ${name} config does not load`)
+        .to.not.throw();
+    }
+  });
+
   it('should load a config a development build stamped with its own prerelease version', async () => {
     // A development build records its own package version in the config, so
     // every node running one is stamped at a prerelease of the next release.
