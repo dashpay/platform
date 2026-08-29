@@ -202,14 +202,6 @@ impl Drive {
 
                                 let (root_hash, result) = match document_transition {
                                     DocumentTransition::Create(create_transition) => {
-                                        let Some(grovedb::Element::Item(payload, _)) =
-                                            entry_element
-                                        else {
-                                            return Err(Error::Proof(ProofError::IncorrectProof(format!(
-                                                "proof did not contain the indexOnly entry item expected to exist after create of {}",
-                                                create_transition.base().id()
-                                            ))));
-                                        };
                                         let expected_document =
                                             Document::try_from_create_transition(
                                                 create_transition,
@@ -219,6 +211,54 @@ impl Drive {
                                                 &document_type,
                                                 platform_version,
                                             )?;
+                                        // The entry's element shape follows the
+                                        // proof index's sum axis: a summable
+                                        // index stores `ItemWithSumItem(
+                                        // commitment, amount)`, a plain one
+                                        // stores `Item(commitment)`. The shapes
+                                        // are checked strictly — an element of
+                                        // the wrong shape is a wrong proof, and
+                                        // for the sum-bearing shape the proved
+                                        // amount must equal the created
+                                        // document's contribution (the value
+                                        // the write path froze into the
+                                        // element).
+                                        let proof_index = crate::query::index_only_synthesis::index_only_proof_index(&document_type)?;
+                                        let payload = match (
+                                            entry_element,
+                                            proof_index.summable.as_deref(),
+                                        ) {
+                                            (Some(grovedb::Element::Item(payload, _)), None) => {
+                                                payload
+                                            }
+                                            (
+                                                Some(grovedb::Element::ItemWithSumItem(
+                                                    payload,
+                                                    sum_value,
+                                                    _,
+                                                )),
+                                                Some(sum_property),
+                                            ) => {
+                                                let expected_sum =
+                                                    crate::drive::document::read_document_sum_contribution(
+                                                        &expected_document,
+                                                        sum_property,
+                                                    )?;
+                                                if sum_value != expected_sum {
+                                                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                        "the proved indexOnly entry's sum contribution does not match the created document {}",
+                                                        create_transition.base().id()
+                                                    ))));
+                                                }
+                                                payload
+                                            }
+                                            _ => {
+                                                return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                    "proof did not contain the indexOnly entry item expected to exist after create of {}",
+                                                    create_transition.base().id()
+                                                ))));
+                                            }
+                                        };
                                         // Entry presence alone only proves that
                                         // SOME row projects onto this position;
                                         // the stored row commitment binds the

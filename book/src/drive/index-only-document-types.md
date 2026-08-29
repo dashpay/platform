@@ -33,12 +33,39 @@ refersTo-typed identifier property (identity, contract, token, permanent
 document) — is the member key, sitting exactly where a normal non-unique
 index keys by document id; the element is an `Item` instead of a
 `Reference` because there is nothing to point at. The `0` storage marker,
-value-tree types, and the count/ranked tree derivation are byte-identical
-to the ordinary non-unique layout, which is what lets the protocol v14
-ranked machinery (see [Document Ranked Trees](./document-ranked-trees.md))
-serve index-only types unchanged: "the five most-liked posts in `#dash`"
-is an O(log n + k) read with an O(log n + k) proof, and Items count in
+value-tree types, and the count/sum/ranked tree derivation are
+byte-identical to the ordinary non-unique layout, which is what lets the
+protocol v14 ranked machinery (see
+[Document Ranked Trees](./document-ranked-trees.md)) serve index-only
+types unchanged: "the five most-liked posts in `#dash`" is an
+O(log n + k) read with an O(log n + k) proof, and Items count in
 count/ranked trees exactly as References do.
+
+**`timeRange` buckets** compose too: a bucketed indexOnly index writes
+one commitment entry per containing bucket under the grid-qualified
+level, exactly as stored types do — the walkers' bucket fan-out, the
+probes' path derivation (`entry_keys_for_raw`, shared so probe and write
+paths cannot drift), and the `IN_TIME_RANGE` count aggregates are all the
+same machinery ("how many likes under `#dash` this hour"). The source can
+only be `$createdAt` (the prefix rule admits no other timestamp), which
+`required` must carry, so a delete's values reproduce the exact bucket
+set. A bucketed index involves `$createdAt` and therefore never serves as
+the proof index; and document synthesis over bucketed entries is refused
+with guidance — the bucket level carries bucket-start granularity, not
+the document's timestamp, and the raw entries are served by the type's
+non-bucketed indexes.
+
+The **sum axes** compose the same way: a `summable: "<prop>"` index
+stores `ItemWithSumItem(<row commitment>, <amount>)` terminals — the same
+commitment payload, plus the summed property's value — so entries
+contribute to ancestor sum trees exactly as stored types'
+`ReferenceWithSumItem` references do ("total tipped to this post", "top
+posts by total tipped" via `rankedSummable`). The doctype-level summable
+cross-checks (one canonical summed property, i64-safe integer type,
+`required` membership) apply unchanged, and on delete grovedb reads the
+amount off the stored element and propagates the subtraction — the
+falsified-amount case dies on the commitment probe first, since the
+amount is one of the committed properties.
 
 **Governing principle: only what is in the indexes exists and is
 recoverable.** Prefix property values live in the path, the terminal id in
@@ -72,10 +99,12 @@ aggregate keywords follow:
 | terminal is `$ownerId` or a single-id refersTo property | the member key must alone be a referable entity id (`identityPublicKey` is compound and rejected) |
 | indexed `$createdAt` requires `$createdAt` in `required` | creation only assigns timestamps for required system times |
 | `documentsMutable: false`, no transfers/trading/history/transient | no stored row, no revision |
-| non-unique, non-contested, `nullSearchable` default, no `timeRange`, count axes only | v1 scope; sum axes and buckets are follow-ups |
+| non-unique, non-contested, `nullSearchable` default | v1 scope |
+| `preallocated` requires a fully reference-determined, non-bucketed path | see [Preallocated index paths](#preallocated-index-paths) |
 
-`indexOnly` and the index set (terminals included) are immutable across
-contract updates — a later-added index could never be backfilled.
+`indexOnly` and the index set (terminals included, `preallocated` flags
+included) are immutable across contract updates — a later-added index
+could never be backfilled.
 
 ## Lifecycle
 
@@ -85,7 +114,11 @@ contract updates — a later-added index could never be backfilled.
   uniqueness constraint over its value projection plus owner — for likes,
   the `[postId]` index is the one-like-per-(post, owner) rule. `refersTo`
   validation runs unchanged (it reads transition values, not storage), so a
-  like on a nonexistent post is rejected.
+  like on a nonexistent post is rejected — and a `propertyAgreement`
+  declaration on the reference (`{ "hashtag": "hashtag" }`) binds the
+  like's own property to the referenced post's: the referenced document is
+  already fetched for the existence check, so the equality comparison adds
+  no reads, and a like whose hashtag disagrees with its post's is refused.
 - **Delete** is its own transition kind,
   `DocumentIndexOnlyDeleteTransition { base, data }` (`$action:
   "indexOnlyDelete"`), carrying the full value tuple (`$createdAt` under
@@ -100,7 +133,52 @@ contract updates — a later-added index could never be backfilled.
   software.
 - **Replace / transfer / purchase / price** are structurally impossible.
 
-## Reads
+## Preallocated index paths
+
+The first entry under a fresh value tuple pays for every tree on its path
+— for a like that is the hashtag value tree, the `postId` property-name
+tree, the post's value tree and the `0` member bucket — while the second
+entry pays for one item insert. When the index path is a pure function of
+a refersTo-referenced document, that lopsidedness is avoidable: an index
+may declare `preallocated: true` iff every index property is either the
+referring property itself (its value is the referenced document's `$id`)
+or a key of that reference's `propertyAgreement` (consensus-equal to a
+referenced-document property), and the reference targets a document type
+of the **same contract**. `byHashtagPost` (`[hashtag, postId]`) qualifies
+— `hashtag` through the agreement, `postId` as the reference;
+`byLiker` (`[$ownerId]`) cannot, since no referenced document determines
+the liker.
+
+Three things change, all bit-compatible with the fallback layout:
+
+- **Insert side** (`insert/add_preallocated_index_tree_operations`):
+  inserting the referenced document also emits if-not-exists creations of
+  the referring index's dynamic trees, down to the empty `0` member
+  bucket, derived through the same tree-type helper the entry walkers use
+  — so a preallocated tree is byte-identical to the tree the first
+  entry's create-on-insert path would have made. The poster pays for the
+  structural bytes; storage flags ride only when the contract itself is
+  deletable, because that is a preallocated tree's one deletion path —
+  entry deletes retain it by design, so entry-level flags would be
+  unrefundable dead weight. Shared prefixes (a second post under the same
+  hashtag) deduplicate through the if-not-exists semantics.
+- **Delete side**: removing the last member entry stops the
+  empty-tree-pruning climb at the member level, keeping the whole
+  apparatus — the group stays in the ranked secondaries at count 0, and a
+  re-entry is again a plain item insert. (Non-preallocated indexes of the
+  same type keep pruning as before.)
+- **Nothing else**: entry insertion keeps its create-if-missing behavior,
+  so correctness never depends on preallocation. Referenced documents
+  created before a contract update introduced a referring type simply
+  hand the first entry the old price, and their trees — created by the
+  fallback — are retained on delete exactly like preallocated ones.
+
+The economics: the referenced document's creator pays for the trees
+whether or not anyone ever references it (which is why the flag is an
+explicit opt-in, per index), every entry from the first on costs the
+same, and "no entries yet" becomes a present-but-empty member bucket —
+provable as zero results, rankable as a zero-count group — instead of an
+absent tree.
 
 An entry's proved `(path, key)` position IS the document, so queries and
 proofs **synthesize** documents through one shared builder
@@ -117,14 +195,28 @@ by the presence of the entry its values produce under the **proof index**
 (the first `$ownerId`-bearing index not involving `$createdAt` — contract
 admission guarantees one exists) and a delete by its absence, with the
 proved entry's payload checked against the transition-derived row
-commitment; prover and verifier build the same single-entry path query
-from the transition. The outcome is always `AffectedState`, never
+commitment (and, when the proof index is summable, the proved sum
+contribution against the created document's amount); prover and verifier
+build the same single-entry path query from the transition. The outcome is always `AffectedState`, never
 `ExecutionProved`: the commitment carries neither id, entropy nor nonce,
 so a snapshot cannot bind one specific transition's execution.
 
-Not yet supported on the read surface: by-`$id` fetches (no primary tree —
-rejected with guidance), `startAt` cursors, and where clauses on the
-terminal property; ranked / count / range-aggregate queries work unchanged
+Where clauses on the **terminal property** lower directly onto the entry
+level's member keys once every prefix property carries an equality clause:
+an equality answers "did I like X" in one query, and a range ordered by
+the terminal (`terminal > <last seen>`, with a limit) walks the entries
+page by page — **keyset pagination**, the indexOnly replacement for
+id-shaped `startAt` cursors, which cannot address a position whose
+synthesized id is a one-way hash. Mixed shapes are served through a
+**prefix pivot**: one range or `in` clause may sit on a prefix property
+instead of the terminal (`hashtag == h AND postId > p AND $ownerId ==
+me`), with everything above the pivot equality-bound, everything below
+it unconstrained, and the terminal clause an equality. All shapes prove
+and verify through the same shared path-query builder.
+
+Not supported on the read surface: by-`$id` fetches (no primary tree —
+rejected with guidance) and `startAt` cursors (rejected with the keyset
+guidance above); ranked / count / range-aggregate queries work unchanged
 since they never open value trees.
 
 ## What it costs and what it saves

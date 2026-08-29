@@ -1,3 +1,56 @@
+## [4.2.0-dev.5](https://github.com/dashpay/platform/compare/4.2.0-dev.4...v4.2.0-dev.5) (2026-08-28)
+
+
+### Bug Fixes
+
+* **dpp:** unbreak v4.2-dev — fmt gate and propertyAgreement compile breaks ([#4515](https://github.com/dashpay/platform/issues/4515))
+
+## [4.2.0-dev.3](https://github.com/dashpay/platform/compare/v4.2.0-dev.2...v4.2.0-dev.3) (2026-08-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** preallocated indexOnly index trees created at referenced-document insert (#4509)
+* **drive:** timeRange buckets on indexOnly indexes (#4508)
+* **drive:** sum axes on indexOnly indexes via ItemWithSumItem terminals (#4506)
+* **dpp:** refersTo propertyAgreement binds referring and referenced document properties (#4505)
+* **drive:** indexOnly read surface — synthesize documents from index positions (#4494)
+* **dpp:** indexOnly delete-by-values as its own transition kind (#4497)
+* **drive:** indexOnly storage layout — index entries as the rows (#4492)
+* **dpp:** add indexOnly document types with terminal index keys (#4491)
+
+### Features
+
+* **dashmate:** record why certificate renewal failed so doctor can name the cause ([#4476](https://github.com/dashpay/platform/issues/4476))
+* **dpp:** add indexOnly document types with terminal index keys ([#4491](https://github.com/dashpay/platform/issues/4491))
+* **dpp:** indexOnly delete-by-values as its own transition kind ([#4497](https://github.com/dashpay/platform/issues/4497))
+* **dpp:** refersTo propertyAgreement binds referring and referenced document properties ([#4505](https://github.com/dashpay/platform/issues/4505))
+* **drive:** indexOnly read surface — synthesize documents from index positions ([#4494](https://github.com/dashpay/platform/issues/4494))
+* **drive:** indexOnly storage layout — index entries as the rows ([#4492](https://github.com/dashpay/platform/issues/4492))
+* **drive:** indexOnly terminal-property where clauses and keyset pagination ([#4499](https://github.com/dashpay/platform/issues/4499))
+* **drive:** preallocated indexOnly index trees created at referenced-document insert ([#4509](https://github.com/dashpay/platform/issues/4509))
+* **drive:** sum axes on indexOnly indexes via ItemWithSumItem terminals ([#4506](https://github.com/dashpay/platform/issues/4506))
+* **drive:** timeRange buckets on indexOnly indexes ([#4508](https://github.com/dashpay/platform/issues/4508))
+* **platform-wallet:** prepare a ProUpServTx without broadcasting it ([#4512](https://github.com/dashpay/platform/issues/4512))
+* **platform-wallet:** unban a PoSe-banned masternode — ProUpServTx orchestration, FFI, Swift ([#4507](https://github.com/dashpay/platform/issues/4507))
+* **sdk:** indexOnly delete-by-values through the SDKs; book chapter ([#4495](https://github.com/dashpay/platform/issues/4495))
+
+
+### Bug Fixes
+
+* **platform-wallet:** harden asset-lock recovery — invisible chain-locked rows, two unbounded waits ([#4422](https://github.com/dashpay/platform/issues/4422))
+* **sdk:** separate the deletion-resolution doc from the Returns list ([#4498](https://github.com/dashpay/platform/issues/4498))
+
+
+### Documentation
+
+* **platform-wallet:** error-code registry for the FFI result space ([#4318](https://github.com/dashpay/platform/issues/4318))
+
+
+### Tests
+
+* **test-suite:** indexOnly document lifecycle functional spec ([#4510](https://github.com/dashpay/platform/issues/4510))
+
 ## [4.2.0-dev.2](https://github.com/dashpay/platform/compare/v4.1.1...v4.2.0-dev.2) (2026-08-26)
 
 

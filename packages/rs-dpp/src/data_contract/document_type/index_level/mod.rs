@@ -114,6 +114,16 @@ pub struct IndexLevelTypeInfo {
     /// property list (duplicates are rejected), so each terminating level
     /// belongs to exactly one index and the field is unambiguous.
     pub terminal: Option<String>,
+    /// Whether the terminating index is `preallocated` (see
+    /// [`crate::data_contract::document_type::index::PREALLOCATED`]): its
+    /// dynamic trees are created when a refersTo-referenced document is, and
+    /// the delete walker must NOT prune them upward when the last member
+    /// entry goes — removing the entry is the whole delete. Carried on the
+    /// level info for the same reason `terminal` is: the delete walker only
+    /// sees the terminating level, which belongs to exactly one index.
+    /// `false` on every pre-PV14 contract (the grammar rejects the keyword
+    /// below meta-schema v3).
+    pub preallocated: bool,
 }
 
 impl IndexType {
@@ -352,6 +362,9 @@ impl IndexLevel {
                         // generation 3), so stamping it here changes nothing
                         // for any historical index level.
                         terminal: index.terminal.clone(),
+                        // Same PV14+ gating as `terminal` — `false` on
+                        // every historical index level.
+                        preallocated: index.preallocated,
                     });
                 }
             }
@@ -464,6 +477,21 @@ impl IndexLevel {
             );
         }
 
+        // The `preallocated` flag decides who creates the index's dynamic
+        // trees and whether last-entry deletes may prune them — see
+        // `find_first_preallocated_change` for why a flip in either
+        // direction breaks already-written state. Immutable like the flags
+        // above.
+        if let Some(preallocated_change_path) = self.find_first_preallocated_change(new_indices) {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    preallocated_change_path,
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 }
@@ -497,6 +525,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -533,6 +562,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let new_indices = vec![
@@ -554,6 +584,7 @@ mod tests {
                 ranked_averageable: false,
                 time_range: None,
                 terminal: None,
+                preallocated: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -573,6 +604,7 @@ mod tests {
                 ranked_averageable: false,
                 time_range: None,
                 terminal: None,
+                preallocated: false,
             },
         ];
 
@@ -618,6 +650,7 @@ mod tests {
                 ranked_averageable: false,
                 time_range: None,
                 terminal: None,
+                preallocated: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -637,6 +670,7 @@ mod tests {
                 ranked_averageable: false,
                 time_range: None,
                 terminal: None,
+                preallocated: false,
             },
         ];
 
@@ -658,6 +692,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -701,6 +736,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let new_indices = vec![Index {
@@ -727,6 +763,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -776,6 +813,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let new_indices = vec![Index {
@@ -796,6 +834,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -839,6 +878,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let new_indices = vec![Index {
@@ -859,6 +899,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -902,6 +943,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let new_indices = vec![Index {
@@ -922,6 +964,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -965,6 +1008,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -1008,6 +1052,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let new_indices = vec![Index {
@@ -1028,6 +1073,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -1071,6 +1117,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let new_indices = vec![Index {
@@ -1091,6 +1138,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -1140,6 +1188,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let new_indices = vec![Index {
@@ -1166,6 +1215,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -1215,6 +1265,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let new_indices = vec![Index {
@@ -1241,6 +1292,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let old_index_structure =
@@ -1298,6 +1350,7 @@ mod tests {
             ranked_averageable,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }
     }
 
@@ -1456,6 +1509,7 @@ mod tests {
             ranked_averageable: false,
             time_range: None,
             terminal: None,
+            preallocated: false,
         }];
 
         let mut new_indices = old_indices.clone();
@@ -1476,5 +1530,63 @@ mod tests {
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
             )] if e.index_path() == "first"
         );
+    }
+
+    /// The `preallocated` flag is immutable across contract updates in
+    /// either direction: turning it on leaves existing referenced
+    /// documents without preallocated trees while deletes already refuse
+    /// to prune, and turning it off lets last-entry deletes prune trees a
+    /// referenced document's creator paid for as permanent structure.
+    #[test]
+    fn should_return_invalid_result_if_preallocated_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let index_with_preallocated = |preallocated: bool| Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated,
+        };
+
+        for (old_flag, new_flag) in [(false, true), (true, false)] {
+            let old_index_structure = IndexLevel::try_from_indices(
+                &[index_with_preallocated(old_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create old index level");
+            let new_index_structure = IndexLevel::try_from_indices(
+                &[index_with_preallocated(new_flag)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create new index level");
+
+            let result =
+                old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+            let expected_path = format!("test -> (preallocated: {} -> {})", old_flag, new_flag);
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == expected_path
+            );
+        }
     }
 }

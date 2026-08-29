@@ -62,10 +62,12 @@ use crate::wallet::identity::{
 /// `WalletEvent` bus delivers.
 ///
 /// Built by the platform-wallet event adapter from `WalletEvent` variants
-/// emitted by `WalletManager`. Every field is purely additive — the
-/// merge implementation uses last-write-wins for the height watermarks
-/// (monotonic-max), `extend` for the records / utxos vecs, and
-/// last-write-wins for the IS-lock map.
+/// emitted by `WalletManager`. The merge implementation coalesces the
+/// record vecs newest-wins (by txid for the wallet-level `records`, by
+/// `(txid, account)` for `account_records` — see
+/// [`fold_same_txid_records`]), uses monotonic-max for the height
+/// watermarks, `extend` for the utxo vecs, and last-write-wins for the
+/// IS-lock map.
 ///
 /// # Why a projection instead of the upstream type
 ///
@@ -83,15 +85,47 @@ use crate::wallet::identity::{
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CoreChangeSet {
-    /// Transaction records produced by this batch.
+    /// Transaction records produced by this batch — one WALLET-LEVEL
+    /// record per txid (dashpay/platform#4387).
     ///
     /// Includes records first stored (`TransactionDetected`,
     /// `BlockProcessed.inserted`), records whose context advanced
     /// (`BlockProcessed.updated` — e.g. a mempool tx that just confirmed),
     /// and coinbase records that crossed the maturity threshold
-    /// (`BlockProcessed.matured`). All persisted; the persister's
-    /// `txid` uniqueness constraint handles dedup on replay.
+    /// (`BlockProcessed.matured`). The event bridge folds a
+    /// transaction's per-account slices into a single record whose
+    /// `net_amount` / details describe the wallet (see
+    /// [`fold_same_txid_records`]), so each record here is a complete
+    /// snapshot of its transaction at one observation — merge coalesces
+    /// same-txid records newest-wins rather than combining them. All
+    /// persisted; the persister's `txid` uniqueness constraint handles
+    /// dedup on replay.
     pub records: Vec<TransactionRecord>,
+
+    /// The per-account record SLICES behind [`Self::records`], exactly
+    /// as upstream emitted them (one record per matched account,
+    /// contact-watch-only slices filtered out).
+    ///
+    /// The wallet-level fold above is right for the txid-keyed
+    /// `transactions` row but destroys account attribution: a sibling
+    /// account's `Change` output rides a record whose `account_type`
+    /// names the funding account, and `OutputDetail` carries no owning
+    /// account. Persisters that route per-account state read the
+    /// slices from here instead: the FFI projection buckets
+    /// `utxos_added` / `utxos_spent` by each slice's account so
+    /// Swift/Kotlin store each TXO under its owning account, and it
+    /// emits the folded transaction row into EVERY slice-owning
+    /// account's bucket so the per-account transaction callback still
+    /// writes the tx↔account involvement join for payload-only
+    /// matches (provider owner/voting keys) that restart restoration
+    /// depends on. Persisters that resolve accounts another way
+    /// (SQLite looks the address up in `core_derived_addresses`) can
+    /// ignore this field.
+    ///
+    /// Merge coalesces by `(txid, account_type)` newest-wins, mirroring
+    /// the wallet-level coalesce on `records`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub account_records: Vec<TransactionRecord>,
 
     /// UTXOs to remove — outpoints that records in this batch spent.
     /// The full `Utxo` is carried (not just `OutPoint`) so a persister
@@ -230,14 +264,257 @@ impl HighestUsedIndexes {
     }
 }
 
+/// Fold same-txid [`TransactionRecord`]s into ONE wallet-level record —
+/// the dashpay/platform#4387 fix at the batch seam.
+///
+/// Upstream `check_core_transaction` emits one record PER MATCHED ACCOUNT
+/// for a single transaction, each carrying only its account's slice
+/// (`net_amount` is documented "Net amount for this account"). The
+/// persisted `transactions` row is keyed by txid alone, so without this
+/// fold whichever record drained last defined the row — a multi-account
+/// sweep persisted one slice as the whole wallet's net (S22 field case:
+/// −0.005 stored for a −2.61920199 spend).
+///
+/// The fold, per txid group of 2+ records:
+/// - `net_amount` — the SUM of the slices: each account's
+///   `received − spent` over disjoint detail sets, so the sum is the
+///   wallet's `Σreceived − Σspent` by construction.
+/// - `input_details` / `output_details` — the union (deduped by input
+///   index / output index): the slices are disjoint per account, and the
+///   union is exactly the wallet-relevant view downstream consumers
+///   (`derive_new_utxos`, usage sweeps) expect of a single record.
+/// - `fee` — the first `Some` (only the funding account's record carries
+///   one, and disjoint accounts cannot disagree); left `None` when no
+///   record knew it.
+/// - `direction` — recomputed over the MERGED details with the same rule
+///   upstream applies per account (`record_transaction`): `CoinJoin`
+///   transaction type wins outright; otherwise no `Sent` output + our
+///   inputs + our outputs → `Internal` (a cross-account move whose
+///   account-local slices said `Outgoing`/`Incoming` is, wallet-level, a
+///   self-transfer); otherwise our inputs → `Outgoing`, else `Incoming`.
+///   Deriving from the net's sign instead erased `Internal` and
+///   `CoinJoin`: an internal transfer nets −fee and would relabel
+///   `Outgoing`.
+/// - `context` — the most advanced in the group (`Mempool` <
+///   `InstantSend` < `InBlock` < `InChainLockedBlock`), so a group mixing
+///   a stale mempool observation with a confirmed one keeps the
+///   confirmation.
+/// - identity fields (`transaction`, `txid`, `transaction_type`,
+///   `label`, `account_type`) — from the FUNDING record (the one with
+///   input details) so the row's account attribution names the spender,
+///   else the first record.
+///
+/// Order-preserving for untouched records; a fold lands at the group's
+/// FIRST position (`group[0]`) regardless of which record supplied the
+/// funding metadata, so unrelated records between two slices never move
+/// ahead of the folded transaction. Contact-watch-only records never
+/// reach here (filtered at projection — see
+/// `core_bridge::is_contact_watch_only`).
+pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
+    use key_wallet::managed_account::transaction_record::{OutputRole, TransactionDirection};
+    use key_wallet::transaction_checking::transaction_router::TransactionType;
+
+    if records.len() < 2 {
+        return;
+    }
+    let mut by_txid: BTreeMap<Txid, Vec<usize>> = BTreeMap::new();
+    for (i, r) in records.iter().enumerate() {
+        by_txid.entry(r.txid).or_default().push(i);
+    }
+    if by_txid.values().all(|g| g.len() < 2) {
+        return;
+    }
+
+    let mut drop_idx: BTreeSet<usize> = BTreeSet::new();
+    let mut folded: BTreeMap<usize, TransactionRecord> = BTreeMap::new();
+    for group in by_txid.values().filter(|g| g.len() >= 2) {
+        // Base: the funding record (has input details), else the first.
+        let base_pos = group
+            .iter()
+            .copied()
+            .find(|&i| !records[i].input_details.is_empty())
+            .unwrap_or(group[0]);
+        let mut merged = records[base_pos].clone();
+        let mut net: i64 = 0;
+        let mut seen_inputs: BTreeSet<u32> = merged.input_details.iter().map(|d| d.index).collect();
+        let mut seen_outputs: BTreeSet<u32> =
+            merged.output_details.iter().map(|d| d.index).collect();
+        for &i in group {
+            let r = &records[i];
+            net = net.saturating_add(r.net_amount);
+            if merged.fee.is_none() {
+                merged.fee = r.fee;
+            }
+            if i != base_pos {
+                for d in &r.input_details {
+                    if seen_inputs.insert(d.index) {
+                        merged.input_details.push(d.clone());
+                    }
+                }
+                for d in &r.output_details {
+                    if seen_outputs.insert(d.index) {
+                        merged.output_details.push(d.clone());
+                    } else if matches!(d.role, OutputRole::Received | OutputRole::Change) {
+                        // Index collision across account slices: the slices
+                        // are only detail-disjoint for details the accounts
+                        // AGREE on. An output owned by account B appears in
+                        // funding account A's slice too — as `Sent`, because
+                        // A's account-local view cannot attribute B's
+                        // address. Keeping the base's entry on collision let
+                        // that `Sent` win, and every consumer deriving UTXOs
+                        // from the folded record (record_new_utxos_ffi,
+                        // derive_new_utxos filter on Received|Change) then
+                        // silently dropped the owned output — the store lost
+                        // the wallet's own change while the folded net_amount
+                        // stayed correct (2026-08-19 device run: records
+                        // landed corrected, TXOs never arrived, the reconcile
+                        // tripwire healed 4). Ownership is account-scoped
+                        // knowledge: exactly one slice can carry
+                        // Received/Change for an index, so on collision the
+                        // owned role wins unconditionally.
+                        if let Some(existing) = merged
+                            .output_details
+                            .iter_mut()
+                            .find(|o| o.index == d.index)
+                        {
+                            if !matches!(existing.role, OutputRole::Received | OutputRole::Change) {
+                                *existing = d.clone();
+                            }
+                        }
+                    }
+                }
+                drop_idx.insert(i);
+            }
+            // Context: keep the most advanced observation in the group.
+            // The funding slice is not necessarily the newest one — a
+            // group can pair a stale `Mempool` sighting with the
+            // confirmed snapshot of the same transaction.
+            if context_rank(&r.context) > context_rank(&merged.context) {
+                merged.context = r.context.clone();
+            }
+        }
+        // The base record's own index was skipped by the `i != base_pos`
+        // guard above; drop every group member except the fold's output
+        // position (the group's FIRST slot, which the reassembly below
+        // fills with the merged record).
+        drop_idx.insert(base_pos);
+        let first_pos = group[0];
+        drop_idx.remove(&first_pos);
+        merged.net_amount = net;
+        // Wallet-level direction over the merged details — same rule
+        // upstream applies per account (see the doc comment). The sign
+        // of the net cannot express `Internal` or `CoinJoin`.
+        merged.direction = if merged.transaction_type == TransactionType::CoinJoin {
+            TransactionDirection::CoinJoin
+        } else {
+            let has_inputs = !merged.input_details.is_empty();
+            let has_sent = merged
+                .output_details
+                .iter()
+                .any(|d| d.role == OutputRole::Sent);
+            let has_our_outputs = merged
+                .output_details
+                .iter()
+                .any(|d| matches!(d.role, OutputRole::Received | OutputRole::Change));
+            if !has_sent && has_inputs && has_our_outputs {
+                TransactionDirection::Internal
+            } else if has_inputs {
+                TransactionDirection::Outgoing
+            } else {
+                TransactionDirection::Incoming
+            }
+        };
+        folded.insert(first_pos, merged);
+    }
+
+    let old = std::mem::take(records);
+    for (i, r) in old.into_iter().enumerate() {
+        if let Some(merged) = folded.remove(&i) {
+            records.push(merged);
+        } else if !drop_idx.contains(&i) {
+            records.push(r);
+        }
+    }
+}
+
+/// Replace-or-append fold shared by the record vecs in
+/// [`CoreChangeSet`]'s merge: each incoming record either SUPERSEDES the
+/// existing record with the same key (in place, keeping the earlier
+/// record's position so unrelated records never reorder) or appends.
+/// `other` is by the `Merge` contract the later changeset, so incoming
+/// records are the newer observations.
+///
+/// One linear pass over each side per merge — the adapter's drain calls
+/// merge once per buffered event, so this deliberately avoids the
+/// full-vec re-fold a `fold_same_txid_records` call here used to cost.
+fn coalesce_newest_wins<K: std::hash::Hash + Eq>(
+    existing: &mut Vec<TransactionRecord>,
+    incoming: Vec<TransactionRecord>,
+    key: impl Fn(&TransactionRecord) -> K,
+) {
+    use std::collections::hash_map::Entry;
+    use std::collections::HashMap;
+
+    if incoming.is_empty() {
+        return;
+    }
+    if existing.is_empty() {
+        *existing = incoming;
+        return;
+    }
+    let mut index: HashMap<K, usize> = existing
+        .iter()
+        .enumerate()
+        .map(|(i, r)| (key(r), i))
+        .collect();
+    for r in incoming {
+        match index.entry(key(&r)) {
+            Entry::Occupied(slot) => existing[*slot.get()] = r,
+            Entry::Vacant(slot) => {
+                slot.insert(existing.len());
+                existing.push(r);
+            }
+        }
+    }
+}
+
+/// Rank a [`TransactionContext`](key_wallet::transaction_checking::TransactionContext)
+/// by how far along the confirmation lifecycle the observation is.
+/// Used by [`fold_same_txid_records`] so a fold never regresses a
+/// confirmed context to a stale mempool one.
+fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) -> u8 {
+    use key_wallet::transaction_checking::TransactionContext;
+    match context {
+        TransactionContext::Mempool => 0,
+        TransactionContext::InstantSend(_) => 1,
+        TransactionContext::InBlock(_) => 2,
+        TransactionContext::InChainLockedBlock(_) => 3,
+    }
+}
+
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
-        // Records / utxo deltas: append-only. The event adapter never
-        // produces duplicates within a single batch (each event covers
-        // a distinct moment); cross-batch dedup is the persister's
-        // responsibility (txid uniqueness for records, outpoint
-        // uniqueness for utxos).
-        self.records.extend(other.records);
+        // Records: coalesce by txid, NEWEST-WINS (dashpay/platform#4387).
+        //
+        // The event bridge already folded each event's per-account
+        // slices into one wallet-level record per txid (see
+        // `fold_same_txid_records` and the `TransactionDetected`
+        // rebuild in `core_bridge::build_core_changeset`), so two
+        // same-txid records meeting here are the same transaction at
+        // two OBSERVATIONS — e.g. a `TransactionDetected` mempool
+        // snapshot and its `BlockProcessed.updated` confirmation.
+        // Summing those doubled the persisted net (−100 detected +
+        // −100 confirmed = −200) and could keep the stale mempool
+        // context; the later snapshot simply supersedes the earlier
+        // one, at the earlier record's position so unrelated records
+        // never reorder around it.
+        coalesce_newest_wins(&mut self.records, other.records, |r| r.txid);
+        // Account slices: same discipline, keyed by (txid, account) —
+        // a slice supersedes the previous observation of the SAME
+        // account's slice, while slices of sibling accounts coexist.
+        coalesce_newest_wins(&mut self.account_records, other.account_records, |r| {
+            (r.txid, r.account_type)
+        });
         self.spent_utxos.extend(other.spent_utxos);
         self.new_utxos.extend(other.new_utxos);
 
@@ -336,6 +613,7 @@ impl Merge for CoreChangeSet {
 
     fn is_empty(&self) -> bool {
         self.records.is_empty()
+            && self.account_records.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()

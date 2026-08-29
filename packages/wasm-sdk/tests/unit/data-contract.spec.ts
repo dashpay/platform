@@ -532,4 +532,30 @@ describe('DataContract', () => {
       contract2.free();
     });
   });
+
+  /**
+   * The `refersTo` surface is implemented in wasm-dpp2 and reaches this
+   * package through `pub use wasm_dpp2::*`. Behaviour is covered by
+   * wasm-dpp2's own suite; what this pins is the re-export, so that
+   * narrowing it fails loudly here rather than silently in a consumer.
+   */
+  describe('document reference metadata re-export', () => {
+    it('should expose the refersTo accessors on DataContract', () => {
+      const contract = sdk.DataContract.fromJSON(
+        contractFixtureV1,
+        true,
+        PLATFORM_VERSION_CONTRACT_V1,
+      );
+
+      expect(contract.documentTypeReferences).to.be.a('function');
+      expect(contract.documentReferences).to.be.instanceOf(Map);
+
+      contract.free();
+    });
+
+    it('should expose the reference consensus error codes', () => {
+      expect(sdk.DocumentReferenceErrorCode.ReferencedEntityNotFound).to.equal(40120);
+      expect(sdk.DocumentReferenceErrorCode.ReferencedKeyIdPropertyInvalid).to.equal(40125);
+    });
+  });
 });

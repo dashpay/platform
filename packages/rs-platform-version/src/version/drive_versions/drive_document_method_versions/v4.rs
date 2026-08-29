@@ -89,7 +89,10 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             delete_document_for_contract_id: 0,
             delete_document_for_contract_apply_and_add_to_operations: 0,
             remove_document_from_primary_storage: 0,
-            remove_reference_for_index_level_for_contract_operations: 0,
+            // v1 at protocol v14: the empty-tree pruning climb stops at the
+            // member level on `preallocated` indexOnly indexes, keeping the
+            // trees the referenced document's insert paid for.
+            remove_reference_for_index_level_for_contract_operations: 1,
             remove_indices_for_index_level_for_contract_operations: 2,
             remove_indices_for_top_index_level_for_contract_operations: 2,
             delete_document_for_contract_id_with_named_type_operations: 0,
@@ -103,7 +106,12 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             add_history_operations: 0,
             add_document_for_contract: 0,
             add_document_for_contract_apply_and_add_to_operations: 0,
-            add_document_for_contract_operations: 0,
+            // v1 at protocol v14: inserting a document also preallocates the
+            // dynamic trees of `preallocated` indexOnly indexes bound to its
+            // type through refersTo declarations. Insert and delete bump
+            // together: the delete-side no-prune rule is what makes the
+            // preallocated trees permanent structure.
+            add_document_for_contract_operations: 1,
             add_document_to_primary_storage: 0,
             add_indices_for_index_level_for_contract_operations: 2,
             add_indices_for_top_index_level_for_contract_operations: 2,

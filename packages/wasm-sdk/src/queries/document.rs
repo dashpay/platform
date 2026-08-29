@@ -445,7 +445,12 @@ async fn parse_documents_average_query(
 }
 
 /// Parse JSON where clause into WhereClause
-fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkError> {
+///
+/// `pub(super)` so the ranked / having-range surface in
+/// [`super::document_ranked`] can reuse the same `[field, operator, value]`
+/// spelling a caller already learned here, rather than growing a second
+/// where-clause dialect.
+pub(super) fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkError> {
     let clause_array = json_clause
         .as_array()
         .ok_or_else(|| WasmSdkError::invalid_argument("where clause must be an array"))?;
@@ -599,7 +604,10 @@ fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, WasmSdkErr
 }
 
 /// Convert JSON value to platform Value
-fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
+///
+/// `pub(super)` for [`super::document_ranked`], which needs the same
+/// conversion for a HAVING clause's right-hand operand.
+pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
     match json_val {
         JsonValue::Null => Ok(Value::Null),
         JsonValue::Bool(b) => Ok(Value::Bool(*b)),

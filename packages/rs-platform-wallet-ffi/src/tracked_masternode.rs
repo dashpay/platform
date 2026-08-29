@@ -17,14 +17,16 @@ use crate::handle::*;
 use crate::runtime::block_on_worker;
 use crate::{check_ptr, unwrap_result_or_return};
 
-fn invalid_handle() -> PlatformWalletFFIResult {
+pub(crate) fn invalid_handle() -> PlatformWalletFFIResult {
     PlatformWalletFFIResult::err(
         PlatformWalletFFIResultCode::ErrorInvalidHandle,
         "invalid platform wallet manager handle",
     )
 }
 
-unsafe fn optional_string(ptr: *const c_char) -> Result<Option<String>, PlatformWalletFFIResult> {
+pub(crate) unsafe fn optional_string(
+    ptr: *const c_char,
+) -> Result<Option<String>, PlatformWalletFFIResult> {
     if ptr.is_null() {
         return Ok(None);
     }
