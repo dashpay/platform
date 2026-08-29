@@ -3,7 +3,8 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::snapshot::{
-    SnapshotFetchingSession, STATE_SYNC_SUBTREES_BATCH_SIZE, SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
+    wipe_drive_for_restore, write_restore_sentinel, SnapshotFetchingSession,
+    STATE_SYNC_SUBTREES_BATCH_SIZE, SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
 };
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
@@ -80,26 +81,28 @@ where
         );
     }
 
-    // Both the fresh-session and the replace-session paths wipe grovedb, start a new
-    // grovedb sync session, and answer Accept.
-    app.platform().drive.grove.wipe().map_err(|e| {
-        AbciError::StateSyncInternalError(format!("offer_snapshot unable to wipe grovedb: {}", e))
+    // Mark the database as under restore BEFORE destroying it. From here until the
+    // restore completes, the node may be in a state that cannot serve consensus, and the
+    // only thing that can tell a restarted process so is this marker: without it, startup
+    // finds a database that disagrees with its platform state and cannot distinguish an
+    // interrupted restore from corruption. See `Platform::open_with_client`.
+    write_restore_sentinel(
+        &app.platform().config.db_path,
+        &request_app_hash,
+        offered_snapshot.height,
+    )
+    .map_err(|e| {
+        AbciError::StateSyncInternalError(format!(
+            "offer_snapshot unable to record the restore sentinel: {}",
+            e
+        ))
     })?;
 
-    // The wipe destroyed the state every lazily-loaded Drive cache was built from. Left
-    // in place, those caches would be silently merged into the RESTORED state and fork the
-    // node: `ProtocolVersionsCache` in particular keeps a `loaded` flag, so
-    // `load_if_needed` would never re-read the restored version counters and the next block
-    // would write vote counts derived from the wiped chain instead. Resetting the counter
-    // wholesale (rather than `clear_global_cache`) is deliberate — it also clears that
-    // flag, so the cache reloads from the restored state on first use.
-    //
-    // `system_data_contracts` is deliberately NOT cleared: those are compiled-in,
-    // version-keyed contracts that never come from grovedb.
-    let drive = &app.platform().drive;
-    *drive.cache.protocol_versions_counter.write() = Default::default();
-    drive.cache.data_contracts.clear();
-    *drive.cache.genesis_time_ms.write() = None;
+    // Both the fresh-session and the replace-session paths wipe grovedb (dropping the
+    // caches derived from it), start a new grovedb sync session, and answer Accept.
+    wipe_drive_for_restore(&app.platform().drive).map_err(|e| {
+        AbciError::StateSyncInternalError(format!("offer_snapshot unable to wipe grovedb: {}", e))
+    })?;
 
     let state_sync_info = app
         .platform()
