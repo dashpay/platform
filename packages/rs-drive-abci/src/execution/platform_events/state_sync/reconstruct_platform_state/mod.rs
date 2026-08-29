@@ -164,16 +164,11 @@ where
 
         let block_height = platform_state.last_committed_block_height();
 
-        // Advance the state to the snapshot block: rotates next-into-current exactly as
-        // the source did on finalization, persists to aux storage and publishes the
-        // state for the info handler.
-        self.update_state_cache(
-            current_block_info,
-            platform_state,
-            &transaction,
-            state_platform_version,
-        )?;
-
+        // Commit the re-derivation BEFORE the in-memory state is published: if this
+        // commit fails, nothing has been published and the error propagates with the
+        // node's observable state unchanged. (Publishing first, as normal block
+        // finalization does, would leave the info handler reporting a snapshot height
+        // that grovedb never persisted.)
         self.drive
             .grove
             .commit_transaction(transaction)
@@ -181,6 +176,28 @@ where
             .map_err(|e| {
                 AbciError::StateSyncInternalError(format!(
                     "reconstruct_platform_state unable to commit transaction: {}",
+                    e
+                ))
+            })?;
+
+        // Advance the state to the snapshot block: rotates next-into-current exactly as
+        // the source did on finalization, persists to aux storage and publishes the
+        // state for the info handler. Aux writes are not part of the root hash, so
+        // committing them separately cannot change the app hash the caller verifies.
+        let aux_transaction = self.drive.grove.start_transaction();
+        self.update_state_cache(
+            current_block_info,
+            platform_state,
+            &aux_transaction,
+            state_platform_version,
+        )?;
+        self.drive
+            .grove
+            .commit_transaction(aux_transaction)
+            .unwrap()
+            .map_err(|e| {
+                AbciError::StateSyncInternalError(format!(
+                    "reconstruct_platform_state unable to commit aux transaction: {}",
                     e
                 ))
             })?;
