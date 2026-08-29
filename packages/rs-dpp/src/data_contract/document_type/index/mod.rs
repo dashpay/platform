@@ -4727,6 +4727,7 @@ mod json_convertible_tests {
                 "time_range": serde_json::Value::Null,
                 "terminal": serde_json::Value::Null,
                 "preallocated": false,
+                "skip_if_absent": false,
             })
         );
         let recovered = Index::from_json(json).expect("from_json");
