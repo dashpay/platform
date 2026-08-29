@@ -1,6 +1,6 @@
 //! Minimal reproducer / tripwire for a grovedb state sync limitation at the pinned
-//! revision (6c882c3): wire protocol version 1 does not faithfully restore SumTree
-//! subtrees. The chunk transfer copies the source's node hashes, so the restored
+//! revision (6c882c3): the replication protocol at this revision does not faithfully
+//! restore SumTree subtrees. The chunk transfer copies the source's node hashes, so the restored
 //! database reproduces the source ROOT hash — but re-opening the restored sum tree
 //! and recomputing its root yields a different hash, i.e. the corruption is latent
 //! and `verify_grovedb` detects it.
