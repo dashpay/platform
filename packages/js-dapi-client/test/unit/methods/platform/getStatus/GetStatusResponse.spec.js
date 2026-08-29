@@ -349,4 +349,51 @@ describe('GetStatusResponse', () => {
     expect(timeStatus.getGenesisTime()).to.equal(BigInt(statusFixture.time.genesis));
     expect(timeStatus.getEpochNumber()).to.equal(statusFixture.time.epoch);
   });
+
+  it('should create an instance from proto without state sync section', () => {
+    // DAPI omits the state sync section on nodes that never state synced
+    proto.getV0().clearStateSync();
+
+    getStatusResponse = GetStatusResponseClass.createFromProto(proto);
+
+    expect(getStatusResponse.getStateSyncStatus()).to.equal(null);
+
+    // the rest of the response must still be parsed
+    expect(getStatusResponse.getChainStatus()).to.be.an.instanceOf(ChainStatus);
+    expect(getStatusResponse.getChainStatus().getLatestBlockHeight())
+      .to.equal(BigInt(statusFixture.chain.latestBlockHeight));
+    expect(getStatusResponse.getVersionStatus()).to.be.an.instanceOf(VersionStatus);
+    expect(getStatusResponse.getTimeStatus()).to.be.an.instanceOf(TimeStatus);
+  });
+
+  it('should create an instance from proto with every optional section absent', () => {
+    const v0 = proto.getV0();
+
+    v0.clearNode();
+    v0.clearChain();
+    v0.clearNetwork();
+    v0.clearStateSync();
+    v0.getVersion().getProtocol().clearDrive();
+    v0.getVersion().getProtocol().clearTenderdash();
+    v0.getVersion().clearSoftware();
+
+    getStatusResponse = GetStatusResponseClass.createFromProto(proto);
+
+    expect(getStatusResponse.getNodeStatus()).to.equal(null);
+    expect(getStatusResponse.getChainStatus()).to.equal(null);
+    expect(getStatusResponse.getNetworkStatus()).to.equal(null);
+    expect(getStatusResponse.getStateSyncStatus()).to.equal(null);
+
+    const versionStatus = getStatusResponse.getVersionStatus();
+    expect(versionStatus).to.be.an.instanceOf(VersionStatus);
+    expect(versionStatus.getDapiVersion()).to.equal(undefined);
+    expect(versionStatus.getDriveVersion()).to.be.null();
+    expect(versionStatus.getTenderdashVersion()).to.be.null();
+    expect(versionStatus.getDriveCurrentProtocol()).to.equal(undefined);
+    expect(versionStatus.getTenderdashP2pProtocol()).to.equal(undefined);
+
+    const timeStatus = getStatusResponse.getTimeStatus();
+    expect(timeStatus).to.be.an.instanceOf(TimeStatus);
+    expect(timeStatus.getLocalTime()).to.equal(BigInt(statusFixture.time.local));
+  });
 });
