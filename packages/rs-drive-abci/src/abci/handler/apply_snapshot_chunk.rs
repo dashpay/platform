@@ -81,6 +81,10 @@ where
                 // so a chunk it has already seen (e.g. the refetch of one it rejected)
                 // cannot be re-applied within this session: ask Tenderdash to restart
                 // the snapshot instead (a same-height re-offer, which we accept).
+                // The string match is brittle by necessity (grovedb only exposes
+                // InternalError(String) here); if the wording ever changes, the fallback
+                // below is still safe — Tenderdash retries the chunk until it gives up
+                // and restarts the snapshot itself.
                 if matches!(&e, drive::grovedb::Error::InternalError(message) if message.contains("not expected"))
                 {
                     tracing::warn!(
