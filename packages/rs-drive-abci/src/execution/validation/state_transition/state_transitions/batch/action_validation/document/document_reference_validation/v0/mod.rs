@@ -284,6 +284,17 @@ fn validate_document_type_references_v0(
                 // OWN document type's key encoding — one deterministic
                 // normal form per value kind, so an identifier stored as
                 // bytes and one carried as an identifier compare equal.
+                //
+                // Absence is part of the agreement, strictly: both sides
+                // absent agree, one side absent is a mismatch. Anything
+                // laxer breaks the properties agreements exist for — with
+                // referring-absent-always-ok, a document could opt out of
+                // echoing a value its referenced document carries (e.g. a
+                // like on a TAGGED post omitting the tag, silently
+                // deflating every per-tag aggregate), and the referenced
+                // side's absence is what lets a referring doctype whose
+                // agreement key triggers a skipIfAbsent index stay
+                // consistently absent for untagged targets.
                 if let Some(referenced_document) = &referenced_document {
                     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
                     use dpp::document::DocumentV0Getters;
@@ -299,17 +310,24 @@ fn validate_document_type_references_v0(
                                 .into(),
                             )
                         };
-                        let Ok(Some(referring_value)) =
-                            document_data.get_optional_at_path(referring_property)
-                        else {
-                            return Ok(mismatch());
-                        };
-                        let Ok(Some(referenced_value)) = referenced_document
+                        let referring_value = document_data
+                            .get_optional_at_path(referring_property)
+                            .unwrap_or(None);
+                        let referenced_value = referenced_document
                             .properties()
                             .get_optional_at_path(referenced_property)
-                        else {
-                            return Ok(mismatch());
-                        };
+                            .unwrap_or(None);
+                        let (referring_value, referenced_value) =
+                            match (referring_value, referenced_value) {
+                                (Some(referring_value), Some(referenced_value)) => {
+                                    (referring_value, referenced_value)
+                                }
+                                // Both absent: the sides agree.
+                                (None, None) => continue,
+                                // One side absent: a mismatch, exactly as a
+                                // differing value would be.
+                                (Some(_), None) | (None, Some(_)) => return Ok(mismatch()),
+                            };
                         let Ok(referring_encoded) = document_type.serialize_value_for_key(
                             referring_property,
                             referring_value,
