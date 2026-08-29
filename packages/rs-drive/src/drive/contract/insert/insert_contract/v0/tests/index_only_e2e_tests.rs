@@ -2522,7 +2522,9 @@ fn beat_duplicate_and_overlapping_rows() {
 // class where "skip" (absent) and the null-layout empty key (present,
 // empty encoding) sit one byte apart.
 
-fn mark_type_ref(contract: &DataContract) -> dpp::data_contract::document_type::DocumentTypeRef {
+fn mark_type_ref(
+    contract: &DataContract,
+) -> dpp::data_contract::document_type::DocumentTypeRef<'_> {
     contract
         .document_type_for_name("mark")
         .expect("mark doctype exists")
@@ -2859,7 +2861,7 @@ fn skip_estimated_fees_upper_bound_actual_fees() {
 
 // ── pin: the compound skip shape and the empty-encoding trigger ─────────
 
-fn pin_type_ref(contract: &DataContract) -> dpp::data_contract::document_type::DocumentTypeRef {
+fn pin_type_ref(contract: &DataContract) -> dpp::data_contract::document_type::DocumentTypeRef<'_> {
     contract
         .document_type_for_name("pin")
         .expect("pin doctype exists")
