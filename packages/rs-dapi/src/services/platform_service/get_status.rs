@@ -322,39 +322,51 @@ fn build_chain_info(
 }
 
 /// Produce state sync metrics derived from Tenderdash status response.
+///
+/// Tenderdash serialises every one of these as a quoted integer that is always present, so
+/// their absence can never be used to decide whether the node state synced. Worse, most of
+/// them are hardcoded to zero in Tenderdash 1.7: `/status` only copies the state sync
+/// counters when `Environment.StateSyncMetricer` is set (`internal/rpc/core/status.go:91`),
+/// and no node ever assigns it (`internal/rpc/core/env.go:86` has no writer), so
+/// `total_snapshots`, `chunk_process_avg_time`, `snapshot_height`, `snapshot_chunks_count`,
+/// `backfilled_blocks` and `backfill_blocks_total` read `"0"` during and after a state sync
+/// alike. Only `total_synced_time` and `remaining_time` are ever non-zero, and those come
+/// from the *block sync* reactor (`internal/blocksync/reactor.go:308-328`), not state sync.
+///
+/// Emitting an all-zero message therefore asserts "state sync happened and did nothing",
+/// which an operator cannot distinguish from "this node never state synced". Report the
+/// message only when Tenderdash actually gave us something, and omit it otherwise.
+///
+/// To tell after the fact that a node was state synced, use `chain.earliest_block_height`:
+/// on a state-synced node the block store starts at the backfill floor rather than at the
+/// genesis height.
 fn build_state_sync_info(
     tenderdash_status: &TenderdashStatusResponse,
 ) -> Option<get_status_response_v0::StateSync> {
     let sync_info = &tenderdash_status.sync_info;
 
-    let has_state_sync_data = !sync_info.total_synced_time.is_empty()
-        || !sync_info.remaining_time.is_empty()
-        || !sync_info.total_snapshots.is_empty()
-        || !sync_info.snapshot_height.is_empty();
+    let parse_or_default = |value: &str| -> u64 {
+        if value.is_empty() {
+            0
+        } else {
+            value.parse::<i64>().map(|v| v.max(0) as u64).unwrap_or(0)
+        }
+    };
 
-    if !has_state_sync_data {
+    let state_sync = get_status_response_v0::StateSync {
+        total_synced_time: parse_or_default(&sync_info.total_synced_time),
+        remaining_time: parse_or_default(&sync_info.remaining_time),
+        total_snapshots: parse_or_default(&sync_info.total_snapshots).min(u32::MAX as u64) as u32,
+        chunk_process_avg_time: parse_or_default(&sync_info.chunk_process_avg_time),
+        snapshot_height: parse_or_default(&sync_info.snapshot_height),
+        snapshot_chunks_count: parse_or_default(&sync_info.snapshot_chunks_count),
+        backfilled_blocks: parse_or_default(&sync_info.backfilled_blocks),
+        backfill_blocks_total: parse_or_default(&sync_info.backfill_blocks_total),
+    };
+
+    if state_sync == get_status_response_v0::StateSync::default() {
         None
     } else {
-        let parse_or_default = |value: &str| -> u64 {
-            if value.is_empty() {
-                0
-            } else {
-                value.parse::<i64>().map(|v| v.max(0) as u64).unwrap_or(0)
-            }
-        };
-
-        let state_sync = get_status_response_v0::StateSync {
-            total_synced_time: parse_or_default(&sync_info.total_synced_time),
-            remaining_time: parse_or_default(&sync_info.remaining_time),
-            total_snapshots: parse_or_default(&sync_info.total_snapshots).min(u32::MAX as u64)
-                as u32,
-            chunk_process_avg_time: parse_or_default(&sync_info.chunk_process_avg_time),
-            snapshot_height: parse_or_default(&sync_info.snapshot_height),
-            snapshot_chunks_count: parse_or_default(&sync_info.snapshot_chunks_count),
-            backfilled_blocks: parse_or_default(&sync_info.backfilled_blocks),
-            backfill_blocks_total: parse_or_default(&sync_info.backfill_blocks_total),
-        };
-
         Some(state_sync)
     }
 }
@@ -445,11 +457,111 @@ mod tests {
         let network = inner.network.expect("network present");
         assert_eq!(network.chain_id, "dash-testnet-51");
 
-        let state_sync = inner.state_sync.expect("state sync present");
-        assert_eq!(state_sync.total_synced_time, 0);
+        // Tenderdash always serialises the state sync counters, all zeroed on a node that is
+        // not syncing. Reporting them would be indistinguishable from a state sync that did
+        // nothing, so the section must be omitted instead.
+        assert!(
+            inner.state_sync.is_none(),
+            "all-zero state sync counters must be omitted"
+        );
 
         let time = inner.time.expect("time present");
         assert!(time.local > 0);
+    }
+
+    /// Regression guard for bug 2: `chain.latest_block_height` is the Platform height read
+    /// from Tenderdash's `sync_info`, never a Dash Core height. Tenderdash's `/status` has no
+    /// Core chain fields at all, and the only Core height in this response is
+    /// `core_chain_locked_height`, which comes from Drive.
+    #[test]
+    fn chain_latest_block_height_is_the_platform_height_not_a_core_height() {
+        let tenderdash_status: TenderdashStatusResponse =
+            serde_json::from_str(&status_json(r#""latest_block_height": "28","#))
+                .expect("parse tenderdash status");
+
+        let drive_status = DriveStatusResponse {
+            chain: Some(get_status_response_v0::Chain {
+                core_chain_locked_height: Some(8036),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let chain = build_chain_info(&drive_status, &tenderdash_status).expect("chain present");
+
+        assert_eq!(chain.latest_block_height, 28);
+        assert_eq!(chain.core_chain_locked_height, Some(8036));
+    }
+
+    #[test]
+    fn state_sync_is_omitted_when_tenderdash_is_unreachable() {
+        // Every field defaults to an empty string, which must not be read as "zero counters".
+        assert!(build_state_sync_info(&TenderdashStatusResponse::default()).is_none());
+    }
+
+    #[test]
+    fn state_sync_is_reported_while_the_node_is_syncing() {
+        let tenderdash_status: TenderdashStatusResponse = serde_json::from_str(&status_json(
+            r#"
+            "total_synced_time": "123456789",
+            "remaining_time": "9876543",
+            "total_snapshots": "3",
+            "chunk_process_avg_time": "4242",
+            "snapshot_height": "198000",
+            "snapshot_chunks_count": "12",
+            "backfilled_blocks": "500",
+            "backfill_blocks_total": "1000",
+            "#,
+        ))
+        .expect("parse tenderdash status");
+
+        let state_sync = build_state_sync_info(&tenderdash_status).expect("state sync present");
+
+        assert_eq!(state_sync.total_synced_time, 123456789);
+        assert_eq!(state_sync.remaining_time, 9876543);
+        assert_eq!(state_sync.total_snapshots, 3);
+        assert_eq!(state_sync.chunk_process_avg_time, 4242);
+        assert_eq!(state_sync.snapshot_height, 198000);
+        assert_eq!(state_sync.snapshot_chunks_count, 12);
+        assert_eq!(state_sync.backfilled_blocks, 500);
+        assert_eq!(state_sync.backfill_blocks_total, 1000);
+    }
+
+    /// Tenderdash 1.7 never populates the state sync counters (`StateSyncMetricer` is nil), so
+    /// a node that state synced reports the same zeroes as one that never did. Only
+    /// `total_synced_time` / `remaining_time` — which the *block sync* reactor owns — can be
+    /// non-zero, and they are back to zero once the node has caught up.
+    #[test]
+    fn state_sync_is_omitted_after_a_completed_state_sync() {
+        let tenderdash_status: TenderdashStatusResponse = serde_json::from_str(&status_json(
+            r#"
+            "total_synced_time": "0",
+            "remaining_time": "0",
+            "total_snapshots": "0",
+            "chunk_process_avg_time": "0",
+            "snapshot_height": "0",
+            "snapshot_chunks_count": "0",
+            "backfilled_blocks": "0",
+            "backfill_blocks_total": "0",
+            "#,
+        ))
+        .expect("parse tenderdash status");
+
+        assert!(build_state_sync_info(&tenderdash_status).is_none());
+    }
+
+    /// Build a minimal `/status` payload whose `sync_info` also carries `extra_sync_info`.
+    fn status_json(extra_sync_info: &str) -> String {
+        format!(
+            r#"{{
+              "node_info": {{ "id": "972a33056d57359de8acfa4fb8b29dc1c14f76b8" }},
+              "sync_info": {{
+                {extra_sync_info}
+                "latest_block_hash": "B15CB7BD25D5334587B591D46FADEDA3AFCE2C57B7BC99E512F79422AB710343",
+                "catching_up": false
+              }}
+            }}"#
+        )
     }
 
     const TENDERMASH_STATUS_JSON: &str = r#"
