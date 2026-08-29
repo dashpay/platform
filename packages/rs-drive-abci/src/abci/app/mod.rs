@@ -10,6 +10,7 @@ pub mod execution_result;
 mod full;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::snapshot::{SnapshotFetchingSession, SnapshotManager};
 use crate::rpc::core::DefaultCoreRPC;
 #[cfg(test)]
 pub(crate) use check_tx::error_into_status;
@@ -22,6 +23,23 @@ pub use full::FullAbciApplication;
 pub trait PlatformApplication<C = DefaultCoreRPC> {
     /// Returns Platform
     fn platform(&self) -> &Platform<C>;
+}
+
+/// ABCI application that serves state sync snapshots
+pub trait SnapshotManagerApplication {
+    /// Returns the snapshot manager, which pins checkpoints that are actively being
+    /// served so pruning cannot delete them mid-transfer
+    fn snapshot_manager(&self) -> &SnapshotManager;
+}
+
+/// ABCI application that can bootstrap its state via state sync
+pub trait StateSyncApplication<'p, C = DefaultCoreRPC> {
+    /// Returns the state sync transfer currently in progress, if any
+    fn snapshot_fetching_session(&self) -> &RwLock<Option<SnapshotFetchingSession<'p>>>;
+
+    /// Returns Platform with the full `'p` lifetime, so a grovedb state sync session
+    /// borrowing the grove can be stored in the snapshot fetching session
+    fn platform(&self) -> &'p Platform<C>;
 }
 
 /// Transactional ABCI application

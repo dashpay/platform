@@ -10,6 +10,7 @@ mod identity_transfer_tests;
 mod required_since_update_tests;
 // TODO: re-enable once OperationType shielded variants are implemented
 // mod shielded_tests;
+mod state_sync_tests;
 mod token_tests;
 mod top_up_tests;
 mod update_identities_tests;

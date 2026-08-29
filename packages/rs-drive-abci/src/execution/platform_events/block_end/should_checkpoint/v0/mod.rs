@@ -39,10 +39,22 @@ where
             return Ok(None);
         }
 
-        // How often we want a checkpoint
-        let checkpoint_interval_milliseconds =
-            platform_version.drive_abci.checkpoints.frequency_seconds as u64 * 1000;
-        let keep_n = platform_version.drive_abci.checkpoints.num_checkpoints as usize;
+        // How often we want a checkpoint. When snapshot serving is enabled, the
+        // operator-provided state sync configuration overrides the
+        // platform-version-driven checkpoint parameters.
+        let state_sync_config = &self.config.abci.state_sync;
+        let (frequency_seconds, keep_n) = if state_sync_config.snapshots_enabled {
+            (
+                state_sync_config.snapshots_frequency_seconds as u64,
+                state_sync_config.max_num_snapshots,
+            )
+        } else {
+            (
+                platform_version.drive_abci.checkpoints.frequency_seconds as u64,
+                platform_version.drive_abci.checkpoints.num_checkpoints as usize,
+            )
+        };
+        let checkpoint_interval_milliseconds = frequency_seconds * 1000;
 
         // If disabled or misconfigured, do nothing.
         if checkpoint_interval_milliseconds == 0 || keep_n == 0 {

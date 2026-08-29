@@ -20,6 +20,8 @@ pub(in crate::execution) mod fee_pool_outwards_distribution;
 pub(in crate::execution) mod initialization;
 /// Protocol upgrade events
 pub(in crate::execution) mod protocol_upgrade;
+/// State sync platform state reconstruction
+pub(in crate::execution) mod state_sync;
 /// State transition processing
 pub(in crate::execution) mod state_transition_processing;
 mod tokens;

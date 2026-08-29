@@ -22,6 +22,8 @@ pub mod platform_state;
 pub mod required_identity_public_key_set;
 /// Signature verification quorums for Core
 pub mod signature_verification_quorum_set;
+/// ABCI state sync snapshot types
+pub mod snapshot;
 /// The state transition execution result as part of the block execution outcome
 pub mod state_transitions_processing_result;
 /// The validator module
