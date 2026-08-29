@@ -294,6 +294,79 @@ export async function fundClientFromCore(coreService, client, amount, {
 }
 
 /**
+ * A CoreService wrapping a node's already-running Core container.
+ *
+ * @param {Object} diContainer - awilix DI container
+ * @param {Config} config
+ * @return {Promise<CoreService>}
+ */
+export async function getRunningCoreService(diContainer, config) {
+  const createRpcClient = diContainer.resolve('createRpcClient');
+  const getConnectionHost = diContainer.resolve('getConnectionHost');
+  const dockerCompose = diContainer.resolve('dockerCompose');
+  const docker = diContainer.resolve('docker');
+
+  const [containerId] = await dockerCompose.getContainerIds(config, {
+    filterServiceNames: 'core',
+  });
+
+  if (!containerId) {
+    throw new Error(`Core is not running on ${config.getName()}`);
+  }
+
+  const rpcClient = createRpcClient({
+    port: config.get('core.rpc.port'),
+    user: 'dashmate',
+    pass: config.get('core.rpc.users.dashmate.password'),
+    host: await getConnectionHost(config, 'core', 'core.rpc.host'),
+  });
+
+  return new CoreService(config, rpcClient, docker.getContainer(containerId));
+}
+
+/**
+ * Sporks the local network turns on during setup.
+ *
+ * A node that joins later never learns them: setup activates them once on the
+ * seed while every node of the group is already connected, and a Core that
+ * finishes its masternode sync afterwards does not go back for them. Without
+ * SPORK_19 in particular the joiner treats ChainLocks as disabled, never
+ * obtains one, and drive-abci waits for a chain lock forever — so Tenderdash
+ * never finishes its ABCI handshake and state sync cannot even begin.
+ *
+ * @type {string[]}
+ */
+const LOCAL_NETWORK_SPORKS = [
+  'SPORK_2_INSTANTSEND_ENABLED',
+  'SPORK_3_INSTANTSEND_BLOCK_FILTERING',
+  'SPORK_9_SUPERBLOCKS_ENABLED',
+  'SPORK_17_QUORUM_DKG_ENABLED',
+  'SPORK_19_CHAINLOCKS_ENABLED',
+];
+
+/**
+ * Activate the local network's sporks on a node that joined after setup.
+ *
+ * The node's config carries the group's spork private key, so it can sign the
+ * spork messages itself.
+ *
+ * @param {Object} diContainer
+ * @param {Config} config
+ * @return {Promise<string[]>} the sporks activated
+ */
+export async function activateLocalSporks(diContainer, config) {
+  const activateCoreSpork = diContainer.resolve('activateCoreSpork');
+
+  const coreService = await getRunningCoreService(diContainer, config);
+
+  for (const spork of LOCAL_NETWORK_SPORKS) {
+    await activateCoreSpork(coreService.getRpcClient(), spork);
+  }
+
+  return LOCAL_NETWORK_SPORKS;
+}
+
+/**
  * Mine coins to a fresh address on the seed node and hand back its key.
  *
  * Reuses dashmate's own `wallet mint` task rather than shelling out to the
@@ -311,31 +384,8 @@ export async function fundClientFromCore(coreService, client, amount, {
  */
 export async function mintToNewAddress(diContainer, seedConfig, amount) {
   const generateToAddressTask = diContainer.resolve('generateToAddressTask');
-  const createRpcClient = diContainer.resolve('createRpcClient');
-  const getConnectionHost = diContainer.resolve('getConnectionHost');
-  const dockerCompose = diContainer.resolve('dockerCompose');
-  const docker = diContainer.resolve('docker');
 
-  const [containerId] = await dockerCompose.getContainerIds(seedConfig, {
-    filterServiceNames: 'core',
-  });
-
-  if (!containerId) {
-    throw new Error(`Core is not running on ${seedConfig.getName()}`);
-  }
-
-  const rpcClient = createRpcClient({
-    port: seedConfig.get('core.rpc.port'),
-    user: 'dashmate',
-    pass: seedConfig.get('core.rpc.users.dashmate.password'),
-    host: await getConnectionHost(seedConfig, 'core', 'core.rpc.host'),
-  });
-
-  const coreService = new CoreService(
-    seedConfig,
-    rpcClient,
-    docker.getContainer(containerId),
-  );
+  const coreService = await getRunningCoreService(diContainer, seedConfig);
 
   const context = await generateToAddressTask(seedConfig, amount).run({
     coreService,

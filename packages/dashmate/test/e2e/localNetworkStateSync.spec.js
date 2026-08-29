@@ -3,6 +3,7 @@ import createDIContainer from '../../src/createDIContainer.js';
 import HomeDir from '../../src/config/HomeDir.js';
 import wait from '../../src/util/wait.js';
 import {
+  activateLocalSporks,
   createClient,
   fundClientFromCore,
   getCoreHeight,
@@ -205,6 +206,15 @@ describe('Local Network State Sync', function main() {
     await startNodeTask(config).run({
       isVerbose: true,
     });
+
+    // A node that joins after setup never learns the local network's sporks,
+    // and without SPORK_19 its Core reports no ChainLock, drive-abci waits for
+    // one forever and Tenderdash never completes the ABCI handshake. Activate
+    // them on the joiner with the group's spork key, exactly as setup does for
+    // the original nodes.
+    const sporks = await activateLocalSporks(container, config);
+
+    record(`activated ${sporks.length} sporks on ${config.getName()}`);
 
     return config;
   }
