@@ -16,7 +16,9 @@
 //! an operator payout on-chain.
 
 use dashcore::blockdata::script::ScriptBuf;
-use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
+use dashcore::blockdata::transaction::special_transaction::provider_registration::{
+    ProviderMasternodeType, ProviderRegistrationPayload,
+};
 use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
 use dashcore::blockdata::transaction::special_transaction::{
     SpecialTransactionBasePayloadEncodable, TransactionPayload,
@@ -317,7 +319,7 @@ pub(crate) fn prepare_update_service_placeholder_from_values(
 pub(crate) async fn fetch_registration_payload(
     wallet: &PlatformWallet,
     pro_tx_hash: &[u8; 32],
-) -> Result<dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderRegistrationPayload, PlatformWalletError>{
+) -> Result<ProviderRegistrationPayload, PlatformWalletError> {
     let display = display_hex(pro_tx_hash);
     let fetched = wallet
         .sdk()
@@ -340,7 +342,7 @@ pub(crate) async fn fetch_registration_payload(
 pub(crate) fn registration_payload_from_fetched(
     pro_tx_hash: &[u8; 32],
     transaction: dashcore::Transaction,
-) -> Result<dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderRegistrationPayload, PlatformWalletError>{
+) -> Result<ProviderRegistrationPayload, PlatformWalletError> {
     let expected = Txid::from_byte_array(*pro_tx_hash);
     let actual = transaction.txid();
     if actual != expected {
