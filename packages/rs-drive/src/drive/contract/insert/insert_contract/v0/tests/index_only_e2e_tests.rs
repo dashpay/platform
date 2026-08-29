@@ -1123,7 +1123,11 @@ fn should_refuse_pivot_with_terminal_range() {
 }
 
 /// An equality BELOW the pivot is not yet supported and must be refused
-/// rather than silently scanned.
+/// rather than silently scanned. Since protocol version 14's contiguous
+/// matching, the candidate is rejected at index-selection time (the
+/// equality does not cover the index prefix the range pivots on), so
+/// the refusal is the generic no-index error rather than the synthesis
+/// route's targeted shape error.
 #[test]
 fn should_refuse_equality_below_pivot() {
     use crate::error::query::QuerySyntaxError;
@@ -1167,8 +1171,7 @@ fn should_refuse_equality_below_pivot() {
         .expect_err("an equality below the pivot must be refused");
     assert_matches!(
         &error,
-        crate::error::Error::Query(QuerySyntaxError::Unsupported(message))
-            if message.contains("BELOW a pivot"),
+        crate::error::Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_)),
         "unexpected error: {error}"
     );
 }

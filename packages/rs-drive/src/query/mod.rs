@@ -2207,29 +2207,11 @@ impl<'a> DriveDocumentQuery<'a> {
             .range_clause
             .as_ref()
             .map(|range_clause| range_clause.field.as_str());
-        let mut fields = equal_fields;
-        if let Some(range_field) = range_field {
-            fields.push(range_field);
-        }
-        if let Some(in_field) = in_field {
-            fields.push(in_field);
-            //if there is an in_field, it always takes precedence
-        }
-
-        let order_by_keys: Vec<&str> = self
-            .order_by
-            .keys()
-            .map(|key: &String| {
-                let str = key.as_str();
-                if !fields.contains(&str) {
-                    fields.push(str);
-                }
-                str
-            })
-            .collect();
+        let order_by_keys: Vec<&str> = self.order_by.keys().map(String::as_str).collect();
 
         let Some((index, difference)) = self.document_type.index_for_types_matching(
-            fields.as_slice(),
+            equal_fields.as_slice(),
+            range_field,
             in_field,
             order_by_keys.as_slice(),
             |index| {

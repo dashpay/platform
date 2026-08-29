@@ -777,18 +777,26 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
 }
 
 impl Index {
-    // The matches function will take a slice of an array of strings and an optional sort on value.
-    // An index matches if all the index_names in the slice are consecutively the index's properties
-    // with leftovers permitted.
-    // If a sort_on value is provided it must match the last index property.
-    // The number returned is the number of unused index properties
-
+    // The v0 (protocol versions <= 13, frozen on chain) matching rule:
+    // every index_name must appear SOMEWHERE in the index's properties
+    // (set membership, any order, any position), the order_by fields must
+    // be a contiguous in-index-order run (not necessarily at the end),
+    // and an in field must be the last or before-last property. The
+    // number returned is the number of unused index properties.
+    //
     // A case for example if we have an index on person's name and age
     // where we say name == 'Sam' sort by age
     // there is no field operator on age
     // The return value for name == 'Sam' sort by age would be 0
-    // The return value for name == 'Sam and age > 5 sort by age would be 0
+    // The return value for name == 'Sam' and age > 5 sort by age would be 0
     // the return value for sort by age would be 1
+    //
+    // Because membership is positionless, a query binding only LATER
+    // index properties (leaving a leading/middle property unbound) still
+    // matches here even though the positional path lowering cannot
+    // represent the gap — [`Self::matches_contiguous`] (protocol version
+    // 14+) closes that hole. This function must keep its defective
+    // semantics byte-for-byte for on-chain replay.
     pub fn matches(
         &self,
         index_names: &[&str],
@@ -917,6 +925,173 @@ impl Index {
         }
 
         Some(d as u16)
+    }
+
+    /// [`Self::matches`] with the contiguous-prefix requirement the
+    /// positional path lowering depends on (protocol version 14+): the
+    /// equality-bound fields must exactly cover the index's leading
+    /// properties, a range or `in` clause must sit immediately after them
+    /// (in either order when both are present — the lowering nests the
+    /// earlier index property outside), and no unused property may precede
+    /// a field the query names (so order-by-only fields cannot skip over
+    /// an unbound level). Unused TRAILING properties are still permitted
+    /// and still count toward the returned difference.
+    ///
+    /// Fields arrive by role rather than as one flat set because a gapped
+    /// shape can be role-invisible: on the index [a, b, c], the query
+    /// `a == 1 AND c == 3 AND b > 0` names exactly {a, b, c}, yet its
+    /// lowering keys c's equality at b's level and applies b's range at
+    /// c's level.
+    pub fn matches_contiguous(
+        &self,
+        equality_fields: &[&str],
+        range_field: Option<&str>,
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<u16> {
+        Self::matches_over_components_contiguous(
+            &self.properties,
+            equality_fields,
+            range_field,
+            in_field_name,
+            order_by,
+        )
+    }
+
+    /// [`Self::matches_contiguous`] with the index's terminal (an
+    /// indexOnly index's member-key property) as a matchable component,
+    /// mirroring [`Self::matches_including_terminal`]: the terminal is
+    /// the entry level itself — ALWAYS the index's deepest component — so
+    /// it is stripped from every role before the prefix properties match
+    /// through the contiguous algorithm. A terminal named in `order_by`
+    /// must be its last (deepest) entry; a terminal range or `in`
+    /// constraint leaves the prefix without one.
+    ///
+    /// Returns `(difference, terminal_used)` with the difference counting
+    /// unused PREFIX properties only, exactly like the v0 variant.
+    pub fn matches_including_terminal_contiguous(
+        &self,
+        equality_fields: &[&str],
+        range_field: Option<&str>,
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<(u16, bool)> {
+        let Some(terminal) = self.terminal.as_deref() else {
+            return self
+                .matches_contiguous(equality_fields, range_field, in_field_name, order_by)
+                .map(|difference| (difference, false));
+        };
+
+        let terminal_used = equality_fields.contains(&terminal)
+            || range_field == Some(terminal)
+            || in_field_name == Some(terminal)
+            || order_by.contains(&terminal);
+        let prefix_equality_fields: Vec<&str> = equality_fields
+            .iter()
+            .copied()
+            .filter(|field| *field != terminal)
+            .collect();
+        let prefix_range_field = range_field.filter(|field| *field != terminal);
+        let prefix_in_field = in_field_name.filter(|field| *field != terminal);
+        let prefix_order_by: &[&str] = match order_by.iter().position(|field| *field == terminal) {
+            // Ordering by the terminal is ordering the deepest level —
+            // admissible only as the ordering's last entry.
+            Some(position) if position + 1 == order_by.len() => &order_by[..position],
+            Some(_) => return None,
+            None => order_by,
+        };
+
+        let difference = Self::matches_over_components_contiguous(
+            &self.properties,
+            &prefix_equality_fields,
+            prefix_range_field,
+            prefix_in_field,
+            prefix_order_by,
+        )?;
+        Some((difference, terminal_used))
+    }
+
+    fn matches_over_components_contiguous(
+        properties: &[IndexProperty],
+        equality_fields: &[&str],
+        range_field: Option<&str>,
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+    ) -> Option<u16> {
+        // The flat field set the v0 checks (order-by suffix run, in-field
+        // placement, membership, difference count) run over — assembled
+        // the way `select_best_index` always has, deduplicated.
+        let mut index_names: Vec<&str> = equality_fields.to_vec();
+        for field in [range_field, in_field_name].into_iter().flatten() {
+            if !index_names.contains(&field) {
+                index_names.push(field);
+            }
+        }
+        for field in order_by {
+            if !index_names.contains(field) {
+                index_names.push(field);
+            }
+        }
+
+        let difference =
+            Self::matches_over_components(properties, &index_names, in_field_name, order_by)?;
+
+        // The equality clauses must exactly cover the index's leading
+        // properties: the lowering pairs their serialized values with
+        // `properties[..equality_fields.len()]` positionally.
+        if properties.len() < equality_fields.len() {
+            return None;
+        }
+        if !properties[..equality_fields.len()]
+            .iter()
+            .all(|property| equality_fields.contains(&property.name.as_str()))
+        {
+            return None;
+        }
+
+        // A range or `in` clause becomes the level right below the
+        // equality path, so its field must sit immediately after the
+        // equality prefix; with both present they occupy the next two
+        // positions (the lowering nests whichever is earlier outside).
+        let position_of = |field: &str| {
+            properties
+                .iter()
+                .position(|property| property.name == field)
+        };
+        let equality_len = equality_fields.len();
+        match (range_field, in_field_name) {
+            (Some(range_field), Some(in_field)) => {
+                let range_position = position_of(range_field)?;
+                let in_position = position_of(in_field)?;
+                if range_position.min(in_position) != equality_len
+                    || range_position.max(in_position) != equality_len + 1
+                {
+                    return None;
+                }
+            }
+            (Some(field), None) | (None, Some(field)) => {
+                if position_of(field)? != equality_len {
+                    return None;
+                }
+            }
+            (None, None) => {}
+        }
+
+        // No unused property may precede a named one: every field the
+        // query names (order-by-only fields included) must fall inside
+        // the index prefix of their combined cardinality, leaving unused
+        // properties only as a trailing run.
+        if properties.len() < index_names.len() {
+            return None;
+        }
+        if !properties[..index_names.len()]
+            .iter()
+            .all(|property| index_names.contains(&property.name.as_str()))
+        {
+            return None;
+        }
+
+        Some(difference)
     }
 }
 
@@ -3080,6 +3255,211 @@ mod tests {
         let index = make_index("idx", vec![("name", true), ("age", true)], false);
         let result = index.matches(&["name"], Some("email"), &[]);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_matches_accepts_gapped_binding_frozen_v0_semantics() {
+        // The frozen v0 rule is positionless set membership: binding only
+        // the LAST property of [name, age] still matches with difference
+        // 1, even though the positional lowering cannot represent the
+        // gap. On-chain replay for protocol versions <= 13 depends on
+        // this staying true.
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        assert_eq!(index.matches(&["age"], None, &[]), Some(1));
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::matches_contiguous() tests (protocol version 14+)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_matches_contiguous_agrees_with_v0_on_contiguous_shapes() {
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        // Full equality cover.
+        assert_eq!(
+            index.matches_contiguous(&["name", "age", "city"], None, None, &[]),
+            Some(0)
+        );
+        // Equality prefix with trailing unused properties.
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, None, &[]),
+            Some(2)
+        );
+        assert_eq!(
+            index.matches_contiguous(&["name", "age"], None, None, &[]),
+            Some(1)
+        );
+        // Equality prefix + adjacent order-by.
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, None, &["age"]),
+            Some(1)
+        );
+        // Equality fields given in any order still cover the prefix.
+        assert_eq!(
+            index.matches_contiguous(&["age", "name"], None, None, &[]),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn test_matches_contiguous_rejects_gapped_equality() {
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        // Last property alone.
+        assert_eq!(index.matches_contiguous(&["city"], None, None, &[]), None);
+        // Middle property alone.
+        assert_eq!(index.matches_contiguous(&["age"], None, None, &[]), None);
+        // First and last, hole in the middle.
+        assert_eq!(
+            index.matches_contiguous(&["name", "city"], None, None, &[]),
+            None
+        );
+    }
+
+    #[test]
+    fn test_matches_contiguous_rejects_role_permutation() {
+        // name == ? AND city == ? AND age > ? names exactly {name, age,
+        // city}, but the range fills the equality hole: the lowering
+        // would key city's equality at age's level. Role-aware matching
+        // must reject it even though the flat set covers the index.
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        assert_eq!(
+            index.matches_contiguous(&["name", "city"], Some("age"), None, &["age", "city"]),
+            None
+        );
+        // The well-formed variant of the same flat set passes.
+        assert_eq!(
+            index.matches_contiguous(&["name", "age"], Some("city"), None, &["city"]),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_matches_contiguous_range_and_in_adjacency() {
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        // Range immediately after the equality prefix.
+        assert_eq!(
+            index.matches_contiguous(&["name"], Some("age"), None, &["age"]),
+            Some(1)
+        );
+        // Range skipping over the unbound middle property.
+        assert_eq!(
+            index.matches_contiguous(&["name"], Some("city"), None, &["city"]),
+            None
+        );
+        // In immediately after the equality prefix (before-last position).
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, Some("age"), &[]),
+            Some(1)
+        );
+        // In on the last property with the middle property unbound.
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, Some("city"), &[]),
+            None
+        );
+        // Range + in filling the two positions after the prefix, in
+        // either index order.
+        assert_eq!(
+            index.matches_contiguous(&["name"], Some("age"), Some("city"), &["age", "city"]),
+            Some(0)
+        );
+        assert_eq!(
+            index.matches_contiguous(&["name"], Some("city"), Some("age"), &["age", "city"]),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_matches_contiguous_rejects_order_by_gap() {
+        // An order-by-only field beyond an unbound property claims an
+        // ordering the leftover walk does not deliver.
+        let index = make_index(
+            "idx",
+            vec![("name", true), ("age", true), ("city", true)],
+            false,
+        );
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, None, &["city"]),
+            None
+        );
+        // Ordering by the property right after the prefix is fine, and
+        // may continue into deeper properties.
+        assert_eq!(
+            index.matches_contiguous(&["name"], None, None, &["age", "city"]),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_matches_including_terminal_contiguous() {
+        let mut index = make_index("idx", vec![("hashtag", true), ("post", true)], false);
+        index.terminal = Some("owner".to_string());
+
+        // Fully determined prefix + terminal equality.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag", "post", "owner"],
+                None,
+                None,
+                &[]
+            ),
+            Some((0, true))
+        );
+        // Prefix-only cover leaves the terminal unused and costs nothing.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(&["hashtag", "post"], None, None, &[]),
+            Some((0, false))
+        );
+        // An `in` on the terminal strips to a pure prefix match.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag", "post"],
+                None,
+                Some("owner"),
+                &[]
+            ),
+            Some((0, true))
+        );
+        // Ordering by the terminal is only admissible as the deepest
+        // (last) order-by entry.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag"],
+                None,
+                None,
+                &["post", "owner"]
+            ),
+            Some((0, true))
+        );
+        assert_eq!(
+            index.matches_including_terminal_contiguous(
+                &["hashtag"],
+                None,
+                None,
+                &["owner", "post"]
+            ),
+            None
+        );
+        // A gapped prefix is rejected even when the terminal is bound.
+        assert_eq!(
+            index.matches_including_terminal_contiguous(&["post", "owner"], None, None, &[]),
+            None
+        );
     }
 
     // -----------------------------------------------------------------------
