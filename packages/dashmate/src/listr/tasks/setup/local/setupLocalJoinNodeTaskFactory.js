@@ -145,6 +145,17 @@ export default function setupLocalJoinNodeTaskFactory(
 
           const chainId = platformConfigs[0].get('platform.drive.tenderdash.genesis.chain_id');
 
+          // The genesis document is a network-wide artifact, and its consensus
+          // params decide node behaviour well past genesis — the evidence
+          // window, for one, sets how far below a restored snapshot this node
+          // backfills light blocks. Rendering the joiner's genesis from preset
+          // defaults only matches the network by accident, so inherit the
+          // group's genesis wholesale and wire the node-specific fields on top.
+          config.set(
+            'platform.drive.tenderdash.genesis',
+            lodashCloneDeep(platformConfigs[0].get('platform.drive.tenderdash.genesis')),
+          );
+
           wireLocalTenderdashNode(config, chainId, platformConfigs);
 
           ctx.joinNodeConfig = config;

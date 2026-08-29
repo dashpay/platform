@@ -194,6 +194,39 @@ describe('setupLocalJoinNodeTaskFactory', () => {
     });
   });
 
+  describe('genesis inheritance', () => {
+    it('should inherit the group genesis, customized consensus params included', async () => {
+      // The way the state sync e2e suite customizes the network genesis:
+      // an evidence window small enough that post-restore backfill stops
+      // above genesis. The joiner must render the same genesis or its
+      // Tenderdash disagrees with the network about the chain it is on.
+      platformConfigs.forEach((config) => {
+        config.set('platform.drive.tenderdash.genesis.consensus_params.evidence', {
+          max_age: '10',
+          max_age_num_blocks: '10',
+          max_age_duration: '10000000000',
+        });
+      });
+
+      await setupLocalJoinNodeTask(groupConfigs).run();
+
+      const joinConfig = configFile.getConfig('local_join');
+
+      expect(
+        joinConfig.get('platform.drive.tenderdash.genesis.consensus_params.evidence'),
+      ).to.deep.equal({
+        max_age: '10',
+        max_age_num_blocks: '10',
+        max_age_duration: '10000000000',
+      });
+
+      // The node-specific wiring still lands on top of the inherited genesis
+      expect(joinConfig.get('platform.drive.tenderdash.genesis.chain_id')).to.equal(CHAIN_ID);
+      expect(joinConfig.get('platform.drive.tenderdash.genesis.validator_quorum_type'))
+        .to.equal(106);
+    });
+  });
+
   describe('additional join nodes', () => {
     it('should honour an explicit config name and port offset', async () => {
       await setupLocalJoinNodeTask(groupConfigs).run();

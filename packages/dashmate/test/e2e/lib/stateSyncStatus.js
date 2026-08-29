@@ -12,12 +12,12 @@ import { getDapiAddress } from './platformSdk.js';
  */
 
 /**
- * Fetch `sync_info` from a node's Tenderdash RPC.
+ * Fetch the full `/status` result from a node's Tenderdash RPC.
  *
  * @param {Config} config
  * @return {Promise<Object>}
  */
-export async function getTenderdashSyncInfo(config) {
+export async function getTenderdashStatus(config) {
   let host = config.get('platform.drive.tenderdash.rpc.host');
 
   if (host === '0.0.0.0') {
@@ -28,10 +28,22 @@ export async function getTenderdashSyncInfo(config) {
 
   const response = await fetch(`http://${host}:${port}/status`);
 
-  const { result, sync_info: syncInfo } = await response.json();
+  const body = await response.json();
 
   // Tenderdash wraps the response into `result` over HTTP JSON RPC
-  return result ? result.sync_info : syncInfo;
+  return body.result || body;
+}
+
+/**
+ * Fetch `sync_info` from a node's Tenderdash RPC.
+ *
+ * @param {Config} config
+ * @return {Promise<Object>}
+ */
+export async function getTenderdashSyncInfo(config) {
+  const { sync_info: syncInfo } = await getTenderdashStatus(config);
+
+  return syncInfo;
 }
 
 /**
@@ -301,12 +313,15 @@ export async function waitForDapiReady(config, {
  * it never restored one.
  *
  * This is the direct evidence that a node state synced. `earliest_block_height`
- * is not: after a successful restore Tenderdash backfills light blocks
- * *backwards* from the snapshot height to satisfy its evidence window, and on
- * a short chain that backfill reaches genesis — so a node that demonstrably
- * restored a snapshot still ends up reporting 1, exactly like a node that
- * replayed every block. The ABCI app saying it completed a restore cannot be
- * produced by block execution, so it distinguishes the two paths cleanly.
+ * alone is not, on a stock genesis: after a successful restore Tenderdash
+ * backfills light blocks *backwards* from the snapshot height to satisfy its
+ * evidence window (100000 blocks / 48 hours by default), and on a short chain
+ * that backfill reaches genesis — so a node that demonstrably restored a
+ * snapshot still ends up reporting 1, exactly like a node that replayed every
+ * block. The state sync suite shrinks the evidence window in genesis exactly
+ * so the backfill floor sits above genesis and the truncated history becomes
+ * observable; this log line remains the per-boot, ABCI-level proof of the
+ * restore itself, which block execution cannot produce.
  *
  * `since` scopes the read to one boot. Without it a node that restored once
  * and was later wiped and restarted would still show the first restore, and
