@@ -444,6 +444,7 @@ describe('Platform', () => {
     describe('skipIfAbsent', () => {
       let untaggedPost;
       let untaggedLike;
+      let freshTaggedPost;
 
       it('should create an untagged post and an untagged like under the absence agreement', async () => {
         // post.hashtag is optional; a post may carry no tag at all
@@ -482,6 +483,27 @@ describe('Platform', () => {
       });
 
       it('should refuse a hashtag-less like on a tagged post', async () => {
+        // A FRESH tagged post: both identities already hold likes on the
+        // shared `post`, and the create-side duplicate probe would refuse
+        // the colliding byPost entry (40105) before the agreement check
+        // ever ran — the shape under test needs a post this identity has
+        // no like on
+        freshTaggedPost = await client.platform.documents.create(
+          'yappr.post',
+          identity,
+          {
+            hashtag: POST_HASHTAG,
+            message: 'a second tagged post',
+          },
+        );
+
+        await client.platform.documents.broadcast({
+          create: [freshTaggedPost],
+        }, identity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
         // Referring absent, referenced present: the absence agreement is
         // strict — a like on a tagged post must carry the tag, or per-tag
         // aggregates would silently deflate
@@ -489,7 +511,7 @@ describe('Platform', () => {
           'yappr.like',
           secondIdentity,
           {
-            postId: post.getId(),
+            postId: freshTaggedPost.getId(),
           },
         );
 
