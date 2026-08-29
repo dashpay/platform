@@ -96,10 +96,27 @@ pub(super) mod index_only_tests {
         document
     }
 
+    /// [`build_like`] without the hashtag — the skipIfAbsent form: no
+    /// `byHashtagPost` entry, and the absence agreement demands an
+    /// untagged post.
+    pub(super) fn build_untagged_like(
+        contract: &DataContract,
+        owner: Identifier,
+        post_id: Identifier,
+        entropy: Bytes32,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Document {
+        let mut document = build_like(contract, owner, post_id, entropy, rng, platform_version);
+        document.remove("hashtag");
+        document
+    }
+
     /// Create a real `post` (the permanent document the likes refer to) and
     /// return it — the like's `postId` carries a `refersTo`, so a like on a
     /// nonexistent post is rejected with ReferencedEntityNotFoundError (as
-    /// this suite's first draft usefully proved).
+    /// this suite's first draft usefully proved). Under `#dash`; see
+    /// [`create_post_with_hashtag`] for the untagged form.
     pub(super) async fn create_post<
         S: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey>,
     >(
@@ -111,6 +128,39 @@ pub(super) mod index_only_tests {
         nonce: u64,
         signer: &S,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Document {
+        create_post_with_hashtag(
+            platform,
+            platform_state,
+            contract,
+            owner,
+            key,
+            nonce,
+            signer,
+            rng,
+            Some("dash"),
+            platform_version,
+        )
+        .await
+    }
+
+    /// [`create_post`] with the hashtag spelled out — `None` creates an
+    /// UNTAGGED post (`post.hashtag` is optional), the target a
+    /// hashtag-less like's absence agreement must match.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn create_post_with_hashtag<
+        S: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey>,
+    >(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        contract: &DataContract,
+        owner: Identifier,
+        key: &dpp::identity::IdentityPublicKey,
+        nonce: u64,
+        signer: &S,
+        rng: &mut StdRng,
+        hashtag: Option<&str>,
         platform_version: &PlatformVersion,
     ) -> Document {
         let post_type = contract
@@ -127,7 +177,16 @@ pub(super) mod index_only_tests {
                 platform_version,
             )
             .expect("expected a random post");
-        post.set("hashtag", "dash".into());
+        match hashtag {
+            Some(hashtag) => {
+                post.set("hashtag", hashtag.into());
+            }
+            None => {
+                // The random fill populates optional properties; an
+                // untagged post carries no hashtag at all.
+                post.remove("hashtag");
+            }
+        }
         let create = BatchTransition::new_document_creation_transition_from_document(
             post.clone(),
             post_type,
@@ -516,6 +575,308 @@ pub(super) mod index_only_tests {
                 ..
             }],
             "a like disagreeing with its post's hashtag must be refused"
+        );
+    }
+
+    /// The absence agreement, strictly: a hashtag-less like may only sit
+    /// on a hashtag-less post. A like OMITTING the tag of a TAGGED post is
+    /// a mismatch (anything laxer would deflate per-tag aggregates), and a
+    /// TAGGED like on an UNTAGGED post is the mirror mismatch.
+    #[tokio::test]
+    async fn test_absence_agreement_is_strict_in_both_directions() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(4244);
+
+        let (alice, alice_signer, alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let contract = register_likes(&platform, alice.id(), platform_version);
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+
+        let tagged_post = create_post(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            &alice_key,
+            2,
+            &alice_signer,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let untagged_post = create_post_with_hashtag(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            &alice_key,
+            3,
+            &alice_signer,
+            &mut rng,
+            None,
+            platform_version,
+        )
+        .await;
+
+        // Referring absent, referenced present: refused.
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let hashtag_less_on_tagged = build_untagged_like(
+            &contract,
+            alice.id(),
+            tagged_post.id(),
+            entropy,
+            &mut rng,
+            platform_version,
+        );
+        let create = BatchTransition::new_document_creation_transition_from_document(
+            hashtag_less_on_tagged,
+            like_type,
+            entropy.0,
+            &alice_key,
+            4,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the create transition");
+        let result = process_and_commit(&platform, &platform_state, &create, platform_version);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(_)
+                ),
+                ..
+            }],
+            "a hashtag-less like on a TAGGED post must be refused"
+        );
+
+        // Referring present, referenced absent: refused.
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let tagged_on_untagged = build_like(
+            &contract,
+            alice.id(),
+            untagged_post.id(),
+            entropy,
+            &mut rng,
+            platform_version,
+        );
+        let create = BatchTransition::new_document_creation_transition_from_document(
+            tagged_on_untagged,
+            like_type,
+            entropy.0,
+            &alice_key,
+            5,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the create transition");
+        let result = process_and_commit(&platform, &platform_state, &create, platform_version);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(_)
+                ),
+                ..
+            }],
+            "a tagged like on an UNTAGGED post must be refused"
+        );
+    }
+
+    /// The untagged lifecycle end-to-end: both-absent agreement passes,
+    /// the skipIfAbsent index writes nothing, structural uniqueness still
+    /// holds through `byPost`, and unlikes are exact.
+    #[tokio::test]
+    async fn test_untagged_like_lifecycle() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(4245);
+
+        let (alice, alice_signer, alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let contract = register_likes(&platform, alice.id(), platform_version);
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+
+        let untagged_post = create_post_with_hashtag(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            &alice_key,
+            2,
+            &alice_signer,
+            &mut rng,
+            None,
+            platform_version,
+        )
+        .await;
+
+        // ── the untagged like goes through ─────────────────────────────
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let untagged_like = build_untagged_like(
+            &contract,
+            alice.id(),
+            untagged_post.id(),
+            entropy,
+            &mut rng,
+            platform_version,
+        );
+        let create = BatchTransition::new_document_creation_transition_from_document(
+            untagged_like.clone(),
+            like_type,
+            entropy.0,
+            &alice_key,
+            3,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the create transition");
+        let result = process_and_commit(&platform, &platform_state, &create, platform_version);
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "the untagged like must be created: {:?}",
+            result.execution_results()
+        );
+
+        // The skip index holds nothing for it: the hashtag property-name
+        // tree stays childless.
+        let like_doctype_path = vec![
+            vec![drive::drive::RootTree::DataContractDocuments as u8],
+            contract.id().to_vec(),
+            vec![1],
+            b"like".to_vec(),
+        ];
+        let path_refs: Vec<&[u8]> = like_doctype_path.iter().map(|v| v.as_slice()).collect();
+        let hashtag_tree = platform
+            .drive
+            .grove_get_raw_optional(
+                path_refs.as_slice().into(),
+                b"hashtag",
+                drive::util::grove_operations::DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("read the hashtag property-name tree");
+        assert_matches!(
+            hashtag_tree,
+            Some(drive::grovedb::Element::Tree(None, _)),
+            "the skipIfAbsent index must hold nothing for an untagged like"
+        );
+
+        // ── a second untagged like collides on byPost ──────────────────
+        let entropy_2 = Bytes32::random_with_rng(&mut rng);
+        let again = build_untagged_like(
+            &contract,
+            alice.id(),
+            untagged_post.id(),
+            entropy_2,
+            &mut rng,
+            platform_version,
+        );
+        let create_again = BatchTransition::new_document_creation_transition_from_document(
+            again,
+            like_type,
+            entropy_2.0,
+            &alice_key,
+            4,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the create transition");
+        let result =
+            process_and_commit(&platform, &platform_state, &create_again, platform_version);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DuplicateUniqueIndexError(_)),
+                ..
+            }],
+            "structural uniqueness must survive the skipped index"
+        );
+
+        // ── unlike, exactly once ───────────────────────────────────────
+        let delete = BatchTransition::new_document_deletion_transition_from_document(
+            untagged_like.clone(),
+            like_type,
+            &alice_key,
+            5,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the delete transition");
+        let result = process_and_commit(&platform, &platform_state, &delete, platform_version);
+        assert_eq!(
+            result.valid_count(),
+            1,
+            "the untagged unlike must go through: {:?}",
+            result.execution_results()
+        );
+
+        let delete_again = BatchTransition::new_document_deletion_transition_from_document(
+            untagged_like,
+            like_type,
+            &alice_key,
+            6,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the delete transition");
+        let result =
+            process_and_commit(&platform, &platform_state, &delete_again, platform_version);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentNotFoundError(_)),
+                ..
+            }],
+            "a second unlike finds nothing"
+        );
+
+        let issues = platform
+            .drive
+            .grove
+            .verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("verify_grovedb must run");
+        assert!(
+            issues.is_empty(),
+            "grovedb must stay consistent: {issues:?}"
         );
     }
 
@@ -964,6 +1325,146 @@ mod index_only_executed_proof_tests {
         };
         let (_, absent) = documents.into_iter().next().expect("one entry");
         assert!(absent.is_none(), "the unliked entry must be proven absent");
+    }
+
+    /// Executed proofs for the UNTAGGED form: the proof anchor is a
+    /// non-skip index (the shared selector refuses skipIfAbsent ones), the
+    /// verifier's recomputed commitment matches the skip-absent preimage,
+    /// and the verified document carries no hashtag — absence survives the
+    /// round trip instead of being default-filled.
+    #[tokio::test]
+    async fn test_executed_untagged_like_create_and_delete_proofs() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(31338);
+
+        let (alice, alice_signer, alice_key) =
+            setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+        let contract = register_likes(&platform, alice.id(), platform_version);
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+        let contract_arc = Arc::new(contract.clone());
+
+        let untagged_post = create_post_with_hashtag(
+            &platform,
+            &platform_state,
+            &contract,
+            alice.id(),
+            &alice_key,
+            2,
+            &alice_signer,
+            &mut rng,
+            None,
+            platform_version,
+        )
+        .await;
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let untagged_like = build_untagged_like(
+            &contract,
+            alice.id(),
+            untagged_post.id(),
+            entropy,
+            &mut rng,
+            platform_version,
+        );
+        let create = BatchTransition::new_document_creation_transition_from_document(
+            untagged_like.clone(),
+            like_type,
+            entropy.0,
+            &alice_key,
+            3,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the create transition");
+        let result = process_and_commit(&platform, &platform_state, &create, platform_version);
+        assert_eq!(result.valid_count(), 1);
+
+        // ── executed create ────────────────────────────────────────────
+        let proof = platform
+            .drive
+            .prove_state_transition(&create, None, platform_version)
+            .expect("expected to prove the executed untagged create")
+            .into_data()
+            .expect("expected proof bytes");
+        let lookup = |_id: &dpp::identifier::Identifier| Ok(Some(Arc::clone(&contract_arc)));
+        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &create,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .expect("expected the executed untagged create proof to verify");
+        assert_ne!(root_hash, [0u8; 32]);
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
+            panic!("expected verified documents");
+        };
+        let (_, verified_like) = documents.into_iter().next().expect("one document");
+        let verified_like = verified_like.expect("the created untagged like is present");
+        assert_eq!(
+            verified_like
+                .properties()
+                .get("postId")
+                .expect("postId present")
+                .to_identifier_bytes()
+                .expect("identifier"),
+            untagged_post.id().to_vec()
+        );
+        assert!(
+            !verified_like.properties().contains_key("hashtag"),
+            "absence must survive verification — no default-filling"
+        );
+
+        // ── executed delete ────────────────────────────────────────────
+        let delete = BatchTransition::new_document_deletion_transition_from_document(
+            untagged_like,
+            like_type,
+            &alice_key,
+            4,
+            0,
+            None,
+            &alice_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the delete transition");
+        let result = process_and_commit(&platform, &platform_state, &delete, platform_version);
+        assert_eq!(result.valid_count(), 1);
+
+        let proof = platform
+            .drive
+            .prove_state_transition(&delete, None, platform_version)
+            .expect("expected to prove the executed untagged delete")
+            .into_data()
+            .expect("expected proof bytes");
+        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &delete,
+            &BlockInfo::default(),
+            proof.as_slice(),
+            &lookup,
+            platform_version,
+        )
+        .expect("expected the executed untagged delete proof to verify");
+        assert_ne!(root_hash, [0u8; 32]);
+        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
+            panic!("expected verified documents");
+        };
+        let (_, absent) = documents.into_iter().next().expect("one entry");
+        assert!(
+            absent.is_none(),
+            "the untagged unlike must be proven absent"
+        );
     }
 
     /// A helper for the negative-path tests below: a signed `mark` create
