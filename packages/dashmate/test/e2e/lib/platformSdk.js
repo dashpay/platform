@@ -86,17 +86,36 @@ export function getEvoSdk(config, quorumListConfig) {
 
       await evo.ensureInitialized();
 
-      const sdk = new evo.EvoSDK({
-        network: 'local',
-        trusted: true,
-        quorumUrl: getQuorumListUrl(quorumListConfig),
-        addresses: [address],
-        proofs: true,
-      });
+      // Connecting prefetches quorum keys and masternode addresses from the
+      // quorum list sidecar, whose per-masternode version checks need time
+      // after network start — early on it answers with no eligible
+      // masternodes and the connect fails. Retry instead of giving up: a
+      // rejected connect must also not stay cached, or one warm-up hiccup
+      // would poison every later proof verification.
+      const deadline = Date.now() + 180000;
 
-      await sdk.connect();
+      for (;;) {
+        const sdk = new evo.EvoSDK({
+          network: 'local',
+          trusted: true,
+          quorumUrl: getQuorumListUrl(quorumListConfig),
+          addresses: [address],
+          proofs: true,
+        });
 
-      return { evo, sdk };
+        try {
+          await sdk.connect();
+
+          return { evo, sdk };
+        } catch (error) {
+          if (Date.now() >= deadline) {
+            evoSdkCache.delete(address);
+            throw error;
+          }
+
+          await wait(5000);
+        }
+      }
     })());
   }
 
@@ -141,6 +160,22 @@ function readErrorName(error) {
  * @return {Object}
  */
 export function createPlatformProofVerifier(config, quorumListConfig) {
+  // The WASM SDK's default per-request timeout is 10 seconds, but waiting for
+  // a state transition result must span at least one block interval — and the
+  // local network produces empty blocks every 30 seconds. Left at the default,
+  // every wait can exhaust its retries before a block was even due.
+  //
+  // `waitTimeoutMs` must NOT be set here: it makes rs-sdk wrap the wait in
+  // `tokio::time::timeout`, which reads `std::time::Instant` — unimplemented
+  // on wasm32 — and the whole module panics with `RuntimeError: unreachable`.
+  // The per-request `timeoutMs` bounds each attempt through the wasm-safe
+  // transport path instead, so the overall wait is still finite
+  // (retries x timeoutMs).
+  const waitSettings = {
+    timeoutMs: 120000,
+    retries: 2,
+  };
+
   return {
     async verifyStateTransitionResult({ serializedStateTransition }) {
       const { evo, sdk } = await getEvoSdk(config, quorumListConfig);
@@ -150,13 +185,13 @@ export function createPlatformProofVerifier(config, quorumListConfig) {
       );
 
       try {
-        await sdk.stateTransitions.waitForResponse(stateTransition);
+        await sdk.stateTransitions.waitForResponse(stateTransition, waitSettings);
       } catch (error) {
         if (readErrorName(error) !== EXECUTION_NOT_PROVED) {
           throw error;
         }
 
-        await sdk.stateTransitions.waitForAffectedState(stateTransition);
+        await sdk.stateTransitions.waitForAffectedState(stateTransition, waitSettings);
       }
     },
 
@@ -208,6 +243,12 @@ export function createClient(config, quorumListConfig, { skipSyncBeforeHeight } 
     network: 'regtest',
     dapiAddresses: [getDapiAddress(config)],
     platformProofVerifier: createPlatformProofVerifier(config, quorumListConfig),
+    // Per-request gRPC deadline. The 10s default is calibrated for reads;
+    // broadcasting an identity registration makes Tenderdash run CheckTx,
+    // which verifies the asset lock's InstantSend signature, and on a local
+    // network that can outlast 10s — the client then times out and retries a
+    // broadcast that was never rejected.
+    timeout: 60000,
     wallet,
   });
 }
@@ -256,13 +297,48 @@ export async function fundClientFromCore(coreService, client, amount, {
 
   log(`sent ${amount} duffs to ${address} in ${transactionId}`);
 
+  // The payment must be observable on the Core it was sent through before the
+  // wallet's stream can be blamed for not delivering it. A broadcast that
+  // silently never made it into the mempool used to surface here as a generic
+  // wallet-sync timeout minutes later, pointing every investigation at DAPI.
+  const { result: mempool } = await rpcClient.getRawMemPool();
+
+  if (!mempool.includes(transactionId)) {
+    throw new Error(
+      `funding transaction ${transactionId} did not enter the Core mempool after sendToAddress`,
+    );
+  }
+
   const privateKey = new PrivateKey();
   const throwawayAddress = privateKey.toAddress('regtest').toString();
 
-  // Confirm the payment. Mining is deliberately not done on every poll: each
-  // new block is one more the wallet has to catch up on, so a tight loop can
-  // outrun the sync it is waiting for.
+  // Confirm the payment and verify it, rather than assuming two mined blocks
+  // did the job.
   await rpcClient.generateToAddress(2, throwawayAddress, 10000000);
+
+  const confirmDeadline = Date.now() + 60000;
+  let confirmations = 0;
+
+  while (Date.now() < confirmDeadline) {
+    const { result: fundingTx } = await rpcClient.getTransaction(transactionId);
+
+    confirmations = fundingTx.confirmations || 0;
+
+    if (confirmations > 0) {
+      log(`funding transaction confirmed in block ${fundingTx.blockheight}`
+        + ` (${confirmations} confirmations)`);
+      break;
+    }
+
+    await rpcClient.generateToAddress(1, throwawayAddress, 10000000);
+    await wait(2000);
+  }
+
+  if (confirmations === 0) {
+    throw new Error(
+      `funding transaction ${transactionId} entered the mempool but was not mined within 60s`,
+    );
+  }
 
   const deadline = Date.now() + timeoutMs;
 
@@ -281,15 +357,20 @@ export async function fundClientFromCore(coreService, client, amount, {
     if (polls % 10 === 0) {
       log(`waiting for wallet ${address}: ${balance} of ${amount} duffs`);
 
-      // Nudge the chain occasionally in case the payment is still unconfirmed
+      // Nudge the chain occasionally: each new block re-triggers the wallet's
+      // stream processing without flooding it. Mining on every poll would give
+      // the sync more blocks to catch up on than it gains.
       await rpcClient.generateToAddress(1, throwawayAddress, 10000000);
     }
 
     await wait(3000);
   }
 
+  // The chain-side facts are known good at this point, so say so: this
+  // failure is in the wallet's transaction stream, not in the funding.
   throw new Error(
-    `wallet at ${address} only saw ${balance} of ${amount} duffs within ${timeoutMs}ms`,
+    `funding transaction ${transactionId} is confirmed on chain, but the wallet at ${address}`
+      + ` only saw ${balance} of ${amount} duffs within ${timeoutMs}ms`,
   );
 }
 
