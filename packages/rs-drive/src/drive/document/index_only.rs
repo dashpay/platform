@@ -66,28 +66,6 @@ impl Drive {
         .into())
     }
 
-    /// The first index of `document_type` that embeds `$ownerId` (as
-    /// terminal or prefix property). The indexOnly parser guarantees one
-    /// exists — its absence is a corrupted contract.
-    pub fn index_only_owner_bearing_index<'a>(
-        document_type: &'a DocumentTypeRef,
-    ) -> Result<&'a Index, Error> {
-        document_type
-            .indexes()
-            .values()
-            .find(|index| {
-                index.terminal.as_deref() == Some(dpp::document::property_names::OWNER_ID)
-                    || index
-                        .properties
-                        .iter()
-                        .any(|property| property.name == dpp::document::property_names::OWNER_ID)
-            })
-            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                "an indexOnly document type must have an $ownerId-bearing index; the \
-                 contract parser enforces it",
-            )))
-    }
-
     /// The grove paths and member key of `document`'s entries under
     /// `index`: each path is `[DataContractDocuments, contract_id, 1,
     /// doctype, (<level key>, <value key>)*, 0]` with the terminal
@@ -100,7 +78,13 @@ impl Drive {
     /// [`TimeRangeTransform::entry_keys_for_raw`] — the same derivation
     /// the index walkers write with, so probe and write paths cannot
     /// drift (including the edge rules: a pre-origin timestamp produces
-    /// NO entries, so it produces no probe paths either).
+    /// NO entries, so it produces no probe paths either). A `skipIfAbsent`
+    /// index whose trigger (first property) the document omits likewise
+    /// produces NO paths (and an empty member key) — the write walkers
+    /// skipped the branch, so there is nothing to probe; the zero-path
+    /// case flows through both consumers with the correct semantics
+    /// (vacuously consistent for the delete probe, no duplicate for the
+    /// create probe).
     ///
     /// [`TimeRangeTransform::entry_keys_for_raw`]:
     /// dpp::data_contract::document_type::TimeRangeTransform::entry_keys_for_raw
@@ -122,10 +106,31 @@ impl Drive {
                     platform_version,
                 )?
                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "every indexOnly property must have a value: the parser requires \
-                     them all and the transitions carry them all",
+                    "every required indexOnly property must have a value: the parser \
+                     requires them and the transitions carry them",
                 )))
         };
+
+        // A skipIfAbsent index participates only when the document carries
+        // its trigger — the first property, which the parser guarantees is
+        // the only one that may be absent. Mirror the write walkers' skip
+        // exactly: no trigger, no entries.
+        if index.skip_if_absent {
+            let trigger = &index
+                .properties
+                .first()
+                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "a skipIfAbsent index has at least one property; the contract parser \
+                     enforces it",
+                )))?
+                .name;
+            if document
+                .get_raw_for_document_type(trigger, document_type, owner_id, platform_version)?
+                .is_none()
+            {
+                return Ok((Vec::new(), Vec::new()));
+            }
+        }
 
         let prefix: Vec<Vec<u8>> = vec![
             vec![crate::drive::RootTree::DataContractDocuments as u8],
