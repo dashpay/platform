@@ -130,40 +130,30 @@ impl DriveDocumentQuery<'_> {
             return Ok(None);
         }
 
-        // The same field assembly the generic matcher receives.
-        let mut fields = self
+        // The same by-role field assembly the generic matcher receives.
+        let equal_fields = self
             .internal_clauses
             .equal_clauses
             .keys()
             .map(|field| field.as_str())
             .collect::<Vec<&str>>();
-        if let Some(range_clause) = &self.internal_clauses.range_clause {
-            fields.push(range_clause.field.as_str());
-        }
+        let range_field = self
+            .internal_clauses
+            .range_clause
+            .as_ref()
+            .map(|range_clause| range_clause.field.as_str());
         let in_field = self
             .internal_clauses
             .in_clauses
             .first()
             .map(|in_clause| in_clause.field.as_str());
-        if let Some(in_field) = in_field {
-            fields.push(in_field);
-        }
-        let order_by_keys: Vec<&str> = self
-            .order_by
-            .keys()
-            .map(|key: &String| {
-                let field = key.as_str();
-                if !fields.contains(&field) {
-                    fields.push(field);
-                }
-                field
-            })
-            .collect();
+        let order_by_keys: Vec<&str> = self.order_by.keys().map(String::as_str).collect();
 
         let Some((index, _difference, terminal_used)) = self
             .document_type
             .index_for_types_matching_including_terminal(
-                fields.as_slice(),
+                equal_fields.as_slice(),
+                range_field,
                 in_field,
                 order_by_keys.as_slice(),
                 // Bucketed indexes never serve the terminal route: only

@@ -9097,3 +9097,373 @@ mod withdrawal_in_clause_placement_equivalence {
         }
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod gapped_index_query_tests {
+    //! Queries whose bound fields do not cover a contiguous prefix of the
+    //! chosen index. Index matching accepted such queries since 2022
+    //! (`33f2a764a4` dropped the original prefix requirement), but the
+    //! positional lowering (`index.properties.split_at(...)`) pairs the
+    //! collected equality values with the index's LEADING properties, so a
+    //! gap misaligns every level below it: results are silently empty or —
+    //! when a range clause fills the hole — satisfy a permutation of the
+    //! requested clauses. Both come back identically on the proof path, so
+    //! the wrong answer verifies against the root hash.
+    //!
+    //! Protocol versions <= 13 are on chain and must replay this defective
+    //! behavior byte-for-byte (the `_frozen_at_protocol_v13` tests — never
+    //! edit their expectations). Protocol version 14 requires the bound
+    //! fields to cover a contiguous index prefix at match time, so a gapped
+    //! candidate is skipped: a well-shaped index wins instead, or the query
+    //! is rejected with `WhereClauseOnNonIndexedProperty`.
+
+    use super::*;
+    use dpp::data_contract::document_type::DocumentTypeRef;
+
+    /// One document type, five integer properties, and two indexes:
+    /// `gapped` = `[a, b, c]` (the index the defective matcher picks) and
+    /// `wide` = `[a, c, d, e]` (a well-shaped fallback for `a`/`c`-bound
+    /// queries).
+    fn setup_gapped_contract() -> (Drive, DataContract) {
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let owner_id = Identifier::new([2u8; 32]);
+
+        let documents = platform_value!({
+            "testDocument": {
+                "type": "object",
+                "properties": {
+                    "a": { "type": "integer", "position": 0 },
+                    "b": { "type": "integer", "position": 1 },
+                    "c": { "type": "integer", "position": 2 },
+                    "d": { "type": "integer", "position": 3 },
+                    "e": { "type": "integer", "position": 4 }
+                },
+                "additionalProperties": false,
+                "indices": [
+                    {
+                        "name": "gapped",
+                        "properties": [
+                            { "a": "asc" },
+                            { "b": "asc" },
+                            { "c": "asc" }
+                        ]
+                    },
+                    {
+                        "name": "wide",
+                        "properties": [
+                            { "a": "asc" },
+                            { "c": "asc" },
+                            { "d": "asc" },
+                            { "e": "asc" }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("should create factory");
+        let contract = factory
+            .create_with_value_config(owner_id, 0, documents, None, None)
+            .expect("data in fixture should be correct")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("should apply contract");
+
+        let document_type = contract
+            .document_type_for_name("testDocument")
+            .expect("should have testDocument type");
+
+        for (entropy_seed, a, b, c, d, e) in [
+            // Satisfies the MISREAD of the wrong-documents query
+            // (a == 1 AND b == 3 AND c > 0) but not the query itself.
+            (1u8, 1i64, 3i64, 5i64, 1i64, 1i64),
+            // Satisfies the wrong-documents query as written
+            // (a == 1 AND c == 3 AND b > 0) and a == 1 AND c == 3.
+            (2, 1, 7, 3, 2, 2),
+            // Third a == 1 document, for the order-by case.
+            (3, 1, 2, 9, 3, 3),
+            // Control: matches nothing (a != 1).
+            (4, 2, 3, 3, 4, 4),
+        ] {
+            let document = document_type
+                .create_document_from_data(
+                    platform_value!({ "a": a, "b": b, "c": c, "d": d, "e": e }),
+                    owner_id,
+                    0,
+                    0,
+                    [entropy_seed; 32],
+                    platform_version,
+                )
+                .expect("should create document");
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("should add document");
+        }
+
+        (drive, contract)
+    }
+
+    fn abcde_tuples(
+        results: &[Vec<u8>],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Vec<(i64, i64, i64, i64, i64)> {
+        results
+            .iter()
+            .map(|bytes| {
+                let document =
+                    Document::from_bytes(bytes.as_slice(), document_type, platform_version)
+                        .expect("should deserialize document");
+                let get = |field: &str| -> i64 {
+                    document
+                        .get(field)
+                        .unwrap_or_else(|| panic!("document should have {field}"))
+                        .to_integer::<i64>()
+                        .expect("field is an integer")
+                };
+                (get("a"), get("b"), get("c"), get("d"), get("e"))
+            })
+            .collect()
+    }
+
+    /// Runs the query at the given protocol version on both the no-proof
+    /// and proof paths, asserts they agree and the proof verifies against
+    /// the live root hash, and returns the (a, b, c, d, e) tuples.
+    fn run_query(
+        drive: &Drive,
+        contract: &DataContract,
+        query_value: &serde_json::Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<(i64, i64, i64, i64, i64)>, Error> {
+        let document_type = contract
+            .document_type_for_name("testDocument")
+            .expect("should have testDocument type");
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(query_value, None)
+            .expect("expected to serialize to cbor");
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            contract,
+            document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let (results, _, _) =
+            query.execute_raw_results_no_proof(drive, None, None, platform_version)?;
+
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+        let (proof_root_hash, proof_results, _) = query
+            .execute_with_proof_only_get_elements(drive, None, None, platform_version)
+            .expect("we should be able to get a proof");
+        assert_eq!(root_hash, proof_root_hash);
+        assert_eq!(
+            results, proof_results,
+            "proof and no-proof paths must return the same documents"
+        );
+
+        Ok(abcde_tuples(&results, document_type, platform_version))
+    }
+
+    fn protocol_v13() -> &'static PlatformVersion {
+        let protocol_v13 = PlatformVersion::get(13).expect("protocol version 13 exists");
+        assert_eq!(
+            protocol_v13
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .methods
+                .index_for_types,
+            0,
+            "protocol v13 must keep the v0 (gap-tolerant) index matching"
+        );
+        protocol_v13
+    }
+
+    // a == 1 AND c == 3 AND b > 0, order by [b, c]. The `gapped` index
+    // [a, b, c] scores difference 0, and the lowering keys c's value at
+    // b's level and applies b's range at c's level — delivering
+    // a == 1 AND b == 3 AND c > 0 instead.
+    fn wrong_documents_query() -> serde_json::Value {
+        json!({
+            "where": [
+                ["a", "==", 1],
+                ["c", "==", 3],
+                ["b", ">", 0],
+            ],
+            "orderBy": [
+                ["b", "asc"],
+                ["c", "asc"]
+            ]
+        })
+    }
+
+    #[test]
+    fn range_filling_an_equality_gap_returns_permuted_clause_results_frozen_at_protocol_v13() {
+        let (drive, contract) = setup_gapped_contract();
+
+        let results = run_query(&drive, &contract, &wrong_documents_query(), protocol_v13())
+            .expect("v13 executes the misaligned query");
+
+        // The document actually satisfying a == 1 AND c == 3 AND b > 0 is
+        // (1, 7, 3, 2, 2). v0 returns the document satisfying the
+        // permuted clauses instead — cryptographically proven above.
+        assert_eq!(
+            results,
+            vec![(1, 3, 5, 1, 1)],
+            "v0 must keep returning the permuted-clause document"
+        );
+    }
+
+    #[test]
+    fn range_filling_an_equality_gap_is_rejected_at_latest_protocol_version() {
+        let (drive, contract) = setup_gapped_contract();
+
+        let error = run_query(
+            &drive,
+            &contract,
+            &wrong_documents_query(),
+            PlatformVersion::latest(),
+        )
+        .expect_err("a gapped equality set must not match any index");
+
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+            ),
+            "expected WhereClauseOnNonIndexedProperty, got {error:?}"
+        );
+    }
+
+    // a == 1 AND c == 3, no order by. `gapped` [a, b, c] scores
+    // difference 1 and wins over the well-shaped `wide` [a, c, d, e]
+    // (difference 2); its misaligned path keys c's value at b's level
+    // above a subtree that does not exist there.
+    fn equality_gap_query() -> serde_json::Value {
+        json!({
+            "where": [
+                ["a", "==", 1],
+                ["c", "==", 3],
+            ]
+        })
+    }
+
+    #[test]
+    fn equality_gap_returns_proven_empty_result_frozen_at_protocol_v13() {
+        let (drive, contract) = setup_gapped_contract();
+
+        let results = run_query(&drive, &contract, &equality_gap_query(), protocol_v13())
+            .expect("v13 executes the misaligned query");
+
+        // (1, 7, 3, 2, 2) satisfies the query; v0 returns nothing, with a
+        // valid absence proof (checked in run_query).
+        assert_eq!(
+            results,
+            vec![],
+            "v0 must keep returning the proven-empty result"
+        );
+    }
+
+    #[test]
+    fn equality_gap_selects_the_well_shaped_index_at_latest_protocol_version() {
+        let (drive, contract) = setup_gapped_contract();
+
+        // The gapped candidate is skipped at match time, so `wide`
+        // [a, c, d, e] (a contiguous [a, c] prefix, difference 2) wins and
+        // the query returns its actual match.
+        let results = run_query(
+            &drive,
+            &contract,
+            &equality_gap_query(),
+            PlatformVersion::latest(),
+        )
+        .expect("the well-shaped index should serve the query");
+
+        assert_eq!(results, vec![(1, 7, 3, 2, 2)]);
+    }
+
+    // a == 1 order by [c]. `gapped` [a, b, c] scores difference 1 and
+    // wins; the leftover walk emits (b, c) tree order while the response
+    // claims order by c.
+    fn order_by_gap_query() -> serde_json::Value {
+        json!({
+            "where": [
+                ["a", "==", 1],
+            ],
+            "orderBy": [
+                ["c", "asc"]
+            ]
+        })
+    }
+
+    #[test]
+    fn order_by_beyond_an_unbound_property_lies_about_order_frozen_at_protocol_v13() {
+        let (drive, contract) = setup_gapped_contract();
+
+        let results = run_query(&drive, &contract, &order_by_gap_query(), protocol_v13())
+            .expect("v13 executes the misaligned query");
+
+        // All three a == 1 documents come back, but in (b, c) tree order —
+        // c descends 9, 5, 3 while the query claims c ascending.
+        assert_eq!(
+            results,
+            vec![(1, 2, 9, 3, 3), (1, 3, 5, 1, 1), (1, 7, 3, 2, 2)],
+            "v0 must keep returning (b, c) tree order under an order-by [c] claim"
+        );
+    }
+
+    #[test]
+    fn order_by_beyond_an_unbound_property_selects_the_well_shaped_index_at_latest_protocol_version(
+    ) {
+        let (drive, contract) = setup_gapped_contract();
+
+        // `gapped` is skipped (its order-by field c sits beyond the unbound
+        // b), so `wide` [a, c, d, e] wins and delivers the claimed order.
+        let results = run_query(
+            &drive,
+            &contract,
+            &order_by_gap_query(),
+            PlatformVersion::latest(),
+        )
+        .expect("the well-shaped index should serve the query");
+
+        assert_eq!(
+            results,
+            vec![(1, 7, 3, 2, 2), (1, 3, 5, 1, 1), (1, 2, 9, 3, 3)],
+            "results must actually be ordered by c ascending"
+        );
+    }
+}

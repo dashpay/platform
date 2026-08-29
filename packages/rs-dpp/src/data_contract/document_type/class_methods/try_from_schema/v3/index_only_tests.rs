@@ -518,6 +518,7 @@ fn terminal_aware_matching_prefers_generic_and_scores_candidates() {
         .index_for_types_matching_including_terminal(
             &["postId"],
             None,
+            None,
             &[],
             |_| true,
             PlatformVersion::latest(),
@@ -535,6 +536,7 @@ fn terminal_aware_matching_prefers_generic_and_scores_candidates() {
         .index_for_types_matching_including_terminal(
             &["$ownerId", "postId"],
             None,
+            None,
             &[],
             |_| true,
             PlatformVersion::latest(),
@@ -550,6 +552,7 @@ fn terminal_aware_matching_prefers_generic_and_scores_candidates() {
     let (index, difference, terminal_used) = document_type_ref
         .index_for_types_matching_including_terminal(
             &["hashtag", "postId", "$ownerId"],
+            None,
             None,
             &[],
             |_| true,
