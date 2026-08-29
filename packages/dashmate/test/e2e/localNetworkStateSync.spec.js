@@ -2,12 +2,36 @@ import { asValue } from 'awilix';
 import createDIContainer from '../../src/createDIContainer.js';
 import HomeDir from '../../src/config/HomeDir.js';
 import wait from '../../src/util/wait.js';
+import {
+  createFaucetClient,
+  createFundedClient,
+  mintToNewAddress,
+  resetEvoSdkCache,
+} from './lib/platformSdk.js';
+import seedPlatformState, { describeSeedManifest } from './lib/seedPlatformState.js';
+import verifySeededState, { describeVerification } from './lib/verifySeededState.js';
+import {
+  getStateSyncLogExcerpt,
+  watchStateSync,
+} from './lib/stateSyncStatus.js';
 
 /**
  * Brings up a three validator local network with frequent Drive snapshots,
- * then joins a fresh platform-enabled full node with Tenderdash state sync
- * enabled and asserts it bootstraps from a snapshot instead of replaying
- * blocks (earliest_block_height > 1 while catching_up is false).
+ * seeds real state onto it, then exercises Tenderdash state sync against that
+ * chain from several angles:
+ *
+ *  - a fresh node joins and bootstraps from a snapshot instead of replaying
+ *    blocks, and the state it restored is re-read from it with proofs;
+ *  - a second joiner survives the serving validator being restarted mid-sync;
+ *  - a joined node whose platform data is wiped syncs again from scratch;
+ *  - a joiner pointed at a network with snapshot serving turned off falls back
+ *    to block sync rather than hanging.
+ *
+ * The scenarios share one network on purpose. Each bring-up costs many minutes
+ * and the later scenarios only need a config change on the running validators,
+ * so re-running setup for each would multiply the wall clock for no extra
+ * coverage. They do have to run in order: the fallback scenario disables
+ * snapshot serving and never turns it back on.
  *
  * No protocol version plumbing is needed for restorable snapshots: local
  * network genesis carries no app_version, so drive-abci starts the chain at
@@ -15,7 +39,7 @@ import wait from '../../src/util/wait.js';
  * state from the genesis block on.
  */
 describe('Local Network State Sync', function main() {
-  this.timeout(60 * 60 * 1000); // 60 minutes
+  this.timeout(120 * 60 * 1000); // 120 minutes
   this.bail(true); // bail on first failure
 
   let homeDir;
@@ -26,10 +50,18 @@ describe('Local Network State Sync', function main() {
   let writeConfigTemplates;
   let assertLocalServicesRunning;
   let dockerCompose;
+  let docker;
   let joinConfig;
+  let churnConfig;
+  let fallbackConfig;
+  let seedManifest;
 
   const groupName = 'local';
   const joinConfigName = 'local_join';
+  const churnConfigName = 'local_join_churn';
+  const fallbackConfigName = 'local_join_fallback';
+
+  const joinConfigNames = [joinConfigName, churnConfigName, fallbackConfigName];
 
   // How often validators create snapshot checkpoints
   // (the config schema minimum is 60 seconds)
@@ -37,6 +69,33 @@ describe('Local Network State Sync', function main() {
 
   // DB_PATH in docker-compose.yml plus the default checkpoints subdirectory
   const driveCheckpointsPath = '/var/lib/dash/rs-drive-abci/db/checkpoints';
+
+  // Host resources this run may claim. Overridable so two checkouts (or a run
+  // following one whose docker networks were left behind) can coexist.
+  const subnet = process.env.DASHMATE_E2E_STATE_SYNC_SUBNET || '172.31.0.0/24';
+  const portBase = parseInt(process.env.DASHMATE_E2E_STATE_SYNC_PORT_BASE || '41000', 10);
+  const auxPortBase = parseInt(process.env.DASHMATE_E2E_STATE_SYNC_AUX_PORT_BASE || '42000', 10);
+
+  /**
+   * Everything worth putting in a run report that assertions alone do not
+   * carry: seeding outcomes, mid-sync observations, log excerpts.
+   *
+   * @type {string[]}
+   */
+  const report = [];
+
+  /**
+   * @param {string} line
+   * @return {void}
+   */
+  function record(line) {
+    report.push(line);
+
+    // Mocha swallows stdout from hooks in some reporters, but the e2e suite
+    // runs with the spec reporter where this is the run's evidence trail.
+    // eslint-disable-next-line no-console
+    console.log(`[state-sync-qa] ${line}`);
+  }
 
   /**
    * List heights of snapshot checkpoints a node's Drive has created so far
@@ -63,26 +122,56 @@ describe('Local Network State Sync', function main() {
   }
 
   /**
-   * Fetch sync_info from a node's Tenderdash RPC
+   * Wait until a validator has a snapshot checkpoint above genesis.
    *
-   * @param {Config} config
-   * @return {Promise<Object>}
+   * @param {Config} validatorConfig
+   * @param {number} [timeoutMs]
+   * @return {Promise<number[]>}
    */
-  async function getTenderdashSyncInfo(config) {
-    let host = config.get('platform.drive.tenderdash.rpc.host');
+  async function waitForCheckpointAboveGenesis(validatorConfig, timeoutMs = 15 * 60 * 1000) {
+    const deadline = Date.now() + timeoutMs;
 
-    if (host === '0.0.0.0') {
-      host = '127.0.0.1';
+    let checkpointHeights = [];
+    while (Date.now() < deadline) {
+      checkpointHeights = await getCheckpointHeights(validatorConfig);
+
+      if (checkpointHeights.some((height) => height > 1)) {
+        break;
+      }
+
+      await wait(5000);
     }
 
-    const port = config.get('platform.drive.tenderdash.rpc.port');
+    return checkpointHeights;
+  }
 
-    const response = await fetch(`http://${host}:${port}/status`);
+  /**
+   * Set up, start and return the config of an extra node joining the network.
+   *
+   * @param {string} configName
+   * @param {number} offsetIndex
+   * @return {Promise<Config>}
+   */
+  async function startJoinNode(configName, offsetIndex) {
+    const setupLocalJoinNodeTask = container.resolve('setupLocalJoinNodeTask');
 
-    const { result, sync_info: syncInfo } = await response.json();
+    await setupLocalJoinNodeTask(configGroup, { configName, offsetIndex }).run({
+      isVerbose: true,
+    });
 
-    // Tenderdash wraps the response into `result` over HTTP JSON RPC
-    return result ? result.sync_info : syncInfo;
+    const config = configFile.getConfig(configName);
+
+    await configFileRepository.write(configFile);
+
+    writeConfigTemplates(config);
+
+    const startNodeTask = container.resolve('startNodeTask');
+
+    await startNodeTask(config).run({
+      isVerbose: true,
+    });
+
+    return config;
   }
 
   before(async () => {
@@ -120,33 +209,40 @@ describe('Local Network State Sync', function main() {
     }
 
     // Offset from localNetwork.spec.js ports so leftovers of one suite
-    // don't collide with the other on a developer machine
-    localConfig.set('docker.network.subnet', '172.31.0.0/24');
-    localConfig.set('dashmate.helper.api.port', 41000);
-    localConfig.set('core.p2p.port', 41001);
-    localConfig.set('core.rpc.port', 41002);
-    localConfig.set('platform.gateway.listeners.dapiAndDrive.port', 41003);
-    localConfig.set('platform.drive.tenderdash.p2p.port', 41004);
-    localConfig.set('platform.drive.tenderdash.rpc.port', 41005);
-    localConfig.set('platform.drive.tenderdash.pprof.port', 41006);
+    // don't collide with the other on a developer machine.
+    //
+    // Both the subnet and the two port blocks are overridable, because a
+    // developer machine can already carry an unrelated local network (or an
+    // orphaned docker network from an earlier run) sitting on these ranges,
+    // and docker refuses to create an overlapping pool.
+    localConfig.set('docker.network.subnet', subnet);
+    localConfig.set('dashmate.helper.api.port', portBase);
+    localConfig.set('core.p2p.port', portBase + 1);
+    localConfig.set('core.rpc.port', portBase + 2);
+    localConfig.set('platform.gateway.listeners.dapiAndDrive.port', portBase + 3);
+    localConfig.set('platform.drive.tenderdash.p2p.port', portBase + 4);
+    localConfig.set('platform.drive.tenderdash.rpc.port', portBase + 5);
+    localConfig.set('platform.drive.tenderdash.pprof.port', portBase + 6);
 
     // The remaining host-published ports (see the `ports:` sections in
     // docker-compose.yml) are moved off their defaults too, so the suite can
     // run next to another local network that keeps the stock ports
-    localConfig.set('core.zmq.port', 42001);
-    localConfig.set('platform.drive.abci.tokioConsole.port', 42002);
-    localConfig.set('platform.drive.abci.metrics.port', 42003);
-    localConfig.set('platform.drive.abci.grovedbVisualizer.port', 42004);
-    localConfig.set('platform.drive.tenderdash.metrics.port', 42005);
-    localConfig.set('platform.gateway.metrics.port', 42006);
-    localConfig.set('platform.gateway.admin.port', 42007);
-    localConfig.set('platform.gateway.rateLimiter.metrics.port', 42008);
-    localConfig.set('platform.quorumList.api.port', 42009);
+    localConfig.set('core.zmq.port', auxPortBase + 1);
+    localConfig.set('platform.drive.abci.tokioConsole.port', auxPortBase + 2);
+    localConfig.set('platform.drive.abci.metrics.port', auxPortBase + 3);
+    localConfig.set('platform.drive.abci.grovedbVisualizer.port', auxPortBase + 4);
+    localConfig.set('platform.drive.tenderdash.metrics.port', auxPortBase + 5);
+    localConfig.set('platform.gateway.metrics.port', auxPortBase + 6);
+    localConfig.set('platform.gateway.admin.port', auxPortBase + 7);
+    localConfig.set('platform.gateway.rateLimiter.metrics.port', auxPortBase + 8);
+    localConfig.set('platform.quorumList.api.port', auxPortBase + 9);
 
-    // A leftover join node config from a previous run against this home dir
-    if (configFile.isConfigExists(joinConfigName)) {
-      configFile.removeConfig(joinConfigName);
-    }
+    // Leftover join node configs from a previous run against this home dir
+    joinConfigNames.forEach((name) => {
+      if (configFile.isConfigExists(name)) {
+        configFile.removeConfig(name);
+      }
+    });
 
     container.register({
       configFile: asValue(configFile),
@@ -155,6 +251,16 @@ describe('Local Network State Sync', function main() {
     writeConfigTemplates = container.resolve('writeConfigTemplates');
     assertLocalServicesRunning = container.resolve('assertLocalServicesRunning');
     dockerCompose = container.resolve('dockerCompose');
+    docker = container.resolve('docker');
+  });
+
+  after(() => {
+    if (report.length === 0) {
+      return;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(`\n[state-sync-qa] run report\n${report.map((line) => `  ${line}`).join('\n')}\n`);
   });
 
   describe('setup', () => {
@@ -231,75 +337,94 @@ describe('Local Network State Sync', function main() {
     });
   });
 
+  describe('seed state', () => {
+    it('should seed identities, names, contracts and documents', async () => {
+      const seedConfig = configGroup.find((config) => config.getName() === 'local_seed');
+      const validatorConfig = configGroup.find((config) => config.get('platform.enable'));
+
+      // Mine coins the SDK wallet can spend. dashmate's own wallet task is
+      // reused so the isolated home dir and per-suite ports are honoured.
+      const { privateKey } = await mintToNewAddress(container, seedConfig, 50);
+
+      const faucetClient = createFaucetClient(validatorConfig, seedConfig, privateKey);
+
+      let client;
+      try {
+        client = await createFundedClient(
+          validatorConfig,
+          seedConfig,
+          faucetClient,
+          800000000,
+        );
+
+        seedManifest = await seedPlatformState(client, { log: record });
+      } finally {
+        await faucetClient.disconnect().catch(() => {});
+        if (client) {
+          await client.disconnect().catch(() => {});
+        }
+      }
+
+      record(`seeding outcomes:\n${describeSeedManifest(seedManifest)}`);
+
+      const failed = seedManifest.steps.filter(({ status }) => status !== 'ok');
+
+      // Individual steps are allowed to skip (tokens have no JS SDK path at
+      // all), but a run where nothing landed would make every later state
+      // assertion vacuous.
+      expect(
+        seedManifest.identities.length,
+        `no identity was seeded; outcomes:\n${describeSeedManifest(seedManifest)}`,
+      ).to.be.above(0);
+
+      expect(
+        Object.keys(seedManifest.contracts).length,
+        `no data contract was seeded; outcomes:\n${describeSeedManifest(seedManifest)}`,
+      ).to.be.above(0);
+
+      expect(
+        seedManifest.documents.length,
+        `no document was seeded; outcomes:\n${describeSeedManifest(seedManifest)}`,
+      ).to.be.above(0);
+
+      record(`seeding skipped ${failed.length} of ${seedManifest.steps.length} steps`);
+    });
+  });
+
   describe('join node', () => {
     it('should create a snapshot beyond genesis on a validator', async () => {
       const validatorConfig = configGroup.find((config) => config.get('platform.enable'));
 
       // Wait until a checkpoint above height 1 exists so the joining node
-      // demonstrably restores a snapshot instead of replaying from genesis
-      const deadline = Date.now() + (15 * 60 * 1000);
-
-      let checkpointHeights = [];
-      while (Date.now() < deadline) {
-        checkpointHeights = await getCheckpointHeights(validatorConfig);
-
-        if (checkpointHeights.some((height) => height > 1)) {
-          break;
-        }
-
-        await wait(5000);
-      }
+      // demonstrably restores a snapshot instead of replaying from genesis.
+      // Seeding already advanced the chain, so this checkpoint carries the
+      // seeded state rather than an empty tree.
+      const checkpointHeights = await waitForCheckpointAboveGenesis(validatorConfig);
 
       expect(
         checkpointHeights.some((height) => height > 1),
         `no snapshot checkpoint above height 1 on ${validatorConfig.getName()},`
           + ` found: [${checkpointHeights.join(', ')}]`,
       ).to.be.true();
+
+      record(`validator checkpoints: [${checkpointHeights.join(', ')}]`);
     });
 
     it('should setup and start a join node', async () => {
-      const setupLocalJoinNodeTask = container.resolve('setupLocalJoinNodeTask');
-
-      await setupLocalJoinNodeTask(configGroup).run({
-        isVerbose: true,
-      });
-
-      joinConfig = configFile.getConfig(joinConfigName);
+      joinConfig = await startJoinNode(joinConfigName, configGroup.length);
 
       expect(joinConfig.get('platform.drive.tenderdash.stateSync.enabled')).to.be.true();
-
-      await configFileRepository.write(configFile);
-
-      writeConfigTemplates(joinConfig);
-
-      const startNodeTask = container.resolve('startNodeTask');
-
-      await startNodeTask(joinConfig).run({
-        isVerbose: true,
-      });
 
       await assertLocalServicesRunning([joinConfig]);
     });
 
     it('should state sync the join node instead of replaying blocks', async () => {
-      const deadline = Date.now() + (20 * 60 * 1000);
-
-      let syncInfo;
-      while (Date.now() < deadline) {
-        try {
-          syncInfo = await getTenderdashSyncInfo(joinConfig);
-
-          if (syncInfo
-            && syncInfo.catching_up === false
-            && parseInt(syncInfo.latest_block_height, 10) > 0) {
-            break;
-          }
-        } catch {
-          // Tenderdash RPC is not reachable yet
-        }
-
-        await wait(5000);
-      }
+      const {
+        syncInfo,
+        tenderdashObservations,
+        dapiObservations,
+        dapiErrors,
+      } = await watchStateSync(joinConfig, { log: record });
 
       expect(syncInfo, 'join node Tenderdash never responded on RPC').to.exist();
       expect(syncInfo.catching_up, 'join node is still catching up').to.be.false();
@@ -313,6 +438,26 @@ describe('Local Network State Sync', function main() {
         'join node replayed blocks from genesis instead of state syncing',
       ).to.be.above(1);
 
+      record(`joined at earliest_block_height=${syncInfo.earliest_block_height},`
+        + ` latest_block_height=${syncInfo.latest_block_height}`);
+
+      // Ops acceptance: the state sync counters an operator would watch.
+      // A sync that finishes between two polls legitimately leaves none, so
+      // this is recorded rather than asserted.
+      record(`mid-sync Tenderdash state sync observations: ${tenderdashObservations.length}`);
+      tenderdashObservations.forEach((observation) => {
+        record(`  ${JSON.stringify(observation)}`);
+      });
+
+      record(`mid-sync DAPI getStatus observations: ${dapiObservations.length}`);
+      dapiObservations.slice(0, 5).forEach((observation) => {
+        record(`  ${JSON.stringify(observation)}`);
+      });
+
+      if (dapiErrors.length > 0) {
+        record(`DAPI getStatus errors seen while syncing: ${JSON.stringify(dapiErrors)}`);
+      }
+
       // Drive and the other services survived applying the snapshot
       await assertLocalServicesRunning([joinConfig]);
 
@@ -320,13 +465,226 @@ describe('Local Network State Sync', function main() {
       const waitForNodeToBeReadyTask = container.resolve('waitForNodeToBeReadyTask');
       await waitForNodeToBeReadyTask(joinConfig).run();
     });
+
+    it('should serve the seeded state from the joined node with proofs', async () => {
+      const checks = await verifySeededState(joinConfig, configGroup[0], seedManifest);
+
+      record(`seeded state on the joined node:\n${describeVerification(checks)}`);
+
+      const missing = checks.filter(({ present }) => !present);
+
+      expect(checks.length, 'nothing was verified against the joined node').to.be.above(0);
+
+      expect(
+        missing.length,
+        `the joined node did not serve seeded state:\n${describeVerification(missing)}`,
+      ).to.equal(0);
+    });
+
+    it('should report a healthy node through dashmate status', async () => {
+      const getPlatformScope = container.resolve('getPlatformScope');
+
+      const scope = await getPlatformScope(joinConfig);
+
+      record(`dashmate platform status: tenderdash=${scope.tenderdash.serviceStatus}`
+        + ` drive=${scope.drive.serviceStatus}`
+        + ` height=${scope.tenderdash.latestBlockHeight}`
+        + ` peers=${scope.tenderdash.peers}`);
+
+      expect(scope.tenderdash.catchingUp).to.be.false();
+      expect(scope.tenderdash.serviceStatus).to.equal('up');
+      expect(scope.drive.serviceStatus).to.equal('up');
+    });
+
+    it('should capture the sync lifecycle from the joiner logs', async () => {
+      const lines = await getStateSyncLogExcerpt(dockerCompose, joinConfig);
+
+      record(`joiner Tenderdash state sync log excerpt (${lines.length} lines):`);
+      lines.forEach((line) => record(`  ${line}`));
+
+      expect(lines.length, 'no state sync related lines in the joiner logs').to.be.above(0);
+    });
+  });
+
+  describe('serving-side churn', () => {
+    it('should complete a sync while the serving validator restarts', async () => {
+      const validatorConfig = configGroup.find((config) => config.get('platform.enable'));
+
+      churnConfig = await startJoinNode(churnConfigName, configGroup.length + 1);
+
+      // Restart the serving validator's platform containers once while the
+      // new node is pulling chunks. Tenderdash should re-peer and either
+      // resume from another validator or retry the offer.
+      const restart = (async () => {
+        const containerIds = await dockerCompose.getContainerIds(validatorConfig, {
+          filterServiceNames: ['drive_abci', 'drive_tenderdash'],
+        });
+
+        await Promise.all(containerIds.map(async (id) => {
+          await docker.getContainer(id).restart({ t: 5 });
+        }));
+
+        record(`restarted ${containerIds.length} containers on ${validatorConfig.getName()}`);
+
+        return containerIds.length;
+      })();
+
+      const [restarted, watch] = await Promise.all([
+        restart,
+        watchStateSync(churnConfig, { log: record }),
+      ]);
+
+      expect(restarted, 'no validator containers were restarted').to.be.above(0);
+
+      const { syncInfo } = watch;
+
+      expect(syncInfo, 'churn join node Tenderdash never responded on RPC').to.exist();
+      expect(
+        syncInfo.catching_up,
+        'churn join node did not finish syncing after the serving validator restarted',
+      ).to.be.false();
+
+      record(`churn joiner reached earliest_block_height=${syncInfo.earliest_block_height},`
+        + ` latest_block_height=${syncInfo.latest_block_height}`);
+
+      await assertLocalServicesRunning([churnConfig]);
+    });
+
+    it('should sync again after the joined node loses its platform data', async () => {
+      const stopNodeTask = container.resolve('stopNodeTask');
+
+      await stopNodeTask(joinConfig).run({
+        isVerbose: true,
+        isForce: true,
+        platformOnly: true,
+      });
+
+      // Wipe platform volumes only: Core keeps its synced chain, so this is a
+      // node that has lost Drive and Tenderdash state and must state sync from
+      // scratch, not a brand new node.
+      const resetNodeTask = container.resolve('resetNodeTask');
+
+      await resetNodeTask(joinConfig).run({
+        isVerbose: true,
+        isForce: true,
+        isPlatformOnlyReset: true,
+        isHardReset: false,
+      });
+
+      // A pooled connection to the old container would outlive the wipe
+      resetEvoSdkCache();
+
+      writeConfigTemplates(joinConfig);
+
+      const startNodeTask = container.resolve('startNodeTask');
+
+      await startNodeTask(joinConfig).run({
+        isVerbose: true,
+        platformOnly: true,
+      });
+
+      const { syncInfo, tenderdashObservations } = await watchStateSync(joinConfig, {
+        log: record,
+      });
+
+      expect(syncInfo, 're-joined node Tenderdash never responded on RPC').to.exist();
+      expect(syncInfo.catching_up, 're-joined node is still catching up').to.be.false();
+      expect(
+        parseInt(syncInfo.earliest_block_height, 10),
+        're-joined node replayed blocks from genesis instead of state syncing',
+      ).to.be.above(1);
+
+      record(`re-joined node reached earliest_block_height=${syncInfo.earliest_block_height}`
+        + ` after ${tenderdashObservations.length} state sync observations`);
+    });
+  });
+
+  describe('fallback ladder', () => {
+    it('should fall back to block sync when no validator serves snapshots', async () => {
+      // Turn snapshot serving off across the network. drive-abci answers
+      // ListSnapshots with an empty set when disabled regardless of the
+      // checkpoints still on disk, so a joiner finds nothing to offer.
+      for (const config of configGroup) {
+        if (config.get('platform.enable')) {
+          config.set('platform.drive.abci.stateSync.snapshots.enabled', false);
+        }
+      }
+
+      await configFileRepository.write(configFile);
+      configGroup.forEach(writeConfigTemplates);
+
+      const restartNodeTask = container.resolve('restartNodeTask');
+
+      for (const config of configGroup) {
+        if (config.get('platform.enable')) {
+          await restartNodeTask(config).run({
+            isVerbose: true,
+            isForce: true,
+            platformOnly: true,
+          });
+        }
+      }
+
+      resetEvoSdkCache();
+
+      await assertLocalServicesRunning(configGroup);
+
+      fallbackConfig = await startJoinNode(fallbackConfigName, configGroup.length + 2);
+
+      expect(fallbackConfig.get('platform.drive.tenderdash.stateSync.enabled')).to.be.true();
+
+      // The joiner discovers no snapshots, exhausts its state sync retries and
+      // then block syncs. That path replays every block, so unlike the state
+      // synced nodes above it keeps the full history from genesis.
+      const { syncInfo } = await watchStateSync(fallbackConfig, {
+        log: record,
+        timeoutMs: 30 * 60 * 1000,
+      });
+
+      expect(syncInfo, 'fallback join node Tenderdash never responded on RPC').to.exist();
+      expect(
+        syncInfo.catching_up,
+        'fallback join node never finished syncing without snapshots',
+      ).to.be.false();
+
+      expect(
+        parseInt(syncInfo.earliest_block_height, 10),
+        'fallback join node did not replay from genesis',
+      ).to.equal(1);
+
+      record(`fallback joiner block synced to latest_block_height=${syncInfo.latest_block_height}`
+        + ` with earliest_block_height=${syncInfo.earliest_block_height}`);
+
+      const lines = await getStateSyncLogExcerpt(dockerCompose, fallbackConfig);
+
+      record(`fallback joiner log excerpt (${lines.length} lines):`);
+      lines.slice(-40).forEach((line) => record(`  ${line}`));
+    });
+
+    it('should still serve the seeded state after block syncing', async () => {
+      const waitForNodeToBeReadyTask = container.resolve('waitForNodeToBeReadyTask');
+      await waitForNodeToBeReadyTask(fallbackConfig).run();
+
+      const checks = await verifySeededState(fallbackConfig, configGroup[0], seedManifest);
+
+      record(`seeded state on the block synced node:\n${describeVerification(checks)}`);
+
+      const missing = checks.filter(({ present }) => !present);
+
+      expect(
+        missing.length,
+        `the block synced node did not serve seeded state:\n${describeVerification(missing)}`,
+      ).to.equal(0);
+    });
   });
 
   describe('stop', () => {
-    it('should stop join node and local network', async () => {
+    it('should stop join nodes and local network', async () => {
       const stopNodeTask = await container.resolve('stopNodeTask');
 
-      for (const config of [joinConfig, ...configGroup.slice().reverse()]) {
+      const joinConfigs = [joinConfig, churnConfig, fallbackConfig].filter(Boolean);
+
+      for (const config of [...joinConfigs, ...configGroup.slice().reverse()]) {
         const task = stopNodeTask(config);
         await task.run({
           isVerbose: true,
@@ -334,7 +692,7 @@ describe('Local Network State Sync', function main() {
         });
       }
 
-      await assertLocalServicesRunning([...configGroup, joinConfig], false);
+      await assertLocalServicesRunning([...configGroup, ...joinConfigs], false);
     });
   });
 
@@ -342,7 +700,7 @@ describe('Local Network State Sync', function main() {
     it('should reset local network', async () => {
       const resetNodeTask = await container.resolve('resetNodeTask');
 
-      // The join node carries the same group name, so it is included
+      // The join nodes carry the same group name, so they are included
       for (const config of configFile.getGroupConfigs(groupName)) {
         const resetTask = resetNodeTask(config);
 
