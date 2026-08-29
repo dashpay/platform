@@ -58,6 +58,26 @@ pub fn write_restore_sentinel(
     )
 }
 
+/// Clears the restore sentinel at a point where the node is already self-consistent —
+/// after a completed restore, or after a genesis initialization — WITHOUT being able to
+/// fail the operation that got it there.
+///
+/// Propagating an I/O error from here would turn a fully successful restore (or a working
+/// genesis) into a hard ABCI error over nothing but a `remove_file` hiccup. The cost of
+/// failing to remove it is bounded and safe in the other direction: the next startup sees
+/// a sentinel, wipes, and re-syncs. Loud, but never a wedge.
+pub fn clear_restore_sentinel_best_effort(db_path: &Path) {
+    if let Err(error) = clear_restore_sentinel(db_path) {
+        tracing::error!(
+            ?error,
+            path = ?restore_sentinel_path(db_path),
+            "[state_sync] could not clear the state sync restore sentinel; the node is \
+             consistent, but the next restart will wipe and re-sync unnecessarily. Remove \
+             the file by hand to avoid that.",
+        );
+    }
+}
+
 /// Clears the restore sentinel. Only ever called once the node is in a self-consistent
 /// state: after a restore has fully completed, after startup recovery has wiped, or after
 /// a genesis initialization.
@@ -86,10 +106,22 @@ pub fn restore_sentinel_exists(db_path: &Path) -> bool {
 ///
 /// `system_data_contracts` is deliberately NOT cleared — those are compiled-in,
 /// version-keyed contracts that never come from grovedb.
+///
+/// The checkpoint registry goes too, and it is not merely a cache: `Drive::open` populates
+/// `drive.checkpoints` before any wipe can run, and `list_snapshots` serves whatever is in
+/// it to peers. Left alone, a node that wiped and re-synced would keep offering snapshots
+/// of the chain it just discarded. The entries are marked for deletion first so their
+/// directories are removed when the last `Arc` drops, rather than leaking on disk.
 pub fn reset_drive_caches_after_wipe(drive: &Drive) {
     *drive.cache.protocol_versions_counter.write() = Default::default();
     drive.cache.data_contracts.clear();
     *drive.cache.genesis_time_ms.write() = None;
+
+    let checkpoints = drive.checkpoints.load();
+    for checkpoint_info in checkpoints.values() {
+        checkpoint_info.checkpoint.mark_for_deletion();
+    }
+    drive.checkpoints.store(Arc::new(BTreeMap::new()));
 }
 
 /// Wipes grovedb and drops the caches derived from it, leaving the node an empty but

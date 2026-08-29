@@ -3,7 +3,7 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::snapshot::{
-    clear_restore_sentinel, wipe_drive_for_restore, MAX_STATE_SYNC_CHUNK_ID_SIZE,
+    clear_restore_sentinel_best_effort, wipe_drive_for_restore, MAX_STATE_SYNC_CHUNK_ID_SIZE,
     MAX_STATE_SYNC_CHUNK_SIZE,
 };
 use crate::rpc::core::CoreRPCLike;
@@ -145,16 +145,19 @@ where
         .take()
         .expect("session presence was just checked");
 
-    app.platform()
+    // grovedb only makes the session durable once its own root-hash check passes, so a
+    // failure here leaves nothing committed — but the database is still WIPED from the
+    // offer, so the node cannot be left as it is. Route it through the same recovery path
+    // as every later failure, which also keeps Tenderdash's snapshot ladder moving instead
+    // of aborting state sync with an exception.
+    if let Err(e) = app
+        .platform()
         .drive
         .grove
         .commit_session(session.state_sync_info, grove_version)
-        .map_err(|e| {
-            AbciError::StateSyncInternalError(format!(
-                "apply_snapshot_chunk unable to commit session: {}",
-                e
-            ))
-        })?;
+    {
+        return reject_restored_snapshot(app, &format!("unable to commit the session: {}", e));
+    }
 
     tracing::debug!("[state_sync] transfer complete, verifying grovedb");
 
@@ -247,13 +250,10 @@ where
 
     // The restore is complete and the node is self-consistent again, so the marker that
     // tells a restarting process to wipe can go. This is deliberately the LAST step, after
-    // `reconstruct_platform_state` has committed the platform state to aux storage.
-    clear_restore_sentinel(&app.platform().config.db_path).map_err(|e| {
-        AbciError::StateSyncInternalError(format!(
-            "apply_snapshot_chunk unable to clear the restore sentinel: {}",
-            e
-        ))
-    })?;
+    // `reconstruct_platform_state` has committed the platform state to aux storage, and
+    // deliberately best-effort: a successful restore must not be turned into an ABCI error
+    // by a `remove_file` hiccup.
+    clear_restore_sentinel_best_effort(&app.platform().config.db_path);
 
     tracing::info!(
         height = session.snapshot.height,

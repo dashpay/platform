@@ -1,7 +1,6 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
-use crate::abci::AbciError;
 use crate::error::Error;
-use crate::platform_types::snapshot::clear_restore_sentinel;
+use crate::platform_types::snapshot::clear_restore_sentinel_best_effort;
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
 
@@ -39,12 +38,10 @@ where
     // to block sync), its marker is still on disk and would make the NEXT restart wipe this
     // perfectly good chain. Clear it here — this is the block-sync arm of the same recovery
     // that `Platform::open_with_client` performs for an interrupted restore.
-    clear_restore_sentinel(&app.platform().config.db_path).map_err(|e| {
-        AbciError::StateSyncInternalError(format!(
-            "init_chain unable to clear the restore sentinel: {}",
-            e
-        ))
-    })?;
+    // Best-effort: failing to remove a marker file must not turn a working genesis into a
+    // failed init_chain. The worst case is one unnecessary wipe-and-resync on a later
+    // restart, which is loud but safe.
+    clear_restore_sentinel_best_effort(&app.platform().config.db_path);
 
     tracing::info!(
         app_hash,
