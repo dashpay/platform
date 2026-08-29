@@ -267,19 +267,27 @@ export async function getStateSyncLogExcerpt(dockerCompose, config, tail = 4000)
  * replayed every block. The ABCI app saying it completed a restore cannot be
  * produced by block execution, so it distinguishes the two paths cleanly.
  *
+ * `since` scopes the read to one boot. Without it a node that restored once
+ * and was later wiped and restarted would still show the first restore, and
+ * the assertion that it re-synced would pass whether or not it actually did —
+ * silently excusing exactly the regression that scenario exists to catch.
+ *
+ * A failure to read the logs throws rather than reporting "no restore": the
+ * fallback scenario asserts on the absence of a restore, and a docker hiccup
+ * must not be able to masquerade as proof of it.
+ *
  * @param {DockerCompose} dockerCompose
  * @param {Config} config
- * @param {number} [tail]
+ * @param {Object} [options]
+ * @param {number} [options.tail]
+ * @param {string} [options.since] - RFC3339 time to read from
  * @return {Promise<number|undefined>}
  */
-export async function getStateSyncRestoreHeight(dockerCompose, config, tail = 4000) {
-  let output;
-
-  try {
-    ({ out: output } = await dockerCompose.logs(config, ['drive_abci'], { tail }));
-  } catch {
-    return undefined;
-  }
+export async function getStateSyncRestoreHeight(dockerCompose, config, {
+  tail = 4000,
+  since,
+} = {}) {
+  const { out: output } = await dockerCompose.logs(config, ['drive_abci'], { tail, since });
 
   // drive-abci's tracing output colours its field names, so the literal text
   // is `state_sync completed <esc>height<esc>=<esc>28`. Strip the escapes
@@ -287,7 +295,10 @@ export async function getStateSyncRestoreHeight(dockerCompose, config, tail = 40
   // eslint-disable-next-line no-control-regex
   const plain = output.replace(/\u001B\[[0-9;]*m/g, '');
 
-  const matches = [...plain.matchAll(/state_sync completed\s*height\s*=\s*(\d+)/g)];
+  // Matched within one line rather than assuming `height` sits immediately
+  // after the message, so adding a field to that tracing call cannot silently
+  // turn a successful restore into "never restored".
+  const matches = [...plain.matchAll(/state_sync completed[^\n]*?height\s*=\s*(\d+)/g)];
 
   if (matches.length === 0) {
     return undefined;

@@ -504,7 +504,10 @@ export default class DockerCompose {
    * @param {Config} config
    * @param {string[]} services
    * @param {Object} options
-   * @param {number} options.tail
+   * @param {number} [options.tail]
+   * @param {string} [options.since] - only logs after this time (RFC3339 or
+   *   a relative value like `10m`), so a caller can read what a service has
+   *   said since a known moment rather than everything the container kept
    * @return {Promise<{exitCode: number | null, out: string, err: string}>}
    */
   async logs(config, services = [], options = {}) {
@@ -513,6 +516,10 @@ export default class DockerCompose {
     const args = [...services];
     if (options.tail) {
       args.unshift('--tail', options.tail.toString());
+    }
+
+    if (options.since) {
+      args.unshift('--since', options.since);
     }
 
     const commandOptions = this.#createOptions(config);

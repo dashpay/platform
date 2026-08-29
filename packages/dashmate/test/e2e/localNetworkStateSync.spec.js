@@ -88,6 +88,38 @@ describe('Local Network State Sync', function main() {
   // joiner is asked to restore it
   const SNAPSHOT_HEIGHT_HEADROOM = 10;
 
+  /**
+   * When each node last started, so a restore can be attributed to this boot
+   * rather than to an earlier one whose log lines the container still holds.
+   *
+   * @type {Map<string, string>}
+   */
+  const bootedAt = new Map();
+
+  /**
+   * Note that a node is starting now, a little in the past to absorb any skew
+   * between this process's clock and the docker daemon's.
+   *
+   * @param {Config} config
+   * @return {void}
+   */
+  function markBoot(config) {
+    bootedAt.set(config.getName(), new Date(Date.now() - 5000).toISOString());
+  }
+
+  /**
+   * The snapshot height a node restored during its current boot, or undefined
+   * if it restored nothing.
+   *
+   * @param {Config} config
+   * @return {Promise<number|undefined>}
+   */
+  function getRestoreHeightSinceBoot(config) {
+    return getStateSyncRestoreHeight(dockerCompose, config, {
+      since: bootedAt.get(config.getName()),
+    });
+  }
+
   // Host resources this run may claim. Overridable so two checkouts (or a run
   // following one whose docker networks were left behind) can coexist.
   const subnet = process.env.DASHMATE_E2E_STATE_SYNC_SUBNET || '172.31.0.0/24';
@@ -225,6 +257,8 @@ describe('Local Network State Sync', function main() {
     writeConfigTemplates(config);
 
     const startNodeTask = container.resolve('startNodeTask');
+
+    markBoot(config);
 
     await startNodeTask(config).run({
       isVerbose: true,
@@ -578,7 +612,7 @@ describe('Local Network State Sync', function main() {
       // reaches genesis — so a node that provably state synced still reports
       // 1, indistinguishable from one that replayed. It is recorded below, not
       // asserted on.
-      const restoreHeight = await getStateSyncRestoreHeight(dockerCompose, joinConfig);
+      const restoreHeight = await getRestoreHeightSinceBoot(joinConfig);
 
       if (restoreHeight === undefined) {
         // The joiner came up but never restored a snapshot. Whether the
@@ -739,7 +773,7 @@ describe('Local Network State Sync', function main() {
       // Recorded, not asserted: a restart harsh enough to exhaust the state
       // sync retries legitimately leaves the joiner block syncing instead,
       // which is still a completed sync but a different path.
-      const churnRestoreHeight = await getStateSyncRestoreHeight(dockerCompose, churnConfig);
+      const churnRestoreHeight = await getRestoreHeightSinceBoot(churnConfig);
 
       record(`churn joiner finished at latest_block_height=${syncInfo.latest_block_height}`
         + ` (${churnRestoreHeight === undefined
@@ -777,6 +811,12 @@ describe('Local Network State Sync', function main() {
 
       const startNodeTask = container.resolve('startNodeTask');
 
+      // From here on, only a restore logged after this moment counts. The wipe
+      // does not necessarily replace the container, so without this the first
+      // join's restore line would still be visible and would satisfy the
+      // assertion below even if this node never re-synced at all.
+      markBoot(joinConfig);
+
       await startNodeTask(joinConfig).run({
         isVerbose: true,
         platformOnly: true,
@@ -789,7 +829,7 @@ describe('Local Network State Sync', function main() {
       expect(syncInfo, 're-joined node Tenderdash never responded on RPC').to.exist();
       expect(syncInfo.catching_up, 're-joined node is still catching up').to.be.false();
 
-      const restoreHeight = await getStateSyncRestoreHeight(dockerCompose, joinConfig);
+      const restoreHeight = await getRestoreHeightSinceBoot(joinConfig);
 
       expect(
         restoreHeight,
@@ -852,12 +892,12 @@ describe('Local Network State Sync', function main() {
       // The inverse of the join assertion: with nothing offered there must be
       // no restore at all. Checked from the ABCI app rather than from
       // earliest_block_height, which a backfill would make ambiguous.
-      const restoreHeight = await getStateSyncRestoreHeight(dockerCompose, fallbackConfig);
+      const restoreHeight = await getRestoreHeightSinceBoot(fallbackConfig);
 
       expect(
         restoreHeight,
         'fallback join node restored a snapshot even though serving was disabled',
-      ).to.equal(undefined);
+      ).to.be.undefined();
 
       record(`fallback joiner block synced to latest_block_height=${syncInfo.latest_block_height}`
         + ` with earliest_block_height=${syncInfo.earliest_block_height}`
