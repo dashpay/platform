@@ -82,6 +82,10 @@ describe('Local Network State Sync', function main() {
   // DB_PATH in docker-compose.yml plus the default checkpoints subdirectory
   const driveCheckpointsPath = '/var/lib/dash/rs-drive-abci/db/checkpoints';
 
+  // Blocks the chain must have produced beyond the newest snapshot before a
+  // joiner is asked to restore it
+  const SNAPSHOT_HEIGHT_HEADROOM = 10;
+
   // Host resources this run may claim. Overridable so two checkouts (or a run
   // following one whose docker networks were left behind) can coexist.
   const subnet = process.env.DASHMATE_E2E_STATE_SYNC_SUBNET || '172.31.0.0/24';
@@ -147,8 +151,25 @@ describe('Local Network State Sync', function main() {
     while (Date.now() < deadline) {
       checkpointHeights = await getCheckpointHeights(validatorConfig);
 
-      if (checkpointHeights.some((height) => height > 1)) {
-        break;
+      const restorable = checkpointHeights.filter((height) => height > 1);
+
+      if (restorable.length > 0) {
+        // A snapshot needs headroom below the tip. Tenderdash verifies the
+        // light block at the snapshot height before accepting an offer, and on
+        // a chain only a block or two long there is nothing to verify against,
+        // so the joiner gives up on discovery and block syncs instead.
+        let latestHeight = 0;
+
+        try {
+          const syncInfo = await getTenderdashSyncInfo(validatorConfig);
+          latestHeight = parseInt(syncInfo.latest_block_height, 10);
+        } catch {
+          // validator RPC not reachable yet
+        }
+
+        if (latestHeight >= Math.max(...restorable) + SNAPSHOT_HEIGHT_HEADROOM) {
+          break;
+        }
       }
 
       await wait(5000);
@@ -549,6 +570,22 @@ describe('Local Network State Sync', function main() {
       // A node bootstrapped from a state sync snapshot has a truncated
       // block history starting at the snapshot height. A node that had
       // block synced (replayed) instead would report 1.
+      if (parseInt(syncInfo.earliest_block_height, 10) <= 1) {
+        // The joiner came up but never restored a snapshot. Whether the
+        // validators offered one at all is the whole question, and it is only
+        // answerable from both sides' logs.
+        await dumpJoinerDiagnostics(joinConfig, 'joiner block synced instead of state syncing');
+
+        const validatorConfig = configGroup.find((config) => config.get('platform.enable'));
+        const offered = await getStateSyncLogExcerpt(dockerCompose, validatorConfig);
+
+        record(`serving validator ${validatorConfig.getName()} snapshot log lines:`);
+        offered.stateSyncLines.slice(-30).forEach((line) => record(`  ${line}`));
+
+        const heights = await getCheckpointHeights(validatorConfig);
+        record(`serving validator checkpoints at failure: [${heights.join(', ')}]`);
+      }
+
       expect(
         parseInt(syncInfo.earliest_block_height, 10),
         'join node replayed blocks from genesis instead of state syncing',
