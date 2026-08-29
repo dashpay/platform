@@ -76,14 +76,20 @@ There is no document beyond that.
 
 Each entry's 32-byte payload is
 `hash_double(owner ‖ (name ‖ length ‖ raw index bytes)* ‖ [$createdAt])`
-over ALL of the document's properties in sorted-name order
-(`index_only_row_commitment`). It binds the independently stored index
-projections of one document back into one logical row: a delete recomputes
-the commitment from its submitted values, and every probed entry must
-carry it. A values tuple spliced from two different creates — even two
-creates by the same owner — fails the comparison on whichever entry
-belongs to the other row. Entry existence alone cannot make that
-distinction; the commitment is what does.
+over the document's PRESENT properties in sorted-name order
+(`index_only_row_commitment`) — every required property must be present,
+and an optional property (a `skipIfAbsent` trigger, the only optional
+kind) contributes nothing when absent, its name included. It binds the
+independently stored index projections of one document back into one
+logical row: a delete recomputes the commitment from its submitted
+values, and every probed entry must carry it. A values tuple spliced from
+two different creates — even two creates by the same owner — fails the
+comparison on whichever entry belongs to the other row. Entry existence
+alone cannot make that distinction; the commitment is what does. The
+present-set is part of what is committed: absent (no name emitted) and
+present-but-empty (`name ‖ 00000000`) hash differently, and the variable
+present-set stays unambiguous because property names never contain a
+zero byte while every length prefix starts with one.
 
 ## Constraint matrix (parse-time, `apply_index_only`)
 
@@ -93,18 +99,65 @@ aggregate keywords follow:
 
 | Constraint | Why |
 |---|---|
-| every property in `required`; every ancestor of an indexed dotted path required | the index path is the storage; no null layout exists |
-| every property appears in ≥ 1 index (prefix or terminal) | an unindexed property would be silently dropped |
+| every property in `required` — except a `skipIfAbsent` index's trigger; every ancestor of an indexed dotted path required | the index path is the storage; no null layout exists — the one sanctioned hole removes the whole entry instead |
+| every non-trigger property appears in ≥ 1 **non-skip** index (prefix or terminal) | only indexed values exist, and a skip index carries no value for trigger-absent documents — covered only there, a property would be validated and committed yet written nowhere |
 | **every index embeds `$ownerId`** (prefix or terminal) | entries are self-authorizing: a delete computed with owner = signer can only ever address the signer's own entries |
+| ≥ 1 index is `$createdAt`-free AND non-`skipIfAbsent` — the **proof index** | executed-transition proofs locate entries from the transition's values alone: they can neither reproduce a block timestamp nor anchor on an entry that may not exist |
 | terminal is `$ownerId` or a single-id refersTo property | the member key must alone be a referable entity id (`identityPublicKey` is compound and rejected) |
 | indexed `$createdAt` requires `$createdAt` in `required` | creation only assigns timestamps for required system times |
 | `documentsMutable: false`, no transfers/trading/history/transient | no stored row, no revision |
 | non-unique, non-contested, `nullSearchable` default | v1 scope |
 | `preallocated` requires a fully reference-determined, non-bucketed path | see [Preallocated index paths](#preallocated-index-paths) |
+| `skipIfAbsent` requires its first property to be an optional, top-level schema property | see [Conditional participation](#conditional-participation-skipifabsent) |
 
-`indexOnly` and the index set (terminals included, `preallocated` flags
-included) are immutable across contract updates — a later-added index
-could never be backfilled.
+`indexOnly` and the index set (terminals included, `preallocated` and
+`skipIfAbsent` flags included) are immutable across contract updates — a
+later-added index could never be backfilled, and the walkers derive the
+skip from `required` membership, which therefore cannot drift from
+historical entries either.
+
+## Conditional participation (skipIfAbsent)
+
+An index may declare `skipIfAbsent: true`: a document that omits the
+index's FIRST property — the **skip trigger** — writes no entry into that
+index at all, and a delete recomputes the same skip from its carried
+values. The trigger is the one property that may leave `required`, and
+the rules keep three views provably equivalent: the write walkers skip a
+top-level branch keyed by an unrequired property (every index through
+such a branch is a skip index — the parser admits an optional property
+only at position 0 of skip indexes, never as a terminal), the probes
+derive zero entry paths from the parsed flag, and the row commitment
+pins the exact present-set so a delete with a different absence pattern
+fails every probe — a skip index can neither be force-pruned nor left
+with an orphan entry.
+
+Why the FIRST property: the merged index structure shares prefix levels
+across indexes and prunes empty trees only upward from a terminal. A
+deeper skip would leave the prefix levels above the absent property
+inserted but unterminated — silently charged, never reclaimed. At the
+top of the branch, absence writes nothing at all. (This also makes
+`skipIfAbsent` + `timeRange` structurally impossible: a bucketed source
+is `$createdAt`, which is required whenever indexed.)
+
+The semantics are a **sparse projection**: the index holds exactly the
+documents carrying its trigger. Counts, ranked reads and absence proofs
+over it answer "among documents with this property" — a proved empty
+position means "no *tagged* like", not "no like". The query router makes
+that opt-in: a skip index is admissible only when the query binds its
+trigger (equality, `in`, range or order-by); the generic matcher alone
+would admit a trigger-unbound query within its difference budget and
+silently omit every trigger-absent row. Structural uniqueness still
+spans the skip boundary — a trigger-absent and a trigger-present
+document colliding on any shared non-skip entry cannot coexist. An
+absent trigger is distinct from a present-but-empty value, which indexes
+normally under its (possibly empty) encoded key.
+
+The economics are the point: each ranked index costs roughly the same on
+every write, so a per-hashtag ranked index on a like doctype used to tax
+every like — tagged or not — and forced a `''` sentinel onto the
+referenced post's hashtag. With `byHashtagPost` as a skip index, an
+untagged like pays only for the indexes it actually appears in, and the
+sentinel disappears (see the absence-aware `propertyAgreement` below).
 
 ## Lifecycle
 
@@ -119,6 +172,12 @@ could never be backfilled.
   like's own property to the referenced post's: the referenced document is
   already fetched for the existence check, so the equality comparison adds
   no reads, and a like whose hashtag disagrees with its post's is refused.
+  Absence is part of the agreement, strictly: both sides absent agree, one
+  side absent is the same mismatch a differing value would be — a like may
+  omit its hashtag exactly when its post has none (anything laxer would
+  let likes on tagged posts silently deflate per-tag aggregates), which is
+  what lets an agreement key double as a `skipIfAbsent` trigger with both
+  sides of the reference optional.
 - **Delete** is its own transition kind,
   `DocumentIndexOnlyDeleteTransition { base, data }` (`$action:
   "indexOnlyDelete"`), carrying the full value tuple (`$createdAt` under
@@ -173,6 +232,13 @@ Three things change, all bit-compatible with the fallback layout:
   hand the first entry the old price, and their trees — created by the
   fallback — are retained on delete exactly like preallocated ones.
 
+`preallocated` composes with `skipIfAbsent`: every bound key is resolved
+before any operation is emitted, and an absent bound value (an untagged
+post's hashtag, under the absence-aware agreement) bails without emitting
+anything — so a tagged post preallocates the skip index's trees, an
+untagged post preallocates only its id-bound indexes, and an untagged
+like skips exactly the trees that were never built.
+
 The economics: the referenced document's creator pays for the trees
 whether or not anyone ever references it (which is why the flag is an
 explicit opt-in, per index), every entry from the first on costs the
@@ -192,8 +258,9 @@ domain-separated, length-framed hash covering every non-owner component,
 
 Executed-transition proofs (waitForStateTransitionResult) prove a create
 by the presence of the entry its values produce under the **proof index**
-(the first `$ownerId`-bearing index not involving `$createdAt` — contract
-admission guarantees one exists) and a delete by its absence, with the
+(the first `$ownerId`-bearing, non-`skipIfAbsent` index not involving
+`$createdAt` — contract admission guarantees one exists) and a delete by
+its absence, with the
 proved entry's payload checked against the transition-derived row
 commitment (and, when the proof index is summable, the proved sum
 contribution against the created document's amount); prover and verifier
