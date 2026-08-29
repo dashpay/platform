@@ -256,6 +256,47 @@ export async function getStateSyncLogExcerpt(dockerCompose, config, tail = 4000)
 }
 
 /**
+ * The height drive-abci reports after restoring a snapshot, or undefined when
+ * it never restored one.
+ *
+ * This is the direct evidence that a node state synced. `earliest_block_height`
+ * is not: after a successful restore Tenderdash backfills light blocks
+ * *backwards* from the snapshot height to satisfy its evidence window, and on
+ * a short chain that backfill reaches genesis — so a node that demonstrably
+ * restored a snapshot still ends up reporting 1, exactly like a node that
+ * replayed every block. The ABCI app saying it completed a restore cannot be
+ * produced by block execution, so it distinguishes the two paths cleanly.
+ *
+ * @param {DockerCompose} dockerCompose
+ * @param {Config} config
+ * @param {number} [tail]
+ * @return {Promise<number|undefined>}
+ */
+export async function getStateSyncRestoreHeight(dockerCompose, config, tail = 4000) {
+  let output;
+
+  try {
+    ({ out: output } = await dockerCompose.logs(config, ['drive_abci'], { tail }));
+  } catch {
+    return undefined;
+  }
+
+  // drive-abci's tracing output colours its field names, so the literal text
+  // is `state_sync completed <esc>height<esc>=<esc>28`. Strip the escapes
+  // before matching or the height never parses.
+  // eslint-disable-next-line no-control-regex
+  const plain = output.replace(/\u001B\[[0-9;]*m/g, '');
+
+  const matches = [...plain.matchAll(/state_sync completed\s*height\s*=\s*(\d+)/g)];
+
+  if (matches.length === 0) {
+    return undefined;
+  }
+
+  return parseInt(matches[matches.length - 1][1], 10);
+}
+
+/**
  * Raw tail of one service's logs, for when a node fails in a way the filtered
  * state sync excerpt cannot explain.
  *

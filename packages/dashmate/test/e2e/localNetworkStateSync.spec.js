@@ -19,6 +19,8 @@ import {
   getContainerStates,
   getServiceLogTail,
   getStateSyncLogExcerpt,
+  getStateSyncRestoreHeight,
+  getTenderdashSyncInfo,
   waitForStateSyncActivity,
   watchStateSync,
 } from './lib/stateSyncStatus.js';
@@ -567,10 +569,18 @@ describe('Local Network State Sync', function main() {
       expect(syncInfo.catching_up, 'join node is still catching up').to.be.false();
       expect(parseInt(syncInfo.latest_block_height, 10)).to.be.above(0);
 
-      // A node bootstrapped from a state sync snapshot has a truncated
-      // block history starting at the snapshot height. A node that had
-      // block synced (replayed) instead would report 1.
-      if (parseInt(syncInfo.earliest_block_height, 10) <= 1) {
+      // Proof that the node restored a snapshot rather than executing every
+      // block, taken from the ABCI app itself.
+      //
+      // `earliest_block_height` cannot carry this. After a successful restore
+      // Tenderdash backfills light blocks backwards from the snapshot height
+      // to fill its evidence window, and on a chain this short the backfill
+      // reaches genesis — so a node that provably state synced still reports
+      // 1, indistinguishable from one that replayed. It is recorded below, not
+      // asserted on.
+      const restoreHeight = await getStateSyncRestoreHeight(dockerCompose, joinConfig);
+
+      if (restoreHeight === undefined) {
         // The joiner came up but never restored a snapshot. Whether the
         // validators offered one at all is the whole question, and it is only
         // answerable from both sides' logs.
@@ -587,9 +597,16 @@ describe('Local Network State Sync', function main() {
       }
 
       expect(
-        parseInt(syncInfo.earliest_block_height, 10),
-        'join node replayed blocks from genesis instead of state syncing',
-      ).to.be.above(1);
+        restoreHeight,
+        'join node replayed blocks from genesis instead of restoring a snapshot',
+      ).to.be.a('number');
+
+      expect(restoreHeight, 'snapshot was restored at genesis').to.be.above(1);
+
+      record(`joiner restored a snapshot at height ${restoreHeight};`
+        + ` earliest_block_height=${syncInfo.earliest_block_height}`
+        + ' (Tenderdash backfills light blocks below the snapshot, so on a short'
+        + ' chain this reaches 1 even after a successful state sync)');
 
       record(`joined at earliest_block_height=${syncInfo.earliest_block_height},`
         + ` latest_block_height=${syncInfo.latest_block_height}`);
@@ -722,11 +739,12 @@ describe('Local Network State Sync', function main() {
       // Recorded, not asserted: a restart harsh enough to exhaust the state
       // sync retries legitimately leaves the joiner block syncing instead,
       // which is still a completed sync but a different path.
-      const earliest = parseInt(syncInfo.earliest_block_height, 10);
+      const churnRestoreHeight = await getStateSyncRestoreHeight(dockerCompose, churnConfig);
 
-      record(`churn joiner reached earliest_block_height=${syncInfo.earliest_block_height},`
-        + ` latest_block_height=${syncInfo.latest_block_height}`
-        + ` (${earliest > 1 ? 'state synced' : 'fell back to block sync'})`);
+      record(`churn joiner finished at latest_block_height=${syncInfo.latest_block_height}`
+        + ` (${churnRestoreHeight === undefined
+          ? 'fell back to block sync'
+          : `restored a snapshot at height ${churnRestoreHeight}`})`);
 
       await assertLocalServicesRunning([churnConfig]);
     });
@@ -770,12 +788,15 @@ describe('Local Network State Sync', function main() {
 
       expect(syncInfo, 're-joined node Tenderdash never responded on RPC').to.exist();
       expect(syncInfo.catching_up, 're-joined node is still catching up').to.be.false();
-      expect(
-        parseInt(syncInfo.earliest_block_height, 10),
-        're-joined node replayed blocks from genesis instead of state syncing',
-      ).to.be.above(1);
 
-      record(`re-joined node reached earliest_block_height=${syncInfo.earliest_block_height}`
+      const restoreHeight = await getStateSyncRestoreHeight(dockerCompose, joinConfig);
+
+      expect(
+        restoreHeight,
+        're-joined node replayed blocks from genesis instead of restoring a snapshot',
+      ).to.be.a('number');
+
+      record(`re-joined node restored a snapshot at height ${restoreHeight}`
         + ` after ${tenderdashObservations.length} state sync observations`);
     });
   });
@@ -828,13 +849,19 @@ describe('Local Network State Sync', function main() {
         'fallback join node never finished syncing without snapshots',
       ).to.be.false();
 
+      // The inverse of the join assertion: with nothing offered there must be
+      // no restore at all. Checked from the ABCI app rather than from
+      // earliest_block_height, which a backfill would make ambiguous.
+      const restoreHeight = await getStateSyncRestoreHeight(dockerCompose, fallbackConfig);
+
       expect(
-        parseInt(syncInfo.earliest_block_height, 10),
-        'fallback join node did not replay from genesis',
-      ).to.equal(1);
+        restoreHeight,
+        'fallback join node restored a snapshot even though serving was disabled',
+      ).to.equal(undefined);
 
       record(`fallback joiner block synced to latest_block_height=${syncInfo.latest_block_height}`
-        + ` with earliest_block_height=${syncInfo.earliest_block_height}`);
+        + ` with earliest_block_height=${syncInfo.earliest_block_height}`
+        + ' and no snapshot restore');
 
       const { lines } = await getStateSyncLogExcerpt(dockerCompose, fallbackConfig);
 
