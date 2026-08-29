@@ -135,12 +135,14 @@ pub fn wipe_drive_for_restore(drive: &Drive) -> Result<(), drive::error::Error> 
     Ok(())
 }
 
-/// The grovedb state sync wire protocol versions this node can serve and consume.
+/// The grovedb state sync protocol versions this node can serve and consume.
 ///
-/// This is THE single supported-set constant: when grovedb wire version 2 lands, add it
-/// here and add a `DriveAbciStateSyncVersions` const selecting it in rs-platform-version
-/// (`drive_abci.state_sync.protocol_version` is the version stamped on snapshots this
-/// node offers).
+/// Exactly one protocol version exists: state sync never shipped, so grovedb updates
+/// its replication protocol in place and stays at version 1. This single supported-set
+/// constant and the offered-snapshot validation against it exist so that any future
+/// incompatible protocol change fails fast on both the serving and consuming side
+/// instead of producing a corrupt restore. (`drive_abci.state_sync.protocol_version`
+/// is the version stamped on snapshots this node offers.)
 pub const SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS: &[u16] = &[1];
 
 /// Maximum accepted size (in bytes) of a single snapshot chunk, enforced before any
