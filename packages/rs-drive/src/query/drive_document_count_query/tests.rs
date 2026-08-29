@@ -3714,3 +3714,360 @@ mod time_range_picker_tests {
         );
     }
 }
+
+mod prefix_to_last {
+    //! The prefix-to-last count form: `count WHERE hashtag == X` on a
+    //! `rangeCountable` `[hashtag, postId]` index, with NO clause on the
+    //! last property. The count is the terminal property-name tree's own
+    //! element aggregate — the whole-prefix total — read (and proven) as
+    //! one element at `…/hashtag/X/postId`. Runs against the `tally`
+    //! fixture (the yappr-likes shape minus the ranked axis): grovedb's
+    //! query dispatch refuses to return INDEXED tree elements, so a
+    //! rankedCountable terminal stays unservable by this form — pinned
+    //! below — while a prefix-level ranking (`rankedCountable: { at }`)
+    //! keeps its terminal non-indexed and composes.
+
+    use super::*;
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_count_query::drive_dispatcher::{
+        DocumentCountRequest, DocumentCountResponse,
+    };
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::DocumentV0Setters;
+    use dpp::tests::json_document::json_document_to_contract;
+
+    fn setup_tally() -> (Drive, dpp::prelude::DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/tally/tally-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to parse the tally contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the tally contract");
+        (drive, contract)
+    }
+
+    fn insert_like(
+        drive: &Drive,
+        contract: &dpp::prelude::DataContract,
+        hashtag: &str,
+        post: &str,
+        seed: u64,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let document_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+        let mut doc: Document = document_type
+            .random_document(Some(seed), platform_version)
+            .expect("random document");
+        let mut props = StdBTreeMap::new();
+        props.insert("hashtag".to_string(), Value::Text(hashtag.to_string()));
+        props.insert("postId".to_string(), Value::Text(post.to_string()));
+        doc.set_properties(props);
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&doc, None)),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a like");
+    }
+
+    /// Three likes for `alpha` (across two posts) and one for `beta` —
+    /// the totals the tests below assert.
+    fn seed_likes(drive: &Drive, contract: &dpp::prelude::DataContract) {
+        insert_like(drive, contract, "alpha", "p1", 1);
+        insert_like(drive, contract, "alpha", "p1", 2);
+        insert_like(drive, contract, "alpha", "p2", 3);
+        insert_like(drive, contract, "beta", "p3", 4);
+    }
+
+    fn hashtag_equal(hashtag: &str) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(hashtag.to_string()),
+        }]
+    }
+
+    fn like_query<'a>(
+        contract: &'a dpp::prelude::DataContract,
+        where_clauses: Vec<WhereClause>,
+    ) -> DriveDocumentCountQuery<'a> {
+        let document_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+        // Off the contract's document-type map rather than the local
+        // `DocumentTypeRef`, so the borrow lives as long as `contract`.
+        let indexes = contract
+            .document_types()
+            .get("like")
+            .expect("like doctype exists")
+            .indexes();
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            indexes,
+            &where_clauses,
+            &[],
+        )
+        .expect("the prefix-to-last fallback must pick byHashtagPost");
+        assert_eq!(
+            index.properties.len(),
+            2,
+            "the picked index must be the compound byHashtagPost"
+        );
+        DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "like".to_string(),
+            index,
+            where_clauses,
+        }
+    }
+
+    /// The picker's coverage rules for the new form, over real contract
+    /// index sets: the fallback fires only for an unranked
+    /// `rangeCountable` index with exactly the leading properties
+    /// covered; a ranked terminal (an indexed tree grovedb refuses to
+    /// return) stays rejected, as does a countable-but-not-rangeCountable
+    /// compound; and an exact match keeps winning where one exists.
+    #[test]
+    fn picker_accepts_leading_coverage_on_unranked_range_countable_only() {
+        let platform_version = PlatformVersion::latest();
+
+        // The tally fixture: {hashtag} covers byHashtagPost's leading
+        // property → the fallback fires.
+        let (_drive, tally) = setup_tally();
+        let like_type_indexes = tally
+            .document_types()
+            .get("like")
+            .expect("like doctype exists")
+            .indexes();
+        let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            like_type_indexes,
+            &hashtag_equal("alpha"),
+            &[],
+        )
+        .expect("leading coverage of an unranked rangeCountable index must match");
+        assert_eq!(picked.properties.len(), 2);
+        assert_eq!(picked.properties[0].name, "hashtag");
+
+        // yappr-likes: the same shape but rankedCountable — the terminal
+        // property-name tree is a ProvableCountIndexedTree, which
+        // grovedb's query dispatch refuses to return, so the fallback
+        // must not select it.
+        let yappr = json_document_to_contract(
+            "tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("yappr fixture parses");
+        let yappr_like_indexes = yappr
+            .document_types()
+            .get("like")
+            .expect("like doctype exists")
+            .indexes();
+        assert!(
+            DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                yappr_like_indexes,
+                &hashtag_equal("alpha"),
+                &[],
+            )
+            .is_none(),
+            "a ranked terminal must stay rejected — its element is an indexed tree"
+        );
+
+        // family's [firstName, middleName, lastName] is countable but NOT
+        // rangeCountable: leading coverage must stay rejected.
+        let family = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("family fixture parses");
+        let person_indexes = family
+            .document_types()
+            .get("person")
+            .expect("person doctype exists")
+            .indexes();
+        assert!(
+            DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                person_indexes,
+                &vec![
+                    WhereClause {
+                        field: "firstName".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Text("Alice".to_string()),
+                    },
+                    WhereClause {
+                        field: "middleName".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Text("M".to_string()),
+                    },
+                ],
+                &[],
+            )
+            .is_none(),
+            "leading coverage without rangeCountable must stay rejected"
+        );
+    }
+
+    /// The motivating query, end to end: the whole-prefix total is one
+    /// element read on the no-proof path and one verified element on the
+    /// prove path, reconstructing the live root hash.
+    #[test]
+    fn equal_prefix_count_reads_and_proves_the_whole_prefix_total() {
+        let (drive, contract) = setup_tally();
+        let platform_version = PlatformVersion::latest();
+        seed_likes(&drive, &contract);
+
+        let query = like_query(&contract, hashtag_equal("alpha"));
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("the prefix count must read");
+        assert_eq!(
+            results[0].count,
+            Some(3),
+            "alpha's total must count across its posts"
+        );
+
+        let proof = query
+            .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+            .expect("the prefix count must prove");
+        let (root_hash, entries) = query
+            .verify_point_lookup_count_proof(&proof, platform_version)
+            .expect("the proof must verify");
+        let summed: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
+        assert_eq!(summed, 3, "the verified total must match the read");
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+            "the proof must reconstruct the live grovedb root hash"
+        );
+    }
+
+    /// An absent prefix counts zero — with a verifiable absence proof.
+    #[test]
+    fn absent_prefix_counts_zero_with_proof() {
+        let (drive, contract) = setup_tally();
+        let platform_version = PlatformVersion::latest();
+        seed_likes(&drive, &contract);
+
+        let query = like_query(&contract, hashtag_equal("missing"));
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("an absent prefix must read");
+        assert_eq!(results[0].count, Some(0));
+
+        let proof = query
+            .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+            .expect("an absent prefix must prove");
+        let (_root_hash, entries) = query
+            .verify_point_lookup_count_proof(&proof, platform_version)
+            .expect("the absence proof must verify");
+        let summed: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
+        assert_eq!(summed, 0, "the verified absence must count zero");
+    }
+
+    /// `hashtag IN […]` fans the same element read over the branches:
+    /// the no-proof read sums them; the proof verifies per branch.
+    #[test]
+    fn in_prefix_counts_per_branch() {
+        let (drive, contract) = setup_tally();
+        let platform_version = PlatformVersion::latest();
+        seed_likes(&drive, &contract);
+
+        let query = like_query(
+            &contract,
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Text("alpha".to_string()),
+                    Value::Text("beta".to_string()),
+                ]),
+            }],
+        );
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("the branched prefix count must read");
+        assert_eq!(results[0].count, Some(4), "alpha's 3 plus beta's 1");
+
+        let proof = query
+            .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+            .expect("the branched prefix count must prove");
+        let (_root_hash, entries) = query
+            .verify_point_lookup_count_proof(&proof, platform_version)
+            .expect("the branched proof must verify");
+        let summed: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
+        assert_eq!(summed, 4, "verified per-branch counts must sum to the read");
+    }
+
+    /// The public dispatcher serves the form end to end — the shape a
+    /// DAPI `GetDocumentsCount` request actually takes.
+    #[test]
+    fn dispatcher_serves_the_prefix_form() {
+        let (drive, contract) = setup_tally();
+        let platform_version = PlatformVersion::latest();
+        seed_likes(&drive, &contract);
+
+        let drive_config = DriveConfig::default();
+        let response = drive
+            .execute_document_count_request(
+                DocumentCountRequest {
+                    contract: &contract,
+                    document_type: contract
+                        .document_type_for_name("like")
+                        .expect("like doctype exists"),
+                    where_clauses: hashtag_equal("alpha"),
+                    resolved_time_ranges: vec![],
+                    order_clauses: Vec::new(),
+                    mode: CountMode::Aggregate,
+                    limit: None,
+                    prove: false,
+                    drive_config: &drive_config,
+                },
+                None,
+                platform_version,
+            )
+            .expect("the dispatcher must serve the prefix form");
+        let DocumentCountResponse::Aggregate(total) = response else {
+            panic!("expected an aggregate response, got a different variant");
+        };
+        assert_eq!(
+            total, 3,
+            "the aggregate total must be alpha's whole-prefix count"
+        );
+    }
+}

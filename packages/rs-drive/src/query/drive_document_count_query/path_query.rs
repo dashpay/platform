@@ -805,10 +805,24 @@ impl DriveDocumentCountQuery<'_> {
     ///       the subquery's single `Key(value)`; `set_subquery_path`
     ///       ends at the terminator's property-name segment.
     ///
+    /// - **Prefix-to-last** (every property except the LAST covered, on
+    ///   a `range_countable` index): the selector is the terminal
+    ///   property-name tree's own element — a count-bearing tree whose
+    ///   aggregate is the whole-prefix total — addressed by its level
+    ///   key one layer below the last pin's value tree:
+    ///   - Equal-only pins: path `[..., pin_field, pin_value]`, single
+    ///     `Key(last_field)`.
+    ///   - With an `In` pin: same compound shape as above, with the
+    ///     post-In Equal `(name, value)` pairs in `set_subquery_path`
+    ///     (all full pairs — nothing is hoisted) and the subquery
+    ///     `Key(last_field)`.
+    ///
     /// ## Errors
     ///
     /// Rejects shapes the builder doesn't support:
-    /// - Partial coverage (uncovered index property)
+    /// - Partial coverage (an uncovered index property, except the
+    ///   trailing free property of the prefix-to-last form on a
+    ///   `range_countable` index)
     /// - More than one `In` clause
     /// - Any non-`Equal` / non-`In` operator (defense-in-depth; mode
     ///   detection already filters these out)
@@ -852,25 +866,34 @@ impl DriveDocumentCountQuery<'_> {
         // the divergence rationale).
         let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
         let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
+        // Set when the LAST property carries no clause — the
+        // prefix-to-last form on a `range_countable` index. The count is
+        // then the terminal property-name tree's own element aggregate
+        // (the whole-prefix total), addressed by this level key from the
+        // last pin's value tree.
+        let mut prefix_to_last_key: Option<Vec<u8>> = None;
 
         for (position, prop) in self.index.properties.iter().enumerate() {
             // The path segment is the level key — grid-qualified for a
             // time-range index's first property — while the clause lookup
             // and value serialization stay on the bare property name.
             let level_key = self.index.level_key(position, &prop.name);
-            let clause = self
-                .where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name)
-                .ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                        "prove count requires the where clauses to fully cover the \
-                         countable index; one or more index properties have no \
-                         matching `==` or `in` clause — use a more specific index \
-                         (define a `countable: true` index whose properties exactly \
-                         match the clauses) or use `prove=false`",
-                    ))
-                })?;
+            let Some(clause) = self.where_clauses.iter().find(|wc| wc.field == prop.name) else {
+                if position + 1 == self.index.properties.len() && self.index.range_countable {
+                    prefix_to_last_key = Some(level_key.into_bytes());
+                    break;
+                }
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "prove count requires the where clauses to cover the countable \
+                     index; one or more index properties have no matching `==` or \
+                     `in` clause — only the LAST property of a `rangeCountable: \
+                     true` index may be left free (the prefix-to-last form). Use a \
+                     more specific index (define a `countable: true` index whose \
+                     properties exactly match the clauses) or use `prove=false`",
+                    ),
+                ));
+            };
 
             match clause.operator {
                 WhereOperator::Equal => {
@@ -973,6 +996,37 @@ impl DriveDocumentCountQuery<'_> {
         // tree. See the book's "Count Trees and Provable Counts"
         // chapter for the layout.
         const COUNT_TREE_KEY: u8 = 0;
+
+        // Prefix-to-last selector: the terminal property-name tree —
+        // count-bearing under `rangeCountable`, its aggregate the sum of
+        // every last-property value tree's count, i.e. the whole-prefix
+        // total — read as one element by its level key from the last
+        // pin's value tree. Structurally the `Key([0])` shape with the
+        // terminal level key in place of the bucket key: nothing is
+        // hoisted, so the `In` branches keep their full trailing pairs
+        // in `set_subquery_path`.
+        if let Some(terminal_level_key) = prefix_to_last_key {
+            return Ok(match in_outer_keys {
+                None => {
+                    let mut query = Query::new();
+                    query.insert_key(terminal_level_key);
+                    PathQuery::new(base_path, SizedQuery::new(query, None, None))
+                }
+                Some(keys) => {
+                    let mut outer_query = Query::new();
+                    for key in keys {
+                        outer_query.insert_key(key);
+                    }
+                    let mut subquery = Query::new();
+                    subquery.insert_key(terminal_level_key);
+                    if !subquery_path_extension.is_empty() {
+                        outer_query.set_subquery_path(subquery_path_extension);
+                    }
+                    outer_query.set_subquery(subquery);
+                    PathQuery::new(base_path, SizedQuery::new(outer_query, None, None))
+                }
+            });
+        }
 
         match in_outer_keys {
             None => {

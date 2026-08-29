@@ -14,22 +14,27 @@ use std::collections::{BTreeMap, BTreeSet};
 impl DriveDocumentCountQuery<'_> {
     /// Finds a `countable: true` index whose properties **exactly match** the
     /// indexable (Equal/In) where-clause fields — every index property has a
-    /// corresponding clause AND every clause's field appears in the index.
+    /// corresponding clause AND every clause's field appears in the index —
+    /// or, failing that, a `rangeCountable: true` index whose properties
+    /// match the clause fields **plus one trailing free property**.
     ///
-    /// Exact coverage is the contract for both no-proof and prove count
-    /// paths: a countable index counts exactly what it indexes, and queries
-    /// against partially-covered indexes are rejected with a clear error
-    /// directing the caller at the index-design fix. This avoids the
-    /// product-of-uncovered-branching-factors walk that a prefix-match
-    /// approach would silently fall through to, and keeps the storage's
-    /// "count maintained only at the terminal level" trade-off intact (no
-    /// need to maintain counts at intermediate index levels just to serve
-    /// partial-coverage queries cheaply).
+    /// Exact coverage is the preferred contract for both no-proof and prove
+    /// count paths: a countable index counts exactly what it indexes. The
+    /// prefix-to-last fallback exists because a `rangeCountable` index also
+    /// maintains one aggregate no exact-coverage query can reach — its
+    /// terminal property-name tree is count-bearing, and that tree's own
+    /// element carries the **whole-prefix** total (every last-property value
+    /// tree contributes its count to it). So `count WHERE hashtag == X` on
+    /// `[hashtag, postId]` is one element read at `…/hashtag/X/postId`, not
+    /// a walk — the same shape as the exact form, one level up. Any other
+    /// partial coverage stays rejected: intermediate levels carry no
+    /// aggregates, so there is nothing cheap to read.
     ///
     /// Returns `None` if:
     /// - Any where clause uses an operator other than `Equal` / `In`.
-    /// - The set of indexable where-clause fields doesn't exactly equal the
-    ///   set of properties of any single `countable: true` index.
+    /// - The set of indexable where-clause fields neither exactly equals the
+    ///   property set of a `countable: true` index nor exactly covers all
+    ///   but the last property of a `rangeCountable: true` index.
     ///
     /// For the `documents_countable: true` case (total count with no where
     /// clauses), the dispatcher reads the document-type primary-key tree's
@@ -88,6 +93,46 @@ impl DriveDocumentCountQuery<'_> {
                 .iter()
                 .all(|prop| indexable_fields.contains(prop.name.as_str()));
             if all_covered {
+                return Some(index);
+            }
+        }
+
+        // Prefix-to-last fallback: exactly the first `len - 1` properties
+        // are covered and the last one is free — servable only when the
+        // terminal property-name tree is count-bearing, i.e.
+        // `rangeCountable`. The exact form above stays preferred so a
+        // shorter exact index (one merk layer cheaper) keeps winning when
+        // both exist. Position matters here, unlike the set-equality
+        // form: a clause on the LAST property with an earlier one free is
+        // not a prefix and reads nothing meaningful.
+        for index in indexes.values() {
+            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+                continue;
+            }
+            if !index.range_countable || !index.countable.is_countable() {
+                continue;
+            }
+            // A ranked axis makes the terminal property-name tree an
+            // INDEXED tree, which grovedb's query dispatch refuses to
+            // return as a result element ("path_queries can not refer to
+            // trees") — the element read this form performs would have
+            // nothing legal to select. Skipped until that dispatch admits
+            // indexed elements; a prefix-level ranking
+            // (`rankedCountable: { at }`) keeps its terminal non-indexed
+            // and stays servable.
+            if index.ranked_countable || index.ranked_summable || index.ranked_averageable {
+                continue;
+            }
+            let Some(leading_len) = index.properties.len().checked_sub(1) else {
+                continue;
+            };
+            if leading_len != indexable_fields.len() || leading_len == 0 {
+                continue;
+            }
+            let leading_covered = index.properties[..leading_len]
+                .iter()
+                .all(|prop| indexable_fields.contains(prop.name.as_str()));
+            if leading_covered {
                 return Some(index);
             }
         }
