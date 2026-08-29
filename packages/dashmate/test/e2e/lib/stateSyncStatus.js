@@ -256,6 +256,44 @@ export async function getStateSyncLogExcerpt(dockerCompose, config, tail = 4000)
 }
 
 /**
+ * Raw tail of one service's logs, for when a node fails in a way the filtered
+ * state sync excerpt cannot explain.
+ *
+ * @param {DockerCompose} dockerCompose
+ * @param {Config} config
+ * @param {string} serviceName
+ * @param {number} [tail]
+ * @return {Promise<string[]>}
+ */
+export async function getServiceLogTail(dockerCompose, config, serviceName, tail = 80) {
+  try {
+    const { out } = await dockerCompose.logs(config, [serviceName], { tail });
+
+    return out.split('\n').map((line) => line.trimEnd()).filter(Boolean);
+  } catch (error) {
+    return [`unable to read ${serviceName} logs: ${error.message}`];
+  }
+}
+
+/**
+ * State of every container of a node, for diagnosing a service that came up
+ * and then died.
+ *
+ * @param {DockerCompose} dockerCompose
+ * @param {Config} config
+ * @return {Promise<string[]>}
+ */
+export async function getContainerStates(dockerCompose, config) {
+  try {
+    const list = await dockerCompose.getContainersList(config, { all: true });
+
+    return list.map((entry) => `${entry.Service || entry.Name}: ${entry.State}`);
+  } catch (error) {
+    return [`unable to list containers: ${error.message}`];
+  }
+}
+
+/**
  * Block until a joining node reports that a snapshot restore is genuinely
  * under way, so a caller can disturb the network at a moment that matters.
  *

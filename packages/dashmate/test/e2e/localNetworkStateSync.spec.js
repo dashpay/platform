@@ -15,6 +15,8 @@ import seedPlatformState, {
 } from './lib/seedPlatformState.js';
 import verifySeededState, { describeVerification } from './lib/verifySeededState.js';
 import {
+  getContainerStates,
+  getServiceLogTail,
   getStateSyncLogExcerpt,
   waitForStateSyncActivity,
   watchStateSync,
@@ -152,6 +154,30 @@ describe('Local Network State Sync', function main() {
     }
 
     return checkpointHeights;
+  }
+
+  /**
+   * Record everything needed to explain a joiner that failed to sync.
+   *
+   * A sync assertion that fails with nothing but "never answered RPC" cannot
+   * be acted on, and by the time the suite tears down the containers are gone.
+   *
+   * @param {Config} config
+   * @param {string} reason
+   * @return {Promise<void>}
+   */
+  async function dumpJoinerDiagnostics(config, reason) {
+    record(`DIAGNOSTICS for ${config.getName()}: ${reason}`);
+
+    const states = await getContainerStates(dockerCompose, config);
+    record('  container states:');
+    states.forEach((line) => record(`    ${line}`));
+
+    for (const service of ['drive_tenderdash', 'drive_abci', 'core']) {
+      const lines = await getServiceLogTail(dockerCompose, config, service);
+      record(`  last ${lines.length} ${service} log lines:`);
+      lines.forEach((line) => record(`    ${line}`));
+    }
   }
 
   /**
@@ -501,6 +527,10 @@ describe('Local Network State Sync', function main() {
         dapiObservations,
         dapiErrors,
       } = await watchStateSync(joinConfig, { log: record });
+
+      if (!syncInfo) {
+        await dumpJoinerDiagnostics(joinConfig, 'joiner never answered Tenderdash RPC');
+      }
 
       expect(syncInfo, 'join node Tenderdash never responded on RPC').to.exist();
       expect(syncInfo.catching_up, 'join node is still catching up').to.be.false();
