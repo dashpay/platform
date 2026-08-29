@@ -200,10 +200,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// A hit means the asset lock is a double spend of a settled outpoint.
 /// Peers reject such a transaction at the mempool boundary and relay
 /// nothing back — Core has not sent BIP61 `reject` messages by default
-/// since 0.17 — so the lock can neither be mined nor IS-locked, and a
-/// proof wait on it never terminates. Callers turn a hit into
-/// [`PlatformWalletError::AssetLockInputContested`] instead of
-/// (re-)broadcasting into that void.
+/// since 0.17 — so while the spender stands the lock can neither be mined
+/// nor IS-locked, and an unbounded proof wait on it never terminates.
+/// Callers use a hit to BOUND that wait and, if it expires with the
+/// conflict still standing, to report
+/// [`PlatformWalletError::AssetLockInputContested`].
+///
+/// **A hit does not refuse the resume**, and must not be made to. Part of
+/// the history this reads is rebuilt at load from persisted rows, and such
+/// a record is never checked against the active chain: a wallet offline
+/// while the spender's block was reorganized out restores the sighting all
+/// the same, and nothing repairs it — key-wallet demotes a record only
+/// when that transaction is re-observed, and a transaction absent from
+/// both the replacement chain and every mempool never is. Short-circuiting
+/// ahead of the (re-)broadcast and the proof wait on that evidence would
+/// hand back the same verdict on every resume and every launch for a lock
+/// that can in fact still confirm. Running the wait keeps the recovery
+/// path open and gives live synchronization the window in which it can
+/// retract the sighting.
 ///
 /// **The gate is `is_confirmed()`, deliberately not `is_chain_locked()`.**
 /// Under the default `keep-finalized-transactions = OFF` build,
@@ -218,12 +232,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// here.** Reporting the conflict on a confirmed sibling is fund-safe:
 /// that sibling is necessarily one of this wallet's own transactions
 /// (nobody else can sign this wallet's outpoints), so the value it
-/// carries is already the wallet's, and stopping the doomed wait costs
+/// carries is already the wallet's, and bounding the doomed wait costs
 /// nothing — the lock is unrelayable for as long as the sibling stands.
-/// What no evidence reachable here justifies is *discarding* the tracked
-/// lock: the sibling's block can still reorg out, at which point a peer
-/// can replay the already-broadcast lock and it can confirm — with its
-/// tracking state gone, the confirmed lock's credits would be stranded.
+/// What no evidence reachable here justifies is *refusing* the resume
+/// outright (see above) or *discarding* the tracked lock: the sibling's
+/// block can still reorg out, at which point a peer can replay the
+/// already-broadcast lock and it can confirm — with its tracking state
+/// gone, the confirmed lock's credits would be stranded.
 ///
 /// A terminal verdict would need proof that the spender's block is an
 /// ancestor of the FINALIZED chain, and the wallet layer cannot produce
@@ -349,6 +364,25 @@ fn first_confirmed_input_conflict(
     None
 }
 
+/// The deadline a proof wait runs under once
+/// [`first_confirmed_input_conflict`] has reported a sighting.
+///
+/// The sighting cannot refuse the wait (see that function), but it does cap
+/// it at [`UNCONFIRMED_BROADCAST_PROOF_TIMEOUT`] — shortening a caller's
+/// longer budget as well as replacing an unbounded one. While the spender
+/// stands the lock is unrelayable, so a caller's extra minutes only delay
+/// the verdict a host needs in order to explain the stalled funding
+/// attempt. Nothing is given up on the recovery path the cap exists to keep
+/// open: a proof that has already arrived resolves on `wait_for_proof`'s
+/// first pass, straight from the record, before any deadline is consulted.
+fn conflict_capped_proof_wait(timeout: Option<Duration>) -> Option<Duration> {
+    Some(
+        timeout.map_or(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT, |caller| {
+            caller.min(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT)
+        }),
+    )
+}
+
 /// Seed the double-spend screen's session memory from freshly restored
 /// state, before any resume runs.
 ///
@@ -400,6 +434,160 @@ pub(crate) fn seed_observed_input_conflicts(info: &PlatformWalletInfo) {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Re-run the double-spend screen once a proof wait has expired, and
+    /// render a conflict that still stands as the verdict explaining that
+    /// expiry.
+    ///
+    /// Reading the screen AFTER the wait rather than before it is what
+    /// keeps a restored sighting from condemning a lock forever. Restored
+    /// block records enter history from persisted rows without ever being
+    /// checked against the active chain, and no event demotes one whose
+    /// block was reorganized out while the wallet was offline; a resume
+    /// that refused to broadcast or wait on that evidence would report the
+    /// same conflict on every launch for the rest of the lock's life.
+    /// Running the wait first gives live synchronization its window: a
+    /// proof that arrives settles the lock and this is never reached, and
+    /// a sighting live history has retracted meanwhile leaves the caller's
+    /// pre-existing outcome alone.
+    ///
+    /// The verdict is always the provisional
+    /// [`PlatformWalletError::AssetLockInputContested`] — see
+    /// [`first_confirmed_input_conflict`] for why nothing reachable here
+    /// can prove the spender's block is on the finalized branch.
+    ///
+    /// A proof still outranks the sighting at this point, exactly as it
+    /// does during the wait. The wait's expiry is a deadline race, not a
+    /// statement about the lock: `wait_for_proof` re-reads the record at
+    /// the top of each iteration and then selects between the notification
+    /// and the deadline, so finality becoming visible while the deadline
+    /// branch wins arrives one instant too late to be seen there — and a
+    /// concurrent resume under a longer budget can equally have attached
+    /// the proof and advanced the row while this one was expiring. Either
+    /// way a sibling is still sitting in history, so the scan alone would
+    /// answer "contested" for a lock that is already settled. A
+    /// zero-duration proof probe runs first (a single local
+    /// record/persister check — the same one the rejected-re-broadcast
+    /// paths use, and no network wait), because only it can reach the
+    /// persister for a record the in-memory map has evicted.
+    ///
+    /// Everything the verdict is then built from is read from ONE wallet
+    /// snapshot: the funding transaction's own finality — its record, or the
+    /// finalized-txid set a promotion that evicted the record leaves behind —
+    /// the tracked row's proof and status, and the sibling scan. Splitting
+    /// those reads is what let the race back in — finality landing after the
+    /// probe's own lookup but before a later read left a locally final lock
+    /// reported as contested, because the later read consulted only the row,
+    /// which a record-only finality never advances. Holding one guard makes
+    /// the three answers describe the same instant.
+    ///
+    /// Every suppression leaves the caller's error alone rather than
+    /// replacing it: the row is left where it was, so the next resume
+    /// returns the proof from the record on `wait_for_proof`'s first pass.
+    async fn input_conflict_verdict(&self, out_point: &OutPoint) -> Option<PlatformWalletError> {
+        if self
+            .wait_for_proof(out_point, Some(Duration::ZERO))
+            .await
+            .is_ok()
+        {
+            tracing::info!(
+                outpoint = %out_point,
+                "resume_asset_lock: the proof wait expired, but the local record \
+                 already holds finality — the input conflict is not the \
+                 explanation and no contested verdict is reported"
+            );
+            return None;
+        }
+
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id)?;
+        let lock = info.tracked_asset_locks.get(out_point)?;
+        // Finality that landed during the probe. The record can carry it
+        // while the row still says `Broadcast` with no proof attached —
+        // `LockNotifyHandler` wakes waiters without advancing the status —
+        // so the row check below cannot stand in for this one.
+        //
+        // Asked of the record AND of the account's finalized-txid set,
+        // because the promotion that grants finality is also what takes the
+        // record away: under the default `keep-finalized-transactions`
+        // configuration a chainlocked record is evicted and only its txid
+        // retained, so a chainlock landing between the probe and this
+        // snapshot leaves nothing for a record lookup to find. Reading only
+        // the record there condemned a locally final lock on the strength of
+        // a sibling the promotion had not touched.
+        {
+            use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+            let wallet_chain_lock_height = info
+                .core_wallet
+                .metadata
+                .last_applied_chain_lock
+                .as_ref()
+                .map(|chain_lock| chain_lock.block_height);
+            let networks_match = info.network() == self.sdk.network;
+            let record_is_final = super::proof::funding_tx_record(
+                &info.core_wallet.accounts,
+                lock.account_index,
+                &out_point.txid,
+            )
+            .is_some_and(|record| {
+                super::proof::record_holds_local_finality(
+                    &record,
+                    wallet_chain_lock_height,
+                    networks_match,
+                )
+            });
+            if record_is_final
+                || super::proof::funding_tx_is_finalized(
+                    &info.core_wallet.accounts,
+                    lock.account_index,
+                    &out_point.txid,
+                )
+            {
+                tracing::info!(
+                    outpoint = %out_point,
+                    "resume_asset_lock: the proof wait expired, but the funding \
+                     transaction reached finality while it was being read — the \
+                     input conflict is not the explanation and no contested \
+                     verdict is reported"
+                );
+                return None;
+            }
+        }
+        // The screen speaks only for the two proof-less statuses
+        // (`resume_asset_lock` screens on exactly those), and a row carrying
+        // a proof is settled by evidence this scan cannot outrank — see the
+        // status match in `resume_asset_lock`.
+        if lock.proof.is_some()
+            || !matches!(
+                lock.status,
+                AssetLockStatus::Built | AssetLockStatus::Broadcast
+            )
+        {
+            tracing::info!(
+                outpoint = %out_point,
+                status = ?lock.status,
+                has_proof = lock.proof.is_some(),
+                "resume_asset_lock: the proof wait expired, but the tracked lock \
+                 has since been settled — no contested verdict is reported"
+            );
+            return None;
+        }
+        let (input, spent_by, height) = first_confirmed_input_conflict(info, lock)?;
+        tracing::warn!(
+            outpoint = %out_point,
+            %input,
+            %spent_by,
+            ?height,
+            "resume_asset_lock: the proof wait expired with the input conflict \
+             still standing; reporting it as the provisional verdict"
+        );
+        Some(PlatformWalletError::AssetLockInputContested {
+            out_point: *out_point,
+            input,
+            spent_by,
+            height,
+        })
+    }
+
     /// Resume a tracked asset lock from whatever stage it's at.
     ///
     /// Looks up the tracked lock by `txid`, then:
@@ -436,19 +624,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// record; on the `Broadcast` arm it is reported as
     /// [`PlatformWalletError::TransactionBroadcastUnconfirmed`].
     ///
-    /// A `Built` / `Broadcast` lock is first screened by
-    /// [`first_confirmed_input_conflict`]; a hit short-circuits without
-    /// broadcasting or waiting, because such a lock is a double spend that
-    /// no peer will relay while the spender stands. The hit ALWAYS raises
-    /// the provisional [`PlatformWalletError::AssetLockInputContested`],
-    /// which keeps the lock tracked for a later retry: stopping the doomed
-    /// broadcast-and-wait is all this evidence supports. Proving the
-    /// spender's block is on the finalized branch would take an ancestry
-    /// predicate the wallet does not have — chainlock contexts and applied
-    /// chainlock heights are promotion artifacts, not ancestry proofs — so
-    /// the terminal [`PlatformWalletError::AssetLockInputConflict`] is
-    /// never constructed here. A conflict that persists across sessions is
-    /// in practice permanent, but acting on that (discarding the tracked
+    /// A `Built` / `Broadcast` lock is screened by
+    /// [`first_confirmed_input_conflict`], and a hit never refuses the
+    /// resume. It withdraws the unbounded wait — a double spend no peer
+    /// relays is not evidence the transaction is on the network — and the
+    /// verdict is read afterwards by [`Self::input_conflict_verdict`]: a
+    /// proof that arrives during the bounded wait settles the lock
+    /// normally, and a conflict the wait did not clear is reported as the
+    /// provisional [`PlatformWalletError::AssetLockInputContested`], which
+    /// keeps the lock tracked for a later retry. Blocking the
+    /// broadcast-and-wait outright is what this evidence does NOT support:
+    /// the screen also reads records the load path rebuilt from persisted
+    /// rows, which no event can demote once their block has been
+    /// reorganized out behind an offline wallet, so a pre-emptive refusal
+    /// would return the same verdict on every launch for a lock that is
+    /// free to confirm. Proving the spender's block is on the finalized
+    /// branch would take an ancestry predicate the wallet does not have —
+    /// chainlock contexts and applied chainlock heights are promotion
+    /// artifacts, not ancestry proofs — so the terminal
+    /// [`PlatformWalletError::AssetLockInputConflict`] is never
+    /// constructed here. A conflict that persists across sessions is in
+    /// practice permanent, but acting on that (discarding the tracked
     /// lock) is host and user policy; the SDK does not license it
     /// unilaterally on this evidence. The screen is one-sided — read its
     /// docs before treating a clean pass as evidence the lock is alive.
@@ -506,38 +702,36 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             )
         };
 
-        // Fail before the `Built` / `Broadcast` arms reach their
-        // (re-)broadcast and their proof wait: the transaction is a double
-        // spend of a settled outpoint, so the broadcast is discarded
-        // without a reply and the wait — unbounded for the user-facing
-        // funding flows — would never return. The typed error is what lets
-        // a host explain the stalled funding attempt instead of showing a
-        // spinner forever.
+        // A sighting does NOT stop the resume. It cannot: the screen reads
+        // records the load path rebuilt from persisted rows, and a block
+        // record restored that way has never been checked against the
+        // active chain. A wallet that was offline while the spender's block
+        // was reorganized out restores the sighting anyway, and nothing
+        // repairs it — key-wallet demotes a record only when that same
+        // transaction is re-observed, and a transaction absent from both
+        // the replacement chain and every mempool is never observed again.
+        // Refusing the (re-)broadcast and the proof wait on that evidence
+        // would return the same verdict on every resume and every launch
+        // for a lock that is in fact free to confirm.
+        //
+        // So the sighting only bounds the wait (below): it withdraws the
+        // unbounded one, because it is not evidence that the transaction is
+        // on the network. The verdict is read afterwards, from whatever
+        // live synchronization left behind while the wait ran — a proof
+        // that arrives settles the lock outright, and a conflict the wait
+        // did not clear becomes the error explaining the expiry.
         if let Some((input, spent_by, height)) = input_conflict {
             tracing::warn!(
                 outpoint = %out_point,
                 %input,
                 %spent_by,
                 ?height,
-                "resume_asset_lock: asset lock double-spends an outpoint \
-                 already consumed by a confirmed transaction; it cannot \
-                 confirm while that spender stands"
+                "resume_asset_lock: asset lock double-spends an outpoint a \
+                 confirmed transaction of this wallet already consumed; \
+                 resuming under a bounded wait rather than refusing, since \
+                 the sighting may be restored evidence no live event can \
+                 retract"
             );
-            // One verdict, always provisional. The screen proves the
-            // broadcast-and-wait is doomed while the spender stands; it
-            // cannot prove the spender's block is on the finalized branch
-            // (see `first_confirmed_input_conflict` for why every finality
-            // signal reachable from here is a promotion artifact). The
-            // terminal variant is the one that licenses discarding tracked
-            // state, and discarding a lock whose sibling turns out to sit
-            // on a losing branch would strand the credits of a lock a peer
-            // can still replay — so it is never raised here.
-            return Err(PlatformWalletError::AssetLockInputContested {
-                out_point: *out_point,
-                input,
-                spent_by,
-                height,
-            });
         }
 
         // 2. Resume from the current status.
@@ -545,7 +739,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             AssetLockStatus::Built => {
                 // Re-broadcast and wait for proof.
                 //
-                // Only a DEFINITE rejection stops the resume. `MaybeSent`
+                // No verdict this broadcaster can return ends the resume by
+                // itself. `MaybeSent`
                 // means the outcome is unknown — and for a lock stuck at
                 // `Built` that is the expected answer when the app died
                 // between a successful broadcast and this status advance:
@@ -568,8 +763,39 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // failure into a permanent hang. Bound it, and translate the
                 // expiry back into the `TransactionBroadcastUnconfirmed` the
                 // caller used to get immediately.
-                let maybe_sent_reason = match self.broadcaster.broadcast(&tx).await {
-                    Ok(_) => None,
+                //
+                // A DEFINITE `Rejected` is scoped to the attempt that
+                // produced it, exactly as on the `Broadcast` arm below: with
+                // the production `SpvBroadcaster` it is reachable only from
+                // an unstarted client and dash-spv's zero-connected-peers
+                // check, so it means "*this* send never left the device". It
+                // is not a statement about the row. A lock sits at `Built`
+                // after a SUCCESSFUL broadcast too — the app killed between
+                // the send and the status advance is the very case this arm
+                // exists for — so the original may be in a mempool or already
+                // mined, and the record may already carry its proof. The
+                // rejection is therefore handled here rather than returned:
+                // probe the local record once without waiting, and where a
+                // conflict was sighted go on to the bounded wait, which is
+                // the only path that can produce the sighting's verdict.
+                //
+                // What must NOT happen is the raw conversion. `Rejected`
+                // becomes `TransactionBroadcast`, the FFI's definite-
+                // rejection code 26, whose contract is that Core rejected the
+                // transaction, the inputs' reservation was released, and a
+                // rebuild is safe. Only the initial build path performs that
+                // untrack-and-release; the resume keeps both the row and its
+                // reservation, so a host honouring code 26 here would rebuild
+                // from other UTXOs and create a SECOND asset lock beside a
+                // possibly-live one. The non-terminal
+                // `TransactionBroadcastUnconfirmed` is the contract that
+                // matches what this arm actually knows: outcome unknown,
+                // inputs still reserved, do not retry.
+                let mut local_proof = None;
+                let mut maybe_sent_reason = None;
+                let mut undispatched = None;
+                match self.broadcaster.broadcast(&tx).await {
+                    Ok(_) => {}
                     Err(BroadcastError::MaybeSent { reason }) => {
                         tracing::warn!(
                             outpoint = %out_point,
@@ -579,45 +805,153 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                              have rejected it — the broadcaster cannot tell); advancing to \
                              Broadcast and waiting for proof under a bounded timeout"
                         );
-                        Some(reason)
+                        maybe_sent_reason = Some(reason);
                     }
-                    Err(rejected) => return Err(rejected.into()),
-                };
-                let cs = self
-                    .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
-                    .await?;
-                self.queue_asset_lock_changeset(cs);
-                let proof = match (&maybe_sent_reason, timeout) {
-                    // Ambiguous re-broadcast AND an unbounded wait: the only
-                    // combination that can hang forever. Substitute the bound
-                    // and translate its expiry back into the broadcast error
-                    // the caller used to get immediately.
-                    //
-                    // Callers that passed their own timeout are left exactly
-                    // as they were, `FinalityTimeout` and all — the shielded
-                    // seed pool treats that error as a pacing signal and
-                    // resumes the lock later, so re-typing it would break a
-                    // working flow to fix an unrelated one.
-                    (Some(reason), None) => {
-                        match self
-                            .wait_for_proof(out_point, Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT))
-                            .await
-                        {
-                            Ok(proof) => proof,
-                            Err(PlatformWalletError::FinalityTimeout(_)) => {
+                    Err(rejected @ BroadcastError::Rejected { .. }) => {
+                        match self.wait_for_proof(out_point, Some(Duration::ZERO)).await {
+                            Ok(proof) => {
+                                tracing::info!(
+                                    outpoint = %out_point,
+                                    error = %rejected,
+                                    "resume_asset_lock: re-broadcast of a Built lock was \
+                                     rejected before dispatch, but the local record already \
+                                     holds finality — completing the resume from the local \
+                                     proof"
+                                );
+                                local_proof = Some(proof);
+                            }
+                            Err(probe_err) => {
+                                // No proof, and this attempt never left the
+                                // device. Without a sighting there is nothing
+                                // this call can still learn — the `Broadcast`
+                                // arm returns the same unknown-outcome error
+                                // here, and for the same reason.
+                                if input_conflict.is_none() {
+                                    tracing::warn!(
+                                        outpoint = %out_point,
+                                        error = %rejected,
+                                        probe = %probe_err,
+                                        "resume_asset_lock: re-broadcast of a Built lock \
+                                         was rejected before dispatch and no local proof \
+                                         exists — this attempt proves nothing about an \
+                                         earlier send; leaving the row tracked at Built \
+                                         and failing the resume as an unknown outcome"
+                                    );
+                                    return Err(
+                                        PlatformWalletError::TransactionBroadcastUnconfirmed(
+                                            format!(
+                                                "asset lock {out_point} remains tracked at \
+                                                 Built after the re-broadcast was rejected \
+                                                 before dispatch; an earlier broadcast may \
+                                                 still be on the network: {rejected}"
+                                            ),
+                                        ),
+                                    );
+                                }
+                                tracing::warn!(
+                                    outpoint = %out_point,
+                                    error = %rejected,
+                                    probe = %probe_err,
+                                    "resume_asset_lock: re-broadcast of a Built lock was \
+                                     rejected before dispatch with an input conflict \
+                                     sighted; entering the bounded proof wait, since the \
+                                     sighting bounds the wait rather than replacing it and \
+                                     its verdict is only readable afterwards"
+                                );
+                                undispatched = Some(rejected.to_string());
+                            }
+                        }
+                    }
+                }
+                let proof = if let Some(proof) = local_proof {
+                    proof
+                } else {
+                    // The status advance belongs to a send that actually
+                    // dispatched. An attempt rejected before dispatch leaves
+                    // the row exactly where it was, so the next resume
+                    // re-sends the transaction instead of dropping into the
+                    // `Broadcast` arm's wait for a send that never happened.
+                    if undispatched.is_none() {
+                        let cs = self
+                            .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
+                            .await?;
+                        self.queue_asset_lock_changeset(cs);
+                    }
+                    // An ambiguous re-broadcast and a conflict sighting both
+                    // deny this call positive evidence that the transaction is
+                    // on the network, and an unbounded wait without that
+                    // evidence pins the host thread rather than merely delaying
+                    // an answer. A clean broadcast with no sighting keeps the
+                    // caller's `None` exactly as before.
+                    let bounded = if input_conflict.is_some() {
+                        conflict_capped_proof_wait(timeout)
+                    } else if maybe_sent_reason.is_some() {
+                        timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT))
+                    } else {
+                        timeout
+                    };
+                    match self.wait_for_proof(out_point, bounded).await {
+                        Ok(proof) => proof,
+                        Err(expiry @ PlatformWalletError::FinalityTimeout(_)) => {
+                            // The wait has now given live synchronization its
+                            // window, so the screen is re-read and what it says
+                            // NOW decides. A conflict it still reports is the
+                            // honest explanation for the expiry; one it has
+                            // retracted meanwhile leaves the pre-existing
+                            // outcome untouched.
+                            if let Some(contested) = self.input_conflict_verdict(out_point).await {
+                                return Err(contested);
+                            }
+                            // A caller who chose its own bound is left exactly
+                            // as it was, `FinalityTimeout` and all. Every
+                            // re-typing below exists to keep an UNBOUNDED wait
+                            // from hanging on a signal that cannot arrive, and
+                            // that reason is absent the moment the caller
+                            // named a deadline: the shielded seed pool reads
+                            // `FinalityTimeout` as a pacing signal and resumes
+                            // the lock later, so substituting a do-not-retry
+                            // error for the bound it asked for would break a
+                            // working flow to fix an unrelated one. The check
+                            // comes FIRST because both translations below are
+                            // reachable under an explicit timeout.
+                            if timeout.is_some() {
+                                return Err(expiry);
+                            }
+                            // The wait ran on a send that never dispatched, so
+                            // the outcome of any earlier one is still unknown
+                            // and the row is still tracked and reserved. That
+                            // is the unknown-outcome contract, never the
+                            // definite-rejection code the raw conversion would
+                            // have produced.
+                            if let Some(rejection) = undispatched {
                                 return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
                                     format!(
+                                        "asset lock {} remains tracked at Built after the \
+                                         re-broadcast was rejected before dispatch and no \
+                                         InstantSend/ChainLock proof arrived within {:?}; an \
+                                         earlier broadcast may still be on the network: {}",
+                                        out_point, UNCONFIRMED_BROADCAST_PROOF_TIMEOUT, rejection
+                                    ),
+                                ));
+                            }
+                            // Ambiguous re-broadcast AND an unbounded wait: the
+                            // only combination that can hang forever. Its expiry
+                            // is translated back into the broadcast error the
+                            // caller used to get immediately.
+                            return Err(match &maybe_sent_reason {
+                                Some(reason) => {
+                                    PlatformWalletError::TransactionBroadcastUnconfirmed(format!(
                                         "asset lock {} was re-broadcast with an unknown \
                                          outcome and no InstantSend/ChainLock proof arrived \
                                          within {:?}: {}",
                                         out_point, UNCONFIRMED_BROADCAST_PROOF_TIMEOUT, reason
-                                    ),
-                                ))
-                            }
-                            Err(e) => return Err(e),
+                                    ))
+                                }
+                                None => expiry,
+                            });
                         }
+                        Err(e) => return Err(e),
                     }
-                    _ => self.wait_for_proof(out_point, timeout).await?,
                 };
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
@@ -775,10 +1109,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 let proof = if let Some(proof) = local_proof {
                     proof
                 } else {
-                    let bounded = timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT));
+                    let bounded = if input_conflict.is_some() {
+                        conflict_capped_proof_wait(timeout)
+                    } else {
+                        timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT))
+                    };
                     match self.wait_for_proof(out_point, bounded).await {
                         Ok(proof) => proof,
-                        Err(PlatformWalletError::FinalityTimeout(_)) if timeout.is_none() => {
+                        Err(expiry @ PlatformWalletError::FinalityTimeout(_)) => {
+                            // Same reading as the `Built` arm: the wait gave
+                            // live synchronization its window, so the screen
+                            // is re-read afterwards and a conflict that still
+                            // stands explains the expiry.
+                            if let Some(contested) = self.input_conflict_verdict(out_point).await {
+                                return Err(contested);
+                            }
+                            if timeout.is_some() {
+                                return Err(expiry);
+                            }
                             let reason = format!(
                                 "asset lock {} is tracked as broadcast but no \
                                  InstantSend/ChainLock proof arrived within {:?}; the \
@@ -1052,9 +1400,15 @@ mod tests {
 
     /// Captures the exact transaction passed to the resumed `Built` branch.
     /// Recovery must never rebuild a replacement transaction/outpoint.
+    ///
+    /// `reject` reproduces the production `SpvBroadcaster` before it is
+    /// connected: the send is recorded (it was attempted) and then refused
+    /// with the DEFINITE `Rejected`, which on that broadcaster means only
+    /// that this attempt never left the device.
     #[derive(Default)]
     struct RecordingBroadcaster {
         transactions: Mutex<Vec<Transaction>>,
+        reject: bool,
     }
 
     #[async_trait]
@@ -1064,6 +1418,11 @@ mod tests {
                 .lock()
                 .expect("recording broadcaster mutex")
                 .push(transaction.clone());
+            if self.reject {
+                return Err(BroadcastError::Rejected {
+                    reason: "simulated pre-send rejection".to_string(),
+                });
+            }
             Ok(transaction.txid())
         }
     }
@@ -1091,6 +1450,108 @@ mod tests {
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
             Ok(ClientStartState::default())
         }
+    }
+
+    /// Persistence stub that mutates the wallet from inside the N-th
+    /// persister-backed record lookup, placing a change at an interleaving
+    /// no test can otherwise reach.
+    ///
+    /// `wait_for_proof` reads the in-memory record under the wallet lock,
+    /// DROPS that guard, and only then falls back to the persister — so a
+    /// mutation applied here lands strictly after the probe's own read and
+    /// strictly before whatever the caller reads next. That is the exact gap
+    /// the verdict has to survive: finality (or a retraction) that becomes
+    /// visible between the probe and the snapshot the verdict is built from.
+    ///
+    /// The lookup is synchronous, so the wallet is taken with `try_write` —
+    /// sound precisely because no wallet guard is held across it.
+    struct InterleavedPersistence {
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        /// Zero-based index of the persister lookup to mutate on.
+        target_lookup: usize,
+        lookups: std::sync::atomic::AtomicUsize,
+        #[allow(clippy::type_complexity)]
+        mutate: Mutex<Option<Box<dyn FnOnce(&mut PlatformWalletInfo) + Send>>>,
+    }
+
+    impl InterleavedPersistence {
+        fn new(
+            wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+            wallet_id: WalletId,
+            target_lookup: usize,
+            mutate: impl FnOnce(&mut PlatformWalletInfo) + Send + 'static,
+        ) -> Self {
+            Self {
+                wallet_manager,
+                wallet_id,
+                target_lookup,
+                lookups: std::sync::atomic::AtomicUsize::new(0),
+                mutate: Mutex::new(Some(Box::new(mutate))),
+            }
+        }
+
+        fn fired(&self) -> bool {
+            self.mutate.lock().expect("interleave mutex").is_none()
+        }
+    }
+
+    impl PlatformWalletPersistence for InterleavedPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            _txid: &Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            let lookup = self
+                .lookups
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if lookup == self.target_lookup {
+                if let Some(mutate) = self.mutate.lock().expect("interleave mutex").take() {
+                    let mut wm = loop {
+                        if let Ok(guard) = self.wallet_manager.try_write() {
+                            break guard;
+                        }
+                        std::thread::yield_now();
+                    };
+                    mutate(
+                        wm.get_wallet_info_mut(&self.wallet_id)
+                            .expect("wallet must remain registered"),
+                    );
+                }
+            }
+            // This backend keeps no records of its own; the mutation above is
+            // its whole purpose.
+            Ok(None)
+        }
+    }
+
+    /// File `record` into the wallet's BIP44 account 0 — the synchronous
+    /// twin of `ConflictFixture::file_record`, for use from inside
+    /// [`InterleavedPersistence`].
+    fn insert_record(info: &mut PlatformWalletInfo, record: TransactionRecord) {
+        info.core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("funded fixture has BIP44 account 0")
+            .transactions_mut()
+            .insert(record.txid, record);
     }
 
     #[tokio::test]
@@ -1309,21 +1770,42 @@ mod tests {
         );
     }
 
-    /// A DEFINITE rejection is the opposite case and must keep failing the
-    /// resume: nothing is on the network, so no proof can ever arrive, and
-    /// the lock stays at `Built` for a later retry to re-send.
+    /// A DEFINITE rejection also fails the resume, but as an UNKNOWN
+    /// outcome — never as the definite-rejection contract.
+    ///
+    /// `Rejected` is scoped to the attempt that produced it: the production
+    /// `SpvBroadcaster` reaches it only from an unstarted client and the
+    /// zero-connected-peers check, so it means "this send never left the
+    /// device". A row sits at `Built` after a SUCCESSFUL broadcast too (the
+    /// app killed between the send and the status advance), so an earlier
+    /// send may be in a mempool or already mined. `TransactionBroadcast` —
+    /// the FFI's code 26 — would tell the host that Core rejected the
+    /// transaction, that its inputs' reservation was released and that a
+    /// rebuild is safe; the resume releases nothing and keeps the row, so a
+    /// host honouring that would build a SECOND asset lock beside a
+    /// possibly-live one. Only the initial build path, which does untrack
+    /// and release, may emit 26.
     #[tokio::test]
-    async fn built_resume_still_fails_on_a_definite_rejection() {
+    async fn built_resume_of_a_rejected_rebroadcast_reports_an_unknown_outcome() {
         let (error, status) = resume_built_lock_with(Arc::new(AlwaysRejectedBroadcaster)).await;
 
         assert!(
-            matches!(error, PlatformWalletError::TransactionBroadcast(_)),
-            "a definite rejection must surface as a broadcast failure: {error:?}"
+            !matches!(error, PlatformWalletError::TransactionBroadcast(_)),
+            "a re-broadcast that never left the device is not evidence that an earlier \
+             send was rejected, so it must not claim the definite-rejection contract \
+             while the row and its reservation are kept: {error:?}"
+        );
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::TransactionBroadcastUnconfirmed(_)
+            ),
+            "a rejected re-broadcast must fail the resume as an unknown outcome: {error:?}"
         );
         assert_eq!(
             status,
             AssetLockStatus::Built,
-            "a tx that never entered the network must stay resumable at Built"
+            "a send that never dispatched must leave the row resumable at Built"
         );
     }
 
@@ -1421,7 +1903,6 @@ mod tests {
         let restored_wallet = Wallet::new_external_signable(Network::Testnet, wallet_id, accounts);
         let mut restored_info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
-            restored_record_txids: Default::default(),
             core_wallet: ManagedWalletInfo::from_wallet(&restored_wallet, 0),
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
@@ -1488,13 +1969,49 @@ mod tests {
         broadcaster: Arc<RecordingBroadcaster>,
         transaction: Transaction,
         out_point: OutPoint,
+        /// Kept so a test can attempt a REBUILD: the wallet's whole balance
+        /// rides on the one UTXO this fixture's transaction spends, so a
+        /// rebuild that fails at input selection is direct proof the funding
+        /// reservation is still held.
+        signer: crate::test_support::WalletSigner,
     }
 
     impl ConflictFixture {
         async fn new() -> Self {
+            Self::with_broadcaster(RecordingBroadcaster::default()).await
+        }
+
+        /// The same fixture whose (re-)broadcast is refused before dispatch,
+        /// the way an app-launch catch-up resume meets an SPV client that
+        /// has not connected yet.
+        async fn rejecting() -> Self {
+            Self::with_broadcaster(RecordingBroadcaster {
+                reject: true,
+                ..Default::default()
+            })
+            .await
+        }
+
+        async fn with_broadcaster(broadcaster: RecordingBroadcaster) -> Self {
+            Self::with_broadcaster_and_persistence(broadcaster, |_, _| {
+                Arc::new(RecordingPersistence::default())
+            })
+            .await
+        }
+
+        /// The fixture wired to a caller-supplied persistence backend, built
+        /// from the wallet handle so an interleaving stub can reach back into
+        /// the wallet it is going to mutate.
+        async fn with_broadcaster_and_persistence(
+            broadcaster: RecordingBroadcaster,
+            persistence: impl FnOnce(
+                Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+                WalletId,
+            ) -> Arc<dyn PlatformWalletPersistence>,
+        ) -> Self {
             let (wallet_manager, wallet_id, _generation, signer) =
                 funded_wallet_manager(StandardAccountType::BIP44Account).await;
-            let broadcaster = Arc::new(RecordingBroadcaster::default());
+            let broadcaster = Arc::new(broadcaster);
             let sdk = Arc::new(
                 dash_sdk::SdkBuilder::new_mock()
                     .with_network(Network::Testnet)
@@ -1507,7 +2024,10 @@ mod tests {
                 wallet_id,
                 Arc::new(Notify::new()),
                 Arc::clone(&broadcaster),
-                WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+                WalletPersister::new(
+                    wallet_id,
+                    persistence(Arc::clone(&wallet_manager), wallet_id),
+                ),
             );
             let (transaction, _path) = manager
                 .build_asset_lock_transaction(
@@ -1527,7 +2047,24 @@ mod tests {
                 broadcaster,
                 transaction,
                 out_point,
+                signer,
             }
+        }
+
+        /// Attempt a fresh asset-lock build over the same wallet. The funded
+        /// fixture holds exactly one spendable UTXO, so this can only succeed
+        /// once that UTXO's reservation has been released.
+        async fn rebuild(&self) -> Result<(), PlatformWalletError> {
+            self.manager
+                .build_asset_lock_transaction(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    5,
+                    &self.signer,
+                )
+                .await
+                .map(|_| ())
         }
 
         /// The single outpoint the asset-lock transaction spends — the one
@@ -1597,16 +2134,6 @@ mod tests {
                 .expect("funded fixture has BIP44 account 0")
                 .transactions_mut()
                 .insert(record.txid, record);
-        }
-
-        /// Mark `txid` as a RESTORED record, the way the load path does for
-        /// everything in history at load time.
-        async fn mark_restored(&self, txid: Txid) {
-            let mut wm = self.manager.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .expect("wallet must remain registered");
-            info.restored_record_txids.insert(txid);
         }
 
         /// Prime the screen's session memory directly, the way the load
@@ -1699,10 +2226,10 @@ mod tests {
         ))
     }
 
-    /// The base case: a confirmed sibling spending the lock's input stops
-    /// the resume before it broadcasts or waits, and it does so through the
-    /// contested variant — the screen's one verdict, which carries no
-    /// licence to discard the tracked lock.
+    /// The base case: a confirmed sibling spending the lock's input makes
+    /// the resume end in the contested variant — the screen's one verdict,
+    /// which carries no licence to discard the tracked lock. It arrives
+    /// after the resume has run its course, not instead of it.
     #[tokio::test]
     async fn broadcast_resume_reports_a_contested_input_for_a_merely_in_block_spender() {
         let fixture = ConflictFixture::new().await;
@@ -1735,39 +2262,565 @@ mod tests {
         }
         assert_eq!(
             fixture.broadcast_count(),
-            0,
-            "the screen must short-circuit ahead of the defensive re-broadcast"
+            1,
+            "the screen must not refuse the defensive re-broadcast — the \
+             sighting may be restored evidence nothing can retract"
         );
     }
 
-    /// Restored provenance changes nothing, in either direction. It used
-    /// to gate a height-only promotion to the terminal verdict; that
-    /// promotion is gone (and the guard was bypassable anyway — under
-    /// `keep-finalized-transactions` the key wallet height-mutates a stale
-    /// restored `InBlock` record straight to `InChainLockedBlock`), so a
-    /// restored spender under a covering boundary reports exactly what
-    /// every other sighting does.
+    /// Regression: a conflict sighting must never cost the lock a proof
+    /// that has already arrived.
+    ///
+    /// The screen reads history the load path rebuilt from persisted rows,
+    /// and such a record is never checked against the active chain — a
+    /// wallet offline while the spender's block was reorganized out
+    /// restores the sighting all the same, and no later event demotes a
+    /// transaction that is absent from both the replacement chain and every
+    /// mempool. Refusing to broadcast or wait on that evidence returned the
+    /// contested verdict on every resume and every launch for a lock whose
+    /// own funding transaction was sitting in history chain-locked, ready
+    /// to settle. The resume must run and take the proof.
     #[tokio::test]
-    async fn a_restored_spender_below_the_boundary_stays_provisional() {
+    async fn a_standing_conflict_never_costs_the_lock_a_proof_that_has_arrived() {
         let fixture = ConflictFixture::new().await;
         fixture.track(AssetLockStatus::Broadcast, None).await;
+
+        // The unreconciled sighting.
+        fixture
+            .file_record(record_for(
+                transaction_spending(fixture.funded_input()),
+                confirmed_at(1_234),
+            ))
+            .await;
+        // ... and the lock's own funding transaction, chain-locked: the
+        // proof `wait_for_proof` resolves from without touching the network.
+        fixture
+            .file_record(record_for(
+                fixture.transaction.clone(),
+                chain_locked_at(1_500),
+            ))
+            .await;
+
+        let (proof, _path) = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect("a lock whose own record is chain-locked must resume despite the sighting");
+        match proof {
+            dpp::prelude::AssetLockProof::Chain(chain) => {
+                assert_eq!(chain.out_point, fixture.out_point);
+                assert_eq!(chain.core_chain_locked_height, 1_500);
+            }
+            other => panic!("expected a ChainAssetLockProof, got {other:?}"),
+        }
+    }
+
+    /// Regression: a `Built` row whose re-broadcast is refused before it
+    /// dispatches must still take a proof that has already arrived.
+    ///
+    /// This is the launch catch-up shape: `catchUpStuckAssetLocks` resumes
+    /// a restored row before SPV connects, so the re-broadcast draws the
+    /// DEFINITE `Rejected` (unstarted client / zero peers), while history
+    /// carries both a restored spender of the lock's input and the lock's
+    /// own chain-locked funding record. Returning the rejection there
+    /// skipped the record entirely — an already-final lock failed on every
+    /// launch until connectivity returned, and it failed as the FFI's code
+    /// 26, whose released-reservation contract this path does not honour.
+    #[tokio::test]
+    async fn a_rejected_rebroadcast_of_a_conflicted_built_lock_still_takes_an_arrived_proof() {
+        let fixture = ConflictFixture::rejecting().await;
+        fixture.track(AssetLockStatus::Built, None).await;
+
+        // The unreconciled sighting...
+        fixture
+            .file_record(record_for(
+                transaction_spending(fixture.funded_input()),
+                confirmed_at(1_234),
+            ))
+            .await;
+        // ... and the lock's own funding transaction, chain-locked.
+        fixture
+            .file_record(record_for(
+                fixture.transaction.clone(),
+                chain_locked_at(1_500),
+            ))
+            .await;
+
+        let (proof, _path) = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect(
+                "a locally-proven lock must resume despite a rejected re-broadcast and a \
+                 standing sighting",
+            );
+        match proof {
+            dpp::prelude::AssetLockProof::Chain(chain) => {
+                assert_eq!(chain.core_chain_locked_height, 1_500);
+            }
+            other => panic!("expected a ChainAssetLockProof, got {other:?}"),
+        }
+        assert_eq!(
+            fixture
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&fixture.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&fixture.out_point)
+                .expect("lock stays tracked")
+                .status,
+            AssetLockStatus::ChainLocked,
+            "the resume must advance the row exactly as a waited-for proof would"
+        );
+        // Completing from a local proof releases nothing either: the lock is
+        // settled and its inputs stay spent by it, so a rebuild must still
+        // find no candidates.
+        let rebuild = fixture.rebuild().await;
+        assert!(
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { available: 0, .. })
+            ),
+            "a settled lock must keep its funding reservation, got {rebuild:?}"
+        );
+    }
+
+    /// The same shape without a proof: the rejection must not pre-empt the
+    /// bounded wait the sighting exists to bound, and its expiry must be
+    /// reported as the provisional contested verdict — never as the
+    /// definite-rejection code 26, which promises a released reservation
+    /// this path does not release.
+    #[tokio::test]
+    async fn a_rejected_rebroadcast_of_a_conflicted_built_lock_reports_the_contested_verdict() {
+        let fixture = ConflictFixture::rejecting().await;
+        fixture.track(AssetLockStatus::Built, None).await;
 
         let spender = transaction_spending(fixture.funded_input());
         let spender_txid = spender.txid();
         fixture
             .file_record(record_for(spender, confirmed_at(1_234)))
             .await;
-        fixture.mark_restored(spender_txid).await;
-        fixture.set_chain_lock_boundary(1_300).await;
 
         let error = fixture
             .manager
             .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
             .await
-            .expect_err("a currently double-spent asset lock must fail, not wait");
+            .expect_err("no proof exists, so the bounded wait must expire");
+        match error {
+            PlatformWalletError::AssetLockInputContested {
+                out_point,
+                input,
+                spent_by,
+                height,
+            } => {
+                assert_eq!(out_point, fixture.out_point);
+                assert_eq!(input, fixture.funded_input());
+                assert_eq!(spent_by, spender_txid);
+                assert_eq!(height, Some(1_234));
+            }
+            other => panic!(
+                "a rejected re-broadcast must not pre-empt the sighting's bounded wait, \
+                 and must never surface the released-reservation contract, got {other:?}"
+            ),
+        }
+        assert_eq!(
+            fixture.broadcast_count(),
+            1,
+            "the re-broadcast is still attempted — the sighting bounds the resume, it \
+             never refuses it"
+        );
+        assert_eq!(
+            fixture
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&fixture.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&fixture.out_point)
+                .expect("lock stays tracked")
+                .status,
+            AssetLockStatus::Built,
+            "a send that never dispatched must not advance the row — the next resume \
+             re-sends rather than waiting on a broadcast that never happened"
+        );
+        // The retained status is only half the invariant. A row that is
+        // resumable while its inputs are re-spendable is exactly the state
+        // the release gate exists to prevent, and only a rebuild attempt can
+        // prove the reservation is still held: the fixture's whole balance
+        // rides on the one UTXO this lock spends, so a released reservation
+        // would let this build succeed and put a second asset lock on the
+        // wire beside the first.
+        let rebuild = fixture.rebuild().await;
         assert!(
-            matches!(error, PlatformWalletError::AssetLockInputContested { .. }),
-            "a restored spender under the boundary must stay provisional, got {error:?}"
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { available: 0, .. })
+            ),
+            "the funding reservation must still be held after a rejected re-broadcast, \
+             leaving a rebuild with zero spendable candidates, got {rebuild:?}"
+        );
+    }
+
+    /// Regression: finality that lands BETWEEN the verdict's proof probe and
+    /// the snapshot the verdict is built from must still outrank the
+    /// standing sighting.
+    ///
+    /// This is the narrowest interleaving the decision has to survive, and
+    /// the whole resume is driven through the public entry point to reach
+    /// it. The funding record is filed from inside the probe's own persister
+    /// lookup — after that probe has already read the in-memory map and
+    /// missed, before anything else is read. Finality arriving that way
+    /// never touches the tracked row (`LockNotifyHandler` wakes waiters
+    /// without advancing a status), so the row still says `Broadcast` with
+    /// no proof and the sibling is still sitting in history: reading the
+    /// record and the row in two separate snapshots reported a locally final
+    /// lock as contested.
+    #[tokio::test]
+    async fn finality_landing_between_the_probe_and_the_snapshot_outranks_the_conflict() {
+        let funding_tx = Mutex::new(None);
+        let interleave = Mutex::new(None);
+        let fixture = ConflictFixture::with_broadcaster_and_persistence(
+            RecordingBroadcaster::default(),
+            |wallet_manager, wallet_id| {
+                // The lock's own transaction is only known once the fixture
+                // has built it, so the stub reads it back out of the shared
+                // slot the fixture fills in below.
+                let built = Arc::new(Mutex::new(None::<Transaction>));
+                let handle = Arc::clone(&built);
+                let stub = Arc::new(InterleavedPersistence::new(
+                    wallet_manager,
+                    wallet_id,
+                    // Lookup 0 is the expiring proof wait's own miss; lookup
+                    // 1 is the verdict's probe, the gap under test.
+                    1,
+                    move |info| {
+                        let transaction = handle
+                            .lock()
+                            .expect("built transaction slot")
+                            .clone()
+                            .expect("fixture files the transaction before resuming");
+                        insert_record(info, record_for(transaction, chain_locked_at(1_500)));
+                    },
+                ));
+                *funding_tx.lock().expect("slot") = Some(built);
+                *interleave.lock().expect("slot") = Some(Arc::clone(&stub));
+                stub as Arc<dyn PlatformWalletPersistence>
+            },
+        )
+        .await;
+        let funding_tx = funding_tx.lock().expect("slot").take().expect("slot set");
+        let interleave = interleave.lock().expect("slot").take().expect("slot set");
+        *funding_tx.lock().expect("built transaction slot") = Some(fixture.transaction.clone());
+
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+        fixture
+            .file_record(record_for(
+                transaction_spending(fixture.funded_input()),
+                confirmed_at(1_234),
+            ))
+            .await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("the proof arrives too late for this wait to return it");
+        assert!(
+            interleave.fired(),
+            "the test proves nothing unless the finality actually landed inside the \
+             verdict's probe"
+        );
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "a lock whose own record reached finality during the probe must not be \
+             reported as contested on the strength of a sibling still sitting in \
+             history — the caller keeps its expiry and the next resume returns the \
+             proof, got {error:?}"
+        );
+        assert_eq!(
+            fixture
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&fixture.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&fixture.out_point)
+                .expect("lock stays tracked")
+                .status,
+            AssetLockStatus::Broadcast,
+            "suppressing the verdict must leave the row exactly where it was"
+        );
+    }
+
+    /// Regression: a ChainLock that lands in that same gap must outrank the
+    /// sighting even though the promotion it performs takes the funding
+    /// record away.
+    ///
+    /// Promotion is EVICTION under the default
+    /// `keep-finalized-transactions = OFF` build: `apply_chain_lock` drops
+    /// the record it has just promoted and keeps only its txid in the
+    /// account's finalized set. A snapshot that asked the record alone
+    /// therefore questioned the one place finality no longer lives, and
+    /// condemned a locally final lock on the strength of a sibling the same
+    /// chainlock never buried. The chainlock here is applied for real —
+    /// the funding transaction is filed in a block below the lock height and
+    /// promoted by the wallet's own pass — so the eviction is the wallet's,
+    /// not the test's. The sibling sits in a HIGHER block on purpose: the
+    /// same pass must leave it standing, or there would be no conflict left
+    /// to suppress and the test would pass on any code.
+    #[tokio::test]
+    async fn a_chainlock_evicting_the_funding_record_mid_verdict_outranks_the_conflict() {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let funding_tx = Mutex::new(None);
+        let interleave = Mutex::new(None);
+        let fixture = ConflictFixture::with_broadcaster_and_persistence(
+            RecordingBroadcaster::default(),
+            |wallet_manager, wallet_id| {
+                let built = Arc::new(Mutex::new(None::<Transaction>));
+                let handle = Arc::clone(&built);
+                let stub = Arc::new(InterleavedPersistence::new(
+                    wallet_manager,
+                    wallet_id,
+                    // Lookup 0 is the expiring proof wait's own miss; lookup
+                    // 1 is the verdict's probe, the gap under test.
+                    1,
+                    move |info| {
+                        let transaction = handle
+                            .lock()
+                            .expect("built transaction slot")
+                            .clone()
+                            .expect("fixture files the transaction before resuming");
+                        insert_record(info, record_for(transaction, confirmed_at(1_200)));
+                        info.apply_chain_lock(ChainLock {
+                            block_height: 1_220,
+                            block_hash: BlockHash::all_zeros(),
+                            signature: BLSSignature::from([0u8; 96]),
+                        });
+                    },
+                ));
+                *funding_tx.lock().expect("slot") = Some(built);
+                *interleave.lock().expect("slot") = Some(Arc::clone(&stub));
+                stub as Arc<dyn PlatformWalletPersistence>
+            },
+        )
+        .await;
+        let funding_tx = funding_tx.lock().expect("slot").take().expect("slot set");
+        let interleave = interleave.lock().expect("slot").take().expect("slot set");
+        *funding_tx.lock().expect("built transaction slot") = Some(fixture.transaction.clone());
+
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+        fixture
+            .file_record(record_for(
+                transaction_spending(fixture.funded_input()),
+                confirmed_at(1_234),
+            ))
+            .await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("the chainlock arrives too late for this wait to return a proof");
+        assert!(
+            interleave.fired(),
+            "the test proves nothing unless the chainlock actually landed inside the \
+             verdict's probe"
+        );
+        {
+            let wm = fixture.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&fixture.wallet_id)
+                .expect("wallet must remain registered");
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get(&0)
+                .expect("funded fixture has BIP44 account 0");
+            #[cfg(not(feature = "keep-finalized-transactions"))]
+            assert!(
+                !account.transactions().contains_key(&fixture.out_point.txid),
+                "the interleaving under test is promotion-EVICTION: a record still \
+                 sitting in the map would leave the resident-record check able to \
+                 answer, and the eviction path untested"
+            );
+            assert!(
+                account.transaction_is_finalized(&fixture.out_point.txid),
+                "the finalized-txid set is where the promotion leaves the finality, \
+                 and the only trace of it the verdict can still read"
+            );
+            assert!(
+                info.core_wallet
+                    .transaction_history()
+                    .iter()
+                    .any(|record| record.txid != fixture.out_point.txid && record.is_confirmed()),
+                "the sibling must survive the same chainlock, or there is no \
+                 contested verdict left for the finality to suppress"
+            );
+        }
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "a lock whose funding transaction was chainlocked during the probe must \
+             not be reported as contested because the promotion evicted the record \
+             that said so — the caller keeps its expiry and the next resume returns \
+             the proof, got {error:?}"
+        );
+        assert_eq!(
+            fixture
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&fixture.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&fixture.out_point)
+                .expect("lock stays tracked")
+                .status,
+            AssetLockStatus::Broadcast,
+            "suppressing the verdict must leave the row exactly where it was"
+        );
+    }
+
+    /// The same precedence against a concurrent resume rather than against
+    /// the record: two overlapping resumes run under different budgets, and
+    /// the longer one attaches the proof and advances the row while the
+    /// shorter one is expiring. Driven end to end, with the settling landing
+    /// in the same probe-to-snapshot gap.
+    #[tokio::test]
+    async fn a_concurrent_resume_that_settled_the_lock_suppresses_the_contested_verdict() {
+        let interleave = Mutex::new(None);
+        let fixture = ConflictFixture::with_broadcaster_and_persistence(
+            RecordingBroadcaster::default(),
+            |wallet_manager, wallet_id| {
+                let stub = Arc::new(InterleavedPersistence::new(
+                    wallet_manager,
+                    wallet_id,
+                    1,
+                    |info| {
+                        let (out_point, lock) = info
+                            .tracked_asset_locks
+                            .iter_mut()
+                            .next()
+                            .map(|(out_point, lock)| (*out_point, lock))
+                            .expect("the lock under resume is tracked");
+                        lock.status = AssetLockStatus::ChainLocked;
+                        lock.proof = Some(dpp::prelude::AssetLockProof::Chain(
+                            dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof {
+                                core_chain_locked_height: 1_500,
+                                out_point,
+                            },
+                        ));
+                    },
+                ));
+                *interleave.lock().expect("slot") = Some(Arc::clone(&stub));
+                stub as Arc<dyn PlatformWalletPersistence>
+            },
+        )
+        .await;
+        let interleave = interleave.lock().expect("slot").take().expect("slot set");
+
+        fixture.track(AssetLockStatus::Broadcast, None).await;
+        fixture
+            .file_record(record_for(
+                transaction_spending(fixture.funded_input()),
+                confirmed_at(1_234),
+            ))
+            .await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("this resume's own wait found no proof before its deadline");
+        assert!(
+            interleave.fired(),
+            "the concurrent resume must actually have settled the row mid-verdict"
+        );
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "a row another resume already settled must not be re-condemned by the \
+             screen, got {error:?}"
+        );
+    }
+
+    /// Regression: a caller that named its own deadline keeps
+    /// `FinalityTimeout` on the rejected-`Built` path too.
+    ///
+    /// The re-typings on that path exist to stop an UNBOUNDED wait hanging
+    /// on a signal that cannot arrive; a caller that supplied a bound never
+    /// had that problem. The shielded seed pool reads `FinalityTimeout` as a
+    /// pacing signal and resumes the lock later, so handing it a
+    /// do-not-retry error instead — and one quoting the 180-second policy
+    /// cap rather than the bound it asked for — silently drops the lock out
+    /// of that flow. The conflict retracts mid-verdict so the contested
+    /// verdict is out of the way and the undispatched translation is the
+    /// only thing left that could win.
+    #[tokio::test]
+    async fn a_rejected_built_rebroadcast_keeps_an_explicit_timeout_as_finality_timeout() {
+        let spender = Mutex::new(None);
+        let interleave = Mutex::new(None);
+        let fixture = ConflictFixture::with_broadcaster_and_persistence(
+            RecordingBroadcaster {
+                reject: true,
+                ..Default::default()
+            },
+            |wallet_manager, wallet_id| {
+                let demoted = Arc::new(Mutex::new(None::<Transaction>));
+                let handle = Arc::clone(&demoted);
+                let stub = Arc::new(InterleavedPersistence::new(
+                    wallet_manager,
+                    wallet_id,
+                    // Lookup 0 is the rejection's own local-proof probe,
+                    // lookup 1 the expiring wait, lookup 2 the verdict's
+                    // probe — the gap the retraction has to land in.
+                    2,
+                    move |info| {
+                        let transaction = handle
+                            .lock()
+                            .expect("spender slot")
+                            .clone()
+                            .expect("fixture files the spender before resuming");
+                        // A reorg drops the block; the record survives,
+                        // demoted, which retracts the remembered sighting.
+                        insert_record(info, record_for(transaction, TransactionContext::Mempool));
+                    },
+                ));
+                *spender.lock().expect("slot") = Some(demoted);
+                *interleave.lock().expect("slot") = Some(Arc::clone(&stub));
+                stub as Arc<dyn PlatformWalletPersistence>
+            },
+        )
+        .await;
+        let spender_slot = spender.lock().expect("slot").take().expect("slot set");
+        let interleave = interleave.lock().expect("slot").take().expect("slot set");
+
+        fixture.track(AssetLockStatus::Built, None).await;
+        let spender = transaction_spending(fixture.funded_input());
+        *spender_slot.lock().expect("spender slot") = Some(spender.clone());
+        fixture
+            .file_record(record_for(spender, confirmed_at(1_234)))
+            .await;
+
+        let error = fixture
+            .manager
+            .resume_asset_lock(&fixture.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("no proof exists, so the caller's bounded wait must expire");
+        assert!(
+            interleave.fired(),
+            "the conflict must actually have retracted mid-verdict, or the contested \
+             verdict would be doing the work this test is about"
+        );
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "a caller-selected timeout must expire as FinalityTimeout, not be retyped \
+             into the unknown-outcome contract that quotes the policy cap it never \
+             asked for, got {error:?}"
         );
     }
 
@@ -2054,8 +3107,8 @@ mod tests {
         );
         assert_eq!(
             fixture.broadcast_count(),
-            0,
-            "the screen must short-circuit ahead of the defensive re-broadcast"
+            1,
+            "not even a chain-locked-looking spender may refuse the resume"
         );
     }
 

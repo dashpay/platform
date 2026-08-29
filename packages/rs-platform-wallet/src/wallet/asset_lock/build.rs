@@ -960,6 +960,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    transaction — so at no point is the row resumable while its
         //    inputs are re-spendable. A `MaybeSent` failure keeps both the
         //    reservation and the resumable row.
+        //
+        //    The error type follows the cleanup, never the broadcaster's
+        //    verdict alone: the definite-rejection contract is only reported
+        //    when the row was actually untracked AND its reservation
+        //    released, because that contract is precisely the promise that
+        //    both happened.
         if let Err(e) = self.broadcaster.broadcast(&tx).await {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
                 let cs_untrack = self.untrack_asset_lock(&out_point).await;
@@ -981,6 +987,34 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         reservation_token,
                     )
                     .await;
+                } else {
+                    // The cleanup did not run, so the definite-rejection
+                    // contract does not hold. `TransactionBroadcast` promises
+                    // the caller that the row is gone, the inputs are free,
+                    // and a rebuild is safe; here the advanced row is still
+                    // tracked and resumable and its inputs are still
+                    // reserved, so a caller honouring that promise would
+                    // rebuild from other UTXOs and create a SECOND asset lock
+                    // beside a transaction the advance says reached the
+                    // network. The contract that matches what is actually
+                    // true is the unknown outcome: do not retry, the row and
+                    // its reservation are intact, resume the existing lock.
+                    tracing::warn!(
+                        %txid,
+                        error = %e,
+                        "asset lock broadcast was rejected, but a concurrent resume had \
+                         already advanced the row past Built; keeping the row and its \
+                         funding reservation and reporting an unknown outcome rather than \
+                         a definite rejection"
+                    );
+                    return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                        format!(
+                            "asset lock {out_point} stays tracked and reserved: the \
+                             broadcast was rejected, but a concurrent resume had already \
+                             advanced the row past Built, so the transaction may be on \
+                             the network: {e}"
+                        ),
+                    ));
                 }
             }
             return Err(e.into());
@@ -1684,6 +1718,12 @@ mod tests {
     /// window, the cleanup must keep the row (guard) AND keep the funding
     /// reservation (release gate) — otherwise the still-tracked transaction
     /// would be resumable while its inputs are re-spendable.
+    ///
+    /// The error must say the same thing the cleanup did. The definite
+    /// rejection promises a released reservation and a safe rebuild, and
+    /// neither holds on this branch: a caller acting on that promise builds
+    /// a second asset lock beside a transaction the advance says reached the
+    /// network. Only the unknown outcome describes what actually happened.
     #[tokio::test]
     async fn rejected_broadcast_racing_concurrent_resume_keeps_row_and_reservation() {
         let (wallet_manager, wallet_id, _balance, signer) =
@@ -1717,8 +1757,13 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
-            "rejection should still surface, got {result:?}"
+            matches!(
+                result,
+                Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+            ),
+            "a rejection whose cleanup released nothing must surface as the \
+             unknown outcome, never as the definite rejection that promises a \
+             released reservation and a safe rebuild, got {result:?}"
         );
 
         // The concurrently-advanced row survives the cleanup…

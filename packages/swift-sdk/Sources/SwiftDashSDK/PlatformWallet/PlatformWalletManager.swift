@@ -1833,13 +1833,21 @@ public class PlatformWalletManager: ObservableObject {
                     // As each finishes, queue the next pending entry —
                     // and publish the FIRST double-spend verdict the
                     // moment its own task returns. A sibling catch-up
-                    // can legitimately sit in its 300s proof wait, and
-                    // the host must not wait on that drain to learn a
-                    // lock is stuck. `lastError` is the manager's one
-                    // public error surface; a UI that explains the
-                    // stalled lock and its pending retry (48 — the only
-                    // verdict emitted; 47 stays reserved) reads it from
-                    // here.
+                    // can legitimately sit in its proof wait, and the
+                    // host must not wait on that drain to learn a lock
+                    // is stuck. `lastError` is the manager's one public
+                    // error surface; a UI that explains the stalled lock
+                    // and its pending retry (48 — the only verdict
+                    // emitted; 47 stays reserved) reads it from here.
+                    //
+                    // The verdict arrives at the END of its own lock's
+                    // bounded wait, not ahead of it: Rust deliberately
+                    // does not refuse a resume on a conflict sighting,
+                    // because the sighting can be a restored block record
+                    // that no live event will ever retract, and refusing
+                    // would strand a lock that is free to confirm. The
+                    // wait it runs under is capped below this call's 300s
+                    // ceiling for exactly that case.
                     while let outcome = await group.next() {
                         if !published, let verdict = outcome {
                             published = true

@@ -340,11 +340,12 @@ pub enum PlatformWalletError {
     /// locks — has been confirmed for a long time.
     ///
     /// While the sibling stands, peers reject the lock as a double spend
-    /// and a proof wait would hang unboundedly (Core stopped sending BIP61
+    /// and an unbounded proof wait would hang (Core stopped sending BIP61
     /// `reject` by default in 0.17, so the drop is silent and looks
-    /// exactly like a slow network), so the resume stops here without a
-    /// further broadcast or wait — a `Broadcast`-status lock was already
-    /// sent on an earlier call.
+    /// exactly like a slow network). The sighting therefore bounds the
+    /// wait rather than replacing it: the resume still (re-)broadcasts and
+    /// still waits, and this is what the bounded wait expired with — a
+    /// `Broadcast`-status lock was also already sent on an earlier call.
     ///
     /// The verdict is PROVISIONAL and carries NO licence to discard the
     /// tracked lock. Keep the lock and retry later. Note what a retry can
@@ -355,15 +356,17 @@ pub enum PlatformWalletError {
     /// other direction — a reorg drops the sibling and the resume proceeds
     /// normally.
     ///
-    /// In practice a conflict that persists across sessions is permanent,
-    /// and a host may well decide to stop retrying and drop the lock. That
-    /// is a host/user policy call, not something this error licenses: the
-    /// SDK does not authorise discarding tracked state on evidence this
-    /// weak. Either way no funds are lost — both signed transactions are
-    /// this wallet's own, so the value behind `input` lives on in
-    /// `spent_by` — but discarding a lock whose sibling turns out to sit
-    /// on a losing branch strands the credits of a lock a peer can still
-    /// replay.
+    /// A conflict that persists across sessions still proves nothing about
+    /// finalized ancestry: persistence is not finality, and the sighting
+    /// can be a block record the load path restored from a previous
+    /// session whose block was reorganized out while the wallet was
+    /// offline. So repetition never licenses a discard either — only
+    /// [`Self::AssetLockInputConflict`], or an independent
+    /// finalized-ancestry proof, authorises dropping the tracked state.
+    /// Discarding a lock whose sibling turns out to sit on a losing branch
+    /// strands the credits of a lock a peer can still replay. No funds move
+    /// while the lock is kept: both signed transactions are this wallet's
+    /// own, so the value behind `input` lives on in `spent_by`.
     ///
     /// Raising this error is a definite verdict about the CONFLICT; NOT
     /// raising it proves nothing — see the detection helper in

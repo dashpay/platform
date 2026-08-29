@@ -146,22 +146,28 @@ sealed class DashSdkError(
          * inputs — typically a restored wallet whose rescan resurrected a
          * UTXO one of its own earlier asset locks had already consumed. Peers
          * drop such a double spend without replying, so the lock cannot
-         * confirm while that spender stands and its proof wait would hang;
-         * the screen stops the resume before it broadcasts again or enters
-         * the wait (a `Broadcast`-status lock was sent on an earlier call).
+         * confirm while that spender stands and an unbounded proof wait would
+         * hang. The resume still runs: the sighting bounds that wait instead
+         * of replacing it, so the lock was (re-)broadcast and waited on (a
+         * `Broadcast`-status lock was also sent on an earlier call), and this
+         * is what the bounded wait expired with.
          *
          * The ONLY double-spend verdict the native side emits, and it is
          * PROVISIONAL. NO discard licence: keep the tracked lock and retry
          * later (next launch, or after the next chainlock) — but note a
          * chainlock does NOT upgrade this to code 47 today; what a retry can
-         * resolve is a reorg dropping the sibling. A conflict that survives
-         * session after session is in practice permanent, and a host may
-         * reasonably stop retrying and offer the user a discard: that is a
-         * host/user policy call this error does not make, and it is fund-safe
-         * either way because the confirmed spender is this wallet's own
-         * transaction. Its absence is not proof of liveness — the native scan
-         * cannot see conflicts whose spender was already pruned. The Android
-         * analog of Swift's `PlatformWalletError.assetLockInputContested`.
+         * resolve is a reorg dropping the sibling. Repetition does not
+         * license a discard either: a conflict that survives session after
+         * session still proves nothing about finalized ancestry — the
+         * sighting can be a block record restored from a previous session
+         * whose block was reorganized out while the host was offline. Only
+         * code 47, or an independent finalized-ancestry proof, authorizes
+         * dropping the tracked state. Keeping the lock costs nothing: the
+         * confirmed spender is this wallet's own transaction, so the value
+         * lives on in it either way. Its absence is not proof of liveness —
+         * the native scan cannot see conflicts whose spender was already
+         * pruned. The Android analog of Swift's
+         * `PlatformWalletError.assetLockInputContested`.
          */
         class AssetLockInputContested(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {

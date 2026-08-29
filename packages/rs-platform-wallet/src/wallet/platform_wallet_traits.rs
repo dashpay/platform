@@ -41,7 +41,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
-            restored_record_txids: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
         }
     }
@@ -56,7 +55,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
-            restored_record_txids: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
         }
     }

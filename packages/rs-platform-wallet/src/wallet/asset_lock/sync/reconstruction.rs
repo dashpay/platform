@@ -592,7 +592,6 @@ mod tests {
 
         let info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
-            restored_record_txids: Default::default(),
             core_wallet: ctx.managed_wallet,
             generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),

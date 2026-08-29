@@ -99,30 +99,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.immature(),
                 core_balance.locked(),
             );
-            let mut platform_info = PlatformWalletInfo {
+            let platform_info = PlatformWalletInfo {
                 observed_input_conflicts: Default::default(),
-                restored_record_txids: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
             };
-            // Everything in history at this point WAS restored — the load
-            // path starts from an empty map and only the selective record
-            // restore has run. Recording those txids preserves that
-            // provenance for the session (the double-spend screen no
-            // longer classifies on it; see `restored_record_txids`), and
-            // seeding the screen's session memory here closes the race
-            // where SPV's chainlock dispatcher promotion-evicts a restored
-            // spender before the first catch-up resume reads it.
-            use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-            platform_info.restored_record_txids = platform_info
-                .core_wallet
-                .transaction_history()
-                .iter()
-                .map(|record| record.txid)
-                .collect();
+            // Seed the double-spend screen's session memory from the
+            // freshly restored state: it closes the race where SPV's
+            // chainlock dispatcher promotion-evicts a restored spender
+            // before the first catch-up resume ever reads it.
             crate::wallet::asset_lock::sync::recovery::seed_observed_input_conflicts(
                 &platform_info,
             );

@@ -468,8 +468,9 @@ pub struct UtxoRestoreEntryFFI {
 ///   the double-spend screen in `resume_asset_lock` scans live
 ///   history — empty at load apart from this array — for a confirmed
 ///   transaction that already took a lock's input. A host that omits
-///   these leaves startup conflict detection blind and the resume in
-///   its full proof wait. `account_index` for a spender row is the
+///   these leaves startup conflict detection blind, so a doomed resume
+///   expires as an untyped proof-wait timeout instead of the typed
+///   contested verdict. `account_index` for a spender row is the
 ///   account of the TXO it spent (the lock's funding account when the
 ///   host cannot resolve one).
 ///

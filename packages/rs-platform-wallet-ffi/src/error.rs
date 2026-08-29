@@ -453,25 +453,28 @@ pub enum PlatformWalletFFIResultCode {
 
     /// Maps `PlatformWalletError::AssetLockInputContested`. The double-spend
     /// screen's ONLY verdict: a confirmed transaction of this wallet
-    /// already spent one of the tracked lock's inputs, so the resume
-    /// stopped without a further broadcast or a wait that cannot return.
-    /// PROVISIONAL — the wallet cannot prove the spender's block is on the
-    /// finalized branch (see [`Self::ErrorAssetLockInputConflict`] (47),
-    /// the reserved terminal form), so this is what a chainlocked-looking
-    /// spender reports too.
+    /// already spent one of the tracked lock's inputs. The resume still
+    /// ran — the sighting bounds the proof wait instead of replacing it,
+    /// so the lock was (re-)broadcast and waited on, and this is what that
+    /// bounded wait expired with. PROVISIONAL — the wallet cannot prove the
+    /// spender's block is on the finalized branch (see
+    /// [`Self::ErrorAssetLockInputConflict`] (47), the reserved terminal
+    /// form), so this is what a chainlocked-looking spender reports too.
     ///
     /// NOT a discard licence. The host keeps the tracked lock and retries
     /// later (next launch, or after the next chainlock) — but note that a
     /// chainlock does NOT upgrade this to 47 today; what a retry can
     /// resolve is the other direction, a reorg dropping the sibling so the
-    /// next resume proceeds normally. A conflict that persists across
-    /// sessions is in practice permanent, and a host may reasonably stop
-    /// retrying and offer the user a discard — that is host policy, which
-    /// this code does not grant and does not withhold funds for: the
+    /// next resume proceeds normally. Nor does repetition license a
+    /// discard: a conflict that persists across sessions still proves
+    /// nothing about finalized ancestry — the sighting can be a block
+    /// record restored from a previous session whose block was reorganized
+    /// out while the host was offline. Only code 47, or an independent
+    /// finalized-ancestry proof, authorises dropping the tracked state,
+    /// because a lock whose sibling sits on a losing branch can still be
+    /// replayed and confirm. Keeping the lock costs the host nothing: the
     /// conflicting spender is this wallet's own transaction, so the value
-    /// lives on in the sibling either way. What the SDK will not do is
-    /// authorise the discard on this evidence, because a lock whose
-    /// sibling sits on a losing branch can still be replayed and confirm.
+    /// lives on in the sibling either way.
     ///
     /// Raised only on a positive detection; its ABSENCE is not a liveness
     /// signal. The wallet-side scan reads confirmed records still held in
@@ -1439,6 +1442,46 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    /// Code 26 is a promise about cleanup, not about the broadcaster's
+    /// verdict: the row was untracked and the funding reservation released,
+    /// so a rebuild is safe. An asset-lock build whose rejection raced a
+    /// concurrent resume keeps both — the guard retains the advanced row and
+    /// the release is skipped — and reports the unknown outcome instead. The
+    /// two must never collapse to one code across the boundary: a host that
+    /// read 26 there would rebuild from other UTXOs and create a second asset
+    /// lock beside a transaction the advance says reached the network.
+    #[test]
+    fn a_retained_asset_lock_row_reports_the_unknown_outcome_not_the_rejection() {
+        let retained: PlatformWalletFFIResult =
+            PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "asset lock 0000..:0 stays tracked and reserved: the broadcast was \
+                 rejected, but a concurrent resume had already advanced the row past \
+                 Built, so the transaction may be on the network"
+                    .to_string(),
+            )
+            .into();
+        assert_eq!(
+            retained.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            "a rejection that released nothing must reach the host as code 20"
+        );
+
+        let cleaned_up: PlatformWalletFFIResult =
+            PlatformWalletError::TransactionBroadcast("bad-txns-inputs-missingorspent".to_string())
+                .into();
+        assert_eq!(
+            cleaned_up.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected,
+            "the untracked-and-released path keeps the safe-to-retry code 26"
+        );
+        assert_ne!(
+            retained.code, cleaned_up.code,
+            "the retained-row and released-reservation outcomes must stay \
+             distinguishable at the FFI boundary — code 26 licenses the rebuild \
+             that the retained row makes unsafe"
+        );
     }
 
     /// `AddressNonceMismatch` maps to the dedicated `ErrorAddressNonceMismatch`

@@ -227,7 +227,7 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
                 // Double-spend verdicts route through the typed conversion
                 // so the host receives the real code. In practice that is
                 // always the provisional ErrorAssetLockInputContested
-                // (48), which stops the wait but keeps the lock for a
+                // (48), which bounds the wait but keeps the lock for a
                 // later retry: the resume never raises the terminal
                 // ErrorAssetLockInputConflict (47), which stays reserved
                 // for a finalized-ancestry proof the wallet cannot make.

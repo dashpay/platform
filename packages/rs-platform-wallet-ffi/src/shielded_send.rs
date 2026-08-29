@@ -773,7 +773,7 @@ fn catch_funding_panic(
 ///   to substring-matching the Display text.
 /// - The double-spend verdicts ride the same typed conversion (both the
 ///   fresh-build and resume entry points funnel through here, and the resume
-///   is where the pre-broadcast conflict screen actually fires). What the
+///   is where the double-spend screen actually fires). What the
 ///   screen emits is always `ErrorAssetLockInputContested` (48), the
 ///   provisional keep-and-retry verdict; the terminal
 ///   `ErrorAssetLockInputConflict` (47) — the code that would authorise a
@@ -2472,8 +2472,8 @@ mod tests {
         );
         assert!(message_of(&mismatch).contains("is ineligible for"));
 
-        // The resume endpoint is where the pre-broadcast conflict screen
-        // fires, and it funnels through this same wrapper. The screen
+        // The resume endpoint is where the double-spend screen fires, and
+        // it funnels through this same wrapper. The screen
         // itself only ever raises the contested verdict below; the
         // terminal one is reserved, so it is constructed directly here to
         // pin that the reserved code would still cross typed.
@@ -2504,7 +2504,7 @@ mod tests {
         );
 
         // The verdict the screen actually emits rides the same wrapper
-        // under its own code: it stops the wait but must not surface as
+        // under its own code: it bounds the wait but must not surface as
         // the terminal, discard-licensing 47.
         let contested = map_asset_lock_funding_result(
             Err(PlatformWalletError::AssetLockInputContested {

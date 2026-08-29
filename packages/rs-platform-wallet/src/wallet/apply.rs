@@ -427,7 +427,6 @@ mod tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             observed_input_conflicts: Default::default(),
-            restored_record_txids: Default::default(),
             dpns_name_states: BTreeMap::new(),
         }
     }

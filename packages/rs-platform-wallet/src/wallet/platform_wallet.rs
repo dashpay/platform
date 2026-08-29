@@ -1,6 +1,6 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -288,19 +288,6 @@ pub struct PlatformWalletInfo {
     /// runs under the manager's read lock; a poisoned mutex degrades to
     /// "no memory" rather than failing a resume.
     pub observed_input_conflicts: std::sync::Mutex<BTreeMap<OutPoint, ObservedInputConflict>>,
-    /// Txids of the transaction records the load path restored into the
-    /// in-memory history, captured once at load. Session state, never
-    /// persisted.
-    ///
-    /// The double-spend screen no longer reads this: it used to withhold
-    /// height-only chainlock promotion from restored records, but that
-    /// guard was unsound (under `keep-finalized-transactions` the key
-    /// wallet height-mutates a stale restored `InBlock` record straight to
-    /// `InChainLockedBlock`, bypassing it) and the screen now emits one
-    /// provenance-independent verdict. Kept as load-path provenance for a
-    /// future consumer that can pair it with a real finalized-ancestry
-    /// predicate; classification must not be rebuilt on it alone.
-    pub restored_record_txids: BTreeSet<Txid>,
     /// DPNS name states with sale price (username marketplace), keyed by
     /// domain document id. Session-lifetime working set for the
     /// marketplace sync/orchestration ops; the durable copy is the
