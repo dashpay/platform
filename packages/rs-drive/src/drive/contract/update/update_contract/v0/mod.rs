@@ -1,5 +1,5 @@
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -324,14 +324,17 @@ impl Drive {
                 // breaking subsequent range-sum / range-count reads.
                 for (level_key, level) in index_structure.sub_levels() {
                     {
-                        let index_info = level.has_index_with_type();
                         // Meta schema v3 (PV14) additionally upgrades the
                         // chosen variant to its indexed mirror when the index
-                        // declares a ranking axis; `ranked_axes` is empty for
-                        // every pre-v3 contract, making this arm bit-identical
-                        // to the previous 4-way dispatch for them.
+                        // declares a ranking axis — including the grouping
+                        // level of a compound index ranked at its first
+                        // property (`rankedCountable: { at }`), which the
+                        // level-aware resolver maps to the Count-axis indexed
+                        // tree; `ranked_axes` is empty for every pre-v3
+                        // contract, making this arm bit-identical to the
+                        // previous 4-way dispatch for them.
                         let (target_tree_type, ranked_axes) =
-                            property_name_tree_type_and_ranked_axes(index_info)?;
+                            property_name_tree_type_and_ranked_axes_for_level(level)?;
                         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
                             BatchInsertTreeApplyType::StatefulBatchInsertTree
                         } else {
@@ -476,9 +479,8 @@ impl Drive {
                         // sum- or range-countable top-level index added via
                         // contract update, diverging on-disk layout from
                         // fresh-insert contracts.
-                        let index_info = level.has_index_with_type();
                         let (tree_type, ranked_axes) =
-                            property_name_tree_type_and_ranked_axes(index_info)?;
+                            property_name_tree_type_and_ranked_axes_for_level(level)?;
                         match tree_type {
                             TreeType::ProvableCountProvableSumTree => self
                                 .batch_insert_empty_provable_count_provable_sum_tree(

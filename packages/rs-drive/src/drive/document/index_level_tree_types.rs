@@ -73,7 +73,7 @@
 //! provable variant did, so a ranked index's secondaries keep ranking
 //! correctly over a shared-prefix shape.
 
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::error::Error;
 use crate::util::object_size_info::DriveKeyInfo;
 use dpp::data_contract::document_type::{
@@ -116,15 +116,27 @@ pub(crate) struct IndexLevelTreeTypes {
 pub(crate) fn index_level_tree_types_with_continuation_demotion(
     sub_level: &IndexLevel,
 ) -> Result<IndexLevelTreeTypes, Error> {
-    let info = sub_level.has_index_with_type();
-    let (property_name_tree_type, ranked_axes) = property_name_tree_type_and_ranked_axes(info)?;
-    let value_tree_type = derive_value_tree_type(
-        info.map(|i| i.countable.is_countable()).unwrap_or(false),
-        info.map(|i| i.range_countable).unwrap_or(false),
-        info.map(|i| i.summable.is_some()).unwrap_or(false),
-        info.map(|i| i.range_summable).unwrap_or(false),
-        !sub_level.sub_levels().is_empty(),
-    );
+    let (property_name_tree_type, ranked_axes) =
+        property_name_tree_type_and_ranked_axes_for_level(sub_level)?;
+    // A prefix-ranking chain level (the `rankedCountable: { at }` grouping
+    // level or a count-propagating level below it) counts its single
+    // continuation: the value tree's count IS the subtree total the
+    // grouping secondary ranks by, so the continuation is inserted
+    // contributing rather than zero-wrapped (see the walkers). No index
+    // terminates at such a level (the resolver above fails closed on one),
+    // so the terminator-flag derivation below never applies to it.
+    let value_tree_type = if sub_level.ranked_count_grouping() || sub_level.count_propagating() {
+        TreeType::CountTree
+    } else {
+        let info = sub_level.has_index_with_type();
+        derive_value_tree_type(
+            info.map(|i| i.countable.is_countable()).unwrap_or(false),
+            info.map(|i| i.range_countable).unwrap_or(false),
+            info.map(|i| i.summable.is_some()).unwrap_or(false),
+            info.map(|i| i.range_summable).unwrap_or(false),
+            !sub_level.sub_levels().is_empty(),
+        )
+    };
     Ok(IndexLevelTreeTypes {
         property_name_tree_type,
         ranked_axes,
@@ -290,6 +302,7 @@ fn derive_value_tree_type(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
     use crate::fees::op::LowLevelDriveOperation;
     use dpp::data_contract::document_type::{IndexCountability, IndexLevelTypeInfo, IndexType};
 
@@ -419,6 +432,150 @@ mod tests {
             assert_eq!(derived_property, expected_property);
             assert_eq!(derived_value, expected_value);
         }
+    }
+
+    /// A `rankedCountable: { at }` index resolves its chain levels to the
+    /// documented tree types: the grouping level to the Count-axis indexed
+    /// tree over `CountTree` value trees, the propagating level to a
+    /// `CountTree` pair, and the terminal level to its unchanged
+    /// terminator-flag derivation.
+    #[test]
+    fn prefix_ranked_chain_levels_resolve_to_the_chain_tree_types() {
+        use dpp::data_contract::document_type::{Index, IndexProperty};
+        use dpp::version::PlatformVersion;
+        use grovedb::element::IndexAxis;
+
+        let prefix_ranked = Index {
+            name: "byHashtagRegionPost".to_string(),
+            properties: ["hashtag", "region", "postId"]
+                .into_iter()
+                .map(|name| IndexProperty {
+                    name: name.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: Some("hashtag".to_string()),
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        };
+
+        let index_structure =
+            IndexLevel::try_from_indices([&prefix_ranked], "like", PlatformVersion::latest())
+                .expect("index level must build");
+
+        let hashtag_level = index_structure
+            .sub_levels()
+            .get("hashtag")
+            .expect("the grouping level exists");
+        let hashtag_types = index_level_tree_types_with_continuation_demotion(hashtag_level)
+            .expect("grouping resolution must succeed");
+        assert_eq!(
+            hashtag_types,
+            IndexLevelTreeTypes {
+                property_name_tree_type: TreeType::ProvableCountIndexedTree,
+                ranked_axes: vec![IndexAxis::Count],
+                value_tree_type: TreeType::CountTree,
+            }
+        );
+
+        let region_level = hashtag_level
+            .sub_levels()
+            .get("region")
+            .expect("the propagating level exists");
+        let region_types = index_level_tree_types_with_continuation_demotion(region_level)
+            .expect("propagating resolution must succeed");
+        assert_eq!(
+            region_types,
+            IndexLevelTreeTypes {
+                property_name_tree_type: TreeType::CountTree,
+                ranked_axes: Vec::new(),
+                value_tree_type: TreeType::CountTree,
+            }
+        );
+
+        let post_level = region_level
+            .sub_levels()
+            .get("postId")
+            .expect("the terminal level exists");
+        let post_types = index_level_tree_types_with_continuation_demotion(post_level)
+            .expect("terminal resolution must succeed");
+        assert_eq!(
+            post_types,
+            IndexLevelTreeTypes {
+                property_name_tree_type: TreeType::ProvableCountTree,
+                ranked_axes: Vec::new(),
+                value_tree_type: TreeType::CountTree,
+            },
+            "the terminal keeps its rangeCountable derivation — the boolean ranked axis is off"
+        );
+    }
+
+    /// A grouping level that also carries a terminator stamp has two
+    /// contradictory layouts; the resolver must fail closed instead of
+    /// picking one. Reachable only through an index set the contract-level
+    /// structural validation rejects (`try_from_indices` alone does not run
+    /// it), which is exactly why the resolver keeps its own guard.
+    #[test]
+    fn a_grouping_level_with_a_terminator_fails_closed() {
+        use dpp::data_contract::document_type::{Index, IndexProperty};
+        use dpp::version::PlatformVersion;
+
+        let base = |name: &str, properties: &[&str]| Index {
+            name: name.to_string(),
+            properties: properties
+                .iter()
+                .map(|property| IndexProperty {
+                    name: property.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: None,
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        };
+        let mut prefix_ranked = base("byHashtagPost", &["hashtag", "postId"]);
+        prefix_ranked.ranked_countable_at = Some("hashtag".to_string());
+        let terminating = base("byHashtag", &["hashtag"]);
+
+        let index_structure = IndexLevel::try_from_indices(
+            [&prefix_ranked, &terminating],
+            "like",
+            PlatformVersion::latest(),
+        )
+        .expect("index level must build — the overlap rule runs at contract parse, not here");
+
+        let hashtag_level = index_structure
+            .sub_levels()
+            .get("hashtag")
+            .expect("the shared level exists");
+        assert!(
+            index_level_tree_types_with_continuation_demotion(hashtag_level).is_err(),
+            "a grouping level with a terminator stamp must fail closed"
+        );
     }
 
     /// The two v14 fixes on one level: a ranked index terminating at
