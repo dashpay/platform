@@ -131,3 +131,32 @@ opt-level = 3
 
 version = "4.2.0-dev.5"
 rust-version = "1.92"
+
+# ============================================================================
+# TEMPORARY — QA ONLY. DROP THIS AT THE REAL RE-PIN.
+#
+# Every grovedb crate is pinned in the package manifests to dashpay/grovedb
+# rev 6c882c3, which carries a restore defect for sum trees: applying a state
+# sync snapshot chunk fails GroveDB verification ("apply_snapshot_chunk grovedb
+# verification failed with N incorrect hashes"), so a joining node can never
+# complete a state sync. packages/rs-drive-abci/tests/sum_tree_sync_probe.rs
+# pins that defect in-tree.
+#
+# dashpay/grovedb#840 (branch feat/state-sync-v2 on the PastaPastaPasta fork,
+# head 10a63e1) fixes it, and its restore wire version is 1, which is inside
+# drive-abci's supported set — so no protocol plumbing changes with it.
+#
+# This section exists so the state sync e2e can be run against the fix before
+# the fork is merged and re-pinned by rev. It MUST be removed once the real
+# pin lands: a branch reference is not reproducible, and a workspace [patch]
+# silently overrides every manifest's rev.
+# ============================================================================
+[patch."https://github.com/dashpay/grovedb"]
+grovedb = { git = "https://github.com/PastaPastaPasta/grovedb", branch = "feat/state-sync-v2" }
+grovedb-costs = { git = "https://github.com/PastaPastaPasta/grovedb", branch = "feat/state-sync-v2" }
+grovedb-path = { git = "https://github.com/PastaPastaPasta/grovedb", branch = "feat/state-sync-v2" }
+grovedb-storage = { git = "https://github.com/PastaPastaPasta/grovedb", branch = "feat/state-sync-v2" }
+grovedb-version = { git = "https://github.com/PastaPastaPasta/grovedb", branch = "feat/state-sync-v2" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/PastaPastaPasta/grovedb", branch = "feat/state-sync-v2" }
+grovedb-query = { git = "https://github.com/PastaPastaPasta/grovedb", branch = "feat/state-sync-v2" }
+grovedb-commitment-tree = { git = "https://github.com/PastaPastaPasta/grovedb", branch = "feat/state-sync-v2" }
