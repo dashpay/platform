@@ -207,6 +207,65 @@ mod tests {
         );
     }
 
+    /// A wipe must also drop the CHECKPOINT REGISTRY, not just the value caches.
+    ///
+    /// `drive.checkpoints` is populated by `Drive::open` and is what `list_snapshots`
+    /// serves to peers. It is not a cache that merely goes stale: left in place across a
+    /// wipe, a node that discarded a chain would keep advertising snapshots of it, and a
+    /// peer state-syncing from those would restore a chain this node no longer has and
+    /// cannot vouch for.
+    #[tokio::test]
+    async fn a_wiped_node_stops_serving_snapshots_of_the_discarded_chain() {
+        let config = sentinel_platform_config();
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let outcome = run_chain_for_strategy(
+            &mut platform.platform,
+            SOURCE_CHAIN_BLOCKS,
+            sentinel_strategy(),
+            config.clone(),
+            SOURCE_CHAIN_SEED,
+            &mut None,
+            &mut None,
+        )
+        .await;
+        let app = outcome.abci_app;
+
+        assert!(
+            !app.list_snapshots(Default::default())
+                .expect("should list snapshots")
+                .snapshots
+                .is_empty(),
+            "sanity: the chain must have produced servable snapshots to begin with"
+        );
+
+        // Accepting an offer wipes the database out from under those checkpoints.
+        app.offer_snapshot(proto::RequestOfferSnapshot {
+            snapshot: Some(proto::Snapshot {
+                height: 1000,
+                version: 1,
+                hash: vec![7u8; 32],
+                metadata: vec![],
+            }),
+            app_hash: vec![7u8; 32],
+        })
+        .expect("the offer must be accepted");
+
+        assert!(
+            app.list_snapshots(Default::default())
+                .expect("should list snapshots")
+                .snapshots
+                .is_empty(),
+            "after a wipe the node must stop advertising snapshots of the chain it just \
+             discarded — otherwise a peer would state-sync from state this node no longer has"
+        );
+        assert!(
+            app.platform.drive.checkpoints.load().is_empty(),
+            "the checkpoint registry itself must be cleared, not just filtered at serve time"
+        );
+    }
+
     /// A rejected offer must not record a sentinel — nothing was wiped, so nothing needs
     /// recovering. Without this, any peer could make a healthy node wipe itself on the next
     /// restart just by offering a snapshot in a format it cannot speak.
