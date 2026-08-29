@@ -16,6 +16,19 @@ use dash_sdk::query_types::AddressInfo;
 pub use super::InputSelection;
 use super::{checked_sum_credits, saturating_sum_credits};
 
+/// Stopgap multiplier applied to the static fee estimate when reserving
+/// `[DeductFromInput(0)]` input headroom, to clear Drive's higher chain-time
+/// fee (platform issue #3040).
+///
+/// The static `address_funds_transfer_*_cost` estimate sits ~2.3x below the
+/// chain-time fee Drive charges (~6.5M vs ~15.08M for 1in/1out on paloma).
+/// 3x (→ ~19.5M reserved) clears the chain-time fee with ~29% margin, the
+/// smallest integer factor that does so comfortably.
+///
+/// TODO(#3040): backend fee model under-estimates vs Drive chain-time fee.
+/// Remove this multiplier and use the raw estimate once #3040 lands.
+const PA3040_FEE_SAFETY_FACTOR: Credits = 3;
+
 /// Address-keyed step in a fee strategy. Resolves to an
 /// [`AddressFundsFeeStrategyStep`] by looking up the named address in the
 /// final inputs / outputs maps that the signer will see.
@@ -555,6 +568,40 @@ impl PlatformAddressWallet {
         Ok(selected)
     }
 
+    /// [`estimate_fee_for_inputs`] inflated by [`PA3040_FEE_SAFETY_FACTOR`] —
+    /// the input-headroom a `[DeductFromInput(0)]` selection must reserve so
+    /// the fee target's *remaining* balance clears Drive's chain-time fee,
+    /// not just the static protocol estimate.
+    ///
+    /// The static estimate (`address_funds_transfer_*_cost`) runs ~2.3x below
+    /// the chain-time fee Drive actually charges, so reserving only the
+    /// estimate ships a transition the protocol's own Phase-4 validator
+    /// blesses but Drive then rejects with `AddressesNotEnoughFundsError`.
+    /// Over-reserving on the *input* side is the one client lever available:
+    /// `[DeductFromInput(0)]` draws the fee from the fee target's remaining
+    /// balance, so reserving more remaining balance covers the gap. (The
+    /// `[ReduceOutput(0)]` path has no such lever — its fee is drawn from the
+    /// caller-fixed output — so this is intentionally not applied there.)
+    ///
+    /// TODO(#3040): backend fee model under-estimates vs Drive chain-time fee.
+    /// Remove this multiplier and use the raw estimate once #3040 lands.
+    fn estimate_fee_for_inputs_with_safety_margin(
+        input_count: usize,
+        output_count: usize,
+        fee_strategy: &[AddressFundsFeeStrategyStep],
+        outputs: &BTreeMap<PlatformAddress, Credits>,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        Self::estimate_fee_for_inputs(
+            input_count,
+            output_count,
+            fee_strategy,
+            outputs,
+            platform_version,
+        )
+        .saturating_mul(PA3040_FEE_SAFETY_FACTOR)
+    }
+
     /// Simulate the fee strategy to determine how much additional balance
     /// the inputs need beyond the output amounts. Walks the strategy steps
     /// in order and returns the residual fee inputs must cover.
@@ -768,7 +815,7 @@ fn select_inputs_deduct_from_input(
         prefix.push((address, balance));
         accumulated = accumulated.saturating_add(balance);
 
-        let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
+        let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs_with_safety_margin(
             prefix.len(),
             output_count,
             fee_strategy,
@@ -860,7 +907,7 @@ fn select_inputs_deduct_from_input(
     // recomputed fee_target_min still fits within the recomputed
     // fee_target_max, keep going; otherwise we genuinely lack headroom.
     let selected_input_count = selected.len() + 1; // + fee target
-    let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
+    let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs_with_safety_margin(
         selected_input_count,
         output_count,
         fee_strategy,
@@ -1350,12 +1397,16 @@ mod auto_select_tests {
         let target = p2pkh(0x99);
         let pv = LATEST_PLATFORM_VERSION;
 
+        // `bump` carries the #3040 safety-factor headroom so the fixture tracks
+        // the factor (effective fee = raw * PA3040_FEE_SAFETY_FACTOR).
+        let raw_fee_1in = 6_500_000u64; // 500_000*1 + 6_000_000
+        let bump = raw_fee_1in.saturating_mul(PA3040_FEE_SAFETY_FACTOR.saturating_sub(1));
         let total_output = 30_000_000u64;
-        // addr_b alone undershoots `total_output + fee_1in ≈ 36.5M`, so the
-        // prefix must include addr_tiny.
-        let addr_b_balance = 35_000_000u64;
-        // addr_tiny < fee_1in + min_input ≈ 6.6M → no fee headroom after the
-        // sub-min-floor consumption.
+        // addr_b alone undershoots `total_output + fee_1in_eff`, so the prefix
+        // must include addr_tiny, yet together they cover the output + fee.
+        let addr_b_balance = 35_000_000u64 + bump;
+        // addr_tiny << fee_2in_eff → no fee headroom after the sub-min-floor
+        // consumption, triggering "Cannot satisfy fee headroom".
         let addr_tiny_balance = 6_000_000u64;
         let outputs = outputs_for(target, total_output);
         let candidates = vec![(addr_tiny, addr_tiny_balance), (addr_b, addr_b_balance)];
@@ -1384,13 +1435,18 @@ mod auto_select_tests {
         let pv = LATEST_PLATFORM_VERSION;
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
-        // Fixture (numbers chosen against fee schedule `500_000*N + 6_000_000`):
-        // - prefix [x] (acc 10M) doesn't cover 10.5M (=4M+fee_1in).
-        // - prefix [x,y] (acc 10.08M) doesn't cover 11M (=4M+fee_2in).
-        // - prefix [x,y,z] (acc 12.08M) covers 11.5M.
+        // Fixture (numbers chosen against the EFFECTIVE fee schedule
+        // `(500_000*N + 6_000_000) * PA3040_FEE_SAFETY_FACTOR`). `bump` is the
+        // extra headroom the #3040 safety factor adds beyond the raw 1x fee, so
+        // these fixtures stay correct for any factor:
+        // - prefix [x] (acc 10M+bump) doesn't cover 4M+fee_1in_eff.
+        // - prefix [x,y] (acc 10.08M+bump) doesn't cover 4M+fee_2in_eff.
+        // - prefix [x,y,z] covers 4M+fee_3in_eff.
         // - Phase 4: y's tentative=80k folds into fee target; z absorbs 2M.
+        let raw_fee_1in = 6_500_000u64; // 500_000*1 + 6_000_000
+        let bump = raw_fee_1in.saturating_mul(PA3040_FEE_SAFETY_FACTOR.saturating_sub(1));
         let total_output = 4_000_000u64;
-        let addr_x_balance = 10_000_000u64;
+        let addr_x_balance = 10_000_000u64 + bump;
         let addr_y_balance = 80_000u64; // below min_input_amount (100_000)
         let addr_z_balance = 2_000_000u64;
         let outputs = outputs_for(target, total_output);
@@ -1440,10 +1496,13 @@ mod auto_select_tests {
         // Numbers: same shape as `non_fee_target_below_min_input_redistributes`
         // — prefix [x,y,z] is needed by Phase-1 fee_3in, but final selected
         // is {x,z} so fee_2in applies. Both paths converge here because the
-        // headroom is large; this asserts no false rejection.
+        // headroom is large; this asserts no false rejection. `bump` carries
+        // the #3040 safety-factor headroom so the fixture tracks the factor.
+        let raw_fee_1in = 6_500_000u64; // 500_000*1 + 6_000_000
+        let bump = raw_fee_1in.saturating_mul(PA3040_FEE_SAFETY_FACTOR.saturating_sub(1));
         let total_output = 4_000_000u64;
         let candidates = vec![
-            (addr_x, 10_000_000u64),
+            (addr_x, 10_000_000u64 + bump),
             (addr_y, 80_000u64), // < min_input → folds into fee target
             (addr_z, 2_000_000u64),
         ];

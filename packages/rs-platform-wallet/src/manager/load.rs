@@ -296,7 +296,7 @@ mod idempotent_load_tests {
         Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(persister),
-            event_handler,
+            vec![event_handler],
         ))
     }
 

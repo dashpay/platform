@@ -423,13 +423,15 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Create a new PlatformWalletManager.
     ///
-    /// `app_handler` receives all SPV and platform events by reference.
-    /// Internally, a `LockNotifyHandler` is also registered to wake
-    /// `AssetLockManager` async waiters on lock events.
+    /// `app_handlers` all receive every SPV and platform event by
+    /// reference. Internally, a `LockNotifyHandler` and a
+    /// `BalanceUpdateHandler` are always appended after them so the
+    /// lock-wake and balance-atomic invariants hold regardless of what
+    /// the caller passes.
     pub fn new(
         sdk: Arc<dash_sdk::Sdk>,
         persister: Arc<P>,
-        app_handler: Arc<dyn PlatformEventHandler>,
+        app_handlers: Vec<Arc<dyn PlatformEventHandler>>,
     ) -> Self {
         // Take the manager's lossless, unbounded persistence receiver BEFORE
         // the manager is wrapped in the shared `Arc<RwLock>` and handed to any
@@ -466,7 +468,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             event_adapter_cancel.clone(),
         );
 
-        // Build handler list: app handler + internal handlers.
+        // Build handler list: caller handlers + internal handlers.
         // BalanceUpdateHandler holds a clone of the wallets map (a
         // separate lock from wallet_manager) so it can look up
         // PlatformWallets and write to their lock-free balance
@@ -483,12 +485,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&wallet_manager),
             Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
         ));
-        let event_manager = Arc::new(PlatformEventManager::new(vec![
-            app_handler,
-            lock_handler,
-            balance_handler,
-            Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>,
-        ]));
+        let mut handlers = app_handlers;
+        handlers.push(lock_handler as Arc<dyn PlatformEventHandler>);
+        handlers.push(balance_handler as Arc<dyn PlatformEventHandler>);
+        // Clone (not move) — `dashpay_payment_handler` is also stored on
+        // `Self` below so `shutdown()` can quiesce it directly.
+        handlers.push(Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>);
+        let event_manager = Arc::new(PlatformEventManager::new(handlers));
 
         let spv = Arc::new(SpvRuntime::new(
             Arc::clone(&wallet_manager),
@@ -1018,7 +1021,7 @@ mod tests {
         Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(NoopPersister),
-            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+            vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
         ))
     }
 

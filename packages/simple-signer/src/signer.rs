@@ -55,6 +55,34 @@ impl Debug for SimpleSigner {
     }
 }
 
+/// Errors returned by the seed-based eager-derivation constructors.
+#[cfg(feature = "derive")]
+#[derive(Debug, thiserror::Error)]
+pub enum SimpleSignerError {
+    /// The seed produced an invalid root extended private key.
+    #[error("invalid seed for root xpriv: {0}")]
+    InvalidSeed(String),
+    /// The DIP-17 / DIP-9 derivation path failed to construct.
+    #[error("derivation path: {0}")]
+    DerivationPath(String),
+    /// `derive_priv` failed at the given leaf index.
+    #[error("derive_priv at index {index}: {message}")]
+    DerivePriv {
+        /// Leaf index that failed.
+        index: u32,
+        /// Underlying key-wallet error message.
+        message: String,
+    },
+    /// A leaf [`ChildNumber`] could not be constructed from the requested index.
+    #[error("invalid leaf index {index}: {message}")]
+    InvalidIndex {
+        /// Offending leaf index.
+        index: u32,
+        /// Underlying key-wallet error message.
+        message: String,
+    },
+}
+
 impl SimpleSigner {
     /// Add a key to the signer
     pub fn add_identity_public_key(
@@ -113,6 +141,126 @@ impl SimpleSigner {
             .insert(address_hash, secret_key.secret_bytes());
 
         PlatformAddress::P2pkh(address_hash)
+    }
+
+    /// Build a [`SimpleSigner`] populated with the DIP-17 platform-payment
+    /// gap window for `(account, key_class)`. Each leaf
+    /// `m/9'/coin_type'/17'/account'/key_class'/index` derives a
+    /// secp256k1 keypair; the 20-byte RIPEMD160(SHA256(pubkey)) hash is
+    /// inserted into [`Self::address_private_keys`].
+    #[cfg(feature = "derive")]
+    pub fn from_seed_for_platform_address_account(
+        seed: &[u8; 64],
+        network: key_wallet::Network,
+        account: u32,
+        key_class: u32,
+        gap_limit: u32,
+    ) -> Result<Self, SimpleSignerError> {
+        Self::from_seed_for_platform_addresses(seed, network, account, key_class, 0..gap_limit)
+    }
+
+    /// Build a [`SimpleSigner`] populated with the DIP-17 platform-payment
+    /// keys for an explicit set of derivation `indices` under
+    /// `(account, key_class)`. Each `index` derives
+    /// `m/9'/coin_type'/17'/account'/key_class'/index`; the 20-byte
+    /// RIPEMD160(SHA256(pubkey)) hash is inserted into
+    /// [`Self::address_private_keys`].
+    ///
+    /// Use this over [`Self::from_seed_for_platform_address_account`] when
+    /// the address set is not the contiguous `0..gap_limit` window — e.g.
+    /// a long-lived wallet whose synced funded pool has cycled past the
+    /// first gap window. Duplicate indices are deduplicated by the
+    /// underlying key map. Returns the first derivation error encountered.
+    #[cfg(feature = "derive")]
+    pub fn from_seed_for_platform_addresses<I: IntoIterator<Item = u32>>(
+        seed: &[u8; 64],
+        network: key_wallet::Network,
+        account: u32,
+        key_class: u32,
+        indices: I,
+    ) -> Result<Self, SimpleSignerError> {
+        use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+        use key_wallet::{AccountType, ChildNumber};
+
+        let root_priv = RootExtendedPrivKey::new_master(seed)
+            .map_err(|err| SimpleSignerError::InvalidSeed(err.to_string()))?;
+        let root_xpriv = root_priv.to_extended_priv_key(network);
+
+        let account_path = AccountType::PlatformPayment { account, key_class }
+            .derivation_path(network)
+            .map_err(|err| SimpleSignerError::DerivationPath(err.to_string()))?;
+
+        let secp = Secp256k1::new();
+        let mut signer = Self::default();
+        for index in indices {
+            let leaf = ChildNumber::from_normal_idx(index).map_err(|err| {
+                SimpleSignerError::InvalidIndex {
+                    index,
+                    message: err.to_string(),
+                }
+            })?;
+            // `extend` returns a fresh path; account_path is reused.
+            let leaf_path = account_path.extend([leaf]);
+            let xpriv = root_xpriv.derive_priv(&secp, &leaf_path).map_err(|err| {
+                SimpleSignerError::DerivePriv {
+                    index,
+                    message: err.to_string(),
+                }
+            })?;
+            let secret: SecretKey = xpriv.private_key;
+            let pubkey: PublicKey = PublicKey::from_secret_key(&secp, &secret);
+            let pkh = ripemd160_sha256(&pubkey.serialize());
+            signer
+                .address_private_keys
+                .insert(pkh, secret.secret_bytes());
+        }
+        Ok(signer)
+    }
+
+    /// Build a [`SimpleSigner`] populated with the DIP-9 identity-authentication
+    /// (ECDSA) gap window for `identity_index`. The returned signer holds raw
+    /// secp256k1 secrets keyed on `(pubkey-hash, secret)` via
+    /// [`Self::address_private_keys`] — callers that need a `Signer<IdentityPublicKey>`
+    /// view must additionally register `IdentityPublicKey` records via
+    /// [`Self::add_identity_public_key`] using the matching pubkey bytes.
+    #[cfg(feature = "derive")]
+    pub fn from_seed_for_identity(
+        seed: &[u8; 64],
+        network: key_wallet::Network,
+        identity_index: u32,
+        gap_limit: u32,
+    ) -> Result<Self, SimpleSignerError> {
+        use key_wallet::bip32::KeyDerivationType;
+        use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+        use key_wallet::DerivationPath;
+
+        let root_priv = RootExtendedPrivKey::new_master(seed)
+            .map_err(|err| SimpleSignerError::InvalidSeed(err.to_string()))?;
+        let root_xpriv = root_priv.to_extended_priv_key(network);
+
+        let secp = Secp256k1::new();
+        let mut signer = Self::default();
+        for key_index in 0..gap_limit {
+            let leaf_path = DerivationPath::identity_authentication_path(
+                network,
+                KeyDerivationType::ECDSA,
+                identity_index,
+                key_index,
+            );
+            let xpriv = root_xpriv.derive_priv(&secp, &leaf_path).map_err(|err| {
+                SimpleSignerError::DerivePriv {
+                    index: key_index,
+                    message: err.to_string(),
+                }
+            })?;
+            let secret: SecretKey = xpriv.private_key;
+            let pubkey: PublicKey = PublicKey::from_secret_key(&secp, &secret);
+            let pkh = ripemd160_sha256(&pubkey.serialize());
+            signer
+                .address_private_keys
+                .insert(pkh, secret.secret_bytes());
+        }
+        Ok(signer)
     }
 }
 

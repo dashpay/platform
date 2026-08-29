@@ -576,7 +576,7 @@ dependencies = [
  "bitflags 2.13.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1700,6 +1700,7 @@ dependencies = [
  "heck 0.5.0",
  "quote",
  "syn 2.0.117",
+ "tokio",
 ]
 
 [[package]]
@@ -2736,6 +2737,16 @@ dependencies = [
  "frost-core",
  "hex",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -5238,20 +5249,26 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "bimap",
+ "bip39",
  "bs58",
  "dash-async",
+ "dash-platform-macros",
  "dash-sdk",
  "dash-spv",
  "dashcore",
+ "dotenvy",
  "dpp",
  "drive-proof-verifier",
+ "fs2",
  "futures",
  "grovedb-commitment-tree",
  "hex",
  "image",
+ "indexmap 2.14.0",
  "key-wallet",
  "key-wallet-manager",
  "log",
+ "parking_lot",
  "platform-encryption",
  "rand 0.8.6",
  "rayon",
@@ -5262,8 +5279,10 @@ dependencies = [
  "sha2",
  "simple-signer",
  "static_assertions",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-shared-rt",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -5285,6 +5304,7 @@ dependencies = [
  "dashcore",
  "dpp",
  "hex",
+ "indexmap 2.14.0",
  "key-wallet",
  "lazy_static",
  "once_cell",
@@ -5582,8 +5602,8 @@ version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
- "heck 0.4.1",
- "itertools 0.10.5",
+ "heck 0.5.0",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "petgraph",
@@ -5604,7 +5624,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5617,7 +5637,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -7236,6 +7256,8 @@ dependencies = [
  "bincode",
  "dpp",
  "hex",
+ "key-wallet",
+ "thiserror 2.0.18",
  "tracing",
  "zeroize",
 ]
@@ -7827,6 +7849,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-shared-rt"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a6bb03ec682a0bb16ce93d19301abc5b98a0d7936477175a156a213dcc47d85"
+dependencies = [
+ "once_cell",
+ "tokio",
+ "tokio-shared-rt-macro",
+]
+
+[[package]]
+name = "tokio-shared-rt-macro"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fe49a94e3a984b0d0ab97343dc3dcd52baae1ee13f005bfad39faea47d051dc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "tokio-stream"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7873,6 +7917,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

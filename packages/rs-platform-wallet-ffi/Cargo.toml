@@ -41,6 +41,9 @@ bincode = { version = "=2.0.1" }
 # Hex used for error diagnostics that include a wallet_id.
 hex = "0.4"
 
+# `IndexMap` mirrors `platform-wallet`'s insertion-ordered outputs API.
+indexmap = "2.7"
+
 # Persistence loader emits structured warnings for skipped /
 # corrupt rows so operators can detect snapshot drift without a
 # native debugger attached.

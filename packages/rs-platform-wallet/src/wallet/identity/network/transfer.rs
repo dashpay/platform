@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
-use dpp::identity::accessors::IdentitySettersV0;
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::BinaryData;
@@ -129,13 +129,15 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(from_id) {
+                let prev_balance = managed.identity.balance();
                 managed.identity.set_balance(sender_balance);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %from_id,
-                        error = %e,
-                        "Failed to persist identity balance update after transfer (external signer)"
-                    );
+                if let Err(source) = self.persister.store(managed.snapshot_changeset().into()) {
+                    managed.identity.set_balance(prev_balance);
+                    return Err(PlatformWalletError::PersistedAfterOnChainSuccess {
+                        identity: *from_id,
+                        op: "transfer",
+                        source,
+                    });
                 }
             }
         }

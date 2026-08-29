@@ -1808,6 +1808,64 @@ impl PlatformWallet {
         )
         .await
     }
+
+    /// Shield credits from a Core L1 asset lock into the wallet's
+    /// shielded pool (Type 18), with the resulting note assigned to
+    /// `shielded_account`'s default Orchard address.
+    ///
+    /// Low-level raw-proof entry point. Production funds shielded
+    /// asset-locks through [`shielded_fund_from_asset_lock`](Self::shielded_fund_from_asset_lock),
+    /// which builds the lock, runs IS→CL fallback, self-derives the
+    /// amount, and tracks/consumes the outpoint. This wrapper takes a
+    /// pre-built proof + explicit amount and does none of that — it
+    /// exists for callers that must drive a chosen proof directly, such
+    /// as the SH-035 single-use replay probe (resubmitting one proof
+    /// twice, which the orchestrated path cannot express).
+    ///
+    /// `asset_lock_proof` is the single-use proof of the locked L1
+    /// outpoint and `private_key` the one-time key authorizing it (the
+    /// caller derives both via the asset-lock builder). `amount` is the
+    /// shielded value. Uses `broadcast_and_wait` for proven inclusion —
+    /// important because the proof is single-use, so a false-positive on
+    /// a later-rejected transition would strand the L1 outpoint.
+    ///
+    /// Mirrors the other four spend wrappers
+    /// ([`shielded_shield_from_account`](Self::shielded_shield_from_account),
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to),
+    /// [`shielded_unshield_to`](Self::shielded_unshield_to),
+    /// [`shielded_withdraw_to`](Self::shielded_withdraw_to)) and delegates
+    /// to `operations::shield_from_asset_lock`. Returns `ShieldedNotBound`
+    /// if no shielded sub-wallet is bound, or `ShieldedKeyDerivation` if
+    /// `shielded_account` isn't bound on it.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_shield_from_asset_lock<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        shielded_account: u32,
+        asset_lock_proof: dpp::prelude::AssetLockProof,
+        private_key: &[u8],
+        amount: u64,
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let guard = self.shielded_keys.read().await;
+        let keys = guard
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        let keyset = keys.get(&shielded_account).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(format!(
+                "shielded account {shielded_account} not bound"
+            ))
+        })?;
+        super::shielded::operations::shield_from_asset_lock(
+            &self.sdk,
+            keyset,
+            shielded_account,
+            asset_lock_proof,
+            private_key,
+            amount,
+            &prover,
+        )
+        .await
+    }
 }
 
 impl PlatformWallet {

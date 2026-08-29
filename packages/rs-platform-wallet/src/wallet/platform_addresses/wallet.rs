@@ -657,9 +657,8 @@ impl PlatformAddressWallet {
     /// - `account_key.account` selects the HD account
     /// - `account_key.key_class` selects the key purpose (0 = clear funds)
     ///
-    /// The address is derived from the wallet's public key material
-    /// via dashcore's `AddressPool::next_unused` — no seed access or
-    /// caller-side derivation needed.
+    /// The address is atomically reserved in the pool before it is
+    /// returned. Observing funds later promotes it from reserved to used.
     pub async fn next_unused_receive_address(
         &self,
         account_key: key_wallet::account::account_collection::PlatformPaymentAccountKey,
@@ -701,12 +700,56 @@ impl PlatformAddressWallet {
 
         let address = managed_account
             .addresses
-            .next_unused(&key_source, true)
+            .next_unused_and_reserve(&key_source, crate::util::now_secs())
             .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
 
         PlatformAddress::try_from(address).map_err(|e| {
             PlatformWalletError::AddressSync(format!("Failed to convert to PlatformAddress: {e}"))
         })
+    }
+
+    /// Release a receive-address reservation back to the available pool.
+    ///
+    /// Returns `false` when the address is non-P2PKH, unknown to the selected
+    /// account, already released, or no longer reserved because it was used.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the wallet or selected platform-payment account
+    /// is not registered with the wallet manager.
+    pub async fn release_receive_reservation(
+        &self,
+        account_key: key_wallet::account::account_collection::PlatformPaymentAccountKey,
+        address: &PlatformAddress,
+    ) -> Result<bool, PlatformWalletError> {
+        let PlatformAddress::P2pkh(hash) = address else {
+            return Ok(false);
+        };
+
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+        let managed_account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(account_key.account)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {}",
+                    account_key.account
+                ))
+            })?;
+
+        let dash_address =
+            PlatformP2PKHAddress::new(*hash).to_address(managed_account.addresses.network);
+        let Some(index) = managed_account.addresses.address_index(&dash_address) else {
+            return Ok(false);
+        };
+
+        Ok(managed_account.addresses.release_reservation(index))
     }
 
     /// Get all platform addresses with their cached balances.
@@ -740,9 +783,9 @@ impl PlatformAddressWallet {
     /// Returns `None` when the provider hasn't been initialised yet or
     /// when no incremental sync has produced a watermark. A zero-valued
     /// watermark is reported as `None` to match the "no stored watermark"
-    /// convention used by [`Self::apply_sync_state`]. Intended for
-    /// progress checks where the precise "uninitialised vs. zero"
-    /// distinction is not material.
+    /// convention used by [`Self::apply_sync_state`]. The value is
+    /// monotonic non-decreasing across syncs against the same chain — a
+    /// later sync can only advance the watermark, never roll it back.
     pub async fn sync_watermark(&self) -> Option<u64> {
         let guard = self.provider.read().await;
         let raw = guard.as_ref().map(|p| p.last_known_recent_block())?;
@@ -759,6 +802,120 @@ impl PlatformAddressWallet {
             .map(|account| account.total_credit_balance())
             .unwrap_or(0)
     }
+
+    /// Highest derived index in the platform-payment receive pool for
+    /// the given account, combining the synced-balance map and the
+    /// eager `highest_generated` watermark. `None` when neither side
+    /// has produced an index (no syncs yet **and** the pool was built
+    /// with `gap_limit == 0`, which doesn't occur in production).
+    ///
+    /// Used by test infrastructure (e2e sweep / funding paths) to size
+    /// the `SimpleSigner` key window — the signer must cover every
+    /// index the pool may hand to a `transfer` input selector. Production
+    /// transfer/withdraw paths use the modern provider and don't call
+    /// this accessor.
+    ///
+    /// TODO: this currently reads from the deprecated
+    /// `platform_payment_managed_account.addresses` pool. Migrate to
+    /// `PlatformPaymentAddressProvider` once it exposes a stateful
+    /// pool (per @QuantumExplorer's review on #3648). Callers don't
+    /// change — the accessor's implementation flips.
+    pub async fn platform_payment_account_max_derived_index(
+        &self,
+        account_index: u32,
+    ) -> Result<Option<u32>, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+        let account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index(account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {account_index}"
+                ))
+            })?;
+        let synced_max = account.addresses.addresses.keys().copied().max();
+        let generated_max = account.addresses.highest_generated;
+        Ok(synced_max.into_iter().chain(generated_max).max())
+    }
+
+    /// Returns the configured `gap_limit` on the platform-payment receive
+    /// pool for the given account.
+    ///
+    /// TODO: this currently reads from the deprecated
+    /// `platform_payment_managed_account.addresses` pool. Migrate to
+    /// `PlatformPaymentAddressProvider` once it exposes a stateful
+    /// pool (per @QuantumExplorer's review on #3648).
+    pub async fn platform_payment_account_gap_limit(
+        &self,
+        account_index: u32,
+    ) -> Result<u32, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+        let account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index(account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {account_index}"
+                ))
+            })?;
+        Ok(account.addresses.gap_limit)
+    }
+}
+
+impl PlatformAddressWallet {
+    /// Force-seed the cached credit balance for a platform payment address.
+    ///
+    /// Called by the e2e harness after a dual-verified `AddressInfo::fetch`
+    /// confirms the on-chain balance when the BLAST sync path consistently
+    /// returns the address as NOT FOUND (DAPI replica divergence, issue #3611).
+    ///
+    /// Mirrors what `on_address_found` does during a successful BLAST sync
+    /// (`provider.rs:621`) and what `fund_from_asset_lock` does after on-chain
+    /// confirmation (`fund_from_asset_lock.rs:429`) — both call
+    /// `account.set_address_credit_balance` directly.
+    ///
+    /// Only call this after proof-verified dual confirmation. Nonce is not
+    /// injected because `transfer()` fetches the current nonce from DAPI at
+    /// broadcast time (matching the `apply_changeset` precedent at `apply.rs:272`).
+    pub async fn inject_address_balance(
+        &self,
+        account_index: u32,
+        address: PlatformP2PKHAddress,
+        balance: Credits,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "wallet {} not in wallet manager",
+                hex::encode(self.wallet_id),
+            ))
+        })?;
+        if let Some(account) = info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(account_index)
+        {
+            account.set_address_credit_balance(address, balance, None);
+            tracing::info!(
+                balance,
+                %address,
+                account_index,
+                "inject_address_balance: spend cache seeded with verified balance"
+            );
+        }
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for PlatformAddressWallet {
@@ -766,6 +923,226 @@ impl std::fmt::Debug for PlatformAddressWallet {
         f.debug_struct("PlatformAddressWallet")
             .field("network", &self.sdk.network)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod found_026_tests {
+    use super::*;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+    use key_wallet::wallet::initialization::{
+        PlatformPaymentAccountSpec, WalletAccountCreationOptions,
+    };
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::{Network, Wallet};
+    use key_wallet_manager::WalletManager;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    const ACCOUNT_KEY: PlatformPaymentAccountKey = PlatformPaymentAccountKey {
+        account: 0,
+        key_class: 0,
+    };
+
+    /// Build a network-free `PlatformAddressWallet` over one DIP-17
+    /// platform-payment account (account 0, key_class 0). Mirrors the
+    /// `register_wallet` path: `ManagedWalletInfo::from_wallet` +
+    /// `insert_wallet`, no SPV / no funding.
+    fn wallet_with_platform_account() -> PlatformAddressWallet {
+        use crate::events::PlatformEventManager;
+        use crate::spv::SpvRuntime;
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use tokio::sync::Notify;
+
+        let mut pp = BTreeSet::new();
+        pp.insert(PlatformPaymentAccountSpec {
+            account: 0,
+            key_class: 0,
+        });
+        let opts = WalletAccountCreationOptions::AllAccounts(
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            pp,
+        );
+        let wallet = Wallet::new_random(Network::Testnet, opts).expect("wallet");
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let info = PlatformWalletInfo {
+            core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
+            generation: Arc::new(crate::wallet::core::WalletGeneration::new()),
+            identity_manager: crate::wallet::identity::IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+        };
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(Network::Testnet)));
+        let wallet_id = wallet_manager
+            .try_write()
+            .expect("uncontended")
+            .insert_wallet(wallet, info)
+            .expect("insert");
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster,
+            persister.clone(),
+        ));
+        PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, asset_locks, persister)
+    }
+
+    /// Found-026 durable guard: two `next_unused_receive_address` calls
+    /// with NO intervening sync/balance update must return DISTINCT
+    /// addresses. The first call reserves index 0 without marking it
+    /// used, so the second yields index 1.
+    #[tokio::test]
+    async fn found_026_back_to_back_handout_returns_distinct_addresses() {
+        let wallet = wallet_with_platform_account();
+
+        let a = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("first hand-out");
+        let b = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("second hand-out");
+
+        assert_ne!(
+            a, b,
+            "back-to-back hand-out with no sync re-handed the same address (Found-026)"
+        );
+    }
+
+    #[tokio::test]
+    async fn release_receive_reservation_is_idempotent_and_miss_safe() {
+        let wallet = wallet_with_platform_account();
+        let unknown = PlatformAddress::P2pkh([0xff; 20]);
+        let non_p2pkh = PlatformAddress::P2sh([0xee; 20]);
+
+        assert!(!wallet
+            .release_receive_reservation(ACCOUNT_KEY, &unknown)
+            .await
+            .expect("unknown address release"));
+        assert!(!wallet
+            .release_receive_reservation(ACCOUNT_KEY, &non_p2pkh)
+            .await
+            .expect("non-P2PKH release"));
+
+        let reserved = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("reserve");
+        assert!(wallet
+            .release_receive_reservation(ACCOUNT_KEY, &reserved)
+            .await
+            .expect("first release"));
+        assert!(!wallet
+            .release_receive_reservation(ACCOUNT_KEY, &reserved)
+            .await
+            .expect("second release"));
+
+        let reissued = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("reissue");
+        assert_eq!(reissued, reserved);
+
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let (_, info) = wm
+                .get_wallet_mut_and_info_mut(&wallet.wallet_id)
+                .expect("wallet present");
+            let pool = &mut info
+                .core_wallet
+                .platform_payment_managed_account_at_index_mut(ACCOUNT_KEY.account)
+                .expect("managed account")
+                .addresses;
+            assert!(pool.mark_index_used(0));
+        }
+        assert!(!wallet
+            .release_receive_reservation(ACCOUNT_KEY, &reserved)
+            .await
+            .expect("used address release"));
+    }
+
+    /// Found-026: K repeated hand-outs create exactly K reservations,
+    /// leave used accounting unchanged, and return distinct addresses.
+    /// A later observed-use mark promotes one reservation to used.
+    #[tokio::test]
+    async fn found_026_repeated_handouts_create_exactly_k_reservations() {
+        const K: u32 = 5;
+        let wallet = wallet_with_platform_account();
+
+        let baseline = {
+            let wm = wallet.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&wallet.wallet_id)
+                .expect("wallet present");
+            let pool = &info
+                .core_wallet
+                .platform_payment_managed_account_at_index(ACCOUNT_KEY.account)
+                .expect("managed account")
+                .addresses;
+            pool.stats()
+        };
+
+        let mut seen = BTreeSet::new();
+        for _ in 0..K {
+            let addr = wallet
+                .next_unused_receive_address(ACCOUNT_KEY)
+                .await
+                .expect("hand-out");
+            assert!(seen.insert(addr), "duplicate address handed out");
+        }
+        assert_eq!(seen.len(), K as usize);
+
+        let mut wm = wallet.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_mut_and_info_mut(&wallet.wallet_id)
+            .expect("wallet present");
+        let pool = &mut info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(ACCOUNT_KEY.account)
+            .expect("managed account")
+            .addresses;
+
+        let after_handouts = pool.stats();
+        assert_eq!(
+            after_handouts.reserved_count,
+            baseline.reserved_count + K,
+            "each hand-out must add exactly one reservation"
+        );
+        assert_eq!(
+            after_handouts.used_count, baseline.used_count,
+            "hand-outs must not count as observed use"
+        );
+        assert_eq!(pool.highest_used, baseline.highest_used);
+        assert_eq!(pool.used_indices.len(), baseline.used_count as usize);
+
+        assert!(
+            pool.mark_index_used(0),
+            "observed funding must promote a reservation to used"
+        );
+        let after_observed_use = pool.stats();
+        assert_eq!(
+            after_observed_use.reserved_count,
+            after_handouts.reserved_count - 1
+        );
+        assert_eq!(after_observed_use.used_count, after_handouts.used_count + 1);
+        assert_eq!(pool.highest_used, Some(0));
+
+        assert!(
+            !pool.mark_index_used(0),
+            "re-marking an already-used index must remain idempotent"
+        );
+        assert_eq!(pool.stats().used_count, after_observed_use.used_count);
     }
 }
 

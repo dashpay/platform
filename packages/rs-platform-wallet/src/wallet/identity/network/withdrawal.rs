@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use dashcore::Address as DashAddress;
 use dpp::address_funds::AddressWitness;
-use dpp::identity::accessors::IdentitySettersV0;
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::Purpose;
@@ -125,13 +125,15 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info_guard.identity_manager.identity_mut(identity_id) {
+                let prev_balance = managed.identity.balance();
                 managed.identity.set_balance(new_balance);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %identity_id,
-                        error = %e,
-                        "Failed to persist identity balance update after withdraw (external signer)"
-                    );
+                if let Err(source) = self.persister.store(managed.snapshot_changeset().into()) {
+                    managed.identity.set_balance(prev_balance);
+                    return Err(PlatformWalletError::PersistedAfterOnChainSuccess {
+                        identity: *identity_id,
+                        op: "withdraw",
+                        source,
+                    });
                 }
             }
         }

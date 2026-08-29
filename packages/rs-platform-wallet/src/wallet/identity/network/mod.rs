@@ -85,11 +85,11 @@ pub use identity_handle::{
     IdentityWallet, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 
-// Helpers declared on `identity_handle.rs` that siblings reach
-// through `use super::*;`. Sibling-only — re-exporting here just
-// avoids each sibling having to spell out `identity_handle::` on
-// every call site.
-pub(super) use identity_handle::derive_identity_auth_key_hash;
+// Resident-wallet MASTER-key-hash derive from `identity_handle.rs`.
+// `pub(crate)` (matching the fn's own visibility) so siblings reach it
+// via `use super::*;` and the register-flow test can cross-check a
+// captured master against the resident derive.
+pub(crate) use identity_handle::derive_identity_auth_key_hash;
 
 /// Process-wide cached DashPay data contract.
 ///

@@ -14,6 +14,8 @@ state-transitions = [
     "dpp/bls-signatures",
     "dpp/state-transition-signing",
 ]
+# Eager seed-based key derivation constructors (DIP-17 / DIP-9).
+derive = ["dep:key-wallet", "dep:thiserror", "state-transitions"]
 
 [dependencies]
 dpp = { path = "../rs-dpp", default-features = false, features = [
@@ -24,6 +26,8 @@ bincode = { version = "=2.0.1", features = ["serde"] }
 base64 = { version = "0.22.1" }
 hex = { version = "0.4.3" }
 tracing = "0.1.41"
+key-wallet = { workspace = true, optional = true }
+thiserror = { version = "2.0.17", optional = true }
 zeroize = "1"
 
 [package.metadata.cargo-machete]

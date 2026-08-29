@@ -504,7 +504,8 @@ impl PlatformPaymentAddressProvider {
     /// Crate-visible mirror of the field used by the `AddressProvider`
     /// trait implementation, so wallet-level helpers (notably
     /// [`super::wallet::PlatformAddressWallet::sync_watermark`]) can
-    /// read the value without going through the trait.
+    /// read the value without going through the trait. Monotonic
+    /// non-decreasing across `sync_finished` calls.
     pub(crate) fn last_known_recent_block(&self) -> u64 {
         self.last_known_recent_block
     }

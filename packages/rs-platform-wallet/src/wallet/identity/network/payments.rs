@@ -1733,7 +1733,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            handler,
+            vec![handler],
         ));
         let mnemonic =
             Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
@@ -1766,7 +1766,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            handler,
+            vec![handler],
         ));
         let mnemonic =
             Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
@@ -1802,7 +1802,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            handler,
+            vec![handler],
         ));
         let mnemonic =
             Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
@@ -2449,7 +2449,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            handler,
+            vec![handler],
         ));
         let mnemonic =
             Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
@@ -5197,7 +5197,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            handler,
+            vec![handler],
         ));
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
             .expect("valid mnemonic")
@@ -5559,7 +5559,7 @@ mod tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::clone(&persister),
-            handler,
+            vec![handler],
         ));
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
             .expect("valid mnemonic")

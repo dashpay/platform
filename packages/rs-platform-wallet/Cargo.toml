@@ -34,6 +34,11 @@ arc-swap = "1"
 
 # Collections
 bimap = "0.6"
+# `IndexMap` powers the insertion-ordered public outputs map on
+# `PlatformAddressWallet::transfer` / `transfer_with_change_address`.
+# Same crate that dpp and rs-sdk already vendor; pin a workspace-aligned
+# minor that satisfies all in-tree requirements.
+indexmap = "2.7"
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
@@ -101,16 +106,19 @@ required-features = ["shielded"]
 
 [dev-dependencies]
 # In-process Signer<IdentityPublicKey> for the manual testnet
-# verification example (`examples/dpns_marketplace_testnet.rs`).
-simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
+# verification example (`examples/dpns_marketplace_testnet.rs`) and the
+# `tests/e2e/` harness's signer (`derive`).
+simple-signer = { path = "../simple-signer", features = ["state-transitions", "derive"] }
 # Used by `examples/shielded_chunk_timing_bench.rs` and
 # `tests/shielded_decrypt_bench.rs` to assemble per-chunk wire
 # fixtures and decode the `ShieldedEncryptedNote` wire type.
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # `test-utils` exposes key-wallet's `TestWalletContext` + `Address::dummy`
 # (via `dashcore/test-utils`) for building funded, signable test wallets.
+# `keep-finalized-transactions` retains finalized txs in RAM, which the
+# in-memory test runs (NoPlatformPersistence) require.
 # Dev-only, so the production build stays on the leaner default features.
-key-wallet = { workspace = true, features = ["test-utils"] }
+key-wallet = { workspace = true, features = ["test-utils", "keep-finalized-transactions"] }
 rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"
@@ -127,18 +135,70 @@ tokio = { version = "1", features = ["sync", "rt", "time", "macros", "test-util"
 # Re-enable the SDK with mocks feature for test-only mock builders;
 # the non-test build keeps the leaner default-feature SDK above.
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet", "mocks"] }
-# Used by `examples/shielded_sync_paloma.rs` to build the SDK against
-# a remote devnet that doesn't have Core RPC reachable — supplies
-# proof verification via a separate HTTP quorum-list service.
-rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 
+# E2E test framework — see `tests/e2e/` for the integration harness
+# that exercises the wallet → SDK → broadcast pipeline against a
+# live testnet bank wallet. Pinned to the canonical published crate
+# names; cargo normalizes dash/underscore in keys but the published
+# name is the source of truth (e.g. `tokio-shared-rt`).
+tokio-shared-rt = "0.1"
+# `stack_size` attribute macro: runs a test body on a std::thread with an
+# explicit stack, sidestepping the ~2MB libtest thread stack that deep SDK
+# GroveDB proof-verification recursion overflows (tk_001). Path dep to the
+# workspace member, mirroring rs-drive-abci's dev-dep on the same crate.
+dash-platform-macros = { path = "../rs-dash-platform-macros" }
+tempfile = "3"
+dotenvy = "0.15"
+bip39 = "2"
+fs2 = "0.4"
+serde = { version = "1", features = ["derive"] }
+parking_lot = "0.12"
+# `dash-async::block_on` is the runtime-flavor-agnostic bridge used by
+# `framework/context_provider.rs` to call `SpvRuntime`'s async API
+# from the synchronous `ContextProvider` trait. Handles all three
+# tokio runtime scenarios (no runtime, current-thread, multi-thread)
+# without the `block_in_place` panic that `tokio::task::block_in_place`
+# triggers on a current-thread runtime.
+dash-async = { path = "../rs-dash-async" }
+# `rt` feature gives us `CancellationToken` for the panic-hook +
+# graceful-shutdown wiring described in the e2e plan.
+tokio-util = { version = "0.7", features = ["rt"] }
+# `TrustedHttpContextProvider` is the e2e harness's current default
+# context provider. It backs `Sdk::set_context_provider` with the
+# operator-trusted Quorum HTTP endpoint built into the crate (per
+# network) so testnet / mainnet runs work without spinning up an
+# SPV client. The SPV-backed provider lives in `framework/spv.rs`
+# and `framework/context_provider.rs` and is currently disabled
+# (see harness.rs) — re-enable when SPV cold-start is stable
+# (Task #15). Also used by `examples/shielded_sync_paloma.rs` to run
+# against a remote devnet without a reachable Core RPC.
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
+# `keep-finalized-transactions` retains finalized txs in RAM for the
+# in-memory test runs (NoPlatformPersistence); dev-only, so production
+# builds pay no memory overhead.
+key-wallet-manager = { workspace = true, features = ["keep-finalized-transactions"] }
 
 [features]
 default = ["bls", "eddsa"]
-test-utils = ["key-wallet/test-utils"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
 shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]
+# Opt-in gate for the live integration suite under `tests/e2e/`. Off by
+# default so a stock `cargo test` (and workspace CI) never compiles or
+# runs the network-dependent harness. Pulls in `shielded` so an e2e run
+# exercises the shielded-pool cases too. Run with:
+# `cargo test -p platform-wallet --test e2e --features e2e`.
+e2e = ["shielded", "test-utils"]
+# Test-only seams that expose internal shielded spend-assembly
+# (extract-spends, note reservation, build-against-a-chosen-note, and an
+# asset-lock one-time-key derivation helper) for the adversarial e2e
+# cases. NOT in `default`; pulled in by `e2e`. Never enable in production
+# builds — these bypass the wallet's spend guards by design. Also
+# forwards to key-wallet's own `test-utils` (`TestWalletContext` +
+# `Address::dummy`) so downstream crates that only need dummy-wallet
+# fixtures can pull them in via this single flag without opting into
+# `shielded` directly.
+test-utils = ["shielded", "key-wallet/test-utils"]
 # Opt-in serde derives on the changeset types in `src/changeset/` plus
 # the per-identity / DashPay scalar types those changesets carry.
 # Activates `key-wallet/serde` (which transitively activates
@@ -167,3 +227,11 @@ keep-finalized-transactions = [
     "key-wallet/keep-finalized-transactions",
     "key-wallet-manager/keep-finalized-transactions",
 ]
+
+# Live integration suite. `required-features` keeps the harness out of a
+# stock `cargo test` build entirely — it compiles and runs only under
+# `--features e2e`. This replaces the former per-test `#[ignore]` gating.
+[[test]]
+name = "e2e"
+path = "tests/e2e.rs"
+required-features = ["e2e"]

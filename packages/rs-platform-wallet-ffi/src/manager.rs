@@ -301,7 +301,7 @@ unsafe fn platform_wallet_manager_create_impl(
     // return and leaves the spawned task running on that runtime.
     let _runtime_guard = runtime().enter();
 
-    let manager = PlatformWalletManager::new(sdk, persister, handler);
+    let manager = PlatformWalletManager::new(sdk, persister, vec![handler]);
     let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
     *out_handle = handle;
 

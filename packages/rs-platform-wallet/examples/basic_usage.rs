@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
 
     // Create a manager
-    let manager = PlatformWalletManager::new(sdk.clone(), persister, event_handler);
+    let manager = PlatformWalletManager::new(sdk.clone(), persister, vec![event_handler]);
 
     // Create a wallet from seed bytes
     let seed_bytes = [0u8; 64]; // dummy seed for example

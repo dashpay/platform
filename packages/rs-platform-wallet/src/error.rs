@@ -32,6 +32,16 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    #[error(
+        "on-chain {op} succeeded for identity {identity} but local persistence failed: {source}"
+    )]
+    PersistedAfterOnChainSuccess {
+        identity: Identifier,
+        op: &'static str,
+        #[source]
+        source: crate::changeset::PersistenceError,
+    },
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing

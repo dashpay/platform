@@ -50,7 +50,7 @@
 
 use std::collections::BTreeMap;
 
-use dpp::identity::accessors::IdentitySettersV0;
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
@@ -285,8 +285,6 @@ impl IdentityWallet {
         // rejection. A missed local add self-heals on the next identity
         // re-sync. This mirrors `register_from_addresses` Step 3.
         {
-            use dpp::identity::accessors::IdentityGettersV0;
-
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => match info.identity_manager.add_identity(
@@ -529,13 +527,17 @@ impl IdentityWallet {
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => {
                     if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                        let prev_balance = managed.identity.balance();
                         managed.identity.set_balance(new_balance);
-                        if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                            tracing::error!(
-                                identity = %identity_id,
-                                error = %e,
-                                "Failed to persist identity balance update after top_up"
-                            );
+                        if let Err(source) =
+                            self.persister.store(managed.snapshot_changeset().into())
+                        {
+                            managed.identity.set_balance(prev_balance);
+                            return Err(PlatformWalletError::PersistedAfterOnChainSuccess {
+                                identity: *identity_id,
+                                op: "top_up",
+                                source,
+                            });
                         }
                     }
                 }
