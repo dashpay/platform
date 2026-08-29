@@ -49,6 +49,13 @@ pub struct MasternodeListSummary {
     /// itself is only on the raw list entry. Snapshots persisted before
     /// this field existed default to `false`.
     pub has_extended_net_info: bool,
+    /// The entry is version 1 (pre-v19), so `operator_public_key` uses the
+    /// LEGACY BLS serialization. A kept operator key re-entering a
+    /// version-2 payload must then be reserialized to the basic scheme —
+    /// the two serializations of one point differ only in flag bits, so
+    /// this cannot be inferred from the bytes. Defaults to `false` on
+    /// pre-field snapshots; the registrar path reads only live summaries.
+    pub operator_key_is_legacy: bool,
 }
 
 impl MasternodeListSummary {
@@ -87,6 +94,7 @@ impl MasternodeListSummary {
                 entry.service_address,
                 dashcore::sml::masternode_list_entry::MasternodeNetInfo::Extended(_)
             ),
+            operator_key_is_legacy: entry.version < 2,
         }
     }
 
@@ -180,6 +188,7 @@ pub(crate) mod test_support {
             is_valid: true,
             is_evonode: false,
             has_extended_net_info: false,
+            operator_key_is_legacy: false,
         }
     }
 

@@ -27,8 +27,8 @@ use platform_wallet::masternode::{
     execute_masternode_update_registrar, execute_masternode_update_service_with_values,
     parse_secret_for_role, prepare_masternode_update_registrar,
     prepare_masternode_update_service_with_values, provider_key_candidates, LocatorSecret,
-    MasternodeKeyRole, MasternodeUpdateRegistrarParams, MasternodeUpdateServiceParams, OwnerSecret,
-    ProviderKeyCandidate, UpdateServiceValues,
+    MasternodeKeyRole, MasternodeUpdateRegistrarParams, OwnerSecret, ProviderKeyCandidate,
+    UpdateServiceValues,
 };
 use platform_wallet::ProviderKeyKind;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
@@ -494,11 +494,7 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_update_service_with_
         Ok(text) => text,
         Err(e) => return e,
     };
-    let params = MasternodeUpdateServiceParams {
-        pro_tx_hash: std::ptr::read(pro_tx_hash as *const [u8; 32]),
-        platform_p2p_port: None,
-        operator_payout_address,
-    };
+    let target: [u8; 32] = std::ptr::read(pro_tx_hash as *const [u8; 32]);
     let operator_secret = match wallet_provider_secret(
         &context.wallet,
         ProviderKeyKind::Operator,
@@ -525,8 +521,9 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_update_service_with_
         execute_masternode_update_service_with_values(
             &wallet,
             &spv,
-            params,
+            target,
             values,
+            operator_payout_address,
             operator_secret,
             &signer,
         )
@@ -587,11 +584,7 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_prepare_update_servi
         Ok(text) => text,
         Err(e) => return e,
     };
-    let params = MasternodeUpdateServiceParams {
-        pro_tx_hash: std::ptr::read(pro_tx_hash as *const [u8; 32]),
-        platform_p2p_port: None,
-        operator_payout_address,
-    };
+    let target: [u8; 32] = std::ptr::read(pro_tx_hash as *const [u8; 32]);
     let operator_secret = match wallet_provider_secret(
         &context.wallet,
         ProviderKeyKind::Operator,
@@ -618,8 +611,9 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_prepare_update_servi
         prepare_masternode_update_service_with_values(
             &wallet,
             &spv,
-            params,
+            target,
             values,
+            operator_payout_address,
             operator_secret,
             &signer,
         )

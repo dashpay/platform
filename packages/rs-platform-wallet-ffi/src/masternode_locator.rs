@@ -321,6 +321,7 @@ mod tests {
             is_valid: true,
             is_evonode: true,
             has_extended_net_info: false,
+            operator_key_is_legacy: false,
         }
     }
 

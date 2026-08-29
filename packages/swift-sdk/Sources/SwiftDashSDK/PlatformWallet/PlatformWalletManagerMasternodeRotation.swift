@@ -32,6 +32,17 @@ private func zeroTxidTuple() -> (
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
+/// Rust reads C strings up to the first NUL, so an embedded U+0000 would
+/// silently truncate the value — the transaction would then use a different
+/// payout/key/service than the caller supplied. Matches the guard the other
+/// wrappers apply (`ManagedPlatformAddressWallet`, `Mnemonic`).
+private func requireNoEmbeddedNul(_ value: String, _ label: String) throws {
+    guard !value.utf8.contains(0) else {
+        throw PlatformWalletError.invalidParameter(
+            "\(label) contains an embedded NUL character")
+    }
+}
+
 extension PlatformWalletManager {
 
     // MARK: - Key candidates
@@ -118,6 +129,7 @@ extension PlatformWalletManager {
             throw PlatformWalletError.invalidParameter(
                 "Manager not configured, or wallet id / proTxHash not 32 bytes")
         }
+        try requireNoEmbeddedNul(payoutAddress, "payout address")
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { () -> Data in
             let resolver = MnemonicResolver()
@@ -165,6 +177,7 @@ extension PlatformWalletManager {
             throw PlatformWalletError.invalidParameter(
                 "Manager not configured, or wallet id / proTxHash not 32 bytes")
         }
+        try requireNoEmbeddedNul(payoutAddress, "payout address")
         let handle = self.handle
         let transactionHandle = try await Task.detached(priority: .userInitiated) { () -> Handle in
             let resolver = MnemonicResolver()
@@ -213,6 +226,8 @@ extension PlatformWalletManager {
             throw PlatformWalletError.invalidParameter(
                 "Manager not configured, or wallet id / proTxHash not 32 bytes")
         }
+        try requireNoEmbeddedNul(ownerKey, "owner key")
+        try requireNoEmbeddedNul(payoutAddress, "payout address")
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { () -> Data in
             let resolver = MnemonicResolver()
@@ -260,6 +275,8 @@ extension PlatformWalletManager {
             throw PlatformWalletError.invalidParameter(
                 "Manager not configured, or wallet id / proTxHash not 32 bytes")
         }
+        try requireNoEmbeddedNul(ownerKey, "owner key")
+        try requireNoEmbeddedNul(payoutAddress, "payout address")
         let handle = self.handle
         let transactionHandle = try await Task.detached(priority: .userInitiated) { () -> Handle in
             let resolver = MnemonicResolver()
@@ -319,6 +336,10 @@ extension PlatformWalletManager {
             throw PlatformWalletError.invalidParameter(
                 "Manager not configured, wallet id / proTxHash not 32 bytes, or platform node id not 20 bytes")
         }
+        try requireNoEmbeddedNul(serviceAddress, "service address")
+        if let operatorPayoutAddress {
+            try requireNoEmbeddedNul(operatorPayoutAddress, "operator payout address")
+        }
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { () -> Data in
             let resolver = MnemonicResolver()
@@ -372,6 +393,10 @@ extension PlatformWalletManager {
         else {
             throw PlatformWalletError.invalidParameter(
                 "Manager not configured, wallet id / proTxHash not 32 bytes, or platform node id not 20 bytes")
+        }
+        try requireNoEmbeddedNul(serviceAddress, "service address")
+        if let operatorPayoutAddress {
+            try requireNoEmbeddedNul(operatorPayoutAddress, "operator payout address")
         }
         let handle = self.handle
         let transactionHandle = try await Task.detached(priority: .userInitiated) { () -> Handle in
