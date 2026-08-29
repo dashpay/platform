@@ -216,6 +216,7 @@ mod tests {
             time_range: None,
             terminal: Some("$ownerId".to_string()),
             preallocated: true,
+            skip_if_absent: false,
         }
     }
 

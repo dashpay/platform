@@ -48,6 +48,7 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         time_range: None,
         terminal: None,
         preallocated: false,
+        skip_if_absent: false,
     }
 }
 
@@ -70,6 +71,7 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         time_range: None,
         terminal: None,
         preallocated: false,
+        skip_if_absent: false,
     }
 }
 
