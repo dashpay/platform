@@ -9121,6 +9121,9 @@ mod gapped_index_query_tests {
     use super::*;
     use dpp::data_contract::document_type::DocumentTypeRef;
 
+    /// A returned document's (a, b, c, d, e) values.
+    type AbcdeTuple = (i64, i64, i64, i64, i64);
+
     /// One document type, five integer properties, and two indexes:
     /// `gapped` = `[a, b, c]` (the index the defective matcher picks) and
     /// `wide` = `[a, c, d, e]` (a well-shaped fallback for `a`/`c`-bound
@@ -9235,7 +9238,7 @@ mod gapped_index_query_tests {
         results: &[Vec<u8>],
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
-    ) -> Vec<(i64, i64, i64, i64, i64)> {
+    ) -> Vec<AbcdeTuple> {
         results
             .iter()
             .map(|bytes| {
@@ -9262,7 +9265,7 @@ mod gapped_index_query_tests {
         contract: &DataContract,
         query_value: &serde_json::Value,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(i64, i64, i64, i64, i64)>, Error> {
+    ) -> Result<Vec<AbcdeTuple>, Error> {
         let document_type = contract
             .document_type_for_name("testDocument")
             .expect("should have testDocument type");
