@@ -927,6 +927,34 @@ pub fn index_admissible_for_resolved_time_range(
     }
 }
 
+/// Whether a query binding `fields` (its equal/in/range and order-by
+/// fields, as assembled for the index matcher) may be served by `index`
+/// given its `skipIfAbsent` participation.
+///
+/// A `skipIfAbsent` index holds only the documents that carry its trigger
+/// (the first property) — it is a SPARSE projection of the document type.
+/// The generic matcher does not require contiguously bound prefixes: an
+/// unused property, the leading trigger included, merely counts toward the
+/// difference score, so without this gate a query that never mentions the
+/// trigger could route here and silently omit every trigger-absent
+/// document — a result a complete index would have included (and the
+/// positional path lowering would additionally mis-assemble the prefix
+/// gap). Requiring the trigger among the query's fields makes the sparse
+/// semantics opt-in: whoever binds the trigger is asking "among documents
+/// carrying this property", which is exactly what the index holds. The
+/// count pickers and the multiple-`In` route need no such gate — their
+/// exact-cover / contiguous-prefix matching already binds position 0.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_admissible_for_skip_if_absent(index: &Index, fields: &[&str]) -> bool {
+    if !index.skip_if_absent {
+        return true;
+    }
+    index
+        .properties
+        .first()
+        .is_some_and(|trigger| fields.contains(&trigger.name.as_str()))
+}
+
 /// Rejects a query whose resolution provenance and clause shapes disagree:
 /// every field in `resolved_time_ranges` must appear in the where
 /// clauses as exactly one `Equal` clause — the only shape
@@ -2204,7 +2232,10 @@ impl<'a> DriveDocumentQuery<'a> {
             fields.as_slice(),
             in_field,
             order_by_keys.as_slice(),
-            |index| index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges),
+            |index| {
+                index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges)
+                    && index_admissible_for_skip_if_absent(index, &fields)
+            },
             platform_version,
         )?
         else {
