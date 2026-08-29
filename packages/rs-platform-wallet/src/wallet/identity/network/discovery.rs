@@ -5,6 +5,7 @@ use dpp::identity::Identity;
 use key_wallet::bip32::ExtendedPrivKey;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::network::contact_requests::budget_spent;
 
 use super::*;
 
@@ -138,6 +139,19 @@ pub struct IdentityDiscoveryOptions {
     /// How many consecutive empty identity indices to tolerate before
     /// stopping. Defaults to [`IDENTITY_GAP_LIMIT`].
     pub gap_limit: u32,
+    /// Deadline for the best-effort DPNS enrichment tail only. `None` is
+    /// unbounded (the default).
+    ///
+    /// The scan itself is never cut here: enrichment runs *after* the scan
+    /// verdict is published, so stopping in it costs a username lookup and
+    /// never a verdict. That separation is the whole point. A caller that
+    /// wraps this entire call in one outer timeout instead cannot tell "the
+    /// scan was abandoned mid-walk" from "the scan finished and its enrichment
+    /// ran long", and has to assume the former — recording an abandoned-scan
+    /// verdict over a scan that answered every index, which sets a sticky
+    /// `unlocated_gap` and forces a from-zero rescan on every launch for as
+    /// long as DPNS stays slow.
+    pub enrichment_deadline: Option<std::time::Instant>,
 }
 
 impl Default for IdentityDiscoveryOptions {
@@ -145,6 +159,7 @@ impl Default for IdentityDiscoveryOptions {
         Self {
             start_index: None,
             gap_limit: IDENTITY_GAP_LIMIT,
+            enrichment_deadline: None,
         }
     }
 }
@@ -525,7 +540,26 @@ impl IdentityWallet {
         }
 
         // --- DPNS lookup for all discovered identities ---
-        for identity in &discovered {
+        for (enriched, identity) in discovered.iter().enumerate() {
+            // Stopped between identities, the same discipline the contact
+            // drains use. This loop is the only unbudgeted network walk inside
+            // a call the startup sequence bounds from the outside, and it runs
+            // AFTER `publish_scan_verdict` above — so an outer timeout that
+            // fires in here cancels a scan whose verdict already landed, and
+            // the caller, seeing only a cancelled future, records it as an
+            // abandoned scan. Enrichment is best-effort: a username this pass
+            // does not fetch is picked up by the next one, while a scan
+            // verdict wrongly overwritten with "abandoned" costs a from-zero
+            // rescan on every launch until a clean scan gets all the way
+            // through.
+            if budget_spent(opts.enrichment_deadline) {
+                tracing::info!(
+                    enriched,
+                    total = discovered.len(),
+                    "identity discovery: budget spent; leaving DPNS enrichment for a later pass"
+                );
+                break;
+            }
             let identity_id = identity.id();
             match self
                 .sdk
@@ -1331,6 +1365,7 @@ mod tests {
             .discover(IdentityDiscoveryOptions {
                 start_index: Some(0),
                 gap_limit: 5,
+                enrichment_deadline: None,
             })
             .await
             .expect_err("the resident derive cannot work for a seedless wallet");
@@ -1358,6 +1393,57 @@ mod tests {
             info.identity_manager
                 .identity_scan_is_incomplete(&wallet_id),
             "the next launch must re-scan instead of taking the warm shortcut"
+        );
+    }
+
+    /// The enrichment deadline bounds the DPNS tail and nothing else.
+    ///
+    /// This is the guard for the split itself. The defect it exists to remove
+    /// is a scan whose identity probes all answered being reported as
+    /// abandoned because its enrichment ran past the caller's budget — so the
+    /// one way this fix could go wrong is the deadline reaching the scan. A
+    /// scan run with an already-spent enrichment deadline must still walk its
+    /// window and still leave its own verdict on record; if it ever stops
+    /// short, the caller sees a cancelled call and overwrites that verdict
+    /// with an abandoned-scan one, which is where the sticky `unlocated_gap`
+    /// and the per-launch from-zero rescan come from.
+    #[tokio::test]
+    async fn a_spent_enrichment_deadline_does_not_cut_the_scan() {
+        use crate::wallet::identity::network::IdentityDiscoveryOptions;
+
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+
+        // Already in the past, so every enrichment iteration would stop on its
+        // first check. The scan must be untouched by it.
+        let spent = std::time::Instant::now() - std::time::Duration::from_secs(1);
+
+        // The result itself is the mock's business — what matters is what the
+        // scan recorded on its way through.
+        let _ = wallet
+            .identity()
+            .discover(IdentityDiscoveryOptions {
+                start_index: Some(0),
+                gap_limit: 2,
+                enrichment_deadline: Some(spent),
+            })
+            .await;
+
+        let wm = manager.wallet_manager.read().await;
+        let verdict = wm
+            .get_wallet_info(&wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .identity_scan_state(&wallet_id)
+            .expect("the scan published a verdict despite the spent enrichment deadline")
+            .clone();
+        assert_eq!(
+            verdict.probed_from, 0,
+            "the scan started where it was told to, not where the deadline was"
+        );
+        assert!(
+            verdict.probed_through > 0,
+            "the scan walked its window; only the enrichment tail is bounded"
         );
     }
 }

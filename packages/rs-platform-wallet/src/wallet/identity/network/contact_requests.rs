@@ -1059,7 +1059,10 @@ async fn bounded<F: std::future::Future>(
 
 /// Whether `deadline` has passed. Checked at the top of each drain iteration so
 /// a spent budget ends the loop between entries, never inside one.
-fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
+///
+/// Shared with the discovery scan's DPNS enrichment tail, which needs the same
+/// between-items stop for the same reason.
+pub(crate) fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
     deadline.is_some_and(|d| std::time::Instant::now() >= d)
 }
 

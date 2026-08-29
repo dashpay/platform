@@ -152,6 +152,10 @@ pub unsafe extern "C" fn platform_wallet_discover_identities(
         } else {
             gap_limit
         },
+        // Unbounded, as this entry point has always been: it is a host-driven
+        // "Find identities" call off the main thread, not the Core-SPV-gating
+        // startup path that owns a budget.
+        enrichment_deadline: None,
     };
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
