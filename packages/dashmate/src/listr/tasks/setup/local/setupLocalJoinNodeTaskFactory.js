@@ -47,17 +47,11 @@ export default function setupLocalJoinNodeTaskFactory(
   obtainSelfSignedCertificateTask,
 ) {
   /**
-   * Create a config for a new platform-enabled full node that joins an
-   * already set up local network. The node is not a masternode (so it
-   * requires no collateral registration): it syncs Core from the group's
-   * seed node and, with `platform.drive.tenderdash.stateSync.enabled`
-   * turned on for it, bootstraps Drive from a state sync snapshot served
-   * by the existing validators instead of replaying blocks.
-   *
-   * This capability is deliberately not exposed as a `dashmate group join`
-   * CLI command: its only consumer is the state sync e2e test, and a
-   * DI-registered task keeps the new surface minimal. It can be promoted to
-   * a command later without changes to the task itself.
+   * Create a `local_join` config for a platform-enabled full node (not a
+   * masternode, so no collateral registration) that joins an already set up
+   * local network and bootstraps Drive from a state sync snapshot. Kept as a
+   * DI task rather than a `group join` CLI command while the state sync e2e
+   * test is its only consumer.
    *
    * @typedef {setupLocalJoinNodeTask}
    * @param {Config[]} groupConfigs - configs of the existing local group
@@ -68,14 +62,12 @@ export default function setupLocalJoinNodeTaskFactory(
       {
         title: 'Create join node config',
         task: async (ctx) => {
-          const configName = ctx.joinNodeConfigName ?? 'local_join';
-
           // Local nodes local_1..local_N occupy offset indexes 0..N-1 and
           // local_seed occupies N, so the joining node continues at N + 1
           const offsetIndex = groupConfigs.length;
           const nodeIndex = offsetIndex + 1;
 
-          const config = configFile.createConfig(configName, PRESET_LOCAL);
+          const config = configFile.createConfig('local_join', PRESET_LOCAL);
 
           config.set('group', 'local');
           config.set('description', 'full node joining the local network');
@@ -103,17 +95,20 @@ export default function setupLocalJoinNodeTaskFactory(
           config.set('core.masternode.enable', false);
 
           // Sync Core from the existing network
-          const seedConfig = groupConfigs.find((groupConfig) => (
+          const seedConfigs = groupConfigs.filter((groupConfig) => (
             groupConfig.getName() === 'local_seed'
           ));
 
-          if (seedConfig) {
-            config.set('core.p2p.seeds', [{
-              host: seedConfig.get('externalIp'),
-              port: seedConfig.get('core.p2p.port'),
-            }]);
+          if (seedConfigs.length === 0) {
+            throw new Error('Cannot join the local network: no local_seed config in the group');
           }
 
+          config.set('core.p2p.seeds', seedConfigs.map((seedConfig) => ({
+            host: seedConfig.get('externalIp'),
+            port: seedConfig.get('core.p2p.port'),
+          })));
+
+          // Every group config carries the same spork keys (set during setup)
           config.set('core.spork.address', groupConfigs[0].get('core.spork.address'));
           config.set('core.spork.privateKey', groupConfigs[0].get('core.spork.privateKey'));
 
@@ -124,7 +119,7 @@ export default function setupLocalJoinNodeTaskFactory(
 
           config.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(nodeKey));
           config.set('platform.drive.tenderdash.node.key', nodeKey);
-          config.set('platform.drive.tenderdash.moniker', configName);
+          config.set('platform.drive.tenderdash.moniker', config.getName());
 
           // A fresh node with state sync enabled bootstraps from a snapshot
           // served by the existing nodes instead of replaying blocks
@@ -134,6 +129,10 @@ export default function setupLocalJoinNodeTaskFactory(
           const platformConfigs = groupConfigs.filter((groupConfig) => (
             groupConfig.get('platform.enable')
           ));
+
+          if (platformConfigs.length === 0) {
+            throw new Error('Cannot join the local network: no platform-enabled configs in the group');
+          }
 
           const chainId = platformConfigs[0].get('platform.drive.tenderdash.genesis.chain_id');
 

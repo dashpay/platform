@@ -24,9 +24,8 @@ export default function configureTenderdashTaskFactory() {
               const randomChainIdPart = Math.floor(Math.random() * 60) + 1;
               const chainId = `dashmate_local_${randomChainIdPart}`;
 
-              platformConfigs.forEach((config) => {
-                wireLocalTenderdashNode(config, chainId, platformConfigs);
-              });
+              platformConfigs.forEach((config) => (
+                wireLocalTenderdashNode(config, chainId, platformConfigs)));
             },
           });
 

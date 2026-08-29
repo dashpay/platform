@@ -1,9 +1,6 @@
 /**
- * Wire a node config into a local network's Tenderdash mesh
- *
- * Sets the shared chain id, the persistent peer list (all given peer
- * configs except the node itself, reached over the node's external IP,
- * which is the same docker host IP for every local node) and the
+ * Wire a node config into a local network's Tenderdash mesh: shared chain id,
+ * persistent peers (all given peer configs except the node itself) and the
  * validator quorum type used in the genesis document.
  *
  * @param {Config} config - config of the node to wire
@@ -18,7 +15,7 @@ export default function wireLocalTenderdashNode(config, chainId, peerConfigs) {
     .filter((peerConfig) => peerConfig.getName() !== config.getName())
     .map((peerConfig) => ({
       id: peerConfig.get('platform.drive.tenderdash.node.id'),
-      host: config.get('externalIp'),
+      host: peerConfig.get('externalIp'),
       port: peerConfig.get('platform.drive.tenderdash.p2p.port'),
     }));
 

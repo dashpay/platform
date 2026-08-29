@@ -9,12 +9,10 @@ import wait from '../../src/util/wait.js';
  * enabled and asserts it bootstraps from a snapshot instead of replaying
  * blocks (earliest_block_height > 1 while catching_up is false).
  *
- * Protocol version note: dashmate puts no `consensus_params.version` into a
- * local network's Tenderdash genesis, so drive-abci's init_chain receives
- * app_version 0 and starts the chain at PlatformVersion::desired(), the
- * latest known protocol version (>= v15). Reduced platform state is thus
- * written from the genesis block on and every snapshot the validators serve
- * is restorable. No initial protocol version plumbing is required.
+ * No protocol version plumbing is needed for restorable snapshots: local
+ * network genesis carries no app_version, so drive-abci starts the chain at
+ * PlatformVersion::desired() (latest, >= v15) and writes reduced platform
+ * state from the genesis block on.
  */
 describe('Local Network State Sync', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
@@ -132,6 +130,24 @@ describe('Local Network State Sync', function main() {
     localConfig.set('platform.drive.tenderdash.rpc.port', 41005);
     localConfig.set('platform.drive.tenderdash.pprof.port', 41006);
 
+    // The remaining host-published ports (see the `ports:` sections in
+    // docker-compose.yml) are moved off their defaults too, so the suite can
+    // run next to another local network that keeps the stock ports
+    localConfig.set('core.zmq.port', 42001);
+    localConfig.set('platform.drive.abci.tokioConsole.port', 42002);
+    localConfig.set('platform.drive.abci.metrics.port', 42003);
+    localConfig.set('platform.drive.abci.grovedbVisualizer.port', 42004);
+    localConfig.set('platform.drive.tenderdash.metrics.port', 42005);
+    localConfig.set('platform.gateway.metrics.port', 42006);
+    localConfig.set('platform.gateway.admin.port', 42007);
+    localConfig.set('platform.gateway.rateLimiter.metrics.port', 42008);
+    localConfig.set('platform.quorumList.api.port', 42009);
+
+    // A leftover join node config from a previous run against this home dir
+    if (configFile.isConfigExists(joinConfigName)) {
+      configFile.removeConfig(joinConfigName);
+    }
+
     container.register({
       configFile: asValue(configFile),
     });
@@ -169,8 +185,7 @@ describe('Local Network State Sync', function main() {
     });
 
     it('should enable frequent snapshots on the validators', async () => {
-      configGroup = configFile.getGroupConfigs(groupName)
-        .filter((config) => config.getName() !== joinConfigName);
+      configGroup = configFile.getGroupConfigs(groupName);
 
       for (const config of configGroup) {
         if (config.get('platform.enable')) {
@@ -243,16 +258,10 @@ describe('Local Network State Sync', function main() {
     });
 
     it('should setup and start a join node', async () => {
-      // A leftover config from a previous run against the same home dir
-      if (configFile.isConfigExists(joinConfigName)) {
-        configFile.removeConfig(joinConfigName);
-      }
-
       const setupLocalJoinNodeTask = container.resolve('setupLocalJoinNodeTask');
 
       await setupLocalJoinNodeTask(configGroup).run({
         isVerbose: true,
-        joinNodeConfigName: joinConfigName,
       });
 
       joinConfig = configFile.getConfig(joinConfigName);

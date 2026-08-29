@@ -1,5 +1,6 @@
 import HomeDir from '../../../src/config/HomeDir.js';
 import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
+import { PRESET_LOCAL } from '../../../src/constants.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import getLocalConfigFactory from '../../../configs/defaults/getLocalConfigFactory.js';
 import generateTenderdashNodeKey from '../../../src/tenderdash/generateTenderdashNodeKey.js';
@@ -14,6 +15,7 @@ describe('setupLocalJoinNodeTaskFactory', () => {
   let homeDir;
   let configFile;
   let groupConfigs;
+  let platformConfigs;
   let templateConfig;
   let resolveDockerHostIp;
   let obtainSelfSignedCertificateTask;
@@ -36,7 +38,7 @@ describe('setupLocalJoinNodeTaskFactory', () => {
     // Recreate the shape of an already set up local group:
     // three validators and a platform-disabled seed node
     groupConfigs = ['local_1', 'local_2', 'local_3', 'local_seed']
-      .map((name) => configFile.createConfig(name, 'local'));
+      .map((name) => configFile.createConfig(name, PRESET_LOCAL));
 
     groupConfigs.forEach((config, i) => {
       config.set('group', 'local');
@@ -63,6 +65,8 @@ describe('setupLocalJoinNodeTaskFactory', () => {
       config.set('core.spork.privateKey', 'spork-private-key');
     });
 
+    platformConfigs = groupConfigs.filter((config) => config.get('platform.enable'));
+
     resolveDockerHostIp = this.sinon.stub().resolves(EXTERNAL_IP);
     obtainSelfSignedCertificateTask = this.sinon.stub().resolves();
 
@@ -80,9 +84,8 @@ describe('setupLocalJoinNodeTaskFactory', () => {
   describe('wireLocalTenderdashNode', () => {
     it('should wire chain id, peers without self and quorum type', () => {
       const config = groupConfigs[0];
-      const peerConfigs = groupConfigs.filter((c) => c.get('platform.enable'));
 
-      wireLocalTenderdashNode(config, CHAIN_ID, peerConfigs);
+      wireLocalTenderdashNode(config, CHAIN_ID, platformConfigs);
 
       expect(config.get('platform.drive.tenderdash.genesis.chain_id')).to.equal(CHAIN_ID);
 
@@ -96,8 +99,9 @@ describe('setupLocalJoinNodeTaskFactory', () => {
         expect(peer.host).to.equal(EXTERNAL_IP);
       });
 
+      // The local preset's validator set quorum is llmqType 106
       expect(config.get('platform.drive.tenderdash.genesis.validator_quorum_type'))
-        .to.equal(config.get('platform.drive.abci.validatorSet.quorum.llmqType'));
+        .to.equal(106);
     });
   });
 
@@ -129,14 +133,13 @@ describe('setupLocalJoinNodeTaskFactory', () => {
       expect(joinConfig.get('platform.drive.tenderdash.genesis.chain_id')).to.equal(CHAIN_ID);
 
       const persistentPeers = joinConfig.get('platform.drive.tenderdash.p2p.persistentPeers');
-      const validatorConfigs = groupConfigs.filter((config) => config.get('platform.enable'));
 
       expect(persistentPeers).to.have.length(3);
       expect(persistentPeers.map((peer) => peer.id)).to.have.members(
-        validatorConfigs.map((config) => config.get('platform.drive.tenderdash.node.id')),
+        platformConfigs.map((config) => config.get('platform.drive.tenderdash.node.id')),
       );
       expect(persistentPeers.map((peer) => peer.port)).to.have.members(
-        validatorConfigs.map((config) => config.get('platform.drive.tenderdash.p2p.port')),
+        platformConfigs.map((config) => config.get('platform.drive.tenderdash.p2p.port')),
       );
     });
 
@@ -146,8 +149,7 @@ describe('setupLocalJoinNodeTaskFactory', () => {
       expect(nodeId).to.be.a('string').and.not.empty();
       expect(joinConfig.get('platform.drive.tenderdash.node.key')).to.be.a('string').and.not.empty();
 
-      const validatorNodeIds = groupConfigs
-        .filter((config) => config.get('platform.enable'))
+      const validatorNodeIds = platformConfigs
         .map((config) => config.get('platform.drive.tenderdash.node.id'));
 
       expect(validatorNodeIds).to.not.include(nodeId);
@@ -189,6 +191,24 @@ describe('setupLocalJoinNodeTaskFactory', () => {
     it('should obtain a self-signed certificate for the joining node', () => {
       expect(obtainSelfSignedCertificateTask).to.have.been.calledOnce();
       expect(obtainSelfSignedCertificateTask.firstCall.args[0]).to.equal(joinConfig);
+    });
+  });
+
+  describe('invalid groups', () => {
+    it('should fail clearly when the group has no seed node', async () => {
+      const groupWithoutSeed = groupConfigs
+        .filter((config) => config.getName() !== 'local_seed');
+
+      await expect(setupLocalJoinNodeTask(groupWithoutSeed).run())
+        .to.be.rejectedWith('no local_seed config');
+    });
+
+    it('should fail clearly when the group has no platform-enabled nodes', async () => {
+      const seedOnlyGroup = groupConfigs
+        .filter((config) => config.getName() === 'local_seed');
+
+      await expect(setupLocalJoinNodeTask(seedOnlyGroup).run())
+        .to.be.rejectedWith('no platform-enabled configs');
     });
   });
 });
