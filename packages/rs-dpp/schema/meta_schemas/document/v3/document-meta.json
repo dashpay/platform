@@ -598,8 +598,27 @@
             "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `averageable` to be set."
           },
           "rankedCountable": {
-            "type": "boolean",
-            "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's document count, so \"top / bottom K groups by count\" queries are O(log n + k) with proofs. Requires `rangeCountable: true`. Adds the Count ranking axis only — the Sum and Avg axes are independent opt-ins (`rankedSummable` / `rankedAverageable`)."
+            "oneOf": [
+              {
+                "type": "boolean",
+                "description": "When true, the index's terminal property-name tree also carries an ordered secondary tree keyed by each group's document count, so \"top / bottom K groups by count\" queries are O(log n + k) with proofs."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "description": "Name of the index property whose level carries the Count ranking. Must be one of the index's properties; naming the last property is equivalent to the boolean form. A non-terminal property places the ranking at that prefix level: its values are ranked by whole-subtree document count (e.g. on [hashtag, postId], at: \"hashtag\" ranks hashtags by total count across all their posts), and every level from there down to the terminal is laid out count-bearing so each write's delta propagates up to the ranking."
+                  }
+                },
+                "required": ["at"],
+                "additionalProperties": false,
+                "description": "Prefix-level form: places the Count ranking at the named property's level instead of the terminal one. Cannot be combined with rankedSummable or rankedAverageable, and no other index of the document type may share the named level or any level below it."
+              }
+            ],
+            "description": "Count ranking axis. Requires `rangeCountable: true`. Independent of the Sum and Avg axes (`rankedSummable` / `rankedAverageable`), which stay terminal-level booleans."
           },
           "rankedSummable": {
             "type": "boolean",
@@ -666,7 +685,11 @@
         "allOf": [
           {
             "if": {
-              "properties": { "rankedCountable": { "const": true } },
+              "properties": {
+                "rankedCountable": {
+                  "anyOf": [{ "const": true }, { "type": "object" }]
+                }
+              },
               "required": ["rankedCountable"]
             },
             "then": { "required": ["rangeCountable"] }

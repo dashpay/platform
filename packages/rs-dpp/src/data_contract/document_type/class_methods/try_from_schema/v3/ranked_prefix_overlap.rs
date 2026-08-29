@@ -12,9 +12,12 @@ use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
 
-/// Rejects the one compound-ranked shape the storage layer cannot lay
-/// out: a compound ranked index whose **full leading prefix** also
-/// terminates a separate countable and/or summable index.
+/// Rejects the compound-ranked shapes the storage layer cannot lay out:
+/// a compound ranked index whose **full leading prefix** also terminates
+/// a separate countable and/or summable index, and — for prefix-level
+/// rankings (`rankedCountable: { at }`) — any other index reaching the
+/// ranked level or below, plus the same aggregating-prefix conflict one
+/// level above the ranked level (see the second loop below).
 ///
 /// A ranked flag on a compound index `[p1, …, pn]` puts an indexed tree
 /// at each prefix's terminal `pn` property-name level — inside the value
@@ -83,6 +86,99 @@ pub(super) fn validate_no_ranked_prefix_overlap(
                             .join(", "),
                     )),
                 ));
+            }
+        }
+    }
+
+    // Prefix-level rankings (`rankedCountable: { at }`) add two rules of
+    // their own, both keyed off the declared `at` level (position `p`):
+    //
+    // 1. **Exclusivity of the `at` level and everything below.** From `p`
+    //    down, the ranked index's levels are one count-propagation chain:
+    //    the `at` property-name tree is the indexed tree ranking by
+    //    whole-subtree count, and its value trees count exactly one
+    //    continuation each. Any other index reaching the `at` level —
+    //    terminating there (its member bucket and aggregates would collide
+    //    with the grouping tree) or continuing below it (a second
+    //    continuation whose members would pollute every subtree total) —
+    //    has no coherent layout, whatever its flags.
+    //
+    // 2. **The same wrapped-indexed impossibility as above, one level up.**
+    //    The grouping tree sits inside the value trees of level `p - 1`
+    //    (when `p >= 1`); a countable/summable index terminating at exactly
+    //    `[p1, …, pp]` makes those value trees aggregating, demanding the
+    //    NonCounted/NotSummed shell the storage layer rejects for indexed
+    //    trees.
+    //
+    // Same name-positional comparison and same unconditional (not
+    // `full_validation`-gated) reasoning as the terminal rule above.
+    for ranked in indices.values() {
+        let Some(at) = &ranked.ranked_countable_at else {
+            continue;
+        };
+        // The parser guarantees `at` resolves to a non-terminal property;
+        // stay defensive for `Index` values built outside it.
+        let Some(at_position) = ranked.properties.iter().position(|p| &p.name == at) else {
+            continue;
+        };
+        for other in indices.values() {
+            if other.name == ranked.name {
+                continue;
+            }
+            let shares_at_level = other.properties.len() > at_position
+                && other
+                    .properties
+                    .iter()
+                    .zip(ranked.properties.iter())
+                    .take(at_position + 1)
+                    .all(|(a, b)| a.name == b.name);
+            if shares_at_level {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "prefix-ranked index `{}` conflicts with index `{}`: the levels from \
+                         its rankedCountable.at property (\"{}\") down form the ranking's \
+                         count-propagation chain and must belong to it exclusively, but the \
+                         other index shares the [{}] level. Diverge the other index before \
+                         the `at` property, or move the ranking",
+                        ranked.name,
+                        other.name,
+                        at,
+                        ranked.properties[..=at_position]
+                            .iter()
+                            .map(|p| p.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )),
+                ));
+            }
+            if at_position >= 1 {
+                let prefix = &ranked.properties[..at_position];
+                let terminates_at_prefix = other.properties.len() == prefix.len()
+                    && other
+                        .properties
+                        .iter()
+                        .zip(prefix.iter())
+                        .all(|(a, b)| a.name == b.name);
+                let aggregates = other.countable.is_countable() || other.summable.is_some();
+                if terminates_at_prefix && aggregates {
+                    return Err(consensus_or_protocol_data_contract_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "prefix-ranked index `{}` conflicts with index `{}`: the prefix \
+                             [{}] above its rankedCountable.at property also terminates a \
+                             countable/summable index, so the grouping tree would sit inside \
+                             aggregating value trees and need a NonCounted/NotSummed shell — \
+                             which the storage layer rejects for indexed trees. Drop the \
+                             ranking, or drop the aggregate flags from the prefix index",
+                            ranked.name,
+                            other.name,
+                            prefix
+                                .iter()
+                                .map(|p| p.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        )),
+                    ));
+                }
             }
         }
     }
