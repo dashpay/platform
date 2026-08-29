@@ -746,6 +746,17 @@ describe('Local Network State Sync', function main() {
         'a state synced node must have a truncated block history starting above genesis',
       ).to.be.above(1);
 
+      // The bounds below assume the joiner restored a snapshot at or above
+      // the minimum the checkpoint gate waited for. Tenderdash may fall back
+      // to an older offered snapshot, and one low enough would clip the
+      // backfill at genesis — fail that precondition by name rather than as
+      // a baffling bounds mismatch.
+      expect(
+        restoreHeight,
+        `the joiner restored a snapshot at ${restoreHeight}, below the`
+          + ` ${TRUNCATION_MIN_SNAPSHOT_HEIGHT} the truncation bounds assume`,
+      ).to.be.at.least(TRUNCATION_MIN_SNAPSHOT_HEIGHT);
+
       // ... and the floor is where the evidence window puts it: backfill runs
       // from the snapshot down until the window is covered, so the earliest
       // block sits at snapshot height minus the block-count window, give or
