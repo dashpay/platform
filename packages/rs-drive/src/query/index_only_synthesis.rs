@@ -149,6 +149,18 @@ impl DriveDocumentQuery<'_> {
             .map(|in_clause| in_clause.field.as_str());
         let order_by_keys: Vec<&str> = self.order_by.keys().map(String::as_str).collect();
 
+        // The union of every field the query binds, for the skip-index
+        // admissibility gate — the by-role slices above are what the
+        // matcher consumes.
+        let mut bound_fields = equal_fields.clone();
+        bound_fields.extend(range_field);
+        bound_fields.extend(in_field);
+        for order_by_key in &order_by_keys {
+            if !bound_fields.contains(order_by_key) {
+                bound_fields.push(order_by_key);
+            }
+        }
+
         let Some((index, _difference, terminal_used)) = self
             .document_type
             .index_for_types_matching_including_terminal(
@@ -161,13 +173,14 @@ impl DriveDocumentQuery<'_> {
                 // opted out above — a raw query name-matching a bucketed
                 // index's properties must not walk its grid-keyed levels.
                 // A skipIfAbsent index additionally requires its trigger
-                // bound — it is a sparse projection, and the matcher alone
-                // would admit a trigger-unbound query within the
-                // difference budget (see
-                // [`index_admissible_for_skip_if_absent`]).
+                // bound — it is a sparse projection, and while the
+                // contiguous matcher already forces position 0 to be bound
+                // whenever any deeper property is used, an all-unused match
+                // inside the difference budget could still slip through
+                // (see [`index_admissible_for_skip_if_absent`]).
                 |index| {
                     index.time_range.is_none()
-                        && index_admissible_for_skip_if_absent(index, &fields)
+                        && index_admissible_for_skip_if_absent(index, &bound_fields)
                 },
                 platform_version,
             )

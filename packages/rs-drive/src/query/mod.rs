@@ -2209,6 +2209,21 @@ impl<'a> DriveDocumentQuery<'a> {
             .map(|range_clause| range_clause.field.as_str());
         let order_by_keys: Vec<&str> = self.order_by.keys().map(String::as_str).collect();
 
+        // The union of every field the query binds, for the skip-index
+        // admissibility gate — the by-role slices above are what the
+        // matcher consumes. The contiguous matcher already forces a used
+        // index's position 0 to be bound, but an all-unused match inside
+        // the difference budget could still select a sparse index for a
+        // query that never names its trigger.
+        let mut bound_fields = equal_fields.clone();
+        bound_fields.extend(range_field);
+        bound_fields.extend(in_field);
+        for order_by_key in &order_by_keys {
+            if !bound_fields.contains(order_by_key) {
+                bound_fields.push(order_by_key);
+            }
+        }
+
         let Some((index, difference)) = self.document_type.index_for_types_matching(
             equal_fields.as_slice(),
             range_field,
@@ -2216,7 +2231,7 @@ impl<'a> DriveDocumentQuery<'a> {
             order_by_keys.as_slice(),
             |index| {
                 index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges)
-                    && index_admissible_for_skip_if_absent(index, &fields)
+                    && index_admissible_for_skip_if_absent(index, &bound_fields)
             },
             platform_version,
         )?
