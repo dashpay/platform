@@ -2,14 +2,14 @@
 //! its checkpoint registry and a fresh target restores one chunk by chunk, then
 //! reconstructs its platform state.
 //!
-//! KNOWN LIMITATION at the pinned grovedb revision (6c882c3): state sync wire protocol
-//! version 1 does not faithfully restore SumTree subtrees — the copied node hashes
-//! reproduce the source root hash, but re-opening a restored sum tree recomputes a
-//! different root (latent corruption), which the strict `verify_grovedb` call in
-//! `apply_snapshot_chunk` correctly refuses. See `tests/sum_tree_sync_probe.rs` for the
-//! minimal upstream reproducer. The full happy-path test below is therefore `#[ignore]`d
-//! until the grovedb pin gains the fixed wire version, and an active test pins today's
-//! refusal behavior instead.
+//! KNOWN LIMITATION at the pinned grovedb revision (6c882c3): state sync does not
+//! faithfully restore SumTree subtrees — the copied node hashes reproduce the source
+//! root hash, but re-opening a restored sum tree recomputes a different root (latent
+//! corruption), which the strict `verify_grovedb` call in `apply_snapshot_chunk`
+//! correctly refuses. See `tests/sum_tree_sync_probe.rs` for the minimal upstream
+//! reproducer. The full happy-path test below is therefore `#[ignore]`d until the
+//! grovedb pin includes the sum-tree restore fix (dashpay/grovedb#840), and an active
+//! test pins today's refusal behavior instead.
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -506,7 +506,7 @@ pub(crate) mod tests {
 
     /// Pins today's behavior at the pinned grovedb revision: the transfer itself
     /// completes (including recovery from a tampered chunk via RETRY and a snapshot
-    /// restart), but the strict post-restore verification detects that wire v1 did not
+    /// restart), but the strict post-restore verification detects that grovedb did not
     /// faithfully restore the sum trees and refuses the snapshot instead of accepting
     /// latent corruption. When this test starts failing because the sync SUCCEEDS,
     /// grovedb has been fixed: un-ignore `run_state_sync_between_two_platforms` and
