@@ -144,13 +144,28 @@ where
             self.config.execution.epoch_time_length_s,
         )?);
 
+        let mut consensus_params = consensus_params_update(
+            self.config.network,
+            first_platform_version,
+            platform_version,
+            &epoch_info,
+        )?;
+
+        // `first_platform_version` above is a fiction for Tenderdash's benefit — it
+        // makes the update carry the real app version, since Tenderdash starts genesis
+        // assuming the first one. But it also makes a chain that STARTS on protocol
+        // v15+ look like it just crossed to v15, and the update then carries the
+        // evidence window override meant for chains upgrading with pre-state-sync
+        // genesis documents (#2512) — silently clobbering the evidence params of the
+        // genesis document being initialized right now. At genesis the operator's
+        // genesis document is authoritative, so the evidence section must not be
+        // emitted here; a `None` section leaves the genesis values in force.
+        if let Some(params) = consensus_params.as_mut() {
+            params.evidence = None;
+        }
+
         Ok(ResponseInitChain {
-            consensus_params: consensus_params_update(
-                self.config.network,
-                first_platform_version,
-                platform_version,
-                &epoch_info,
-            )?,
+            consensus_params,
             app_hash: app_hash.to_vec(),
             validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,
