@@ -453,6 +453,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         };
         let compound = Index {
             name: "byRestaurantChef".to_string(),
@@ -479,6 +480,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         };
 
         let index_structure =

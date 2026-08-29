@@ -647,6 +647,10 @@
           "preallocated": {
             "type": "boolean",
             "description": "Only on indexOnly document types whose index path is fully determined by a same-contract permanentDocument refersTo declaration: every index property must be either the referring property itself (its value is the referenced document's $id) or a key of that declaration's propertyAgreement (consensus-equal to a referenced-document property). When true, creating a referenced document also creates this index's dynamic trees for entries referencing it — paid by the referenced document's creator — and deleting the last entry keeps them, so every entry insert costs the same as the first. Available from protocol version 14."
+          },
+          "skipIfAbsent": {
+            "type": "boolean",
+            "description": "Only on indexOnly document types: when true, a document that omits this index's first property writes no entry into this index (and a delete recomputes the same skip), so the index holds only documents carrying the property. The first property is the skip trigger: it must be a top-level schema property NOT listed in `required` (making it the only way an indexOnly property may be optional), and every index involving an optional property must be skipIfAbsent with that property first. Every other property that is not a skip trigger must still appear in at least one non-skipIfAbsent index, and at least one $createdAt-free index must remain non-skipIfAbsent (the executed-transition proof index). An absent trigger is distinct from an empty value: absence skips the index, while any present value — empty included — indexes normally. Available from protocol version 14."
           }
         },
         "required": [
@@ -793,7 +797,7 @@
     },
     "indexOnly": {
       "type": "boolean",
-      "description": "When true, documents of this type are never written to primary storage: the index entries are the rows, each terminating in an Item keyed by the index's `terminal` property instead of a Reference keyed by the document id. Only what is in the indexes exists and is recoverable. Requires: every property required and appearing in at least one index, $ownerId in at least one index (as a property or terminal), documentsMutable: false, no transfers/trading/history/transient properties, and no doctype-level aggregate keywords (use the index-level count flags). Available from protocol version 14."
+      "description": "When true, documents of this type are never written to primary storage: the index entries are the rows, each terminating in an Item keyed by the index's `terminal` property instead of a Reference keyed by the document id. Only what is in the indexes exists and is recoverable. Requires: every property required and appearing in at least one index (except a `skipIfAbsent` index's optional first property), $ownerId in at least one index (as a property or terminal), documentsMutable: false, no transfers/trading/history/transient properties, and no doctype-level aggregate keywords (use the index-level count flags). Available from protocol version 14."
     },
     "tokenCost": {
       "type": "object",

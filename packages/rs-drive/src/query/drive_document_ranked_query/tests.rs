@@ -703,6 +703,7 @@ fn test_index(name: &str, properties: &[&str], summable: Option<&str>) -> Index 
         time_range: None,
         terminal: None,
         preallocated: false,
+        skip_if_absent: false,
     }
 }
 

@@ -94,6 +94,23 @@ pub const TERMINAL: &str = "terminal";
 /// `permanentDocument` reference; the doc-type-level validation rejects every
 /// other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
 pub const PREALLOCATED: &str = "preallocated";
+/// Index-level keyword opting the index into **conditional participation**
+/// on an `indexOnly` document type: when `true`, a document that omits the
+/// index's first property writes no entry into this index, and a delete
+/// recomputes the same skip from its carried values. The first property is
+/// the *skip trigger*: it must be a top-level (non-dotted) schema property
+/// NOT listed in `required` — the only way an indexOnly property may be
+/// optional — and every index involving an optional property must be
+/// `skipIfAbsent` with that property first, which is what keeps the write
+/// walkers' required-derived skip and the probes' flag-derived skip
+/// provably equivalent. Every non-trigger property must still appear in at
+/// least one non-skip index (only indexed values exist on an indexOnly
+/// type, and a skip index cannot carry a value for every document), and at
+/// least one `$createdAt`-free index must remain non-skip to serve as the
+/// executed-transition proof index. Only allowed on indexOnly document
+/// types; the doc-type-level validation rejects every other shape.
+/// Meta-schema v3+ (protocol version 14).
+pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -566,6 +583,19 @@ pub struct Index {
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub preallocated: bool,
+    /// On an indexOnly document type: when `true`, a document that omits this
+    /// index's first property — the skip trigger, which must be an optional
+    /// top-level schema property (see [`SKIP_IF_ABSENT`]) — writes no entry
+    /// into this index, and a delete recomputes the same skip from the
+    /// carried values. The index then holds exactly the documents carrying
+    /// the trigger. An absent trigger is distinct from a present-but-empty
+    /// value, which indexes normally.
+    //
+    // `serde(default)`: added after the struct's serde shape was in the wild
+    // (see the note on `countable` above), so pre-existing JSON must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub skip_if_absent: bool,
 }
 
 /// Which grammar keywords a document meta-schema generation admits for
@@ -587,6 +617,9 @@ pub(crate) struct IndexGrammarAdmissions {
     /// The `preallocated` keyword (indexOnly document types with a
     /// determining refersTo; generation 3 and later).
     pub(crate) preallocated: bool,
+    /// The `skipIfAbsent` keyword (indexOnly document types; generation 3
+    /// and later).
+    pub(crate) skip_if_absent: bool,
 }
 
 impl IndexGrammarAdmissions {
@@ -600,6 +633,7 @@ impl IndexGrammarAdmissions {
             time_range: generation >= 3,
             terminal: generation >= 3,
             preallocated: generation >= 3,
+            skip_if_absent: generation >= 3,
         }
     }
 }
@@ -904,6 +938,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 time_range: false,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
     }
@@ -942,6 +977,7 @@ impl Index {
             time_range: time_range_allowed,
             terminal: terminal_allowed,
             preallocated: preallocated_allowed,
+            skip_if_absent: skip_if_absent_allowed,
         } = admissions;
         // Decouple the map
         // It contains properties and a unique key
@@ -998,6 +1034,7 @@ impl Index {
         let mut time_range: Option<TimeRangeTransform> = None;
         let mut terminal: Option<String> = None;
         let mut preallocated = false;
+        let mut skip_if_absent = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -1372,6 +1409,22 @@ impl Index {
                             .as_bool()
                             .ok_or(DataContractError::ValueWrongType(
                                 "preallocated value must be a boolean".to_string(),
+                            ))?;
+                }
+                // `skipIfAbsent` is guarded the same way as `terminal` and
+                // `preallocated` above: it joined the grammar at meta-schema
+                // v3, so below that the key falls through to the
+                // unknown-property arm. Whether the declaring document type
+                // is indexOnly and the first property is a legal skip
+                // trigger are doc-type facts this parser cannot see;
+                // `apply_index_only` in `try_from_schema::common` enforces
+                // both.
+                SKIP_IF_ABSENT if skip_if_absent_allowed => {
+                    skip_if_absent =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "skipIfAbsent value must be a boolean".to_string(),
                             ))?;
                 }
                 "properties" => {
@@ -1855,6 +1908,7 @@ impl Index {
             time_range,
             terminal,
             preallocated,
+            skip_if_absent,
         })
     }
 }
@@ -1928,6 +1982,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }
     }
 
@@ -2009,6 +2064,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2025,6 +2081,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2041,6 +2098,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2061,6 +2119,7 @@ mod tests {
             time_range: false,
             terminal: false,
             preallocated: true,
+            skip_if_absent: false,
         };
 
         let mut map = index_value_map("postId", None);
@@ -2090,6 +2149,7 @@ mod tests {
                 time_range: false,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2120,6 +2180,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2142,6 +2203,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2164,6 +2226,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2187,6 +2250,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2211,6 +2275,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2231,6 +2296,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2256,6 +2322,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2281,6 +2348,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2304,6 +2372,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2332,6 +2401,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("the parser applies structural rules only");
@@ -2355,6 +2425,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2374,6 +2445,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2397,6 +2469,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2451,6 +2524,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2487,6 +2561,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("should parse");
@@ -2516,6 +2591,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2547,6 +2623,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -2572,6 +2649,7 @@ mod tests {
                 time_range: true,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("a non-unique $updatedAt bucketing stays legal");
@@ -2592,6 +2670,7 @@ mod tests {
                 time_range: false,
                 terminal: false,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .unwrap_err();
@@ -3574,6 +3653,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("all three ranked keywords must parse when the grammar allows them");
@@ -3600,6 +3680,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("index without ranked keywords must parse");
@@ -3642,6 +3723,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("ranked flags on a compound index must be accepted");
@@ -3672,6 +3754,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3703,6 +3786,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3732,6 +3816,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3758,6 +3843,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3786,6 +3872,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3814,6 +3901,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         );
         assert!(
@@ -3844,6 +3932,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("rankedAverageable on the averageable sugar form must parse");
@@ -3880,6 +3969,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("rankedAverageable on the explicit longhand form must parse");
@@ -3906,6 +3996,7 @@ mod tests {
                     time_range: true,
                     terminal: true,
                     preallocated: false,
+                    skip_if_absent: false,
                 },
             );
             assert!(result.is_err(), "{key} must reject a non-boolean value");
@@ -3938,6 +4029,7 @@ mod tests {
                         time_range: false,
                         terminal: false,
                         preallocated: false,
+                        skip_if_absent: false,
                     },
                 );
                 assert!(
@@ -4019,6 +4111,7 @@ mod tests {
                     time_range: true,
                     terminal: true,
                     preallocated: false,
+                    skip_if_absent: false,
                 },
             );
             assert!(
@@ -4047,6 +4140,7 @@ mod tests {
                     time_range: true,
                     terminal: true,
                     preallocated: false,
+                    skip_if_absent: false,
                 },
             )
             .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
@@ -4071,6 +4165,7 @@ mod tests {
                     time_range: true,
                     terminal: true,
                     preallocated: false,
+                    skip_if_absent: false,
                 },
             )
             .unwrap_or_else(|e| {
@@ -4093,6 +4188,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("nullSearchable: false on a plain index must still parse");
@@ -4110,6 +4206,7 @@ mod tests {
                 time_range: true,
                 terminal: true,
                 preallocated: false,
+                skip_if_absent: false,
             },
         )
         .expect("nullSearchable: false on a range-averageable index must still parse");
@@ -4597,6 +4694,7 @@ mod json_convertible_tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }
     }
 

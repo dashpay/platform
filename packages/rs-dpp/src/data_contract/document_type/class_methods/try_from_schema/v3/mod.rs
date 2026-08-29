@@ -277,6 +277,10 @@ fn try_from_schema_generation_3(
             // PREALLOCATED: the fourth generation-3 index keyword, from the
             // same shared mapping.
             admit_index_preallocated: IndexGrammarAdmissions::for_schema_generation(3).preallocated,
+            // SKIP IF ABSENT: the fifth generation-3 index keyword, from the
+            // same shared mapping.
+            admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
+                .skip_if_absent,
         },
         platform_version,
     )?;
