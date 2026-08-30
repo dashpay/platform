@@ -844,10 +844,11 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
 /// Memory is bounded on BOTH axes (#4313 review finding d6b7be21f4a4). The
 /// cache holds at most [`FOREIGN_SCAN_CHECKPOINT_CAP`] entries, and each
 /// entry retains at most [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] notes —
-/// [`ForeignScanCheckpointCache::save`] refuses an over-budget checkpoint
-/// outright rather than truncating it (a truncated note set with an intact
-/// `resume_position` would claim coverage it doesn't have and make a resumed
-/// scan MISS notes; no checkpoint at all merely costs a rescan). The notes
+/// [`ForeignScanCheckpointCache::save`] bounds an over-budget checkpoint to
+/// the budget's highest-value notes while its `resume_position` advances
+/// normally (see [`bound_retained_notes`] for why that cannot change a
+/// claim's outcome, and #4313 review finding df7d9c0f41ab for why refusing
+/// the save whole stalled budget-exhausted retries forever). The notes
 /// ride an `Arc<[ShieldedNote]>` so [`ForeignScanCheckpointCache::load`]
 /// hands back a shared handle instead of deep-copying the vector — the old
 /// `Vec` clone transiently doubled an entry's memory while the cached
@@ -859,10 +860,12 @@ struct ForeignScanCheckpoint {
     /// Always a full-chunk boundary (and re-aligned down on use).
     resume_position: u64,
     /// Notes that decrypted under the key at positions strictly below
-    /// `resume_position`. Positions at/above it are re-derived on resume, so
-    /// buffer-chunk notes are never carried here (no duplicates on rescan).
-    /// Shared (never mutated in place): `load` clones the handle, not the
-    /// notes.
+    /// `resume_position` — bounded to the
+    /// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] highest-value ones when more
+    /// decrypted than the budget (see [`bound_retained_notes`]). Positions
+    /// at/above `resume_position` are re-derived on resume, so buffer-chunk
+    /// notes are never carried here (no duplicates on rescan). Shared (never
+    /// mutated in place): `load` clones the handle, not the notes.
     notes: Arc<[ShieldedNote]>,
 }
 
@@ -912,11 +915,18 @@ const FOREIGN_SCAN_CHECKPOINT_CAP: usize = 8;
 /// magnitude of headroom while capping the whole cache at
 /// [`FOREIGN_SCAN_CHECKPOINT_CAP`] × 16 notes (a few tens of KB).
 ///
-/// Exceeding it drops the CHECKPOINT, never notes from it — see
-/// [`ForeignScanCheckpointCache::save`]. Correctness never depends on a
-/// checkpoint existing: the next attempt rescans from the last retained
-/// (bounded) position, or from zero, and merely re-pays work that the
-/// per-attempt [`FOREIGN_SCAN_BATCH_BUDGET`] keeps bounded.
+/// Exceeding it retains the budget's HIGHEST-VALUE notes and still advances
+/// the resume position — see [`ForeignScanCheckpointCache::save`] and
+/// [`bound_retained_notes`] for why dropping only the lowest-value notes
+/// cannot fail a genuinely funded claim (one bundle spends at most the
+/// structural action cap's worth of notes, which this budget covers, and
+/// selection is largest-value-first). Refusing the over-budget save whole
+/// (this constant's original enforcement) froze the resume position: every
+/// budget-exhausted retry rescanned the same window and a funding note
+/// beyond it became permanently unreachable (#4313 review finding
+/// df7d9c0f41ab). Correctness never depends on a checkpoint existing — a
+/// missing entry merely costs a rescan the per-attempt
+/// [`FOREIGN_SCAN_BATCH_BUDGET`] keeps bounded.
 const FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET: usize = 16;
 
 impl ForeignScanCheckpointCache {
@@ -946,20 +956,19 @@ impl ForeignScanCheckpointCache {
     /// no writer can rewind another's progress.
     ///
     /// Bounded: a checkpoint retaining more than
-    /// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] notes is REFUSED — dropped
-    /// whole, never truncated, because a truncated note set under an intact
-    /// `resume_position` would claim coverage it doesn't have and make a
-    /// resumed scan MISS the dropped notes (an under-reported value could
-    /// then fail a genuinely funded claim). Any existing entry for the key
-    /// is left in place: it passed this same bound when it was stored, so
-    /// memory stays bounded and later attempts still resume from the last
-    /// bounded position instead of from zero. See
-    /// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] for the threat model (#4313
-    /// review finding d6b7be21f4a4).
+    /// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] notes keeps only the budget's
+    /// HIGHEST-VALUE notes (via [`bound_retained_notes`]) — and its
+    /// `resume_position` still advances, so budget-exhausted retries always
+    /// make progress. Refusing the save whole (the previous repair of
+    /// finding d6b7be21f4a4) capped memory but froze the position: with an
+    /// over-budget note set below the resume point, EVERY save was refused,
+    /// each retry reloaded the same old checkpoint and rescanned the same
+    /// window, and a funding note beyond that window became permanently
+    /// unreachable (#4313 review finding df7d9c0f41ab). See
+    /// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] for why dropping only the
+    /// lowest-value notes cannot change a claim's outcome.
     fn save(&self, key: [u8; 32], checkpoint: ForeignScanCheckpoint) {
-        if checkpoint.notes.len() > FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET {
-            return;
-        }
+        let checkpoint = bound_retained_notes(checkpoint);
         let mut map = self
             .entries
             .lock()
@@ -974,6 +983,44 @@ impl ForeignScanCheckpointCache {
             map.remove(0);
         }
         map.push((key, checkpoint));
+    }
+}
+
+/// Bound a checkpoint's retained notes to the
+/// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] HIGHEST-VALUE ones, keeping the
+/// resume position intact. A within-budget checkpoint passes through
+/// untouched (sharing its allocation — the common path allocates nothing).
+///
+/// Dropping only the lowest-value notes is CLAIM-LOSSLESS: note selection is
+/// largest-value-first (`note_selection::select_notes`), and one claim spends
+/// its notes inside a single transition whose action count is structurally
+/// capped at `max_shielded_transition_actions` — which the budget covers
+/// (pinned by `checkpoint_note_budget_covers_a_full_claim_bundle`), and each
+/// action spends at most one note. The k highest-value notes therefore
+/// dominate every subset a bundle could spend: any denomination coverable
+/// from the full set is coverable from the retained set, so — unlike the
+/// blind truncation the d6b7be21f4a4 round rejected — this bound can never
+/// fail a genuinely funded claim. Value the dropped dust represented is
+/// value no single bundle could have spent anyway.
+///
+/// Ties break toward the LOWER position, making the retained set a
+/// deterministic function of the full set under a total order — so bounding
+/// is merge-exact across passes: re-bounding a previously bounded set plus
+/// new finds yields exactly what bounding the full set once would have.
+fn bound_retained_notes(checkpoint: ForeignScanCheckpoint) -> ForeignScanCheckpoint {
+    if checkpoint.notes.len() <= FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET {
+        return checkpoint;
+    }
+    let mut notes: Vec<ShieldedNote> = checkpoint.notes.iter().cloned().collect();
+    notes.sort_by(|a, b| b.value.cmp(&a.value).then(a.position.cmp(&b.position)));
+    notes.truncate(FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET);
+    // Back to position order: carried notes are position-filtered against the
+    // aligned resume start on load, and the scan's returned set stays in
+    // discovery order.
+    notes.sort_by_key(|n| n.position);
+    ForeignScanCheckpoint {
+        resume_position: checkpoint.resume_position,
+        notes: notes.into(),
     }
 }
 
@@ -1062,9 +1109,11 @@ fn foreign_scan_checkpoint_below(
 /// Retained MEMORY is bounded independently of the work bound
 /// ([`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`], #4313 review finding
 /// d6b7be21f4a4): an inviter who floods the published invitation address
-/// with many small notes cannot pin them all in the checkpoint — an
-/// over-budget checkpoint is dropped whole, and the claim degrades to a
-/// (budgeted) rescan rather than a wrong result.
+/// with many small notes cannot pin them all in the checkpoint — the
+/// checkpoint keeps the budget's highest-value notes (a set that dominates
+/// anything one claim bundle could spend — see [`bound_retained_notes`])
+/// while resume progress still compounds across retries (#4313 review
+/// finding df7d9c0f41ab).
 ///
 /// [`ShieldedChunkBatch`]: dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch
 pub(crate) async fn scan_notes_for_foreign_key(
@@ -1159,9 +1208,9 @@ pub(crate) async fn scan_notes_for_foreign_key(
 /// checkpoint; this pass's own finds accumulate in a separate vector and the
 /// two are only combined when a checkpoint is saved or the scan completes.
 /// Every save is subject to the retained-note budget — see
-/// [`ForeignScanCheckpointCache::save`]: a refused save costs the next
-/// attempt a rescan from the previous (bounded) checkpoint, never
-/// correctness.
+/// [`ForeignScanCheckpointCache::save`]: an over-budget save is bounded to
+/// the highest-value notes with its position intact, so retries always
+/// resume past the window this attempt covered.
 #[allow(clippy::too_many_arguments)]
 async fn scan_foreign_stream_with_budget<St, E>(
     stream: St,
@@ -1566,70 +1615,128 @@ mod tests {
         }
     }
 
-    /// The retained-note budget (#4313 review finding d6b7be21f4a4): an
-    /// untrusted inviter controls how many notes decrypt under a published
-    /// invitation key, so a checkpoint whose note set exceeds
-    /// [`super::FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] must be REFUSED —
-    /// dropped whole, never truncated (a truncated set under an intact
-    /// resume position would claim coverage it doesn't have, and a resumed
-    /// scan would MISS the dropped notes). An existing bounded entry for the
-    /// key survives the refusal, so retries still resume from the last
-    /// bounded position.
+    /// The retained-note budget (#4313 review findings d6b7be21f4a4 +
+    /// df7d9c0f41ab): an untrusted inviter controls how many notes decrypt
+    /// under a published invitation key, so a checkpoint whose note set
+    /// exceeds [`super::FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] is bounded to
+    /// the BUDGET HIGHEST-VALUE notes — while its resume position advances
+    /// normally. (The earlier refuse-whole behavior capped memory but froze
+    /// the resume position: with an over-budget note set below the resume
+    /// point, every save was refused and budget-exhausted retries rescanned
+    /// the same window forever.) Dropping only the LOWEST-value notes is
+    /// claim-lossless: selection is largest-value-first and one claim bundle
+    /// can spend at most `max_shielded_transition_actions` (≤ the budget)
+    /// notes, so the retained set dominates every selectable subset.
     #[test]
-    fn an_over_budget_checkpoint_is_dropped_not_truncated() {
+    fn an_over_budget_save_retains_the_highest_value_notes_and_advances() {
         let budget = super::FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET;
         let cache = super::ForeignScanCheckpointCache::default();
         let key = [0xAA; 32];
-        let notes_of = |count: usize| -> std::sync::Arc<[super::ShieldedNote]> {
-            (0..count as u64).map(|i| note_at(i, 1)).collect()
-        };
 
-        // AT the budget: retained in full.
+        // AT the budget: retained in full, untouched.
+        let at_budget: std::sync::Arc<[super::ShieldedNote]> =
+            (0..budget as u64).map(|i| note_at(i, i + 1)).collect();
         cache.save(
             key,
             super::ForeignScanCheckpoint {
                 resume_position: 2048,
-                notes: notes_of(budget),
+                notes: at_budget,
             },
         );
         let bounded = cache.load(&key).expect("a within-budget save is retained");
         assert_eq!(bounded.notes.len(), budget);
 
-        // OVER the budget: the save is refused — and the existing bounded
-        // entry is what a later load still sees, at its own resume position.
+        // OVER the budget (distinct values 1..=budget+4): the save keeps the
+        // budget highest-value notes, drops the dust, and ADVANCES the entry.
+        let over: std::sync::Arc<[super::ShieldedNote]> = (0..budget as u64 + 4)
+            .map(|i| note_at(i, i + 1))
+            .collect();
         cache.save(
             key,
             super::ForeignScanCheckpoint {
                 resume_position: 4096,
-                notes: notes_of(budget + 1),
+                notes: over,
             },
         );
-        let after = cache
-            .load(&key)
-            .expect("the previous bounded entry must survive the refusal");
+        let after = cache.load(&key).expect("the bounded save must be stored");
         assert_eq!(
-            after.resume_position, 2048,
-            "an over-budget checkpoint must not advance the entry"
+            after.resume_position, 4096,
+            "a bounded save must advance the resume position"
         );
-        assert!(
-            after.notes.len() <= budget,
+        assert_eq!(
+            after.notes.len(),
+            budget,
             "no cached entry may ever exceed the retained-note budget"
         );
+        assert!(
+            after.notes.iter().all(|n| n.value >= 5),
+            "the retained notes must be the highest-value ones (values 1..=4 dropped)"
+        );
+        let positions: Vec<u64> = after.notes.iter().map(|n| n.position).collect();
+        let mut sorted = positions.clone();
+        sorted.sort_unstable();
+        assert_eq!(
+            positions, sorted,
+            "the bounded set stays in position order for the resume-chain filter"
+        );
 
-        // A fresh key with an over-budget first checkpoint keeps NO entry:
-        // the next attempt degrades to a from-scratch scan, not a wrong
-        // result.
-        let fresh = [0xBB; 32];
+        // EQUAL values: the tie breaks deterministically toward the LOWER
+        // position, so re-bounding a bounded set plus new finds equals
+        // bounding the full set once (iterative top-k is merge-exact under
+        // a total order).
+        let ties = [0xBB; 32];
+        let tied: std::sync::Arc<[super::ShieldedNote]> =
+            (0..budget as u64 + 1).map(|i| note_at(i, 7)).collect();
         cache.save(
-            fresh,
+            ties,
             super::ForeignScanCheckpoint {
                 resume_position: 2048,
-                notes: notes_of(budget + 1),
+                notes: tied,
             },
         );
+        let tied_after = cache.load(&ties).expect("bounded tie save is stored");
+        assert_eq!(tied_after.notes.len(), budget);
         assert!(
-            cache.load(&fresh).is_none(),
-            "an over-budget checkpoint must be dropped whole, not stored"
+            tied_after.notes.iter().all(|n| n.position < budget as u64),
+            "on equal value the lower position wins deterministically"
+        );
+
+        // Monotonicity is unchanged: a stale over-budget writer cannot
+        // rewind an advanced entry.
+        let stale: std::sync::Arc<[super::ShieldedNote]> = (0..budget as u64 + 4)
+            .map(|i| note_at(i, i + 1))
+            .collect();
+        cache.save(
+            key,
+            super::ForeignScanCheckpoint {
+                resume_position: 2048,
+                notes: stale,
+            },
+        );
+        assert_eq!(
+            cache.load(&key).expect("entry survives").resume_position,
+            4096,
+            "an older resume position must never replace a newer one"
+        );
+    }
+
+    /// The dominance argument behind bounded retention requires the budget
+    /// to cover every note one claim bundle could spend: a single
+    /// transition holds at most `max_shielded_transition_actions` actions,
+    /// and each action spends at most one note. If a version bump ever
+    /// raises that cap past the budget, retention could drop a note a
+    /// wider bundle could have spent — this pin forces the budget to be
+    /// revisited together with the cap.
+    #[test]
+    fn checkpoint_note_budget_covers_a_full_claim_bundle() {
+        let latest = dpp::version::PlatformVersion::latest();
+        assert!(
+            super::FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET
+                >= latest.system_limits.max_shielded_transition_actions as usize,
+            "FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET ({}) must cover the structural \
+             action cap ({}) or bounded retention could forget a spendable note",
+            super::FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET,
+            latest.system_limits.max_shielded_transition_actions
         );
     }
 

@@ -259,10 +259,11 @@ async fn a_stream_error_checkpoints_partial_progress() {
 /// batch budget bounds WORK, but an untrusted inviter controls how many
 /// notes decrypt under a published invitation key, and every note found
 /// below the resume position used to be RETAINED in the checkpoint across
-/// budgeted retries. A many-note funding must not pin unbounded memory:
-/// whatever the cache holds for the key after a flood stays within
-/// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`] (here: the over-budget
-/// checkpoint is dropped whole).
+/// budgeted retries. A many-note funding must not pin unbounded memory —
+/// AND must not stall progress (review finding df7d9c0f41ab): whatever the
+/// cache holds for the key after a flood stays within
+/// [`FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET`], while the resume position still
+/// records exactly how far the paused scan got.
 #[tokio::test]
 async fn a_note_flood_cannot_pin_unbounded_checkpoint_memory() {
     let keys = keyset();
@@ -300,40 +301,54 @@ async fn a_note_flood_cannot_pin_unbounded_checkpoint_memory() {
         PlatformWalletError::ShieldedForeignScanBudgetExhausted { .. }
     ));
 
-    // THE BOUND. Pre-fix, the pause checkpointed every flood note (the
-    // cache held `flood` notes for this key); the retained-note budget now
-    // refuses the over-budget checkpoint, so the cache holds nothing — and
-    // in no case may it hold more than the budget.
-    if let Some(cp) = checkpoints.load(&key) {
-        assert!(
-            cp.notes.len() <= FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET,
-            "a note flood must not be retained past the budget (got {})",
-            cp.notes.len()
-        );
-    }
+    // THE BOUND — and the PROGRESS. Pre-fix, the pause checkpointed every
+    // flood note; the first repair refused the over-budget checkpoint whole,
+    // which capped memory but froze the resume position (every retry
+    // rescanned the same window forever). The save now retains the
+    // highest-value notes within the budget AND advances the position.
+    let cp = checkpoints
+        .load(&key)
+        .expect("a flooded pause must still checkpoint its progress");
+    assert!(
+        cp.notes.len() <= FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET,
+        "a note flood must not be retained past the budget (got {})",
+        cp.notes.len()
+    );
+    assert_eq!(
+        cp.resume_position,
+        2 * CHUNK_SIZE,
+        "the flooded checkpoint must record the coverage the pause reached"
+    );
 }
 
-/// Dropping an over-budget checkpoint must cost a rescan, never a wrong
-/// result: the retry restarts from scratch (no checkpoint survived the
-/// flood), re-decrypts every flood note, and still completes the claim —
-/// all notes found, total value exact — once the funding note is reached.
+/// THE round-5 liveness guarantee (review finding df7d9c0f41ab): more dust
+/// notes than the retained-note budget, followed by a funding note DEEPER
+/// than the first attempt's batch-budget window. Refusing the over-budget
+/// checkpoint whole (the first repair of d6b7be21f4a4) froze the resume
+/// position here: every retry reloaded the same old checkpoint, rediscovered
+/// the same over-budget prefix, had its save refused again, and exhausted
+/// the same window — a genuinely funded invitation became permanently
+/// unclaimable. The bounded save must instead ADVANCE the position while
+/// retaining the highest-value notes, so attempts compound toward the deep
+/// funding note and the claim completes.
 #[tokio::test]
-async fn a_refused_checkpoint_degrades_to_rescan_and_the_claim_still_succeeds() {
+async fn a_note_flood_beyond_the_first_window_still_reaches_a_deep_funding_note() {
     let keys = keyset();
     let checkpoints = ForeignScanCheckpointCache::default();
     let key = foreign_scan_checkpoint_key(&keys.full_viewing_key);
 
+    // Dust with DISTINCT values 1..=20 (budget + 4): the retained set is
+    // then observable — the 16 most valuable notes (values 5..=20, summing
+    // to 200) survive, values 1..=4 are dropped.
     let flood = FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET + 4;
-    let make_flood = |keys: &OrchardKeySet| -> Vec<DecryptedNote> {
-        (0..flood)
-            .map(|i| decrypted_note_at(keys, i as u64, 1))
-            .collect()
-    };
+    let flood_notes: Vec<DecryptedNote> = (0..flood)
+        .map(|i| decrypted_note_at(&keys, i as u64, i as u64 + 1))
+        .collect();
 
-    // Attempt 1: the flood chunk, then a budget pause. The over-budget
-    // checkpoint is refused, so no resume position survives.
+    // Attempt 1: the flood chunk, then a budget pause two chunks in. The
+    // funding note lies beyond this window.
     let batches: Vec<BatchResult> = vec![
-        Ok(full_batch_with(0, make_flood(&keys))),
+        Ok(full_batch_with(0, flood_notes)),
         Ok(full_batch(CHUNK_SIZE)),
         Ok(full_batch(2 * CHUNK_SIZE)),
     ];
@@ -351,27 +366,44 @@ async fn a_refused_checkpoint_degrades_to_rescan_and_the_claim_still_succeeds() 
     .await
     .expect_err("attempt 1 pauses at its batch budget");
 
-    // Attempt 2 — as the production caller would run it: load finds no
-    // checkpoint (the flood refused it), so the rescan starts from zero and
-    // re-serves the whole stream, now including the funding note. The stop
-    // value requires the funding note AND every flood note, so a missed
-    // note fails the total.
-    let resume = checkpoints
+    // MONOTONIC PROGRESS: the flooded pause must have advanced the
+    // checkpoint past the chunks it covered — this is exactly what the
+    // refuse-whole behavior failed to do.
+    let cp = checkpoints
         .load(&key)
-        .map(|cp| cp.resume_position)
-        .unwrap_or(0);
+        .expect("the flooded pause must leave a resumable checkpoint");
     assert_eq!(
-        resume, 0,
-        "the refused checkpoint means a from-scratch rescan, not a resume"
+        cp.resume_position,
+        2 * CHUNK_SIZE,
+        "attempt 2 must resume past attempt 1's window, not repeat it"
     );
-    let stop_at_value = flood as u64 + 100;
+    assert_eq!(
+        cp.notes.len(),
+        FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET,
+        "the checkpoint retains exactly the budget's worth of notes"
+    );
+    assert!(
+        cp.notes.iter().all(|n| n.value >= 5),
+        "the retained notes must be the HIGHEST-value ones (dust 1..=4 dropped)"
+    );
+
+    // Attempt 2 — as the production caller would run it: resume from the
+    // checkpoint with its carried notes, and find the deep funding note in
+    // the first fresh chunk. The stop value (450) needs the funding note
+    // AND most of the carried value (200 + 300 = 500 ≥ 450), so a claim
+    // that forgot the retained notes — or never reached the funding note —
+    // fails the total.
+    let carried = cp.notes;
+    let carried_total: u64 = carried.iter().map(|n| n.value).sum();
+    assert_eq!(carried_total, 200, "values 5..=20 sum to 200");
+    let resume = cp.resume_position;
+    let stop_at_value = 450;
     let batches2: Vec<BatchResult> = vec![
-        Ok(full_batch_with(0, make_flood(&keys))),
         Ok(full_batch_with(
-            CHUNK_SIZE,
-            vec![decrypted_note_at(&keys, CHUNK_SIZE + 3, 100)],
+            resume,
+            vec![decrypted_note_at(&keys, resume + 3, 300)],
         )),
-        Ok(partial_batch(2 * CHUNK_SIZE)),
+        Ok(partial_batch(resume + CHUNK_SIZE)),
     ];
     let found = scan_foreign_stream_with_budget(
         stream::iter(batches2),
@@ -380,27 +412,27 @@ async fn a_refused_checkpoint_degrades_to_rescan_and_the_claim_still_succeeds() 
         &keys.full_viewing_key,
         stop_at_value,
         resume,
-        Arc::from(Vec::new()),
-        0,
+        carried,
+        carried_total,
         8,
     )
     .await
-    .expect("the rescan completes the claim the dropped checkpoint deferred");
+    .expect("the resumed attempt completes the claim the pause deferred");
 
     assert_eq!(
         found.len(),
-        flood + 1,
-        "every flood note plus the funding note must be re-found"
+        FOREIGN_SCAN_CHECKPOINT_NOTE_BUDGET + 1,
+        "the retained notes plus the funding note must all be selectable"
     );
     let total: u64 = found.iter().map(|n| n.value).sum();
     assert_eq!(
-        total, stop_at_value,
-        "the claim's selectable value is exact"
+        total, 500,
+        "retained value (200) plus the funding note (300) — nothing forgotten"
     );
     assert!(
         found
             .iter()
-            .any(|n| n.position == CHUNK_SIZE + 3 && n.value == 100),
-        "the funding note itself must be present"
+            .any(|n| n.position == resume + 3 && n.value == 300),
+        "the deep funding note itself must be present"
     );
 }
