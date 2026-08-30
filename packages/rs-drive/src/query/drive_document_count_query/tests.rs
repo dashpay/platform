@@ -3917,7 +3917,7 @@ mod prefix_to_last {
         assert!(
             DriveDocumentCountQuery::find_countable_index_for_where_clauses(
                 person_indexes,
-                &vec![
+                &[
                     WhereClause {
                         field: "firstName".to_string(),
                         operator: WhereOperator::Equal,
