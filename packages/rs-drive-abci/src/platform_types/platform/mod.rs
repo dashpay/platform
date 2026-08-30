@@ -157,12 +157,26 @@ impl<C> Platform<C> {
             }
         };
 
+        // Checkpoints are created under the operator-configured `CHECKPOINTS_PATH`
+        // (defaulting to `<db_path>/checkpoints`); startup MUST read them back from the
+        // same place, or a node with a custom path comes up with an empty registry:
+        // it would stop advertising the snapshots it retained and could never prune the
+        // directories it wrote.
+        let checkpoints_path = config
+            .abci
+            .state_sync
+            .resolved_checkpoints_path(&config.db_path);
+
         // The epoch length is the execution config's; Drive counts the epochs a document with a
         // time to live lives by it, so it gets the same value rather than a setting of its own.
         let mut drive_config = config.drive.clone();
         drive_config.epoch_time_length_s = config.execution.epoch_time_length_s;
-        let (drive, current_platform_version) =
-            Drive::open(&config.db_path, Some(drive_config)).map_err(Error::Drive)?;
+        let (drive, current_platform_version) = Drive::open_with_checkpoints_path(
+            &config.db_path,
+            Some(drive_config),
+            Some(&checkpoints_path),
+        )
+        .map_err(Error::Drive)?;
 
         // Finish any TTL bucket-drop reclamation a crash interrupted
         // (grovedb#848 / PR #849): committed redo records survive restarts,
@@ -227,9 +241,7 @@ impl<C> Platform<C> {
             let mut checkpoint_platform_states = BTreeMap::new();
             let checkpoints = drive.checkpoints.load();
             for &block_height in checkpoints.keys() {
-                let checkpoint_state_path = config
-                    .db_path
-                    .join("checkpoints")
+                let checkpoint_state_path = checkpoints_path
                     .join(block_height.to_string())
                     .join("platform_state.bin");
 
