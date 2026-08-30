@@ -1,8 +1,9 @@
 use crate::abci::app::PlatformApplication;
 use crate::abci::AbciError;
 use crate::error::Error;
-use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::platform_types::snapshot::encode_snapshot_metadata;
 use crate::rpc::core::CoreRPCLike;
+use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci as proto;
 
 /// Lists the state sync snapshots this node can serve.
@@ -25,15 +26,32 @@ where
         return Ok(Default::default());
     }
 
-    let platform_state = app.platform().state.load();
-    let platform_version = platform_state.current_platform_version()?;
-    let grove_version = &platform_version.drive.grove_version;
-
     let checkpoints = app.platform().drive.checkpoints.load();
 
     let mut snapshots = Vec::new();
     for (height, checkpoint_info) in checkpoints.iter() {
         let checkpoint = &checkpoint_info.checkpoint;
+
+        // Read the checkpoint under the version IT was written at, not this node's
+        // current one: a node that has since upgraded still serves older checkpoints, and
+        // grovedb's tree opening and root-hash rules are version gated. The same version
+        // is stamped into the snapshot metadata so the consuming node — which has no way
+        // to derive it — restores under exactly these rules.
+        let Some(snapshot_protocol_version) =
+            checkpoint.current_protocol_version().map_err(|e| {
+                AbciError::StateSyncInternalError(format!(
+                    "list_snapshots unable to read the protocol version of the checkpoint at \
+                     height {}: {}",
+                    height, e
+                ))
+            })?
+        else {
+            continue;
+        };
+        let Ok(snapshot_platform_version) = PlatformVersion::get(snapshot_protocol_version) else {
+            continue;
+        };
+        let grove_version = &snapshot_platform_version.drive.grove_version;
 
         let restorable = checkpoint
             .has_reduced_platform_state(grove_version)
@@ -60,9 +78,12 @@ where
 
         snapshots.push(proto::Snapshot {
             height: *height,
-            version: platform_version.drive_abci.state_sync.protocol_version as u32,
+            version: snapshot_platform_version
+                .drive_abci
+                .state_sync
+                .protocol_version as u32,
             hash: root_hash.to_vec(),
-            metadata: Vec::new(),
+            metadata: encode_snapshot_metadata(snapshot_protocol_version),
         });
     }
 
@@ -123,6 +144,14 @@ mod tests {
         platform
             .store_reduced_platform_state(&reduced_platform_state, None, platform_version)
             .expect("should store reduced platform state");
+
+        // A real node always has its protocol version in aux (Drive::open reads it to
+        // decide whether there is saved state at all); snapshots are stamped with the
+        // checkpoint's own version, so the test platform has to have one too.
+        platform
+            .drive
+            .store_current_protocol_version(platform_version.protocol_version, None)
+            .expect("should store protocol version");
 
         fast_forward_to_block(&platform, 2_000_000, 20, 43, 0, false);
         platform

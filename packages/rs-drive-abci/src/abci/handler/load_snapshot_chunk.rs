@@ -1,11 +1,11 @@
 use crate::abci::app::{PlatformApplication, SnapshotManagerApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::snapshot::{
     MAX_STATE_SYNC_CHUNK_ID_SIZE, SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
 };
 use crate::rpc::core::CoreRPCLike;
+use dpp::version::PlatformVersion;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
@@ -56,10 +56,6 @@ where
         .into());
     };
 
-    let platform_state = app.platform().state.load();
-    let platform_version = platform_state.current_platform_version()?;
-    let grove_version = &platform_version.drive.grove_version;
-
     // Resolve the checkpoint: from the registry, or — if pruning already dropped it —
     // from the pins of transfers already in flight.
     let checkpoint = app
@@ -77,9 +73,26 @@ where
             ))
         })?;
 
-    // Pin (or refresh the pin of) the checkpoint for the duration of the transfer
-    app.snapshot_manager()
-        .pin_for_serving(request.height, Arc::clone(&checkpoint));
+    // Chunks must be generated under the version the checkpoint was WRITTEN at — the same
+    // one `list_snapshots` stamped into the snapshot metadata and the consuming node
+    // restores under. This node's own current version may have moved on since.
+    let snapshot_protocol_version = checkpoint
+        .current_protocol_version()
+        .map_err(|e| {
+            AbciError::StateSyncInternalError(format!(
+                "load_snapshot_chunk unable to read the protocol version of the checkpoint at \
+                 height {}: {}",
+                request.height, e
+            ))
+        })?
+        .ok_or_else(|| {
+            AbciError::StateSyncInternalError(format!(
+                "load_snapshot_chunk checkpoint at height {} has no protocol version",
+                request.height
+            ))
+        })?;
+    let snapshot_platform_version = PlatformVersion::get(snapshot_protocol_version)?;
+    let grove_version = &snapshot_platform_version.drive.grove_version;
 
     let chunk = checkpoint
         .grove_db
@@ -90,6 +103,12 @@ where
                 e
             ))
         })?;
+
+    // Pin (or refresh the pin of) the checkpoint only once a chunk was actually served.
+    // Pinning before the fetch would let a peer keep a checkpoint — and its directory —
+    // alive with a stream of requests that never succeed.
+    app.snapshot_manager()
+        .pin_for_serving(request.height, checkpoint);
 
     Ok(proto::ResponseLoadSnapshotChunk { chunk })
 }
@@ -118,6 +137,13 @@ mod tests {
         platform
             .store_reduced_platform_state(&reduced_platform_state, None, platform_version)
             .expect("should store reduced platform state");
+        // Snapshots are served under the checkpoint's OWN protocol version, which a real
+        // node always has in aux.
+        platform
+            .drive
+            .store_current_protocol_version(platform_version.protocol_version, None)
+            .expect("should store protocol version");
+
         fast_forward_to_block(&platform, 1_000_000, 10, 42, 0, false);
         platform
             .create_grovedb_checkpoint(platform_version)
