@@ -1377,7 +1377,7 @@ export default {
                       type: 'integer',
                       minimum: 0,
                       description: 'How many times to retry state sync before falling back to block sync.'
-                        + ' 0 disables retries',
+                        + ' 0 means retry indefinitely and never fall back',
                     },
                     chunkRequestTimeout: {
                       description: 'Timeout before re-requesting a snapshot chunk. Tenderdash requires at least 5s',

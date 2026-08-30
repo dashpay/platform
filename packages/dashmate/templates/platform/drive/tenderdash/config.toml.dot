@@ -99,6 +99,13 @@ grpc-concurrency = [
   { "check_tx" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
   # Snapshot serving: discovery is one request per peer, chunk downloads run
   # several concurrent fetchers per syncing peer.
+  #
+  # NOTE: Tenderdash currently applies grpc-concurrency only to a direct
+  # `transport = "grpc"` client; the routed transport used here drops the map
+  # when it builds the nested per-method clients (NewRoutedClientWithAddr
+  # passes address and transport only), so these limits — including the
+  # pre-existing check_tx one — are declarative until Tenderdash propagates
+  # them to routed clients.
   { "list_snapshots" = 10 },
   { "load_snapshot_chunk" = 100 },
 ]
@@ -439,8 +446,9 @@ rpc-servers = ""
 discovery-time = "15s"
 
 # The number of times to retry state sync. When retries are exhausted, the node falls back
-# to block sync. Set to 0 to disable retries. In the pessimistic case it takes at least
-# discovery-time * retries before falling back.
+# to block sync. 0 means retry indefinitely: the node keeps repeating snapshot discovery
+# and never falls back. In the pessimistic case it takes at least discovery-time * retries
+# before falling back.
 retries = {{= it.platform.drive.tenderdash.stateSync.retries }}
 
 # Temporary directory for state sync snapshot chunks, defaults to os.TempDir().
