@@ -46,7 +46,9 @@ describe('state sync options', () => {
       config = getBaseConfig();
     });
 
-    it('should accept retries of 0 (disable retries) but not negative', () => {
+    // Tenderdash treats 0 as an unlimited retry count: SyncAny only returns
+    // errNoSnapshots (the block sync fallback trigger) when retries > 0.
+    it('should accept retries of 0 (retry indefinitely) but not negative', () => {
       config.set('platform.drive.tenderdash.stateSync.retries', 0);
 
       expect(() => config.set('platform.drive.tenderdash.stateSync.retries', -1))

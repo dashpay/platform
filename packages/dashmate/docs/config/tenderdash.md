@@ -87,7 +87,7 @@ State sync bootstraps a fresh node from a recent state snapshot fetched from pee
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `platform.drive.tenderdash.stateSync.enabled` | Bootstrap a fresh node from a snapshot | `true` | `false` |
-| `platform.drive.tenderdash.stateSync.retries` | Retries before falling back to block sync, `0` disables retries | `3` | `5` |
+| `platform.drive.tenderdash.stateSync.retries` | Retries before falling back to block sync, `0` retries indefinitely (never falls back) | `3` | `5` |
 | `platform.drive.tenderdash.stateSync.chunkRequestTimeout` | Timeout before re-requesting a snapshot chunk, at least `5s` | `15s` | `30s` |
 | `platform.drive.tenderdash.stateSync.fetchersCount` | Concurrent chunk fetchers, 1 to 64 | `4` | `8` |
 
