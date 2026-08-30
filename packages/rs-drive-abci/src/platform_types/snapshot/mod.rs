@@ -215,20 +215,36 @@ const SERVING_PIN_INACTIVITY_TTL: Duration = Duration::from_secs(600);
 /// Absolute lifetime of a serving pin, regardless of activity.
 ///
 /// The inactivity TTL alone is refreshable, so a peer that keeps touching a height keeps
-/// its checkpoint alive forever. A real restore is far quicker than this — a full
-/// mainnet-state restore measures in seconds — so an hour is generous for any honest
-/// transfer while putting a ceiling on how long abuse can hold a directory back.
-const SERVING_PIN_MAX_LIFETIME: Duration = Duration::from_secs(3600);
-
-/// Hard cap on how many checkpoints may be pinned for serving at once.
+/// its checkpoint alive forever; this deadline is deliberately NOT refreshable.
 ///
-/// Without it, a peer could keep one transfer alive per height it ever touched: pruning
+/// It is the backstop, not the primary bound — [`max_serving_pins`] is what actually
+/// limits how many directories can be held back at once — so it is set well above any
+/// plausible honest transfer rather than tight. A full mainnet-state restore measures in
+/// seconds; six hours leaves enormous room for a slow or rate-limited peer whose
+/// checkpoint gets pruned mid-transfer, while still bounding how long a pinned directory
+/// can outlive its checkpoint.
+const SERVING_PIN_MAX_LIFETIME: Duration = Duration::from_secs(6 * 3600);
+
+/// How many pins are allowed on top of the number of snapshots the node retains.
+///
+/// The interesting pins are the ones for checkpoints pruning has ALREADY dropped from the
+/// registry — those are the directories a pin holds back from deletion. There can only
+/// ever be a handful of them legitimately (a transfer that started before the checkpoint
+/// aged out), so the retained count plus this slack is generous.
+const SERVING_PIN_SLACK: usize = 4;
+
+/// Cap on how many checkpoints may be pinned for serving at once, given how many snapshots
+/// the node is configured to retain.
+///
+/// Without a cap, a peer could keep one transfer alive per height it ever touched: pruning
 /// keeps advancing, the peer keeps refreshing, and the number of checkpoint directories
-/// held back from deletion grows without bound regardless of `MAX_NUM_SNAPSHOTS`. Eight
-/// concurrent transfers is far more than the handful of snapshots a node advertises, so
-/// the cap only ever bites on abuse; when it does, the least recently served pin goes
-/// first.
-const MAX_SERVING_PINS: usize = 8;
+/// held back from deletion grows without bound regardless of `MAX_NUM_SNAPSHOTS`. The cap
+/// only ever bites on abuse; when it does, the least recently served pin goes first, and a
+/// peer whose pin is evicted can still resolve the checkpoint from the registry if it is
+/// still there.
+pub fn max_serving_pins(max_num_snapshots: usize) -> usize {
+    max_num_snapshots.saturating_add(SERVING_PIN_SLACK)
+}
 
 /// A checkpoint held back from deletion for a transfer in flight.
 struct ServingPin {
@@ -256,7 +272,7 @@ impl ServingPin {
 /// A pin must not be something a remote peer can hold open indefinitely, so it is bounded
 /// three ways: [`SERVING_PIN_INACTIVITY_TTL`] since the last chunk actually served,
 /// [`SERVING_PIN_MAX_LIFETIME`] since it was taken (not refreshable), and
-/// [`MAX_SERVING_PINS`] in total. Expiry also must not depend on peers making further
+/// [`max_serving_pins`] in total. Expiry also must not depend on peers making further
 /// requests, or an abandoned transfer would hold its directory forever:
 /// [`SnapshotManager::release_expired_pins`] runs once per block and every read of a pin
 /// re-checks both deadlines.
@@ -273,11 +289,12 @@ impl SnapshotManager {
     }
 
     /// Pins a checkpoint that is being served (or refreshes the pin of one that already
-    /// is), dropping expired pins and enforcing [`MAX_SERVING_PINS`].
+    /// is), dropping expired pins and holding the total to `max_pins` (see
+    /// [`max_serving_pins`]).
     ///
     /// Call this only AFTER a chunk was successfully served: a request that could not be
     /// answered must not be able to keep a checkpoint alive.
-    pub fn pin_for_serving(&self, height: u64, checkpoint: Arc<Checkpoint>) {
+    pub fn pin_for_serving(&self, height: u64, checkpoint: Arc<Checkpoint>, max_pins: usize) {
         let now = Instant::now();
         let mut pins = self
             .serving_pins
@@ -293,7 +310,7 @@ impl SnapshotManager {
         }
 
         // Evict the least recently served pin to make room for a genuinely new one
-        while pins.len() >= MAX_SERVING_PINS {
+        while pins.len() >= max_pins.max(1) {
             let Some(coldest) = pins
                 .iter()
                 .min_by_key(|(_, pin)| pin.last_served)
@@ -412,7 +429,7 @@ mod tests {
     fn expired_pins_are_released_without_any_further_chunk_request() {
         let dir = tempfile::tempdir().expect("should create temp dir");
         let manager = SnapshotManager::new();
-        manager.pin_for_serving(10, checkpoint_in(&dir, 10));
+        manager.pin_for_serving(10, checkpoint_in(&dir, 10), max_serving_pins(3));
         assert!(manager.pinned_checkpoint(10).is_some());
 
         let Some(long_ago) = Instant::now().checked_sub(SERVING_PIN_INACTIVITY_TTL * 2) else {
@@ -426,7 +443,7 @@ mod tests {
             "an expired pin must not be handed out",
         );
 
-        manager.pin_for_serving(11, checkpoint_in(&dir, 11));
+        manager.pin_for_serving(11, checkpoint_in(&dir, 11), max_serving_pins(3));
         manager.backdate_pin(11, None, Some(long_ago));
         manager.release_expired_pins();
         assert_eq!(
@@ -444,12 +461,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("should create temp dir");
         let manager = SnapshotManager::new();
         let checkpoint = checkpoint_in(&dir, 10);
-        manager.pin_for_serving(10, Arc::clone(&checkpoint));
+        manager.pin_for_serving(10, Arc::clone(&checkpoint), max_serving_pins(3));
         let (pinned_at, _) = manager.pin_instants(10).expect("pin must exist");
 
         // Continued activity refreshes the idle deadline but must NOT reset `pinned_at`,
         // or the absolute deadline could be pushed out forever.
-        manager.pin_for_serving(10, Arc::clone(&checkpoint));
+        manager.pin_for_serving(10, Arc::clone(&checkpoint), max_serving_pins(3));
         let (pinned_at_after_touch, last_served) =
             manager.pin_instants(10).expect("pin must exist");
         assert_eq!(
@@ -478,18 +495,21 @@ mod tests {
         let dir = tempfile::tempdir().expect("should create temp dir");
         let manager = SnapshotManager::new();
 
-        for height in 0..(MAX_SERVING_PINS as u64 + 4) {
-            manager.pin_for_serving(height, checkpoint_in(&dir, height));
+        // The cap tracks how many snapshots the node retains, plus slack for transfers
+        // that started before their checkpoint aged out.
+        let max_pins = max_serving_pins(3);
+        assert_eq!(max_pins, 3 + SERVING_PIN_SLACK);
+
+        for height in 0..(max_pins as u64 + 4) {
+            manager.pin_for_serving(height, checkpoint_in(&dir, height), max_pins);
         }
 
-        assert_eq!(manager.pinned_count(), MAX_SERVING_PINS);
+        assert_eq!(manager.pinned_count(), max_pins);
         assert!(
             manager.pinned_checkpoint(0).is_none(),
             "the least recently served pin must be evicted first",
         );
-        assert!(manager
-            .pinned_checkpoint(MAX_SERVING_PINS as u64 + 3)
-            .is_some());
+        assert!(manager.pinned_checkpoint(max_pins as u64 + 3).is_some());
     }
 
     #[test]

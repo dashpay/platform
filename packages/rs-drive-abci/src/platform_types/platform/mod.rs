@@ -174,7 +174,7 @@ impl<C> Platform<C> {
         let (drive, current_platform_version) = Drive::open_with_checkpoints_path(
             &config.db_path,
             Some(drive_config),
-            Some(&checkpoints_path),
+            &checkpoints_path,
         )
         .map_err(Error::Drive)?;
 

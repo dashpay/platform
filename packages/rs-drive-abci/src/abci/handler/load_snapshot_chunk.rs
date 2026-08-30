@@ -2,10 +2,9 @@ use crate::abci::app::{PlatformApplication, SnapshotManagerApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::snapshot::{
-    MAX_STATE_SYNC_CHUNK_ID_SIZE, SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
+    max_serving_pins, MAX_STATE_SYNC_CHUNK_ID_SIZE, SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
 };
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::PlatformVersion;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
@@ -76,8 +75,8 @@ where
     // Chunks must be generated under the version the checkpoint was WRITTEN at — the same
     // one `list_snapshots` stamped into the snapshot metadata and the consuming node
     // restores under. This node's own current version may have moved on since.
-    let snapshot_protocol_version = checkpoint
-        .current_protocol_version()
+    let snapshot_platform_version = checkpoint
+        .platform_version()
         .map_err(|e| {
             AbciError::StateSyncInternalError(format!(
                 "load_snapshot_chunk unable to read the protocol version of the checkpoint at \
@@ -87,11 +86,10 @@ where
         })?
         .ok_or_else(|| {
             AbciError::StateSyncInternalError(format!(
-                "load_snapshot_chunk checkpoint at height {} has no protocol version",
+                "load_snapshot_chunk checkpoint at height {} has no usable protocol version",
                 request.height
             ))
         })?;
-    let snapshot_platform_version = PlatformVersion::get(snapshot_protocol_version)?;
     let grove_version = &snapshot_platform_version.drive.grove_version;
 
     let chunk = checkpoint
@@ -107,8 +105,11 @@ where
     // Pin (or refresh the pin of) the checkpoint only once a chunk was actually served.
     // Pinning before the fetch would let a peer keep a checkpoint — and its directory —
     // alive with a stream of requests that never succeed.
-    app.snapshot_manager()
-        .pin_for_serving(request.height, checkpoint);
+    app.snapshot_manager().pin_for_serving(
+        request.height,
+        checkpoint,
+        max_serving_pins(app.platform().config.abci.state_sync.max_num_snapshots),
+    );
 
     Ok(proto::ResponseLoadSnapshotChunk { chunk })
 }
