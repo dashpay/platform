@@ -12,7 +12,11 @@ describe('envoy template', () => {
     config.set('platform.gateway.admin.enabled', false);
 
     const renderTemplate = renderTemplateFactory();
-    const renderServiceTemplates = renderServiceTemplatesFactory(renderTemplate);
+    const ensureTenderdashNodeKey = () => {};
+    const renderServiceTemplates = renderServiceTemplatesFactory(
+      renderTemplate,
+      ensureTenderdashNodeKey,
+    );
     const renderedConfigs = renderServiceTemplates(config);
 
     const envoyConfig = renderedConfigs['platform/gateway/envoy.yaml'];
