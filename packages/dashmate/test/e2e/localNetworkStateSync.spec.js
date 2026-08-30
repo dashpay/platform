@@ -579,7 +579,9 @@ describe('Local Network State Sync', function main() {
 
       record(`core height before funding: ${coreHeight}`);
 
-      const client = createClient(validatorConfig, seedConfig);
+      const client = createClient(validatorConfig, seedConfig, {
+        skipSyncBeforeHeight: coreHeight,
+      });
 
       try {
         const { address, balance } = await fundClientFromCore(coreService, client, 800000000, {
