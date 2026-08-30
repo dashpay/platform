@@ -19,34 +19,39 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::{Index, IndexProperty};
 
-/// The property whose level hosts the index's ranking secondaries, plus
-/// the leading properties a ranked / having-range request must pin: the
-/// `at` property for a prefix-level `rankedCountable` (which excludes
-/// every other ranking axis, so it is the index's ONLY ranked level),
-/// the last property otherwise.
+/// The ranked level a request with `pin_count` pins addresses, split
+/// into the leading properties (one pin each) and the ranked property
+/// itself. An index can host secondaries at up to TWO levels — its
+/// `rankedCountable.at` property and, independently, its terminal
+/// property (the boolean axes) — so the level cannot be derived from
+/// the index alone: the request's pin count names it, since every
+/// property before the ranked level must be pinned and none after it
+/// may appear. Fails closed when the pin count lands on a level that
+/// hosts no secondary.
 ///
 /// Shared by the path builder and the prefix encoder — and, through
 /// them, by the server executors and the SDK verifier — so both sides
-/// agree on where an index's secondary lives without re-deriving it.
+/// agree on where a request's secondary lives without re-deriving it.
 pub(crate) fn ranked_level_split(
     index: &Index,
+    pin_count: usize,
 ) -> Result<(&[IndexProperty], &IndexProperty), Error> {
-    if let Some(at) = index.ranked_countable_at.as_deref() {
-        let Some(position) = index.properties.iter().position(|p| p.name == at) else {
-            return Err(Error::Drive(DriveError::NotSupported(
-                "the index's rankedCountable.at property is not among its properties — the \
-                 contract should never have validated",
-            )));
-        };
-        return Ok((&index.properties[..position], &index.properties[position]));
-    }
-    let Some((terminal_property, leading_properties)) = index.properties.split_last() else {
+    let Some(ranked_property) = index.properties.get(pin_count) else {
         return Err(Error::Drive(DriveError::NotSupported(
-            "ranked and having-range queries require an index with at least one \
-             property",
+            "ranked and having-range queries require exactly one pinned value per property \
+             before the ranked level — the resolved pin set addresses no index property",
         )));
     };
-    Ok((leading_properties, terminal_property))
+    let is_at_level = index.ranked_countable_at.as_deref() == Some(ranked_property.name.as_str());
+    let is_terminal = pin_count + 1 == index.properties.len();
+    if !is_at_level && !is_terminal {
+        return Err(Error::Drive(DriveError::NotSupported(
+            "ranked and having-range queries must land on a level hosting a ranking \
+             secondary — the index's rankedCountable.at property or its terminal property; \
+             the resolved pin set addresses an intermediate level",
+        )));
+    }
+    Ok((&index.properties[..pin_count], ranked_property))
 }
 
 /// Path of an index's **ranked-level** property-name tree — the terminal
@@ -70,16 +75,11 @@ pub(crate) fn indexed_property_name_tree_path_for_index(
     index: &Index,
     equality_prefix_values: &[Vec<u8>],
 ) -> Result<Vec<Vec<u8>>, Error> {
-    let (leading_properties, terminal_property) = ranked_level_split(index)?;
-    if leading_properties.len() != equality_prefix_values.len() {
-        return Err(Error::Drive(DriveError::NotSupported(
-            "ranked and having-range queries over a compound index require exactly one \
-             encoded equality value per leading index property: the axis secondary lives \
-             on the index's terminal property-name tree, which for a compound index sits \
-             under one prefix value tree per leading property, and only a `where` pin (an \
-             equality, or one element of the single permitted `IN`) can name those values",
-        )));
-    }
+    // The pin count names the ranked level (see `ranked_level_split`),
+    // which also makes the leading-property arity match by construction;
+    // the split's fail-closed error replaces the old arity backstop.
+    let (leading_properties, terminal_property) =
+        ranked_level_split(index, equality_prefix_values.len())?;
     let mut path = Vec::with_capacity(5 + 2 * leading_properties.len());
     path.push(vec![RootTree::DataContractDocuments as u8]);
     path.push(contract_id.to_vec());

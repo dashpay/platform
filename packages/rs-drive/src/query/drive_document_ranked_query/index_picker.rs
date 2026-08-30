@@ -21,13 +21,15 @@ use std::collections::BTreeMap;
 ///
 /// An index qualifies when **all** of:
 ///
-/// - its **ranked-level** property for `axis` is `group_by_property`,
+/// - one of its **ranked levels** for `axis` is `group_by_property`,
 ///   with exactly one pin per property before it. For the boolean axes
 ///   the ranked level is the index's **last** property; a prefix-level
-///   `rankedCountable: { at }` hosts the Count axis at the `at`
-///   property instead, ranking its values by whole-subtree count —
-///   there the properties *after* `at` never appear in the request at
-///   all (they are interior to the subtrees being counted);
+///   `rankedCountable: { at }` hosts a Count secondary at the `at`
+///   property as well, ranking its values by whole-subtree count — an
+///   index may declare both, and the (group property, pin count) pair
+///   singles out which level a request addresses. At a prefix level the
+///   properties *after* `at` never appear in the request at all (they
+///   are interior to the subtrees being counted);
 /// - every property **before** the ranked level is pinned: each appears
 ///   (by name) among `equality_pin_fields`. Lengths matching plus the
 ///   pins being distinct (enforced upstream by
@@ -87,39 +89,54 @@ pub fn find_ranked_index_for_axis<'b>(
         if index.time_range.is_some() {
             return false;
         }
-        // The position of the property whose level hosts this axis's
-        // secondary — `None` when the index does not declare the axis (or
-        // aggregates a different field than requested).
-        let ranked_position = match axis {
-            RankedAxis::Count => match index.ranked_countable_at.as_deref() {
-                Some(at) => index.properties.iter().position(|p| p.name == at),
-                None if index.ranked_countable => index.properties.len().checked_sub(1),
-                None => None,
-            },
-            RankedAxis::Sum => (index.ranked_summable
-                && index.summable.as_deref() == Some(aggregate_field))
-            .then(|| index.properties.len().checked_sub(1))
-            .flatten(),
-            RankedAxis::Avg => (index.ranked_averageable
-                && index.summable.as_deref() == Some(aggregate_field))
-            .then(|| index.properties.len().checked_sub(1))
-            .flatten(),
+        // The positions whose levels host this axis's secondaries — up to
+        // TWO for the Count axis, since an index may declare the prefix
+        // (`at`) ranking and the terminal one together; empty when the
+        // index does not declare the axis (or aggregates a different
+        // field than requested).
+        let candidate_positions: [Option<usize>; 2] = match axis {
+            RankedAxis::Count => [
+                index
+                    .ranked_countable_at
+                    .as_deref()
+                    .and_then(|at| index.properties.iter().position(|p| p.name == at)),
+                index
+                    .ranked_countable
+                    .then(|| index.properties.len().checked_sub(1))
+                    .flatten(),
+            ],
+            RankedAxis::Sum => [
+                None,
+                (index.ranked_summable && index.summable.as_deref() == Some(aggregate_field))
+                    .then(|| index.properties.len().checked_sub(1))
+                    .flatten(),
+            ],
+            RankedAxis::Avg => [
+                None,
+                (index.ranked_averageable && index.summable.as_deref() == Some(aggregate_field))
+                    .then(|| index.properties.len().checked_sub(1))
+                    .flatten(),
+            ],
         };
-        let Some(ranked_position) = ranked_position else {
-            return false;
-        };
-        let Some(ranked_property) = index.properties.get(ranked_position) else {
-            return false;
-        };
-        // The ranked-level property is the grouping property; every
-        // property before it is pinned exactly once (length equality +
-        // distinct pins ⇒ set equality).
-        let leading = &index.properties[..ranked_position];
-        ranked_property.name == group_by_property
-            && leading.len() == equality_pin_fields.len()
-            && leading
-                .iter()
-                .all(|property| equality_pin_fields.iter().any(|f| f == &property.name))
+        // A candidate matches when its property is the grouping property
+        // and every property before it is pinned exactly once (length
+        // equality + distinct pins ⇒ set equality). At most one candidate
+        // can match a given request: the two levels are distinct
+        // positions, and the pin count singles one out.
+        candidate_positions
+            .into_iter()
+            .flatten()
+            .any(|ranked_position| {
+                let Some(ranked_property) = index.properties.get(ranked_position) else {
+                    return false;
+                };
+                let leading = &index.properties[..ranked_position];
+                ranked_property.name == group_by_property
+                    && leading.len() == equality_pin_fields.len()
+                    && leading
+                        .iter()
+                        .all(|property| equality_pin_fields.iter().any(|f| f == &property.name))
+            })
     })
 }
 
@@ -272,11 +289,11 @@ pub fn encode_prefix_branches(
     prefix_pins: &[PrefixPin],
     platform_version: &PlatformVersion,
 ) -> Result<Vec<Vec<Vec<u8>>>, Error> {
-    // The pinnable properties end at the index's ranked level — the last
-    // property for the boolean axes, the `at` property for a prefix-level
-    // ranking (whose deeper properties are interior to the counted
-    // subtrees and never pinned).
-    let (leading, _) = super::path::ranked_level_split(index)?;
+    // The pinnable properties end at the ranked level the pin count
+    // addresses (an index may host secondaries at both its `at` property
+    // and its terminal — the pin count singles one out; properties past
+    // it are interior to the counted subtrees and never pinned).
+    let (leading, _) = super::path::ranked_level_split(index, prefix_pins.len())?;
     // Enforced BEFORE any encoding: the ceiling bounds every downstream
     // cost (encode, sort, clone, walk, proof size), so an oversized pin
     // must not buy that work first. The post-product branch count check
