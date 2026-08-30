@@ -258,6 +258,12 @@ impl Drive {
         // property-name tree needs the zero-contribution wrapper — exactly
         // the `parent_value_tree_type` the recursive walker threads through.
         let mut parent_value_tree_type = TreeType::NormalTree;
+        // Whether the level above is a prefix-ranking chain level
+        // (`rankedCountable: { at }` grouping or count-propagating): its
+        // value trees count exactly their single continuation, so the
+        // continuation is inserted unwrapped and contributes — the same
+        // inversion the entry-insert walkers apply.
+        let mut parent_counts_continuations = false;
 
         for (property_name, sub_level, source_property, key_source, value_key) in resolved_levels {
             let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
@@ -296,7 +302,9 @@ impl Drive {
                     };
                     let path_key_info =
                         KeyRef(property_name.as_bytes()).add_path_info(path_info.clone());
-                    if !matches!(parent_value_tree_type, TreeType::NormalTree) {
+                    if !matches!(parent_value_tree_type, TreeType::NormalTree)
+                        && !parent_counts_continuations
+                    {
                         self.batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists(
                             path_key_info,
                             parent_value_tree_type,
@@ -406,6 +414,8 @@ impl Drive {
 
             index_path_info = Some(path_info);
             parent_value_tree_type = value_tree_type;
+            parent_counts_continuations =
+                sub_level.ranked_count_grouping() || sub_level.count_propagating();
         }
 
         let mut path_info = index_path_info.ok_or(Error::Drive(
