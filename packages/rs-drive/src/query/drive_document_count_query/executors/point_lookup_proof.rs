@@ -77,7 +77,8 @@ impl Drive {
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                 "prove count requires a `countable: true` index whose properties \
-                 exactly match the where clause fields, or `documentsCountable: \
+                 exactly match the where clause fields, a `rangeCountable: true` \
+                 index they cover up to its last property, or `documentsCountable: \
                  true` on the document type for unfiltered total counts — same \
                  requirement as the no-proof path"
                     .to_string(),
