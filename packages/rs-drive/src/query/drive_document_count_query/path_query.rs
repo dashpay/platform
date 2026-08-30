@@ -908,7 +908,7 @@ impl DriveDocumentCountQuery<'_> {
                     .filter_map(|at| self.index.properties.iter().position(|p| &p.name == at))
                     .min();
                 let deepest_pin_is_count_bearing =
-                    position >= 1 && min_at_position.is_some_and(|min_at| min_at <= position - 1);
+                    position >= 1 && min_at_position.is_some_and(|min_at| min_at < position);
                 if deepest_pin_is_count_bearing {
                     // Fail closed on a gapped set reaching the builder
                     // directly: a clause on any deeper property means the
