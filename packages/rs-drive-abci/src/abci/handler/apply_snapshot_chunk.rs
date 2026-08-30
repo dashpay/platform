@@ -448,20 +448,7 @@ mod tests {
             .set_genesis_state();
         let app = FullAbciApplication::new(&platform);
 
-        let target_app_hash = vec![7u8; 32];
-        offer_snapshot(
-            &app,
-            proto::RequestOfferSnapshot {
-                snapshot: Some(proto::Snapshot {
-                    height: 100,
-                    version: 1,
-                    hash: target_app_hash.clone(),
-                    metadata: encode_snapshot_metadata(PROTOCOL_VERSION_15),
-                }),
-                app_hash: target_app_hash.clone(),
-            },
-        )
-        .expect("should accept offer");
+        let target_app_hash = offer_a_snapshot(&app);
 
         // Garbage bytes for the root chunk: grovedb rejects them, and the session must
         // survive with a Retry + refetch of exactly that chunk, banning the sender.
