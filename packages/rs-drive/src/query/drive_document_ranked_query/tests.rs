@@ -4197,3 +4197,66 @@ mod both_levels {
         );
     }
 }
+
+mod every_level {
+    //! The fully ranked chain (`at: ["tag", "region", "postId"]` on the
+    //! trending fixture's `chain` doctype): each of the three levels
+    //! serves its own ranking, addressed purely by the (group property,
+    //! pin count) pair, with every proof verifying against the live
+    //! root hash.
+
+    use super::prefix_level::{
+        assert_proof_round_trips, counts_of, entries_of, insert_rows, named, run, setup_trending,
+    };
+    use crate::query::{WhereClause, WhereOperator};
+    use dpp::platform_value::Value;
+
+    fn pin(field: &str, value: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(value.to_string()),
+        }
+    }
+
+    #[test]
+    fn all_three_levels_serve_and_prove() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "chain",
+            &[
+                &[("tag", "alpha"), ("region", "east"), ("postId", "p1")],
+                &[("tag", "alpha"), ("region", "east"), ("postId", "p1")],
+                &[("tag", "alpha"), ("region", "east"), ("postId", "p2")],
+                &[("tag", "alpha"), ("region", "west"), ("postId", "p1")],
+                &[("tag", "beta"), ("region", "east"), ("postId", "p1")],
+            ],
+        );
+
+        // Level 0: top tags, nothing pinned.
+        let tags =
+            entries_of(run(&drive, &contract, "chain", "tag", &[], 10, false).expect("tag read"));
+        assert_eq!(counts_of(&tags), named(&[(4, "alpha"), (1, "beta")]));
+        assert_proof_round_trips(&drive, &contract, "chain", "tag", &[], 10, &tags);
+
+        // Level 1: top regions within a tag.
+        let alpha_pin = vec![pin("tag", "alpha")];
+        let regions = entries_of(
+            run(&drive, &contract, "chain", "region", &alpha_pin, 10, false).expect("region read"),
+        );
+        assert_eq!(counts_of(&regions), named(&[(3, "east"), (1, "west")]));
+        assert_proof_round_trips(
+            &drive, &contract, "chain", "region", &alpha_pin, 10, &regions,
+        );
+
+        // Level 2: top posts within (tag, region).
+        let east_pins = vec![pin("tag", "alpha"), pin("region", "east")];
+        let posts = entries_of(
+            run(&drive, &contract, "chain", "postId", &east_pins, 10, false).expect("post read"),
+        );
+        assert_eq!(counts_of(&posts), named(&[(2, "p1"), (1, "p2")]));
+        assert_proof_round_trips(&drive, &contract, "chain", "postId", &east_pins, 10, &posts);
+    }
+}

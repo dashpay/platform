@@ -89,54 +89,52 @@ pub fn find_ranked_index_for_axis<'b>(
         if index.time_range.is_some() {
             return false;
         }
-        // The positions whose levels host this axis's secondaries — up to
-        // TWO for the Count axis, since an index may declare the prefix
-        // (`at`) ranking and the terminal one together; empty when the
-        // index does not declare the axis (or aggregates a different
-        // field than requested).
-        let candidate_positions: [Option<usize>; 2] = match axis {
-            RankedAxis::Count => [
-                index
-                    .ranked_countable_at
-                    .as_deref()
-                    .and_then(|at| index.properties.iter().position(|p| p.name == at)),
-                index
-                    .ranked_countable
-                    .then(|| index.properties.len().checked_sub(1))
-                    .flatten(),
-            ],
-            RankedAxis::Sum => [
-                None,
-                (index.ranked_summable && index.summable.as_deref() == Some(aggregate_field))
-                    .then(|| index.properties.len().checked_sub(1))
-                    .flatten(),
-            ],
-            RankedAxis::Avg => [
-                None,
-                (index.ranked_averageable && index.summable.as_deref() == Some(aggregate_field))
-                    .then(|| index.properties.len().checked_sub(1))
-                    .flatten(),
-            ],
+        // The positions whose levels host this axis's secondaries — for
+        // the Count axis every `at` level plus the terminal when the
+        // boolean is on (any subset of an index's levels may rank); empty
+        // when the index does not declare the axis (or aggregates a
+        // different field than requested).
+        let candidate_positions: Vec<usize> = match axis {
+            RankedAxis::Count => index
+                .ranked_countable_at
+                .iter()
+                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+                .chain(
+                    index
+                        .ranked_countable
+                        .then(|| index.properties.len().checked_sub(1))
+                        .flatten(),
+                )
+                .collect(),
+            RankedAxis::Sum => (index.ranked_summable
+                && index.summable.as_deref() == Some(aggregate_field))
+            .then(|| index.properties.len().checked_sub(1))
+            .flatten()
+            .into_iter()
+            .collect(),
+            RankedAxis::Avg => (index.ranked_averageable
+                && index.summable.as_deref() == Some(aggregate_field))
+            .then(|| index.properties.len().checked_sub(1))
+            .flatten()
+            .into_iter()
+            .collect(),
         };
         // A candidate matches when its property is the grouping property
         // and every property before it is pinned exactly once (length
         // equality + distinct pins ⇒ set equality). At most one candidate
         // can match a given request: the two levels are distinct
         // positions, and the pin count singles one out.
-        candidate_positions
-            .into_iter()
-            .flatten()
-            .any(|ranked_position| {
-                let Some(ranked_property) = index.properties.get(ranked_position) else {
-                    return false;
-                };
-                let leading = &index.properties[..ranked_position];
-                ranked_property.name == group_by_property
-                    && leading.len() == equality_pin_fields.len()
-                    && leading
-                        .iter()
-                        .all(|property| equality_pin_fields.iter().any(|f| f == &property.name))
-            })
+        candidate_positions.into_iter().any(|ranked_position| {
+            let Some(ranked_property) = index.properties.get(ranked_position) else {
+                return false;
+            };
+            let leading = &index.properties[..ranked_position];
+            ranked_property.name == group_by_property
+                && leading.len() == equality_pin_fields.len()
+                && leading
+                    .iter()
+                    .all(|property| equality_pin_fields.iter().any(|f| f == &property.name))
+        })
     })
 }
 

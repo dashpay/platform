@@ -42,7 +42,10 @@ pub(crate) fn ranked_level_split(
              before the ranked level — the resolved pin set addresses no index property",
         )));
     };
-    let is_at_level = index.ranked_countable_at.as_deref() == Some(ranked_property.name.as_str());
+    let is_at_level = index
+        .ranked_countable_at
+        .iter()
+        .any(|at| at == &ranked_property.name);
     let is_terminal = pin_count + 1 == index.properties.len();
     if !is_at_level && !is_terminal {
         return Err(Error::Drive(DriveError::NotSupported(
