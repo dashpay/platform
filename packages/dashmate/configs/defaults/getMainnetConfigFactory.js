@@ -32,30 +32,34 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
         drive: {
           tenderdash: {
             p2p: {
+              // Registered evonodes with open platform p2p, verified working
+              // against the live evonode registry on 2026-08-30. Seeds rotate
+              // with the registry, so this list rots; the long-term fix is to
+              // generate it from the registry instead of hardcoding it.
               seeds: [
                 {
-                  id: '069639dfceec5f7c86257e6e9c46407c16ad1eab',
-                  host: '34.211.174.194',
+                  id: 'ee9ab93559e6e931d7dbcf269e1ea8446e7068e5',
+                  host: '149.28.241.190',
                   port: 26656,
                 },
                 {
-                  id: 'd46e2445642b2f94158ac3c2a6d90b88b83705b8',
-                  host: '3.76.148.150',
+                  id: '30918550e1f57eaff1b97f85adc8f4967065a16b',
+                  host: '216.238.75.46',
                   port: 26656,
                 },
                 {
-                  id: 'b08a650ecfac178939f21c0c12801eccaf18a5ea',
-                  host: '3.0.60.103',
+                  id: '6d9fe2b4f18b999521cf706e8c7b8559d4477e4c',
+                  host: '89.125.209.110',
                   port: 26656,
                 },
                 {
-                  id: '4cb4a8488eb1dbabda7fb79e47ac3c14eec73c4f',
-                  host: '152.42.151.147',
+                  id: 'dc812dc0e2e35a8a59491c5d20cba0390d045171',
+                  host: '84.247.180.201',
                   port: 26656,
                 },
                 {
-                  id: 'fdc2239c1e0e62f3a192823d6e068d012620a2d1',
-                  host: 'seed-1.pshenmic.dev',
+                  id: '3ed7bb4f1ed2f19cacd33f44a68b95d3f24cf85d',
+                  host: '134.255.182.186',
                   port: 26656,
                 },
               ],

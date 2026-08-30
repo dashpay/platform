@@ -1764,6 +1764,44 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.2.0-dev.7': (configFile) => {
+        // All five mainnet tenderdash seeds shipped until now are dead
+        // (verified at the p2p layer on 2026-08-30): four fail the
+        // secret-connection handshake and one drops right after completing it,
+        // and none of their node IDs is in the current evonode registry. They
+        // still accept TCP on 26656, so a mainnet node carrying them stalls
+        // instead of failing loudly. Move configs still holding exactly the
+        // stock list onto the new defaults; a custom seed list is left alone.
+        const deadSeeds = [
+          '069639dfceec5f7c86257e6e9c46407c16ad1eab@34.211.174.194:26656',
+          'd46e2445642b2f94158ac3c2a6d90b88b83705b8@3.76.148.150:26656',
+          'b08a650ecfac178939f21c0c12801eccaf18a5ea@3.0.60.103:26656',
+          '4cb4a8488eb1dbabda7fb79e47ac3c14eec73c4f@152.42.151.147:26656',
+          'fdc2239c1e0e62f3a192823d6e068d012620a2d1@seed-1.pshenmic.dev:26656',
+        ];
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network !== NETWORK_MAINNET) {
+              return;
+            }
+
+            const seeds = options.platform?.drive?.tenderdash?.p2p?.seeds;
+
+            if (!Array.isArray(seeds) || seeds.length !== deadSeeds.length) {
+              return;
+            }
+
+            const isStockList = seeds
+              .every((seed) => deadSeeds.includes(`${seed.id}@${seed.host}:${seed.port}`));
+
+            if (isStockList) {
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.getStored('platform.drive.tenderdash.p2p.seeds');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
