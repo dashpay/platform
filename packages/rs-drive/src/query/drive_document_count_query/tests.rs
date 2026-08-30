@@ -3936,6 +3936,107 @@ mod prefix_to_last {
         );
     }
 
+    /// The composition with the prefix-level ranking stack: an `at`-form
+    /// index (`rankedCountable: { "at": "hashtag" }` on the trending
+    /// fixture's `like` doctype) keeps its TERMINAL property-name tree
+    /// non-indexed, so — unlike a terminal-ranked index — the
+    /// prefix-to-last fallback serves it: one index answers both "top
+    /// hashtags by total likes" (the ranking) and "how many likes does
+    /// this hashtag have" (this proven point read).
+    #[test]
+    fn an_at_form_index_serves_prefix_counts_alongside_its_ranking() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/trending/trending-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to parse the trending contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the trending contract");
+
+        let document_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+        for (i, (hashtag, post)) in [("alpha", "p1"), ("alpha", "p2"), ("beta", "p1")]
+            .into_iter()
+            .enumerate()
+        {
+            let mut doc: Document = document_type
+                .random_document(Some(600 + i as u64), platform_version)
+                .expect("random document");
+            let mut props = StdBTreeMap::new();
+            props.insert("hashtag".to_string(), Value::Text(hashtag.to_string()));
+            props.insert("postId".to_string(), Value::Text(post.to_string()));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to insert a like");
+        }
+
+        let where_clauses = hashtag_equal("alpha");
+        let indexes = contract
+            .document_types()
+            .get("like")
+            .expect("like doctype exists")
+            .indexes();
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            indexes,
+            &where_clauses,
+            &[],
+        )
+        .expect("the at-form index's non-indexed terminal must be servable");
+        assert!(
+            !index.ranked_countable_at.is_empty(),
+            "the picked index must be the prefix-ranked byHashtagPost"
+        );
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "like".to_string(),
+            index,
+            where_clauses,
+        };
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("the prefix count must read on an at-form index");
+        assert_eq!(results[0].count, Some(2), "alpha's total across its posts");
+
+        let proof = query
+            .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+            .expect("the prefix count must prove on an at-form index");
+        let (_root_hash, entries) = query
+            .verify_point_lookup_count_proof(&proof, platform_version)
+            .expect("the proof must verify");
+        let summed: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
+        assert_eq!(summed, 2);
+    }
+
     /// The motivating query, end to end: the whole-prefix total is one
     /// element read on the no-proof path and one verified element on the
     /// prove path, reconstructing the live root hash.
