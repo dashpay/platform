@@ -1340,6 +1340,10 @@ mod tests {
     // rules
     // -------------------------------------------------------------------
 
+    /// One extra (possibly compound) index for [`prefix_at_schema`]:
+    /// `(name, properties, keys)`.
+    type CompoundExtraIndexSpec<'a> = (&'a str, &'a [&'a str], Vec<(&'a str, Value)>);
+
     /// A doctype over `region` / `restaurantId` (strings) and `grade`
     /// (integer) whose main index spans `main_properties` and carries the
     /// given `rankedCountable` value on a countable + rangeCountable
@@ -1350,7 +1354,7 @@ mod tests {
         ranked_countable: Value,
         include_range_count: bool,
         region_max_length: u32,
-        extra_indexes: Vec<(&str, &[&str], Vec<(&str, Value)>)>,
+        extra_indexes: Vec<CompoundExtraIndexSpec>,
     ) -> Value {
         let index_properties = |names: &[&str]| {
             Value::Array(
