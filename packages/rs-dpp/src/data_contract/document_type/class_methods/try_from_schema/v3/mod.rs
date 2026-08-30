@@ -1577,26 +1577,35 @@ mod tests {
         }
     }
 
-    /// Exclusivity of the `at` level and below: any other index reaching
-    /// the `at` level — terminating there or continuing below it — is
-    /// rejected on both parse paths, whatever its flags.
+    /// Exclusivity of the `at` level and below, with the one carve-out:
+    /// an index terminating exactly at the `at` level, or reaching it
+    /// with countable/summable/ranked flags, is rejected on both parse
+    /// paths; a PLAIN index continuing below the `at` level is admitted
+    /// — its branch is laid out count-exempt (`Element::NonCounted`)
+    /// beside the chain by the storage layer.
     #[test]
     fn prefix_ranked_at_level_must_be_exclusive() {
-        let conflicting: Vec<(&str, &[&str])> = vec![
-            ("byRegion", &["region"]),
-            ("byRegionGrade", &["region", "grade"]),
+        let conflicting = [
+            // An exact-at terminator, even plain.
+            ("byRegion", &["region"][..], vec![]),
+            // A continuing sibling carrying aggregate flags.
+            (
+                "byRegionGrade",
+                &["region", "grade"][..],
+                vec![("countable", Value::Text("countable".to_string()))],
+            ),
         ];
-        for (name, properties) in conflicting {
+        for (name, properties, flags) in conflicting {
             for full_validation in [true, false] {
                 let schema = prefix_at_schema(
                     &["region", "restaurantId"],
                     at_value("region"),
                     true,
                     32,
-                    vec![(name, properties, vec![])],
+                    vec![(name, properties, flags.clone())],
                 );
                 let error = parse_with(schema, pv14(), full_validation)
-                    .expect_err("an index sharing the at level must be rejected");
+                    .expect_err("an index conflicting with the at level must be rejected");
                 let message = format!("{error:?}");
                 assert!(
                     message.contains("byMain") && message.contains(name),
@@ -1604,6 +1613,34 @@ mod tests {
                      (full_validation: {full_validation}); got {message}"
                 );
             }
+        }
+
+        // A plain sibling continuing below the at level is admitted on
+        // both parse paths, and its branch level is stamped count-exempt.
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId"],
+                at_value("region"),
+                true,
+                32,
+                vec![("byRegionGrade", &["region", "grade"], vec![])],
+            );
+            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+                panic!(
+                    "a plain continuing sibling must be admitted \
+                     (full_validation: {full_validation}): {e}"
+                )
+            });
+            let branch = v2
+                .index_structure
+                .sub_levels()
+                .get("region")
+                .and_then(|level| level.sub_levels().get("grade"))
+                .expect("the sibling branch level exists");
+            assert!(
+                branch.count_exempt_branch(),
+                "the sibling branch must be stamped count-exempt"
+            );
         }
 
         // Diverging before the at level does not conflict.
