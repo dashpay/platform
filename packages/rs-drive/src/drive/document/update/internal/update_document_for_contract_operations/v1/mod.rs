@@ -592,8 +592,16 @@ impl Drive {
                         // `INDEXED_INNER_UNWRAPPABLE` in `fees::op`).
                         let property_name_tree_type = sub_level_tree_types.property_name_tree_type;
                         let ranked_axes = sub_level_tree_types.ranked_axes.as_slice();
+                        // A count-exempt sibling branch (`count_exempt_branch`,
+                        // stamped by the IndexLevel derivation) re-inverts the
+                        // chain-level choice per child: even though the chain
+                        // level counts its own continuation, the sibling's
+                        // branch tree must be zero-wrapped so its entries
+                        // never pollute the subtree totals — matching the v2
+                        // insert walker's dispatch.
                         let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree)
-                            || parent_counts_continuations
+                            || (parent_counts_continuations
+                                && !current_index_level.count_exempt_branch())
                         {
                             self.batch_insert_empty_index_tree_if_not_exists(
                                 PathKeyInfo::PathKeyRef::<0>((
