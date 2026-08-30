@@ -4185,9 +4185,7 @@ mod prefix_to_last_in_with_trailing_equal {
 
     use super::*;
     use crate::config::DriveConfig;
-    use crate::query::drive_document_count_query::drive_dispatcher::{
-        DocumentCountRequest, DocumentCountResponse,
-    };
+    use crate::query::drive_document_count_query::drive_dispatcher::DocumentCountRequest;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::document::DocumentV0Setters;
     use dpp::tests::json_document::json_document_to_contract;
