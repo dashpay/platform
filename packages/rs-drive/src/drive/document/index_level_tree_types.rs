@@ -576,6 +576,29 @@ mod tests {
             index_level_tree_types_with_continuation_demotion(hashtag_level).is_err(),
             "a grouping level with a terminator stamp must fail closed"
         );
+
+        // Same guard one level down: a COUNT-PROPAGATING level that also
+        // carries a terminator stamp (an index terminating inside another
+        // index's ranked chain — rejected by contract validation, but
+        // constructible by hand) has the same two contradictory layouts.
+        let mut chain = base("byHashtagRegionPost", &["hashtag", "region", "postId"]);
+        chain.ranked_countable_at = vec!["hashtag".to_string()];
+        let terminating_inside = base("byHashtagRegion", &["hashtag", "region"]);
+        let index_structure = IndexLevel::try_from_indices(
+            [&chain, &terminating_inside],
+            "like",
+            PlatformVersion::latest(),
+        )
+        .expect("index level must build — the overlap rule runs at contract parse, not here");
+        let region_level = index_structure
+            .sub_levels()
+            .get("hashtag")
+            .and_then(|level| level.sub_levels().get("region"))
+            .expect("the shared propagating level exists");
+        assert!(
+            index_level_tree_types_with_continuation_demotion(region_level).is_err(),
+            "a count-propagating level with a terminator stamp must fail closed"
+        );
     }
 
     /// The two v14 fixes on one level: a ranked index terminating at

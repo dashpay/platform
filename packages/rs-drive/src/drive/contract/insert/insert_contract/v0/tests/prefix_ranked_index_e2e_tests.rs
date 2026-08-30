@@ -921,3 +921,158 @@ fn every_level_of_an_index_can_rank() {
 
     assert_grovedb_is_consistent(&drive);
 }
+
+/// The `preallocated` composition the issue calls out: inserting the
+/// referenced `post` preallocates the `plike` chain — the group appears
+/// in the hashtag-level secondary **at zero before any like exists** —
+/// and draining the entries keeps it rankable at zero instead of
+/// pruning it (the non-preallocated drain behaviour is pinned above).
+#[test]
+fn preallocated_groups_stay_rankable_at_zero() {
+    let (drive, contract) = setup_trending();
+    let pv = platform_version();
+
+    // Insert the referenced post; preallocation creates plike's chain.
+    let post_type = contract
+        .document_type_for_name("post")
+        .expect("post doctype exists");
+    let mut post = post_type
+        .random_document(Some(400), pv)
+        .expect("random post");
+    let mut props = std::collections::BTreeMap::new();
+    props.insert("hashtag".to_string(), Value::Text("alpha".to_string()));
+    props.insert("message".to_string(), Value::Text("gm".to_string()));
+    post.set_properties(props);
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&post, None)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type: post_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect("expected to insert the post");
+
+    let grouping_path = level_path(&contract, "plike", &[b"hashtag"]);
+    assert_eq!(
+        count_top_k_named(&drive, &grouping_path, 10, true),
+        named(&[(0, "alpha")]),
+        "preallocation must surface the group in the secondary at zero, before any like"
+    );
+
+    // Two likes on the post, then drain them both.
+    let plike_type = contract
+        .document_type_for_name("plike")
+        .expect("plike doctype exists");
+    let likes: Vec<Document> = [[1u8; 32], [2u8; 32]]
+        .into_iter()
+        .enumerate()
+        .map(|(i, owner)| {
+            let mut like = plike_type
+                .random_document(Some(500 + i as u64), pv)
+                .expect("random like");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("hashtag".to_string(), Value::Text("alpha".to_string()));
+            props.insert(
+                "postId".to_string(),
+                Value::Identifier(post.id().to_buffer()),
+            );
+            like.set_properties(props);
+            like.set_owner_id(Identifier::from(owner));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&like, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type: plike_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a plike entry");
+            like
+        })
+        .collect();
+    assert_eq!(
+        count_top_k_named(&drive, &grouping_path, 10, true),
+        named(&[(2, "alpha")])
+    );
+
+    for like in likes {
+        drive
+            .delete_index_only_document_for_contract(
+                like,
+                &contract,
+                plike_type,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("expected to delete the plike entry");
+    }
+    assert_eq!(
+        count_top_k_named(&drive, &grouping_path, 10, true),
+        named(&[(0, "alpha")]),
+        "draining a preallocated group must keep it rankable at zero, not prune it"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// The contract-insert **estimation** path (a dry-run `apply_contract`)
+/// must price the registration of grouping first-level trees — the
+/// branch that tallies the at-level PCIT into the doctype layer's
+/// estimated weights.
+#[test]
+fn dry_run_contract_apply_prices_the_grouping_registration() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/trending/trending-contract.json",
+        false,
+        pv,
+    )
+    .expect("expected to parse the trending contract");
+
+    let estimated = drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            false,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("the dry-run contract apply must traverse the estimation path");
+    assert!(estimated.processing_fee > 0);
+
+    let applied = drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("the real apply must succeed after the dry run");
+    assert!(applied.processing_fee > 0);
+}
