@@ -30,6 +30,7 @@ mod tests {
     use crate::test_cases::state_sync_tests::tests::{
         install_reconstruction_core_mocks, sync_snapshot, SnapshotSyncOutcome,
     };
+    use dpp::version::v15::PROTOCOL_VERSION_15;
     use dpp::version::PlatformVersion;
     use drive_abci::abci::app::FullAbciApplication;
     use drive_abci::config::{
@@ -39,7 +40,8 @@ mod tests {
     use drive_abci::platform_types::platform::Platform;
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::platform_types::snapshot::{
-        restore_sentinel_exists, write_restore_sentinel, RESTORE_IN_PROGRESS_FILE_NAME,
+        encode_snapshot_metadata, restore_sentinel_exists, write_restore_sentinel,
+        RESTORE_IN_PROGRESS_FILE_NAME,
     };
     use drive_abci::rpc::core::MockCoreRPCLike;
     use drive_abci::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -183,7 +185,7 @@ mod tests {
                     height: 1000,
                     version: 1,
                     hash: vec![7u8; 32],
-                    metadata: vec![],
+                    metadata: encode_snapshot_metadata(PROTOCOL_VERSION_15),
                 }),
                 app_hash: vec![7u8; 32],
             })
@@ -246,7 +248,7 @@ mod tests {
                 height: 1000,
                 version: 1,
                 hash: vec![7u8; 32],
-                metadata: vec![],
+                metadata: encode_snapshot_metadata(PROTOCOL_VERSION_15),
             }),
             app_hash: vec![7u8; 32],
         })
@@ -515,7 +517,7 @@ mod tests {
             height,
             version: platform_version.drive_abci.state_sync.protocol_version as u32,
             hash: checkpoint_root.to_vec(),
-            metadata: vec![],
+            metadata: encode_snapshot_metadata(platform_version.protocol_version),
         };
 
         let mut target_platform = TestPlatformBuilder::new()

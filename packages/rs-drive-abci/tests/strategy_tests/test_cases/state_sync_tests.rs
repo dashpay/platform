@@ -21,6 +21,7 @@ pub(crate) mod tests {
         ExtendedQuorumDetails, MasternodeListDiff, MasternodeListItem, QuorumInfoResult,
     };
     use dpp::dashcore_rpc::json::{ExtendedQuorumListResult, QuorumType};
+    use dpp::version::v15::PROTOCOL_VERSION_15;
     use dpp::version::PlatformVersion;
     use drive_abci::abci::app::FullAbciApplication;
     use drive_abci::config::{
@@ -30,8 +31,9 @@ pub(crate) mod tests {
     use drive_abci::mimic::test_quorum::TestQuorumInfo;
     use drive_abci::platform_types::platform::Platform;
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
+    use drive_abci::platform_types::snapshot::encode_snapshot_metadata;
     use drive_abci::rpc::core::MockCoreRPCLike;
-    use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use drive_abci::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use std::collections::{BTreeMap, HashMap, VecDeque};
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
@@ -682,6 +684,78 @@ pub(crate) mod tests {
         assert_eq!(info.last_block_app_hash, tip_app_hash.to_vec());
     }
 
+    /// Checkpoints are created under the operator-configured `CHECKPOINTS_PATH`, so
+    /// startup has to read them back from the SAME place. When the reload path was
+    /// hard-coded to `<db_path>/checkpoints`, a node configured with a custom path came
+    /// back from a restart with an empty registry: it stopped advertising the snapshots it
+    /// had retained, and could never prune the directories it had written.
+    #[tokio::test]
+    async fn checkpoints_in_a_custom_path_are_reloaded_after_a_restart() {
+        let checkpoints_dir = tempfile::tempdir().expect("should create a checkpoints dir");
+        let mut config = state_sync_platform_config();
+        config.abci.state_sync.checkpoints_path = Some(checkpoints_dir.path().to_path_buf());
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let (heights_before, db_path) = {
+            let outcome = run_chain_for_strategy(
+                &mut platform.platform,
+                15,
+                state_sync_network_strategy(),
+                config.clone(),
+                15,
+                &mut None,
+                &mut None,
+            )
+            .await;
+
+            let source = outcome.abci_app.platform;
+            let heights: Vec<u64> = source.drive.checkpoints.load().keys().copied().collect();
+            (heights, source.config.db_path.clone())
+        };
+
+        assert!(
+            !heights_before.is_empty(),
+            "the chain must have created checkpoints"
+        );
+        assert!(
+            checkpoints_dir
+                .path()
+                .join(heights_before[0].to_string())
+                .is_dir(),
+            "checkpoints must be written under the configured path"
+        );
+        assert!(
+            !db_path.join("checkpoints").exists(),
+            "nothing must be written to the default path when one is configured"
+        );
+
+        let TempPlatform {
+            platform: original,
+            tempdir,
+            ..
+        } = platform;
+        drop(original);
+        let restarted = TempPlatform::open_with_tempdir(tempdir, config.clone());
+
+        let heights_after: Vec<u64> = restarted.drive.checkpoints.load().keys().copied().collect();
+        assert_eq!(
+            heights_after, heights_before,
+            "a restart must reload the checkpoints from the configured path"
+        );
+
+        let app = FullAbciApplication::new(&restarted);
+        assert!(
+            !app.list_snapshots(Default::default())
+                .expect("should list snapshots")
+                .snapshots
+                .is_empty(),
+            "a restarted node must keep advertising the snapshots it retained"
+        );
+    }
+
     /// A snapshot from a chain that never wrote the reduced platform state (pre-v15)
     /// is not offered by the source, and a target driven at it anyway refuses to
     /// restore it.
@@ -725,11 +799,23 @@ pub(crate) mod tests {
             "pre-v15 checkpoints are unrestorable and must not be offered"
         );
 
-        // Even if a peer maliciously offers such a snapshot, the target must refuse to
-        // restore it. (At the current grovedb revision the refusal comes from the
-        // post-restore verification; once grovedb faithfully restores sum trees it
-        // comes from the missing reduced platform state at the reconstruction step.
-        // Either way the snapshot must not be accepted.)
+        // Offered honestly — with its real, pre-v15 protocol version — such a snapshot is
+        // refused before anything is wiped.
+        let honest_pre_v15_offer = proto::RequestOfferSnapshot {
+            snapshot: Some(proto::Snapshot {
+                height: 1,
+                version: 1,
+                hash: vec![7u8; 32],
+                metadata: encode_snapshot_metadata(14),
+            }),
+            app_hash: vec![7u8; 32],
+        };
+
+        // Even if a peer maliciously offers such a snapshot — lying in the metadata that
+        // it is restorable — the target must refuse to restore it. (At the current grovedb
+        // revision the refusal comes from the post-restore verification; once grovedb
+        // faithfully restores sum trees it comes from the missing reduced platform state
+        // at the reconstruction step. Either way the snapshot must not be accepted.)
         let (height, checkpoint) = {
             let checkpoints = source_app.platform.drive.checkpoints.load();
             let (height, info) = checkpoints
@@ -747,7 +833,7 @@ pub(crate) mod tests {
             height,
             version: 1,
             hash: checkpoint_root.to_vec(),
-            metadata: vec![],
+            metadata: encode_snapshot_metadata(PROTOCOL_VERSION_15),
         };
 
         let mut target_platform = TestPlatformBuilder::new()
@@ -762,6 +848,15 @@ pub(crate) mod tests {
             &validator_quorums,
         );
         let target_app = FullAbciApplication::new(&target_platform);
+
+        let honest_offer_response = target_app
+            .offer_snapshot(honest_pre_v15_offer)
+            .expect("an honestly-labelled pre-v15 offer is answered, not errored");
+        assert_eq!(
+            honest_offer_response.result,
+            i32::from(response_offer_snapshot::Result::Reject),
+            "a snapshot that declares a pre-v15 protocol version must be refused up front"
+        );
 
         let outcome = sync_snapshot(&source_app, &target_app, &forged_snapshot, false)
             .expect("a refused snapshot is answered, not errored");
