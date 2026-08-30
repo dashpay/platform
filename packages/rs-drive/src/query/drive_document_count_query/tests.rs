@@ -4351,25 +4351,26 @@ mod prefix_to_last_in_with_trailing_equal {
         ];
         let drive_config = DriveConfig::default();
         for prove in [false, true] {
-            let error = drive
-                .execute_document_count_request(
-                    DocumentCountRequest {
-                        contract: &contract,
-                        document_type: contract
-                            .document_type_for_name("geo")
-                            .expect("geo doctype exists"),
-                        where_clauses: gapped.clone(),
-                        resolved_time_ranges: vec![],
-                        order_clauses: Vec::new(),
-                        mode: CountMode::Aggregate,
-                        limit: None,
-                        prove,
-                        drive_config: &drive_config,
-                    },
-                    None,
-                    platform_version,
-                )
-                .expect_err("a gapped pin set must be rejected (prove: {prove})");
+            let result = drive.execute_document_count_request(
+                DocumentCountRequest {
+                    contract: &contract,
+                    document_type: contract
+                        .document_type_for_name("geo")
+                        .expect("geo doctype exists"),
+                    where_clauses: gapped.clone(),
+                    resolved_time_ranges: vec![],
+                    order_clauses: Vec::new(),
+                    mode: CountMode::Aggregate,
+                    limit: None,
+                    prove,
+                    drive_config: &drive_config,
+                },
+                None,
+                platform_version,
+            );
+            let Err(error) = result else {
+                panic!("a gapped pin set must be rejected (prove: {prove})");
+            };
             let message = format!("{error}");
             assert!(
                 message.contains("rangeCountable") && message.contains("exactly match"),
