@@ -16,7 +16,10 @@ impl DriveDocumentCountQuery<'_> {
     /// indexable (Equal/In) where-clause fields — every index property has a
     /// corresponding clause AND every clause's field appears in the index —
     /// or, failing that, a `rangeCountable: true` index whose properties
-    /// match the clause fields **plus one trailing free property**.
+    /// match the clause fields **plus one trailing free property** — or,
+    /// failing that, an index with a prefix-level ranking
+    /// (`rankedCountable: { at }`) whose count-bearing chain reaches the
+    /// deepest pinned property, serving contiguous pins of **any** depth.
     ///
     /// Exact coverage is the preferred contract for both no-proof and prove
     /// count paths: a countable index counts exactly what it indexes. The
@@ -130,6 +133,49 @@ impl DriveDocumentCountQuery<'_> {
                 continue;
             }
             let leading_covered = index.properties[..leading_len]
+                .iter()
+                .all(|prop| indexable_fields.contains(prop.name.as_str()));
+            if leading_covered {
+                return Some(index);
+            }
+        }
+
+        // At-chain value-tree fallback: on an index with a prefix-level
+        // ranking (`rankedCountable: { at }`), every level from the
+        // shallowest `at` property down is count-bearing — its value
+        // trees are `CountTree`s whose count IS the whole-subtree total
+        // — so contiguous pins of ANY depth k landing at or below that
+        // level are servable by reading the deepest pin's value tree
+        // element. This also covers what the loop above cannot: a
+        // ranked-terminal (`at` + boolean) index, since the value-tree
+        // read never touches the indexed property-name tree grovedb
+        // refuses to return. Pins landing ABOVE the shallowest `at`
+        // level stay rejected — those levels are plain trees.
+        for index in indexes.values() {
+            if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+                continue;
+            }
+            if !index.countable.is_countable() {
+                continue;
+            }
+            let pin_depth = indexable_fields.len();
+            if pin_depth == 0 || pin_depth >= index.properties.len() {
+                continue;
+            }
+            let Some(min_at_position) = index
+                .ranked_countable_at
+                .iter()
+                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+                .min()
+            else {
+                continue;
+            };
+            // The deepest pinned property (position pin_depth - 1) must
+            // sit at or below the shallowest ranked level.
+            if min_at_position > pin_depth - 1 {
+                continue;
+            }
+            let leading_covered = index.properties[..pin_depth]
                 .iter()
                 .all(|prop| indexable_fields.contains(prop.name.as_str()));
             if leading_covered {

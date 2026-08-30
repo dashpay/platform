@@ -879,16 +879,62 @@ impl DriveDocumentCountQuery<'_> {
             // and value serialization stay on the bare property name.
             let level_key = self.index.level_key(position, &prop.name);
             let Some(clause) = self.where_clauses.iter().find(|wc| wc.field == prop.name) else {
-                if position + 1 == self.index.properties.len() && self.index.range_countable {
+                // Prefix-to-last: the terminal property-name tree's own
+                // element carries the whole-prefix total — but only when
+                // that tree is a plain (non-indexed) count-bearing tree;
+                // a ranked terminal is an indexed tree grovedb refuses to
+                // return, and those indexes route through the value-tree
+                // arm below instead.
+                let terminal_ranked = self.index.ranked_countable
+                    || self.index.ranked_summable
+                    || self.index.ranked_averageable;
+                if position + 1 == self.index.properties.len()
+                    && self.index.range_countable
+                    && !terminal_ranked
+                {
                     prefix_to_last_key = Some(level_key.into_bytes());
+                    break;
+                }
+                // At-chain value-tree read: when the deepest pinned
+                // property's level sits at or below the index's
+                // shallowest `at` level, its value trees are `CountTree`s
+                // whose count IS the whole-subtree total, and the
+                // fully-covered selector below reads them verbatim — the
+                // loop just stops here instead of at the terminal.
+                let min_at_position = self
+                    .index
+                    .ranked_countable_at
+                    .iter()
+                    .filter_map(|at| self.index.properties.iter().position(|p| &p.name == at))
+                    .min();
+                let deepest_pin_is_count_bearing =
+                    position >= 1 && min_at_position.is_some_and(|min_at| min_at <= position - 1);
+                if deepest_pin_is_count_bearing {
+                    // Fail closed on a gapped set reaching the builder
+                    // directly: a clause on any deeper property means the
+                    // pins are not a contiguous prefix and address nothing.
+                    if self.index.properties[position..]
+                        .iter()
+                        .any(|deeper| self.where_clauses.iter().any(|wc| wc.field == deeper.name))
+                    {
+                        return Err(Error::Query(
+                            QuerySyntaxError::InvalidWhereClauseComponents(
+                                "prove count: the pinned properties must form a \
+                                 contiguous index prefix — a clause on a property \
+                                 deeper than the first free one addresses nothing",
+                            ),
+                        ));
+                    }
                     break;
                 }
                 return Err(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "prove count requires the where clauses to cover the countable \
                      index; one or more index properties have no matching `==` or \
-                     `in` clause — only the LAST property of a `rangeCountable: \
-                     true` index may be left free (the prefix-to-last form). Use a \
+                     `in` clause — only a trailing free suffix is servable: the LAST \
+                     property of a `rangeCountable: true` index (the prefix-to-last \
+                     form), or everything below a pinned level of a \
+                     `rankedCountable: { at }` chain (the value-tree form). Use a \
                      more specific index (define a `countable: true` index whose \
                      properties exactly match the clauses) or use `prove=false`",
                     ),
