@@ -238,6 +238,62 @@
         "postId"
       ],
       "additionalProperties": false
+    },
+    "chain": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byTagRegionPost",
+          "properties": [
+            {
+              "tag": "asc"
+            },
+            {
+              "region": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": {
+            "at": [
+              "tag",
+              "region",
+              "postId"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 1
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 2
+        }
+      },
+      "required": [
+        "tag",
+        "region",
+        "postId"
+      ],
+      "additionalProperties": false
     }
   }
 }

@@ -826,3 +826,98 @@ fn both_levels_rank_on_one_index() {
 
     assert_grovedb_is_consistent(&drive);
 }
+
+/// The `chain` doctype ranks EVERY level of `[tag, region, postId]`:
+/// three nested indexed trees, each a contributing child of the level
+/// above. All three secondaries rank simultaneously through the real
+/// walkers, one delete re-keys all three, and the integrity sweep
+/// stays clean — the unbounded-depth composition, end to end.
+#[test]
+fn every_level_of_an_index_can_rank() {
+    let (drive, contract) = setup_trending();
+    let pv = platform_version();
+
+    let dry_run_doc = build_row(
+        &contract,
+        "chain",
+        &[("tag", "alpha"), ("region", "east"), ("postId", "p1")],
+        None,
+        99,
+    );
+    let estimated = insert_row(&drive, &contract, "chain", &dry_run_doc, false)
+        .expect("the dry run must traverse the fully ranked layout");
+    assert!(estimated.processing_fee > 0);
+
+    let docs = insert_rows(
+        &drive,
+        &contract,
+        "chain",
+        &[
+            &[("tag", "alpha"), ("region", "east"), ("postId", "p1")],
+            &[("tag", "alpha"), ("region", "east"), ("postId", "p1")],
+            &[("tag", "alpha"), ("region", "east"), ("postId", "p2")],
+            &[("tag", "alpha"), ("region", "west"), ("postId", "p1")],
+            &[("tag", "beta"), ("region", "east"), ("postId", "p1")],
+        ],
+    );
+
+    // Every level is an indexed tree; every level ranks.
+    let tag_path = level_path(&contract, "chain", &[b"tag"]);
+    assert!(matches!(
+        read_grove_element(&drive, &level_path(&contract, "chain", &[]), b"tag"),
+        Some(Element::ProvableCountIndexedTree(..))
+    ));
+    assert_eq!(
+        count_top_k_named(&drive, &tag_path, 10, true),
+        named(&[(4, "alpha"), (1, "beta")])
+    );
+    let alpha_regions_path = level_path(&contract, "chain", &[b"tag", b"alpha", b"region"]);
+    assert!(matches!(
+        read_grove_element(
+            &drive,
+            &level_path(&contract, "chain", &[b"tag", b"alpha"]),
+            b"region"
+        ),
+        Some(Element::ProvableCountIndexedTree(..))
+    ));
+    assert_eq!(
+        count_top_k_named(&drive, &alpha_regions_path, 10, true),
+        named(&[(3, "east"), (1, "west")])
+    );
+    let alpha_east_posts_path = level_path(
+        &contract,
+        "chain",
+        &[b"tag", b"alpha", b"region", b"east", b"postId"],
+    );
+    assert_eq!(
+        count_top_k_named(&drive, &alpha_east_posts_path, 10, true),
+        named(&[(2, "p1"), (1, "p2")])
+    );
+
+    // One delete re-keys all three secondaries on its path.
+    drive
+        .delete_document_for_contract(
+            docs[0].id(),
+            &contract,
+            "chain",
+            BlockInfo::default(),
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect("expected to delete a chain document");
+    assert_eq!(
+        count_top_k_named(&drive, &tag_path, 10, true),
+        named(&[(3, "alpha"), (1, "beta")])
+    );
+    assert_eq!(
+        count_top_k_named(&drive, &alpha_regions_path, 10, true),
+        named(&[(2, "east"), (1, "west")])
+    );
+    let mut posts_after = count_top_k_named(&drive, &alpha_east_posts_path, 10, true);
+    posts_after.sort();
+    assert_eq!(posts_after, named(&[(1, "p1"), (1, "p2")]));
+
+    assert_grovedb_is_consistent(&drive);
+}

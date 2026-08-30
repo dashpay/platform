@@ -462,7 +462,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: Some("hashtag".to_string()),
+            ranked_countable_at: vec!["hashtag".to_string()],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -549,7 +549,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -558,7 +558,7 @@ mod tests {
             skip_if_absent: false,
         };
         let mut prefix_ranked = base("byHashtagPost", &["hashtag", "postId"]);
-        prefix_ranked.ranked_countable_at = Some("hashtag".to_string());
+        prefix_ranked.ranked_countable_at = vec!["hashtag".to_string()];
         let terminating = base("byHashtag", &["hashtag"]);
 
         let index_structure = IndexLevel::try_from_indices(
