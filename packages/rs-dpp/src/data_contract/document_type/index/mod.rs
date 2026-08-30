@@ -524,15 +524,16 @@ pub struct Index {
     /// Parsed from the object form `rankedCountable: { "at": … }` — one
     /// property name or an array of them. Each named property must be one of
     /// the index's properties; naming the *last* property is canonicalized to
-    /// the terminal form ([`Index::ranked_countable`] `= true`), so `Some`
-    /// here always means a non-terminal level. An array naming the terminal
-    /// alongside one prefix property declares BOTH rankings on one index
-    /// (this field `Some` AND `ranked_countable` true): the terminal indexed
-    /// tree then lives inside the prefix chain as a contributing child, its
-    /// count flowing up to the prefix secondary. At most one non-terminal
-    /// level per index for now. Mutually exclusive with the other ranking
-    /// axes (`rankedSummable` / `rankedAverageable`) — the subtree count
-    /// chain the prefix level ranks by cannot carry a sum axis.
+    /// the terminal form ([`Index::ranked_countable`] `= true`), so this
+    /// vector holds only non-terminal levels, in index-property order
+    /// (canonical, whatever order the contract spelled them in). ANY subset
+    /// of levels may be ranked — `{ "at": ["tag", "region", "postId"] }` on
+    /// `[tag, region, postId]` ranks every level — with each deeper ranked
+    /// tree living inside the chain as a contributing child, its count
+    /// flowing up through every ranked level above it. Mutually exclusive
+    /// with the other ranking axes (`rankedSummable` / `rankedAverageable`)
+    /// — the subtree count chain the prefix levels rank by cannot carry a
+    /// sum axis.
     ///
     /// Requires [`Index::range_countable`], like the terminal form. Levels
     /// from the named property down to the terminal are laid out
@@ -543,7 +544,7 @@ pub struct Index {
     // (see the note on `countable` above), so pre-existing JSON must still
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
-    pub ranked_countable_at: Option<String>,
+    pub ranked_countable_at: Vec<String>,
     /// Sum-axis counterpart of [`Index::ranked_countable`]: the terminal
     /// property-name tree gains an ordered secondary keyed by each group's sum
     /// of the [`Index::summable`] property, making "top / bottom K groups by
@@ -1244,7 +1245,7 @@ impl Index {
         // property list.
         let mut ranked_countable_at_levels: Vec<String> = Vec::new();
         let mut ranked_countable_object_form = false;
-        let mut ranked_countable_at: Option<String> = None;
+        let mut ranked_countable_at: Vec<String> = Vec::new();
         let mut ranked_summable = false;
         let mut ranked_averageable = false;
         let mut time_range: Option<TimeRangeTransform> = None;
@@ -1756,12 +1757,11 @@ impl Index {
 
         // Resolve the object form of `rankedCountable` against the property
         // list. Naming the *last* property is the terminal form spelled
-        // longhand — folded into the boolean so `ranked_countable_at: Some`
-        // always means a non-terminal level and downstream code never
-        // handles two spellings of one layout. An array may name the
-        // terminal alongside ONE non-terminal level (both rankings on one
-        // index); several non-terminal levels are rejected until the
-        // multi-level chain is deliberately designed. (The boolean and
+        // longhand — folded into the boolean so `ranked_countable_at` holds
+        // only non-terminal levels and downstream code never handles two
+        // spellings of one layout. Any number of levels may be named; the
+        // resolved vector is sorted into index-property order so two
+        // spellings of one declaration parse identically. (The boolean and
         // object spellings cannot conflict: they are one JSON key.)
         if ranked_countable_object_form {
             for (position, at) in ranked_countable_at_levels.iter().enumerate() {
@@ -1772,6 +1772,7 @@ impl Index {
                     )));
                 }
             }
+            let mut at_positions: Vec<(usize, String)> = Vec::new();
             for at in ranked_countable_at_levels.drain(..) {
                 let Some(position) = index_properties
                     .iter()
@@ -1785,17 +1786,12 @@ impl Index {
                 };
                 if position + 1 == index_properties.len() {
                     ranked_countable = true;
-                } else if ranked_countable_at.is_some() {
-                    return Err(DataContractError::InvalidContractStructure(
-                        "rankedCountable.at may name at most one non-terminal property \
-                         (alongside the last property for the terminal ranking): chains with \
-                         several prefix-level rankings are not supported yet"
-                            .to_string(),
-                    ));
                 } else {
-                    ranked_countable_at = Some(at);
+                    at_positions.push((position, at));
                 }
             }
+            at_positions.sort_by_key(|(position, _)| *position);
+            ranked_countable_at = at_positions.into_iter().map(|(_, at)| at).collect();
         }
 
         // A prefix-level Count ranking works by making every level from the
@@ -1805,7 +1801,7 @@ impl Index {
         // to contribute *count* through that chain, which its tree types
         // cannot express — the combination has no coherent layout. (The
         // terminal boolean form composes with the other axes as before.)
-        if ranked_countable_at.is_some() && (ranked_summable || ranked_averageable) {
+        if !ranked_countable_at.is_empty() && (ranked_summable || ranked_averageable) {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedCountable's `at` form cannot be combined with rankedSummable or \
                  rankedAverageable: the prefix level ranks by the subtree count chain, which \
@@ -1940,7 +1936,7 @@ impl Index {
         // aggregate the corresponding range axis already maintains per group,
         // so the range axis is a hard prerequisite: without it the terminal
         // property-name tree carries no per-group aggregate to rank by.
-        if (ranked_countable || ranked_countable_at.is_some()) && !range_countable {
+        if (ranked_countable || !ranked_countable_at.is_empty()) && !range_countable {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedCountable requires rangeCountable: true; ranking groups by \
                  count needs the per-group counts the range-count layout \
@@ -1980,7 +1976,7 @@ impl Index {
         // maintenance on every write. Contested indexes are unique by
         // construction (checked above).
         if (ranked_countable
-            || ranked_countable_at.is_some()
+            || !ranked_countable_at.is_empty()
             || ranked_summable
             || ranked_averageable)
             && unique
@@ -2023,7 +2019,7 @@ impl Index {
         // real reference and form a legitimate rankable group, which is the
         // combination authors actually want.
         if (ranked_countable
-            || ranked_countable_at.is_some()
+            || !ranked_countable_at.is_empty()
             || ranked_summable
             || ranked_averageable)
             && !null_searchable
@@ -2108,7 +2104,7 @@ impl Index {
             // secondaries that are unreachable; reject the combination until
             // bucket-aware ranked semantics are deliberately designed.
             if ranked_countable
-                || ranked_countable_at.is_some()
+                || !ranked_countable_at.is_empty()
                 || ranked_summable
                 || ranked_averageable
             {
@@ -2346,7 +2342,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -4688,7 +4684,7 @@ mod tests {
         let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
             .expect("the prefix-level object form must parse");
         assert!(!index.ranked_countable);
-        assert_eq!(index.ranked_countable_at.as_deref(), Some("hashtag"));
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
     }
 
     /// Naming the last property is the terminal form spelled longhand and
@@ -4699,7 +4695,7 @@ mod tests {
         let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
             .expect("at naming the last property must parse as the terminal form");
         assert!(index.ranked_countable);
-        assert_eq!(index.ranked_countable_at, None);
+        assert_eq!(index.ranked_countable_at, Vec::<String>::new());
     }
 
     /// The array form naming both the prefix and the last property
@@ -4717,7 +4713,7 @@ mod tests {
         let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
             .expect("the both-levels array form must parse");
         assert!(index.ranked_countable);
-        assert_eq!(index.ranked_countable_at.as_deref(), Some("hashtag"));
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
 
         // Order in the array is irrelevant — each name resolves by its
         // index position.
@@ -4731,7 +4727,7 @@ mod tests {
         let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
             .expect("the reversed array must parse identically");
         assert!(index.ranked_countable);
-        assert_eq!(index.ranked_countable_at.as_deref(), Some("hashtag"));
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
 
         // An array carrying only the last property is the terminal form.
         let index_map = prefix_ranked_index_map(Value::Map(vec![(
@@ -4741,7 +4737,7 @@ mod tests {
         let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
             .expect("a terminal-only array must parse as the boolean form");
         assert!(index.ranked_countable);
-        assert_eq!(index.ranked_countable_at, None);
+        assert_eq!(index.ranked_countable_at, Vec::<String>::new());
     }
 
     /// Array-form rejections: a duplicate name, more than one
@@ -4772,17 +4768,15 @@ mod tests {
                 "{label} must be rejected"
             );
         }
+    }
 
-        // Two non-terminal levels on a three-property index: not
-        // supported yet.
-        let mut index_map = prefix_ranked_index_map(Value::Map(vec![(
-            Value::Text("at".to_string()),
-            Value::Array(vec![
-                Value::Text("hashtag".to_string()),
-                Value::Text("region".to_string()),
-            ]),
-        )]));
-        index_map[0].1 = Value::Array(vec![
+    /// Any subset of levels may be ranked: a fully ranked three-property
+    /// index parses with every non-terminal level in `ranked_countable_at`
+    /// (canonical index-property order, whatever the array spelled) and
+    /// the terminal boolean on.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_every_level() {
+        let three_properties = Value::Array(vec![
             Value::Map(vec![(
                 Value::Text("hashtag".to_string()),
                 Value::Text("asc".to_string()),
@@ -4796,14 +4790,42 @@ mod tests {
                 Value::Text("asc".to_string()),
             )]),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
-        let msg = format!(
-            "{:?}",
-            result.expect_err("two non-terminal levels must be rejected")
+
+        // All three levels, spelled deepest-first to exercise the
+        // canonical reordering.
+        let mut index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("postId".to_string()),
+                Value::Text("region".to_string()),
+                Value::Text("hashtag".to_string()),
+            ]),
+        )]));
+        index_map[0].1 = three_properties.clone();
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("a fully ranked index must parse");
+        assert!(index.ranked_countable);
+        assert_eq!(
+            index.ranked_countable_at,
+            vec!["hashtag".to_string(), "region".to_string()],
+            "non-terminal levels must come out in index-property order"
         );
-        assert!(
-            msg.contains("at most one non-terminal"),
-            "the rejection must state the single-prefix-level rule; got {msg}"
+
+        // Two non-terminal levels without the terminal.
+        let mut index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("hashtag".to_string()),
+                Value::Text("region".to_string()),
+            ]),
+        )]));
+        index_map[0].1 = three_properties;
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("two prefix levels must parse");
+        assert!(!index.ranked_countable);
+        assert_eq!(
+            index.ranked_countable_at,
+            vec!["hashtag".to_string(), "region".to_string()]
         );
     }
 
@@ -5609,7 +5631,7 @@ mod json_convertible_tests {
             // prove each flag survives independently, which a uniform
             // all-true / all-false fixture cannot.
             ranked_countable: true,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: true,
             time_range: None,
@@ -5643,7 +5665,7 @@ mod json_convertible_tests {
                 "summable": "price",
                 "range_summable": true,
                 "ranked_countable": true,
-                "ranked_countable_at": serde_json::Value::Null,
+                "ranked_countable_at": serde_json::json!([]),
                 "ranked_summable": false,
                 "ranked_averageable": true,
                 "time_range": serde_json::Value::Null,

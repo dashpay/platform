@@ -621,11 +621,11 @@
                           "maxLength": 256
                         },
                         "minItems": 1,
-                        "maxItems": 2,
+                        "maxItems": 10,
                         "uniqueItems": true
                       }
                     ],
-                    "description": "Name of the index property (or array of properties) whose level carries a Count ranking. Each must be one of the index's properties; naming the last property is equivalent to the boolean form. A non-terminal property places a ranking at that prefix level: its values are ranked by whole-subtree document count (e.g. on [hashtag, postId], at: \"hashtag\" ranks hashtags by total count across all their posts), and every level from there down to the terminal is laid out count-bearing so each write's delta propagates up to the ranking. An array naming the terminal alongside one prefix property (e.g. [\"hashtag\", \"postId\"]) declares both rankings on one index. At most one non-terminal property."
+                    "description": "Name of the index property (or array of properties) whose levels carry Count rankings. Each must be one of the index's properties (an index has at most 10, hence maxItems); naming the last property is equivalent to the boolean form. A non-terminal property places a ranking at that prefix level: its values are ranked by whole-subtree document count (e.g. on [hashtag, postId], at: \"hashtag\" ranks hashtags by total count across all their posts), and every level from the shallowest ranked one down to the terminal is laid out count-bearing so each write's delta propagates up through the chain. ANY subset of levels may be named — e.g. [\"hashtag\", \"postId\"] declares both rankings on one index, and a fully ranked index ranks every level."
                   }
                 },
                 "required": ["at"],

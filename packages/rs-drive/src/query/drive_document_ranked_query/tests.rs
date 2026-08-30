@@ -698,7 +698,7 @@ fn test_index(name: &str, properties: &[&str], summable: Option<&str>) -> Index 
         summable: summable.map(String::from),
         range_summable: summable.is_some(),
         ranked_countable: false,
-        ranked_countable_at: None,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,

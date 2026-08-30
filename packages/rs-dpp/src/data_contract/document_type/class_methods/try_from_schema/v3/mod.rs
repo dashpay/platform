@@ -81,7 +81,9 @@ const INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER: u16 = 4;
 fn ranked_index_key_length_limit(index: &Index) -> Option<u16> {
     if index.ranked_averageable {
         Some(MAX_RANKED_AVG_INDEX_KEY_LENGTH)
-    } else if index.ranked_countable || index.ranked_countable_at.is_some() || index.ranked_summable
+    } else if index.ranked_countable
+        || !index.ranked_countable_at.is_empty()
+        || index.ranked_summable
     {
         Some(MAX_RANKED_COUNT_SUM_INDEX_KEY_LENGTH)
     } else {
@@ -122,7 +124,10 @@ fn validate_ranked_index_property_key_length(
     // that is where the tightened ceiling comes from. Every other property
     // of a ranked index is an ordinary grovedb path segment, bound by the
     // generic limits checked after this.
-    let is_at_level = index.ranked_countable_at.as_deref() == Some(index_property_name);
+    let is_at_level = index
+        .ranked_countable_at
+        .iter()
+        .any(|at| at == index_property_name);
     let is_ranked_terminal = index.properties.last().map(|p| p.name.as_str())
         == Some(index_property_name)
         && (index.ranked_countable || index.ranked_summable || index.ranked_averageable);
@@ -1476,7 +1481,7 @@ mod tests {
             });
             let index = v2.indices.get("byMain").expect("index parsed");
             assert!(!index.ranked_countable);
-            assert_eq!(index.ranked_countable_at.as_deref(), Some("region"));
+            assert_eq!(index.ranked_countable_at, vec!["region".to_string()]);
         }
     }
 
@@ -1503,7 +1508,7 @@ mod tests {
             });
             let index = v2.indices.get("byMain").expect("index parsed");
             assert!(index.ranked_countable, "the terminal ranking must be on");
-            assert_eq!(index.ranked_countable_at.as_deref(), Some("region"));
+            assert_eq!(index.ranked_countable_at, vec!["region".to_string()]);
         }
     }
 

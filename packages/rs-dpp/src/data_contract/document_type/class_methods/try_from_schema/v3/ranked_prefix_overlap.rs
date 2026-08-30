@@ -113,14 +113,20 @@ pub(super) fn validate_no_ranked_prefix_overlap(
     // Same name-positional comparison and same unconditional (not
     // `full_validation`-gated) reasoning as the terminal rule above.
     for ranked in indices.values() {
-        let Some(at) = &ranked.ranked_countable_at else {
+        // Key both rules off the SHALLOWEST ranked prefix level: every
+        // deeper ranked level sits inside its exclusive range, so nothing
+        // else can conflict with them once this one is protected. The
+        // parser guarantees each `at` name resolves to a non-terminal
+        // property; stay defensive for `Index` values built outside it.
+        let Some(at_position) = ranked
+            .ranked_countable_at
+            .iter()
+            .filter_map(|at| ranked.properties.iter().position(|p| &p.name == at))
+            .min()
+        else {
             continue;
         };
-        // The parser guarantees `at` resolves to a non-terminal property;
-        // stay defensive for `Index` values built outside it.
-        let Some(at_position) = ranked.properties.iter().position(|p| &p.name == at) else {
-            continue;
-        };
+        let at = ranked.properties[at_position].name.as_str();
         for other in indices.values() {
             if other.name == ranked.name {
                 continue;

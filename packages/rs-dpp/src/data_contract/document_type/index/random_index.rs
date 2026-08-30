@@ -65,7 +65,7 @@ impl Index {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,

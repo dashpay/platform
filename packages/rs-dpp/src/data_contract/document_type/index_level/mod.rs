@@ -319,16 +319,18 @@ impl IndexLevel {
 
         for index_to_borrow in indices {
             let index = index_to_borrow.borrow();
-            // The position of the property a prefix-level Count ranking
-            // aggregates at, when the index declares one. The parser
-            // guarantees the name resolves to a non-terminal property; the
-            // lookup stays defensive because unvalidated `Index` values can
-            // reach this derivation (check_tx, fixtures), and for those a
+            // The positions of the properties hosting prefix-level Count
+            // rankings, when the index declares any. The parser guarantees
+            // each name resolves to a non-terminal property; the lookups
+            // stay defensive because unvalidated `Index` values can reach
+            // this derivation (check_tx, fixtures), and for those a
             // dangling `at` simply stamps nothing.
-            let ranked_at_position = index
+            let ranked_at_positions: Vec<usize> = index
                 .ranked_countable_at
-                .as_ref()
-                .and_then(|at| index.properties.iter().position(|p| &p.name == at));
+                .iter()
+                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+                .collect();
+            let min_ranked_at_position = ranked_at_positions.iter().copied().min();
             let mut current_level = &mut index_level;
             let mut properties_iter = index.properties.iter().enumerate().peekable();
 
@@ -365,16 +367,17 @@ impl IndexLevel {
                     }
                 }
 
-                // Prefix-level Count ranking stamps: the `at` level hosts the
-                // grouping tree; the levels strictly between it and the
-                // terminal must be count-bearing so deltas propagate up to
-                // it. The terminal level is skipped — its count-bearing
+                // Prefix-level Count ranking stamps: every `at` level hosts
+                // a grouping tree; the levels strictly between the
+                // shallowest of them and the terminal that host none must
+                // be count-bearing so deltas propagate up through the
+                // chain. The terminal level is skipped — its count-bearing
                 // layout follows from its own `IndexLevelTypeInfo` stamp
                 // below (`at` requires `rangeCountable`).
-                if let Some(at_position) = ranked_at_position {
-                    if position == at_position {
+                if let Some(min_at_position) = min_ranked_at_position {
+                    if ranked_at_positions.contains(&position) {
                         current_level.ranked_count_grouping = true;
-                    } else if position > at_position && properties_iter.peek().is_some() {
+                    } else if position > min_at_position && properties_iter.peek().is_some() {
                         current_level.count_propagating = true;
                     }
                 }
@@ -586,7 +589,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -625,7 +628,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -649,7 +652,7 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
-                ranked_countable_at: None,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -671,7 +674,7 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
-                ranked_countable_at: None,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -719,7 +722,7 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
-                ranked_countable_at: None,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -741,7 +744,7 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
-                ranked_countable_at: None,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -765,7 +768,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -811,7 +814,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -840,7 +843,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -892,7 +895,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -915,7 +918,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -961,7 +964,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -984,7 +987,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1030,7 +1033,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1053,7 +1056,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1099,7 +1102,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1145,7 +1148,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1168,7 +1171,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1214,7 +1217,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1237,7 +1240,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1289,7 +1292,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1318,7 +1321,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1370,7 +1373,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1399,7 +1402,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1459,7 +1462,7 @@ mod tests {
             summable: Some("score".to_string()),
             range_summable: true,
             ranked_countable,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable,
             ranked_averageable,
             time_range: None,
@@ -1525,7 +1528,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: Some(at.to_string()),
+            ranked_countable_at: vec![at.to_string()],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1637,7 +1640,7 @@ mod tests {
 
         let unranked = {
             let mut index = prefix_ranked_index("first");
-            index.ranked_countable_at = None;
+            index.ranked_countable_at = vec![];
             index
         };
 
@@ -1792,7 +1795,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1845,7 +1848,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
-            ranked_countable_at: None,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
