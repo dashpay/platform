@@ -124,7 +124,7 @@ impl Drive {
             // Full nodes are stuck and proceeded after re-sync.
             // For the mainnet chain, we enable this fix at the block when we consider the state is consistent.
             let transaction =
-                if network == Network::Mainnet && chain_id == "evo1" && block_height < 33000 {
+                if network == Network::Mainnet && chain_id == "evo1" && block_height < 32329 {
                     // Old behaviour on mainnet
                     None
                 } else {
