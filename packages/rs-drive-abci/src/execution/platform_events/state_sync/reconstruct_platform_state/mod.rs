@@ -2,20 +2,25 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
-use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
+use crate::platform_types::signature_verification_quorum_set::{
+    Quorums, SignatureVerificationQuorumSet, SignatureVerificationQuorumSetV0Methods,
+    VerificationQuorum,
+};
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
+use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::platform_value::Bytes32;
+use dpp::reduced_platform_state::v0::ReducedPreviousQuorumsV0;
 use dpp::reduced_platform_state::ReducedPlatformState;
 use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use indexmap::IndexMap;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl<C> Platform<C>
 where
@@ -155,12 +160,61 @@ where
             state_platform_version,
         )?;
 
+        // The validator sets live in the platform state, NOT in grovedb, so the caller's
+        // app-hash equality check cannot see a disagreement between what Core just handed
+        // us and what the snapshot source actually ran with. `quorum_positions` is the
+        // consensus-covered list of validator set hashes from the source, so require an
+        // exact match before publishing anything: a restored node running with validator
+        // sets the chain never agreed on is worse than no restore at all, and the caller
+        // turns this error into a REJECT_SNAPSHOT.
+        let derived_validator_sets: BTreeSet<[u8; 32]> = platform_state
+            .validator_sets()
+            .keys()
+            .map(|quorum_hash| quorum_hash.to_byte_array())
+            .collect();
+        let saved_validator_sets: BTreeSet<[u8; 32]> = saved
+            .quorum_positions
+            .iter()
+            .map(|quorum_hash| quorum_hash.to_buffer())
+            .collect();
+        if derived_validator_sets != saved_validator_sets {
+            return Err(AbciError::StateSyncInternalError(format!(
+                "reconstruct_platform_state validator sets re-derived from Core do not match the \
+                 snapshot: {} derived, {} saved, {} only in Core, {} only in the snapshot",
+                derived_validator_sets.len(),
+                saved_validator_sets.len(),
+                derived_validator_sets
+                    .difference(&saved_validator_sets)
+                    .count(),
+                saved_validator_sets
+                    .difference(&derived_validator_sets)
+                    .count(),
+            ))
+            .into());
+        }
+
         // Core RPC returns quorums in an order that need not match the incremental
         // order the source node maintained; restore the recorded order.
         sort_validator_sets_by_saved_positions(
             platform_state.validator_sets_mut(),
             &saved.quorum_positions,
         );
+
+        // Reinstate the signature-verification quorum HISTORY. `update_core_info` above
+        // rebuilt the current sets from Core — which is exact, the quorums of a type at a
+        // core height are whatever Core reports — but it was given `platform_state = None`
+        // and so could not produce any previous set. That history is consensus-relevant:
+        // `select_quorums` uses the previous set for locks signed within `SIGN_OFFSET`
+        // core blocks of a change, and for instant locks there is no Core fallback, so a
+        // restored node missing it would reject an asset lock proof the network accepted.
+        restore_previous_quorums(
+            platform_state.chain_lock_validating_quorums_mut(),
+            saved.previous_chain_lock_quorums.as_ref(),
+        )?;
+        restore_previous_quorums(
+            platform_state.instant_lock_validating_quorums_mut(),
+            saved.previous_instant_lock_quorums.as_ref(),
+        )?;
 
         let block_height = platform_state.last_committed_block_height();
 
@@ -212,6 +266,52 @@ where
     }
 }
 
+/// Reinstates the superseded quorums of a signature-verification quorum set exactly as the
+/// snapshot source held them.
+///
+/// `None` is a legitimate answer (the source had seen no quorum change yet) and leaves the
+/// set without a history, which is what the source had.
+fn restore_previous_quorums(
+    quorum_set: &mut SignatureVerificationQuorumSet,
+    saved: Option<&ReducedPreviousQuorumsV0>,
+) -> Result<(), Error> {
+    let Some(saved) = saved else {
+        return Ok(());
+    };
+
+    let quorums = saved
+        .quorums
+        .iter()
+        .map(|quorum| {
+            let public_key = BlsPublicKey::try_from(quorum.public_key.as_slice()).map_err(|e| {
+                AbciError::StateSyncInternalError(format!(
+                    "reconstruct_platform_state previous quorum {} has an undeserializable public \
+                     key: {}",
+                    hex::encode(quorum.quorum_hash.to_buffer()),
+                    e
+                ))
+            })?;
+
+            Ok((
+                QuorumHash::from_byte_array(quorum.quorum_hash.to_buffer()),
+                VerificationQuorum {
+                    public_key,
+                    index: quorum.index,
+                },
+            ))
+        })
+        .collect::<Result<Quorums<VerificationQuorum>, Error>>()?;
+
+    quorum_set.restore_previous_past_quorums(
+        quorums,
+        saved.last_active_core_height,
+        saved.updated_at_core_height,
+        saved.previous_change_height,
+    );
+
+    Ok(())
+}
+
 /// Sorts the validator sets into the order recorded in the reduced platform state.
 ///
 /// Validator sets not present in the recorded order (which should not happen when the
@@ -247,6 +347,99 @@ mod tests {
         let mut bytes = [0u8; 32];
         bytes[31] = seed;
         QuorumHash::from_byte_array(bytes)
+    }
+
+    /// The quorum-set history that travels with a snapshot must come back byte for byte,
+    /// including `previous_change_height` — `set_previous_past_quorums` DERIVES that field
+    /// from whatever the set already holds, which on a freshly reconstructed set is
+    /// nothing, so restoring through it would silently lose it and change which quorums
+    /// `select_quorums` considers verifiable.
+    #[test]
+    fn should_restore_the_previous_quorum_history_verbatim() {
+        use crate::config::ChainLockConfig;
+        use crate::platform_types::platform_state::to_reduced_previous_quorums;
+        use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let mut rng = StdRng::seed_from_u64(11);
+        let quorums: Quorums<VerificationQuorum> = [(1u8, None), (2u8, Some(3u32))]
+            .into_iter()
+            .map(|(seed, index)| {
+                (
+                    quorum_hash(seed),
+                    VerificationQuorum {
+                        public_key: SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key(),
+                        index,
+                    },
+                )
+            })
+            .collect();
+
+        let mut source = SignatureVerificationQuorumSet::new(
+            &ChainLockConfig::default_100_67(),
+            PlatformVersion::latest(),
+        )
+        .expect("should build quorum set");
+        // Two changes, so `previous_change_height` is populated and can be lost
+        source.set_previous_past_quorums(quorums.clone(), 900, 950);
+        source.set_previous_past_quorums(quorums.clone(), 990, 995);
+
+        let saved = to_reduced_previous_quorums(&source).expect("should capture the history");
+
+        let mut restored = SignatureVerificationQuorumSet::new(
+            &ChainLockConfig::default_100_67(),
+            PlatformVersion::latest(),
+        )
+        .expect("should build quorum set");
+        restore_previous_quorums(&mut restored, Some(&saved)).expect("should restore");
+
+        let source_previous = source.previous_past_quorums().expect("source has history");
+        let restored_previous = restored
+            .previous_past_quorums()
+            .expect("restored must have history");
+
+        assert_eq!(
+            restored_previous.last_active_core_height,
+            source_previous.last_active_core_height
+        );
+        assert_eq!(
+            restored_previous.updated_at_core_height,
+            source_previous.updated_at_core_height
+        );
+        assert_eq!(
+            restored_previous.previous_change_height,
+            source_previous.previous_change_height
+        );
+        assert_eq!(restored_previous.previous_change_height, Some(950));
+
+        assert_eq!(
+            restored_previous.quorums.len(),
+            source_previous.quorums.len()
+        );
+        for (quorum_hash, source_quorum) in source_previous.quorums.iter() {
+            let restored_quorum = restored_previous
+                .quorums
+                .get(quorum_hash)
+                .expect("every quorum must be restored");
+            assert_eq!(restored_quorum.public_key, source_quorum.public_key);
+            assert_eq!(restored_quorum.index, source_quorum.index);
+        }
+    }
+
+    /// A set with no history restores to no history, not to an empty one — an empty
+    /// previous set would make `select_quorums` consider locks verifiable against nothing.
+    #[test]
+    fn should_leave_a_set_without_history_alone() {
+        use crate::config::ChainLockConfig;
+
+        let mut restored = SignatureVerificationQuorumSet::new(
+            &ChainLockConfig::default_100_67(),
+            PlatformVersion::latest(),
+        )
+        .expect("should build quorum set");
+        restore_previous_quorums(&mut restored, None).expect("should restore");
+        assert!(!restored.has_previous_past_quorums());
     }
 
     #[test]

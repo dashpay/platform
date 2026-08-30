@@ -59,7 +59,10 @@ impl PlatformDeserializableFromVersionedStructure for ReducedPlatformState {
 
 #[cfg(test)]
 mod tests {
-    use super::v0::{ReducedBlockInfoV0, ReducedPlatformStateV0};
+    use super::v0::{
+        ReducedBlockInfoV0, ReducedPlatformStateV0, ReducedPreviousQuorumsV0,
+        ReducedVerificationQuorumV0,
+    };
     use super::*;
     use crate::block::block_info::BlockInfo;
 
@@ -82,6 +85,26 @@ mod tests {
             previous_fee_versions: [(0u16, 1u32)].into_iter().collect(),
             quorum_positions: vec![[4u8; 32].into(), [5u8; 32].into()],
             proposed_core_chain_locked_height: 1000,
+            previous_chain_lock_quorums: Some(ReducedPreviousQuorumsV0 {
+                quorums: vec![ReducedVerificationQuorumV0 {
+                    quorum_hash: [6u8; 32].into(),
+                    public_key: [7u8; 48],
+                    index: None,
+                }],
+                last_active_core_height: 990,
+                updated_at_core_height: 995,
+                previous_change_height: Some(900),
+            }),
+            previous_instant_lock_quorums: Some(ReducedPreviousQuorumsV0 {
+                quorums: vec![ReducedVerificationQuorumV0 {
+                    quorum_hash: [8u8; 32].into(),
+                    public_key: [9u8; 48],
+                    index: Some(3),
+                }],
+                last_active_core_height: 991,
+                updated_at_core_height: 996,
+                previous_change_height: None,
+            }),
         });
 
         let bytes = state.serialize_to_bytes().expect("should serialize");
