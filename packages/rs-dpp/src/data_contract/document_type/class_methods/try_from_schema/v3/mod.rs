@@ -115,17 +115,18 @@ fn validate_ranked_index_property_key_length(
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
-    // Only the property whose level hosts the indexed tree gets its encoded
+    // Only a property whose level hosts an indexed tree gets its encoded
     // value mirrored into the ordered secondary behind the sort key — the
     // **terminal** property for the boolean axes, the **`at`** property for
-    // a prefix-level ranking — and that is where the tightened ceiling comes
-    // from. Every other property of a ranked index is an ordinary grovedb
-    // path segment, bound by the generic limits checked after this.
-    let ranked_level_property = index
-        .ranked_countable_at
-        .as_deref()
-        .or_else(|| index.properties.last().map(|p| p.name.as_str()));
-    if ranked_level_property != Some(index_property_name) {
+    // a prefix-level ranking, and BOTH when one index declares both — and
+    // that is where the tightened ceiling comes from. Every other property
+    // of a ranked index is an ordinary grovedb path segment, bound by the
+    // generic limits checked after this.
+    let is_at_level = index.ranked_countable_at.as_deref() == Some(index_property_name);
+    let is_ranked_terminal = index.properties.last().map(|p| p.name.as_str())
+        == Some(index_property_name)
+        && (index.ranked_countable || index.ranked_summable || index.ranked_averageable);
+    if !is_at_level && !is_ranked_terminal {
         return Ok(());
     }
 
@@ -1475,6 +1476,33 @@ mod tests {
             });
             let index = v2.indices.get("byMain").expect("index parsed");
             assert!(!index.ranked_countable);
+            assert_eq!(index.ranked_countable_at.as_deref(), Some("region"));
+        }
+    }
+
+    /// The array form naming both levels passes the meta-schema and
+    /// parses into both flags — the both-rankings-on-one-index shape.
+    #[test]
+    fn prefix_ranked_at_array_form_accepted_at_pv14() {
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId"],
+                Value::Map(vec![(
+                    Value::Text("at".to_string()),
+                    Value::Array(vec![
+                        Value::Text("region".to_string()),
+                        Value::Text("restaurantId".to_string()),
+                    ]),
+                )]),
+                true,
+                32,
+                vec![],
+            );
+            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+                panic!("the array form must parse (full_validation: {full_validation}): {e}")
+            });
+            let index = v2.indices.get("byMain").expect("index parsed");
+            assert!(index.ranked_countable, "the terminal ranking must be on");
             assert_eq!(index.ranked_countable_at.as_deref(), Some("region"));
         }
     }

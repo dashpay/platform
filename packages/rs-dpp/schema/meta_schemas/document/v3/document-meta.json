@@ -607,15 +607,30 @@
                 "type": "object",
                 "properties": {
                   "at": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256,
-                    "description": "Name of the index property whose level carries the Count ranking. Must be one of the index's properties; naming the last property is equivalent to the boolean form. A non-terminal property places the ranking at that prefix level: its values are ranked by whole-subtree document count (e.g. on [hashtag, postId], at: \"hashtag\" ranks hashtags by total count across all their posts), and every level from there down to the terminal is laid out count-bearing so each write's delta propagates up to the ranking."
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "minItems": 1,
+                        "maxItems": 2,
+                        "uniqueItems": true
+                      }
+                    ],
+                    "description": "Name of the index property (or array of properties) whose level carries a Count ranking. Each must be one of the index's properties; naming the last property is equivalent to the boolean form. A non-terminal property places a ranking at that prefix level: its values are ranked by whole-subtree document count (e.g. on [hashtag, postId], at: \"hashtag\" ranks hashtags by total count across all their posts), and every level from there down to the terminal is laid out count-bearing so each write's delta propagates up to the ranking. An array naming the terminal alongside one prefix property (e.g. [\"hashtag\", \"postId\"]) declares both rankings on one index. At most one non-terminal property."
                   }
                 },
                 "required": ["at"],
                 "additionalProperties": false,
-                "description": "Prefix-level form: places the Count ranking at the named property's level instead of the terminal one. Cannot be combined with rankedSummable or rankedAverageable, and no other index of the document type may share the named level or any level below it."
+                "description": "Level-addressed form: places Count rankings at the named properties' levels. Cannot be combined with rankedSummable or rankedAverageable when a non-terminal level is named, and no other index of the document type may share a non-terminal ranked level or any level below it."
               }
             ],
             "description": "Count ranking axis. Requires `rangeCountable: true`. Independent of the Sum and Avg axes (`rankedSummable` / `rankedAverageable`), which stay terminal-level booleans."

@@ -521,13 +521,18 @@ pub struct Index {
     /// terminal form (`rankedCountable: true`) ranks a pinned hashtag's posts
     /// by direct member count.
     ///
-    /// Parsed from the object form `rankedCountable: { "at": "<property>" }`.
-    /// The named property must be one of the index's properties; naming the
-    /// *last* property is canonicalized to the terminal form
-    /// ([`Index::ranked_countable`] `= true`, this field `None`), so `Some`
-    /// here always means a non-terminal level. Mutually exclusive with the
-    /// other ranking axes (`rankedSummable` / `rankedAverageable`) — the
-    /// subtree count chain the prefix level ranks by cannot carry a sum axis.
+    /// Parsed from the object form `rankedCountable: { "at": … }` — one
+    /// property name or an array of them. Each named property must be one of
+    /// the index's properties; naming the *last* property is canonicalized to
+    /// the terminal form ([`Index::ranked_countable`] `= true`), so `Some`
+    /// here always means a non-terminal level. An array naming the terminal
+    /// alongside one prefix property declares BOTH rankings on one index
+    /// (this field `Some` AND `ranked_countable` true): the terminal indexed
+    /// tree then lives inside the prefix chain as a contributing child, its
+    /// count flowing up to the prefix secondary. At most one non-terminal
+    /// level per index for now. Mutually exclusive with the other ranking
+    /// axes (`rankedSummable` / `rankedAverageable`) — the subtree count
+    /// chain the prefix level ranks by cannot carry a sum axis.
     ///
     /// Requires [`Index::range_countable`], like the terminal form. Levels
     /// from the named property down to the terminal are laid out
@@ -1232,10 +1237,13 @@ impl Index {
         // is no sugar relationship between them, so no explicit-vs-default
         // tracking is needed — nothing ever promotes them.
         let mut ranked_countable = false;
-        // The object form `rankedCountable: { "at": "<property>" }` — held raw
-        // until after the loop, because resolving it (does it name an index
-        // property? is it the last one, i.e. the terminal form spelled
-        // longhand?) needs the parsed property list.
+        // The object form `rankedCountable: { "at": … }` — one property name
+        // or an array of them — held raw until after the loop, because
+        // resolving each (does it name an index property? is it the last
+        // one, i.e. the terminal form spelled longhand?) needs the parsed
+        // property list.
+        let mut ranked_countable_at_levels: Vec<String> = Vec::new();
+        let mut ranked_countable_object_form = false;
         let mut ranked_countable_at: Option<String> = None;
         let mut ranked_summable = false;
         let mut ranked_averageable = false;
@@ -1477,27 +1485,47 @@ impl Index {
                 RANKED_COUNTABLE if ranked_aggregates_allowed => {
                     // Two spellings: the boolean form ranks the terminal
                     // level's groups by direct member count; the object form
-                    // `{ "at": "<property>" }` names the level the Count axis
-                    // aggregates at, ranking that property's values by
-                    // whole-subtree count.
+                    // `{ "at": … }` names the level(s) the Count axis
+                    // aggregates at — one property name or an array of them.
+                    // A non-terminal name ranks that property's values by
+                    // whole-subtree count; naming the last property is the
+                    // terminal form spelled longhand, so an array carrying
+                    // both (e.g. `["hashtag", "postId"]` on
+                    // `[hashtag, postId]`) declares BOTH rankings on one
+                    // index — the nested-secondaries shape the storage layer
+                    // maintains as one count-propagation chain.
                     if let Some(ranked_map) = value_value.as_map() {
-                        let mut at: Option<String> = None;
+                        let mut at_levels: Option<Vec<String>> = None;
                         for (rc_key_value, rc_value) in ranked_map {
                             let rc_key = rc_key_value.to_str().map_err(|e| {
                                 DataContractError::ValueDecodingError(e.to_string())
                             })?;
                             match rc_key {
                                 "at" => {
-                                    at = Some(
-                                        rc_value
-                                            .as_text()
-                                            .ok_or(DataContractError::ValueWrongType(
-                                                "rankedCountable.at should be a string naming an \
-                                                 index property"
-                                                    .to_string(),
-                                            ))?
-                                            .to_owned(),
-                                    );
+                                    let levels = if let Some(text) = rc_value.as_text() {
+                                        vec![text.to_owned()]
+                                    } else if let Some(array) = rc_value.as_array() {
+                                        array
+                                            .iter()
+                                            .map(|element| {
+                                                element.as_text().map(|text| text.to_owned()).ok_or(
+                                                    DataContractError::ValueWrongType(
+                                                        "rankedCountable.at array elements \
+                                                         should be strings naming index \
+                                                         properties"
+                                                            .to_string(),
+                                                    ),
+                                                )
+                                            })
+                                            .collect::<Result<Vec<_>, _>>()?
+                                    } else {
+                                        return Err(DataContractError::ValueWrongType(
+                                            "rankedCountable.at should be a string naming an \
+                                             index property, or an array of them"
+                                                .to_string(),
+                                        ));
+                                    };
+                                    at_levels = Some(levels);
                                 }
                                 other => {
                                     return Err(DataContractError::InvalidContractStructure(
@@ -1506,19 +1534,29 @@ impl Index {
                                 }
                             }
                         }
-                        let at = at.ok_or(DataContractError::InvalidContractStructure(
-                            "rankedCountable's object form requires an `at` field naming the \
-                             index property whose level carries the ranking"
-                                .to_string(),
-                        ))?;
-                        if at.is_empty() {
+                        let at_levels =
+                            at_levels.ok_or(DataContractError::InvalidContractStructure(
+                                "rankedCountable's object form requires an `at` field naming \
+                                 the index property (or properties) whose levels carry the \
+                                 ranking"
+                                    .to_string(),
+                            ))?;
+                        if at_levels.is_empty() {
+                            return Err(DataContractError::InvalidContractStructure(
+                                "rankedCountable.at must name at least one property; an empty \
+                                 array names nothing"
+                                    .to_string(),
+                            ));
+                        }
+                        if at_levels.iter().any(|at| at.is_empty()) {
                             return Err(DataContractError::InvalidContractStructure(
                                 "rankedCountable.at must name a property; an empty string names \
                                  nothing"
                                     .to_string(),
                             ));
                         }
-                        ranked_countable_at = Some(at);
+                        ranked_countable_object_form = true;
+                        ranked_countable_at_levels = at_levels;
                     } else {
                         ranked_countable =
                             value_value
@@ -1718,25 +1756,45 @@ impl Index {
 
         // Resolve the object form of `rankedCountable` against the property
         // list. Naming the *last* property is the terminal form spelled
-        // longhand — fold it into the boolean so `ranked_countable_at: Some`
-        // always means a non-terminal level and downstream code never handles
-        // two spellings of one layout. (The two spellings cannot conflict:
-        // they are one JSON key.)
-        if let Some(at) = ranked_countable_at.take() {
-            let Some(position) = index_properties
-                .iter()
-                .position(|property| property.name == at)
-            else {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "rankedCountable.at (\"{}\") must name one of the index's properties; the \
-                     ranking is placed at that property's level",
-                    at
-                )));
-            };
-            if position + 1 == index_properties.len() {
-                ranked_countable = true;
-            } else {
-                ranked_countable_at = Some(at);
+        // longhand — folded into the boolean so `ranked_countable_at: Some`
+        // always means a non-terminal level and downstream code never
+        // handles two spellings of one layout. An array may name the
+        // terminal alongside ONE non-terminal level (both rankings on one
+        // index); several non-terminal levels are rejected until the
+        // multi-level chain is deliberately designed. (The boolean and
+        // object spellings cannot conflict: they are one JSON key.)
+        if ranked_countable_object_form {
+            for (position, at) in ranked_countable_at_levels.iter().enumerate() {
+                if ranked_countable_at_levels[..position].contains(at) {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "rankedCountable.at names \"{}\" twice; each level is one ranking",
+                        at
+                    )));
+                }
+            }
+            for at in ranked_countable_at_levels.drain(..) {
+                let Some(position) = index_properties
+                    .iter()
+                    .position(|property| property.name == at)
+                else {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "rankedCountable.at (\"{}\") must name one of the index's properties; \
+                         the ranking is placed at that property's level",
+                        at
+                    )));
+                };
+                if position + 1 == index_properties.len() {
+                    ranked_countable = true;
+                } else if ranked_countable_at.is_some() {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "rankedCountable.at may name at most one non-terminal property \
+                         (alongside the last property for the terminal ranking): chains with \
+                         several prefix-level rankings are not supported yet"
+                            .to_string(),
+                    ));
+                } else {
+                    ranked_countable_at = Some(at);
+                }
             }
         }
 
@@ -4642,6 +4700,111 @@ mod tests {
             .expect("at naming the last property must parse as the terminal form");
         assert!(index.ranked_countable);
         assert_eq!(index.ranked_countable_at, None);
+    }
+
+    /// The array form naming both the prefix and the last property
+    /// declares BOTH rankings: the terminal boolean turns on alongside
+    /// the prefix level.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_array_declares_both_levels() {
+        let index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("hashtag".to_string()),
+                Value::Text("postId".to_string()),
+            ]),
+        )]));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the both-levels array form must parse");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at.as_deref(), Some("hashtag"));
+
+        // Order in the array is irrelevant — each name resolves by its
+        // index position.
+        let index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("postId".to_string()),
+                Value::Text("hashtag".to_string()),
+            ]),
+        )]));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the reversed array must parse identically");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at.as_deref(), Some("hashtag"));
+
+        // An array carrying only the last property is the terminal form.
+        let index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![Value::Text("postId".to_string())]),
+        )]));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("a terminal-only array must parse as the boolean form");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, None);
+    }
+
+    /// Array-form rejections: a duplicate name, more than one
+    /// non-terminal level, an empty array, and a non-string element.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_array_malformed_rejected() {
+        let cases: Vec<(Value, &str)> = vec![
+            (
+                Value::Array(vec![
+                    Value::Text("hashtag".to_string()),
+                    Value::Text("hashtag".to_string()),
+                ]),
+                "duplicate name",
+            ),
+            (Value::Array(vec![]), "empty array"),
+            (
+                Value::Array(vec![Value::Text("hashtag".to_string()), Value::U64(1)]),
+                "non-string element",
+            ),
+        ];
+        for (at_value, label) in cases {
+            let index_map = prefix_ranked_index_map(Value::Map(vec![(
+                Value::Text("at".to_string()),
+                at_value,
+            )]));
+            assert!(
+                Index::try_from_value_map(index_map.as_slice(), v3_admissions()).is_err(),
+                "{label} must be rejected"
+            );
+        }
+
+        // Two non-terminal levels on a three-property index: not
+        // supported yet.
+        let mut index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("hashtag".to_string()),
+                Value::Text("region".to_string()),
+            ]),
+        )]));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("hashtag".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("region".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("two non-terminal levels must be rejected")
+        );
+        assert!(
+            msg.contains("at most one non-terminal"),
+            "the rejection must state the single-prefix-level rule; got {msg}"
+        );
     }
 
     /// `at` must name one of the index's properties.
