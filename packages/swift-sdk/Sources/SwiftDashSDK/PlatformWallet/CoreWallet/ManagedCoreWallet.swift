@@ -242,6 +242,23 @@ public class ManagedCoreWallet {
 
     /// Consume and broadcast an atomically finalized transaction, returning
     /// the authoritative accepted/rejected/unknown network outcome.
+    ///
+    /// - Important: `.errorStaleReservationToken` (native code 34) is a
+    ///   **terminal** outcome, not a retryable one. It means the handle was held
+    ///   until the wallet's `last_processed_height` advanced past the funding
+    ///   reservation's age bound, so the transaction was refused *before* the
+    ///   network was touched — nothing was sent.
+    ///
+    ///   Neither a retry nor an abandon is possible: `takeForBroadcast()` above
+    ///   has already consumed this handle, so calling
+    ///   `broadcastTransactionWithOutcome(_:)` again throws locally, and
+    ///   `abandonTransaction(_:)` has nothing left to release. The refusal path
+    ///   in Rust reconciles the reservation itself, releasing the inputs
+    ///   owner-guarded.
+    ///
+    ///   **Recover by rebuilding the transaction.** The released inputs are
+    ///   immediately reselectable by a fresh builder → `finalize` sequence, with
+    ///   no cleanup call in between.
     public func broadcastTransactionWithOutcome(
         _ tx: FinalizedCoreTransaction
     ) throws -> CoreTransactionBroadcastOutcome {

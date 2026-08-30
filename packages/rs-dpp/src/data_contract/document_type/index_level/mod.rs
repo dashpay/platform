@@ -152,6 +152,30 @@ pub struct IndexLevel {
     /// is expanded into one key per overlapping range bucket instead of a
     /// single key. Immutable after contract creation.
     time_range: Option<TimeRangeTransform>,
+    /// When `true`, the property-name tree materialized at this level is the
+    /// prefix-level Count ranking tree of exactly one index — the one whose
+    /// [`Index::ranked_countable_at`] names this level's property. The
+    /// rs-drive write path lays that tree out as the Count-axis indexed tree
+    /// and this level's value trees as count-bearing, so the ordered
+    /// secondary ranks the property's values by whole-subtree document
+    /// count. Only ever `true` on PV14+ contracts (the grammar rejects the
+    /// object form of `rankedCountable` below meta-schema v3), and never on
+    /// a terminating level (`at` naming the last property canonicalizes to
+    /// the terminal boolean form). Unambiguous despite level merging: the
+    /// contract-level structural validation rejects any other index sharing
+    /// a ranked prefix level or anything below it.
+    ranked_count_grouping: bool,
+    /// When `true`, this level sits strictly between an index's ranked
+    /// prefix level ([`Self::ranked_count_grouping`] above it) and that
+    /// index's terminal level: the rs-drive write path lays out its
+    /// property-name tree and value trees count-bearing so every
+    /// insert/delete propagates its count delta up to the prefix level's
+    /// ranking secondary. Never set on the terminating level itself, whose
+    /// count-bearing layout already follows from its own
+    /// [`IndexLevelTypeInfo`] (`rankedCountable`'s `at` form requires
+    /// `rangeCountable`). Same PV14+ gating and same non-ambiguity argument
+    /// as `ranked_count_grouping`.
+    count_propagating: bool,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -169,6 +193,19 @@ impl IndexLevel {
     /// level, if any. Only set on first-property nodes.
     pub fn time_range(&self) -> Option<&TimeRangeTransform> {
         self.time_range.as_ref()
+    }
+
+    /// Whether this level hosts a prefix-level Count ranking — see the field
+    /// docs on [`IndexLevel`].
+    pub fn ranked_count_grouping(&self) -> bool {
+        self.ranked_count_grouping
+    }
+
+    /// Whether this level sits between a prefix-level Count ranking and its
+    /// index's terminal, and must be laid out count-bearing — see the field
+    /// docs on [`IndexLevel`].
+    pub fn count_propagating(&self) -> bool {
+        self.count_propagating
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -273,6 +310,8 @@ impl IndexLevel {
             sub_index_levels: Default::default(),
             has_index_with_type: None,
             time_range: None,
+            ranked_count_grouping: false,
+            count_propagating: false,
             level_identifier: 0,
         };
 
@@ -280,6 +319,18 @@ impl IndexLevel {
 
         for index_to_borrow in indices {
             let index = index_to_borrow.borrow();
+            // The positions of the properties hosting prefix-level Count
+            // rankings, when the index declares any. The parser guarantees
+            // each name resolves to a non-terminal property; the lookups
+            // stay defensive because unvalidated `Index` values can reach
+            // this derivation (check_tx, fixtures), and for those a
+            // dangling `at` simply stamps nothing.
+            let ranked_at_positions: Vec<usize> = index
+                .ranked_countable_at
+                .iter()
+                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+                .collect();
+            let min_ranked_at_position = ranked_at_positions.iter().copied().min();
             let mut current_level = &mut index_level;
             let mut properties_iter = index.properties.iter().enumerate().peekable();
 
@@ -305,12 +356,36 @@ impl IndexLevel {
                             sub_index_levels: Default::default(),
                             has_index_with_type: None,
                             time_range: None,
+                            ranked_count_grouping: false,
+                            count_propagating: false,
                         }
                     });
 
                 if position == 0 {
                     if let Some(transform) = &index.time_range {
                         current_level.time_range = Some(transform.clone());
+                    }
+                }
+
+                // Prefix-level Count ranking stamps: every `at` level hosts
+                // a grouping tree; the levels strictly between the
+                // shallowest of them and the terminal that host none must
+                // be count-bearing so deltas propagate up through the
+                // chain. The terminal level never takes either stamp: its
+                // ranked/count-bearing layout follows from its own
+                // `IndexLevelTypeInfo` below (`at` requires
+                // `rangeCountable`), and the parser folds a last-property
+                // `at` name into the terminal boolean — so a hand-built
+                // `Index` carrying the terminal name in the vector stamps
+                // nothing rather than marking a level both grouping and
+                // terminating.
+                if let Some(min_at_position) = min_ranked_at_position {
+                    if properties_iter.peek().is_some() {
+                        if ranked_at_positions.contains(&position) {
+                            current_level.ranked_count_grouping = true;
+                        } else if position > min_at_position {
+                            current_level.count_propagating = true;
+                        }
                     }
                 }
 
@@ -521,6 +596,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -559,6 +635,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -582,6 +659,7 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -603,6 +681,7 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -650,6 +729,7 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -671,6 +751,7 @@ mod tests {
                 summable: None,
                 range_summable: false,
                 ranked_countable: false,
+                ranked_countable_at: vec![],
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
@@ -694,6 +775,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -739,6 +821,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -767,6 +850,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -818,6 +902,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -840,6 +925,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -885,6 +971,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -907,6 +994,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -952,6 +1040,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -974,6 +1063,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1019,6 +1109,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1064,6 +1155,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1086,6 +1178,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1131,6 +1224,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1153,6 +1247,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1204,6 +1299,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1232,6 +1328,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1283,6 +1380,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1311,6 +1409,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1370,6 +1469,7 @@ mod tests {
             summable: Some("score".to_string()),
             range_summable: true,
             ranked_countable,
+            ranked_countable_at: vec![],
             ranked_summable,
             ranked_averageable,
             time_range: None,
@@ -1413,6 +1513,203 @@ mod tests {
         // The range axes the ranking extends live on the same info.
         assert!(info.range_countable);
         assert!(info.range_summable);
+    }
+
+    /// A prefix-ranked countable index on `[first, second, third]` whose
+    /// ranking sits at the named property's level.
+    fn prefix_ranked_index(at: &str) -> Index {
+        Index {
+            name: "prefixRanked".to_string(),
+            properties: ["first", "second", "third"]
+                .into_iter()
+                .map(|name| IndexProperty {
+                    name: name.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![at.to_string()],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        }
+    }
+
+    /// `rankedCountable: { at: "first" }` on `[first, second, third]` stamps
+    /// the `at` level as the grouping level, the level below it as
+    /// count-propagating, and leaves the terminal level's stamps to its own
+    /// `IndexLevelTypeInfo` — where the boolean ranked axis stays off.
+    #[test]
+    fn ranked_countable_at_stamps_grouping_and_propagation_levels() {
+        let platform_version = PlatformVersion::latest();
+        let indices = vec![prefix_ranked_index("first")];
+
+        let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+            .expect("failed to create index level");
+
+        let first = structure
+            .sub_levels()
+            .get("first")
+            .expect("first level exists");
+        assert!(first.ranked_count_grouping());
+        assert!(!first.count_propagating());
+        assert!(first.has_index_with_type().is_none());
+
+        let second = first
+            .sub_levels()
+            .get("second")
+            .expect("second level exists");
+        assert!(!second.ranked_count_grouping());
+        assert!(second.count_propagating());
+        assert!(second.has_index_with_type().is_none());
+
+        let third = second
+            .sub_levels()
+            .get("third")
+            .expect("third (terminal) level exists");
+        assert!(!third.ranked_count_grouping());
+        assert!(
+            !third.count_propagating(),
+            "the terminal level's count-bearing layout follows from its own info stamp"
+        );
+        let info = third
+            .has_index_with_type()
+            .expect("the index terminates at the last property level");
+        assert!(!info.ranked_countable);
+        assert!(info.range_countable);
+    }
+
+    /// A middle-property `at` leaves the levels above it unstamped.
+    #[test]
+    fn ranked_countable_at_middle_property_leaves_levels_above_unstamped() {
+        let platform_version = PlatformVersion::latest();
+        let indices = vec![prefix_ranked_index("second")];
+
+        let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+            .expect("failed to create index level");
+
+        let first = structure
+            .sub_levels()
+            .get("first")
+            .expect("first level exists");
+        assert!(!first.ranked_count_grouping());
+        assert!(!first.count_propagating());
+
+        let second = first
+            .sub_levels()
+            .get("second")
+            .expect("second level exists");
+        assert!(second.ranked_count_grouping());
+        assert!(!second.count_propagating());
+    }
+
+    /// A hand-built `Index` (this derivation accepts unvalidated values)
+    /// carrying the LAST property's name in `ranked_countable_at` — a
+    /// spelling the parser always folds into the terminal boolean — must
+    /// not stamp the terminal level as a grouping level: the terminal's
+    /// ranked layout is its info's business, and a level that is both
+    /// grouping and terminating has no coherent layout.
+    #[test]
+    fn a_terminal_name_in_the_at_vector_stamps_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let mut invalid = prefix_ranked_index("first");
+        invalid.ranked_countable_at = vec!["third".to_string()];
+
+        let structure = IndexLevel::try_from_indices([&invalid], "test", platform_version)
+            .expect("index level must build");
+        let third = structure
+            .sub_levels()
+            .get("first")
+            .and_then(|level| level.sub_levels().get("second"))
+            .and_then(|level| level.sub_levels().get("third"))
+            .expect("the terminal level exists");
+        assert!(!third.ranked_count_grouping());
+        assert!(!third.count_propagating());
+        assert!(third.has_index_with_type().is_some());
+    }
+
+    /// Without the `at` form nothing stamps the level flags — pinned so the
+    /// derivation stays bit-identical for every existing contract.
+    #[test]
+    fn ranked_level_flags_default_off_without_at() {
+        let platform_version = PlatformVersion::latest();
+        let indices = vec![ranked_index(true, false, true)];
+
+        let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+            .expect("failed to create index level");
+
+        let first = structure
+            .sub_levels()
+            .get("first")
+            .expect("first level exists");
+        assert!(!first.ranked_count_grouping());
+        assert!(!first.count_propagating());
+        let second = first
+            .sub_levels()
+            .get("second")
+            .expect("second level exists");
+        assert!(!second.ranked_count_grouping());
+        assert!(!second.count_propagating());
+    }
+
+    /// Adding, removing or moving a prefix-level ranking on update is
+    /// rejected: the flags live on the level, so the diff helper must
+    /// catch them even though every `IndexLevelTypeInfo` stays identical.
+    #[test]
+    fn should_return_invalid_result_if_ranked_countable_at_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let unranked = {
+            let mut index = prefix_ranked_index("first");
+            index.ranked_countable_at = vec![];
+            index
+        };
+
+        for (old_index, new_index, expected_path) in [
+            (
+                unranked.clone(),
+                prefix_ranked_index("first"),
+                "first -> (ranked_count_grouping: false -> true)",
+            ),
+            (
+                prefix_ranked_index("first"),
+                unranked.clone(),
+                "first -> (ranked_count_grouping: true -> false)",
+            ),
+            (
+                prefix_ranked_index("first"),
+                prefix_ranked_index("second"),
+                "first -> (ranked_count_grouping: true -> false)",
+            ),
+        ] {
+            let old_index_structure =
+                IndexLevel::try_from_indices(&[old_index], document_type_name, platform_version)
+                    .expect("failed to create old index level");
+            let new_index_structure =
+                IndexLevel::try_from_indices(&[new_index], document_type_name, platform_version)
+                    .expect("failed to create new index level");
+
+            let result =
+                old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == expected_path
+            );
+        }
     }
 
     #[test]
@@ -1530,6 +1827,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1582,6 +1880,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,

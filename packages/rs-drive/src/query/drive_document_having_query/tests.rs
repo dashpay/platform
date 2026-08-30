@@ -2354,3 +2354,159 @@ mod pinned_prefix {
         assert_proof_round_trips(&drive, &contract, &pins, &[], &entries);
     }
 }
+
+mod prefix_level {
+    //! `SELECT COUNT(*) … GROUP BY hashtag HAVING COUNT(*) >= n` over a
+    //! prefix-level ranking (`rankedCountable: { "at": "hashtag" }`):
+    //! the having surface reads the same hashtag-level secondary the
+    //! ranked surface walks, through the same shared resolution
+    //! (`find_ranked_index_for_axis` / `encode_prefix_branches` /
+    //! the ranked-level path builder), so a bounded band over subtree
+    //! totals lands on the `at` level. The rank-walk sibling lives in
+    //! `drive_document_ranked_query::tests::prefix_level`.
+
+    use super::super::drive_dispatcher::{DocumentHavingRequest, DocumentHavingResponse};
+    use super::*;
+    use crate::drive::Drive;
+    use crate::query::drive_document_ranked_query::{RankedEntry, RankedEntryValue};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    fn setup_trending_likes() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/trending/trending-contract.json",
+            false,
+            pv,
+        )
+        .expect("expected to parse the trending contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the trending contract");
+        (drive, contract)
+    }
+
+    fn insert_likes(drive: &Drive, contract: &DataContract, rows: &[(&str, &str)]) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+        for (i, (hashtag, post)) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(8000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert("hashtag".to_string(), Value::Text(hashtag.to_string()));
+            props.insert("postId".to_string(), Value::Text(post.to_string()));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a like");
+        }
+    }
+
+    /// Hashtags whose subtree totals fall in the `COUNT(*) >= n` band,
+    /// ascending by count (the having walk's default direction).
+    #[test]
+    fn count_band_over_subtree_totals_lands_on_the_at_level() {
+        let (drive, contract) = setup_trending_likes();
+        insert_likes(
+            &drive,
+            &contract,
+            &[
+                ("alpha", "p1"),
+                ("alpha", "p1"),
+                ("alpha", "p2"),
+                ("beta", "p1"),
+                ("beta", "p3"),
+                ("gamma", "p2"),
+            ],
+        );
+
+        let group_by = vec!["hashtag".to_string()];
+        let having = vec![clause(
+            HavingAggregateFunction::Count,
+            "",
+            HavingOperator::GreaterThanOrEquals,
+            Value::U64(2),
+        )];
+        let response = drive
+            .execute_document_having_request(
+                DocumentHavingRequest {
+                    contract: &contract,
+                    document_type: contract
+                        .document_type_for_name("like")
+                        .expect("like doctype exists"),
+                    group_by: &group_by,
+                    select: SelectProjection::count_star(),
+                    having: &having,
+                    order_by: &[],
+                    where_clauses: &[],
+                    resolved_time_ranges: &[],
+                    limit: Some(10),
+                    offset: None,
+                    has_start_at: false,
+                    prove: false,
+                },
+                None,
+                platform_version(),
+            )
+            .expect("the having read must succeed");
+        let DocumentHavingResponse::Entries(entries) = response else {
+            panic!("expected entries, got a proof");
+        };
+        assert_eq!(
+            entries,
+            vec![
+                RankedEntry {
+                    key: b"beta".to_vec(),
+                    value: RankedEntryValue::Count(2),
+                    in_key: None,
+                },
+                RankedEntry {
+                    key: b"alpha".to_vec(),
+                    value: RankedEntryValue::Count(3),
+                    in_key: None,
+                },
+            ],
+            "only hashtags with subtree totals in the band qualify, ascending by count"
+        );
+    }
+}

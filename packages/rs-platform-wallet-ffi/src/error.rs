@@ -312,6 +312,23 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorReservationWalletMismatch`] (36, minted against a different
     /// wallet generation). All three are non-retryable-in-place and none touched
     /// the network; they are distinct codes so a host can message each precisely.
+    ///
+    /// Also maps `PlatformWalletError::StaleReservation` from the atomic
+    /// finalized-transaction handle path
+    /// (`core_wallet_broadcast_signed_transaction`): a pinned handle whose
+    /// funding reservation aged past the SAME `RESERVATION_MAX_AGE_BLOCKS` bound
+    /// carries the identical "may already have been swept — rebuild" meaning, so
+    /// the two surfaces intentionally share this one code. The handle carries
+    /// no numeric reservation token, hence a distinct (token-less) wallet-error
+    /// variant behind the same FFI code. The refusal reconciles the reservation
+    /// on the way out: a funded finalize always stamps an owner token, so the
+    /// release is owner-guarded (safe at any age — a no-op once ownership
+    /// transferred) and the still-owned inputs are freed for the instructed
+    /// rebuild. Abandon/free of a handle never surfaces this — abandon returns
+    /// no result code and likewise releases owner-guarded at any age; only a
+    /// token-less build skips its unguarded by-outpoint release past the bound
+    /// (leaving the aged outpoint to key-wallet's TTL, since releasing it
+    /// unguarded could free an unrelated newer build's reservation).
     ErrorStaleReservationToken = 34,
 
     /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
@@ -720,6 +737,34 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::TransactionBroadcast(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
+            }
+            // The finalized-transaction handle path's age guard. Shares the
+            // `ErrorStaleReservationToken` code with the deferred registry-token
+            // sibling (`SignedPaymentError::StaleReservationToken`): both mean
+            // "the funding reservation may already have been swept — rebuild",
+            // and neither touched the network. See the code's doc note.
+            PlatformWalletError::StaleReservation => {
+                PlatformWalletFFIResultCode::ErrorStaleReservationToken
+            }
+            // A coin selection that picked an input still held by an in-flight
+            // broadcast dispatch. Typed on the Rust side (it carries the
+            // conflicting `OutPoint`; see the variant docs for the retry
+            // contract — the intent is re-attemptable only after the fenced
+            // dispatch's outcome is reconciled), but DELIBERATELY mapped to the
+            // same numeric code it produced before that variant existed: all three
+            // choke points previously returned it as
+            // `TransactionBuild` / `AssetLockTransaction`, neither of which is
+            // matched here, so both fell to `ErrorUnknown`.
+            //
+            // Minting a dedicated code is a separate, coordinated change — the
+            // numeric space is a cross-PR registry (see the claim table on
+            // `ErrorStaleReservationToken` above) and every new value has to be
+            // mirrored into the Swift and Kotlin result enums. This arm exists
+            // so the mapping is an explicit, reviewable decision in one place
+            // rather than an accident of the catch-all, and so it is a one-line
+            // change when a code is claimed (`dashpay/platform#4309`).
+            PlatformWalletError::InputMidBroadcast { .. } => {
+                PlatformWalletFFIResultCode::ErrorUnknown
             }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
@@ -1442,6 +1487,34 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    /// The finalized-transaction handle age guard
+    /// (`core_wallet_broadcast_signed_transaction` → `broadcast_finalized_transaction`)
+    /// surfaces `PlatformWalletError::StaleReservation` through the blanket
+    /// `From` impl, which must reuse the deferred registry-token path's
+    /// `ErrorStaleReservationToken` (34) code rather than flattening to
+    /// `ErrorUnknown` — the two surfaces share the "reservation may have been
+    /// swept; rebuild" meaning and this one code. The typed Display rendering
+    /// survives across the boundary as the message.
+    #[test]
+    fn stale_reservation_maps_to_shared_stale_reservation_code() {
+        let err = PlatformWalletError::StaleReservation;
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorStaleReservationToken,
+            "StaleReservation must reuse the registry-token stale code (rendered: {rendered})"
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            msg, rendered,
+            "Display payload must survive the FFI boundary verbatim"
+        );
     }
 
     /// Code 26 is a promise about cleanup, not about the broadcaster's

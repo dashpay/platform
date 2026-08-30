@@ -212,4 +212,54 @@ impl IdentityManager {
             .get(wallet_id)
             .and_then(|m| m.keys().last().copied())
     }
+
+    /// Verdict of the last gap-limit identity scan for `wallet_id`, if one is
+    /// known.
+    pub fn identity_scan_state(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Option<&crate::changeset::IdentityScanStateEntry> {
+        self.identity_scan_states.get(wallet_id)
+    }
+
+    /// Whether a scan is known to have left indices unanswered.
+    ///
+    /// The question the warm-launch shortcut asks, phrased so that only
+    /// positive evidence of an incomplete scan can force a rescan. Deliberately
+    /// **not** `!is_complete()`: an absent verdict means nobody recorded one —
+    /// a host that does not persist it, or a wallet whose identities predate
+    /// this bookkeeping — and treating "unknown" as "incomplete" would make
+    /// every launch on such a host pay for a full scan plus its Keychain round
+    /// trip, which is the cost the warm-launch shortcut exists to avoid.
+    pub fn identity_scan_is_incomplete(&self, wallet_id: &WalletId) -> bool {
+        self.identity_scan_states
+            .get(wallet_id)
+            .is_some_and(|state| !state.complete)
+    }
+
+    /// Record the verdict of a gap-limit scan for `wallet_id`, folded over
+    /// whatever verdict is already on record, and return what was stored.
+    ///
+    /// Folding rather than replacing is what stops a scan from clearing a gap
+    /// it never probed — see
+    /// [`IdentityScanStateEntry::superseding`](crate::changeset::IdentityScanStateEntry::superseding).
+    /// It happens here, on the one path every writer takes, rather than in
+    /// each of them.
+    ///
+    /// In-memory only — the caller emits the matching changeset entry, because
+    /// only it holds the persister, and it emits the returned value so what is
+    /// persisted is what is in memory.
+    pub fn record_identity_scan(
+        &mut self,
+        wallet_id: WalletId,
+        state: crate::changeset::IdentityScanStateEntry,
+    ) -> crate::changeset::IdentityScanStateEntry {
+        let recorded = match self.identity_scan_states.get(&wallet_id) {
+            Some(previous) => state.superseding(previous),
+            None => state,
+        };
+        self.identity_scan_states
+            .insert(wallet_id, recorded.clone());
+        recorded
+    }
 }

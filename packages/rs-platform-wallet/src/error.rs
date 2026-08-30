@@ -105,21 +105,139 @@ pub enum PlatformWalletError {
     /// A core transaction broadcast failed with an **ambiguous** outcome — the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent inputs'
-    /// reservation is intentionally kept, so an immediate retry fails at
-    /// input selection instead of double-spending; the reservation-TTL
-    /// backstop (or a sync observing the transaction) reconciles the outcome.
+    /// whose earlier attempt may have succeeded). The spent inputs are
+    /// intentionally kept out of the selectable set, so an immediate retry
+    /// fails at input selection instead of double-spending.
+    ///
+    /// # What actually reconciles this, and what does not
+    ///
+    /// The inputs are held by TWO independent things, and only one of them
+    /// expires. Key-wallet's `ReservationSet` entry is swept by its own TTL —
+    /// 24 blocks (`RESERVATION_TTL_BLOCKS`) on the wallet's
+    /// `last_processed_height` clock, measured from the height the reservation
+    /// was stamped at. That TTL is NOT the 20-block bound this crate refuses a
+    /// held finalized transaction / registry token at
+    /// ([`Self::StaleReservation`]); the refusal bound is deliberately the
+    /// lower of the two so a broadcast is turned away while its reservation is
+    /// still provably unswept. The generation's pending-spend fence
+    /// ([`WalletGeneration`](crate::wallet::core::WalletGeneration)) is NOT
+    /// swept with either: it has no bound of its own and is released by the
+    /// wallet OBSERVING the outpoint spent, and by nothing else
+    /// (`dashpay/platform#4309`).
+    ///
+    /// So an earlier promise made here — that the reservation TTL reconciles an
+    /// ambiguous outcome — no longer holds and was never sound: elapsed time is
+    /// not evidence about the transaction, which stays valid and relayable no
+    /// matter how long the wait. The build refusal that follows a `MaybeSent`
+    /// is [`Self::InputMidBroadcast`], and it stands until a spend is observed
+    /// — this wallet's own transaction landing, or a conflicting one taking the
+    /// outpoint.
+    ///
+    /// Removing the wallet and re-creating it under the same id does NOT end
+    /// the refusal: the fence map is keyed by wallet id and handed to the
+    /// replacement generation, so a recreation inherits the pending spends
+    /// rather than restoring the outpoints unprotected. Only a fresh manager —
+    /// in practice a process restart — currently loses the fence, because the
+    /// map is not persisted; see
+    /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) for what
+    /// closing that gap requires.
     ///
     /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
     #[error(
         "Transaction broadcast outcome unknown — it may already be on the \
-         network; its inputs stay reserved until a sync or the reservation \
-         TTL reconciles the outcome: {0}"
+         network; its inputs stay unspendable until this wallet observes them \
+         spent: {0}"
     )]
     TransactionBroadcastUnconfirmed(String),
 
+    /// A finalized transaction handle
+    /// (`core_wallet_tx_builder_finalize` → `broadcast_finalized_transaction`)
+    /// was held long enough that its funding reservation may already have been
+    /// swept and re-selected by key-wallet's TTL: the wallet's
+    /// `last_processed_height` advanced at least
+    /// `RESERVATION_MAX_AGE_BLOCKS`
+    /// blocks past the height the reservation was stamped at
+    /// ([`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction::reservation_height)).
+    /// Broadcasting it could spend against a newer, unrelated reservation, so it
+    /// is refused **before** touching the network — NOT retryable in place, the
+    /// caller must rebuild the payment. The refusal reconciles the reservation
+    /// on the way out: a funded finalize always stamps an owner token, so the
+    /// release is owner-guarded (`release_reservation_if_owner`, safe at any
+    /// age — it no-ops once ownership transferred) and the still-owned inputs
+    /// are freed for the instructed rebuild. Abandoning/freeing the handle
+    /// likewise releases owner-guarded at any age; only a token-less build
+    /// skips its unguarded by-outpoint release past the bound and leaves the
+    /// aged outpoint for key-wallet's TTL to reclaim.
+    ///
+    /// This is the handle-path sibling of the deferred registry-token
+    /// [`SignedPaymentError::StaleReservationToken`](crate::SignedPaymentError::StaleReservationToken);
+    /// both share the same age bound and the FFI `ErrorStaleReservationToken`
+    /// code. Carries no token — the handle path is keyed by an opaque handle,
+    /// not a numeric reservation token.
+    #[error("finalized transaction reservation has outlived its lifetime; rebuild the payment")]
+    StaleReservation,
+
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
+
+    /// Coin selection picked an outpoint that a broadcast dispatch is still
+    /// holding — the transaction spending it is in flight, or has reached the
+    /// network and has not yet been observed spent by this wallet
+    /// ([`WalletGeneration::in_broadcast_conflict`](crate::wallet::core::WalletGeneration::in_broadcast_conflict)).
+    /// Completing the build would race that transaction on the wire, so it is
+    /// refused: the attempted selection is DISCARDED, its fresh reservation
+    /// released, and nothing was broadcast.
+    ///
+    /// Signing, however, MAY already have happened by the time the conflict
+    /// is caught. The finalized-transaction build runs its check on the
+    /// unsigned selection, but the contact-payment build calls `build_signed`
+    /// before its conflict check, and the asset-lock build's key-wallet
+    /// builder signs as it builds — on those two paths a fully signed
+    /// transaction exists at the moment of refusal. It is discarded without
+    /// ever reaching a broadcaster, and its inputs go back to the selectable
+    /// pool with the reservation release; "nothing was broadcast" is part of
+    /// this contract, "nothing was signed" is NOT.
+    ///
+    /// A TRANSIENT, EXPECTED condition, and the reason it is a variant of its
+    /// own rather than a [`Self::TransactionBuild`] /
+    /// [`Self::AssetLockTransaction`] string: the refusal says nothing wrong
+    /// about the request itself — the same intent can be re-attempted once
+    /// the conflict resolves (see below for what "resolves" requires) — and
+    /// telling it apart from a genuine build failure previously meant
+    /// substring-matching prose (`message.contains("mid-broadcast")`, which
+    /// the tests did too). All three selection choke points — the
+    /// finalized-transaction build, the contact-payment build and the
+    /// asset-lock build — now return this one variant.
+    ///
+    /// # Retrying the INTENT requires reconciling the fenced transaction first
+    ///
+    /// "Retry once the dispatch settles" must not be read as "retry
+    /// unconditionally once this error stops". The fence behind this refusal
+    /// outlives the broadcaster's return on every non-rejected dispatch and
+    /// clears only when this wallet OBSERVES the outpoint spent — and the
+    /// overwhelmingly common observation is the fenced dispatch's OWN payment
+    /// landing. At that moment the intent this build was carrying may already
+    /// be fulfilled: re-issuing it blindly then produces a second, duplicate
+    /// logical payment rather than completing the first. So a caller must
+    /// reconcile the transaction the fence was protecting — did that payment
+    /// land? — before deciding whether the retried intent is still owed.
+    /// Only when the fenced dispatch is definitively rejected (its fence
+    /// released together with its reservation) is an immediate, unchanged
+    /// retry unconditionally correct.
+    ///
+    /// `outpoint` is the first conflicting input, carried structurally so
+    /// callers and diagnostics need not parse it back out of a message.
+    ///
+    /// Reaching a caller at all is the uncommon path: a fenced input is
+    /// normally still reserved and never offered to selection. This fires only
+    /// in the window after key-wallet's reservation TTL swept that dispatch's
+    /// reservation, which is exactly what the fence exists to cover
+    /// (`dashpay/platform#4309`).
+    #[error(
+        "selected input {outpoint} is mid-broadcast by an in-flight dispatch; \
+         retry after it completes"
+    )]
+    InputMidBroadcast { outpoint: dashcore::OutPoint },
 
     /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
     /// target at all: unparseable, encoded for a different network than the
@@ -604,6 +722,41 @@ pub enum PlatformWalletError {
     SeedMismatch {
         /// Hex of the wallet id whose binding check failed.
         wallet_id: String,
+    },
+
+    #[error(
+        "Seed-binding check for wallet {wallet_id} did not answer within the \
+         caller's deadline (refusing to derive through a provider that was \
+         never checked)"
+    )]
+    /// The contact-crypto provider did not return the BIP44 account-0 xpub
+    /// before the deadline the caller supplied — a stalled host Keychain /
+    /// Keystore, or a budget already spent by the time the gated pass was
+    /// reached. Distinct from [`Self::SeedMismatch`], which is a *proven*
+    /// wrong seed: this one proves nothing either way, which is why it is
+    /// refused just as firmly. The check derives nothing and commits nothing,
+    /// so the queue survives for the next signer-present pass.
+    SeedBindingUnanswered {
+        /// Hex of the wallet id whose binding could not be established.
+        wallet_id: String,
+    },
+
+    #[error(
+        "Contact-request sync reached none of the wallet's {identities} identities \
+         (Platform unreachable) — the pass did not complete"
+    )]
+    /// A contact-request pass had identities to fetch for and could not read a
+    /// single one of them. Distinct from an empty success, which means
+    /// "Platform answered, and there is nothing new": this one means we do not
+    /// know, so the caller must not record the pass as completed.
+    ///
+    /// The sweep's per-identity log-and-continue collapsed the two, so a DAPI
+    /// outage returned `Ok(vec![])` and a startup sequence recorded a
+    /// successful contact sync — then reported `Ready`, promising that every
+    /// contact's DIP-15 addresses existed before Core SPV started.
+    ContactSyncUnreachable {
+        /// Identities the pass tried, and failed, to fetch for.
+        identities: usize,
     },
 
     #[error("SPV is already running — stop it before starting again")]

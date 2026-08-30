@@ -403,6 +403,31 @@ impl IndexCountability {
     }
 }
 
+/// Deserializer for [`Index::ranked_countable_at`] that accepts, besides
+/// the current array-of-names form, the two legacy spellings the field
+/// had while it was an `Option<String>`: `null` (→ empty) and a bare
+/// string (→ a one-name vector). Serialization always emits the array
+/// form; this only widens what deserializes.
+#[cfg(feature = "serde-conversion")]
+fn deserialize_ranked_countable_at<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RankedCountableAtCompat {
+        Many(Vec<String>),
+        One(String),
+    }
+    Ok(
+        match Option::<RankedCountableAtCompat>::deserialize(deserializer)? {
+            None => Vec::new(),
+            Some(RankedCountableAtCompat::One(level)) => vec![level],
+            Some(RankedCountableAtCompat::Many(levels)) => levels,
+        },
+    )
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
@@ -511,6 +536,46 @@ pub struct Index {
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub ranked_countable: bool,
+    /// When `Some`, the Count ranking axis is placed at the named **prefix**
+    /// property's level instead of the terminal one: that property-name tree
+    /// (whose children are the property's distinct values, each holding the
+    /// whole index subtree beneath it) becomes the indexed tree, and its
+    /// secondary is keyed by each value's **whole-subtree** document count. So
+    /// on `[hashtag, postId]`, `rankedCountable: { "at": "hashtag" }` ranks
+    /// hashtags by total document count across all their posts, where the
+    /// terminal form (`rankedCountable: true`) ranks a pinned hashtag's posts
+    /// by direct member count.
+    ///
+    /// Parsed from the object form `rankedCountable: { "at": … }` — one
+    /// property name or an array of them. Each named property must be one of
+    /// the index's properties; naming the *last* property is canonicalized to
+    /// the terminal form ([`Index::ranked_countable`] `= true`), so this
+    /// vector holds only non-terminal levels, in index-property order
+    /// (canonical, whatever order the contract spelled them in). ANY subset
+    /// of levels may be ranked — `{ "at": ["tag", "region", "postId"] }` on
+    /// `[tag, region, postId]` ranks every level — with each deeper ranked
+    /// tree living inside the chain as a contributing child, its count
+    /// flowing up through every ranked level above it. Mutually exclusive
+    /// with the other ranking axes (`rankedSummable` / `rankedAverageable`)
+    /// — the subtree count chain the prefix levels rank by cannot carry a
+    /// sum axis.
+    ///
+    /// Requires [`Index::range_countable`], like the terminal form. Levels
+    /// from the named property down to the terminal are laid out
+    /// count-bearing so every insert/delete propagates its delta up to the
+    /// prefix level's secondary (see `IndexLevel` for the per-level stamps).
+    //
+    // `serde(default)`: added after the struct's serde shape was in the wild
+    // (see the note on `countable` above), so pre-existing JSON must still
+    // deserialize. The custom deserializer additionally accepts the two
+    // spellings the field had while it was an `Option<String>` — `null`
+    // and a bare string — which derived `Vec` deserialization would
+    // reject; `serde(default)` alone only covers an absent key.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(default, deserialize_with = "deserialize_ranked_countable_at")
+    )]
+    pub ranked_countable_at: Vec<String>,
     /// Sum-axis counterpart of [`Index::ranked_countable`]: the terminal
     /// property-name tree gains an ordered secondary keyed by each group's sum
     /// of the [`Index::summable`] property, making "top / bottom K groups by
@@ -1204,6 +1269,14 @@ impl Index {
         // is no sugar relationship between them, so no explicit-vs-default
         // tracking is needed — nothing ever promotes them.
         let mut ranked_countable = false;
+        // The object form `rankedCountable: { "at": … }` — one property name
+        // or an array of them — held raw until after the loop, because
+        // resolving each (does it name an index property? is it the last
+        // one, i.e. the terminal form spelled longhand?) needs the parsed
+        // property list.
+        let mut ranked_countable_at_levels: Vec<String> = Vec::new();
+        let mut ranked_countable_object_form = false;
+        let mut ranked_countable_at: Vec<String> = Vec::new();
         let mut ranked_summable = false;
         let mut ranked_averageable = false;
         let mut time_range: Option<TimeRangeTransform> = None;
@@ -1442,12 +1515,90 @@ impl Index {
                 // unknown-property arm below — byte-identical to how a node
                 // without this feature rejects it.
                 RANKED_COUNTABLE if ranked_aggregates_allowed => {
-                    ranked_countable =
-                        value_value
-                            .as_bool()
-                            .ok_or(DataContractError::ValueWrongType(
-                                "rankedCountable value must be a boolean".to_string(),
+                    // Two spellings: the boolean form ranks the terminal
+                    // level's groups by direct member count; the object form
+                    // `{ "at": … }` names the level(s) the Count axis
+                    // aggregates at — one property name or an array of them.
+                    // A non-terminal name ranks that property's values by
+                    // whole-subtree count; naming the last property is the
+                    // terminal form spelled longhand, so an array carrying
+                    // both (e.g. `["hashtag", "postId"]` on
+                    // `[hashtag, postId]`) declares BOTH rankings on one
+                    // index — the nested-secondaries shape the storage layer
+                    // maintains as one count-propagation chain.
+                    if let Some(ranked_map) = value_value.as_map() {
+                        let mut at_levels: Option<Vec<String>> = None;
+                        for (rc_key_value, rc_value) in ranked_map {
+                            let rc_key = rc_key_value.to_str().map_err(|e| {
+                                DataContractError::ValueDecodingError(e.to_string())
+                            })?;
+                            match rc_key {
+                                "at" => {
+                                    let levels = if let Some(text) = rc_value.as_text() {
+                                        vec![text.to_owned()]
+                                    } else if let Some(array) = rc_value.as_array() {
+                                        array
+                                            .iter()
+                                            .map(|element| {
+                                                element.as_text().map(|text| text.to_owned()).ok_or(
+                                                    DataContractError::ValueWrongType(
+                                                        "rankedCountable.at array elements \
+                                                         should be strings naming index \
+                                                         properties"
+                                                            .to_string(),
+                                                    ),
+                                                )
+                                            })
+                                            .collect::<Result<Vec<_>, _>>()?
+                                    } else {
+                                        return Err(DataContractError::ValueWrongType(
+                                            "rankedCountable.at should be a string naming an \
+                                             index property, or an array of them"
+                                                .to_string(),
+                                        ));
+                                    };
+                                    at_levels = Some(levels);
+                                }
+                                other => {
+                                    return Err(DataContractError::InvalidContractStructure(
+                                        format!("unexpected rankedCountable field: {}", other),
+                                    ));
+                                }
+                            }
+                        }
+                        let at_levels =
+                            at_levels.ok_or(DataContractError::InvalidContractStructure(
+                                "rankedCountable's object form requires an `at` field naming \
+                                 the index property (or properties) whose levels carry the \
+                                 ranking"
+                                    .to_string(),
                             ))?;
+                        if at_levels.is_empty() {
+                            return Err(DataContractError::InvalidContractStructure(
+                                "rankedCountable.at must name at least one property; an empty \
+                                 array names nothing"
+                                    .to_string(),
+                            ));
+                        }
+                        if at_levels.iter().any(|at| at.is_empty()) {
+                            return Err(DataContractError::InvalidContractStructure(
+                                "rankedCountable.at must name a property; an empty string names \
+                                 nothing"
+                                    .to_string(),
+                            ));
+                        }
+                        ranked_countable_object_form = true;
+                        ranked_countable_at_levels = at_levels;
+                    } else {
+                        ranked_countable =
+                            value_value
+                                .as_bool()
+                                .ok_or(DataContractError::ValueWrongType(
+                                    "rankedCountable value must be a boolean or a map with an \
+                                     `at` field"
+                                        .to_string(),
+                                ))?;
+                    }
                 }
                 RANKED_SUMMABLE if ranked_aggregates_allowed => {
                     ranked_summable =
@@ -1635,6 +1786,61 @@ impl Index {
             ));
         }
 
+        // Resolve the object form of `rankedCountable` against the property
+        // list. Naming the *last* property is the terminal form spelled
+        // longhand — folded into the boolean so `ranked_countable_at` holds
+        // only non-terminal levels and downstream code never handles two
+        // spellings of one layout. Any number of levels may be named; the
+        // resolved vector is sorted into index-property order so two
+        // spellings of one declaration parse identically. (The boolean and
+        // object spellings cannot conflict: they are one JSON key.)
+        if ranked_countable_object_form {
+            for (position, at) in ranked_countable_at_levels.iter().enumerate() {
+                if ranked_countable_at_levels[..position].contains(at) {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "rankedCountable.at names \"{}\" twice; each level is one ranking",
+                        at
+                    )));
+                }
+            }
+            let mut at_positions: Vec<(usize, String)> = Vec::new();
+            for at in ranked_countable_at_levels.drain(..) {
+                let Some(position) = index_properties
+                    .iter()
+                    .position(|property| property.name == at)
+                else {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "rankedCountable.at (\"{}\") must name one of the index's properties; \
+                         the ranking is placed at that property's level",
+                        at
+                    )));
+                };
+                if position + 1 == index_properties.len() {
+                    ranked_countable = true;
+                } else {
+                    at_positions.push((position, at));
+                }
+            }
+            at_positions.sort_by_key(|(position, _)| *position);
+            ranked_countable_at = at_positions.into_iter().map(|(_, at)| at).collect();
+        }
+
+        // A prefix-level Count ranking works by making every level from the
+        // named property down to the terminal count-bearing, so each write's
+        // count delta propagates up to the prefix level's secondary. A sum
+        // axis on the same index would need the terminal's sum-bearing tree
+        // to contribute *count* through that chain, which its tree types
+        // cannot express — the combination has no coherent layout. (The
+        // terminal boolean form composes with the other axes as before.)
+        if !ranked_countable_at.is_empty() && (ranked_summable || ranked_averageable) {
+            return Err(DataContractError::InvalidContractStructure(
+                "rankedCountable's `at` form cannot be combined with rankedSummable or \
+                 rankedAverageable: the prefix level ranks by the subtree count chain, which \
+                 cannot carry a sum axis"
+                    .to_string(),
+            ));
+        }
+
         // Desugar `averageable` / `rangeAverageable` into the
         // count + sum flags they're shorthand for. Conflict rules:
         // - `averageable` + `summable` must name the same property (or
@@ -1761,7 +1967,7 @@ impl Index {
         // aggregate the corresponding range axis already maintains per group,
         // so the range axis is a hard prerequisite: without it the terminal
         // property-name tree carries no per-group aggregate to rank by.
-        if ranked_countable && !range_countable {
+        if (ranked_countable || !ranked_countable_at.is_empty()) && !range_countable {
             return Err(DataContractError::InvalidContractStructure(
                 "rankedCountable requires rangeCountable: true; ranking groups by \
                  count needs the per-group counts the range-count layout \
@@ -1800,7 +2006,12 @@ impl Index {
         // serves — while still paying for an indexed tree and its secondary
         // maintenance on every write. Contested indexes are unique by
         // construction (checked above).
-        if (ranked_countable || ranked_summable || ranked_averageable) && unique {
+        if (ranked_countable
+            || !ranked_countable_at.is_empty()
+            || ranked_summable
+            || ranked_averageable)
+            && unique
+        {
             return Err(DataContractError::InvalidContractStructure(
                 "ranked aggregates are not supported on unique indexes: each \
                  group of a unique index contains at most one document, so \
@@ -1838,7 +2049,12 @@ impl Index {
         // default is `true` — and under `true` the null documents get their
         // real reference and form a legitimate rankable group, which is the
         // combination authors actually want.
-        if (ranked_countable || ranked_summable || ranked_averageable) && !null_searchable {
+        if (ranked_countable
+            || !ranked_countable_at.is_empty()
+            || ranked_summable
+            || ranked_averageable)
+            && !null_searchable
+        {
             return Err(DataContractError::InvalidContractStructure(
                 "ranked aggregates are not supported with nullSearchable: false: a \
                  document missing the indexed property still creates the null group's \
@@ -1918,7 +2134,11 @@ impl Index {
             // the flags would only make the contract pay for ranked
             // secondaries that are unreachable; reject the combination until
             // bucket-aware ranked semantics are deliberately designed.
-            if ranked_countable || ranked_summable || ranked_averageable {
+            if ranked_countable
+                || !ranked_countable_at.is_empty()
+                || ranked_summable
+                || ranked_averageable
+            {
                 return Err(DataContractError::InvalidContractStructure(
                     "a timeRange index cannot be ranked (rankedCountable / rankedSummable / \
                      rankedAverageable): ranked queries have no time-bucket semantics, so the \
@@ -2078,6 +2298,7 @@ impl Index {
             summable,
             range_summable,
             ranked_countable,
+            ranked_countable_at,
             ranked_summable,
             ranked_averageable,
             time_range,
@@ -2152,6 +2373,7 @@ mod tests {
             summable: None,
             range_summable: false,
             ranked_countable: false,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -4441,6 +4663,377 @@ mod tests {
         );
     }
 
+    /// Map fixture for a compound countable `[hashtag, postId]` index whose
+    /// `rankedCountable` carries the given value — the shape the prefix-level
+    /// (`{ "at": … }`) tests exercise.
+    fn prefix_ranked_index_map(ranked_countable: Value) -> Vec<(Value, Value)> {
+        vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    Value::Map(vec![(
+                        Value::Text("hashtag".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                    Value::Map(vec![(
+                        Value::Text("postId".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                ]),
+            ),
+            (
+                Value::Text("countable".to_string()),
+                Value::Text("countable".to_string()),
+            ),
+            (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+            (Value::Text("rankedCountable".to_string()), ranked_countable),
+        ]
+    }
+
+    fn ranked_at(property: &str) -> Value {
+        Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Text(property.to_string()),
+        )])
+    }
+
+    fn v3_admissions() -> IndexGrammarAdmissions {
+        IndexGrammarAdmissions {
+            ranked: true,
+            time_range: true,
+            terminal: true,
+            preallocated: false,
+            skip_if_absent: false,
+        }
+    }
+
+    /// The object form naming a non-terminal property parses into
+    /// `ranked_countable_at` with the boolean terminal axis off.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_prefix_property_parses() {
+        let index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the prefix-level object form must parse");
+        assert!(!index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
+    }
+
+    /// Naming the last property is the terminal form spelled longhand and
+    /// canonicalizes to the boolean, so downstream code sees one spelling.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_last_property_canonicalizes() {
+        let index_map = prefix_ranked_index_map(ranked_at("postId"));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("at naming the last property must parse as the terminal form");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, Vec::<String>::new());
+    }
+
+    /// The array form naming both the prefix and the last property
+    /// declares BOTH rankings: the terminal boolean turns on alongside
+    /// the prefix level.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_array_declares_both_levels() {
+        let index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("hashtag".to_string()),
+                Value::Text("postId".to_string()),
+            ]),
+        )]));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the both-levels array form must parse");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
+
+        // Order in the array is irrelevant — each name resolves by its
+        // index position.
+        let index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("postId".to_string()),
+                Value::Text("hashtag".to_string()),
+            ]),
+        )]));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("the reversed array must parse identically");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, vec!["hashtag".to_string()]);
+
+        // An array carrying only the last property is the terminal form.
+        let index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![Value::Text("postId".to_string())]),
+        )]));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("a terminal-only array must parse as the boolean form");
+        assert!(index.ranked_countable);
+        assert_eq!(index.ranked_countable_at, Vec::<String>::new());
+    }
+
+    /// Array-form rejections: a duplicate name, more than one
+    /// non-terminal level, an empty array, and a non-string element.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_array_malformed_rejected() {
+        let cases: Vec<(Value, &str)> = vec![
+            (
+                Value::Array(vec![
+                    Value::Text("hashtag".to_string()),
+                    Value::Text("hashtag".to_string()),
+                ]),
+                "duplicate name",
+            ),
+            (Value::Array(vec![]), "empty array"),
+            (
+                Value::Array(vec![Value::Text("hashtag".to_string()), Value::U64(1)]),
+                "non-string element",
+            ),
+        ];
+        for (at_value, label) in cases {
+            let index_map = prefix_ranked_index_map(Value::Map(vec![(
+                Value::Text("at".to_string()),
+                at_value,
+            )]));
+            assert!(
+                Index::try_from_value_map(index_map.as_slice(), v3_admissions()).is_err(),
+                "{label} must be rejected"
+            );
+        }
+    }
+
+    /// Any subset of levels may be ranked: a fully ranked three-property
+    /// index parses with every non-terminal level in `ranked_countable_at`
+    /// (canonical index-property order, whatever the array spelled) and
+    /// the terminal boolean on.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_every_level() {
+        let three_properties = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("hashtag".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("region".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+
+        // All three levels, spelled deepest-first to exercise the
+        // canonical reordering.
+        let mut index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("postId".to_string()),
+                Value::Text("region".to_string()),
+                Value::Text("hashtag".to_string()),
+            ]),
+        )]));
+        index_map[0].1 = three_properties.clone();
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("a fully ranked index must parse");
+        assert!(index.ranked_countable);
+        assert_eq!(
+            index.ranked_countable_at,
+            vec!["hashtag".to_string(), "region".to_string()],
+            "non-terminal levels must come out in index-property order"
+        );
+
+        // Two non-terminal levels without the terminal.
+        let mut index_map = prefix_ranked_index_map(Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Array(vec![
+                Value::Text("hashtag".to_string()),
+                Value::Text("region".to_string()),
+            ]),
+        )]));
+        index_map[0].1 = three_properties;
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("two prefix levels must parse");
+        assert!(!index.ranked_countable);
+        assert_eq!(
+            index.ranked_countable_at,
+            vec!["hashtag".to_string(), "region".to_string()]
+        );
+    }
+
+    /// `at` must name one of the index's properties.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_unknown_property_rejected() {
+        let index_map = prefix_ranked_index_map(ranked_at("author"));
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("unknown at property must be rejected")
+        );
+        assert!(
+            msg.contains("rankedCountable.at") && msg.contains("author"),
+            "error must name the field and the dangling property; got {msg}"
+        );
+    }
+
+    /// Malformed object forms: empty `at`, missing `at`, an unknown field,
+    /// a non-string `at`, and a value that is neither bool nor map.
+    #[test]
+    fn test_index_try_from_ranked_countable_malformed_object_forms_rejected() {
+        let cases: Vec<(Value, &str)> = vec![
+            (ranked_at(""), "empty at"),
+            (Value::Map(vec![]), "missing at"),
+            (
+                Value::Map(vec![
+                    (
+                        Value::Text("at".to_string()),
+                        Value::Text("hashtag".to_string()),
+                    ),
+                    (
+                        Value::Text("axis".to_string()),
+                        Value::Text("count".to_string()),
+                    ),
+                ]),
+                "unknown field",
+            ),
+            (
+                Value::Map(vec![(Value::Text("at".to_string()), Value::U64(1))]),
+                "non-string at",
+            ),
+            (Value::Text("hashtag".to_string()), "bare string value"),
+        ];
+        for (value, label) in cases {
+            let index_map = prefix_ranked_index_map(value);
+            assert!(
+                Index::try_from_value_map(index_map.as_slice(), v3_admissions()).is_err(),
+                "{label} must be rejected"
+            );
+        }
+    }
+
+    /// The prefix form shares the terminal form's `rangeCountable`
+    /// prerequisite: the count-propagation chain is built from the
+    /// range-count layout.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_without_range_countable_rejected() {
+        let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        index_map.retain(|(key, _)| {
+            key.as_text() != Some("rangeCountable") && key.as_text() != Some("countable")
+        });
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("prefix form without rangeCountable must be rejected")
+        );
+        assert!(
+            msg.contains("rangeCountable"),
+            "error must state the prerequisite; got {msg}"
+        );
+    }
+
+    /// The prefix form cannot be combined with a sum-bearing ranking axis:
+    /// the count-propagation chain cannot carry one.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_with_sum_axis_rejected() {
+        let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        index_map.push((
+            Value::Text("summable".to_string()),
+            Value::Text("score".to_string()),
+        ));
+        index_map.push((Value::Text("rangeSummable".to_string()), Value::Bool(true)));
+        index_map.push((Value::Text("rankedSummable".to_string()), Value::Bool(true)));
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("prefix form combined with rankedSummable must be rejected")
+        );
+        assert!(
+            msg.contains("rankedSummable"),
+            "error must name the conflicting axis; got {msg}"
+        );
+    }
+
+    /// The prefix form is rejected on unique indexes and with
+    /// `nullSearchable: false`, exactly like the boolean axes.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_unique_and_null_searchable_rejected() {
+        for (key, value, expectation) in [
+            ("unique", Value::Bool(true), "unique"),
+            ("nullSearchable", Value::Bool(false), "nullSearchable"),
+        ] {
+            let mut index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+            index_map.push((Value::Text(key.to_string()), value));
+            assert!(
+                Index::try_from_value_map(index_map.as_slice(), v3_admissions()).is_err(),
+                "prefix form with {expectation} must be rejected"
+            );
+        }
+    }
+
+    /// A timeRange index rejects the prefix form exactly like the boolean
+    /// axes: a bucketed document is stored once per containing bucket, so
+    /// any ranked secondary would score it `overlap_factor` times.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_on_time_range_index_rejected() {
+        let mut index_map = prefix_ranked_index_map(ranked_at("$createdAt"));
+        // Make the fixture a [$createdAt, postId] compound so `at` names the
+        // bucketed leading property.
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((
+            Value::Text("timeRange".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (Value::Text("range".to_string()), Value::U64(21_600)),
+                (Value::Text("step".to_string()), Value::U64(7_200)),
+            ]),
+        ));
+        let result = Index::try_from_value_map(index_map.as_slice(), v3_admissions());
+        let msg = format!(
+            "{:?}",
+            result.expect_err("prefix form on a timeRange index must be rejected")
+        );
+        assert!(
+            msg.contains("timeRange") && msg.contains("ranked"),
+            "error must state the timeRange/ranked conflict; got {msg}"
+        );
+    }
+
+    /// Below grammar generation 3 the object form is rejected through the
+    /// unknown-key arm, byte-identical to a node without the feature.
+    #[test]
+    fn test_index_try_from_ranked_countable_at_rejected_when_grammar_disallows() {
+        let index_map = prefix_ranked_index_map(ranked_at("hashtag"));
+        let result = Index::try_from_value_map(
+            index_map.as_slice(),
+            IndexGrammarAdmissions {
+                ranked: false,
+                time_range: false,
+                terminal: false,
+                preallocated: false,
+                skip_if_absent: false,
+            },
+        );
+        let msg = format!(
+            "{:?}",
+            result.expect_err("the object form must be rejected below generation 3")
+        );
+        assert!(
+            msg.contains("unexpected property name"),
+            "pre-v3 rejection must be the unknown-key error; got {msg}"
+        );
+    }
+
     /// The three range/ranked flag pairs that make a single-property index
     /// legally rankable, one per axis. Used by the `nullSearchable` tests so
     /// each axis is checked on its own rather than through the Avg superset.
@@ -5069,6 +5662,7 @@ mod json_convertible_tests {
             // prove each flag survives independently, which a uniform
             // all-true / all-false fixture cannot.
             ranked_countable: true,
+            ranked_countable_at: vec![],
             ranked_summable: false,
             ranked_averageable: true,
             time_range: None,
@@ -5102,6 +5696,7 @@ mod json_convertible_tests {
                 "summable": "price",
                 "range_summable": true,
                 "ranked_countable": true,
+                "ranked_countable_at": serde_json::json!([]),
                 "ranked_summable": false,
                 "ranked_averageable": true,
                 "time_range": serde_json::Value::Null,
@@ -5112,6 +5707,39 @@ mod json_convertible_tests {
         );
         let recovered = Index::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    /// `ranked_countable_at` deserializes all three wire spellings: the
+    /// current array, plus the legacy `null` and bare-string forms from
+    /// its `Option<String>` era. An absent key keeps the `serde(default)`
+    /// path.
+    #[test]
+    fn index_json_accepts_legacy_ranked_countable_at_shapes() {
+        use crate::serialization::JsonConvertible;
+        let mut json = serde_json::to_value(index_fixture()).expect("serialize");
+
+        for (wire_value, expected) in [
+            (serde_json::Value::Null, Vec::<String>::new()),
+            (serde_json::json!("hashtag"), vec!["hashtag".to_string()]),
+            (
+                serde_json::json!(["hashtag", "postId"]),
+                vec!["hashtag".to_string(), "postId".to_string()],
+            ),
+        ] {
+            json["ranked_countable_at"] = wire_value.clone();
+            let recovered = Index::from_json(json.clone())
+                .unwrap_or_else(|e| panic!("{wire_value:?} must deserialize: {e}"));
+            assert_eq!(
+                recovered.ranked_countable_at, expected,
+                "for {wire_value:?}"
+            );
+        }
+
+        let mut object = json.as_object().expect("object").clone();
+        object.remove("ranked_countable_at");
+        let recovered = Index::from_json(serde_json::Value::Object(object))
+            .expect("an absent key must default");
+        assert_eq!(recovered.ranked_countable_at, Vec::<String>::new());
     }
 
     #[test]

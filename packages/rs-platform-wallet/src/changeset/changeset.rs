@@ -35,6 +35,7 @@ use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
+use crate::changeset::identity_scan_state::IdentityScanStateEntry;
 use crate::wallet::platform_wallet::WalletId;
 
 use dpp::balances::credits::Credits;
@@ -1884,6 +1885,18 @@ pub struct PlatformWalletChangeSet {
     /// Per-wallet metadata emitted once at registration. See
     /// [`WalletMetadataEntry`] for the merge policy.
     pub wallet_metadata: Option<WalletMetadataEntry>,
+    /// Verdict of the most recent gap-limit identity scan. Emitted by
+    /// discovery and by the startup sequence when it abandons a scan; read on
+    /// the next launch to decide whether the warm-launch shortcut may skip
+    /// discovery. See [`IdentityScanStateEntry`].
+    ///
+    /// Durability caveat, the same one [`Self::pending_contact_crypto_added`]
+    /// carries: no persister vtable has a slot for this field yet, so on
+    /// hosts that have not adopted it the verdict is process-lifetime only.
+    /// Within a process it still redirects a second bring-up, and a partial
+    /// scan is now retried inside its own launch — but closing
+    /// dashpay/platform#4365 across launches needs the host slot.
+    pub identity_scan_state: Option<IdentityScanStateEntry>,
     /// Per-account registration entries emitted at registration / on
     /// later `add_account` calls. See [`AccountRegistrationEntry`] for
     /// the merge policy (plain `Vec::extend`, dedup is the apply-side
@@ -2019,6 +2032,17 @@ impl Merge for PlatformWalletChangeSet {
         if let Some(meta) = other.wallet_metadata {
             self.wallet_metadata = Some(meta);
         }
+        // Identity-scan verdict: the later scan's verdict folded over the
+        // earlier one, on the rule the manager applies — see
+        // `IdentityScanStateEntry::superseding`. Overwriting instead would let
+        // a scan batched into the same persist round clear a gap it never
+        // probed, which is the whole reason the verdict is recorded.
+        if let Some(scan) = other.identity_scan_state {
+            self.identity_scan_state = Some(match self.identity_scan_state.take() {
+                Some(previous) => scan.superseding(&previous),
+                None => scan,
+            });
+        }
         // Per-account specs and address-pool snapshots: append-only.
         // See the type docstrings for the rationale (registration
         // round emits each key once; snapshots are whole-pool, so
@@ -2057,6 +2081,7 @@ impl Merge for PlatformWalletChangeSet {
                 .as_ref()
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
+            && self.identity_scan_state.is_none()
             && self.account_registrations.is_empty()
             && self.provider_key_account_registrations.is_empty()
             && self.account_address_pools.is_empty()
