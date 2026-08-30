@@ -1,4 +1,4 @@
-use dpp::data_contract::document_type::TimeRangeTransform;
+use dpp::data_contract::document_type::{DocumentPropertyType, TimeRangeTransform};
 use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -925,6 +925,34 @@ pub fn index_admissible_for_resolved_time_range(
             .is_some_and(|transform| *transform == resolved.transform),
         _ => false,
     }
+}
+
+/// Whether a query binding `fields` (its equal/in/range and order-by
+/// fields, as assembled for the index matcher) may be served by `index`
+/// given its `skipIfAbsent` participation.
+///
+/// A `skipIfAbsent` index holds only the documents that carry its trigger
+/// (the first property) — it is a SPARSE projection of the document type.
+/// The generic matcher does not require contiguously bound prefixes: an
+/// unused property, the leading trigger included, merely counts toward the
+/// difference score, so without this gate a query that never mentions the
+/// trigger could route here and silently omit every trigger-absent
+/// document — a result a complete index would have included (and the
+/// positional path lowering would additionally mis-assemble the prefix
+/// gap). Requiring the trigger among the query's fields makes the sparse
+/// semantics opt-in: whoever binds the trigger is asking "among documents
+/// carrying this property", which is exactly what the index holds. The
+/// count pickers and the multiple-`In` route need no such gate — their
+/// exact-cover / contiguous-prefix matching already binds position 0.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_admissible_for_skip_if_absent(index: &Index, fields: &[&str]) -> bool {
+    if !index.skip_if_absent {
+        return true;
+    }
+    index
+        .properties
+        .first()
+        .is_some_and(|trigger| fields.contains(&trigger.name.as_str()))
 }
 
 /// Rejects a query whose resolution provenance and clause shapes disagree:
@@ -2179,32 +2207,32 @@ impl<'a> DriveDocumentQuery<'a> {
             .range_clause
             .as_ref()
             .map(|range_clause| range_clause.field.as_str());
-        let mut fields = equal_fields;
-        if let Some(range_field) = range_field {
-            fields.push(range_field);
-        }
-        if let Some(in_field) = in_field {
-            fields.push(in_field);
-            //if there is an in_field, it always takes precedence
-        }
+        let order_by_keys: Vec<&str> = self.order_by.keys().map(String::as_str).collect();
 
-        let order_by_keys: Vec<&str> = self
-            .order_by
-            .keys()
-            .map(|key: &String| {
-                let str = key.as_str();
-                if !fields.contains(&str) {
-                    fields.push(str);
-                }
-                str
-            })
-            .collect();
+        // The union of every field the query binds, for the skip-index
+        // admissibility gate — the by-role slices above are what the
+        // matcher consumes. The contiguous matcher already forces a used
+        // index's position 0 to be bound, but an all-unused match inside
+        // the difference budget could still select a sparse index for a
+        // query that never names its trigger.
+        let mut bound_fields = equal_fields.clone();
+        bound_fields.extend(range_field);
+        bound_fields.extend(in_field);
+        for order_by_key in &order_by_keys {
+            if !bound_fields.contains(order_by_key) {
+                bound_fields.push(order_by_key);
+            }
+        }
 
         let Some((index, difference)) = self.document_type.index_for_types_matching(
-            fields.as_slice(),
+            equal_fields.as_slice(),
+            range_field,
             in_field,
             order_by_keys.as_slice(),
-            |index| index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges),
+            |index| {
+                index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges)
+                    && index_admissible_for_skip_if_absent(index, &bound_fields)
+            },
             platform_version,
         )?
         else {
@@ -2524,12 +2552,47 @@ impl<'a> DriveDocumentQuery<'a> {
         // the entries are row commitments, not documents. Synthesize the
         // documents from their (path, key) positions and serialize them into
         // the wire shape this path's callers return. An index that does not
-        // cover every required property cannot produce a serializable
+        // cover EVERY property cannot produce a faithful serialized
         // document: partial projections only travel the proved read surface,
-        // where the client synthesizes them itself from the proof.
+        // where the client synthesizes them itself from the proof. The check
+        // includes optional properties (skipIfAbsent triggers) — the wire
+        // encodes absent-vs-present, and a projection that does not carry an
+        // optional property cannot distinguish "absent on the row" from
+        // "not in this index", so serializing it would assert an absence the
+        // index cannot know.
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
             if self.document_type.index_only() {
+                // By-id and cursor shapes carry dedicated guidance deeper in
+                // the route (no primary-key tree; keyset pagination) — let
+                // them reach it instead of preempting with the coverage
+                // refusal below, which would misdescribe the problem.
+                if !self.is_for_primary_key() && self.start_at.is_none() {
+                    let index = self.index_only_query_index(platform_version)?;
+                    let covers_every_property = self
+                        .document_type
+                        .flattened_properties()
+                        .iter()
+                        .filter(|(_, property)| {
+                            !matches!(property.property_type, DocumentPropertyType::Object(_))
+                        })
+                        .all(|(name, _)| {
+                            index.terminal.as_deref() == Some(name.as_str())
+                                || index
+                                    .properties
+                                    .iter()
+                                    .any(|index_property| index_property.name == *name)
+                        });
+                    if !covers_every_property {
+                        return Err(Error::Query(QuerySyntaxError::Unsupported(
+                            "this indexOnly query's index does not cover every property, so \
+                             the documents it synthesizes cannot be serialized into a \
+                             non-proof response; query through an index covering all \
+                             properties, or use a proved query"
+                                .to_string(),
+                        )));
+                    }
+                }
                 let (documents, skipped) = self.execute_index_only_documents_no_proof_internal(
                     drive,
                     transaction,

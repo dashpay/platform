@@ -526,6 +526,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -563,6 +564,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![
@@ -585,6 +587,7 @@ mod tests {
                 time_range: None,
                 terminal: None,
                 preallocated: false,
+                skip_if_absent: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -605,6 +608,7 @@ mod tests {
                 time_range: None,
                 terminal: None,
                 preallocated: false,
+                skip_if_absent: false,
             },
         ];
 
@@ -651,6 +655,7 @@ mod tests {
                 time_range: None,
                 terminal: None,
                 preallocated: false,
+                skip_if_absent: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -671,6 +676,7 @@ mod tests {
                 time_range: None,
                 terminal: None,
                 preallocated: false,
+                skip_if_absent: false,
             },
         ];
 
@@ -693,6 +699,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -737,6 +744,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -764,6 +772,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -814,6 +823,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -835,6 +845,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -879,6 +890,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -900,6 +912,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -944,6 +957,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -965,6 +979,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1009,6 +1024,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1053,6 +1069,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -1074,6 +1091,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1118,6 +1136,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -1139,6 +1158,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1189,6 +1209,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -1216,6 +1237,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1266,6 +1288,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let new_indices = vec![Index {
@@ -1293,6 +1316,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let old_index_structure =
@@ -1351,6 +1375,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }
     }
 
@@ -1510,6 +1535,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }];
 
         let mut new_indices = old_indices.clone();
@@ -1561,6 +1587,7 @@ mod tests {
             time_range: None,
             terminal: None,
             preallocated,
+            skip_if_absent: false,
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {

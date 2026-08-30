@@ -2172,6 +2172,7 @@ mod range_countable_picker_tests {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }
     }
 
@@ -3546,6 +3547,7 @@ mod time_range_picker_tests {
             time_range,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         }
     }
 

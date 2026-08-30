@@ -24,7 +24,8 @@
           "countable": "countable",
           "rangeCountable": true,
           "rankedCountable": true,
-          "preallocated": true
+          "preallocated": true,
+          "skipIfAbsent": true
         },
         {
           "name": "byPost",
@@ -72,7 +73,6 @@
         }
       },
       "required": [
-        "hashtag",
         "postId"
       ],
       "additionalProperties": false
@@ -104,9 +104,6 @@
           "position": 1
         }
       },
-      "required": [
-        "hashtag"
-      ],
       "additionalProperties": false
     },
     "beat": {

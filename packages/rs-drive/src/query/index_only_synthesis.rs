@@ -35,7 +35,7 @@
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::DriveDocumentQuery;
+use crate::query::{index_admissible_for_skip_if_absent, DriveDocumentQuery};
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -130,47 +130,58 @@ impl DriveDocumentQuery<'_> {
             return Ok(None);
         }
 
-        // The same field assembly the generic matcher receives.
-        let mut fields = self
+        // The same by-role field assembly the generic matcher receives.
+        let equal_fields = self
             .internal_clauses
             .equal_clauses
             .keys()
             .map(|field| field.as_str())
             .collect::<Vec<&str>>();
-        if let Some(range_clause) = &self.internal_clauses.range_clause {
-            fields.push(range_clause.field.as_str());
-        }
+        let range_field = self
+            .internal_clauses
+            .range_clause
+            .as_ref()
+            .map(|range_clause| range_clause.field.as_str());
         let in_field = self
             .internal_clauses
             .in_clauses
             .first()
             .map(|in_clause| in_clause.field.as_str());
-        if let Some(in_field) = in_field {
-            fields.push(in_field);
+        let order_by_keys: Vec<&str> = self.order_by.keys().map(String::as_str).collect();
+
+        // The union of every field the query binds, for the skip-index
+        // admissibility gate — the by-role slices above are what the
+        // matcher consumes.
+        let mut bound_fields = equal_fields.clone();
+        bound_fields.extend(range_field);
+        bound_fields.extend(in_field);
+        for order_by_key in &order_by_keys {
+            if !bound_fields.contains(order_by_key) {
+                bound_fields.push(order_by_key);
+            }
         }
-        let order_by_keys: Vec<&str> = self
-            .order_by
-            .keys()
-            .map(|key: &String| {
-                let field = key.as_str();
-                if !fields.contains(&field) {
-                    fields.push(field);
-                }
-                field
-            })
-            .collect();
 
         let Some((index, _difference, terminal_used)) = self
             .document_type
             .index_for_types_matching_including_terminal(
-                fields.as_slice(),
+                equal_fields.as_slice(),
+                range_field,
                 in_field,
                 order_by_keys.as_slice(),
                 // Bucketed indexes never serve the terminal route: only
                 // resolved time ranges may bind to bucket keys, and those
                 // opted out above — a raw query name-matching a bucketed
                 // index's properties must not walk its grid-keyed levels.
-                |index| index.time_range.is_none(),
+                // A skipIfAbsent index additionally requires its trigger
+                // bound — it is a sparse projection, and while the
+                // contiguous matcher already forces position 0 to be bound
+                // whenever any deeper property is used, an all-unused match
+                // inside the difference budget could still slip through
+                // (see [`index_admissible_for_skip_if_absent`]).
+                |index| {
+                    index.time_range.is_none()
+                        && index_admissible_for_skip_if_absent(index, &bound_fields)
+                },
                 platform_version,
             )
             .map_err(|e| Error::Protocol(Box::new(e)))?
@@ -668,10 +679,13 @@ impl DriveDocumentQuery<'_> {
 
 /// The index an executed-transition proof (waitForStateTransitionResult)
 /// runs against: the first `$ownerId`-bearing index that involves no
-/// `$createdAt` — the verifier cannot know the block timestamp the entry
-/// was keyed with, so a time-keyed entry cannot be located client-side.
-/// The parser guarantees an owner-bearing index exists; one avoiding
-/// `$createdAt` is a v1 proof-surface requirement.
+/// `$createdAt` AND is not `skipIfAbsent` — the verifier cannot know the
+/// block timestamp a time-keyed entry was written with, and a skipIfAbsent
+/// index has no entry at all for a trigger-absent document, so neither can
+/// anchor a proof that must exist for every create/delete. The parser
+/// guarantees such an index exists (`apply_index_only`'s proof-index rule
+/// mirrors exactly this predicate); prover and verifier share this one
+/// selector, so they can never disagree on the anchor.
 pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<&'a Index, Error> {
     use dpp::document::property_names::{CREATED_AT, OWNER_ID};
     document_type
@@ -682,12 +696,12 @@ pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<
                 || index.properties.iter().any(|p| p.name == OWNER_ID);
             let carries_created_at = index.terminal.as_deref() == Some(CREATED_AT)
                 || index.properties.iter().any(|p| p.name == CREATED_AT);
-            carries_owner && !carries_created_at
+            carries_owner && !carries_created_at && !index.skip_if_absent
         })
         .ok_or(Error::Query(
             crate::error::query::QuerySyntaxError::Unsupported(
                 "executed-transition proofs for an indexOnly type need an \
-                 $ownerId-bearing index that does not involve $createdAt"
+                 $ownerId-bearing, non-skipIfAbsent index that does not involve $createdAt"
                     .to_string(),
             ),
         ))

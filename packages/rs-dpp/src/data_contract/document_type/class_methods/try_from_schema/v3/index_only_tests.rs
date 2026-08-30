@@ -434,7 +434,7 @@ fn rejects_only_bucketed_indexes() {
         .expect("indices apply");
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "does not involve $createdAt",
+        "neither involves $createdAt nor sets skipIfAbsent",
     );
 }
 
@@ -518,6 +518,7 @@ fn terminal_aware_matching_prefers_generic_and_scores_candidates() {
         .index_for_types_matching_including_terminal(
             &["postId"],
             None,
+            None,
             &[],
             |_| true,
             PlatformVersion::latest(),
@@ -535,6 +536,7 @@ fn terminal_aware_matching_prefers_generic_and_scores_candidates() {
         .index_for_types_matching_including_terminal(
             &["$ownerId", "postId"],
             None,
+            None,
             &[],
             |_| true,
             PlatformVersion::latest(),
@@ -550,6 +552,7 @@ fn terminal_aware_matching_prefers_generic_and_scores_candidates() {
     let (index, difference, terminal_used) = document_type_ref
         .index_for_types_matching_including_terminal(
             &["hashtag", "postId", "$ownerId"],
+            None,
             None,
             &[],
             |_| true,
@@ -591,7 +594,7 @@ fn rejects_when_every_index_involves_created_at() {
         .expect("required applies");
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "at least one index that does not involve $createdAt",
+        "neither involves $createdAt nor sets skipIfAbsent",
     );
 }
 
@@ -693,7 +696,7 @@ fn rejects_unindexed_property() {
     );
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "does not appear in any index",
+        "does not appear in any non-skipIfAbsent index",
     );
 }
 
@@ -1063,5 +1066,261 @@ fn rejects_preallocated_on_bucketed_index() {
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
         "declares `preallocated` together with `timeRange`",
+    );
+}
+
+// ── skipIfAbsent: conditional index participation ───────────────────────
+
+/// The likes schema with `hashtag` optional and `byHashtagPost` marked
+/// `skipIfAbsent` — the canonical conditional-participation shape: an
+/// untagged like writes no `byHashtagPost` entry at all.
+fn skip_likes_schema() -> Value {
+    let mut schema = likes_schema_with_index_key(0, "skipIfAbsent", platform_value!(true));
+    schema
+        .set_value("required", platform_value!(["postId"]))
+        .expect("required applies");
+    schema
+}
+
+/// The base skip schema with one more index appended.
+fn skip_likes_schema_with_extra_index(index: Value) -> Value {
+    let mut schema = skip_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(index);
+    schema
+}
+
+#[test]
+fn accepts_skip_if_absent_index_with_optional_trigger() {
+    let platform_version = PlatformVersion::latest();
+
+    for full_validation in [false, true] {
+        let document_type = parse_with(skip_likes_schema(), platform_version, full_validation)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "skip likes schema should parse (full_validation: {full_validation}): {error}"
+                )
+            });
+
+        assert!(document_type.index_only());
+        assert!(
+            document_type
+                .indices
+                .get("byHashtagPost")
+                .expect("index present")
+                .skip_if_absent,
+            "the flag must survive parsing"
+        );
+        assert!(
+            !document_type.required_fields.contains("hashtag"),
+            "the trigger stays optional"
+        );
+    }
+}
+
+#[test]
+fn rejects_skip_if_absent_on_non_index_only_type() {
+    // A minimal stored doctype (no indexOnly, no terminal) with the flag:
+    // conditional participation only means anything when the entries ARE
+    // the storage.
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 }
+        },
+        "indices": [
+            {
+                "name": "byHashtag",
+                "properties": [{ "hashtag": "asc" }],
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares `skipIfAbsent`",
+    );
+}
+
+#[test]
+fn rejects_skip_if_absent_with_required_first_property() {
+    // Flag on, but `hashtag` still required: the index could never skip.
+    let schema = likes_schema_with_index_key(0, "skipIfAbsent", platform_value!(true));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "but its first property",
+    );
+}
+
+#[test]
+fn rejects_skip_if_absent_with_system_property_trigger() {
+    // byLiker's first property is $ownerId, which is always present.
+    let schema = likes_schema_with_index_key(2, "skipIfAbsent", platform_value!(true));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "system property",
+    );
+}
+
+#[test]
+fn rejects_optional_property_in_non_skip_index() {
+    // `hashtag` is byHashtagPost's trigger, but a second, non-skip index
+    // also leads with it — that index would have to represent absence,
+    // which has no index encoding.
+    let schema = skip_likes_schema_with_extra_index(platform_value!({
+        "name": "byHashtag",
+        "properties": [{ "hashtag": "asc" }],
+        "terminal": "$ownerId"
+    }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "does not set `skipIfAbsent`",
+    );
+}
+
+#[test]
+fn rejects_optional_property_below_first_position() {
+    // An optional property below position 0 would strand the prefix
+    // levels above it when absent — only a leading trigger prunes the
+    // whole branch before anything is written.
+    // The extra index is deliberately NOT skipIfAbsent: with the flag set,
+    // its required first property (`postId`) would trip the trigger rule
+    // before the position rule is ever reached.
+    let schema = skip_likes_schema_with_extra_index(platform_value!({
+        "name": "byPostHashtag",
+        "properties": [{ "postId": "asc" }, { "hashtag": "asc" }],
+        "terminal": "$ownerId"
+    }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "below its first position",
+    );
+}
+
+#[test]
+fn rejects_optional_terminal() {
+    // `postId` is a skip index's trigger (so legitimately optional) but
+    // also another index's terminal — and a terminal is every entry's
+    // member key, which can never be absent.
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "refersTo": { "type": "identity" },
+                "position": 0
+            }
+        },
+        "required": [],
+        "indices": [
+            {
+                "name": "byLiker",
+                "properties": [{ "$ownerId": "asc" }],
+                "terminal": "postId"
+            },
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "terminal": "$ownerId",
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "is the terminal of index",
+    );
+}
+
+#[test]
+fn rejects_when_every_proof_candidate_is_skippable() {
+    // The only $createdAt-free index is skipIfAbsent: a trigger-absent
+    // document would have no entry an executed-transition proof could
+    // locate from the transition's values alone.
+    let mut schema = skip_likes_schema();
+    schema
+        .set_value("required", platform_value!(["postId", "$createdAt"]))
+        .expect("required applies");
+    schema
+        .set_value(
+            "indices",
+            platform_value!([
+                {
+                    "name": "byHashtagPost",
+                    "properties": [{ "hashtag": "asc" }, { "postId": "asc" }],
+                    "terminal": "$ownerId",
+                    "skipIfAbsent": true
+                },
+                {
+                    "name": "byTime",
+                    "properties": [{ "$createdAt": "asc" }, { "postId": "asc" }],
+                    "terminal": "$ownerId"
+                }
+            ]),
+        )
+        .expect("indices apply");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "nor sets skipIfAbsent",
+    );
+}
+
+#[test]
+fn skip_if_absent_keyword_is_rejected_below_generation_3_on_both_modes() {
+    let platform_version_13 = PlatformVersion::get(13).expect("PV13 exists");
+    let schema = skip_likes_schema();
+
+    for full_validation in [false, true] {
+        assert!(
+            parse_dispatched(schema.clone(), platform_version_13, full_validation).is_err(),
+            "PV13 must reject the skipIfAbsent keyword (full_validation: {full_validation}): \
+             it is not part of generation 2's index grammar"
+        );
+    }
+}
+
+#[test]
+fn skip_if_absent_flag_is_frozen_on_contract_update() {
+    // `validate_index_definitions_unchanged` compares parsed `Index` values
+    // by full equality, so flipping the flag (with the trigger's
+    // requiredness necessarily moving alongside) is a rejected index
+    // change — the walkers derive the skip from `required` membership, so
+    // historical entries would go undeletable if either could drift.
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+
+    let platform_version = PlatformVersion::latest();
+    let old =
+        parse_dispatched(skip_likes_schema(), platform_version, false).expect("skip schema parses");
+    let new =
+        parse_dispatched(likes_schema(), platform_version, false).expect("base schema parses");
+
+    let result = old
+        .as_ref()
+        .validate_update(new.as_ref(), 2, platform_version)
+        .expect("validate_update should not error");
+
+    assert!(
+        result.errors.iter().any(|error| matches!(
+            error,
+            ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            ) if e.index_path() == "changed index 'byHashtagPost'"
+        )),
+        "expected a changed-index rejection, got: {:?}",
+        result.errors
     );
 }

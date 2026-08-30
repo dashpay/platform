@@ -139,7 +139,7 @@ impl Drive {
 
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
-            let document_top_field = document_and_contract_info
+            let document_top_field = match document_and_contract_info
                 .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
@@ -148,8 +148,29 @@ impl Drive {
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
                     platform_version,
-                )?
-                .unwrap_or_default();
+                )? {
+                Some(document_top_field) => document_top_field,
+                // An unrequired top-level property on an indexOnly type is a
+                // skipIfAbsent index's trigger (the parser admits no other
+                // optional property), and every index through this branch is
+                // such an index — an absent trigger writes NOTHING: no
+                // property-name tree, no descent, no entries. Skipping
+                // before any operation is emitted is what keeps the branch
+                // free of stranded prefix trees; the probes mirror this
+                // exact condition in `index_only_entry_paths_and_key`. A
+                // create's estimation dry-run reads the real document (so it
+                // skips exactly when apply skips), and the timestamp of a
+                // bucketed level can never land here (its source is
+                // `$createdAt`, required whenever indexed).
+                None if document_type.index_only()
+                    && !document_type.required_fields().contains(property_name) =>
+                {
+                    continue;
+                }
+                // A stored type's absent value keeps its null-layout empty
+                // key.
+                None => DriveKeyInfo::default(),
+            };
 
             // here we are inserting the value tree (per distinct property value)
             // under the top-level property-name tree. The top-level property-name

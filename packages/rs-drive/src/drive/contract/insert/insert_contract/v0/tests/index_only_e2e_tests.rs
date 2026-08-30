@@ -711,9 +711,10 @@ fn should_serialize_synthesized_documents_on_raw_no_proof_reads() {
     );
     assert_eq!(document.owner_id().to_buffer(), OWNER_1);
 
-    // Subset index ([$ownerId] → postId): the projection has no hashtag,
-    // which is required — it cannot be serialized, so the raw read must
-    // refuse with guidance instead of returning bytes no client can parse.
+    // Subset index ([$ownerId] → postId): the projection has no hashtag —
+    // and with hashtag optional, serializing the projection would assert
+    // an absence the index cannot know (this like HAS a hashtag). The raw
+    // read must refuse with guidance instead of misrepresenting the row.
     let subset = likes_query(
         &contract,
         vec![WhereClause {
@@ -730,9 +731,32 @@ fn should_serialize_synthesized_documents_on_raw_no_proof_reads() {
         matches!(
             &error,
             Error::Query(QuerySyntaxError::Unsupported(message))
-                if message.contains("does not cover every required property")
+                if message.contains("does not cover every property")
         ),
         "expected covering guidance, got: {error}"
+    );
+
+    // A by-id raw read keeps its DEDICATED guidance: the coverage refusal
+    // must not preempt it (the wire clients' test suite pins the message).
+    let by_id = likes_query(
+        &contract,
+        vec![WhereClause {
+            field: "$id".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier([7u8; 32]),
+        }],
+        Some(1),
+    );
+    let error = by_id
+        .execute_raw_results_no_proof(&drive, None, None, platform_version())
+        .expect_err("a by-id raw read must be refused");
+    assert!(
+        matches!(
+            &error,
+            Error::Query(QuerySyntaxError::Unsupported(message))
+                if message.contains("cannot be fetched by id")
+        ),
+        "expected the by-id guidance, got: {error}"
     );
 
     assert_grovedb_is_consistent(&drive);
@@ -1123,7 +1147,11 @@ fn should_refuse_pivot_with_terminal_range() {
 }
 
 /// An equality BELOW the pivot is not yet supported and must be refused
-/// rather than silently scanned.
+/// rather than silently scanned. Since protocol version 14's contiguous
+/// matching, the candidate is rejected at index-selection time (the
+/// equality does not cover the index prefix the range pivots on), so
+/// the refusal is the generic no-index error rather than the synthesis
+/// route's targeted shape error.
 #[test]
 fn should_refuse_equality_below_pivot() {
     use crate::error::query::QuerySyntaxError;
@@ -1167,8 +1195,7 @@ fn should_refuse_equality_below_pivot() {
         .expect_err("an equality below the pivot must be refused");
     assert_matches!(
         &error,
-        crate::error::Error::Query(QuerySyntaxError::Unsupported(message))
-            if message.contains("BELOW a pivot"),
+        crate::error::Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_)),
         "unexpected error: {error}"
     );
 }
@@ -2503,6 +2530,693 @@ fn beat_duplicate_and_overlapping_rows() {
     let other_owner = build_beat(&contract, "dash", OWNER_2, BEAT_T_MS, 3);
     insert_beat(&drive, &contract, &other_owner, true)
         .expect("another owner may beat in the same buckets");
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ---------------------------------------------------------------------------
+// skipIfAbsent: conditional index participation
+// ---------------------------------------------------------------------------
+//
+// The `mark` doctype's `byB` index is `skipIfAbsent` with the optional `b`
+// as its trigger (and count axes, so sparse counting is observable); the
+// `pin` doctype adds the compound skip shape `byTagXY [tag, x, y]` with an
+// optional BYTE-ARRAY trigger admitting the empty value — the one input
+// class where "skip" (absent) and the null-layout empty key (present,
+// empty encoding) sit one byte apart.
+
+fn mark_type_ref(
+    contract: &DataContract,
+) -> dpp::data_contract::document_type::DocumentTypeRef<'_> {
+    contract
+        .document_type_for_name("mark")
+        .expect("mark doctype exists")
+}
+
+/// A property-name tree with no children — the registration-time state a
+/// skip index's tree stays in while every row omits the trigger. Whatever
+/// countability variant registration chose, "empty" means no root key
+/// (and a zero count where the variant carries one).
+fn assert_empty_index_tree(element: Option<Element>, context: &str) {
+    match element {
+        Some(Element::Tree(root, _)) => {
+            assert!(root.is_none(), "{context}: expected an empty tree")
+        }
+        Some(Element::CountTree(root, count, _))
+        | Some(Element::ProvableCountTree(root, count, _)) => {
+            assert!(
+                root.is_none() && count == 0,
+                "{context}: expected an empty count tree, got root {root:?} count {count}"
+            )
+        }
+        Some(Element::ProvableCountIndexedTree(root, secondary, count, _)) => assert!(
+            root.is_none() && secondary.is_none() && count == 0,
+            "{context}: expected an empty indexed count tree"
+        ),
+        other => panic!("{context}: expected a property-name tree, got {other:?}"),
+    }
+}
+
+/// A mark with `a` always present and `b` present only when given — the
+/// trigger-absent form is the whole point of this section.
+fn build_mark(
+    contract: &DataContract,
+    a: &str,
+    b: Option<&str>,
+    owner: [u8; 32],
+    seed: u64,
+) -> Document {
+    let mut doc = mark_type_ref(contract)
+        .random_document(Some(seed), platform_version())
+        .expect("random mark");
+    let mut props = std::collections::BTreeMap::new();
+    props.insert("a".to_string(), Value::Text(a.to_string()));
+    if let Some(b) = b {
+        props.insert("b".to_string(), Value::Text(b.to_string()));
+    }
+    doc.set_properties(props);
+    doc.set_owner_id(Identifier::from(owner));
+    doc
+}
+
+fn insert_mark(
+    drive: &Drive,
+    contract: &DataContract,
+    doc: &Document,
+    apply: bool,
+) -> Result<FeeResult, crate::error::Error> {
+    drive.add_document_for_contract(
+        DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((doc, None)),
+                owner_id: None,
+            },
+            contract,
+            document_type: mark_type_ref(contract),
+        },
+        false,
+        BlockInfo::default(),
+        apply,
+        None,
+        platform_version(),
+        None,
+    )
+}
+
+fn delete_mark(
+    drive: &Drive,
+    contract: &DataContract,
+    doc: Document,
+    apply: bool,
+) -> Result<FeeResult, crate::error::Error> {
+    drive.delete_index_only_document_for_contract(
+        doc,
+        contract,
+        mark_type_ref(contract),
+        BlockInfo::default(),
+        apply,
+        None,
+        platform_version(),
+        None,
+    )
+}
+
+/// `[.., "mark"]` / `[.., "pin"]` — sibling doctype trees.
+fn sibling_doctype_path(contract: &DataContract, doctype: &str) -> Vec<Vec<u8>> {
+    let mut path = doctype_path(contract);
+    *path.last_mut().expect("path non-empty") = doctype.as_bytes().to_vec();
+    path
+}
+
+/// A trigger-absent create writes entries ONLY in the non-skip indexes: no
+/// value tree, no member bucket, not a byte under the skip index's
+/// property-name tree — and its delete removes exactly what was written,
+/// leaving other rows' skip entries untouched.
+#[test]
+fn skip_index_absent_trigger_writes_nothing_and_deletes_cleanly() {
+    let (drive, contract) = setup_likes();
+    let mark_path = sibling_doctype_path(&contract, "mark");
+
+    let no_b = build_mark(&contract, "a1", None, OWNER_1, 1);
+    insert_mark(&drive, &contract, &no_b, true).expect("insert trigger-absent mark");
+
+    // byA carries the row: [.., "a", "a1", 0] key OWNER_1, payload = the
+    // commitment over the PRESENT set (no `b` contribution).
+    let expected_commitment = crate::drive::document::index_only_row_commitment(
+        &no_b,
+        mark_type_ref(&contract),
+        platform_version(),
+    )
+    .expect("commitment computes");
+    let mut by_a = mark_path.clone();
+    by_a.extend([b"a".to_vec(), b"a1".to_vec(), vec![0]]);
+    match read_grove_element(&drive, &by_a, &OWNER_1) {
+        Some(Element::Item(data, _)) => assert_eq!(
+            data,
+            expected_commitment.to_vec(),
+            "the non-skip entry carries the present-set commitment"
+        ),
+        other => panic!("expected the byA terminal item, got {other:?}"),
+    }
+
+    // byB's property-name tree exists (registration creates it) but holds
+    // NOTHING: not a value tree, not a member bucket, not a byte.
+    assert_empty_index_tree(
+        read_grove_element(&drive, &mark_path, b"b"),
+        "after a trigger-absent create",
+    );
+
+    // A trigger-present sibling row populates byB, independently.
+    let with_b = build_mark(&contract, "a2", Some("b2"), OWNER_2, 2);
+    insert_mark(&drive, &contract, &with_b, true).expect("insert trigger-present mark");
+    let mut by_b_b2 = mark_path.clone();
+    by_b_b2.extend([b"b".to_vec(), b"b2".to_vec(), vec![0]]);
+    assert!(
+        matches!(
+            read_grove_element(&drive, &by_b_b2, &OWNER_2),
+            Some(Element::Item(..))
+        ),
+        "a trigger-present row writes its skip-index entry normally"
+    );
+
+    // Deleting the trigger-absent row removes byA's entry and leaves the
+    // sibling's skip entry alone.
+    delete_mark(&drive, &contract, no_b, true).expect("delete trigger-absent mark");
+    assert!(
+        read_grove_element(&drive, &by_a, &OWNER_1).is_none(),
+        "the non-skip entry must be gone"
+    );
+    assert!(
+        read_grove_element(&drive, &by_b_b2, &OWNER_2).is_some(),
+        "the sibling's skip entry must survive"
+    );
+
+    // Deleting the sibling drains byB back to the empty tree.
+    delete_mark(&drive, &contract, with_b, true).expect("delete trigger-present mark");
+    assert_empty_index_tree(
+        read_grove_element(&drive, &mark_path, b"b"),
+        "after the last trigger-present row deletes",
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// The commitment pins the exact present-set: a delete whose absence
+/// pattern differs from the create — dropping the trigger, or inventing
+/// one — fails the commitment probe in BOTH directions, so a skip index
+/// can neither be force-pruned nor left with an orphan entry.
+#[test]
+fn skip_index_absence_pattern_binds_the_commitment() {
+    let (drive, contract) = setup_likes();
+
+    // Row 1 was created WITH the trigger; a delete carrying the same
+    // values minus `b` addresses byA's real entry with a different
+    // commitment (all of row 1's entries would survive an accepted probe
+    // in byB only because probes there are vacuous for the forged shape).
+    let with_b = build_mark(&contract, "a1", Some("b1"), OWNER_1, 1);
+    insert_mark(&drive, &contract, &with_b, true).expect("insert trigger-present mark");
+    let forged_without_b = build_mark(&contract, "a1", None, OWNER_1, 2);
+    let error = delete_mark(&drive, &contract, forged_without_b, true)
+        .expect_err("dropping the trigger from the carried values must be refused");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Drive(
+                crate::error::drive::DriveError::DeletingDocumentThatDoesNotExist(_)
+            )
+        ),
+        "expected the row-integrity refusal, got: {error}"
+    );
+
+    // Row 2 was created WITHOUT the trigger; a delete carrying an invented
+    // `b` — even one whose byB entry exists, courtesy of row 1 — fails on
+    // byA's commitment.
+    let no_b = build_mark(&contract, "a2", None, OWNER_1, 3);
+    insert_mark(&drive, &contract, &no_b, true).expect("insert trigger-absent mark");
+    let forged_with_b = build_mark(&contract, "a2", Some("b1"), OWNER_1, 4);
+    let error = delete_mark(&drive, &contract, forged_with_b, true)
+        .expect_err("inventing a trigger in the carried values must be refused");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Drive(
+                crate::error::drive::DriveError::DeletingDocumentThatDoesNotExist(_)
+            )
+        ),
+        "expected the row-integrity refusal, got: {error}"
+    );
+
+    // Both real rows remain deletable with their true absence patterns.
+    delete_mark(&drive, &contract, with_b, true).expect("the trigger-present row still deletes");
+    delete_mark(&drive, &contract, no_b, true).expect("the trigger-absent row still deletes");
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Structural uniqueness spans the skip boundary: a trigger-absent and a
+/// trigger-present document of the same owner colliding on a NON-skip
+/// index cannot coexist, in either creation order.
+#[test]
+fn skip_and_non_skip_rows_still_collide_on_shared_entries() {
+    let (drive, contract) = setup_likes();
+
+    let with_b = build_mark(&contract, "a1", Some("b1"), OWNER_1, 1);
+    insert_mark(&drive, &contract, &with_b, true).expect("insert trigger-present mark");
+    let no_b = build_mark(&contract, "a1", None, OWNER_1, 2);
+    let error = insert_mark(&drive, &contract, &no_b, true)
+        .expect_err("the byA entry collides regardless of the trigger");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Drive(crate::error::drive::DriveError::CorruptedContractIndexes(
+                _
+            ))
+        ),
+        "expected the duplicate-entry backstop, got: {error}"
+    );
+
+    // Reverse order on a fresh value.
+    let no_b_2 = build_mark(&contract, "a2", None, OWNER_1, 3);
+    insert_mark(&drive, &contract, &no_b_2, true).expect("insert trigger-absent mark");
+    let with_b_2 = build_mark(&contract, "a2", Some("b2"), OWNER_1, 4);
+    let error = insert_mark(&drive, &contract, &with_b_2, true)
+        .expect_err("the byA entry collides in the reverse order too");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Drive(crate::error::drive::DriveError::CorruptedContractIndexes(
+                _
+            ))
+        ),
+        "expected the duplicate-entry backstop, got: {error}"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// A skip index's count axes see exactly the trigger-present rows — the
+/// sparse-projection semantics the query gate makes opt-in.
+#[test]
+fn skip_index_counts_reflect_trigger_present_rows_only() {
+    let (drive, contract) = setup_likes();
+    let mark_path = sibling_doctype_path(&contract, "mark");
+
+    for (a, b, owner, seed) in [
+        ("a1", Some("shared"), OWNER_1, 1u64),
+        ("a2", Some("shared"), OWNER_2, 2),
+        ("a3", None, OWNER_3, 3),
+    ] {
+        let mark = build_mark(&contract, a, b, owner, seed);
+        insert_mark(&drive, &contract, &mark, true).expect("insert mark");
+    }
+
+    let mut by_b_level = mark_path.clone();
+    by_b_level.push(b"b".to_vec());
+    match read_grove_element(&drive, &by_b_level, b"shared") {
+        Some(Element::CountTree(_, count, _)) => {
+            assert_eq!(count, 2, "the skip index counts trigger-present rows only")
+        }
+        other => panic!("expected the shared group's CountTree, got {other:?}"),
+    }
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Fee shape: skipping an index is cheaper than writing it, and the
+/// dry-run stays a valid upper bound for both the trigger-absent create
+/// (value-driven — it skips exactly when apply skips) and its delete
+/// (shape-driven — it deliberately over-estimates the skipped branch).
+#[test]
+fn skip_estimated_fees_upper_bound_actual_fees() {
+    let (drive, contract) = setup_likes();
+
+    let no_b = build_mark(&contract, "a1", None, OWNER_1, 1);
+    let estimated_insert =
+        insert_mark(&drive, &contract, &no_b, false).expect("estimated insert must work");
+    let actual_insert = insert_mark(&drive, &contract, &no_b, true).expect("actual insert");
+    assert!(
+        estimated_insert.storage_fee >= actual_insert.storage_fee,
+        "estimated insert storage fee {} must upper-bound actual {}",
+        estimated_insert.storage_fee,
+        actual_insert.storage_fee
+    );
+
+    // The payoff, measured: the same row with the trigger present pays for
+    // the extra index.
+    let with_b = build_mark(&contract, "a2", Some("b2"), OWNER_2, 2);
+    let actual_insert_with_b =
+        insert_mark(&drive, &contract, &with_b, true).expect("actual insert with trigger");
+    assert!(
+        actual_insert_with_b.storage_fee > actual_insert.storage_fee,
+        "a trigger-present row ({}) must cost more than a trigger-absent one ({})",
+        actual_insert_with_b.storage_fee,
+        actual_insert.storage_fee
+    );
+
+    let estimated_delete =
+        delete_mark(&drive, &contract, no_b.clone(), false).expect("estimated delete must work");
+    let actual_delete = delete_mark(&drive, &contract, no_b, true).expect("actual delete");
+    assert!(estimated_delete.processing_fee > 0);
+    assert!(actual_delete.processing_fee > 0);
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ── pin: the compound skip shape and the empty-encoding trigger ─────────
+
+fn pin_type_ref(contract: &DataContract) -> dpp::data_contract::document_type::DocumentTypeRef<'_> {
+    contract
+        .document_type_for_name("pin")
+        .expect("pin doctype exists")
+}
+
+/// A pin with required `x`/`y` and the byte-array trigger `tag` present
+/// only when given — `Some(&[])` is the PRESENT-but-empty form, whose
+/// tree-key encoding is empty bytes (the null-layout lane), one byte away
+/// from absence.
+fn build_pin(
+    contract: &DataContract,
+    tag: Option<&[u8]>,
+    x: &str,
+    y: &str,
+    owner: [u8; 32],
+    seed: u64,
+) -> Document {
+    let mut doc = pin_type_ref(contract)
+        .random_document(Some(seed), platform_version())
+        .expect("random pin");
+    let mut props = std::collections::BTreeMap::new();
+    if let Some(tag) = tag {
+        props.insert("tag".to_string(), Value::Bytes(tag.to_vec()));
+    }
+    props.insert("x".to_string(), Value::Text(x.to_string()));
+    props.insert("y".to_string(), Value::Text(y.to_string()));
+    doc.set_properties(props);
+    doc.set_owner_id(Identifier::from(owner));
+    doc
+}
+
+fn insert_pin(
+    drive: &Drive,
+    contract: &DataContract,
+    doc: &Document,
+    apply: bool,
+) -> Result<FeeResult, crate::error::Error> {
+    drive.add_document_for_contract(
+        DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((doc, None)),
+                owner_id: None,
+            },
+            contract,
+            document_type: pin_type_ref(contract),
+        },
+        false,
+        BlockInfo::default(),
+        apply,
+        None,
+        platform_version(),
+        None,
+    )
+}
+
+fn delete_pin(
+    drive: &Drive,
+    contract: &DataContract,
+    doc: Document,
+    apply: bool,
+) -> Result<FeeResult, crate::error::Error> {
+    drive.delete_index_only_document_for_contract(
+        doc,
+        contract,
+        pin_type_ref(contract),
+        BlockInfo::default(),
+        apply,
+        None,
+        platform_version(),
+        None,
+    )
+}
+
+fn pin_query<'a>(
+    contract: &'a DataContract,
+    clauses: Vec<crate::query::WhereClause>,
+    limit: Option<u16>,
+) -> crate::query::DriveDocumentQuery<'a> {
+    crate::query::DriveDocumentQuery {
+        contract,
+        document_type: pin_type_ref(contract),
+        internal_clauses: crate::query::InternalClauses::extract_from_clauses(
+            clauses,
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit,
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+    }
+}
+
+/// The admissibility gate: a query binding everything BUT the trigger must
+/// not route to the skip index — the matcher alone would admit it within
+/// the difference budget and silently omit every trigger-absent row. The
+/// same query WITH the trigger bound routes there and sees exactly the
+/// trigger-present rows, with proof parity.
+#[test]
+fn trigger_unbound_queries_do_not_route_to_a_skip_index() {
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::{WhereClause, WhereOperator};
+    use dpp::document::DocumentV0Getters;
+
+    let (drive, contract) = setup_likes();
+
+    let tagged = build_pin(&contract, Some(&[1u8]), "x1", "y1", OWNER_1, 1);
+    insert_pin(&drive, &contract, &tagged, true).expect("insert tagged pin");
+    let untagged = build_pin(&contract, None, "x1", "y1", OWNER_2, 2);
+    insert_pin(&drive, &contract, &untagged, true).expect("insert untagged pin");
+
+    // {x, y} bound, trigger unbound: byX lacks y, byY lacks x, and the
+    // skip index byTagXY must be inadmissible — so no index serves it.
+    let unbound = pin_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "x".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("x1".to_string()),
+            },
+            WhereClause {
+                field: "y".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("y1".to_string()),
+            },
+        ],
+        Some(10),
+    );
+    let error = drive
+        .query_documents(unbound, None, false, None, None)
+        .expect_err("a trigger-unbound query must not route to the skip index");
+    assert!(
+        matches!(
+            error,
+            crate::error::Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+        ),
+        "expected the no-index refusal, got: {error}"
+    );
+
+    // Binding the trigger opts into the sparse semantics: only the tagged
+    // row comes back.
+    let bound = pin_query(
+        &contract,
+        vec![
+            WhereClause {
+                field: "tag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Bytes(vec![1u8]),
+            },
+            WhereClause {
+                field: "x".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("x1".to_string()),
+            },
+            WhereClause {
+                field: "y".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("y1".to_string()),
+            },
+        ],
+        Some(10),
+    );
+    let outcome = drive
+        .query_documents(bound.clone(), None, false, None, None)
+        .expect("the trigger-bound query executes");
+    let documents = outcome.documents();
+    assert_eq!(
+        documents.len(),
+        1,
+        "only the tagged row lives in the skip index"
+    );
+    assert_eq!(documents[0].owner_id().to_buffer(), OWNER_1);
+
+    // Proof parity on the sparse read.
+    let (proof, _) = bound
+        .clone()
+        .execute_with_proof(&drive, None, None, platform_version())
+        .expect("sparse proof generation");
+    let (_root, verified) = bound
+        .verify_proof(proof.as_slice(), platform_version())
+        .expect("sparse proof verification");
+    assert_eq!(verified.len(), 1);
+    assert_eq!(verified[0].id(), documents[0].id());
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Present-but-empty is NOT absent: an empty byte-array trigger encodes to
+/// an empty tree key (the null-layout lane) and the row participates in
+/// the skip index; walker, probes, and commitment all agree, and the two
+/// forms coexist and delete independently.
+#[test]
+fn empty_byte_array_trigger_takes_the_value_lane_not_the_skip_lane() {
+    let (drive, contract) = setup_likes();
+    let pin_path = sibling_doctype_path(&contract, "pin");
+
+    let empty_tag = build_pin(&contract, Some(&[]), "x1", "y1", OWNER_1, 1);
+    let absent_tag = build_pin(&contract, None, "x2", "y2", OWNER_1, 2);
+
+    // The commitments must differ even over otherwise-identical values:
+    // absent emits nothing, empty emits `name ‖ 00000000`.
+    let empty_on_same_values = build_pin(&contract, Some(&[]), "x2", "y2", OWNER_1, 3);
+    let commitment_empty = crate::drive::document::index_only_row_commitment(
+        &empty_on_same_values,
+        pin_type_ref(&contract),
+        platform_version(),
+    )
+    .expect("commitment computes");
+    let commitment_absent = crate::drive::document::index_only_row_commitment(
+        &absent_tag,
+        pin_type_ref(&contract),
+        platform_version(),
+    )
+    .expect("commitment computes");
+    assert_ne!(
+        commitment_empty, commitment_absent,
+        "absent and present-but-empty must commit differently"
+    );
+
+    insert_pin(&drive, &contract, &empty_tag, true).expect("insert empty-tag pin");
+    insert_pin(&drive, &contract, &absent_tag, true).expect("insert absent-tag pin");
+
+    // The empty-tag row's skip-index entry sits under the EMPTY value key.
+    let mut empty_lane = pin_path.clone();
+    empty_lane.extend([
+        b"tag".to_vec(),
+        Vec::new(),
+        b"x".to_vec(),
+        b"x1".to_vec(),
+        b"y".to_vec(),
+        b"y1".to_vec(),
+        vec![0],
+    ]);
+    assert!(
+        matches!(
+            read_grove_element(&drive, &empty_lane, &OWNER_1),
+            Some(Element::Item(..))
+        ),
+        "the empty-encoding trigger writes a real entry under the empty key"
+    );
+
+    // Both rows delete with their true forms.
+    delete_pin(&drive, &contract, empty_tag, true).expect("delete empty-tag pin");
+    assert!(
+        read_grove_element(&drive, &empty_lane, &OWNER_1).is_none(),
+        "the empty-lane entry must be gone"
+    );
+    delete_pin(&drive, &contract, absent_tag, true).expect("delete absent-tag pin");
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ── the real payoff shape: the untagged like ────────────────────────────
+
+/// A like carrying no hashtag — `byHashtagPost` is `skipIfAbsent` with
+/// `hashtag` as its trigger, so this form writes only `byPost` and
+/// `byLiker` entries. Shared with the preallocated suite.
+pub(super) fn build_untagged_like(
+    contract: &DataContract,
+    post: [u8; 32],
+    owner: [u8; 32],
+    seed: u64,
+) -> Document {
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(DOCTYPE)
+        .expect("like doctype exists");
+    let mut doc = document_type
+        .random_document(Some(seed), pv)
+        .expect("random document");
+    let mut props = std::collections::BTreeMap::new();
+    props.insert("postId".to_string(), Value::Identifier(post));
+    doc.set_properties(props);
+    doc.set_owner_id(Identifier::from(owner));
+    doc
+}
+
+/// The measured payoff, end-to-end on the real shape: an untagged like
+/// writes only the two non-skip indexes' entries, costs less than a
+/// tagged like (no ranked hashtag chain), and deletes cleanly.
+#[test]
+fn untagged_like_skips_the_hashtag_index_and_prices_lower() {
+    let (drive, contract) = setup_likes();
+    let base = doctype_path(&contract);
+
+    let untagged = build_untagged_like(&contract, POST_A, OWNER_1, 1);
+    let untagged_fee =
+        insert_like(&drive, &contract, &untagged, true).expect("insert untagged like");
+
+    // byHashtagPost holds nothing: the top-level hashtag tree stays the
+    // empty registration-time tree.
+    assert!(
+        matches!(
+            read_grove_element(&drive, &base, b"hashtag"),
+            Some(Element::Tree(None, _))
+        ),
+        "the skip index must hold nothing for an untagged like"
+    );
+
+    // byPost and byLiker carry the row.
+    let mut by_post = base.clone();
+    by_post.extend([b"postId".to_vec(), POST_A.to_vec(), vec![0]]);
+    assert!(matches!(
+        read_grove_element(&drive, &by_post, &OWNER_1),
+        Some(Element::Item(..))
+    ));
+    let mut by_liker = base.clone();
+    by_liker.extend([b"$ownerId".to_vec(), OWNER_1.to_vec(), vec![0]]);
+    assert!(matches!(
+        read_grove_element(&drive, &by_liker, &POST_A),
+        Some(Element::Item(..))
+    ));
+
+    // A tagged like by another owner on another post pays for the ranked
+    // hashtag chain the untagged one skipped.
+    let tagged = build_like(&contract, "dash", POST_B, OWNER_2, 2);
+    let tagged_fee = insert_like(&drive, &contract, &tagged, true).expect("insert tagged like");
+    assert!(
+        tagged_fee.storage_fee > untagged_fee.storage_fee,
+        "a tagged like ({}) must cost more than an untagged one ({})",
+        tagged_fee.storage_fee,
+        untagged_fee.storage_fee
+    );
+
+    // The untagged like deletes cleanly through the same skip.
+    delete_like(&drive, &contract, untagged, true).expect("delete untagged like");
+    assert!(read_grove_element(&drive, &by_post, &OWNER_1).is_none());
+    assert!(read_grove_element(&drive, &by_liker, &POST_A).is_none());
 
     assert_grovedb_is_consistent(&drive);
 }

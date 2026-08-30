@@ -70,6 +70,7 @@ impl Index {
             time_range: None,
             terminal: None,
             preallocated: false,
+            skip_if_absent: false,
         })
     }
 }

@@ -790,23 +790,60 @@ async fn build_core_changeset(
             addresses_derived,
             ..
         } => {
-            // Derive UTXO deltas before moving the record into `records`
-            // so the per-record borrows are still live.
+            // Live mempool matching emits ONE event per matched
+            // account, each carrying only that account's slice — and
+            // nothing marks a transaction's last slice. Folding
+            // whatever slices happened to share an adapter drain made
+            // the persisted row depend on scheduling: a drain that
+            // caught one slice stored that slice as the wallet's row
+            // (the dashpay/platform#4387 bug, reintroduced
+            // nondeterministically). The MANAGER, not the drain, is
+            // the boundary where a transaction's slices are complete:
+            // by the time this event is projected the manager already
+            // holds every so-far-matched account's record for the
+            // txid (mempool records are never pruned — only
+            // chain-locked ones are). Rebuild the wallet-level row
+            // from that snapshot; a sibling account matching later
+            // re-runs this rebuild through its own event, so the
+            // persisted row converges on the full fold no matter how
+            // events land in drains.
+            //
+            // `None` = the manager doesn't know the wallet (removed
+            // mid-flight, or a bare test manager): fall back to the
+            // event's own record. `Some([])` = the wallet exists but
+            // the record is gone (chain-locked and pruned between
+            // emit and drain): emit NO row rather than let a lone
+            // stale slice supersede a complete fold earlier in this
+            // drain's batch — the chainlock's own events carry the
+            // row's finality forward.
+            let slices: Vec<TransactionRecord> =
+                match wallet_slices_for_txid(wallet_manager, wallet_id, &record.txid).await {
+                    Some(slices) => slices,
+                    None => vec![(**record).clone()],
+                };
+            // A contact's watch-only chain never defines the wallet's
+            // transaction row or its TXOs (see `is_contact_watch_only`);
+            // the usage deltas below are still emitted, so the event
+            // is not dropped and the contact's address pool still
+            // advances.
+            let owned: Vec<TransactionRecord> = slices
+                .iter()
+                .filter(|r| !is_contact_watch_only(r))
+                .cloned()
+                .collect();
             let (addresses_marked_used, account_highest_used) =
                 collect_usage_deltas(wallet_manager, wallet_id, vec![&**record]).await;
+            let mut folded = owned.clone();
+            crate::changeset::changeset::fold_same_txid_records(&mut folded);
             CoreChangeSet {
-                new_utxos: derive_new_utxos(record),
-                spent_utxos: derive_spent_utxos(record),
-                // A contact's watch-only chain never defines the
-                // wallet's transaction row (see `is_contact_watch_only`).
-                // The usage deltas below are still emitted, so the
-                // event is not dropped and the contact's address pool
-                // still advances.
-                records: if is_contact_watch_only(record) {
-                    Vec::new()
-                } else {
-                    vec![(**record).clone()]
-                },
+                // New UTXOs from the owned slices only (a watch-only
+                // chain's outputs are the contact's coins); spends
+                // from ALL slices, so a contact spending an output a
+                // pre-fix build persisted still clears the stale row.
+                new_utxos: owned.iter().flat_map(derive_new_utxos).collect(),
+                spent_utxos: slices.iter().flat_map(derive_spent_utxos).collect(),
+                records: folded,
+                account_records: owned,
                 // Mirror the upstream-emitted derived addresses
                 // through to the persister so newly-extended pool
                 // rows are written transactionally with the tx that
@@ -862,7 +899,15 @@ async fn build_core_changeset(
             // funding account's row with an incoming/positive
             // classification just as the first sighting did (see
             // `is_contact_watch_only`).
-            cs.records.extend(
+            // Keep the raw per-account slices for persisters that
+            // route per-account state (the FFI projection buckets
+            // TXOs by owning account from these), then fold the
+            // wallet-level `records` copy: one block can insert
+            // SEVERAL per-account records for one transaction (a
+            // multi-account spend), and the txid-keyed row needs the
+            // one wallet-level record (dashpay/platform#4387 — see
+            // fold_same_txid_records).
+            cs.account_records.extend(
                 inserted
                     .iter()
                     .chain(updated.iter())
@@ -870,6 +915,8 @@ async fn build_core_changeset(
                     .filter(|r| !is_contact_watch_only(r))
                     .cloned(),
             );
+            cs.records = cs.account_records.clone();
+            crate::changeset::changeset::fold_same_txid_records(&mut cs.records);
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
             // Already deduped upstream by `project_derived_addresses`;
@@ -1137,6 +1184,28 @@ async fn is_chain_locked(
     false
 }
 
+/// Every account slice the manager currently holds for `txid` in
+/// `wallet_id` — the authoritative "all accounts matched so far"
+/// snapshot behind the wallet-level fold (see the `TransactionDetected`
+/// arm of [`build_core_changeset`]). Returns `None` when the manager
+/// doesn't know the wallet at all, `Some(vec![])` when it does but no
+/// account holds a record for the txid (e.g. pruned at chain-lock).
+async fn wallet_slices_for_txid(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    txid: &dashcore::Txid,
+) -> Option<Vec<TransactionRecord>> {
+    let guard = wallet_manager.read().await;
+    let info = guard.get_wallet_info(wallet_id)?;
+    let mut slices = Vec::new();
+    for account in info.core_wallet.accounts.all_accounts() {
+        if let Some(record) = account.transactions().get(txid) {
+            slices.push(record.clone());
+        }
+    }
+    Some(slices)
+}
+
 /// Is this record owned by a contact's watch-only DashPay chain?
 ///
 /// A `DashpayExternalAccount` derives its addresses from the
@@ -1302,6 +1371,7 @@ impl CoreChangeSet {
     /// circuits on the common case.
     fn is_empty_no_records(&self) -> bool {
         self.records.is_empty()
+            && self.account_records.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -1444,11 +1514,36 @@ mod contact_watch_only_projection_tests {
         output_details: Vec<OutputDetail>,
         net_amount: i64,
     ) -> TransactionRecord {
-        TransactionRecord::new(
-            tx.clone(),
+        record_with(
+            tx,
             account_type,
             in_block(1_000),
             TransactionType::Standard,
+            direction,
+            input_details,
+            output_details,
+            net_amount,
+        )
+    }
+
+    /// [`record`] with caller-chosen context and transaction type, for
+    /// the lifecycle-coalescing and direction-preservation tests.
+    #[allow(clippy::too_many_arguments)]
+    fn record_with(
+        tx: &Transaction,
+        account_type: AccountType,
+        context: TransactionContext,
+        transaction_type: TransactionType,
+        direction: TransactionDirection,
+        input_details: Vec<InputDetail>,
+        output_details: Vec<OutputDetail>,
+        net_amount: i64,
+    ) -> TransactionRecord {
+        TransactionRecord::new(
+            tx.clone(),
+            account_type,
+            context,
+            transaction_type,
             direction,
             input_details,
             output_details,
@@ -1524,6 +1619,111 @@ mod contact_watch_only_projection_tests {
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
         }
+    }
+
+    /// dashpay/platform#4387: a multi-account spend's per-account records
+    /// must fold into ONE wallet-level row. Models the S22 field sweep in
+    /// miniature: the BIP44 slice spends 2.0, the receival slice spends
+    /// 0.62 with 0.005 change — the persisted row must carry the summed
+    /// −2.615 net, the union of the details, and Outgoing.
+    #[tokio::test]
+    async fn multi_account_spend_folds_to_one_wallet_level_record() {
+        // Destination the sweep pays; both spending accounts see it as
+        // `Sent` (upstream marks every non-own output `Sent` whenever
+        // the account owns an input).
+        let dest = DashAddress::dummy(Network::Testnet, 7);
+        let tx = tx_with(&[(&dest, 261_493_912), (&our_change_address(), 500_000)]);
+        let bip44_slice = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 200_000_000,
+                address: our_change_address(),
+            }],
+            vec![
+                output(0, OutputRole::Sent, &dest, 261_493_912),
+                // The sibling account's change is not this account's
+                // address either — account-locally it reads `Sent`.
+                output(1, OutputRole::Sent, &our_change_address(), 500_000),
+            ],
+            -200_000_000,
+        );
+        let receival_slice = record(
+            &tx,
+            AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: [1u8; 32],
+                friend_identity_id: [2u8; 32],
+            },
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 1,
+                value: 62_000_000,
+                address: our_change_address(),
+            }],
+            vec![
+                output(0, OutputRole::Sent, &dest, 261_493_912),
+                output(1, OutputRole::Change, &our_change_address(), 500_000),
+            ],
+            -61_500_000,
+        );
+        let cs = build_core_changeset(
+            &test_manager(),
+            &block_processed(vec![bip44_slice, receival_slice]),
+        )
+        .await;
+
+        assert_eq!(
+            cs.records.len(),
+            1,
+            "same-txid per-account records must fold into one wallet-level record"
+        );
+        let persisted = &cs.records[0];
+        assert_eq!(persisted.net_amount, -261_500_000);
+        assert_eq!(persisted.direction, TransactionDirection::Outgoing);
+        assert_eq!(persisted.input_details.len(), 2, "input details must union");
+        assert_eq!(persisted.output_details.len(), 2);
+        assert_eq!(
+            cs.account_records.len(),
+            2,
+            "the raw per-account slices ride along for account-scoped persisters"
+        );
+    }
+
+    /// Records for DISTINCT transactions are never folded.
+    #[tokio::test]
+    async fn distinct_txids_stay_separate_records() {
+        let tx_a = tx_with(&[(&our_change_address(), 1_000)]);
+        let rec_a = record(
+            &tx_a,
+            bip44_account_0(),
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 1_000,
+                address: our_change_address(),
+            }],
+            Vec::new(),
+            -1_000,
+        );
+        let mut tx_b = tx_with(&[(&our_change_address(), 2_000)]);
+        tx_b.lock_time = 999; // distinct txid
+        let rec_b = record(
+            &tx_b,
+            bip44_account_0(),
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 2_000,
+                address: our_change_address(),
+            }],
+            Vec::new(),
+            -2_000,
+        );
+        let cs = build_core_changeset(&test_manager(), &block_processed(vec![rec_a, rec_b])).await;
+        assert_eq!(cs.records.len(), 2);
     }
 
     /// (1) A payment to a contact must persist as the outgoing,
@@ -1736,6 +1936,419 @@ mod contact_watch_only_projection_tests {
 
         assert_eq!(cs.records.len(), 1);
         assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
+    }
+
+    /// A cross-account spend (CoinJoin-funded send with BIP44 change)
+    /// emits one record per matched account, and the two slices DISAGREE
+    /// on the change output's role: the funding account's slice carries it
+    /// as `Sent` (its account-local view cannot attribute the sibling
+    /// account's address), the change account's slice as `Change`. The
+    /// fold seeds its output union from the FUNDING record, so keeping the
+    /// base entry on index collision let `Sent` win — and every UTXO
+    /// projection over the folded record (record_new_utxos_ffi,
+    /// derive_new_utxos) then dropped the wallet's own change while the
+    /// folded net stayed correct. 2026-08-19 device run: corrected record
+    /// rows landed, TXOs never arrived, the reconcile tripwire healed 4.
+    /// On collision the owned role must win.
+    #[tokio::test]
+    async fn fold_prefers_owned_output_role_on_index_collision() {
+        const CHANGE_BACK: u64 = FUNDING - PAID_TO_CONTACT - 227;
+        let tx = tx_with(&[
+            (&contact_address(), PAID_TO_CONTACT),
+            (&our_change_address(), CHANGE_BACK),
+        ]);
+        // Funding account's slice: knows the input; sees BOTH outputs as
+        // counterparty payments.
+        let funding_slice = record(
+            &tx,
+            AccountType::CoinJoin { index: 0 },
+            TransactionDirection::Outgoing,
+            vec![our_input()],
+            vec![
+                output(0, OutputRole::Sent, &contact_address(), PAID_TO_CONTACT),
+                output(1, OutputRole::Sent, &our_change_address(), CHANGE_BACK),
+            ],
+            -(FUNDING as i64),
+        );
+        // Change account's slice: no inputs of its own; owns output 1.
+        let change_slice = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Incoming,
+            vec![],
+            vec![output(
+                1,
+                OutputRole::Change,
+                &our_change_address(),
+                CHANGE_BACK,
+            )],
+            CHANGE_BACK as i64,
+        );
+
+        let event = WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_001,
+            chain_lock: None,
+            inserted: vec![funding_slice, change_slice],
+            updated: vec![],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert_eq!(cs.records.len(), 1, "same-txid slices fold to one row");
+        let folded = &cs.records[0];
+        assert_eq!(
+            folded.net_amount,
+            CHANGE_BACK as i64 - FUNDING as i64,
+            "net is the sum of the slices"
+        );
+        let change_detail = folded
+            .output_details
+            .iter()
+            .find(|o| o.index == 1)
+            .expect("folded record keeps output 1");
+        assert_eq!(
+            change_detail.role,
+            OutputRole::Change,
+            "the owned role must win the index collision — a lingering Sent role \
+             makes every UTXO projection drop the wallet's own change"
+        );
+    }
+
+    /// A detection snapshot and its confirmation snapshot for the SAME
+    /// transaction are one account contribution observed twice, not two
+    /// account slices. Merging their changesets must coalesce to the
+    /// newest snapshot — summing them doubled the persisted net
+    /// (−100 detected + −100 confirmed = −200) and folding could keep
+    /// the stale `Mempool` context over the confirmed one.
+    #[tokio::test]
+    async fn detection_then_confirmation_coalesces_to_the_confirmed_snapshot() {
+        let tx = tx_with(&[(&contact_address(), PAID_TO_CONTACT)]);
+        let mempool_slice = record_with(
+            &tx,
+            bip44_account_0(),
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            vec![our_input()],
+            vec![output(
+                0,
+                OutputRole::Sent,
+                &contact_address(),
+                PAID_TO_CONTACT,
+            )],
+            -(FUNDING as i64),
+        );
+        let mut confirmed_slice = mempool_slice.clone();
+        confirmed_slice.context = in_block(1_001);
+
+        let manager = test_manager();
+        let mut merged = build_core_changeset(&manager, &transaction_detected(mempool_slice)).await;
+        let confirmation = WalletEvent::BlockProcessed {
+            wallet_id: WALLET_ID,
+            height: 1_001,
+            chain_lock: None,
+            inserted: vec![],
+            updated: vec![confirmed_slice],
+            matured: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        merged.merge(build_core_changeset(&manager, &confirmation).await);
+
+        assert_eq!(
+            merged.records.len(),
+            1,
+            "two observations of one transaction must coalesce to one row"
+        );
+        let row = &merged.records[0];
+        assert_eq!(
+            row.net_amount,
+            -(FUNDING as i64),
+            "coalescing must not sum repeated snapshots"
+        );
+        assert!(
+            matches!(row.context, TransactionContext::InBlock(_)),
+            "the newest (confirmed) snapshot must win, got {:?}",
+            row.context
+        );
+    }
+
+    /// Wallet-level direction cannot be derived from the net's sign: a
+    /// cross-account transfer nets −fee but is, wallet-level, a
+    /// self-transfer. After the owned-role collision fix flips the
+    /// funding slice's `Sent` view of the sibling-owned output to the
+    /// sibling's `Received`, no `Sent` output remains — the fold must
+    /// label the row `Internal`, exactly as upstream labels a
+    /// single-account self-transfer.
+    #[tokio::test]
+    async fn cross_account_transfer_folds_to_internal_direction() {
+        const MOVED: u64 = FUNDING - 1_000; // everything minus fee
+        let tx = tx_with(&[(&our_receive_address(), MOVED)]);
+        let funding_slice = record(
+            &tx,
+            AccountType::CoinJoin { index: 0 },
+            TransactionDirection::Outgoing,
+            vec![our_input()],
+            // The sibling account's address is not this account's —
+            // account-locally the output reads `Sent`.
+            vec![output(0, OutputRole::Sent, &our_receive_address(), MOVED)],
+            -(FUNDING as i64),
+        );
+        let receiving_slice = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Incoming,
+            vec![],
+            vec![output(
+                0,
+                OutputRole::Received,
+                &our_receive_address(),
+                MOVED,
+            )],
+            MOVED as i64,
+        );
+        let cs = build_core_changeset(
+            &test_manager(),
+            &block_processed(vec![funding_slice, receiving_slice]),
+        )
+        .await;
+
+        assert_eq!(cs.records.len(), 1);
+        let row = &cs.records[0];
+        assert_eq!(row.net_amount, -1_000, "wallet net is just the fee");
+        assert_eq!(
+            row.direction,
+            TransactionDirection::Internal,
+            "a cross-account move is a wallet-level self-transfer, \
+             not an Outgoing spend"
+        );
+    }
+
+    /// `CoinJoin` is assigned from the transaction TYPE upstream, never
+    /// from amounts — a multi-account CoinJoin round with a nonzero
+    /// wallet net must keep the `CoinJoin` direction through the fold.
+    #[tokio::test]
+    async fn coinjoin_fold_keeps_coinjoin_direction() {
+        let tx = tx_with(&[(&our_receive_address(), FUNDING - 500)]);
+        let slice_a = record_with(
+            &tx,
+            AccountType::CoinJoin { index: 0 },
+            in_block(1_000),
+            TransactionType::CoinJoin,
+            TransactionDirection::CoinJoin,
+            vec![our_input()],
+            vec![output(
+                0,
+                OutputRole::Received,
+                &our_receive_address(),
+                FUNDING - 500,
+            )],
+            -500,
+        );
+        let slice_b = record_with(
+            &tx,
+            bip44_account_0(),
+            in_block(1_000),
+            TransactionType::CoinJoin,
+            TransactionDirection::CoinJoin,
+            vec![],
+            vec![],
+            0,
+        );
+        let cs =
+            build_core_changeset(&test_manager(), &block_processed(vec![slice_a, slice_b])).await;
+
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(
+            cs.records[0].direction,
+            TransactionDirection::CoinJoin,
+            "a nonzero net must not rewrite a CoinJoin row as Outgoing/Incoming"
+        );
+    }
+
+    /// A fold lands at the group's FIRST position even when the funding
+    /// record (the metadata source) appears later — unrelated records
+    /// between the slices must not move ahead of the folded transaction.
+    #[tokio::test]
+    async fn fold_lands_at_the_groups_first_position() {
+        let tx = tx_with(&[(&our_change_address(), CHANGE)]);
+        let no_input_slice = record(
+            &tx,
+            bip44_account_0(),
+            TransactionDirection::Incoming,
+            vec![],
+            vec![output(0, OutputRole::Change, &our_change_address(), CHANGE)],
+            CHANGE as i64,
+        );
+        let mut unrelated_tx = tx_with(&[(&our_receive_address(), 1_000)]);
+        unrelated_tx.lock_time = 77; // distinct txid
+        let unrelated = record(
+            &unrelated_tx,
+            bip44_account_0(),
+            TransactionDirection::Incoming,
+            vec![],
+            vec![output(
+                0,
+                OutputRole::Received,
+                &our_receive_address(),
+                1_000,
+            )],
+            1_000,
+        );
+        let funding_slice = record(
+            &tx,
+            AccountType::CoinJoin { index: 0 },
+            TransactionDirection::Outgoing,
+            vec![our_input()],
+            vec![output(0, OutputRole::Sent, &our_change_address(), CHANGE)],
+            -(FUNDING as i64),
+        );
+
+        let mut records = vec![no_input_slice, unrelated, funding_slice];
+        crate::changeset::changeset::fold_same_txid_records(&mut records);
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(
+            records[0].txid,
+            tx.txid(),
+            "the folded record must keep the group's first position"
+        );
+        assert_eq!(
+            records[0].account_type,
+            AccountType::CoinJoin { index: 0 },
+            "funding metadata still comes from the funding slice"
+        );
+        assert_eq!(records[1].txid, unrelated_tx.txid());
+    }
+
+    /// The adapter drain is NOT where a multi-account transaction's
+    /// mempool slices reliably meet: live matching emits one
+    /// `TransactionDetected` per account, and a drain can commit
+    /// between them. The projection must therefore rebuild the
+    /// wallet-level row from the MANAGER's slices — an event carrying
+    /// one account's slice still yields the full fold, so the
+    /// persisted row converges no matter how events land in drains.
+    #[tokio::test]
+    async fn mempool_slice_event_rebuilds_the_full_fold_from_the_manager() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+        use key_wallet::test_utils::TestWalletContext;
+
+        // A wallet funded on TWO standard accounts (mirrors
+        // `test_support::funded_wallet_manager_dual_standard`, kept
+        // inline because the spend must be checked before the managed
+        // wallet moves into the manager).
+        let mut ctx = TestWalletContext::new_random();
+        let bip44_address = ctx.receive_address.clone();
+        let bip32_address = {
+            let xpub = ctx
+                .wallet
+                .accounts
+                .standard_bip32_accounts
+                .get(&0)
+                .expect("bip32 account")
+                .account_xpub;
+            ctx.managed_wallet
+                .first_bip32_managed_account_mut()
+                .expect("bip32 managed account")
+                .next_receive_address(Some(&xpub), true)
+                .expect("bip32 receive address")
+        };
+        let bip44_funding = Transaction::dummy(&bip44_address, 0..1, &[100_000_000]);
+        let bip32_funding = Transaction::dummy(&bip32_address, 1..2, &[50_000_000]);
+        for funding in [&bip44_funding, &bip32_funding] {
+            let result = ctx
+                .check_transaction(
+                    funding,
+                    TransactionContext::InChainLockedBlock(BlockInfo::new(
+                        1,
+                        BlockHash::from_slice(&[4u8; 32]).expect("valid block hash"),
+                        1_700_000_000,
+                    )),
+                )
+                .await;
+            assert!(result.is_relevant, "funding tx should be relevant");
+        }
+
+        // One transaction spending BOTH accounts' coins — the manager
+        // records one slice per account for it.
+        let spend = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: [&bip44_funding, &bip32_funding]
+                .iter()
+                .map(|funding| TxIn {
+                    previous_output: OutPoint {
+                        txid: funding.txid(),
+                        vout: 0,
+                    },
+                    script_sig: ScriptBuf::new(),
+                    sequence: 0xffffffff,
+                    witness: Witness::new(),
+                })
+                .collect(),
+            output: vec![TxOut {
+                value: 149_999_000,
+                script_pubkey: DashAddress::dummy(Network::Testnet, 7).script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let result = ctx
+            .check_transaction(&spend, TransactionContext::Mempool)
+            .await;
+        assert!(result.is_relevant, "spend should match both accounts");
+
+        let info = PlatformWalletInfo {
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+        };
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+        let manager = Arc::new(RwLock::new(wm));
+
+        let slices = wallet_slices_for_txid(&manager, &wallet_id, &spend.txid())
+            .await
+            .expect("manager knows the wallet");
+        assert_eq!(slices.len(), 2, "both funding accounts hold a slice");
+        let lone_slice = slices
+            .iter()
+            .find(|r| r.account_type == bip44_account_0())
+            .expect("bip44 slice")
+            .clone();
+        assert_eq!(
+            lone_slice.net_amount, -100_000_000,
+            "the lone slice carries only its own account's net"
+        );
+
+        // The event delivers ONE slice — as live mempool matching does.
+        let lone_event = WalletEvent::TransactionDetected {
+            wallet_id,
+            record: Box::new(lone_slice),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        };
+        let cs = build_core_changeset(&manager, &lone_event).await;
+
+        assert_eq!(cs.records.len(), 1, "one wallet-level row");
+        assert_eq!(
+            cs.records[0].net_amount, -150_000_000,
+            "the row is rebuilt from ALL of the manager's slices, \
+             not the one slice the event happened to carry"
+        );
+        assert_eq!(
+            cs.account_records.len(),
+            2,
+            "both account slices ride along for account-scoped persisters"
+        );
     }
 
     /// A contact spending an output that a *pre-fix* build already

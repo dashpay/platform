@@ -767,3 +767,79 @@ fn should_not_emit_partial_paths_when_a_bound_property_is_absent() {
 
     assert_grovedb_is_consistent(&drive);
 }
+
+/// An UNTAGGED post preallocates nothing for the skipIfAbsent
+/// `byHashtagPost` (its hashtag binding has no value to resolve) while
+/// `byPost` — bound purely by the post's id — still preallocates, and an
+/// untagged like then lands in those trees, skipping the hashtag index
+/// entirely. The preallocated + skipIfAbsent composition end-to-end.
+#[test]
+fn should_preallocate_only_reference_bound_trees_for_an_untagged_post() {
+    use super::index_only_e2e_tests::build_untagged_like;
+
+    let (drive, contract) = setup_preallocated_likes();
+    let post_type = contract
+        .document_type_for_name("post")
+        .expect("post doctype exists");
+    let mut post = post_type
+        .random_document(Some(41), platform_version())
+        .expect("random post");
+    post.set_properties(std::collections::BTreeMap::new());
+    post.set_owner_id(Identifier::from(OWNER_POSTER));
+    let post_id = post.id().to_buffer();
+    insert_post(&drive, &contract, &post, true).expect("insert untagged post");
+
+    let base = doctype_path(&contract);
+
+    // byHashtagPost: nothing preallocated — the hashtag binding resolved
+    // to an absent value and bailed before emitting any operation.
+    assert!(
+        matches!(
+            read_grove_element(&drive, &base, b"hashtag"),
+            Some(grovedb::Element::Tree(None, _))
+        ),
+        "no hashtag trees may be preallocated for an untagged post"
+    );
+
+    // byPost: fully preallocated down to the empty member bucket.
+    let mut by_post_level = base.clone();
+    by_post_level.push(b"postId".to_vec());
+    assert!(
+        read_grove_element(&drive, &by_post_level, &post_id).is_some(),
+        "the id-bound byPost trees must still be preallocated"
+    );
+    let mut member_bucket = by_post_level.clone();
+    member_bucket.push(post_id.to_vec());
+    assert!(read_grove_element(&drive, &member_bucket, &[0]).is_some());
+
+    // An untagged like lands in the preallocated byPost trees and skips
+    // the hashtag index.
+    let like = build_untagged_like(&contract, post_id, OWNER_1, 42);
+    insert_like(&drive, &contract, &like, true).expect("insert untagged like");
+    let mut entry_path = member_bucket.clone();
+    entry_path.push(vec![0]);
+    assert!(
+        read_grove_element(&drive, &entry_path, &OWNER_1).is_some(),
+        "the untagged like's byPost entry must sit in the preallocated bucket"
+    );
+    assert!(
+        matches!(
+            read_grove_element(&drive, &base, b"hashtag"),
+            Some(grovedb::Element::Tree(None, _))
+        ),
+        "the like must not have touched the hashtag index"
+    );
+
+    // Unlike keeps the preallocated trees (the no-prune contract).
+    delete_like(&drive, &contract, like, true).expect("delete untagged like");
+    assert!(
+        read_grove_element(&drive, &entry_path, &OWNER_1).is_none(),
+        "the entry itself must be gone"
+    );
+    assert!(
+        read_grove_element(&drive, &member_bucket, &[0]).is_some(),
+        "the preallocated member bucket must survive the unlike"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
