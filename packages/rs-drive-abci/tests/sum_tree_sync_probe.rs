@@ -19,6 +19,16 @@ use platform_version::version::PlatformVersion;
 use std::collections::VecDeque;
 
 #[test]
+// QA BRANCH ONLY — paired with the TEMPORARY `[patch."https://github.com/dashpay/grovedb"]`
+// section in the workspace root Cargo.toml, which redirects grovedb to the fix in
+// dashpay/grovedb#840. This tripwire asserts the DEFECT is present, so with the patch
+// applied it fails by design (it reports zero verification issues instead of the sum
+// tree). Ignoring it keeps the QA suite green while the fix is patched in.
+//
+// UN-IGNORE THIS (and delete it, per the module docs) in the same change that drops the
+// root Cargo.toml patch section — i.e. when the real grovedb pin is bumped.
+#[ignore = "QA branch: the root Cargo.toml patch to dashpay/grovedb#840 fixes this defect, \
+            so this defect-present tripwire fails by design — see the comment above"]
 fn sum_tree_state_sync_restore_is_latently_corrupt_at_pinned_grovedb() {
     let grove_version = &PlatformVersion::latest().drive.grove_version;
     let source_dir = tempfile::tempdir().unwrap();

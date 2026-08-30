@@ -370,10 +370,10 @@ pub(crate) mod tests {
     /// snapshot, restore it chunk by chunk on a fresh target (with one tampered chunk
     /// along the way to prove refetch/restart recovery), reconstruct the target
     /// platform state, and verify the target matches the source checkpoint exactly.
+    // QA BRANCH: un-ignored because the workspace root Cargo.toml carries a TEMPORARY
+    // patch redirecting grovedb to the sum-tree restore fix (dashpay/grovedb#840). Restore
+    // the `#[ignore]` if that patch is dropped without bumping the real grovedb pin.
     #[tokio::test]
-    #[ignore = "the pinned grovedb (6c882c3) cannot faithfully restore sum trees; un-ignore \
-                when the pin includes the sum-tree restore fix (dashpay/grovedb#840) — see \
-                tests/sum_tree_sync_probe.rs and state_sync_transfer_detects_sum_tree_restore_defect"]
     async fn run_state_sync_between_two_platforms() {
         let config = state_sync_platform_config();
         let mut source_platform = TestPlatformBuilder::new()
@@ -511,7 +511,14 @@ pub(crate) mod tests {
     /// latent corruption. When this test starts failing because the sync SUCCEEDS,
     /// grovedb has been fixed: un-ignore `run_state_sync_between_two_platforms` and
     /// drop this pin.
+    // QA BRANCH ONLY — this test asserts the grovedb sum-tree restore DEFECT is present.
+    // The workspace root Cargo.toml carries a TEMPORARY patch redirecting grovedb to the
+    // fix (dashpay/grovedb#840), so the sync now SUCCEEDS and this defect-present pin
+    // fails by design. Un-ignore (and delete it, as its own doc comment instructs) in the
+    // same change that drops the root Cargo.toml patch section.
     #[tokio::test]
+    #[ignore = "QA branch: the root Cargo.toml patch to dashpay/grovedb#840 fixes this defect, \
+                so this defect-present pin fails by design — see the comment above"]
     async fn state_sync_transfer_detects_sum_tree_restore_defect() {
         let config = state_sync_platform_config();
         let mut source_platform = TestPlatformBuilder::new()
