@@ -81,7 +81,10 @@ const INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER: u16 = 4;
 fn ranked_index_key_length_limit(index: &Index) -> Option<u16> {
     if index.ranked_averageable {
         Some(MAX_RANKED_AVG_INDEX_KEY_LENGTH)
-    } else if index.ranked_countable || index.ranked_summable {
+    } else if index.ranked_countable
+        || !index.ranked_countable_at.is_empty()
+        || index.ranked_summable
+    {
         Some(MAX_RANKED_COUNT_SUM_INDEX_KEY_LENGTH)
     } else {
         None
@@ -114,12 +117,21 @@ fn validate_ranked_index_property_key_length(
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
-    // Only the **terminal** property's encoded value becomes an
-    // indexed-tree item key, mirrored into the ordered secondary behind
-    // the sort key — that is where the tightened ceiling comes from.
-    // Leading properties of a compound ranked index are ordinary grovedb
-    // path segments, bound by the generic limits checked after this.
-    if index.properties.last().map(|p| p.name.as_str()) != Some(index_property_name) {
+    // Only a property whose level hosts an indexed tree gets its encoded
+    // value mirrored into the ordered secondary behind the sort key — the
+    // **terminal** property for the boolean axes, the **`at`** property for
+    // a prefix-level ranking, and BOTH when one index declares both — and
+    // that is where the tightened ceiling comes from. Every other property
+    // of a ranked index is an ordinary grovedb path segment, bound by the
+    // generic limits checked after this.
+    let is_at_level = index
+        .ranked_countable_at
+        .iter()
+        .any(|at| at == index_property_name);
+    let is_ranked_terminal = index.properties.last().map(|p| p.name.as_str())
+        == Some(index_property_name)
+        && (index.ranked_countable || index.ranked_summable || index.ranked_averageable);
+    if !is_at_level && !is_ranked_terminal {
         return Ok(());
     }
 
@@ -1327,5 +1339,358 @@ mod tests {
         let plain_prefix = compound_ranked_schema(vec![("byRegion", "region", vec![])]);
         parse_with(plain_prefix, pv14(), true)
             .expect("a non-aggregating index on the prefix must not conflict");
+    }
+
+    // -------------------------------------------------------------------
+    // Prefix-level rankedCountable (`{ "at": … }`) and its structural
+    // rules
+    // -------------------------------------------------------------------
+
+    /// One extra (possibly compound) index for [`prefix_at_schema`]:
+    /// `(name, properties, keys)`.
+    type CompoundExtraIndexSpec<'a> = (&'a str, &'a [&'a str], Vec<(&'a str, Value)>);
+
+    /// A doctype over `region` / `restaurantId` (strings) and `grade`
+    /// (integer) whose main index spans `main_properties` and carries the
+    /// given `rankedCountable` value on a countable + rangeCountable
+    /// layout (unless `include_range_count` is off, for the meta-schema
+    /// prerequisite test), plus optional extra indexes.
+    fn prefix_at_schema(
+        main_properties: &[&str],
+        ranked_countable: Value,
+        include_range_count: bool,
+        region_max_length: u32,
+        extra_indexes: Vec<CompoundExtraIndexSpec>,
+    ) -> Value {
+        let index_properties = |names: &[&str]| {
+            Value::Array(
+                names
+                    .iter()
+                    .map(|name| {
+                        Value::Map(vec![(
+                            Value::Text(name.to_string()),
+                            Value::Text("asc".to_string()),
+                        )])
+                    })
+                    .collect(),
+            )
+        };
+
+        let mut main_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byMain".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                index_properties(main_properties),
+            ),
+        ];
+        if include_range_count {
+            main_entry.push((
+                Value::Text("countable".to_string()),
+                Value::Text("countable".to_string()),
+            ));
+            main_entry.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
+        }
+        main_entry.push((Value::Text("rankedCountable".to_string()), ranked_countable));
+
+        let mut indices = vec![Value::Map(main_entry)];
+        for (name, properties, keys) in extra_indexes {
+            let mut entry: Vec<(Value, Value)> = vec![
+                (
+                    Value::Text("name".to_string()),
+                    Value::Text(name.to_string()),
+                ),
+                (
+                    Value::Text("properties".to_string()),
+                    index_properties(properties),
+                ),
+            ];
+            entry.extend(
+                keys.into_iter()
+                    .map(|(key, value)| (Value::Text(key.to_string()), value)),
+            );
+            indices.push(Value::Map(entry));
+        }
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "region": {
+                        "type": "string",
+                        "maxLength": region_max_length,
+                        "position": 0,
+                    },
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 1,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 2,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("region".to_string()),
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (Value::Text("indices".to_string()), Value::Array(indices)),
+        ])
+    }
+
+    fn at_value(property: &str) -> Value {
+        Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Text(property.to_string()),
+        )])
+    }
+
+    /// The `at` form parses at PV14 on both the validating and the
+    /// structural path, landing in `ranked_countable_at` with the boolean
+    /// terminal axis off.
+    #[test]
+    fn prefix_ranked_at_accepted_at_pv14() {
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId"],
+                at_value("region"),
+                true,
+                32,
+                vec![],
+            );
+            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+                panic!("the at form must parse (full_validation: {full_validation}): {e}")
+            });
+            let index = v2.indices.get("byMain").expect("index parsed");
+            assert!(!index.ranked_countable);
+            assert_eq!(index.ranked_countable_at, vec!["region".to_string()]);
+        }
+    }
+
+    /// The array form naming both levels passes the meta-schema and
+    /// parses into both flags — the both-rankings-on-one-index shape.
+    #[test]
+    fn prefix_ranked_at_array_form_accepted_at_pv14() {
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId"],
+                Value::Map(vec![(
+                    Value::Text("at".to_string()),
+                    Value::Array(vec![
+                        Value::Text("region".to_string()),
+                        Value::Text("restaurantId".to_string()),
+                    ]),
+                )]),
+                true,
+                32,
+                vec![],
+            );
+            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+                panic!("the array form must parse (full_validation: {full_validation}): {e}")
+            });
+            let index = v2.indices.get("byMain").expect("index parsed");
+            assert!(index.ranked_countable, "the terminal ranking must be on");
+            assert_eq!(index.ranked_countable_at, vec!["region".to_string()]);
+        }
+    }
+
+    /// PV13 rejects the object form on both paths: meta-schema v2 through
+    /// `additionalProperties: false`, the structural grammar through the
+    /// unknown-key arm.
+    #[test]
+    fn prefix_ranked_at_rejected_at_pv13() {
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId"],
+                at_value("region"),
+                true,
+                32,
+                vec![],
+            );
+            assert!(
+                parse_dispatched(schema, pv13(), full_validation).is_err(),
+                "PV13 must reject the object form (full_validation: {full_validation})"
+            );
+        }
+    }
+
+    /// The meta-schema's reshaped conditional demands `rangeCountable` for
+    /// the object form exactly as for `rankedCountable: true`.
+    #[test]
+    fn prefix_ranked_at_without_range_countable_rejected_by_meta_schema() {
+        let schema = prefix_at_schema(
+            &["region", "restaurantId"],
+            at_value("region"),
+            false,
+            32,
+            vec![],
+        );
+        assert!(
+            parse_with(schema, pv14(), true).is_err(),
+            "meta-schema v3 must demand rangeCountable alongside the at form"
+        );
+    }
+
+    /// Malformed object forms fail meta validation: an unknown field and a
+    /// missing `at`.
+    #[test]
+    fn prefix_ranked_at_malformed_object_rejected_by_meta_schema() {
+        for (value, label) in [
+            (
+                Value::Map(vec![
+                    (
+                        Value::Text("at".to_string()),
+                        Value::Text("region".to_string()),
+                    ),
+                    (
+                        Value::Text("axis".to_string()),
+                        Value::Text("count".to_string()),
+                    ),
+                ]),
+                "unknown field",
+            ),
+            (Value::Map(vec![]), "missing at"),
+        ] {
+            let schema = prefix_at_schema(&["region", "restaurantId"], value, true, 32, vec![]);
+            assert!(
+                parse_with(schema, pv14(), true).is_err(),
+                "the meta-schema must reject the {label} object form"
+            );
+        }
+    }
+
+    /// Exclusivity of the `at` level and below: any other index reaching
+    /// the `at` level — terminating there or continuing below it — is
+    /// rejected on both parse paths, whatever its flags.
+    #[test]
+    fn prefix_ranked_at_level_must_be_exclusive() {
+        let conflicting: Vec<(&str, &[&str])> = vec![
+            ("byRegion", &["region"]),
+            ("byRegionGrade", &["region", "grade"]),
+        ];
+        for (name, properties) in conflicting {
+            for full_validation in [true, false] {
+                let schema = prefix_at_schema(
+                    &["region", "restaurantId"],
+                    at_value("region"),
+                    true,
+                    32,
+                    vec![(name, properties, vec![])],
+                );
+                let error = parse_with(schema, pv14(), full_validation)
+                    .expect_err("an index sharing the at level must be rejected");
+                let message = format!("{error:?}");
+                assert!(
+                    message.contains("byMain") && message.contains(name),
+                    "the rejection must name both indexes \
+                     (full_validation: {full_validation}); got {message}"
+                );
+            }
+        }
+
+        // Diverging before the at level does not conflict.
+        let schema = prefix_at_schema(
+            &["region", "restaurantId"],
+            at_value("region"),
+            true,
+            32,
+            vec![("byGrade", &["grade"], vec![])],
+        );
+        parse_with(schema, pv14(), true)
+            .expect("an index over a different leading property must not conflict");
+    }
+
+    /// The wrapped-indexed impossibility one level above the `at` level: a
+    /// countable index terminating at the prefix above `at` makes those
+    /// value trees aggregating, which cannot shell an indexed tree. A
+    /// plain index on the same prefix stays fine. The main index is a
+    /// three-property compound ranked at its **middle** property (`at`
+    /// naming the last property would canonicalize to the terminal form
+    /// and exercise the pre-existing rule instead).
+    #[test]
+    fn prefix_ranked_at_with_aggregating_prefix_index_rejected() {
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId", "grade"],
+                at_value("restaurantId"),
+                true,
+                32,
+                vec![(
+                    "byRegion",
+                    &["region"],
+                    vec![("countable", Value::Text("countable".to_string()))],
+                )],
+            );
+            let error = parse_with(schema, pv14(), full_validation)
+                .expect_err("an aggregating index above the at level must be rejected");
+            let message = format!("{error:?}");
+            assert!(
+                message.contains("byMain")
+                    && message.contains("byRegion")
+                    && message.contains("NonCounted"),
+                "the rejection must name both indexes and the structural conflict \
+                 (full_validation: {full_validation}); got {message}"
+            );
+        }
+
+        let schema = prefix_at_schema(
+            &["region", "restaurantId", "grade"],
+            at_value("restaurantId"),
+            true,
+            32,
+            vec![("byRegion", &["region"], vec![])],
+        );
+        parse_with(schema, pv14(), true)
+            .expect("a plain index on the prefix above the at level must not conflict");
+    }
+
+    /// The ranked key ceiling binds the `at` property — whose encoded
+    /// value keys the ordered secondary — not the terminal property.
+    #[test]
+    fn prefix_ranked_at_ceiling_binds_the_at_property() {
+        // 61 * 4 = 244 <= 247: accepted.
+        let schema = prefix_at_schema(
+            &["region", "restaurantId"],
+            at_value("region"),
+            true,
+            61,
+            vec![],
+        );
+        parse_with(schema, pv14(), true).expect("61 characters fits the 247-byte ceiling");
+
+        // 62 * 4 = 248 > 247: rejected, naming the at property's bound.
+        let schema = prefix_at_schema(
+            &["region", "restaurantId"],
+            at_value("region"),
+            true,
+            62,
+            vec![],
+        );
+        let error = parse_with(schema, pv14(), true)
+            .expect_err("62 characters exceeds the 247-byte ceiling");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("maxLength") && msg.contains("61") && msg.contains("247"),
+            "the error must name maxLength, the 61-character bound and the 247-byte \
+             ceiling; got {msg}"
+        );
     }
 }
