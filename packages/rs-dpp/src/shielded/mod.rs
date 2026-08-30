@@ -38,7 +38,7 @@ pub use sighash::{
 /// `cv_net` (32) + `spend_auth_sig` (64). This is the per-action cost in the
 /// transition's `actions` vector, EXCLUDING the Halo 2 proof's per-action
 /// growth (see [`SHIELDED_PROOF_WIRE_BYTES_PER_ACTION`]).
-pub const SHIELDED_ACTION_WIRE_BYTES: u64 = 408;
+pub(crate) const SHIELDED_ACTION_WIRE_BYTES: u64 = 408;
 
 /// On-wire growth of the Halo 2 proof per additional Orchard action: 2,273 bytes.
 ///
@@ -50,7 +50,7 @@ pub const SHIELDED_ACTION_WIRE_BYTES: u64 = 408;
 /// which 408 B is the serialized action ([`SHIELDED_ACTION_WIRE_BYTES`]) and
 /// 2,273 B is proof growth. Pinned by
 /// `shielded_wire_cost_model_matches_measured_transitions` below.
-pub const SHIELDED_PROOF_WIRE_BYTES_PER_ACTION: u64 = 2_273;
+pub(crate) const SHIELDED_PROOF_WIRE_BYTES_PER_ACTION: u64 = 2_273;
 
 /// Fixed on-wire envelope overhead of a shielded state transition: 2,932 bytes.
 ///
@@ -71,7 +71,7 @@ pub const SHIELDED_PROOF_WIRE_BYTES_PER_ACTION: u64 = 2_273;
 /// [`estimated_shielded_transition_wire_bytes_with_envelope`], so the
 /// pre-proving gate sees the size the byte prefilter will see. DAPI's byte
 /// prefilter remains the authoritative gate.
-pub const SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES: u64 = 2_932;
+pub(crate) const SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES: u64 = 2_932;
 
 /// Encoded size of the CHAIN asset-lock proof that is already counted inside
 /// [`SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES`]: 40 bytes.
@@ -95,7 +95,7 @@ pub const SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES: u64 = 2_932;
 /// Pinned to the calibration proof by
 /// `baseline_asset_lock_proof_bytes_matches_the_calibration_proof` (#4312
 /// review finding b6f78dd76eb7).
-pub const SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES: u64 = 40;
+pub(crate) const SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES: u64 = 40;
 
 /// Conservative estimate of a shielded transition's on-wire serialized size
 /// for a bundle of `num_actions` Orchard actions with the baseline envelope.
@@ -106,7 +106,7 @@ pub const SHIELDED_BASELINE_ASSET_LOCK_PROOF_BYTES: u64 = 40;
 /// [`SHIELDED_PROOF_WIRE_BYTES_PER_ACTION`]). Transitions with
 /// variable-size non-Orchard fields use
 /// [`estimated_shielded_transition_wire_bytes_with_envelope`].
-pub fn estimated_shielded_transition_wire_bytes(num_actions: usize) -> u64 {
+pub(crate) fn estimated_shielded_transition_wire_bytes(num_actions: usize) -> u64 {
     estimated_shielded_transition_wire_bytes_with_envelope(num_actions, 0)
 }
 
@@ -115,7 +115,7 @@ pub fn estimated_shielded_transition_wire_bytes(num_actions: usize) -> u64 {
 /// serialized size of the transition's variable-length non-Orchard fields
 /// (an embedded instant asset-lock proof, an identity key set), which the
 /// fixed [`SHIELDED_TRANSITION_WIRE_OVERHEAD_BYTES`] does not cover.
-pub fn estimated_shielded_transition_wire_bytes_with_envelope(
+pub(crate) fn estimated_shielded_transition_wire_bytes_with_envelope(
     num_actions: usize,
     extra_envelope_bytes: u64,
 ) -> u64 {
@@ -139,7 +139,7 @@ pub fn estimated_shielded_transition_wire_bytes_with_envelope(
 ///    Drive-ABCI consensus decoder BEFORE structural validation runs).
 ///
 /// Because the on-wire size grows ~2,681 B per action on a ~2.9 KiB envelope
-/// (see [`estimated_shielded_transition_wire_bytes`]), the byte cap is the
+/// (see `estimated_shielded_transition_wire_bytes`), the byte cap is the
 /// binding constraint at current constants: 6 actions serialize to ~19.0 KiB
 /// while 7 need ~21.7 KiB against the 20 KiB limit — so the structural cap of
 /// 16 is unreachable unless `max_state_transition_size` is raised. Builders
@@ -150,7 +150,7 @@ pub fn estimated_shielded_transition_wire_bytes_with_envelope(
 ///
 /// This is the ceiling for the BASELINE envelope. Transition types with
 /// variable-size non-Orchard fields (instant asset-lock proofs, identity key
-/// sets) must use [`max_shielded_actions_for_envelope`] with their measured
+/// sets) must use `max_shielded_actions_for_envelope` with their measured
 /// extra bytes — a large enough envelope tightens the ceiling below 6.
 pub fn max_shielded_actions_per_transition(
     platform_version: &platform_version::version::PlatformVersion,
@@ -170,7 +170,7 @@ pub fn max_shielded_actions_per_transition(
 /// price them in or a bundle passes the gate, burns the Halo 2 proof, and is
 /// only then rejected by DAPI's byte prefilter (#4312 review finding
 /// e90e9cf15f52).
-pub fn max_shielded_actions_for_envelope(
+pub(crate) fn max_shielded_actions_for_envelope(
     platform_version: &platform_version::version::PlatformVersion,
     extra_envelope_bytes: u64,
 ) -> usize {
