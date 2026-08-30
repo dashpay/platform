@@ -21,6 +21,7 @@ use key_wallet::{DerivationPath, ReservationToken, Utxo};
 
 use super::{CoreWallet, WalletGeneration};
 use crate::broadcaster::TransactionBroadcaster;
+use crate::wallet::reservations::reservation_expired;
 use crate::PlatformWalletError;
 
 /// What funded (or failed to fund) a build, for attributing a shortfall.
@@ -418,6 +419,31 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 };
             }
 
+            // Refuse a selection that picked an input pinned by an IN-FLIGHT
+            // BROADCAST. A pinned input is normally still reserved and never
+            // reaches selection; getting here means this build's own
+            // selection swept that dispatch's aged reservation (catch-up
+            // advanced the clock past key-wallet's TTL while the dispatch
+            // was suspended pre-submission) and re-reserved the input under
+            // our token. Completing this build would race the pinned,
+            // already-signed transaction on the wire — the double-spend the
+            // dispatch-side age guard exists to prevent
+            // (`WalletGeneration::pin_in_broadcast`). Still under the write
+            // guard, so the check is atomic with our reservation and the
+            // release is exact.
+            //
+            // The refusal is TYPED (`InputMidBroadcast`, carrying the
+            // conflicting outpoint) rather than a build-failure string: the
+            // request itself is sound and can be re-attempted once the fenced
+            // dispatch's outcome is reconciled (see the variant docs for the
+            // duplicate-payment hazard in "retry unchanged"), and callers
+            // should not have to substring-match prose to tell it apart
+            // (`dashpay/platform#4309`).
+            if let Some(outpoint) = info.generation.in_broadcast_conflict(&unsigned) {
+                release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
+                return Err(PlatformWalletError::InputMidBroadcast { outpoint });
+            }
+
             // Map every selected input back to the account that owns it. That
             // mapping — not the offered list — is what the transaction carries:
             // selection routinely takes nothing from most offered sources, and
@@ -540,7 +566,45 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     }
 
     /// Release a finalized transaction that the caller has chosen not to send.
+    ///
+    /// # Reservation age guard
+    ///
+    /// This is the abandon/free arm of the finalized-transaction handle —
+    /// including the FFI broadcast/abandon *failure* paths (invalid or
+    /// wrong-generation wallet handle) that route their cleanup here, and the
+    /// host-language deinit/GC backstop
+    /// (`core_wallet_signed_transaction_free`). A pinned handle can reach it
+    /// long after `finalize`, so it honors the **same** age bound as
+    /// [`broadcast_finalized_transaction`](Self::broadcast_finalized_transaction),
+    /// off the same shared [`reservation_expired`] predicate and the same
+    /// `last_processed_height` clock.
+    ///
+    /// With the build's owner token present the release is owner-guarded
+    /// (`release_reservation_if_owner`), which is safe at ANY age: it frees the
+    /// inputs only while this build still owns them and no-ops once key-wallet's
+    /// TTL sweep or a re-reservation transferred ownership. Between
+    /// [`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS)
+    /// and the TTL the reservation is typically STILL this build's, so an aged
+    /// abandon must still release — skipping would strand the inputs for
+    /// several more blocks while the host has already discarded the payment.
+    /// Only a token-less build (never reached on the funded finalize path)
+    /// honours the age bound and skips: its only release primitive is the
+    /// unguarded by-outpoint form, which after a sweep could free a newer
+    /// build's reservation. This mirrors the deferred registry's
+    /// `reconcile_removed_entry` policy exactly.
     pub async fn abandon_transaction(&self, transaction: &SignedCoreTransaction) {
+        if transaction.reservation_token.is_none()
+            && reservation_expired(
+                transaction.reservation_height,
+                self.last_processed_height().await,
+            )
+        {
+            // Aged, and no owner token to guard the release: the outpoint may
+            // have been swept and re-reserved by an unrelated build. Leave it
+            // for key-wallet's TTL; releasing by outpoint could free that newer
+            // reservation.
+            return;
+        }
         self.release_transaction_reservation(
             &transaction.funding_accounts,
             &transaction.transaction,
