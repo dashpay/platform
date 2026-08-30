@@ -1648,9 +1648,8 @@ mod tests {
 
         // OVER the budget (distinct values 1..=budget+4): the save keeps the
         // budget highest-value notes, drops the dust, and ADVANCES the entry.
-        let over: std::sync::Arc<[super::ShieldedNote]> = (0..budget as u64 + 4)
-            .map(|i| note_at(i, i + 1))
-            .collect();
+        let over: std::sync::Arc<[super::ShieldedNote]> =
+            (0..budget as u64 + 4).map(|i| note_at(i, i + 1)).collect();
         cache.save(
             key,
             super::ForeignScanCheckpoint {
@@ -1703,9 +1702,8 @@ mod tests {
 
         // Monotonicity is unchanged: a stale over-budget writer cannot
         // rewind an advanced entry.
-        let stale: std::sync::Arc<[super::ShieldedNote]> = (0..budget as u64 + 4)
-            .map(|i| note_at(i, i + 1))
-            .collect();
+        let stale: std::sync::Arc<[super::ShieldedNote]> =
+            (0..budget as u64 + 4).map(|i| note_at(i, i + 1)).collect();
         cache.save(
             key,
             super::ForeignScanCheckpoint {
