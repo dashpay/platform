@@ -11,6 +11,8 @@ use crate::config::DriveConfig;
 use arc_swap::ArcSwap;
 #[cfg(feature = "server")]
 use dpp::prelude::{BlockHeight, TimestampMillis};
+#[cfg(feature = "server")]
+use dpp::util::deserializer::ProtocolVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
 use std::fmt;
@@ -124,6 +126,16 @@ impl Checkpoint {
             .unwrap()
             .map(|maybe_element| maybe_element.is_some())
             .map_err(Error::from)
+    }
+
+    /// The Platform protocol version the chain was running at when this checkpoint was
+    /// taken, as recorded in the checkpoint's own aux storage.
+    ///
+    /// State sync must serve and consume a snapshot under the version table the snapshot
+    /// was PRODUCED with — the consuming node is typically a fresh node whose in-memory
+    /// version is still the initial one — so this is the authoritative source for it.
+    pub fn current_protocol_version(&self) -> Result<Option<ProtocolVersion>, Error> {
+        Drive::fetch_current_protocol_version_with_grovedb(&self.grove_db, None)
     }
 
     /// Marks this checkpoint for deletion when it is dropped.

@@ -244,6 +244,13 @@ where
         &self,
         request: proto::RequestFinalizeBlock,
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
+        // Autonomous expiry of serving pins: an abandoned state sync transfer stops
+        // making chunk requests, so nothing on the serving path would ever release its
+        // pin and the pruned checkpoint directory would stay on disk forever. A block is
+        // the one thing that reliably keeps happening. This is node-local bookkeeping and
+        // touches no consensus state.
+        self.snapshot_manager.release_expired_pins();
+
         handler::finalize_block(self, request).map_err(error_into_exception)
     }
 
