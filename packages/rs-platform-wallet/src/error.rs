@@ -503,6 +503,41 @@ pub enum PlatformWalletError {
         wallet_id: String,
     },
 
+    #[error(
+        "Seed-binding check for wallet {wallet_id} did not answer within the \
+         caller's deadline (refusing to derive through a provider that was \
+         never checked)"
+    )]
+    /// The contact-crypto provider did not return the BIP44 account-0 xpub
+    /// before the deadline the caller supplied — a stalled host Keychain /
+    /// Keystore, or a budget already spent by the time the gated pass was
+    /// reached. Distinct from [`Self::SeedMismatch`], which is a *proven*
+    /// wrong seed: this one proves nothing either way, which is why it is
+    /// refused just as firmly. The check derives nothing and commits nothing,
+    /// so the queue survives for the next signer-present pass.
+    SeedBindingUnanswered {
+        /// Hex of the wallet id whose binding could not be established.
+        wallet_id: String,
+    },
+
+    #[error(
+        "Contact-request sync reached none of the wallet's {identities} identities \
+         (Platform unreachable) — the pass did not complete"
+    )]
+    /// A contact-request pass had identities to fetch for and could not read a
+    /// single one of them. Distinct from an empty success, which means
+    /// "Platform answered, and there is nothing new": this one means we do not
+    /// know, so the caller must not record the pass as completed.
+    ///
+    /// The sweep's per-identity log-and-continue collapsed the two, so a DAPI
+    /// outage returned `Ok(vec![])` and a startup sequence recorded a
+    /// successful contact sync — then reported `Ready`, promising that every
+    /// contact's DIP-15 addresses existed before Core SPV started.
+    ContactSyncUnreachable {
+        /// Identities the pass tried, and failed, to fetch for.
+        identities: usize,
+    },
+
     #[error("SPV is already running — stop it before starting again")]
     SpvAlreadyRunning,
 

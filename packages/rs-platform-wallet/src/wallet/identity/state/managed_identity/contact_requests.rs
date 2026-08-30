@@ -146,8 +146,23 @@ impl ManagedIdentity {
 
         let mut cs = ContactChangeSet::default();
 
-        // Check if there's already an incoming request from this recipient
-        if let Some(incoming_request) = self.dashpay.incoming_contact_requests.remove(&recipient_id)
+        // Fresh send. Persist BEFORE committing to memory, as both rotation
+        // branches above already do — this branch is what the recurring
+        // sweep's sent-side ingest runs, and its retry is gated on these very
+        // maps: a store failure that had already committed leaves the
+        // established / sent entry in memory, so the next sweep's re-fetch of
+        // the held-back range hits the same-reference no-op guard at the top
+        // of this method, returns `Ok(())`, reports a complete pass and
+        // advances the cursor. The write never reaches the backend and the
+        // relationship disappears at the next restart.
+        //
+        // `get`, not `remove`: the incoming request has to survive a failed
+        // store, or the retry can no longer reproduce the auto-establish.
+        if let Some(incoming_request) = self
+            .dashpay
+            .incoming_contact_requests
+            .get(&recipient_id)
+            .cloned()
         {
             // Automatically establish the contact — per the ContactChangeSet
             // auto-establishment contract, `established` implies the matching
@@ -169,6 +184,8 @@ impl ManagedIdentity {
                 },
                 contact.clone(),
             );
+            persister.store(cs.into())?;
+            self.dashpay.incoming_contact_requests.remove(&recipient_id);
             self.dashpay
                 .established_contacts
                 .insert(recipient_id, contact);
@@ -183,11 +200,11 @@ impl ManagedIdentity {
                     request: request.clone(),
                 },
             );
+            persister.store(cs.into())?;
             self.dashpay
                 .sent_contact_requests
                 .insert(recipient_id, request);
         }
-        persister.store(cs.into())?;
         Ok(())
     }
 
@@ -380,6 +397,21 @@ impl ManagedIdentity {
     /// If there's already a sent request to the sender, the contact is
     /// auto-established. Persists the resulting [`ContactChangeSet`] via
     /// `persister` and returns `()`.
+    ///
+    /// **Persist before committing to memory** — the same order as
+    /// [`Self::set_contact_metadata`] and the two rotation branches of
+    /// [`Self::add_sent_contact_request`], and for a sharper version of the
+    /// same reason. On an `Err` the in-memory maps are left exactly as the
+    /// persisted state, because the sync sweep's retry decides what to ingest
+    /// by reading *these maps*: `ingest_received_requests` computes the
+    /// sender's tracked `accountReference` from `incoming_contact_requests` /
+    /// `established_contacts` and `continue`s when it equals the fetched
+    /// request's. A committed-but-unpersisted request therefore makes the next
+    /// sweep skip the sender as already known, report a complete pass and
+    /// advance the cursor — so holding the cursor back buys nothing, the
+    /// backend never receives the write, and the contact is gone after a
+    /// restart. Holding the cursor only retries the write if memory still
+    /// looks like the write never happened.
     pub fn add_incoming_contact_request(
         &mut self,
         request: ContactRequest,
@@ -389,8 +421,12 @@ impl ManagedIdentity {
         let sender_id = request.sender_id;
         let mut cs = ContactChangeSet::default();
 
-        // Check if there's already a sent request to this sender
-        if let Some(outgoing_request) = self.dashpay.sent_contact_requests.remove(&sender_id) {
+        // Check if there's already a sent request to this sender. `get`, not
+        // `remove`: the outgoing request has to survive a failed store, or the
+        // retry can no longer reproduce the auto-establish and silently
+        // downgrades the pair to a bare incoming request.
+        if let Some(outgoing_request) = self.dashpay.sent_contact_requests.get(&sender_id).cloned()
+        {
             // Automatically establish the contact — per the ContactChangeSet
             // auto-establishment contract, `established` implies the matching
             // pending entries are dropped, so we don't also emit a
@@ -413,6 +449,8 @@ impl ManagedIdentity {
                 },
                 contact.clone(),
             );
+            persister.store(cs.into())?;
+            self.dashpay.sent_contact_requests.remove(&sender_id);
             self.dashpay.established_contacts.insert(sender_id, contact);
         } else {
             // No matching sent request, just add as incoming
@@ -425,11 +463,11 @@ impl ManagedIdentity {
                     request: request.clone(),
                 },
             );
+            persister.store(cs.into())?;
             self.dashpay
                 .incoming_contact_requests
                 .insert(sender_id, request);
         }
-        persister.store(cs.into())?;
         Ok(())
     }
 
@@ -546,8 +584,27 @@ impl ManagedIdentity {
 
         let mut cs = ContactChangeSet::default();
 
+        // Which map tracks this sender, settled before either is touched. The
+        // `entry` API is deliberately not used for the commits below: a
+        // fallible `persister.store` sits between the lookup and the write, and
+        // an occupied entry would hold a mutable borrow across it — that borrow
+        // is precisely what must not exist until the store has succeeded.
+        let tracked_pending = self
+            .dashpay
+            .incoming_contact_requests
+            .contains_key(&sender_id);
+
+        // Persist BEFORE committing to memory, same order and same reason as
+        // `add_incoming_contact_request`: on a failed store the rotation must
+        // be invisible in memory. Both of the retry's gates read these maps —
+        // the sweep's `tracked_reference == Some(new_reference)` skip and this
+        // method's own `already_applied` guard above — so a rotation committed
+        // to memory but not to disk locks itself out of both, reports a
+        // complete pass, advances the cursor, and loses the new key material
+        // at the next restart while the caller never tears down the stale
+        // external account.
         let rekeyed_established =
-            if let Some(contact) = self.dashpay.established_contacts.get_mut(&sender_id) {
+            if let Some(contact) = self.dashpay.established_contacts.get(&sender_id) {
                 tracing::info!(
                     owner = %owner_id,
                     sender = %sender_id,
@@ -555,42 +612,49 @@ impl ManagedIdentity {
                     new_reference = request.account_reference,
                     "Contact rotated their addresses — re-keying the established contact"
                 );
-                contact.incoming_request = request;
-                contact.payment_channel_broken = false;
+                let mut updated = contact.clone();
+                updated.incoming_request = request;
+                updated.payment_channel_broken = false;
                 // The label belongs to the incoming request being replaced —
                 // drop it so the rebuilt external account re-derives it from
                 // the new request rather than showing the old label against
                 // fresh key material.
-                contact.contact_account_label = None;
+                updated.contact_account_label = None;
                 // The stale external account (built from the old reference)
                 // is torn down by the caller — reset the marker so the build
                 // sweep re-registers from the new xpub and re-stamps it.
-                contact.external_account_reference = None;
+                updated.external_account_reference = None;
                 cs.established.insert(
                     SentContactRequestKey {
                         owner_id,
                         recipient_id: sender_id,
                     },
-                    contact.clone(),
+                    updated.clone(),
                 );
+                persister.store(cs.into())?;
+                self.dashpay.established_contacts.insert(sender_id, updated);
                 true
-            } else if let Some(slot) = self.dashpay.incoming_contact_requests.get_mut(&sender_id) {
-                // Pending (not-yet-accepted) incoming request — replace it
-                // in place so a later Accept uses the freshest key material.
-                *slot = request.clone();
+            } else if tracked_pending {
+                // Pending (not-yet-accepted) incoming request — replace it so
+                // a later Accept uses the freshest key material.
                 cs.incoming_requests.insert(
                     ReceivedContactRequestKey {
                         owner_id,
                         sender_id,
                     },
-                    ContactRequestEntry { request },
+                    ContactRequestEntry {
+                        request: request.clone(),
+                    },
                 );
+                persister.store(cs.into())?;
+                self.dashpay
+                    .incoming_contact_requests
+                    .insert(sender_id, request);
                 false
             } else {
                 return Ok(false);
             };
 
-        persister.store(cs.into())?;
         Ok(rekeyed_established)
     }
 
