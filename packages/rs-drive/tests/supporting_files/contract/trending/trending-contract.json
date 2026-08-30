@@ -150,6 +150,51 @@
       ],
       "additionalProperties": false
     },
+    "both": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byHashtagPost",
+          "properties": [
+            {
+              "hashtag": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": {
+            "at": [
+              "hashtag",
+              "postId"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 1
+        }
+      },
+      "required": [
+        "hashtag",
+        "postId"
+      ],
+      "additionalProperties": false
+    },
     "ilike": {
       "type": "object",
       "indexOnly": true,

@@ -691,3 +691,138 @@ fn index_only_entries_rank_hashtags_and_drain_on_delete() {
 
     assert_grovedb_is_consistent(&drive);
 }
+
+// ---------------------------------------------------------------------------
+// Behaviour: both rankings on one index (`at: ["hashtag", "postId"]`)
+// ---------------------------------------------------------------------------
+
+/// The `both` doctype declares the grouping level AND the terminal
+/// ranking on one index: the chain nests two indexed trees, the inner
+/// (terminal) one a CONTRIBUTING child inside the grouping level's
+/// count-bearing value trees. Registration lays the outer one down;
+/// document inserts materialize the inner one per hashtag; both
+/// secondaries rank simultaneously and re-key on delete, drains prune
+/// through both, and the dry-run prices the nested layout.
+#[test]
+fn both_levels_rank_on_one_index() {
+    let (drive, contract) = setup_trending();
+    let pv = platform_version();
+
+    // Registration: the grouping first level is the PCIT.
+    let doctype_path = level_path(&contract, "both", &[]);
+    assert!(
+        matches!(
+            read_grove_element(&drive, &doctype_path, b"hashtag"),
+            Some(Element::ProvableCountIndexedTree(..))
+        ),
+        "registration must create the grouping PCIT"
+    );
+
+    // Dry-run estimation traverses the nested layout before any state
+    // exists.
+    let dry_run_doc = build_row(
+        &contract,
+        "both",
+        &[("hashtag", "alpha"), ("postId", "p1")],
+        None,
+        99,
+    );
+    let estimated = insert_row(&drive, &contract, "both", &dry_run_doc, false)
+        .expect("the dry run must traverse the nested layout");
+    assert!(estimated.processing_fee > 0);
+
+    let docs = insert_rows(
+        &drive,
+        &contract,
+        "both",
+        &[
+            &[("hashtag", "alpha"), ("postId", "p1")],
+            &[("hashtag", "alpha"), ("postId", "p1")],
+            &[("hashtag", "alpha"), ("postId", "p2")],
+            &[("hashtag", "beta"), ("postId", "p1")],
+        ],
+    );
+
+    // The inner (terminal) tree is ALSO an indexed tree, contributing
+    // its count to the hashtag value tree above it.
+    let grouping_path = level_path(&contract, "both", &[b"hashtag"]);
+    match read_grove_element(&drive, &grouping_path, b"alpha") {
+        Some(element @ Element::CountTree(..)) => {
+            assert_eq!(
+                element.count_value_or_default(),
+                3,
+                "alpha's value tree must receive the inner PCIT's contribution"
+            );
+        }
+        other => panic!("expected a CountTree value tree for alpha, got {other:?}"),
+    }
+    let alpha_path = level_path(&contract, "both", &[b"hashtag", b"alpha"]);
+    match read_grove_element(&drive, &alpha_path, b"postId") {
+        Some(Element::ProvableCountIndexedTree(_, _, count, _)) => {
+            assert_eq!(
+                count, 3,
+                "the contributing inner PCIT carries alpha's total"
+            );
+        }
+        other => panic!("expected a contributing inner PCIT, got {other:?}"),
+    }
+
+    // Both secondaries serve their rankings.
+    assert_eq!(
+        count_top_k_named(&drive, &grouping_path, 10, true),
+        named(&[(3, "alpha"), (1, "beta")]),
+        "the grouping secondary ranks hashtags by subtree total"
+    );
+    let alpha_posts_path = level_path(&contract, "both", &[b"hashtag", b"alpha", b"postId"]);
+    assert_eq!(
+        count_top_k_named(&drive, &alpha_posts_path, 10, true),
+        named(&[(2, "p1"), (1, "p2")]),
+        "the terminal secondary ranks alpha's posts by member count"
+    );
+
+    // A delete re-keys both secondaries.
+    drive
+        .delete_document_for_contract(
+            docs[0].id(),
+            &contract,
+            "both",
+            BlockInfo::default(),
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect("expected to delete a like");
+    assert_eq!(
+        count_top_k_named(&drive, &grouping_path, 10, true),
+        named(&[(2, "alpha"), (1, "beta")])
+    );
+    let mut alpha_after = count_top_k_named(&drive, &alpha_posts_path, 10, true);
+    alpha_after.sort();
+    assert_eq!(alpha_after, named(&[(1, "p1"), (1, "p2")]));
+
+    // Draining beta prunes its whole chain — the group leaves the
+    // grouping secondary.
+    drive
+        .delete_document_for_contract(
+            docs[3].id(),
+            &contract,
+            "both",
+            BlockInfo::default(),
+            true,
+            None,
+            pv,
+            None,
+        )
+        .expect("expected to delete beta's only like");
+    assert_eq!(
+        count_top_k_named(&drive, &grouping_path, 10, true),
+        named(&[(2, "alpha")])
+    );
+    assert!(
+        read_grove_element(&drive, &grouping_path, b"beta").is_none(),
+        "beta's drained chain must be pruned"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
