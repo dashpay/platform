@@ -147,8 +147,22 @@ impl<C> Platform<C> {
             }
         };
 
-        let (drive, current_platform_version) =
-            Drive::open(&config.db_path, Some(config.drive.clone())).map_err(Error::Drive)?;
+        // Checkpoints are created under the operator-configured `CHECKPOINTS_PATH`
+        // (defaulting to `<db_path>/checkpoints`); startup MUST read them back from the
+        // same place, or a node with a custom path comes up with an empty registry:
+        // it would stop advertising the snapshots it retained and could never prune the
+        // directories it wrote.
+        let checkpoints_path = config
+            .abci
+            .state_sync
+            .resolved_checkpoints_path(&config.db_path);
+
+        let (drive, current_platform_version) = Drive::open_with_checkpoints_path(
+            &config.db_path,
+            Some(config.drive.clone()),
+            Some(&checkpoints_path),
+        )
+        .map_err(Error::Drive)?;
 
         // A state sync restore that never finished leaves grovedb holding state the
         // platform state knows nothing about. That is not recoverable by restarting —
@@ -195,9 +209,7 @@ impl<C> Platform<C> {
             let mut checkpoint_platform_states = BTreeMap::new();
             let checkpoints = drive.checkpoints.load();
             for (&block_height, _checkpoint_info) in checkpoints.iter() {
-                let checkpoint_state_path = config
-                    .db_path
-                    .join("checkpoints")
+                let checkpoint_state_path = checkpoints_path
                     .join(block_height.to_string())
                     .join("platform_state.bin");
 
