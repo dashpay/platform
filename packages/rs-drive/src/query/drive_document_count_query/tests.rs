@@ -4071,3 +4071,212 @@ mod prefix_to_last {
         );
     }
 }
+
+mod prefix_to_last_in_with_trailing_equal {
+    //! The one prefix-to-last builder arm the two-property fixture cannot
+    //! reach: an `IN` pin followed by a trailing `Equal` pin with the
+    //! LAST property free. The descent under each `IN` branch rolls the
+    //! trailing pair through `set_subquery_path` and then selects the
+    //! terminal property-name tree by its level key — per-branch
+    //! whole-prefix totals, proved and verified. Also pins the
+    //! no-covering-index rejection text both executors emit for a
+    //! genuinely uncoverable pin set.
+
+    use super::*;
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_count_query::drive_dispatcher::{
+        DocumentCountRequest, DocumentCountResponse,
+    };
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::DocumentV0Setters;
+    use dpp::tests::json_document::json_document_to_contract;
+
+    fn setup_geo() -> (Drive, dpp::prelude::DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/tally/tally-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to parse the tally contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the tally contract");
+        (drive, contract)
+    }
+
+    fn insert_geo(
+        drive: &Drive,
+        contract: &dpp::prelude::DataContract,
+        region: &str,
+        hashtag: &str,
+        post: &str,
+        seed: u64,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let document_type = contract
+            .document_type_for_name("geo")
+            .expect("geo doctype exists");
+        let mut doc: Document = document_type
+            .random_document(Some(seed), platform_version)
+            .expect("random document");
+        let mut props = StdBTreeMap::new();
+        props.insert("region".to_string(), Value::Text(region.to_string()));
+        props.insert("hashtag".to_string(), Value::Text(hashtag.to_string()));
+        props.insert("postId".to_string(), Value::Text(post.to_string()));
+        doc.set_properties(props);
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&doc, None)),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a geo document");
+    }
+
+    #[test]
+    fn in_pin_with_trailing_equal_counts_per_branch_with_proof() {
+        let (drive, contract) = setup_geo();
+        let platform_version = PlatformVersion::latest();
+
+        // alpha in r1: 3 likes across two posts; alpha in r2: 1; beta
+        // rows must not leak into the alpha totals.
+        insert_geo(&drive, &contract, "r1", "alpha", "p1", 1);
+        insert_geo(&drive, &contract, "r1", "alpha", "p1", 2);
+        insert_geo(&drive, &contract, "r1", "alpha", "p2", 3);
+        insert_geo(&drive, &contract, "r2", "alpha", "p1", 4);
+        insert_geo(&drive, &contract, "r1", "beta", "p1", 5);
+
+        let where_clauses = vec![
+            WhereClause {
+                field: "region".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Text("r1".to_string()),
+                    Value::Text("r2".to_string()),
+                ]),
+            },
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("alpha".to_string()),
+            },
+        ];
+        let document_type = contract
+            .document_type_for_name("geo")
+            .expect("geo doctype exists");
+        let indexes = contract
+            .document_types()
+            .get("geo")
+            .expect("geo doctype exists")
+            .indexes();
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            indexes,
+            &where_clauses,
+            &[],
+        )
+        .expect("the fallback must accept the two leading pins of the 3-property index");
+        assert_eq!(index.properties.len(), 3);
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "geo".to_string(),
+            index,
+            where_clauses,
+        };
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("the branched trailing-equal prefix count must read");
+        assert_eq!(results[0].count, Some(4), "r1 alpha's 3 plus r2 alpha's 1");
+
+        let proof = query
+            .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+            .expect("the branched trailing-equal prefix count must prove");
+        let (root_hash, entries) = query
+            .verify_point_lookup_count_proof(&proof, platform_version)
+            .expect("the proof must verify");
+        let summed: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
+        assert_eq!(summed, 4, "verified per-branch totals must sum to the read");
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
+    /// A pin set no index covers — a MIDDLE property left free is not the
+    /// prefix-to-last shape — must surface both executors' rejection text
+    /// naming every acceptable coverage.
+    #[test]
+    fn uncoverable_pins_name_the_acceptable_coverages() {
+        let (drive, contract) = setup_geo();
+        let platform_version = PlatformVersion::latest();
+        insert_geo(&drive, &contract, "r1", "alpha", "p1", 1);
+
+        // region pinned, hashtag free, postId pinned: covers neither the
+        // exact form nor the leading prefix.
+        let gapped = vec![
+            WhereClause {
+                field: "region".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("r1".to_string()),
+            },
+            WhereClause {
+                field: "postId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("p1".to_string()),
+            },
+        ];
+        let drive_config = DriveConfig::default();
+        for prove in [false, true] {
+            let error = drive
+                .execute_document_count_request(
+                    DocumentCountRequest {
+                        contract: &contract,
+                        document_type: contract
+                            .document_type_for_name("geo")
+                            .expect("geo doctype exists"),
+                        where_clauses: gapped.clone(),
+                        resolved_time_ranges: vec![],
+                        order_clauses: Vec::new(),
+                        mode: CountMode::Aggregate,
+                        limit: None,
+                        prove,
+                        drive_config: &drive_config,
+                    },
+                    None,
+                    platform_version,
+                )
+                .expect_err("a gapped pin set must be rejected (prove: {prove})");
+            let message = format!("{error}");
+            assert!(
+                message.contains("rangeCountable") && message.contains("exactly match"),
+                "the rejection must name both acceptable coverages (prove: {prove}); \
+                 got {message}"
+            );
+        }
+    }
+}

@@ -42,6 +42,55 @@
         "postId"
       ],
       "additionalProperties": false
+    },
+    "geo": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byRegionHashtagPost",
+          "properties": [
+            {
+              "region": "asc"
+            },
+            {
+              "hashtag": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": "countable",
+          "rangeCountable": true
+        }
+      ],
+      "properties": {
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 0
+        },
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 2
+        }
+      },
+      "required": [
+        "region",
+        "hashtag",
+        "postId"
+      ],
+      "additionalProperties": false
     }
   }
 }
