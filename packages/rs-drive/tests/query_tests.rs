@@ -8166,6 +8166,253 @@ mod tests {
         assert_eq!(query_result.documents().len(), 1);
     }
 
+    #[cfg(all(feature = "server", feature = "verify"))]
+    #[test]
+    fn test_proved_desc_range_continuation_page_includes_cursor_document() {
+        // Issue #4540: a continuation page over a non-unique
+        // [equality, $createdAt] index — cursor + range clause on the
+        // terminal property + descending order — merged the cursor
+        // fetch into the proved query with a descending root, so the
+        // index branch consumed the whole limit + 1 budget before the
+        // cursor branch was reached and the proof omitted the cursor
+        // document's subtree layer ("V1 proof is missing lower layer"),
+        // which no client could verify. The merged root must be walked
+        // ascending so the cursor branch spends its reserved slot first.
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract_value = platform_value!({
+            "$formatVersion": "0",
+            "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
+            "version": 1,
+            "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
+            "documentSchemas": {
+                "message": {
+                    "type": "object",
+                    "indices": [
+                        {"name":"categoryTimeline", "properties": [{"category":"asc"}, {"$createdAt":"asc"}]},
+                    ],
+                    "properties":{
+                        "category": {
+                            "type": "string",
+                            "maxLength": 63,
+                            "position": 0
+                        }
+                    },
+                    "required": ["category", "$createdAt"],
+                    "additionalProperties": false,
+                },
+            },
+        });
+
+        let contract = DataContract::from_value(contract_value, false, platform_version)
+            .expect("should create a contract from value");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("should apply contract");
+
+        let document_type = contract
+            .document_type_for_name("message")
+            .expect("should have message document type");
+
+        let mut rng = StdRng::seed_from_u64(84594);
+        let base_time: TimestampMillis = 1_700_000_000_000;
+
+        for i in 0u64..12 {
+            let document_value = platform_value!({
+               "category": "en",
+               "$createdAt": base_time + i * 1000,
+            });
+
+            let document = document_type
+                .create_document_from_data(
+                    document_value,
+                    Identifier::random_with_rng(&mut rng),
+                    1,
+                    1,
+                    rng.gen(),
+                    platform_version,
+                )
+                .expect("should create document");
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("should add document");
+        }
+
+        let created_at_values = |results: &[Vec<u8>]| -> Vec<TimestampMillis> {
+            results
+                .iter()
+                .map(|serialized| {
+                    Document::from_bytes(serialized, document_type, platform_version)
+                        .expect("should deserialize document")
+                        .created_at()
+                        .expect("document should have a creation time")
+                })
+                .collect()
+        };
+
+        // Page 1: newest five documents.
+        let page_one_value = json!({
+            "where": [
+                ["category", "==", "en"],
+                ["$createdAt", ">", 0]
+            ],
+            "orderBy": [
+                ["category", "asc"],
+                ["$createdAt", "desc"]
+            ],
+            "limit": 5,
+        });
+        let page_one_cbor = cbor_serializer::serializable_value_to_cbor(&page_one_value, None)
+            .expect("should serialize to cbor");
+        let page_one_query = DriveDocumentQuery::from_cbor(
+            page_one_cbor.as_slice(),
+            &contract,
+            document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let (page_one_results, _, _) = page_one_query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should be executed");
+        assert_eq!(
+            created_at_values(&page_one_results),
+            (7..12)
+                .rev()
+                .map(|i| base_time + i * 1000)
+                .collect::<Vec<_>>()
+        );
+
+        let last_document = Document::from_bytes(
+            page_one_results
+                .last()
+                .expect("page one should have results"),
+            document_type,
+            platform_version,
+        )
+        .expect("should deserialize document");
+        let encoded_cursor = bs58::encode(last_document.id().as_slice()).into_string();
+
+        // Page 2 via startAfter: mid-timeline, more matching documents
+        // remain than the limit, so the proved merged query's budget
+        // exhausts before the cursor branch unless the root is walked
+        // ascending.
+        let page_two_value = json!({
+            "where": [
+                ["category", "==", "en"],
+                ["$createdAt", ">", 0]
+            ],
+            "orderBy": [
+                ["category", "asc"],
+                ["$createdAt", "desc"]
+            ],
+            "limit": 5,
+            "startAfter": encoded_cursor.clone(),
+        });
+        let page_two_cbor = cbor_serializer::serializable_value_to_cbor(&page_two_value, None)
+            .expect("should serialize to cbor");
+        let page_two_query = DriveDocumentQuery::from_cbor(
+            page_two_cbor.as_slice(),
+            &contract,
+            document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let (page_two_results, _, _) = page_two_query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should be executed");
+        assert_eq!(
+            created_at_values(&page_two_results),
+            (2..7)
+                .rev()
+                .map(|i| base_time + i * 1000)
+                .collect::<Vec<_>>()
+        );
+
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        let (proof_root_hash, proof_results, _) = page_two_query
+            .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+            .expect("proved startAfter continuation page should verify");
+        assert_eq!(root_hash, proof_root_hash);
+        assert_eq!(page_two_results, proof_results);
+
+        // startAt (inclusive) exercises the same merged-query shape.
+        let page_two_inclusive_value = json!({
+            "where": [
+                ["category", "==", "en"],
+                ["$createdAt", ">", 0]
+            ],
+            "orderBy": [
+                ["category", "asc"],
+                ["$createdAt", "desc"]
+            ],
+            "limit": 5,
+            "startAt": encoded_cursor,
+        });
+        let page_two_inclusive_cbor =
+            cbor_serializer::serializable_value_to_cbor(&page_two_inclusive_value, None)
+                .expect("should serialize to cbor");
+        let page_two_inclusive_query = DriveDocumentQuery::from_cbor(
+            page_two_inclusive_cbor.as_slice(),
+            &contract,
+            document_type,
+            &drive.config,
+            platform_version,
+        )
+        .expect("query should be built");
+
+        let (page_two_inclusive_results, _, _) = page_two_inclusive_query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should be executed");
+        assert_eq!(
+            created_at_values(&page_two_inclusive_results),
+            (3..8)
+                .rev()
+                .map(|i| base_time + i * 1000)
+                .collect::<Vec<_>>()
+        );
+
+        let (proof_root_hash, proof_results, _) = page_two_inclusive_query
+            .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+            .expect("proved startAt continuation page should verify");
+        assert_eq!(root_hash, proof_root_hash);
+        assert_eq!(page_two_inclusive_results, proof_results);
+    }
+
     #[cfg(feature = "server")]
     #[test]
     fn test_count_regular_index() {

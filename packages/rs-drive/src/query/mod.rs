@@ -1873,11 +1873,9 @@ impl<'a> DriveDocumentQuery<'a> {
         if let Some(mut start_at_path_query) = start_at_path_query {
             // The cursor query selects exactly one key, so its walk
             // direction carries no meaning — but grovedb's merge (V4+)
-            // requires every input to agree on direction and propagates
-            // the shared one to the merged root. Align it to the main
-            // query's `orderBy` direction so a descending page merges,
-            // and so the merged root keeps the direction the verifier
-            // will rebuild through this same path.
+            // requires every input to agree on direction, so align it to
+            // the main query's `orderBy` direction so a descending page
+            // merges at all.
             start_at_path_query.query.query.left_to_right =
                 main_path_query.query.query.left_to_right;
             let limit = main_path_query.query.limit.take();
@@ -1887,6 +1885,22 @@ impl<'a> DriveDocumentQuery<'a> {
             )
             .map_err(Error::from)?;
             merged.query.limit = limit.map(|a| a.saturating_add(1));
+            // The merged root must be walked ascending regardless of the
+            // page's `orderBy` direction: the `limit + 1` above reserves
+            // one result slot for the cursor document, and the prover
+            // spends the budget in root traversal order. Ascending, the
+            // cursor branch (key `[0]`) is visited first and takes its
+            // reserved slot; descending, the index branch sorts first,
+            // consumes the whole budget mid-timeline, and the prover then
+            // omits the cursor subtree's lower layer — an unverifiable
+            // proof (the verifier extracts the cursor document from the
+            // proof before rebuilding the main query). Only this
+            // synthesized root flips: each input's own query lands intact
+            // inside a subquery branch, keeping in-branch result order.
+            // The verifier never rebuilds the merged query — it runs the
+            // cursor and main queries as separate subset queries — so the
+            // root's direction is not client-visible.
+            merged.query.query.left_to_right = true;
             Ok(merged)
         } else {
             Ok(main_path_query)
