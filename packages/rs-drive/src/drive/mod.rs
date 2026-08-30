@@ -13,6 +13,8 @@ use arc_swap::ArcSwap;
 use dpp::prelude::{BlockHeight, TimestampMillis};
 #[cfg(feature = "server")]
 use dpp::util::deserializer::ProtocolVersion;
+#[cfg(feature = "server")]
+use dpp::version::PlatformVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
 use std::fmt;
@@ -136,6 +138,17 @@ impl Checkpoint {
     /// version is still the initial one — so this is the authoritative source for it.
     pub fn current_protocol_version(&self) -> Result<Option<ProtocolVersion>, Error> {
         Drive::fetch_current_protocol_version_with_grovedb(&self.grove_db, None)
+    }
+
+    /// The Platform version this checkpoint must be read under, or `None` when the
+    /// checkpoint records no protocol version or one this binary does not know.
+    ///
+    /// Both are reasons not to serve the checkpoint as a state sync snapshot rather than
+    /// errors: an unknown version is simply a newer node's checkpoint.
+    pub fn platform_version(&self) -> Result<Option<&'static PlatformVersion>, Error> {
+        Ok(self
+            .current_protocol_version()?
+            .and_then(|protocol_version| PlatformVersion::get(protocol_version).ok()))
     }
 
     /// Marks this checkpoint for deletion when it is dropped.

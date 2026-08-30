@@ -61,14 +61,12 @@ where
     // has no saved state, so its in-memory platform state is still at the initial protocol
     // version and would hand grovedb the wrong (much older) version table than the one the
     // serving node generated the chunks with.
-    let snapshot_platform_version =
-        decode_snapshot_metadata(&offered_snapshot.metadata).and_then(|protocol_version| {
-            // Only versions that write the reduced platform state can be restored at all;
-            // anything else is refused here rather than after a full transfer.
-            (protocol_version >= PROTOCOL_VERSION_15)
-                .then(|| PlatformVersion::get(protocol_version).ok())
-                .flatten()
-        });
+    //
+    // Only versions that write the reduced platform state can be restored at all, so
+    // anything below v15 is refused here rather than after a full transfer.
+    let snapshot_platform_version = decode_snapshot_metadata(&offered_snapshot.metadata)
+        .filter(|protocol_version| *protocol_version >= PROTOCOL_VERSION_15)
+        .and_then(|protocol_version| PlatformVersion::get(protocol_version).ok());
     let Some(snapshot_platform_version) = snapshot_platform_version else {
         tracing::warn!(
             height = offered_snapshot.height,

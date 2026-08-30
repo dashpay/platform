@@ -3,7 +3,6 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::snapshot::encode_snapshot_metadata;
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci as proto;
 
 /// Lists the state sync snapshots this node can serve.
@@ -37,18 +36,22 @@ where
         // grovedb's tree opening and root-hash rules are version gated. The same version
         // is stamped into the snapshot metadata so the consuming node — which has no way
         // to derive it — restores under exactly these rules.
-        let Some(snapshot_protocol_version) =
-            checkpoint.current_protocol_version().map_err(|e| {
-                AbciError::StateSyncInternalError(format!(
-                    "list_snapshots unable to read the protocol version of the checkpoint at \
-                     height {}: {}",
-                    height, e
-                ))
-            })?
+        let Some(snapshot_platform_version) = checkpoint.platform_version().map_err(|e| {
+            AbciError::StateSyncInternalError(format!(
+                "list_snapshots unable to read the protocol version of the checkpoint at \
+                 height {}: {}",
+                height, e
+            ))
+        })?
         else {
-            continue;
-        };
-        let Ok(snapshot_platform_version) = PlatformVersion::get(snapshot_protocol_version) else {
+            // Unreachable on a healthy node — `store_platform_state` writes the protocol
+            // version in the block transaction that commits before the checkpoint is
+            // taken — so say so rather than silently dropping the snapshot from the list.
+            tracing::warn!(
+                height,
+                "[state_sync] not offering the checkpoint at this height: it records no \
+                 protocol version, or one this binary does not know",
+            );
             continue;
         };
         let grove_version = &snapshot_platform_version.drive.grove_version;
@@ -83,7 +86,7 @@ where
                 .state_sync
                 .protocol_version as u32,
             hash: root_hash.to_vec(),
-            metadata: encode_snapshot_metadata(snapshot_protocol_version),
+            metadata: encode_snapshot_metadata(snapshot_platform_version.protocol_version),
         });
     }
 
