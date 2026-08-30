@@ -371,14 +371,21 @@ impl IndexLevel {
                 // a grouping tree; the levels strictly between the
                 // shallowest of them and the terminal that host none must
                 // be count-bearing so deltas propagate up through the
-                // chain. The terminal level is skipped — its count-bearing
-                // layout follows from its own `IndexLevelTypeInfo` stamp
-                // below (`at` requires `rangeCountable`).
+                // chain. The terminal level never takes either stamp: its
+                // ranked/count-bearing layout follows from its own
+                // `IndexLevelTypeInfo` below (`at` requires
+                // `rangeCountable`), and the parser folds a last-property
+                // `at` name into the terminal boolean — so a hand-built
+                // `Index` carrying the terminal name in the vector stamps
+                // nothing rather than marking a level both grouping and
+                // terminating.
                 if let Some(min_at_position) = min_ranked_at_position {
-                    if ranked_at_positions.contains(&position) {
-                        current_level.ranked_count_grouping = true;
-                    } else if position > min_at_position && properties_iter.peek().is_some() {
-                        current_level.count_propagating = true;
+                    if properties_iter.peek().is_some() {
+                        if ranked_at_positions.contains(&position) {
+                            current_level.ranked_count_grouping = true;
+                        } else if position > min_at_position {
+                            current_level.count_propagating = true;
+                        }
                     }
                 }
 
@@ -1604,6 +1611,31 @@ mod tests {
             .expect("second level exists");
         assert!(second.ranked_count_grouping());
         assert!(!second.count_propagating());
+    }
+
+    /// A hand-built `Index` (this derivation accepts unvalidated values)
+    /// carrying the LAST property's name in `ranked_countable_at` — a
+    /// spelling the parser always folds into the terminal boolean — must
+    /// not stamp the terminal level as a grouping level: the terminal's
+    /// ranked layout is its info's business, and a level that is both
+    /// grouping and terminating has no coherent layout.
+    #[test]
+    fn a_terminal_name_in_the_at_vector_stamps_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let mut invalid = prefix_ranked_index("first");
+        invalid.ranked_countable_at = vec!["third".to_string()];
+
+        let structure = IndexLevel::try_from_indices([&invalid], "test", platform_version)
+            .expect("index level must build");
+        let third = structure
+            .sub_levels()
+            .get("first")
+            .and_then(|level| level.sub_levels().get("second"))
+            .and_then(|level| level.sub_levels().get("third"))
+            .expect("the terminal level exists");
+        assert!(!third.ranked_count_grouping());
+        assert!(!third.count_propagating());
+        assert!(third.has_index_with_type().is_some());
     }
 
     /// Without the `at` form nothing stamps the level flags — pinned so the

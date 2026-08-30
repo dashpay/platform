@@ -403,6 +403,31 @@ impl IndexCountability {
     }
 }
 
+/// Deserializer for [`Index::ranked_countable_at`] that accepts, besides
+/// the current array-of-names form, the two legacy spellings the field
+/// had while it was an `Option<String>`: `null` (→ empty) and a bare
+/// string (→ a one-name vector). Serialization always emits the array
+/// form; this only widens what deserializes.
+#[cfg(feature = "serde-conversion")]
+fn deserialize_ranked_countable_at<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RankedCountableAtCompat {
+        Many(Vec<String>),
+        One(String),
+    }
+    Ok(
+        match Option::<RankedCountableAtCompat>::deserialize(deserializer)? {
+            None => Vec::new(),
+            Some(RankedCountableAtCompat::One(level)) => vec![level],
+            Some(RankedCountableAtCompat::Many(levels)) => levels,
+        },
+    )
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
@@ -542,8 +567,14 @@ pub struct Index {
     //
     // `serde(default)`: added after the struct's serde shape was in the wild
     // (see the note on `countable` above), so pre-existing JSON must still
-    // deserialize.
-    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    // deserialize. The custom deserializer additionally accepts the two
+    // spellings the field had while it was an `Option<String>` — `null`
+    // and a bare string — which derived `Vec` deserialization would
+    // reject; `serde(default)` alone only covers an absent key.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(default, deserialize_with = "deserialize_ranked_countable_at")
+    )]
     pub ranked_countable_at: Vec<String>,
     /// Sum-axis counterpart of [`Index::ranked_countable`]: the terminal
     /// property-name tree gains an ordered secondary keyed by each group's sum
@@ -5676,6 +5707,39 @@ mod json_convertible_tests {
         );
         let recovered = Index::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    /// `ranked_countable_at` deserializes all three wire spellings: the
+    /// current array, plus the legacy `null` and bare-string forms from
+    /// its `Option<String>` era. An absent key keeps the `serde(default)`
+    /// path.
+    #[test]
+    fn index_json_accepts_legacy_ranked_countable_at_shapes() {
+        use crate::serialization::JsonConvertible;
+        let mut json = serde_json::to_value(index_fixture()).expect("serialize");
+
+        for (wire_value, expected) in [
+            (serde_json::Value::Null, Vec::<String>::new()),
+            (serde_json::json!("hashtag"), vec!["hashtag".to_string()]),
+            (
+                serde_json::json!(["hashtag", "postId"]),
+                vec!["hashtag".to_string(), "postId".to_string()],
+            ),
+        ] {
+            json["ranked_countable_at"] = wire_value.clone();
+            let recovered = Index::from_json(json.clone())
+                .unwrap_or_else(|e| panic!("{wire_value:?} must deserialize: {e}"));
+            assert_eq!(
+                recovered.ranked_countable_at, expected,
+                "for {wire_value:?}"
+            );
+        }
+
+        let mut object = json.as_object().expect("object").clone();
+        object.remove("ranked_countable_at");
+        let recovered = Index::from_json(serde_json::Value::Object(object))
+            .expect("an absent key must default");
+        assert_eq!(recovered.ranked_countable_at, Vec::<String>::new());
     }
 
     #[test]
