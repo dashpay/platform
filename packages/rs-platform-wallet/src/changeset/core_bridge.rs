@@ -2309,6 +2309,7 @@ mod contact_watch_only_projection_tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
