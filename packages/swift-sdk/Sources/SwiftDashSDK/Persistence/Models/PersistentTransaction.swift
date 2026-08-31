@@ -119,6 +119,23 @@ public final class PersistentTransaction {
     public var createdAt: Date
     public var lastUpdated: Date
 
+    /// Durable global exclusion for a swept loser.
+    ///
+    /// Set by `applySweptTransaction` in EVERY wallet's callback that
+    /// observes this row's sweep — not only the one whose deletion happens
+    /// to remove it. `store()` commits once per wallet, independently, so a
+    /// row `commit_batch` holds back for a second wallet's still-outstanding
+    /// claim cannot let that hold-back also postpone the parts of the sweep
+    /// that are true regardless of who else has weighed in: this flag is
+    /// what stays true the moment the first wallet's callback runs, so a
+    /// crash or rejection before any other wallet's callback arrives still
+    /// leaves the row excluded from every restore/enumeration path. `true`
+    /// means Rust has already proven the transaction can never confirm;
+    /// callers must treat the row as gone regardless of whether it still
+    /// physically exists (see `applySweptTransaction`'s doc for why the
+    /// physical delete is demoted to housekeeping once this is set).
+    public var isGloballySwept: Bool = false
+
     /// Transaction outputs created by this transaction.
     ///
     /// Cascade-deletes the matching `PersistentTxo` rows when the
