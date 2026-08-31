@@ -197,12 +197,20 @@ impl<'a> DriveChainedDocumentQuery<'a> {
     /// server and the verifier run — the single-builder rule that keeps
     /// the derived outer query identical on both sides.
     pub fn join_values(&self, inner_documents: &[Document]) -> Result<Vec<Identifier>, Error> {
+        use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+
         let mut seen: std::collections::BTreeSet<Identifier> = std::collections::BTreeSet::new();
         let mut join_values = Vec::with_capacity(inner_documents.len());
         for document in inner_documents {
+            // Path-aware read: `validate` admits any property
+            // `flattened_properties()` names — dotted (nested) keys
+            // included — and the synthesis builder stores those nested
+            // (`insert_at_path`), so a flat `.get` would miss them.
             let value = document
                 .properties()
-                .get(self.join_property.as_str())
+                .get_optional_at_path(self.join_property.as_str())
+                .ok()
+                .flatten()
                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                     "an inner projection is missing the join property: validate() \
                      guarantees the resolved index carries it",
@@ -408,12 +416,21 @@ impl DriveChainedDocumentQuery<'_> {
     /// disagree with the outer branch derived from the stale
     /// materialization, and every verifier would reject the
     /// composition.
+    ///
+    /// Returns the proof and the materialized INNER projections (the
+    /// join values, and with them the caller's response hint and
+    /// pagination cursor, derive from these). The outer documents are
+    /// deliberately NOT materialized here — the proof pass covers them,
+    /// so reading their bodies a second time would double the state
+    /// reads for data the proved response never carries inline.
     pub(crate) fn execute_with_proof_internal(
         &self,
         drive: &crate::drive::Drive,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<(Vec<u8>, ChainedDocumentsResult), Error> {
+    ) -> Result<(Vec<u8>, Vec<Document>), Error> {
+        self.validate(platform_version)?;
+
         // Block commits are seconds apart while an attempt is
         // milliseconds, so a bracket collision is rare and two in a row
         // vanishingly so; three attempts is generosity, not need.
@@ -424,13 +441,16 @@ impl DriveChainedDocumentQuery<'_> {
                 .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()?;
 
-            // Materializes both halves (validating on the way in) — the
-            // join values drive the outer component, and the documents
-            // ride back for callers that want proof + results in one
-            // pass.
-            let result =
-                self.execute_no_proof_internal(drive, None, drive_operations, platform_version)?;
-            let join_values = self.join_values(&result.inner_documents)?;
+            // Materialize the INNER half only — the join values the
+            // outer component derives from live in its projections.
+            let (inner_documents, _skipped) =
+                self.inner.execute_index_only_documents_no_proof_internal(
+                    drive,
+                    None,
+                    drive_operations,
+                    platform_version,
+                )?;
+            let join_values = self.join_values(&inner_documents)?;
 
             let path_queries = self.proof_path_queries(&join_values, platform_version)?;
             let path_query_refs: Vec<&grovedb::PathQuery> = path_queries.iter().collect();
@@ -447,7 +467,7 @@ impl DriveChainedDocumentQuery<'_> {
                 continue;
             }
 
-            return Ok((proof, result));
+            return Ok((proof, inner_documents));
         }
         Err(Error::Drive(DriveError::NotSupported(
             "chained proof generation raced a block commit on every attempt; \

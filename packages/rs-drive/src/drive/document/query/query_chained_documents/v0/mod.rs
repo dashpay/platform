@@ -55,7 +55,7 @@ impl Drive {
         &self,
         query: &DriveChainedDocumentQuery,
         platform_version: &PlatformVersion,
-    ) -> Result<(Vec<u8>, ChainedDocumentsResult), Error> {
+    ) -> Result<(Vec<u8>, Vec<dpp::document::Document>), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         query.execute_with_proof_internal(self, &mut drive_operations, platform_version)
     }

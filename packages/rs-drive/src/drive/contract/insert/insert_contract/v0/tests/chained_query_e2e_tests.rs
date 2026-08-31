@@ -191,12 +191,14 @@ fn chained_query_returns_liked_posts_with_proof_parity() {
     );
 
     // Proof round trip: ONE merged proof, verified against the query
-    // re-derived from the server's join-value hint.
-    let (proof, proved_result) = drive
+    // re-derived from the server's join-value hint. The with-proof path
+    // materializes only the inner projections — the outer half rides
+    // the proof.
+    let (proof, proved_inner) = drive
         .query_chained_documents_with_proof(&chained, pv)
         .expect("chained proof generates");
     let hint = chained
-        .join_values(&proved_result.inner_documents)
+        .join_values(&proved_inner)
         .expect("join values extract");
     let (_root_hash, verified) = chained
         .verify_chained_documents_proof(proof.as_slice(), &hint, pv)
@@ -207,7 +209,8 @@ fn chained_query_returns_liked_posts_with_proof_parity() {
             .iter()
             .map(|d| d.id())
             .collect::<Vec<_>>(),
-        proved_result
+        outcome
+            .result
             .outer_documents
             .iter()
             .map(|d| d.id())
@@ -220,11 +223,7 @@ fn chained_query_returns_liked_posts_with_proof_parity() {
             .iter()
             .map(|d| d.id())
             .collect::<Vec<_>>(),
-        proved_result
-            .inner_documents
-            .iter()
-            .map(|d| d.id())
-            .collect::<Vec<_>>(),
+        proved_inner.iter().map(|d| d.id()).collect::<Vec<_>>(),
         "verifier and server agree on the inner half"
     );
 }
@@ -239,10 +238,10 @@ fn chained_query_empty_inner_proves_alone() {
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
 
     let chained = chained_posts_i_liked(&contract, OWNER_3, None, Some(10));
-    let (proof, result) = drive
+    let (proof, proved_inner) = drive
         .query_chained_documents_with_proof(&chained, pv)
         .expect("chained proof generates");
-    assert!(result.inner_documents.is_empty());
+    assert!(proved_inner.is_empty());
 
     let (_root, verified) = chained
         .verify_chained_documents_proof(proof.as_slice(), &[], pv)
@@ -290,11 +289,11 @@ fn chained_query_paginates_through_inner_cursor() {
         .to_buffer();
 
     let page_2 = chained_posts_i_liked(&contract, OWNER_1, Some(cursor), Some(1));
-    let (proof, result_2) = drive
+    let (proof, proved_inner_2) = drive
         .query_chained_documents_with_proof(&page_2, pv)
         .expect("page 2 proof generates");
     let hint = page_2
-        .join_values(&result_2.inner_documents)
+        .join_values(&proved_inner_2)
         .expect("join values extract");
     let (_root, verified) = page_2
         .verify_chained_documents_proof(proof.as_slice(), &hint, pv)
@@ -312,7 +311,7 @@ fn chained_query_validation_rejections() {
     let pv = platform_version();
 
     // Missing inner limit — the bound on the outer fan-out.
-    let mut no_limit = chained_posts_i_liked(&contract, OWNER_1, None, None);
+    let no_limit = chained_posts_i_liked(&contract, OWNER_1, None, None);
     assert!(
         matches!(
             drive.query_chained_documents(&no_limit, None, None, pv),
@@ -320,7 +319,6 @@ fn chained_query_validation_rejections() {
         ),
         "an inner limit is required"
     );
-    no_limit.inner.limit = Some(10);
 
     // Join property without a refersTo declaration.
     let mut bad_join = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
@@ -385,11 +383,11 @@ fn chained_query_rejects_tampered_hints() {
     }
 
     let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
-    let (proof, result) = drive
+    let (proof, proved_inner) = drive
         .query_chained_documents_with_proof(&chained, pv)
         .expect("chained proof generates");
     let honest_hint = chained
-        .join_values(&result.inner_documents)
+        .join_values(&proved_inner)
         .expect("join values extract");
     assert_eq!(honest_hint.len(), 2);
 
