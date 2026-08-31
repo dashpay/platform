@@ -98,6 +98,12 @@ pub enum AbciError {
     /// Generic with code should only be used in tests
     #[error("invalid state transition error: {0}")]
     InvalidStateTransition(#[from] ConsensusError),
+
+    /// The current state was restored via state sync and carries no block id hash or
+    /// quorum signature yet, so a proof built from it could never authenticate; the
+    /// metadata arrives with the first block finalized after the restore.
+    #[error("state sync proof metadata not yet available: {0}")]
+    StateSyncProofMetadataUnavailable(String),
 }
 
 #[cfg(test)]
