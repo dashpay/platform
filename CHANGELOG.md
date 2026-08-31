@@ -1,3 +1,26 @@
+## [4.2.0-dev.7](https://github.com/dashpay/platform/compare/v4.2.0-dev.6...v4.2.0-dev.7) (2026-08-31)
+
+
+### Features
+
+* **drive:** admit plain sibling indexes beside a prefix-ranked chain via NonCounted branches ([#4543](https://github.com/dashpay/platform/issues/4543))
+* **platform-wallet-ffi:** expose external-recipient asset-lock funding entry points
+* **platform-wallet:** add fund_from_asset_lock_external for third-party recipients
+* **swift-sdk:** fundFromAssetLockExternal, recipient discriminator, and tests
+
+
+### Bug Fixes
+
+* **platform-wallet:** fail a double-spending asset lock with a typed terminal error ([#4356](https://github.com/dashpay/platform/issues/4356))
+* **platform-wallet:** keep the fund_from_asset_lock fee-strategy argument
+* **swift-sdk:** drain the persister's autorelease pool per row
+* **swift-sdk:** freeze the v2 asset-lock model and add schema v3
+
+
+### Code Refactoring
+
+* **platform-wallet:** derive the asset-lock fee strategy below the FFI boundary
+
 ## [4.2.0-dev.6](https://github.com/dashpay/platform/compare/v4.2.0-dev.5...v4.2.0-dev.6) (2026-08-30)
 
 
