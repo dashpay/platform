@@ -736,8 +736,20 @@ jobs:
       # Uploaded with the preinstalled CLI rather than a third-party action:
       # code running in this job runs beside the signing material, and an action
       # can read the keyring or shim the tools regardless of being pinned.
+      # The guard at the start of this job cannot cover the whole run: a
+      # maintainer can attach a signature while the packages are downloaded and
+      # verified. Re-checking here means the upload never replaces a file a
+      # signature already covers, leaving that signature over bytes it never saw.
       - name: Upload checksums to release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "${TAG}" assets/SHA256SUMS --repo "${GITHUB_REPOSITORY}" --clobber
+        run: |
+          set -euo pipefail
+          signature="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            --jq '[.assets[].name | select(. == "SHA256SUMS.asc")] | first // ""')"
+          if [ -n "${signature}" ]; then
+            echo "::error::SHA256SUMS.asc was attached to ${TAG} while this job was running, so uploading SHA256SUMS now would leave that signature over bytes it did not sign. Delete it with 'gh release delete-asset ${TAG} SHA256SUMS.asc', re-run, and sign the new file."
+            exit 1
+          fi
+          gh release upload "${TAG}" assets/SHA256SUMS --repo "${GITHUB_REPOSITORY}" --clobber
