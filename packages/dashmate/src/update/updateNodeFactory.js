@@ -1,5 +1,6 @@
 import lodash from 'lodash';
 import findPullStreamError from '../docker/findPullStreamError.js';
+import sanitizeRemoteText from '../util/sanitizeRemoteText.js';
 
 /**
  * @param {getServiceList} getServiceList
@@ -33,8 +34,10 @@ export default function updateNodeFactory(getServiceList, docker) {
           return new Promise((resolve) => {
             docker.pull(image, (err, stream) => {
               if (err) {
+                // A registry response body can reach the operator's terminal
+                // through this message, so it is made safe to print
                 resolve({
-                  name, title, image, updated: 'error', error: err.message,
+                  name, title, image, updated: 'error', error: sanitizeRemoteText(err.message),
                 });
 
                 return;
@@ -44,7 +47,8 @@ export default function updateNodeFactory(getServiceList, docker) {
               // chunks, splits them the way Docker writes them and reports
               // transport failures. A failed pull arrives as a regular message
               docker.modem.followProgress(stream, (streamError, output) => {
-                const error = streamError?.message ?? findPullStreamError(output);
+                const error = sanitizeRemoteText(streamError?.message)
+                  ?? findPullStreamError(output);
 
                 if (error) {
                   resolve({

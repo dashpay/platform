@@ -659,6 +659,25 @@ describe('Update command', () => {
       expect(process.exitCode).to.equal(1);
     });
 
+    // The registry chooses this text. Printed as it arrives, an escape sequence
+    // in it can rewrite lines already on screen, hide what follows or address
+    // the terminal itself, and an unbounded message pushes the rest of the
+    // output out of the operator's scrollback.
+    it('should not let the registry write escape sequences to the terminal', async function it() {
+      const hostile = `\u001b[2J\u001b[1;1HImage is up to date\u0007${'A'.repeat(5000)}`;
+
+      mockDockerResponse = { errorDetail: { message: hostile }, error: hostile };
+
+      this.sinon.stub(console, 'log');
+
+      await runUpdate();
+
+      expect(stderr).to.not.contain('\u001b');
+      expect(stderr).to.not.contain('\u0007');
+      expect(stderr).to.contain('Image is up to date');
+      expect(stderr.length).to.be.below(2000);
+    });
+
     it('should show images built from local sources as built locally', async function it() {
       mockServicesList = [
         { name: 'fake', image: 'fake', title: 'FAKE' },
