@@ -1,6 +1,7 @@
 mod accessors;
 mod masternode_list_changes;
 mod platform_state_for_saving;
+pub mod recent;
 
 use crate::error::Error;
 
@@ -64,6 +65,14 @@ pub struct PlatformState {
 
     /// previous FeeVersions
     pub previous_fee_versions: CachedEpochIndexFeeVersions,
+
+    /// True when a field carried only by the full saved record has changed since
+    /// the state was last written in full. The masternode lists, validator sets
+    /// and quorum sets are over a megabyte on mainnet and change on a minority of
+    /// blocks, so the full record is rewritten only when this is set; every block
+    /// still writes the small record holding the block info and quorum hashes.
+    /// Not part of the saved record: a state read back from disk starts dirty.
+    pub heavy_fields_dirty: bool,
 }
 
 fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet>) -> String {
@@ -149,6 +158,7 @@ impl PlatformState {
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
             previous_fee_versions: Default::default(),
+            heavy_fields_dirty: true,
         };
 
         Ok(state)
@@ -162,7 +172,7 @@ impl PlatformSerializable for PlatformState {
         let platform_version = self.current_platform_version()?;
         let config = config::standard().with_big_endian().with_no_limit();
         let platform_state_for_saving: PlatformStateForSaving =
-            self.clone().try_into_platform_versioned(platform_version)?;
+            self.try_into_platform_versioned(platform_version)?;
         bincode::encode_to_vec(platform_state_for_saving, config).map_err(|e| {
             ProtocolError::PlatformSerializationError(format!(
                 "unable to serialize PlatformState: {}",
@@ -195,6 +205,31 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
         platform_state_in_save_format
             .try_into_platform_versioned(platform_version)
             .map_err(|e: Error| ProtocolError::Generic(e.to_string()))
+    }
+}
+
+impl TryFromPlatformVersioned<&PlatformState> for PlatformStateForSaving {
+    type Error = Error;
+    fn try_from_platform_versioned(
+        value: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        match platform_version
+            .drive_abci
+            .structs
+            .platform_state_for_saving_structure_default
+        {
+            0 => {
+                let saving_v1: PlatformStateForSavingV1 = value.try_into()?;
+                Ok(saving_v1.into())
+            }
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "PlatformStateForSaving::try_from_platform_versioned(&PlatformState)"
+                    .to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }
 
@@ -279,6 +314,32 @@ mod tests {
 
             PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V3)
                 .expect("failed to deserialize state");
+        }
+
+        /// Serializing through the borrowed conversion must produce exactly the
+        /// bytes the owned conversion produced, since it writes the same aux record.
+        #[test]
+        fn borrowed_serialization_matches_owned() {
+            let serialized_state =
+                hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
+
+            let state = PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V9)
+                .expect("failed to deserialize state");
+
+            let platform_version = state
+                .current_platform_version()
+                .expect("state must know its version");
+            let config = config::standard().with_big_endian().with_no_limit();
+            let owned: PlatformStateForSaving = state
+                .clone()
+                .try_into_platform_versioned(platform_version)
+                .expect("owned conversion");
+            let owned_bytes = bincode::encode_to_vec(owned, config).expect("owned encode");
+
+            assert_eq!(
+                state.serialize_to_bytes().expect("borrowed serialize"),
+                owned_bytes
+            );
         }
 
         #[test]

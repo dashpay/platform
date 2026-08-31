@@ -54,6 +54,11 @@ where
         // Persist block state
         self.store_platform_state(&block_platform_state, Some(transaction), platform_version)?;
 
+        // Whatever the store wrote is now what is on disk for this block, so the
+        // next block only has to write the full record if it changes something
+        // heavy itself.
+        block_platform_state.heavy_fields_dirty = false;
+
         let block_platform_state = Arc::new(block_platform_state);
 
         self.state.store(block_platform_state);

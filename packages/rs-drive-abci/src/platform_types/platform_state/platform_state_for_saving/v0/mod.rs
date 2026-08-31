@@ -87,6 +87,8 @@ impl From<PlatformStateForSavingV0> for PlatformState {
                 .into_keys()
                 .map(|epoch_index| (epoch_index, FeeVersion::first()))
                 .collect(),
+            // a state read back from disk has not been written in full since
+            heavy_fields_dirty: true,
         }
     }
 }

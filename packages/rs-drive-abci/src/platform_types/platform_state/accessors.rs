@@ -399,6 +399,10 @@ impl PlatformStateV0Methods for PlatformState {
     /// Sets the current protocol version in consensus.
     fn set_current_protocol_version_in_consensus(&mut self, version: ProtocolVersion) {
         self.current_protocol_version_in_consensus = version;
+        // The protocol version chooses the structure the full record is written
+        // in, so a change has to rewrite it rather than leave an older structure
+        // on disk with a newer version recorded beside it.
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the next epoch protocol version.
@@ -419,26 +423,31 @@ impl PlatformStateV0Methods for PlatformState {
     /// Sets the current validator sets.
     fn set_validator_sets(&mut self, sets: IndexMap<QuorumHash, ValidatorSet>) {
         self.validator_sets = sets;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the current chain lock validating quorums.
     fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         self.chain_lock_validating_quorums = quorums;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the current instant lock validating quorums.
     fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
         self.instant_lock_validating_quorums = quorums;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the full masternode list.
     fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         self.full_masternode_list = list;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the list of high performance masternodes.
     fn set_hpmn_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
         self.hpmn_masternode_list = list;
+        self.heavy_fields_dirty = true;
     }
 
     /// Sets the platform initialization information.
@@ -451,6 +460,7 @@ impl PlatformStateV0Methods for PlatformState {
     }
 
     fn current_protocol_version_in_consensus_mut(&mut self) -> &mut ProtocolVersion {
+        self.heavy_fields_dirty = true;
         &mut self.current_protocol_version_in_consensus
     }
 
@@ -467,22 +477,27 @@ impl PlatformStateV0Methods for PlatformState {
     }
 
     fn validator_sets_mut(&mut self) -> &mut IndexMap<QuorumHash, ValidatorSet> {
+        self.heavy_fields_dirty = true;
         &mut self.validator_sets
     }
 
     fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
+        self.heavy_fields_dirty = true;
         &mut self.chain_lock_validating_quorums
     }
 
     fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
+        self.heavy_fields_dirty = true;
         &mut self.instant_lock_validating_quorums
     }
 
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
+        self.heavy_fields_dirty = true;
         &mut self.full_masternode_list
     }
 
     fn hpmn_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
+        self.heavy_fields_dirty = true;
         &mut self.hpmn_masternode_list
     }
 
@@ -606,6 +621,7 @@ impl PlatformStateV0Methods for PlatformState {
     }
 
     fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
+        self.heavy_fields_dirty = true;
         &mut self.previous_fee_versions
     }
 }
