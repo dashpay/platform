@@ -109,6 +109,23 @@ where
             ..
         } = &masternode_diff;
 
+        // Core advances a block without any masternode changing far more often
+        // than not. Returning before the first mutable borrow keeps the platform
+        // state clean, which is what lets the block skip rewriting the full saved
+        // state (over a megabyte on mainnet) to disk.
+        if !start_from_scratch
+            && added_mns.is_empty()
+            && removed_mns.is_empty()
+            && updated_mns.is_empty()
+        {
+            return Ok(
+                update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome {
+                    masternode_list_diff: masternode_diff,
+                    removed_masternodes: BTreeMap::new(),
+                },
+            );
+        }
+
         //todo: clean up
         let added_hpmns = added_mns.iter().filter_map(|masternode| {
             if masternode.node_type == MasternodeType::Evo {

@@ -33,9 +33,7 @@ mod tests {
 
     #[test]
     fn a_block_from_a_year_ago_is_historical() {
-        assert!(is_historical_block(
-            now_ms() - 365 * 24 * 60 * 60 * 1000
-        ));
+        assert!(is_historical_block(now_ms() - 365 * 24 * 60 * 60 * 1000));
     }
 
     #[test]

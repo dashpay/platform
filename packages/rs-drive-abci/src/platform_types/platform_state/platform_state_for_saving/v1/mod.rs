@@ -53,6 +53,65 @@ pub struct PlatformStateForSavingV1 {
     pub previous_fee_versions: EpochIndexFeeVersionsForStorage,
 }
 
+impl TryFrom<&PlatformState> for PlatformStateForSavingV1 {
+    type Error = Error;
+
+    /// Builds the saving form from a borrowed state.
+    ///
+    /// The owned conversion below is what serialization used to go through, and
+    /// reaching it from `&PlatformState` meant cloning the whole state first —
+    /// two full copies of the masternode lists and validator sets per block, on
+    /// a path that runs once per block. This clones each field once instead.
+    fn try_from(value: &PlatformState) -> Result<Self, Self::Error> {
+        let platform_version = value.current_platform_version()?;
+        Ok(PlatformStateForSavingV1 {
+            genesis_block_info: value.genesis_block_info,
+            last_committed_block_info: value.last_committed_block_info.clone(),
+            current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
+            next_epoch_protocol_version: value.next_epoch_protocol_version,
+            current_validator_set_quorum_hash: value
+                .current_validator_set_quorum_hash
+                .to_byte_array()
+                .into(),
+            next_validator_set_quorum_hash: value
+                .next_validator_set_quorum_hash
+                .map(|quorum_hash| quorum_hash.to_byte_array().into()),
+            validator_sets: value
+                .validator_sets
+                .iter()
+                .map(|(k, v)| (k.to_byte_array().into(), v.clone()))
+                .collect(),
+            chain_lock_validating_quorums: value.chain_lock_validating_quorums.clone().into(),
+            instant_lock_validating_quorums: value.instant_lock_validating_quorums.clone().into(),
+            full_masternode_list: value
+                .full_masternode_list
+                .iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k.to_byte_array().into(),
+                        v.clone().try_into_platform_versioned(platform_version)?,
+                    ))
+                })
+                .collect::<Result<BTreeMap<Bytes32, Masternode>, Error>>()?,
+            hpmn_masternode_list: value
+                .hpmn_masternode_list
+                .iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k.to_byte_array().into(),
+                        v.clone().try_into_platform_versioned(platform_version)?,
+                    ))
+                })
+                .collect::<Result<BTreeMap<Bytes32, Masternode>, Error>>()?,
+            previous_fee_versions: value
+                .previous_fee_versions
+                .iter()
+                .map(|(epoch_index, fee_version)| (*epoch_index, fee_version.fee_version_number))
+                .collect(),
+        })
+    }
+}
+
 impl TryFrom<PlatformState> for PlatformStateForSavingV1 {
     type Error = Error;
 
@@ -147,6 +206,8 @@ impl From<PlatformStateForSavingV1> for PlatformState {
                     )
                 })
                 .collect(),
+            // a state read back from disk has not been written in full since
+            heavy_fields_dirty: true,
         }
     }
 }
