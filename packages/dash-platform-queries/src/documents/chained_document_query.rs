@@ -191,24 +191,34 @@ impl FromProof<ChainedDocumentQuery> for ChainedDocuments {
             }
         })?;
 
-        // The standard envelope carries the INNER proof (and the
-        // signature fields); the outer grovedb proof rides beside the
-        // result oneof.
+        // The standard envelope carries the single MERGED proof; the
+        // untrusted join-value hint rides beside the result oneof.
         let proof = response
             .proof()
             .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
         let mtd = response
             .metadata()
             .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
-        let outer_grovedb_proof = match &response.version {
-            Some(ResponseVersion::V0(v0)) => v0.outer_grovedb_proof.as_slice(),
+        let hint: Vec<dpp::prelude::Identifier> = match &response.version {
+            Some(ResponseVersion::V0(v0)) => v0
+                .proven_join_values
+                .iter()
+                .map(|bytes| {
+                    dpp::prelude::Identifier::from_bytes(bytes).map_err(|_| {
+                        drive_proof_verifier::Error::ResponseDecodeError {
+                            error: "proven_join_values entries must be 32-byte identifiers"
+                                .to_string(),
+                        }
+                    })
+                })
+                .collect::<Result<_, _>>()?,
             None => return Err(drive_proof_verifier::Error::EmptyVersion),
         };
 
         let (_root_hash, chained) = verify_chained_documents_tenderdash_proof(
             &query,
             proof,
-            outer_grovedb_proof,
+            &hint,
             mtd,
             platform_version,
             provider,

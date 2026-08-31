@@ -1,15 +1,18 @@
 //! Verified **chained document** (provable semi-join) results.
 //!
 //! A chained query is `SELECT * FROM <outer> WHERE $id IN (SELECT
-//! <join_property> FROM <inner> WHERE …)` answered as TWO grovedb
-//! proofs bound to ONE state root: the inner indexOnly page, and the
-//! outer by-ids fetch DERIVED from the proven inner values. The
+//! <join_property> FROM <inner> WHERE …)` answered as ONE merged
+//! grovedb proof: the limited inner indexOnly page and the outer
+//! by-ids fetch derived from its values, merged by the server (grovedb
+//! lifts the inner limit into a per-instance branch limit). The
 //! verifier ([`DriveChainedDocumentQuery::verify_chained_documents_proof`])
-//! re-derives the outer query itself, requires equal root hashes and
-//! exact id↔document set equality — a missing referenced document is an
-//! invalid proof (`refersTo: permanentDocument` targets cannot dangle)
-//! — and this module's [`FromProof`] impl composes that with the
-//! tenderdash signature binding of the shared root.
+//! reconstructs the merged query from the response's UNTRUSTED
+//! join-value hint, verifies in one pass, and requires the proven
+//! outer documents to match the PROVEN inner join values exactly — a
+//! missing referenced document is an invalid proof (`refersTo:
+//! permanentDocument` targets cannot dangle) — and this module's
+//! [`FromProof`] impl composes that with the tenderdash signature
+//! binding of the single root.
 //!
 //! There is deliberately **no unproven decoder with verification
 //! semantics** here: an unproven chained response is free to fabricate
@@ -43,31 +46,30 @@ pub struct ChainedDocuments {
     pub outer_documents: Vec<Document>,
 }
 
-/// Verify a chained proof pair and bind the shared root hash to the
-/// quorum signature.
+/// Verify a chained query's single merged proof and bind its root hash
+/// to the quorum signature.
 ///
-/// The merk-level composition (outer-query re-derivation, root
-/// equality, exact set equality) lives in rs-drive's
+/// The merk-level composition (merged-query reconstruction from the
+/// untrusted hint, single-pass verification, exact set equality against
+/// the PROVEN join values) lives in rs-drive's
 /// [`DriveChainedDocumentQuery::verify_chained_documents_proof`]; this
-/// wrapper adds the [`verify_tenderdash_proof`] binding — the root
-/// hash both proofs commit to is only an attested fact once it is tied
-/// to the quorum-signed app hash, and this function exists so the
-/// composition can never be skipped by accident.
+/// wrapper adds the [`verify_tenderdash_proof`] binding — the root hash
+/// the proof commits to is only an attested fact once it is tied to the
+/// quorum-signed app hash, and this function exists so the composition
+/// can never be skipped by accident.
 ///
-/// `outer_grovedb_proof` is the response's rider field: empty means
-/// "no outer proof" (required for an empty inner page, refused
-/// otherwise — the verifier enforces presence-iff-nonempty).
+/// `join_values_hint` is the response's `proven_join_values` rider —
+/// untrusted bootstrap data; a hint that lies fails verification.
 pub fn verify_chained_documents_proof(
     query: &DriveChainedDocumentQuery,
     proof: &Proof,
-    outer_grovedb_proof: &[u8],
+    join_values_hint: &[dpp::prelude::Identifier],
     mtd: &ResponseMetadata,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, ChainedDocuments), Error> {
-    let outer_proof = (!outer_grovedb_proof.is_empty()).then_some(outer_grovedb_proof);
     let (root_hash, result) = query
-        .verify_chained_documents_proof(&proof.grovedb_proof, outer_proof, platform_version)
+        .verify_chained_documents_proof(&proof.grovedb_proof, join_values_hint, platform_version)
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -110,24 +112,28 @@ where
                     error: e.to_string(),
                 })?;
 
-        // The standard envelope carries the INNER proof (and the
-        // signature fields); the outer grovedb proof rides beside the
-        // result oneof.
+        // The standard envelope carries the single MERGED proof; the
+        // untrusted join-value hint rides beside the result oneof.
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-        let outer_grovedb_proof = match &response.version {
-            Some(ResponseVersion::V0(v0)) => v0.outer_grovedb_proof.as_slice(),
+        let hint: Vec<dpp::prelude::Identifier> = match &response.version {
+            Some(ResponseVersion::V0(v0)) => v0
+                .proven_join_values
+                .iter()
+                .map(|bytes| {
+                    dpp::prelude::Identifier::from_bytes(bytes).map_err(|_| {
+                        Error::ResponseDecodeError {
+                            error: "proven_join_values entries must be 32-byte identifiers"
+                                .to_string(),
+                        }
+                    })
+                })
+                .collect::<Result<_, _>>()?,
             None => return Err(Error::EmptyVersion),
         };
 
-        let (_root_hash, chained) = verify_chained_documents_proof(
-            &query,
-            proof,
-            outer_grovedb_proof,
-            mtd,
-            platform_version,
-            provider,
-        )?;
+        let (_root_hash, chained) =
+            verify_chained_documents_proof(&query, proof, &hint, mtd, platform_version, provider)?;
 
         // An empty inner page is a valid, proven "you have nothing
         // here" — surface it as Some(empty) rather than None so callers
