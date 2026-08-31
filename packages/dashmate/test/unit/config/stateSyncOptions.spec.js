@@ -77,6 +77,21 @@ describe('state sync options', () => {
       });
     });
 
+    // The fractional minute/hour floor is 0.1, which is conservative: 5s is a
+    // non-terminating decimal in minutes (0.0833...m), so a regex can't hit the
+    // boundary exactly. Durations between 5s and the floor (e.g. 0.09m = 5.4s,
+    // 0.01h = 36s) must be spelled in s or ms, which express any duration exactly.
+    it('should accept fractional minutes and hours down to 0.1 only', () => {
+      ['0.1m', '0.15m', '0.1h'].forEach((valid) => {
+        config.set('platform.drive.tenderdash.stateSync.chunkRequestTimeout', valid);
+      });
+
+      ['0.09m', '0.01h', '0.099m'].forEach((invalid) => {
+        expect(() => config.set('platform.drive.tenderdash.stateSync.chunkRequestTimeout', invalid), invalid)
+          .to.throw();
+      });
+    });
+
     it('should reject a snapshot frequency below one minute', () => {
       config.set('platform.drive.abci.stateSync.snapshots.frequencySeconds', 60);
 
