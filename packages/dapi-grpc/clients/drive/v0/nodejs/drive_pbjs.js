@@ -24061,7 +24061,6 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IResultData|null} [data] GetDocumentsResponseV1 data
                              * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetDocumentsResponseV1 proof
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetDocumentsResponseV1 metadata
-                             * @property {Array.<Uint8Array>|null} [provenJoinValues] GetDocumentsResponseV1 provenJoinValues
                              */
 
                             /**
@@ -24073,7 +24072,6 @@ $root.org = (function() {
                              * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.IGetDocumentsResponseV1=} [properties] Properties to set
                              */
                             function GetDocumentsResponseV1(properties) {
-                                this.provenJoinValues = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -24103,14 +24101,6 @@ $root.org = (function() {
                              * @instance
                              */
                             GetDocumentsResponseV1.prototype.metadata = null;
-
-                            /**
-                             * GetDocumentsResponseV1 provenJoinValues.
-                             * @member {Array.<Uint8Array>} provenJoinValues
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
-                             * @instance
-                             */
-                            GetDocumentsResponseV1.prototype.provenJoinValues = $util.emptyArray;
 
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
@@ -24156,9 +24146,6 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
                                     $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                                if (message.provenJoinValues != null && message.provenJoinValues.length)
-                                    for (var i = 0; i < message.provenJoinValues.length; ++i)
-                                        writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.provenJoinValues[i]);
                                 return writer;
                             };
 
@@ -24201,11 +24188,6 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
-                                        break;
-                                    case 4:
-                                        if (!(message.provenJoinValues && message.provenJoinValues.length))
-                                            message.provenJoinValues = [];
-                                        message.provenJoinValues.push(reader.bytes());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -24266,13 +24248,6 @@ $root.org = (function() {
                                     if (error)
                                         return "metadata." + error;
                                 }
-                                if (message.provenJoinValues != null && message.hasOwnProperty("provenJoinValues")) {
-                                    if (!Array.isArray(message.provenJoinValues))
-                                        return "provenJoinValues: array expected";
-                                    for (var i = 0; i < message.provenJoinValues.length; ++i)
-                                        if (!(message.provenJoinValues[i] && typeof message.provenJoinValues[i].length === "number" || $util.isString(message.provenJoinValues[i])))
-                                            return "provenJoinValues: buffer[] expected";
-                                }
                                 return null;
                             };
 
@@ -24303,16 +24278,6 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.metadata: object expected");
                                     message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
                                 }
-                                if (object.provenJoinValues) {
-                                    if (!Array.isArray(object.provenJoinValues))
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.provenJoinValues: array expected");
-                                    message.provenJoinValues = [];
-                                    for (var i = 0; i < object.provenJoinValues.length; ++i)
-                                        if (typeof object.provenJoinValues[i] === "string")
-                                            $util.base64.decode(object.provenJoinValues[i], message.provenJoinValues[i] = $util.newBuffer($util.base64.length(object.provenJoinValues[i])), 0);
-                                        else if (object.provenJoinValues[i].length >= 0)
-                                            message.provenJoinValues[i] = object.provenJoinValues[i];
-                                }
                                 return message;
                             };
 
@@ -24329,8 +24294,6 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.arrays || options.defaults)
-                                    object.provenJoinValues = [];
                                 if (options.defaults)
                                     object.metadata = null;
                                 if (message.data != null && message.hasOwnProperty("data")) {
@@ -24345,11 +24308,6 @@ $root.org = (function() {
                                 }
                                 if (message.metadata != null && message.hasOwnProperty("metadata"))
                                     object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
-                                if (message.provenJoinValues && message.provenJoinValues.length) {
-                                    object.provenJoinValues = [];
-                                    for (var j = 0; j < message.provenJoinValues.length; ++j)
-                                        object.provenJoinValues[j] = options.bytes === String ? $util.base64.encode(message.provenJoinValues[j], 0, message.provenJoinValues[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.provenJoinValues[j]) : message.provenJoinValues[j];
-                                }
                                 return object;
                             };
 

@@ -2890,13 +2890,6 @@ export namespace GetDocumentsResponse {
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
-    clearProvenJoinValuesList(): void;
-    getProvenJoinValuesList(): Array<Uint8Array | string>;
-    getProvenJoinValuesList_asU8(): Array<Uint8Array>;
-    getProvenJoinValuesList_asB64(): Array<string>;
-    setProvenJoinValuesList(value: Array<Uint8Array | string>): void;
-    addProvenJoinValues(value: Uint8Array | string, index?: number): Uint8Array | string;
-
     getResultCase(): GetDocumentsResponseV1.ResultCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetDocumentsResponseV1.AsObject;
@@ -2913,7 +2906,6 @@ export namespace GetDocumentsResponse {
       data?: GetDocumentsResponse.GetDocumentsResponseV1.ResultData.AsObject,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
-      provenJoinValuesList: Array<Uint8Array | string>,
     }
 
     export class Documents extends jspb.Message {

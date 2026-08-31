@@ -6492,14 +6492,12 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV0_Documents__storage_ {
 @dynamic data_p;
 @dynamic proof;
 @dynamic hasMetadata, metadata;
-@dynamic provenJoinValuesArray, provenJoinValuesArray_Count;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1__storage_ {
   uint32_t _has_storage_[2];
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData *data_p;
   Proof *proof;
   ResponseMetadata *metadata;
-  NSMutableArray *provenJoinValuesArray;
 } GetDocumentsResponse_GetDocumentsResponseV1__storage_;
 
 // This method is threadsafe because it is initially called
@@ -6534,15 +6532,6 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1__storage_ {
         .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1__storage_, metadata),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
-      },
-      {
-        .name = "provenJoinValuesArray",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_ProvenJoinValuesArray,
-        .hasIndex = GPBNoHasBit,
-        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1__storage_, provenJoinValuesArray),
-        .flags = GPBFieldRepeated,
-        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =

@@ -4908,7 +4908,6 @@ mod time_range_proof_verification {
             version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(mtd),
-                proven_join_values: Vec::new(),
             })),
         };
         let (verified, _mtd, _proof) =
@@ -5072,7 +5071,6 @@ mod time_range_proof_verification {
             version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(mtd.clone()),
-                proven_join_values: Vec::new(),
             })),
         }
     }

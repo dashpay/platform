@@ -9,7 +9,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
-use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
 
@@ -20,18 +19,48 @@ impl DriveChainedDocumentQuery<'_> {
     pub(super) fn verify_chained_documents_proof_v0(
         &self,
         proof: &[u8],
-        join_values_hint: &[Identifier],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, ChainedDocumentsResult), Error> {
         self.validate(platform_version)?;
         let grove_version = &platform_version.drive.grove_version;
 
-        // The hint is UNTRUSTED bootstrap data (the server's claimed
-        // join values). The merged query is derived from it and the
-        // proof is verified against that derivation — if the hint
-        // disagrees with the proof's actual inner content, the exact-set
-        // assembly below fails, so soundness never rests on the hint.
-        let path_queries = self.proof_path_queries(join_values_hint, platform_version)?;
+        // BOOTSTRAP PASS: run the inner query alone against the merged
+        // proof (subset verification — succinctness off, so the outer
+        // branch's extra coverage is tolerated) and extract the join
+        // values from its proven positions. These are only CANDIDATES
+        // for reconstructing the merged query; the full pass below is
+        // the authority, so nothing rests on this pass's completeness
+        // semantics.
+        let inner_path_query = self.inner.construct_path_query(None, platform_version)?;
+        let (_, bootstrap_trios) =
+            GroveDb::verify_subset_query(proof, &inner_path_query, grove_version)?;
+        let index = self.inner.index_only_query_index(platform_version)?;
+        let bootstrap_documents = bootstrap_trios
+            .into_iter()
+            .filter(|(_, _, element)| element.is_some())
+            .map(|(path, key, _)| {
+                synthesize_index_only_document(
+                    self.inner.contract.id(),
+                    self.inner.document_type,
+                    index,
+                    &path,
+                    &key,
+                )
+            })
+            .collect::<Result<Vec<Document>, Error>>()?;
+        let candidate_join_values = self.join_values(&bootstrap_documents)?;
+
+        // AUTHORITATIVE PASS: re-derive the outer component from the
+        // candidates, re-merge at the same grove version (identical to
+        // the prover's merge by the single-builder rule), and verify
+        // the whole composition with succinctness on — grovedb enforces
+        // the inner page's lifted per-instance limit and range
+        // completeness here. A proof that covers only the inner half
+        // (e.g. a node that predates the chained surface serving the
+        // plain inner query) fails this pass whenever the candidates
+        // are non-empty: the merged query demands outer coverage the
+        // proof cannot supply.
+        let path_queries = self.proof_path_queries(&candidate_join_values, platform_version)?;
         let path_query_refs: Vec<&PathQuery> = path_queries.iter().collect();
         let merged_query = if path_query_refs.len() > 1 {
             PathQuery::merge(path_query_refs, grove_version)?
@@ -47,7 +76,6 @@ impl DriveChainedDocumentQuery<'_> {
         // <doctype>, …]`.
         let inner_type_name = self.inner.document_type.name().as_bytes();
         let outer_type_name = self.outer_document_type.name().as_bytes();
-        let index = self.inner.index_only_query_index(platform_version)?;
         let mut inner_documents: Vec<Document> = Vec::new();
         let mut outer_documents: Vec<Document> = Vec::new();
         for (path, key, element) in proved_path_key_values {
@@ -91,12 +119,10 @@ impl DriveChainedDocumentQuery<'_> {
             }
         }
 
-        // The PROVEN join values are authoritative. If the hint lied —
-        // extra ids, missing ids, different ids — the outer half the
-        // merged query covered cannot match them, and the exact-set
-        // assembly refuses in whichever direction the lie went. An
-        // empty proven page with a non-empty hint dies here too: the
-        // merged query demanded outer entries the proof cannot carry.
+        // The full pass's PROVEN join values are authoritative — the
+        // bootstrap candidates were only for reconstructing the query —
+        // and the exact-set assembly refuses any divergence between
+        // them and the proven outer documents, in either direction.
         let join_values = self.join_values(&inner_documents)?;
         let outer_documents = self.assemble_outer_documents(&join_values, outer_documents)?;
 

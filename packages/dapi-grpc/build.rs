@@ -337,11 +337,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("identity_id", SERDE_WITH_BYTES)
         .field_attribute("ids", SERDE_WITH_BASE64)
         // Wire-format compat for mock vectors captured before the chained
-        // surface existed: both new fields deserialize to their defaults
-        // when absent (same pattern DocumentQuery's own serde defaults
-        // follow for pre-SQL-surface fixtures).
+        // surface existed: the field deserializes to its default when
+        // absent (same pattern DocumentQuery's own serde defaults follow
+        // for pre-SQL-surface fixtures).
         .field_attribute("GetDocumentsRequestV1.chained", SERDE_DEFAULT)
-        .field_attribute("GetDocumentsResponseV1.proven_join_values", SERDE_DEFAULT)
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)

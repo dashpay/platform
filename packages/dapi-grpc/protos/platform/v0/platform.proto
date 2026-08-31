@@ -1182,12 +1182,15 @@ message GetDocumentsRequest {
     // `having`, time-range clauses, cursors, and `offset` are all
     // rejected. Pagination is a range clause on `join_property`.
     //
-    // A node that predates this field ignores it (proto3 unknown
-    // field) and serves the plain inner query — which FAILS CLOSED
-    // client-side: the verifier assembles the outer half against
-    // the PROVEN inner join values, so an inner-only proof cannot
-    // satisfy a non-empty join, and an unproven response carries
-    // the wrong ResultData variant.
+    // The verifier needs nothing beyond the proof itself: it
+    // subset-verifies the inner query against the merged proof to
+    // extract the join values, re-derives the outer component, and
+    // verifies the whole composition. A node that predates this
+    // field ignores it (proto3 unknown field) and serves the plain
+    // inner query — which FAILS CLOSED client-side: an inner-only
+    // proof cannot satisfy the re-derived merged query for a
+    // non-empty page, and an unproven response carries the wrong
+    // ResultData variant.
     message ChainedJoin {
       // The inner property whose proven values become the outer
       // documents' `$id`s.
@@ -1563,14 +1566,6 @@ message GetDocumentsResponse {
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
-    // Chained mode only: the server's join values (32-byte ids,
-    // deduplicated, first-appearance order) — the UNTRUSTED
-    // bootstrap hint the verifier uses to re-derive the outer
-    // component of the single merged proof before verifying. A hint
-    // that disagrees with the proof's actual inner content fails
-    // verification, so soundness never rests on it. Populated only
-    // with `proof` on a chained request; empty otherwise.
-    repeated bytes proven_join_values = 4;
   }
 
   oneof version {

@@ -178,7 +178,11 @@ impl<C> Platform<C> {
         }
 
         let response = if prove {
-            let (merged_proof, inner_documents) = match self
+            // The proof is self-sufficient for the verifier: it
+            // subset-verifies the inner query against it to extract
+            // the join values, then re-derives and verifies the whole
+            // merged composition.
+            let (merged_proof, _inner_documents) = match self
                 .drive
                 .query_chained_documents_with_proof(&chained_query, platform_version)
             {
@@ -191,21 +195,12 @@ impl<C> Platform<C> {
                 Err(e) => return Err(e.into()),
             };
 
-            // The bootstrap hint the verifier re-derives the outer
-            // component from — untrusted by design.
-            let proven_join_values = chained_query
-                .join_values(&inner_documents)?
-                .into_iter()
-                .map(|id| id.to_vec())
-                .collect();
-
             let (grovedb_used, proof) =
                 self.response_proof_v0(platform_state, merged_proof, GroveDBToUse::Current)?;
 
             GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
-                proven_join_values,
             }
         } else {
             let outcome = match self.drive.query_chained_documents(
@@ -253,7 +248,6 @@ impl<C> Platform<C> {
                     })),
                 })),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
-                proven_join_values: Vec::new(),
             }
         };
 
@@ -374,7 +368,6 @@ mod tests {
             .expect("query executes");
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
         let response = result.data.expect("response data");
-        assert!(response.proven_join_values.is_empty());
         let Some(ResponseResult::Data(data)) = response.result else {
             panic!("expected a data result");
         };
@@ -418,11 +411,6 @@ mod tests {
         let Some(ResponseResult::Proof(proof)) = response.result else {
             panic!("expected a proof result");
         };
-        assert_eq!(
-            response.proven_join_values,
-            vec![POST_A.to_vec(), POST_B.to_vec()],
-            "the bootstrap hint carries the proven join values in first-appearance order"
-        );
 
         // Client-side composition: rebuild the same chained query and
         // verify the single merged proof.
@@ -456,16 +444,9 @@ mod tests {
                 .document_type_for_name("post")
                 .expect("post doctype"),
         };
-        let hint: Vec<Identifier> = response
-            .proven_join_values
-            .iter()
-            .map(|bytes| {
-                Identifier::from_bytes(bytes).expect("hint entries are 32-byte identifiers")
-            })
-            .collect();
         let (_root_hash, verified) = chained
-            .verify_chained_documents_proof(proof.grovedb_proof.as_slice(), &hint, version)
-            .expect("chained proof verifies");
+            .verify_chained_documents_proof(proof.grovedb_proof.as_slice(), version)
+            .expect("chained proof verifies — the proof alone carries everything");
         assert_eq!(verified.outer_documents.len(), 2);
         assert_eq!(
             verified

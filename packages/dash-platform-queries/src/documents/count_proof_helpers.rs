@@ -721,7 +721,6 @@ mod tests {
                     time_ms: BUCKET_START_MS + 3_600_000,
                     ..Default::default()
                 }),
-                proven_join_values: Vec::new(),
             })),
         };
 

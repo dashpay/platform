@@ -3304,12 +3304,15 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin_FieldNumb
  * `having`, time-range clauses, cursors, and `offset` are all
  * rejected. Pagination is a range clause on `join_property`.
  *
- * A node that predates this field ignores it (proto3 unknown
- * field) and serves the plain inner query — which FAILS CLOSED
- * client-side: the verifier assembles the outer half against
- * the PROVEN inner join values, so an inner-only proof cannot
- * satisfy a non-empty join, and an unproven response carries
- * the wrong ResultData variant.
+ * The verifier needs nothing beyond the proof itself: it
+ * subset-verifies the inner query against the merged proof to
+ * extract the join values, re-derives the outer component, and
+ * verifies the whole composition. A node that predates this
+ * field ignores it (proto3 unknown field) and serves the plain
+ * inner query — which FAILS CLOSED client-side: an inner-only
+ * proof cannot satisfy the re-derived merged query for a
+ * non-empty page, and an unproven response carries the wrong
+ * ResultData variant.
  **/
 GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_ChainedJoin : GPBMessage
 
@@ -3412,7 +3415,6 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber) {
   GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Data_p = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Proof = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Metadata = 3,
-  GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_ProvenJoinValuesArray = 4,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase) {
@@ -3470,19 +3472,6 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1 : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
-
-/**
- * Chained mode only: the server's join values (32-byte ids,
- * deduplicated, first-appearance order) — the UNTRUSTED
- * bootstrap hint the verifier uses to re-derive the outer
- * component of the single merged proof before verifying. A hint
- * that disagrees with the proof's actual inner content fails
- * verification, so soundness never rests on it. Populated only
- * with `proof` on a chained request; empty otherwise.
- **/
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *provenJoinValuesArray;
-/** The number of items in @c provenJoinValuesArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger provenJoinValuesArray_Count;
 
 @end
 

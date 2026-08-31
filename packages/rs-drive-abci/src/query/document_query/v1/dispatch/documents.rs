@@ -82,9 +82,5 @@ fn translate_documents_v0_to_v1(
         }
         None => None,
     };
-    GetDocumentsResponseV1 {
-        result,
-        metadata,
-        proven_join_values: Vec::new(),
-    }
+    GetDocumentsResponseV1 { result, metadata }
 }
