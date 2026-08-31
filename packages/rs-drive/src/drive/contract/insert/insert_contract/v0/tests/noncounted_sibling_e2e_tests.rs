@@ -279,7 +279,8 @@ fn registration_admits_the_plain_continuing_sibling() {
 
 /// Everything the shape matrix keeps rejecting must still reject, with
 /// the (updated) exclusivity error: aggregating / range / ranked
-/// siblings, and a plain sibling terminating exactly at the `at` level.
+/// siblings, a plain sibling terminating exactly at the `at` level, and
+/// a plain sibling that never branches off the chain.
 #[test]
 fn registration_still_rejects_non_plain_and_exact_at_siblings() {
     fn sibling(json: &mut serde_json::Value) -> &mut serde_json::Value {
@@ -319,6 +320,20 @@ fn registration_still_rejects_non_plain_and_exact_at_siblings() {
     assert!(
         contract_from_json_value(exact_at).is_err(),
         "an exact-at plain terminator must stay rejected (possible follow-up, not this change)"
+    );
+
+    // A plain sibling continuing below `at` but never leaving the chain:
+    // `deep`'s sibling cut to [tag, region], a strict prefix of the
+    // ranked [tag, region, postId]. Its member bucket would land ON the
+    // count-propagating region level — the terminal-plus-chain stamp the
+    // tree-type resolver fails closed on — so registration must reject
+    // it rather than admit a contract whose first insert errors.
+    let mut strict_prefix = fixture_json();
+    strict_prefix["documentSchemas"]["deep"]["indices"][1]["properties"] =
+        serde_json::json!([{ "tag": "asc" }, { "region": "asc" }]);
+    assert!(
+        contract_from_json_value(strict_prefix).is_err(),
+        "a plain sibling terminating inside the chain must be rejected at registration"
     );
 }
 
