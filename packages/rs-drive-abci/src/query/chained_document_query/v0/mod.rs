@@ -257,7 +257,7 @@ impl<C> Platform<C> {
                         .map(|document| {
                             document
                                 .serialize(document_type, contract_ref, platform_version)
-                                .map_err(|e| Error::Protocol(e))
+                                .map_err(Error::Protocol)
                         })
                         .collect()
                 };
