@@ -454,6 +454,13 @@ pub(crate) mod tests {
             "target must be at the snapshot height"
         );
         assert_eq!(
+            target_platform
+                .committed_block_height_guard
+                .load(std::sync::atomic::Ordering::Relaxed),
+            snapshot.height,
+            "a completed restore must open the query height gate at the snapshot height"
+        );
+        assert_eq!(
             target_state.last_committed_block_app_hash(),
             source_platform_state.last_committed_block_app_hash()
         );
@@ -547,6 +554,13 @@ pub(crate) mod tests {
         assert_eq!(
             target_platform.state.load().last_committed_block_height(),
             0
+        );
+        assert_eq!(
+            target_platform
+                .committed_block_height_guard
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "a rejected restore must not open the query height gate"
         );
         assert_ne!(
             target_platform

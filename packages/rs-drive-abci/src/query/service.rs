@@ -126,11 +126,16 @@ impl QueryService {
                 // that query is executed only after/before both states are updated.
                 let mut needs_restart = false;
 
+                // The wait budget must survive iterations of the loop below: declared
+                // inside it, the counter was reset on every pass and the 1 second
+                // timeout could never fire, so a query arriving while the two states
+                // disagreed would spin here forever instead of restarting.
+                let mut counter = 0;
+
                 loop {
                     let committed_block_height_guard = platform
                         .committed_block_height_guard
                         .load(Ordering::Relaxed);
-                    let mut counter = 0;
                     if platform_state.last_committed_block_height() == committed_block_height_guard
                     {
                         break;
