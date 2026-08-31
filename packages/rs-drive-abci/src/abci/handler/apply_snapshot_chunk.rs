@@ -1,11 +1,13 @@
 use crate::abci::app::StateSyncApplication;
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::snapshot::{
     clear_restore_sentinel_best_effort, wipe_drive_for_restore, MAX_STATE_SYNC_CHUNK_ID_SIZE,
     MAX_STATE_SYNC_CHUNK_SIZE,
 };
 use crate::rpc::core::CoreRPCLike;
+use std::sync::atomic::Ordering;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_apply_snapshot_chunk;
 
@@ -277,6 +279,20 @@ where
             ),
         );
     }
+
+    // The query service only serves while `committed_block_height_guard` matches the
+    // published state's height. A fresh node's guard is still 0 (nothing was ever
+    // finalized through it), while `reconstruct_platform_state` just published the
+    // state at the snapshot height — left alone, that mismatch keeps every query
+    // unserviceable until the first post-restore block finalizes. Open the gate only
+    // HERE, after grovedb reconstruction, aux persistence and the final app-hash check
+    // have all succeeded: on any earlier failure the guard stays 0, exactly as it must
+    // for a node whose restore was rejected. (A restart re-derives the guard from the
+    // persisted state, so this store also matches what the next boot would compute.)
+    app.platform().committed_block_height_guard.store(
+        app.platform().state.load().last_committed_block_height(),
+        Ordering::Relaxed,
+    );
 
     // The restore is complete and the node is self-consistent again, so the marker that
     // tells a restarting process to wipe can go. This is deliberately the LAST step, after
