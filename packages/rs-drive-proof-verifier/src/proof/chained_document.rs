@@ -24,7 +24,6 @@
 use crate::error::MapGroveDbError;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::get_documents_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
@@ -49,27 +48,24 @@ pub struct ChainedDocuments {
 /// Verify a chained query's single merged proof and bind its root hash
 /// to the quorum signature.
 ///
-/// The merk-level composition (merged-query reconstruction from the
-/// untrusted hint, single-pass verification, exact set equality against
-/// the PROVEN join values) lives in rs-drive's
+/// The merk-level composition (bootstrap subset pass on the inner
+/// query, merged-query re-derivation, authoritative full verification,
+/// exact set equality against the PROVEN join values) lives in rs-drive's
 /// [`DriveChainedDocumentQuery::verify_chained_documents_proof`]; this
 /// wrapper adds the [`verify_tenderdash_proof`] binding — the root hash
 /// the proof commits to is only an attested fact once it is tied to the
 /// quorum-signed app hash, and this function exists so the composition
 /// can never be skipped by accident.
 ///
-/// `join_values_hint` is the response's `proven_join_values` rider —
-/// untrusted bootstrap data; a hint that lies fails verification.
 pub fn verify_chained_documents_proof(
     query: &DriveChainedDocumentQuery,
     proof: &Proof,
-    join_values_hint: &[dpp::prelude::Identifier],
     mtd: &ResponseMetadata,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, ChainedDocuments), Error> {
     let (root_hash, result) = query
-        .verify_chained_documents_proof(&proof.grovedb_proof, join_values_hint, platform_version)
+        .verify_chained_documents_proof(&proof.grovedb_proof, platform_version)
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -112,35 +108,14 @@ where
                     error: e.to_string(),
                 })?;
 
-        // The standard envelope carries the single MERGED proof; the
-        // untrusted join-value hint rides beside the result oneof.
+        // The standard envelope carries the single MERGED proof, and
+        // the proof alone is enough: the verifier bootstraps the join
+        // values from it via a subset pass.
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-        let hint: Vec<dpp::prelude::Identifier> = match &response.version {
-            Some(ResponseVersion::V1(v1)) => v1
-                .proven_join_values
-                .iter()
-                .map(|bytes| {
-                    dpp::prelude::Identifier::from_bytes(bytes).map_err(|_| {
-                        Error::ResponseDecodeError {
-                            error: "proven_join_values entries must be 32-byte identifiers"
-                                .to_string(),
-                        }
-                    })
-                })
-                .collect::<Result<_, _>>()?,
-            Some(ResponseVersion::V0(_)) => {
-                return Err(Error::ResponseDecodeError {
-                    error: "chained results are a V1-only response shape; got a V0 \
-                            getDocuments response"
-                        .to_string(),
-                })
-            }
-            None => return Err(Error::EmptyVersion),
-        };
 
         let (_root_hash, chained) =
-            verify_chained_documents_proof(&query, proof, &hint, mtd, platform_version, provider)?;
+            verify_chained_documents_proof(&query, proof, mtd, platform_version, provider)?;
 
         // An empty inner page is a valid, proven "you have nothing
         // here" — surface it as Some(empty) rather than None so callers

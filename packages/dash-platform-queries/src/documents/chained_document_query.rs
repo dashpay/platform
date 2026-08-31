@@ -13,7 +13,6 @@ use crate::documents::document_query::DocumentQuery;
 use crate::error::Error;
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::ChainedJoin;
 use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
-use dapi_grpc::platform::v0::get_documents_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
@@ -164,41 +163,19 @@ impl FromProof<ChainedDocumentQuery> for ChainedDocuments {
             }
         })?;
 
-        // The standard envelope carries the single MERGED proof; the
-        // untrusted join-value hint rides beside the result oneof.
+        // The standard envelope carries the single MERGED proof, and
+        // the proof alone is enough: the verifier bootstraps the join
+        // values from it via a subset pass.
         let proof = response
             .proof()
             .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
         let mtd = response
             .metadata()
             .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
-        let hint: Vec<dpp::prelude::Identifier> = match &response.version {
-            Some(ResponseVersion::V1(v1)) => v1
-                .proven_join_values
-                .iter()
-                .map(|bytes| {
-                    dpp::prelude::Identifier::from_bytes(bytes).map_err(|_| {
-                        drive_proof_verifier::Error::ResponseDecodeError {
-                            error: "proven_join_values entries must be 32-byte identifiers"
-                                .to_string(),
-                        }
-                    })
-                })
-                .collect::<Result<_, _>>()?,
-            Some(ResponseVersion::V0(_)) => {
-                return Err(drive_proof_verifier::Error::ResponseDecodeError {
-                    error: "chained results are a V1-only response shape; got a V0 \
-                            getDocuments response"
-                        .to_string(),
-                })
-            }
-            None => return Err(drive_proof_verifier::Error::EmptyVersion),
-        };
 
         let (_root_hash, chained) = verify_chained_documents_tenderdash_proof(
             &query,
             proof,
-            &hint,
             mtd,
             platform_version,
             provider,
