@@ -63,7 +63,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // boundary with no Swift-side reset path, so transactional
         // semantics matter for this hydration API.
         let mut inserted_in_manager: Vec<WalletId> = Vec::new();
-        let mut inserted_in_wallets: Vec<WalletId> = Vec::new();
+        // The generation travels with the id: a rollback may only remove the
+        // registration THIS call published (see the rollback block below).
+        let mut inserted_in_wallets: Vec<(WalletId, Arc<crate::wallet::core::WalletGeneration>)> =
+            Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
 
         'load: for (expected_wallet_id, wallet_state) in wallets {
@@ -213,7 +216,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 wallets.insert(wallet_id, Arc::clone(&platform_wallet));
                 wallets
             });
-            inserted_in_wallets.push(wallet_id);
+            inserted_in_wallets.push((wallet_id, Arc::clone(platform_wallet.generation())));
         }
 
         if let Some(err) = load_error {
@@ -221,18 +224,44 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // manager state matches what it was before. Order:
             // remove from `self.wallets` first (UI surface), then
             // from the inner `wallet_manager`.
+            // Generation-checked, exactly like `remove_wallet`'s own removal:
+            // a concurrent removal frees an id and a registration can publish
+            // a DIFFERENT generation under it before this rollback runs.
+            // Removing by id alone would delete that live wallet — one this
+            // call never created and whose owner is still using it.
+            let rolled_back = std::cell::RefCell::new(Vec::<WalletId>::new());
             if !inserted_in_wallets.is_empty() {
                 self.wallets.rcu(|wallets| {
-                    let mut wallets = std::collections::BTreeMap::clone(wallets);
-                    for id in &inserted_in_wallets {
-                        wallets.remove(id);
+                    // `rcu` may retry, so this is rebuilt per attempt rather
+                    // than accumulated across them.
+                    let ours = rollback_targets(&inserted_in_wallets, wallets);
+                    let mut next = std::collections::BTreeMap::clone(wallets);
+                    for id in &ours {
+                        next.remove(id);
                     }
-                    wallets
+                    *rolled_back.borrow_mut() = ours;
+                    next
                 });
             }
+            let rolled_back = rolled_back.into_inner();
             if !inserted_in_manager.is_empty() {
                 let mut wm = self.wallet_manager.write().await;
                 for id in &inserted_in_manager {
+                    // A published id whose generation is no longer ours belongs
+                    // to a newer registration; taking it out of the inner
+                    // manager would strip a live wallet of its backing. An id
+                    // that never reached `self.wallets` (this call failed
+                    // between the two inserts) has no such owner and is unwound
+                    // as before.
+                    let published = inserted_in_wallets.iter().any(|(w, _)| w == id);
+                    if published && !rolled_back.contains(id) {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id),
+                            "rollback after load failure: a new generation was registered under \
+                             this id, leaving the new registration in place"
+                        );
+                        continue;
+                    }
                     if let Err(e) = wm.remove_wallet(id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),
@@ -249,10 +278,40 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 }
 
+/// Of the registrations this load published, the ones a rollback may still
+/// take back: those whose map entry is *still the same generation* this call
+/// inserted.
+///
+/// A concurrent `remove_wallet` frees an id, and a registration can publish a
+/// different generation under it before a later iteration's failure reaches
+/// the rollback. Removing by id alone would delete that live wallet — one this
+/// call never created and whose owner is still using it. Same rule
+/// `remove_wallet` applies to its own removal.
+///
+/// Pure so the invariant is unit-testable without racing a real load against a
+/// real re-registration.
+fn rollback_targets(
+    published: &[(WalletId, Arc<WalletGeneration>)],
+    current: &BTreeMap<WalletId, Arc<PlatformWallet>>,
+) -> Vec<WalletId> {
+    published
+        .iter()
+        .filter(|(id, generation)| {
+            current
+                .get(id)
+                .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), generation))
+        })
+        .map(|(id, _)| *id)
+        .collect()
+}
+
 #[cfg(test)]
 mod idempotent_load_tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
+
+    use super::rollback_targets;
+    use crate::wallet::core::WalletGeneration;
 
     use key_wallet::test_utils::TestWalletContext;
     use key_wallet::wallet::ManagedWalletInfo;
@@ -365,6 +424,57 @@ mod idempotent_load_tests {
             manager.wallet_ids().await,
             vec![expected_id],
             "idempotent reloads must not duplicate or drop the wallet"
+        );
+    }
+
+    /// `dashpay/platform#4309`-adjacent lifecycle hazard: a rollback must not
+    /// remove a registration it did not make.
+    ///
+    /// The interleaving: this load publishes generation G1 under an id, a
+    /// concurrent `remove_wallet` frees that id, a registration publishes G2
+    /// under it, and only then does a later iteration of this load fail and
+    /// reach the rollback. Removing by id alone deletes G2 — a live wallet
+    /// whose owner is still using it, and one this call never created.
+    ///
+    /// Both halves are pinned: the entry is reclaimed while it is still ours,
+    /// and refused once it is not. The inner-manager rollback keys off this
+    /// same answer, so a wallet left in `self.wallets` is never stripped of
+    /// its backing either.
+    #[tokio::test]
+    async fn rollback_only_reclaims_the_generation_this_load_published() {
+        let ctx = TestWalletContext::new_random();
+        let expected_id = ctx.wallet.compute_wallet_id();
+        let manager = make_manager(SingleWalletPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("first load succeeds");
+
+        let published = manager.wallets.load();
+        let wallet = published
+            .get(&expected_id)
+            .expect("the load registered the wallet");
+        let ours = Arc::clone(wallet.generation());
+
+        assert_eq!(
+            rollback_targets(&[(expected_id, Arc::clone(&ours))], &published),
+            vec![expected_id],
+            "a registration still holding this load's generation is ours to roll back"
+        );
+
+        // The same id, a different generation — what a removal plus a
+        // re-registration leaves behind.
+        let superseding = Arc::new(WalletGeneration::new());
+        assert!(
+            !Arc::ptr_eq(&ours, &superseding),
+            "the fixture must model two distinct generations"
+        );
+        assert!(
+            rollback_targets(&[(expected_id, superseding)], &published).is_empty(),
+            "a generation this load never published must survive its rollback"
         );
     }
 }

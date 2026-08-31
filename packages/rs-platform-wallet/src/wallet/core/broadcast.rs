@@ -828,9 +828,7 @@ mod tests {
     fn wallets_map<B: TransactionBroadcaster>(
         cores: &[&CoreWallet<B>],
     ) -> Arc<
-        arc_swap::ArcSwap<
-            std::collections::BTreeMap<WalletId, Arc<crate::wallet::PlatformWallet>>,
-        >,
+        arc_swap::ArcSwap<std::collections::BTreeMap<WalletId, Arc<crate::wallet::PlatformWallet>>>,
     > {
         Arc::new(arc_swap::ArcSwap::from_pointee(
             cores
