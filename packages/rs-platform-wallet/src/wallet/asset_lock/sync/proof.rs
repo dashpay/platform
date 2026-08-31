@@ -44,6 +44,42 @@ pub(super) fn record_or_persister(
     persister.get_core_tx_record(txid)
 }
 
+/// Family-aware in-memory funding-tx record lookup, shared by EVERY proof,
+/// ChainLock-wait, and recovery path.
+///
+/// `TrackedAssetLock.account_index` is family-less — it records the source
+/// index, not which accounts ended up funding the lock — while key-wallet files
+/// a transaction under *every* account its inputs touch. So the record can sit
+/// in any of the families a lock may be funded from, and looking in only some
+/// of them leaves it invisible (fatal on hosts running `NoPlatformPersistence`,
+/// whose persister fallback always returns `None`, and a burnt proof-wait
+/// timeout everywhere else).
+///
+/// Two shapes make that a live concern: a whole-balance CoinJoin drain files
+/// only under `coinjoin_accounts`, and a POOLED asset lock
+/// (`ASSET_LOCK_FUNDING_SOURCES`) may take nothing from BIP44 and be funded
+/// entirely out of the BIP32 account or a DashPay contact-receiving one. All
+/// four families are therefore checked: the standard pair and CoinJoin at
+/// `account_index`, then the DashPay receiving accounts, which span their own
+/// indices and so are searched by txid alone. BIP44 stays first — it holds
+/// every historical lock.
+pub(in crate::wallet::asset_lock) fn funding_tx_record(
+    accounts: &key_wallet::account::ManagedAccountCollection,
+    account_index: u32,
+    txid: &Txid,
+) -> Option<TransactionRecord> {
+    let at_index = [
+        accounts.standard_bip44_accounts.get(&account_index),
+        accounts.standard_bip32_accounts.get(&account_index),
+        accounts.coinjoin_accounts.get(&account_index),
+    ];
+    at_index
+        .into_iter()
+        .flatten()
+        .chain(accounts.dashpay_receival_accounts.values())
+        .find_map(|account| account.transactions().get(txid).cloned())
+}
+
 /// Variant of [`record_or_persister`] that swallows persister errors
 /// as `None` after a `warn`-level log. Use this from poll loops where
 /// the next iteration retries — a hard error from a single tick would
@@ -98,11 +134,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            info.core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&account_index)
-                .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+            funding_tx_record(&info.core_wallet.accounts, account_index, &out_point.txid)
             // wm dropped at end of block — release before persister + DAPI calls.
         };
 
@@ -192,11 +224,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            info.core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&account_index)
-                .and_then(|a| a.transactions().get(&txid).cloned())
+            funding_tx_record(&info.core_wallet.accounts, account_index, &txid)
         };
 
         let record = record_or_persister(in_memory, &self.persister, &txid).map_err(|e| {
@@ -298,11 +326,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let in_memory = {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id).and_then(|info| {
-                    info.core_wallet
-                        .accounts
-                        .standard_bip44_accounts
-                        .get(&account_index)
-                        .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                    funding_tx_record(&info.core_wallet.accounts, account_index, &out_point.txid)
                 })
             };
             if let Some(record) =
@@ -409,14 +433,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .and_then(|i| i.core_wallet.metadata.last_applied_chain_lock.as_ref())
                     .map(|cl| cl.block_height);
                 let rec = info.as_ref().and_then(|i| {
-                    i.core_wallet
-                        .accounts
-                        .standard_bip44_accounts
-                        .get(&account_index)
-                        .and_then(|a| a.transactions().get(&out_point.txid))
+                    funding_tx_record(&i.core_wallet.accounts, account_index, &out_point.txid)
                 });
-                let ctx = rec.map(|r| format!("{:?}", r.context));
-                let h = rec.and_then(|r| r.height());
+                let ctx = rec.as_ref().map(|r| format!("{:?}", r.context));
+                let h = rec.as_ref().and_then(|r| r.height());
                 (cl_h, ctx, h)
             };
             tracing::debug!(
@@ -433,11 +453,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let in_memory = {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id).and_then(|info| {
-                    info.core_wallet
-                        .accounts
-                        .standard_bip44_accounts
-                        .get(&account_index)
-                        .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                    funding_tx_record(&info.core_wallet.accounts, account_index, &out_point.txid)
                 })
             };
             if let Some(record) =
@@ -589,6 +605,238 @@ mod tests {
     };
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use crate::wallet::platform_wallet::WalletId;
+
+    /// CoinJoin-family regression for [`funding_tx_record`]: a record filed
+    /// only under `coinjoin_accounts` (how key-wallet records a tx spending
+    /// CoinJoin inputs, e.g. a whole-balance drain asset lock) must be
+    /// visible — the pre-fix BIP44-only lookups missed it and burned the
+    /// full proof-wait timeout under `NoPlatformPersistence`.
+    #[test]
+    fn funding_tx_record_finds_coinjoin_only_record() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = coinjoin_record_with_txid(0x77);
+        let txid = record.txid;
+        ctx.managed_wallet
+            .first_coinjoin_managed_account_mut()
+            .expect("default wallet has CoinJoin account 0")
+            .transactions_mut()
+            .insert(txid, record);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("CoinJoin-family record must be found by the shared lookup");
+        assert_eq!(found.txid, txid);
+
+        // Unknown txid and unknown account index are clean misses.
+        assert!(
+            funding_tx_record(&ctx.managed_wallet.accounts, 0, &Txid::from([0x01; 32])).is_none()
+        );
+        assert!(funding_tx_record(&ctx.managed_wallet.accounts, 9, &txid).is_none());
+    }
+
+    /// The historical BIP44 path through [`funding_tx_record`] still resolves.
+    #[test]
+    fn funding_tx_record_finds_bip44_record() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = record_with_txid(0x42);
+        let txid = record.txid;
+        ctx.managed_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("default wallet has BIP44 account 0")
+            .transactions_mut()
+            .insert(txid, record);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("BIP44-family record must be found by the shared lookup");
+        assert_eq!(found.txid, txid);
+    }
+
+    /// BIP32-family regression for [`funding_tx_record`]: a POOLED asset
+    /// lock (`ASSET_LOCK_FUNDING_SOURCES`) may take nothing from BIP44 and
+    /// be funded entirely out of the BIP32 account, filing the record only
+    /// under `standard_bip32_accounts` — the lookup must still see it.
+    #[test]
+    fn funding_tx_record_finds_bip32_only_record() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = bip32_record_with_txid(0x55);
+        let txid = record.txid;
+        ctx.managed_wallet
+            .first_bip32_managed_account_mut()
+            .expect("default wallet has BIP32 account 0")
+            .transactions_mut()
+            .insert(txid, record);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("BIP32-family record must be found by the shared lookup");
+        assert_eq!(found.txid, txid);
+
+        // Unknown txid and unknown account index are clean misses.
+        assert!(
+            funding_tx_record(&ctx.managed_wallet.accounts, 0, &Txid::from([0x02; 32])).is_none()
+        );
+        assert!(funding_tx_record(&ctx.managed_wallet.accounts, 9, &txid).is_none());
+    }
+
+    /// DashPay-family regression for [`funding_tx_record`]: the receiving
+    /// accounts span their own indices, so the lookup searches them by txid
+    /// alone. A record filed only under a contact-receiving account whose
+    /// OWN index (7) differs from the tracked source `account_index` (0)
+    /// must still be found.
+    #[test]
+    fn funding_tx_record_finds_dashpay_receival_record_across_indices() {
+        use key_wallet::account::account_collection::DashpayAccountKey;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+        use key_wallet::test_utils::TestWalletContext;
+        use key_wallet::{DerivationPath, ManagedAccountType, Network};
+
+        let mut ctx = TestWalletContext::new_random();
+
+        let user_identity_id = [0xAB; 32];
+        let friend_identity_id = [0xCD; 32];
+        let addresses = AddressPool::new(
+            DerivationPath::master(),
+            AddressPoolType::Absent,
+            20,
+            Network::Testnet,
+            &KeySource::NoKeySource,
+        )
+        .expect("single DashPay address pool");
+        let mut account = ManagedCoreFundsAccount::new(
+            ManagedAccountType::DashpayReceivingFunds {
+                index: 7,
+                user_identity_id,
+                friend_identity_id,
+                addresses,
+            },
+            Network::Testnet,
+        );
+
+        let record = dashpay_record_with_txid(0x66, 7, user_identity_id, friend_identity_id);
+        let txid = record.txid;
+        account.transactions_mut().insert(txid, record);
+        ctx.managed_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .insert(
+                DashpayAccountKey {
+                    index: 7,
+                    user_identity_id,
+                    friend_identity_id,
+                },
+                account,
+            );
+
+        // The tracked source index (0) does not match the account's own
+        // index (7), yet the record is found — DashPay receiving accounts
+        // are searched by txid, not by the tracked source index.
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("DashPay receival record must be found regardless of account_index");
+        assert_eq!(found.txid, txid);
+
+        // Even an account_index matching no account in any family still
+        // resolves the DashPay record — the search is index-independent.
+        let found_any_index = funding_tx_record(&ctx.managed_wallet.accounts, 9, &txid)
+            .expect("DashPay lookup is index-independent");
+        assert_eq!(found_any_index.txid, txid);
+
+        // Unknown txid is still a clean miss.
+        assert!(
+            funding_tx_record(&ctx.managed_wallet.accounts, 0, &Txid::from([0x03; 32])).is_none()
+        );
+    }
+
+    /// [`record_with_txid`] sibling filed as a BIP32-account record.
+    fn bip32_record_with_txid(seed: u8) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP32Account,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    /// [`record_with_txid`] sibling filed as a DashPay contact-receiving
+    /// account record.
+    fn dashpay_record_with_txid(
+        seed: u8,
+        index: u32,
+        user_identity_id: [u8; 32],
+        friend_identity_id: [u8; 32],
+    ) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::DashpayReceivingFunds {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    /// [`record_with_txid`] sibling filed as a CoinJoin-account record.
+    fn coinjoin_record_with_txid(seed: u8) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::CoinJoin { index: 0 },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
 
     fn record_with_txid(seed: u8) -> TransactionRecord {
         // A unique txid per `seed` falls out of the (different) input

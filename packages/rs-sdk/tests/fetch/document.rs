@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use super::{common::setup_logs, config::Config};
-use dash_sdk::platform::{DocumentQuery, Fetch, FetchMany};
+use dash_sdk::platform::{DocumentQuery, DocumentQuerySdk, Fetch, FetchMany};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::string_encoding::Encoding;
@@ -132,6 +132,7 @@ async fn document_list_drive_query() {
         start_at: None,
         start_at_included: true,
         block_time_ms: None,
+        resolved_time_ranges: vec![],
     };
 
     let docs = Document::fetch_many(&sdk, query)

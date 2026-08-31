@@ -2,11 +2,13 @@
 
 pub mod accessors;
 pub mod dashpay_sync;
+pub mod dpns_sync;
 pub mod identity_sync;
 mod load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+pub mod startup;
 mod wallet_lifecycle;
 
 use std::sync::Arc;
@@ -22,13 +24,14 @@ use key_wallet_manager::WalletManager;
 use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::dashpay_sync::DashPaySyncManager;
+use crate::manager::dpns_sync::DpnsSyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
-use crate::wallet::core::BalanceUpdateHandler;
+use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
@@ -49,6 +52,8 @@ pub enum WalletWorker {
     IdentitySync,
     /// DashPay (contact requests + profiles) sync coordinator.
     DashPaySync,
+    /// DPNS username-marketplace sync coordinator.
+    DpnsSync,
     /// Shielded (Orchard) note sync coordinator.
     ShieldedSync,
     /// SPV runtime — the network event source feeding every persister-
@@ -347,6 +352,12 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// auto-started — call `start` after wallets are registered. See
     /// [`DashPaySyncManager`].
     pub(super) dashpay_sync_manager: Arc<DashPaySyncManager>,
+    /// Periodic DPNS username-marketplace sync coordinator. Drives
+    /// `sync_dpns_marketplace()` (owned-name sale state + departure
+    /// detection) on **every** registered wallet each sweep; shares the
+    /// same `wallets` map as [`DashPaySyncManager`]. Not auto-started —
+    /// call `start` after wallets are registered. See [`DpnsSyncManager`].
+    pub(super) dpns_sync_manager: Arc<DpnsSyncManager>,
     /// Tracks asynchronous payment hooks so manager shutdown can close
     /// admission and drain every task before host callback contexts are freed.
     pub(super) dashpay_payment_handler: Arc<DashPayPaymentHandler>,
@@ -375,11 +386,20 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// onto the freshly-created `NetworkShieldedCoordinator` that
     /// forwards into `on_shielded_sync_progress`. Sub-managers
     /// (`SpvRuntime`, `PlatformAddressSyncManager`, etc.) hold their
-    /// own clones already, so `configure_shielded` is the only reader of
-    /// this retained handle — hence it is `shielded`-gated.
-    #[cfg(feature = "shielded")]
+    /// own clones already, so `configure_shielded` is the only
+    /// production reader of this retained handle — hence it is gated to
+    /// `shielded`, plus `test` so the handler-wiring test can dispatch
+    /// an event through the manager's own fan-out.
+    #[cfg(any(test, feature = "shielded"))]
     pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
+    /// Tracked (wallet-independent) masternodes for this manager's
+    /// network, keyed by wire proTxHash, plus the per-node gates that
+    /// serialize their refreshes. Hydrated from the persister at
+    /// `load_from_persistor`; every mutation writes the whole set back
+    /// (see `masternode::tracked`).
+    pub(crate) tracked_masternodes:
+        std::sync::Arc<crate::masternode::tracked::TrackedMasternodeRegistry>,
     /// Cancellation token + join handle for the wallet-event adapter
     /// task. Held so [`shutdown`] can stop it cleanly when the manager
     /// is torn down.
@@ -400,6 +420,31 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// failed / rescan pending" state rather than re-freezing silently on
     /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    /// Per-WALLET in-broadcast fence maps, handed to every
+    /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) registered
+    /// under each id (`dashpay/platform#4309`, review round 8).
+    ///
+    /// A fence describes a signed transaction that may be live on the network.
+    /// That fact outlives the wallet *instance* that dispatched it: removing a
+    /// wallet and re-creating it under the same id used to mint a generation
+    /// with an empty map, so the re-created wallet restored the persisted UTXO
+    /// with nothing holding it — not the fence, not key-wallet's memory-only
+    /// reservation — and could sign a conflicting spend of an outpoint the
+    /// original transaction still spends. Keying the map here instead makes the
+    /// replacement inherit it.
+    ///
+    /// **Deliberately never pruned.** A removed wallet's entry stays, because a
+    /// removal is exactly when the protection must survive; dropping it on
+    /// removal would restore the bug for the recreate-after-remove path this
+    /// exists to close. Growth is bounded by the number of distinct wallet ids
+    /// this process has registered, and each entry reaps its own cleared rows
+    /// on read.
+    ///
+    /// A `std::sync::Mutex`: touched only at wallet registration and load, for
+    /// one map lookup, and never held across an await.
+    pub(super) in_broadcast_fences: std::sync::Mutex<
+        std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
+    >,
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -456,6 +501,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // with SPV's write lock.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
         let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
+        // SpendObservationHandler releases in-broadcast input fences when the
+        // wallet observes the fenced outpoints spent — the evidence that ends
+        // the fence a dispatch installs (`dashpay/platform#4309`). It takes the
+        // same `wallets` map, and for the same lock reason as the balance
+        // handler: the event fires inside SPV's block-processing write section,
+        // so the generation cannot be resolved through the wallet-manager lock.
+        let spend_observation_handler =
+            Arc::new(SpendObservationHandler::new(Arc::clone(&wallets)));
         // DashPayPaymentHandler records incoming DashPay payments and
         // confirms sent ones off the wallet-event fan-out, keeping that
         // domain logic out of the generic core-changeset bridge. It holds
@@ -469,6 +522,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             app_handler,
             lock_handler,
             balance_handler,
+            spend_observation_handler,
             Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>,
         ]));
 
@@ -492,6 +546,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&wallets),
             Arc::clone(&registry),
         ));
+        // DPNS marketplace sync also sweeps the `wallets` map; it takes
+        // the event manager to dispatch its pass-completion event.
+        let dpns_sync = Arc::new(DpnsSyncManager::new(
+            Arc::clone(&wallets),
+            Arc::clone(&registry),
+            Arc::clone(&event_manager),
+        ));
         #[cfg(feature = "shielded")]
         let shielded_coordinator: Arc<
             RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>,
@@ -511,19 +572,42 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             platform_address_sync_manager: platform_address_sync,
             identity_sync_manager: identity_sync,
             dashpay_sync_manager: dashpay_sync,
+            dpns_sync_manager: dpns_sync,
             dashpay_payment_handler,
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
-            #[cfg(feature = "shielded")]
+            #[cfg(any(test, feature = "shielded"))]
             event_manager,
             persister,
+            tracked_masternodes: std::sync::Arc::new(Default::default()),
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
             registry,
             sync_fault,
+            in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         }
+    }
+
+    /// The in-broadcast fence map for `wallet_id`, creating it on first use.
+    ///
+    /// Every [`WalletGeneration`](crate::wallet::core::WalletGeneration) this
+    /// manager mints for a wallet is built from this, so a generation that
+    /// replaces another under the same id inherits its pending-spend fences —
+    /// see the [`in_broadcast_fences`](Self#structfield.in_broadcast_fences)
+    /// field docs (`dashpay/platform#4309`).
+    pub(super) fn in_broadcast_fences_for(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Arc<crate::wallet::core::InBroadcastFences> {
+        Arc::clone(
+            self.in_broadcast_fences
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .entry(*wallet_id)
+                .or_default(),
+        )
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync
@@ -855,23 +939,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // run a full pass — and fire persister / completion callbacks —
         // after `destroy` returned and the host freed those contexts.
         #[cfg(feature = "shielded")]
-        let (pa_drained, id_drained, dp_drained, sh_drained) = tokio::join!(
+        let (pa_drained, id_drained, dp_drained, dpns_drained, sh_drained) = tokio::join!(
             self.platform_address_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.identity_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.dashpay_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+            self.dpns_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.shielded_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
         );
         #[cfg(not(feature = "shielded"))]
-        let (pa_drained, id_drained, dp_drained) = tokio::join!(
+        let (pa_drained, id_drained, dp_drained, dpns_drained) = tokio::join!(
             self.platform_address_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.identity_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
             self.dashpay_sync_manager
+                .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
+            self.dpns_sync_manager
                 .quiesce_sealed_within(COORDINATOR_DRAIN_BUDGET),
         );
 
@@ -889,6 +977,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             (WalletWorker::PlatformAddressSync, pa_drained),
             (WalletWorker::IdentitySync, id_drained),
             (WalletWorker::DashPaySync, dp_drained),
+            (WalletWorker::DpnsSync, dpns_drained),
             #[cfg(feature = "shielded")]
             (WalletWorker::ShieldedSync, sh_drained),
         ];
@@ -988,6 +1077,77 @@ mod tests {
             Arc::new(NoopPersister),
             Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
         ))
+    }
+
+    /// The constructor must register [`SpendObservationHandler`] on the event
+    /// fan-out, over the LIVE wallets map (`dashpay/platform#4309`, review
+    /// round 6): a spend-bearing wallet event dispatched through the manager's
+    /// own `event_manager` must release a registered wallet's in-broadcast
+    /// fence. Dropping the handler from the constructor's handler list — the
+    /// accidental-omission regression this pins — fails the final assertion,
+    /// because nothing else on the fan-out calls `observe_spent`.
+    #[tokio::test]
+    async fn constructor_wires_spend_observation_into_the_event_fanout() {
+        use dashcore::hashes::Hash as _;
+
+        let mgr = make_manager();
+
+        // A funded wallet registered in the manager's live wallets map — the
+        // same map the constructor handed to its handlers.
+        let (wallet_manager, wallet_id, generation, _signer) =
+            crate::test_support::funded_wallet_manager(
+                key_wallet::account::account_type::StandardAccountType::BIP44Account,
+            )
+            .await;
+        let spv = Arc::new(SpvRuntime::new(
+            Arc::clone(&wallet_manager),
+            Arc::new(PlatformEventManager::new(Vec::new())),
+        ));
+        let wallet = Arc::new(PlatformWallet::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+            wallet_id,
+            wallet_manager,
+            Arc::clone(&generation),
+            Arc::new(Notify::new()),
+            Arc::new(NoopPersister) as Arc<dyn PlatformWalletPersistence>,
+            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        ));
+        mgr.wallets.write().await.insert(wallet_id, wallet);
+
+        // Fence an outpoint the way a dispatch does: pin, then settle into the
+        // pending-spend phase that only an observed spend may end.
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![dashcore::TxIn {
+                previous_output: dashcore::OutPoint {
+                    txid: dashcore::Txid::from_slice(&[9u8; 32]).expect("txid"),
+                    vout: 0,
+                },
+                script_sig: dashcore::ScriptBuf::new(),
+                sequence: 0xffff_ffff,
+                witness: dashcore::Witness::new(),
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        generation.pin_in_broadcast(&tx).settle_pending_spend();
+        assert!(
+            generation.in_broadcast_conflict(&tx).is_some(),
+            "the settled pin must leave the pending-spend fence up"
+        );
+
+        // The spend event, dispatched through the manager's OWN fan-out — not
+        // a hand-built handler — so the assertion covers registration itself.
+        mgr.event_manager
+            .on_wallet_event(&crate::test_support::observed_spend_event(wallet_id, &tx));
+
+        assert!(
+            generation.in_broadcast_conflict(&tx).is_none(),
+            "a spend event through the manager's event fan-out must release \
+             the registered wallet's fence — is SpendObservationHandler still \
+             in the constructor's handler list?"
+        );
     }
 
     /// `shutdown()` joins every started coordinator through the shared

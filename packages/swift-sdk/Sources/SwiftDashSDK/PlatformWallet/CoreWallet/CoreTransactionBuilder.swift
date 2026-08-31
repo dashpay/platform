@@ -144,12 +144,19 @@ public final class CoreTransactionBuilder {
         case bip44
         case bip32
         case coinJoin
+        /// Pool every spendable transparent source: BIP44 + BIP32 + all
+        /// DashPay contact-receiving accounts. Change returns to BIP44 (the
+        /// first pooled source). CoinJoin stays out (separate privacy
+        /// domain), as do a contact's watch-only external coins. The default
+        /// selector for a plain send.
+        case allSpendable
 
         var ffi: CoreAccountTypeFFI {
             switch self {
             case .bip44: return CORE_ACCOUNT_TYPE_FFI_BIP44
             case .bip32: return CORE_ACCOUNT_TYPE_FFI_BIP32
             case .coinJoin: return CORE_ACCOUNT_TYPE_FFI_COIN_JOIN
+            case .allSpendable: return CORE_ACCOUNT_TYPE_FFI_ALL_SPENDABLE
             }
         }
     }
@@ -311,8 +318,8 @@ public final class CoreTransactionBuilder {
     /// then sign after Rust has released the wallet-manager lock.
     public func finalizeAtomic(
         wallet: ManagedPlatformWallet,
-        accountType: AccountType,
-        accountIndex: UInt32
+        accountType: AccountType = .allSpendable,
+        accountIndex: UInt32 = 0
     ) throws -> FinalizedCoreTransaction {
         guard !consumed else {
             throw PlatformWalletError.unknown("CoreTransactionBuilder already consumed")

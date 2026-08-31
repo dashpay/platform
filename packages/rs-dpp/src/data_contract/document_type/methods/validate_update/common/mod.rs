@@ -346,6 +346,29 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // indexOnly immutability: the flag selects the entire storage layout
+        // (no primary-key tree, index terminals are Items keyed by the
+        // terminal property). Flipping it in either direction would strand
+        // every existing entry: rows with no primary storage to dereference,
+        // or references whose primary rows were never written. The per-index
+        // `terminal` needs no separate check here — it is a field of `Index`,
+        // so `validate_index_definitions_unchanged`'s full equality
+        // comparison already rejects any change to it.
+        if new_document_type.index_only() != self.index_only() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it is indexOnly: changing from {} to {}",
+                        self.index_only(),
+                        new_document_type.index_only()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 
@@ -1197,6 +1220,100 @@ mod tests {
         }
 
         #[test]
+        fn should_return_invalid_result_when_index_only_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "like";
+
+            // A minimal valid indexOnly type: one refersTo-typed property,
+            // one index over it, terminal defaulting to $ownerId.
+            let index_only_schema = platform_value!({
+                "type": "object",
+                "indexOnly": true,
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "refersTo": { "type": "identity" },
+                        "position": 0,
+                    }
+                },
+                "required": ["postId"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                    }
+                ],
+                "additionalProperties": false,
+            });
+
+            // The same type without indexOnly (documentsMutable kept equal
+            // so the earlier mutability check doesn't fire first).
+            let plain_schema = platform_value!({
+                "type": "object",
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "refersTo": { "type": "identity" },
+                        "position": 0,
+                    }
+                },
+                "required": ["postId"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                    }
+                ],
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let make_document_type = |schema: platform_value::Value| {
+                DocumentType::try_from_schema(
+                    data_contract_id,
+                    1,
+                    config.version(),
+                    document_type_name,
+                    schema,
+                    None,
+                    &BTreeMap::new(),
+                    &config,
+                    false,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("document type should parse")
+            };
+
+            let old_document_type = make_document_type(index_only_schema);
+            let new_document_type = make_document_type(plain_schema);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether it is indexOnly: changing from true to false"
+            );
+        }
+
+        #[test]
         fn should_return_invalid_result_when_range_countable_is_changed() {
             // documents_countable must remain equal across old/new so that
             // validate_config reaches the range_countable check below it.
@@ -1570,6 +1687,104 @@ mod tests {
                 )] if e.operation() == "replace" && e.property_path() == "/properties/test/type"
             );
         }
+
+        fn identifier_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut to_user_id = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 0
+            });
+
+            if let Some(refers_to) = refers_to {
+                to_user_id
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "toUserId": to_user_id
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_refers_to_is_added() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type = identifier_document_type(None, platform_version);
+            let new_document_type = identifier_document_type(
+                Some(platform_value!({ "type": "identity" })),
+                platform_version,
+            );
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.operation() == "add"
+                    && e.property_path() == "/properties/toUserId/refersTo"
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_refers_to_is_modified() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type = identifier_document_type(
+                Some(platform_value!({ "type": "identity" })),
+                platform_version,
+            );
+            let new_document_type = identifier_document_type(
+                Some(platform_value!({ "type": "contract" })),
+                platform_version,
+            );
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.operation() == "replace"
+                    && e.property_path() == "/properties/toUserId/refersTo/type"
+            );
+        }
     }
 
     mod validate_byte_array_encoding {
@@ -1614,7 +1829,7 @@ mod tests {
             let old = document_type_with_byte_array(old_ba, platform_version);
             let new = document_type_with_byte_array(new_ba, platform_version);
             old.as_ref()
-                .validate_update(new.as_ref(), platform_version)
+                .validate_update(new.as_ref(), 2, platform_version)
                 .expect("validate_update should not error")
         }
 

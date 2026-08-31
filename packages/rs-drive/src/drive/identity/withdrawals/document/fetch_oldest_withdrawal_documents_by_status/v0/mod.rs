@@ -41,13 +41,30 @@ impl Drive {
 
         let mut order_by = IndexMap::new();
 
-        order_by.insert(
-            withdrawal::properties::UPDATED_AT.to_string(),
-            OrderClause {
-                field: withdrawal::properties::UPDATED_AT.to_string(),
-                ascending: true,
-            },
-        );
+        // The full tail of the `pooling` index ([status, pooling,
+        // coreFeePerByte, $updatedAt]), in index order. This is the
+        // ordering the left-over walk has always delivered — before
+        // protocol version 14 the query named only $updatedAt and the
+        // matcher tolerated the two unbound middle properties, so
+        // documents still came back grouped by (pooling, coreFeePerByte)
+        // ascending, then oldest-first within a group. Naming the whole
+        // tail keeps the query accepted under v14's contiguous matching
+        // and produces the identical path query (all directions match
+        // the walk's ascending defaults), so results are unchanged on
+        // every protocol version.
+        for field in [
+            withdrawal::properties::POOLING,
+            withdrawal::properties::CORE_FEE_PER_BYTE,
+            withdrawal::properties::UPDATED_AT,
+        ] {
+            order_by.insert(
+                field.to_string(),
+                OrderClause {
+                    field: field.to_string(),
+                    ascending: true,
+                },
+            );
+        }
 
         let drive_query = DriveDocumentQuery {
             contract: &withdrawals_contract,
@@ -55,7 +72,7 @@ impl Drive {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: where_clauses,
             },
@@ -65,6 +82,7 @@ impl Drive {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         // todo: deal with cost of this operation
@@ -101,7 +119,7 @@ impl Drive {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: where_clauses,
             },
@@ -111,6 +129,7 @@ impl Drive {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         // Fetch all documents
@@ -535,5 +554,91 @@ mod tests {
         //     "Successfully fetched {} QUEUED documents sorted by updatedAt",
         //     queued_documents.len()
         // );
+    }
+
+    /// The pooling fetch names the `pooling` index's full tail
+    /// ([pooling, coreFeePerByte, $updatedAt]) in `order_by`; before the
+    /// protocol-version-14 contiguous matching it named only $updatedAt
+    /// and relied on the matcher tolerating the two unbound middle
+    /// properties. Withdrawal pooling runs during block execution, so
+    /// the shapes must lower to the byte-identical path query at
+    /// protocol version 13 for replay — and only the full-tail shape
+    /// may survive at protocol version 14.
+    #[test]
+    fn full_tail_order_by_lowers_identically_to_the_legacy_shape_at_protocol_v13() {
+        let platform_version = PlatformVersion::latest();
+        let protocol_v13 = PlatformVersion::get(13).expect("protocol version 13 exists");
+
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
+        let document_type = data_contract
+            .document_type_for_name(withdrawal::NAME)
+            .expect("expected to get document type");
+
+        let make_query = |order_fields: &[&str]| {
+            let mut where_clauses = BTreeMap::new();
+            where_clauses.insert(
+                withdrawal::properties::STATUS.to_string(),
+                WhereClause {
+                    field: withdrawal::properties::STATUS.to_string(),
+                    operator: crate::query::WhereOperator::Equal,
+                    value: Value::U8(withdrawals_contract::WithdrawalStatus::QUEUED as u8),
+                },
+            );
+            let mut order_by = IndexMap::new();
+            for field in order_fields {
+                order_by.insert(
+                    field.to_string(),
+                    OrderClause {
+                        field: field.to_string(),
+                        ascending: true,
+                    },
+                );
+            }
+            DriveDocumentQuery {
+                contract: &data_contract,
+                document_type,
+                internal_clauses: InternalClauses {
+                    primary_key_in_clause: None,
+                    primary_key_equal_clause: None,
+                    in_clauses: Vec::new(),
+                    range_clause: None,
+                    equal_clauses: where_clauses,
+                },
+                offset: None,
+                limit: Some(DEFAULT_QUERY_LIMIT),
+                order_by,
+                start_at: None,
+                start_at_included: false,
+                block_time_ms: None,
+                resolved_time_ranges: vec![],
+            }
+        };
+
+        let legacy_shape = make_query(&[withdrawal::properties::UPDATED_AT]);
+        let full_tail_shape = make_query(&[
+            withdrawal::properties::POOLING,
+            withdrawal::properties::CORE_FEE_PER_BYTE,
+            withdrawal::properties::UPDATED_AT,
+        ]);
+
+        let legacy_v13 = legacy_shape
+            .construct_path_query(None, protocol_v13)
+            .expect("legacy shape lowers at protocol v13");
+        let full_tail_v13 = full_tail_shape
+            .construct_path_query(None, protocol_v13)
+            .expect("full-tail shape lowers at protocol v13");
+        assert_eq!(
+            legacy_v13, full_tail_v13,
+            "the two order-by shapes must lower to the identical path query at protocol v13"
+        );
+
+        full_tail_shape
+            .construct_path_query(None, platform_version)
+            .expect("full-tail shape lowers at protocol v14");
+        legacy_shape
+            .construct_path_query(None, platform_version)
+            .expect_err("the gapped legacy shape is rejected at protocol v14");
     }
 }

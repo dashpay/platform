@@ -5,10 +5,83 @@ use crate::platform_address_sync::{
 };
 use crate::shielded_types::ShieldedSyncWalletResultFFI;
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
+use platform_wallet::manager::dpns_sync::{DpnsSyncPassSummary, WalletDpnsSyncOutcome};
 #[cfg(feature = "shielded")]
 use platform_wallet::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use platform_wallet::{PlatformAddressSyncSummary, WalletSyncOutcome};
 use std::os::raw::{c_char, c_void};
+
+/// Current layout version of [`EventHandlerCallbacksExtension`].
+pub const PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION: u32 = 1;
+
+/// One wallet's owned DPNS marketplace sync result. All pointers are valid
+/// only for the callback duration; managed-language bridges must copy them.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct DpnsSyncWalletResultFFI {
+    pub wallet_id: [u8; 32],
+    pub success: bool,
+    pub names_tracked: u32,
+    pub names_added: u32,
+    pub names_departed: u32,
+    pub prices_changed: u32,
+    pub error_message: *const c_char,
+}
+
+impl Default for DpnsSyncWalletResultFFI {
+    fn default() -> Self {
+        Self {
+            wallet_id: [0; 32],
+            success: false,
+            names_tracked: 0,
+            names_added: 0,
+            names_departed: 0,
+            prices_changed: 0,
+            error_message: std::ptr::null(),
+        }
+    }
+}
+
+pub type DpnsMarketplaceSyncCompletedFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    results: *const DpnsSyncWalletResultFFI,
+    count: usize,
+    sync_unix_seconds: u64,
+);
+
+/// Size/version-tagged event extension. It shares the legacy event
+/// vtable's context and destructor; only callback pointers are copied.
+/// This avoids growing [`EventHandlerCallbacks`] and over-reading callers
+/// compiled against an older generated header.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct EventHandlerCallbacksExtension {
+    pub struct_size: usize,
+    pub version: u32,
+    pub reserved: u32,
+    /// Declared inline because cbindgen does not expand a named function-
+    /// pointer alias inside `Option`; using the alias here emits an opaque
+    /// `Option_*` field by value and produces an invalid C header.
+    pub on_dpns_marketplace_sync_completed_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            results: *const DpnsSyncWalletResultFFI,
+            count: usize,
+            sync_unix_seconds: u64,
+        ),
+    >,
+}
+
+impl Default for EventHandlerCallbacksExtension {
+    fn default() -> Self {
+        Self {
+            struct_size: std::mem::size_of::<Self>(),
+            version: PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
+            reserved: 0,
+            on_dpns_marketplace_sync_completed_fn: None,
+        }
+    }
+}
 
 /// C callback vtable for event handling.
 ///
@@ -26,13 +99,9 @@ use std::os::raw::{c_char, c_void};
 /// copy of the generated header allocates a smaller struct, so each appended
 /// slot makes `ptr::read` over-read past that allocation.
 ///
-/// This is accepted for now because the only consumer is the in-tree Swift
-/// SDK, which is regenerated (cbindgen) and rebuilt in lockstep with this
-/// crate — there is no out-of-tree consumer pinned to a stale header. A
-/// proper fix (a leading `size`/`version` discriminator passed to
-/// `platform_wallet_manager_create`, or per-callback registration
-/// entrypoints) is tracked as a follow-up and is out of scope for the
-/// sync-progress work that added these slots.
+/// Existing slots remain frozen for compatibility. New event kinds belong
+/// in the size/version-tagged [`EventHandlerCallbacksExtension`] (or a later
+/// extension version), never at the end of this legacy by-value vtable.
 #[repr(C)]
 pub struct EventHandlerCallbacks {
     /// Opaque context pointer passed to all callbacks.
@@ -119,11 +188,18 @@ unsafe impl Sync for EventHandlerCallbacks {}
 /// Wrapper that implements `PlatformEventHandler` via FFI callbacks.
 pub(crate) struct FFIEventHandler {
     callbacks: EventHandlerCallbacks,
+    dpns_sync_callback: Option<DpnsMarketplaceSyncCompletedFn>,
 }
 
 impl FFIEventHandler {
-    pub fn new(callbacks: EventHandlerCallbacks) -> Self {
-        Self { callbacks }
+    pub fn new(
+        callbacks: EventHandlerCallbacks,
+        dpns_sync_callback: Option<DpnsMarketplaceSyncCompletedFn>,
+    ) -> Self {
+        Self {
+            callbacks,
+            dpns_sync_callback,
+        }
     }
 }
 
@@ -174,6 +250,63 @@ impl EventHandler for FFIEventHandler {
 }
 
 impl PlatformEventHandler for FFIEventHandler {
+    fn on_dpns_marketplace_sync_completed(&self, summary: &DpnsSyncPassSummary) {
+        let Some(callback) = self.dpns_sync_callback else {
+            return;
+        };
+        if summary.wallet_results.is_empty() {
+            unsafe {
+                callback(
+                    self.callbacks.context,
+                    std::ptr::null(),
+                    0,
+                    summary.sync_unix_seconds,
+                );
+            }
+            return;
+        }
+
+        let mut owned_errors = Vec::new();
+        let mut results = Vec::with_capacity(summary.wallet_results.len());
+        for (&wallet_id, outcome) in &summary.wallet_results {
+            match outcome {
+                WalletDpnsSyncOutcome::Ok(wallet_summary) => {
+                    results.push(DpnsSyncWalletResultFFI {
+                        wallet_id,
+                        success: true,
+                        names_tracked: wallet_summary.names_tracked,
+                        names_added: wallet_summary.names_added.len() as u32,
+                        names_departed: wallet_summary.names_departed.len() as u32,
+                        prices_changed: wallet_summary.prices_changed.len() as u32,
+                        error_message: std::ptr::null(),
+                    });
+                }
+                WalletDpnsSyncOutcome::Err(error) => {
+                    let error_message = std::ffi::CString::new(error.as_str()).ok();
+                    let error_ptr = error_message
+                        .as_ref()
+                        .map_or(std::ptr::null(), |message| message.as_ptr());
+                    if let Some(error_message) = error_message {
+                        owned_errors.push(error_message);
+                    }
+                    results.push(DpnsSyncWalletResultFFI {
+                        wallet_id,
+                        error_message: error_ptr,
+                        ..DpnsSyncWalletResultFFI::default()
+                    });
+                }
+            }
+        }
+        unsafe {
+            callback(
+                self.callbacks.context,
+                results.as_ptr(),
+                results.len(),
+                summary.sync_unix_seconds,
+            );
+        }
+    }
+
     fn on_platform_address_sync_completed(&self, summary: &PlatformAddressSyncSummary) {
         let Some(cb) = self.callbacks.on_platform_address_sync_completed_fn else {
             return;
@@ -331,8 +464,8 @@ mod release_tests {
         }
 
         let releases = Box::leak(Box::new(AtomicUsize::new(0)));
-        let handler: Arc<dyn PlatformEventHandler> =
-            Arc::new(FFIEventHandler::new(EventHandlerCallbacks {
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(FFIEventHandler::new(
+            EventHandlerCallbacks {
                 context: releases as *const AtomicUsize as *mut c_void,
                 on_wallet_event_fn: None,
                 on_error_fn: None,
@@ -341,7 +474,9 @@ mod release_tests {
                 on_shielded_sync_progress_fn: None,
                 on_shielded_tree_progress_fn: None,
                 release_fn: Some(count_release),
-            }));
+            },
+            None,
+        ));
         let straggler = Arc::clone(&handler);
 
         drop(handler);

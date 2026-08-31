@@ -20,7 +20,14 @@ impl Drive {
     ///   consult the cache first and hand back the very entry being replaced; worse, a
     ///   read-only query thread — which reads committed state with no transaction and does
     ///   populate the global cache — could race a pre-write copy back in between the eviction
-    ///   and the re-seed.
+    ///   and the re-seed. The other half of that race — a query thread that read the
+    ///   pre-migration contract, was descheduled, and performs its cache insert only after the
+    ///   migrated contract was promoted to the global cache — is closed by the monotonic
+    ///   version guard in [`DataContractCache::insert`], which requires every migration rewrite
+    ///   to bump the contract's version (the v13 DPNS rewrite goes 1 → 2, the v14 DashPay
+    ///   rewrite likewise).
+    ///
+    ///   [`DataContractCache::insert`]: crate::cache::DataContractCache::insert
     /// * The result is seeded into the **block** cache whenever a transaction is supplied. The
     ///   write is still uncommitted at that point: the block cache is the first cache a
     ///   transactional read consults, it is promoted to the global cache when the block commits

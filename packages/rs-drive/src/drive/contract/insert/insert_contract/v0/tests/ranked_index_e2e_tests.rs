@@ -46,6 +46,16 @@
 //! secondary entries `indexed_*_top_k` returns are keyed by those same group
 //! keys. A compound index `[a, b]` inserts `<a> / <value_of_a>` between the
 //! doctype and the terminal `<b>` level.
+//!
+//! [`batched_group_drain`] extends this suite to the one shape it does not
+//! otherwise reach: several document operations applied in a *single* grovedb
+//! batch. It reuses the fixture and the assertion helpers below, which is why
+//! it is a child module rather than a sibling.
+
+/// Declared with `#[path]` so it can sit beside the other test files while
+/// still reaching this module's fixture and assertion helpers.
+#[path = "batched_group_drain.rs"]
+mod batched_group_drain;
 
 use crate::drive::Drive;
 use crate::util::grove_operations::DirectQueryType;
@@ -261,49 +271,55 @@ fn group_keys<T>(entries: &[(T, Vec<u8>)]) -> Vec<String> {
         .collect()
 }
 
-fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i128, Vec<u8>)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    drive
+fn axis_top_k_keys(
+    drive: &Drive,
+    path: &[Vec<u8>],
+    axis: grovedb_query::IndexAxis,
+    k: u16,
+    descending: bool,
+) -> grovedb::AxisKeys {
+    let path_query = grovedb::PathQuery::new_axis(
+        path.to_vec(),
+        grovedb_query::AxisQuery::top_k(axis, k, 0, descending).keys_only(),
+    );
+    match drive
         .grove
-        .indexed_avg_top_k(
-            path_refs.as_slice(),
-            k,
-            descending,
+        .run_path_query(
+            &path_query,
+            true,
+            true,
+            true,
+            grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
             None,
             &platform_version().drive.grove_version,
         )
         .unwrap()
-        .expect("indexed_avg_top_k must succeed")
+        .expect("the keys-only axis read must succeed")
+    {
+        grovedb::PathQueryRun::AxisKeys { keys, .. } => keys,
+        other => panic!("expected a keys-only axis page, got {other:?}"),
+    }
+}
+
+fn avg_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i128, Vec<u8>)> {
+    match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Avg, k, descending) {
+        grovedb::AxisKeys::Avg(pairs) => pairs,
+        other => panic!("expected avg keys, got {other:?}"),
+    }
 }
 
 fn count_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(u64, Vec<u8>)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    drive
-        .grove
-        .indexed_count_top_k(
-            path_refs.as_slice(),
-            k,
-            descending,
-            None,
-            &platform_version().drive.grove_version,
-        )
-        .unwrap()
-        .expect("indexed_count_top_k must succeed")
+    match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Count, k, descending) {
+        grovedb::AxisKeys::Count(pairs) => pairs,
+        other => panic!("expected count keys, got {other:?}"),
+    }
 }
 
 fn sum_top_k(drive: &Drive, path: &[Vec<u8>], k: u16, descending: bool) -> Vec<(i64, Vec<u8>)> {
-    let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
-    drive
-        .grove
-        .indexed_sum_top_k(
-            path_refs.as_slice(),
-            k,
-            descending,
-            None,
-            &platform_version().drive.grove_version,
-        )
-        .unwrap()
-        .expect("indexed_sum_top_k must succeed")
+    match axis_top_k_keys(drive, path, grovedb_query::IndexAxis::Sum, k, descending) {
+        grovedb::AxisKeys::Sum(pairs) => pairs,
+        other => panic!("expected sum keys, got {other:?}"),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -751,13 +767,11 @@ fn try_build_dish_contract(
 
 /// The write path's terminal-level resolver has to pick the indexed variant
 /// for a **compound** ranked index too — that level lives one step below the
-/// doctype tree and is materialized lazily by the document index walker, not
-/// at contract registration.
-///
-/// Compound ranked indexes are rejected at contract-parse time (rs-dpp,
-/// single-property restriction), so the index is built as a struct literal
-/// here: this pins that the drive dispatch is already correct for the day a
-/// future protocol version relaxes the grammar.
+/// doctype tree and is materialized lazily, per prefix value, by the
+/// document index walker rather than at contract registration. This pins
+/// the resolver's half of that contract; the end-to-end half (documents
+/// inserted, per-prefix secondaries read and proved) lives in the query
+/// suites' `pinned_prefix` modules.
 #[test]
 fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
     use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
@@ -785,8 +799,13 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
         summable: Some("price".to_string()),
         range_summable: true,
         ranked_countable: false,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: true,
+        time_range: None,
+        terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     };
     let index_structure =
         IndexLevel::try_from_indices([&compound_ranked_index], "dish", platform_version())
@@ -819,23 +838,24 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
     assert_eq!(terminal_axes, vec![IndexAxis::Avg]);
 }
 
-/// Compound ranked indexes are rejected at contract-parse time (rs-dpp's
-/// single-property restriction) — a v1 scope choice: a ranked terminal
-/// level under an aggregating prefix would need a NonCounted/NotSummed
-/// wrapper, which grovedb structurally rejects for indexed trees, and the
-/// ranked query surface has no equality-prefix routing yet. (GroveDB's
-/// merged PR #657 does support creating and populating an indexed tree in
-/// one batch, so lazy terminal creation itself is no longer a blocker —
-/// the restriction is relaxable at a future protocol version.)
+/// A compound ranked index parses on its own (per-prefix semantics —
+/// the terminal level's indexed tree is materialized lazily per prefix
+/// by the document walker; grovedb's PR #657 supports creating and
+/// populating an indexed tree in one batch). What stays rejected, at
+/// contract-parse time, is the one structurally impossible pairing: a
+/// countable/summable index terminating at the compound's full leading
+/// prefix, whose aggregating value trees would demand the
+/// NonCounted/NotSummed wrapper grovedb structurally rejects for
+/// indexed trees.
 ///
-/// Storage-level backstop behind this gate: both wrapper dispatchers in
-/// `fees/op.rs` fail closed (`DriveError::NotSupported`) for a ranked
-/// terminal level inside an aggregating value tree — the frozen v0
-/// diagonal and the v14 zero-contribution matrix alike. The latter
-/// matters since the v14 shared-prefix fix: its unwrapped fallback for
-/// non-sum children of sum-only parents would otherwise have accepted an
-/// indexed continuation, quietly creating a ranked tree that neither the
-/// grammar nor the ranked query picker supports.
+/// Storage-level backstop behind that parse-time gate: both wrapper
+/// dispatchers in `fees/op.rs` fail closed (`DriveError::NotSupported`)
+/// for a ranked terminal level inside an aggregating value tree — the
+/// frozen v0 diagonal and the v14 zero-contribution matrix alike. The
+/// latter matters since the v14 shared-prefix fix: its unwrapped
+/// fallback for non-sum children of sum-only parents would otherwise
+/// have accepted an indexed continuation, quietly creating a ranked
+/// tree the picker never resolves.
 ///
 /// Note that a ranked index *sharing* its property with a compound index
 /// — `[a]` ranked next to `[a, b]` — is a different (and, since v14,
@@ -843,16 +863,21 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
 /// one, and the continuation hangs *below* it. See
 /// `ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property`.
 #[test]
-fn compound_ranked_index_contract_is_rejected_at_parse_time() {
-    for standalone_prefix_index in [false, true] {
-        let error = try_build_dish_contract(standalone_prefix_index)
-            .expect_err("a compound ranked index must be rejected at contract-parse time");
-        let message = error.to_string();
-        assert!(
-            message.contains("single-property"),
-            "expected the single-property restriction, got: {message}"
-        );
-    }
+fn compound_ranked_index_contract_parses_unless_its_prefix_aggregates() {
+    try_build_dish_contract(false)
+        .expect("a compound ranked index with no aggregating prefix index must parse");
+
+    let error = try_build_dish_contract(true).expect_err(
+        "a countable index terminating at the ranked compound's prefix must be rejected",
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("byRestaurantCourse")
+            && message.contains("byRestaurant")
+            && message.contains("NonCounted"),
+        "expected the prefix-overlap rejection naming both indexes and the structural \
+         conflict, got: {message}"
+    );
 }
 
 /// Build a `visit` contract whose single-property `rankedCountable` index
@@ -994,8 +1019,13 @@ fn a_null_unsearchable_ranked_level_is_what_makes_a_phantom_group_possible() {
         summable: None,
         range_summable: false,
         ranked_countable: true,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
+        time_range: None,
+        terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     };
 
     for null_searchable in [false, true] {
@@ -1281,6 +1311,136 @@ fn estimated_mode_insert_on_ranked_indexes_produces_fees_and_does_not_undercharg
     }
 }
 
+/// Run one document update twice — estimated (`apply: false`) then applied —
+/// and return `(estimated, actual)` fees. The document must already be
+/// inserted; the estimate runs against the same committed state the applied
+/// run will see.
+fn estimated_and_actual_update_fees(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type_name: &str,
+    updated: &Document,
+) -> (
+    dpp::fee::fee_result::FeeResult,
+    dpp::fee::fee_result::FeeResult,
+) {
+    use std::borrow::Cow;
+
+    let pv = platform_version();
+    let document_type = contract
+        .document_type_for_name(document_type_name)
+        .unwrap_or_else(|_| panic!("{document_type_name} doctype exists"));
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+    let run = |apply: bool| {
+        drive
+            .update_document_for_contract(
+                updated,
+                contract,
+                document_type,
+                None,
+                BlockInfo::default(),
+                apply,
+                storage_flags.clone(),
+                None,
+                pv,
+                None,
+            )
+            .unwrap_or_else(|e| {
+                panic!("expected the {document_type_name} update (apply={apply}) to succeed: {e}")
+            })
+    };
+
+    let estimated = run(false);
+    let actual = run(true);
+    (estimated, actual)
+}
+
+/// Updates under a ranked index are write-amplified by design: an axis row
+/// binds the immediate primary node's committed value hash (grovedb #817), so
+/// ANY update of an indexed document refreshes every configured axis row —
+/// an in-place payload change rewrites the rows where they stand, and a
+/// group move deletes the old row and inserts a new one. Both must be priced
+/// by the dry-run estimate at least as high as the applied run meters, or the
+/// fee gate admits transitions that execution rejects. Both update shapes are
+/// exercised per axis family, and the canonical-row integrity walk must be
+/// clean afterwards (no stale rows left by the refresh paths).
+#[test]
+fn estimated_mode_update_on_ranked_indexes_does_not_undercharge() {
+    for (document_type_name, aggregated_property) in [
+        ("review", "grade"), // PCPSIT, Avg axis
+        ("visit", "guests"), // PCIT, Count axis
+        ("tip", "amount"),   // PSIT, Sum axis
+    ] {
+        let (drive, contract) = setup_restaurants();
+        let doc = build_doc(
+            &contract,
+            document_type_name,
+            aggregated_property,
+            "alpha",
+            42,
+            7,
+        );
+        insert_doc(&drive, &contract, document_type_name, &doc);
+
+        // Phase 1: in-place update — same group, new aggregated payload.
+        let mut in_place = doc.clone();
+        let mut props = std::collections::BTreeMap::new();
+        props.insert(GROUP_PROPERTY.to_string(), Value::Text("alpha".to_string()));
+        props.insert(aggregated_property.to_string(), Value::I64(43));
+        in_place.set_properties(props);
+        let (estimated, actual) =
+            estimated_and_actual_update_fees(&drive, &contract, document_type_name, &in_place);
+        for (kind, est, act) in [
+            ("storage", estimated.storage_fee, actual.storage_fee),
+            (
+                "processing",
+                estimated.processing_fee,
+                actual.processing_fee,
+            ),
+        ] {
+            assert!(
+                est >= act,
+                "{document_type_name}: in-place update estimated {kind} fee {est} is BELOW the \
+                 applied {kind} fee {act} (short by {}) — the axis row refresh under-charges",
+                act.saturating_sub(est),
+            );
+        }
+        assert!(
+            actual.processing_fee > 0,
+            "{document_type_name}: the applied in-place update must meter work"
+        );
+
+        // Phase 2: group move — the sort key changes, so the old row is
+        // deleted and a new one inserted under the new prefix.
+        let mut moved = doc.clone();
+        let mut props = std::collections::BTreeMap::new();
+        props.insert(GROUP_PROPERTY.to_string(), Value::Text("beta".to_string()));
+        props.insert(aggregated_property.to_string(), Value::I64(43));
+        moved.set_properties(props);
+        let (estimated, actual) =
+            estimated_and_actual_update_fees(&drive, &contract, document_type_name, &moved);
+        for (kind, est, act) in [
+            ("storage", estimated.storage_fee, actual.storage_fee),
+            (
+                "processing",
+                estimated.processing_fee,
+                actual.processing_fee,
+            ),
+        ] {
+            assert!(
+                est >= act,
+                "{document_type_name}: group-move update estimated {kind} fee {est} is BELOW \
+                 the applied {kind} fee {act} (short by {}) — the row move under-charges",
+                act.saturating_sub(est),
+            );
+        }
+
+        // No stale or non-canonical rows may survive either refresh path.
+        assert_grovedb_is_consistent(&drive);
+    }
+}
+
 /// The PSIT arm: a sum-only ranked index ranks its groups by running sum.
 #[test]
 fn sum_axis_ranks_groups_by_running_sum() {
@@ -1357,6 +1517,7 @@ fn ranked_avg_page(
                     ascending: false,
                 }],
                 where_clauses: &[],
+                resolved_time_ranges: &[],
                 limit: Some(limit),
                 offset: Some(offset),
                 has_start_at: false,
@@ -1403,6 +1564,7 @@ fn verified_ranked_avg_page(
                     ascending: false,
                 }],
                 where_clauses: &[],
+                resolved_time_ranges: &[],
                 limit: Some(limit),
                 offset: Some(offset),
                 has_start_at: false,
@@ -1427,8 +1589,9 @@ fn verified_ranked_avg_page(
         document_type,
         contract_id: contract.id().to_buffer(),
         document_type_name: "review".to_string(),
-        index: find_ranked_index_for_axis(indexes, GROUP_PROPERTY, RankedAxis::Avg, "grade")
+        index: find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade")
             .expect("the fixture declares rankedAverageable on grade"),
+        prefix_branches: vec![vec![]],
         axis: RankedAxis::Avg,
         descending: true,
         k: limit as u16,
@@ -1542,10 +1705,10 @@ fn an_offset_window_spanning_the_end_returns_the_short_tail() {
 /// The page comes back empty and `skipped` collapses below the requested
 /// offset — and *that shape* is the proof that the ranking holds exactly
 /// `skipped` groups in total, because the counted commitments cover the whole
-/// walk. It is the only way this surface reports a population, and the one
-/// place the proved and unproven paths differ: the unproven read cannot see
-/// the short walk (grovedb's read API returns an empty vector either way) and
-/// reports the requested offset.
+/// walk. It is the only way this surface reports a population, and both paths
+/// report it: grovedb's counted descent tracks how far the skip got and returns
+/// it on the page, so an unproven read reports the population rather than the
+/// offset it was asked for. What proving adds is that the number is attested.
 #[test]
 fn an_offset_past_the_end_returns_an_empty_page_whose_skip_attests_the_population() {
     let (drive, contract) = setup_restaurants();
@@ -1557,8 +1720,9 @@ fn an_offset_past_the_end_returns_an_empty_page_whose_skip_attests_the_populatio
         "there is no rank 12 in a five-group ranking"
     );
     assert_eq!(
-        page.skipped, 12,
-        "the unproven read echoes the requested offset — it has nothing to attest with"
+        page.skipped, 5,
+        "the unproven read reports the five groups the ranking holds, not the requested \
+         offset of 12"
     );
 
     let verified = verified_ranked_avg_page(&drive, &contract, 3, 12);

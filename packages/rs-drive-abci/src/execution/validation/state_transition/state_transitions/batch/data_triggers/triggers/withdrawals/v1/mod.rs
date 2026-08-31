@@ -61,7 +61,7 @@ pub(super) fn delete_withdrawal_data_trigger_v1(
                 operator: WhereOperator::Equal,
                 value: Value::Identifier(dt_delete.base().id().to_buffer()),
             }),
-            in_clause: None,
+            in_clauses: Vec::new(),
             range_clause: None,
             equal_clauses: BTreeMap::default(),
         },
@@ -71,6 +71,7 @@ pub(super) fn delete_withdrawal_data_trigger_v1(
         start_at: None,
         start_at_included: false,
         block_time_ms: None,
+        resolved_time_ranges: vec![],
     };
 
     // Diff vs `_v0` (withdrawal-document lookup):

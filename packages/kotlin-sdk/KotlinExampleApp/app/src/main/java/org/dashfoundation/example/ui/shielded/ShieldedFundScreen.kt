@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -30,24 +31,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import org.dashfoundation.dashsdk.funding.ShieldedProver
+import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ShieldedFundProgress
 import org.dashfoundation.example.services.shielded.ShieldedFundFromAssetLockCoordinator.StartFundingResult
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.funding.canFundIdentity
+import org.dashfoundation.example.ui.funding.parseOutPoint
+import org.dashfoundation.example.ui.funding.shortOutPointDisplay
+import org.dashfoundation.example.ui.funding.statusLabel
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
+import java.util.UUID
 
 /**
  * Shield funds from an asset lock — port of `ShieldedFundFromAssetLockView.swift`.
  * Gated on shielded support ([ShieldedGate]). Shows the Halo 2 prover
  * readiness (via [ShieldedProver.isReady], warming it on entry) and the
- * consensus-pinned shield fee ([ShieldedProver.estimateFee]).
+ * consensus-pinned shield fee
+ * ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.estimateShieldedFee],
+ * computed at the manager's network-tracked platform version).
  *
  * Submit is wired to the real shield FFI: the recipient defaults to the
  * wallet's own bound shielded address ("shield to self", via
@@ -58,29 +69,87 @@ import org.dashfoundation.example.util.toHex
  * `platform_wallet_manager_shielded_fund_from_asset_lock`; the screen then
  * navigates to the dismissal-safe progress view. The Orchard note arrives on
  * the next shielded sync pass, not synchronously.
+ *
+ * RESUME mode (← the Swift view's `resumeFromLock` parameter): when
+ * [resumeOutPointHex] is non-null the screen hides the Amount section (the
+ * lock and its amount were fixed at original build time) and routes Submit to
+ * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedResumeFundFromAssetLock]
+ * instead of `shieldedFundFromAssetLock`, seeded with the parsed outpoint.
+ * The recipient is still chosen here — a shielded orphan lock carries no
+ * recipient stamp, because the Orchard recipient is an external address
+ * picked at ST-submit time, not allocated from the wallet.
+ *
+ * This is the resume path for `fundingTypeRaw == 5`
+ * (AssetLockShieldedAddressTopUp) rows on the "Pending Platform Top Ups"
+ * surface. Before it existed those rows had nowhere to go: the surface only
+ * queried funding type 4, and its Resume opened the platform-ADDRESS screen,
+ * whose submit calls the wrong FFI for a shielded lock.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
+fun ShieldedFundScreen(
+    walletIdHex: String,
+    navController: NavHostController,
+    resumeOutPointHex: String? = null,
+) {
     ShieldedGate(navController) {
         val container = LocalAppContainer.current
+        val appState = LocalAppState.current
         val walletId = remember(walletIdHex) { walletIdHex.hexToBytes() }
         val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+        val isResume = resumeOutPointHex != null
 
         var amountText by rememberSaveable { mutableStateOf("") }
         var recipientHex by rememberSaveable { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
         var isSubmitting by remember { mutableStateOf(false) }
 
+        // In resume mode, load the tracked lock so we can show its amount +
+        // status. Keyed by `outPointHex` (primary key); a null result means
+        // the lock was swept between opening the list and this screen.
+        // ← FundFromAssetLockScreen's identical resume-mode load.
+        val resumeLock by produceState<AssetLockEntity?>(
+            initialValue = null,
+            resumeOutPointHex,
+        ) {
+            value = resumeOutPointHex?.let {
+                container.database.assetLockDao().getByOutPointHex(it)
+            }
+        }
+
         // Prover status + fee estimate (bridged, single-note-with-change = 2 actions).
         val proverReady by produceState(initialValue = false) {
             runCatching { ShieldedProver.warmUp() }
             value = runCatching { ShieldedProver.isReady() }.getOrDefault(false)
         }
-        val feeEstimate by produceState<Long?>(initialValue = null) {
-            value = runCatching {
-                ShieldedProver.estimateFee(ShieldedProver.FeeKind.TransferOrShield, 2)
-            }.getOrNull()
+        // Re-keyed on the published protocol version: the SDK learns the
+        // network's version on a background refresh after the manager
+        // exists, so an estimate produced before the ratchet completed was
+        // computed at the seed version (← iOS SendTransactionView
+        // re-resolves on `platformState.platformProtocolVersion`).
+        val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
+        // ...and re-read on every resume, because the flow alone can go
+        // stale: that refresh republishes the unchanged seed when its
+        // proven fetch fails, and the SDK independently ratchets its
+        // version from ANY proof-verified query's response metadata
+        // without publishing at all. The estimate is a pure handle
+        // lookup, so re-reading is free.
+        var feeReadEpoch by remember { mutableIntStateOf(0) }
+        LifecycleResumeEffect(Unit) {
+            feeReadEpoch++
+            onPauseOrDispose {}
+        }
+        val feeEstimate by produceState<Long?>(
+            initialValue = null,
+            manager,
+            protocolVersion,
+            feeReadEpoch,
+        ) {
+            value = manager?.let { m ->
+                runCatching {
+                    m.estimateShieldedFee(ShieldedProver.FeeKind.TransferOrShield, 2)
+                }.getOrNull()
+            }
         }
 
         // Default "shield to self" recipient — the wallet's bound shielded
@@ -102,13 +171,18 @@ fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
         val recipient = overrideRecipient ?: defaultRecipient
 
         val amount = amountText.toLongOrNull()
-        val canSubmit =
-            manager != null && recipient != null && amount != null && amount > 0 && !isSubmitting
+        // Resume only needs a recipient (+ the loaded lock): the shield value
+        // is derived Rust-side from the existing lock. Fresh needs an amount
+        // too. ← FundFromAssetLockScreen's `canSubmit`.
+        val canSubmit = manager != null && recipient != null && !isSubmitting &&
+            if (isResume) resumeLock != null else (amount != null && amount > 0)
 
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Shield from Asset Lock") },
+                    title = {
+                        Text(if (isResume) "Resume Shield" else "Shield from Asset Lock")
+                    },
                     navigationIcon = {
                         IconButton(onClick = { navController.popBackStack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -137,6 +211,47 @@ fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
                     )
                 }
 
+                if (isResume) {
+                    // Read-only summary of the lock being resumed — replaces
+                    // the Amount section (the locked amount is fixed by the
+                    // original build). ← Swift `resumeFromAssetLockSection`.
+                    FormSection(title = "Resuming") {
+                        val lock = resumeLock
+                        if (lock == null) {
+                            Text(
+                                "This asset lock is no longer tracked. Return to the " +
+                                    "Pending Platform Top Ups list.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.testTag("shieldedFund.resume.missing"),
+                            )
+                        } else {
+                            Text(
+                                "Asset Lock ${lock.shortOutPointDisplay}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.testTag("shieldedFund.resume.outpoint"),
+                            )
+                            Text(
+                                "${lock.amountDuffs} duffs · ${lock.statusLabel}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                if (lock.canFundIdentity) {
+                                    "The asset lock already reached a usable proof state. " +
+                                        "Pick a recipient to complete the shield."
+                                } else {
+                                    "The asset lock is broadcast and still awaiting " +
+                                        "InstantSend / ChainLock finality. Resuming will wait " +
+                                        "for finality, then shield into the pool."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
                 FormSection(title = "Recipient") {
                     OutlinedTextField(
                         value = recipientHex,
@@ -156,39 +271,86 @@ fun ShieldedFundScreen(walletIdHex: String, navController: NavHostController) {
                     )
                 }
 
-                FormSection(title = "Amount") {
-                    OutlinedTextField(
-                        value = amountText,
-                        onValueChange = { amountText = it.filter(Char::isDigit) },
-                        label = { Text("Amount (duffs)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth().testTag("shieldedFund.amount"),
-                    )
+                if (!isResume) {
+                    FormSection(title = "Amount") {
+                        OutlinedTextField(
+                            value = amountText,
+                            onValueChange = { amountText = it.filter(Char::isDigit) },
+                            label = { Text("Amount (duffs)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth().testTag("shieldedFund.amount"),
+                        )
+                    }
                 }
 
                 SubmitButton(
-                    text = "Shield",
+                    text = if (isResume) "Resume Shield" else "Shield",
                     isLoading = isSubmitting,
                     enabled = canSubmit,
                     modifier = Modifier.fillMaxWidth().testTag("shieldedFund.submit"),
                 ) {
                     val m = manager ?: return@SubmitButton
                     val recipientBytes = recipient ?: return@SubmitButton
-                    val amountDuffs = amount ?: return@SubmitButton
+
+                    // Resume mode dispatches to a different FFI than a fresh
+                    // shield, so resolve the whole body up front — including
+                    // the outpoint parse, which must not fail after the
+                    // coordinator has already claimed the slot. The operation
+                    // id carries the resumed lock's outpoint: resumable locks
+                    // default to the same wallet-owned shielded recipient, so
+                    // the coordinator's slot key alone cannot tell two locks
+                    // apart and would silently reuse the first controller.
+                    // A fresh shield mints a NEW id per submission: the
+                    // coordinator retains a completed controller for ~30s,
+                    // and a fixed marker would match it and rebind — showing
+                    // the old result instead of running this submission's
+                    // body. Minted here, at submission time, so returning to
+                    // this form and shielding again is always a new
+                    // operation ("resume:<outpoint>" stays stable so a
+                    // re-tap of the SAME lock still rebinds).
+                    val (operationId, submitBody) = if (isResume) {
+                        val lock = resumeLock ?: return@SubmitButton
+                        val parsed = parseOutPoint(lock.outPointHex)
+                        if (parsed == null) {
+                            error = "Could not parse asset lock outpoint: ${lock.outPointHex}"
+                            return@SubmitButton
+                        }
+                        val (txid, vout) = parsed
+                        val body: suspend () -> Unit = {
+                            m.shieldedResumeFundFromAssetLock(
+                                walletId = walletId,
+                                outPointTxid = txid,
+                                outPointVout = vout,
+                                recipientRaw43 = recipientBytes,
+                            )
+                        }
+                        "resume:${lock.outPointHex}" to body
+                    } else {
+                        val amountDuffs = amount ?: return@SubmitButton
+                        val body: suspend () -> Unit = {
+                            m.shieldedFundFromAssetLock(
+                                walletId = walletId,
+                                recipientRaw43 = recipientBytes,
+                                amountDuffs = amountDuffs,
+                            )
+                        }
+                        "shield:${UUID.randomUUID()}" to body
+                    }
+
                     isSubmitting = true
                     // Start the funding through the coordinator (dismissal-safe,
                     // per-wallet serialized). The body performs the shield FFI.
+                    // Resume shares the coordinator with fresh shields on
+                    // purpose: both consume the same per-wallet shield_guard
+                    // Rust-side, so a resume racing a fresh shield on one
+                    // wallet has to be blocked by the same gate.
                     val result = container.shieldedFundCoordinator.startFunding(
                         walletId = walletId,
                         recipientRaw43 = recipientBytes,
-                    ) {
-                        m.shieldedFundFromAssetLock(
-                            walletId = walletId,
-                            recipientRaw43 = recipientBytes,
-                            amountDuffs = amountDuffs,
-                        )
-                    }
+                        operationId = operationId,
+                        body = submitBody,
+                    )
                     when (result) {
                         is StartFundingResult.Started -> {
                             navController.navigate(

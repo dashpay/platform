@@ -658,10 +658,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - amountDuffs: Amount to lock in Core duffs.
-    ///   - fundingAccountIndex: BIP44 standard Core account whose UTXOs
-    ///     fund the asset lock. Today only BIP44 standard accounts are
-    ///     supported (CoinJoin / BIP32 not yet wired through the
-    ///     asset-lock builder).
+    ///   - fundingAccountIndex: standard-family source index — the asset
+    ///     lock POOLS the BIP44 and BIP32 accounts at that index together
+    ///     with every DashPay receiving account (change returns to BIP44);
+    ///     the index does not restrict which DashPay receiving accounts
+    ///     contribute. CoinJoin remains drain-only and separate.
     ///   - platformAccountIndex: Platform-payment account containing
     ///     `recipients`. Used for the membership pre-flight on the Rust
     ///     side and the post-success balance write.

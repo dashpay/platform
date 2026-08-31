@@ -40,8 +40,8 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::events::{build_event_vtable, KotlinEventCtx};
-use crate::persistence::{build_vtable, KotlinPersistenceCtx};
+use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
+use crate::persistence::{build_extension, build_vtable, KotlinPersistenceCtx};
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, PWFFI_CODE_OFFSET};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::{
@@ -52,7 +52,7 @@ use jni::JNIEnv;
 use platform_wallet_ffi::error::{
     platform_wallet_ffi_result_free, PlatformWalletFFIResult, PlatformWalletFFIResultCode,
 };
-use platform_wallet_ffi::event_handler::EventHandlerCallbacks;
+use platform_wallet_ffi::event_handler::{EventHandlerCallbacks, EventHandlerCallbacksExtension};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::persistence::{PersistenceCallbacks, PersistenceCapabilitiesFFI};
 use platform_wallet_ffi::types::IdentifierArray;
@@ -155,6 +155,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let persistence_ctx =
             Box::into_raw(Box::new(KotlinPersistenceCtx::new(persistence_global)));
         let persistence: PersistenceCallbacks = build_vtable(persistence_ctx as *mut c_void);
+        let persistence_extension = build_extension();
         let persistence_capabilities = PersistenceCapabilitiesFFI {
             version: declared_capabilities_version,
             reserved: 0,
@@ -174,16 +175,19 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let event_ctx = Box::into_raw(Box::new(KotlinEventCtx::new(event_global)));
         let mut event_callbacks: EventHandlerCallbacks =
             build_event_vtable(event_ctx as *mut c_void);
+        let event_extension: EventHandlerCallbacksExtension = build_event_extension();
 
         let mut manager_handle: Handle = 0;
         // SAFETY: `inner` is a live Sdk pointer for the duration of this
         // call; the manager clones the Sdk and reads both vtables by value.
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_manager_create_with_persistence_capabilities(
+            platform_wallet_ffi::platform_wallet_manager_create_with_extensions(
                 inner,
                 &persistence as *const PersistenceCallbacks,
                 &mut event_callbacks as *const EventHandlerCallbacks,
                 &persistence_capabilities as *const PersistenceCapabilitiesFFI,
+                &persistence_extension,
+                &event_extension,
                 &mut manager_handle as *mut Handle,
             )
         };
@@ -616,6 +620,59 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             return ptr::null_mut();
         }
         arr.into_raw()
+    })
+}
+
+/// `core_wallet_set_gap_limit` — widen an account's address-pool gap
+/// limit, generating the addresses the wider limit now requires (capped
+/// Rust-side at `MAX_GAP_LIMIT`). The window a compact-filter scan watches
+/// is `last used index + gap`, so this is the host's lever for wallets
+/// whose usage frontier moved OUTSIDE the SDK's view (another client on
+/// the same seed — dashj during the migration — spending past the default
+/// window; observed in the field as change addresses the SDK refused to
+/// recognise). `account_type`: 0 BIP44, 1 BIP32, 2 CoinJoin
+/// (3 AllSpendable is rejected — gap limits are per-account).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletSetGapLimit(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    account_type: jni::sys::jint,
+    account_index: jni::sys::jint,
+    gap_limit: jni::sys::jint,
+) {
+    guard(&mut env, (), |env| {
+        // A gap limit belongs to ONE account's address pools; the
+        // AllSpendable aggregate (3) has no pool of its own, so reject it
+        // here rather than letting the per-account FFI fail opaquely.
+        let account_type = match core_account_type(account_type) {
+            Some(platform_wallet_ffi::CoreAccountTypeFFI::AllSpendable) | None => {
+                throw_sdk_exception(
+                    env,
+                    1,
+                    "accountType must be a concrete account (0=BIP44, 1=BIP32, 2=CoinJoin)",
+                );
+                return;
+            }
+            Some(concrete) => concrete,
+        };
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return;
+        }
+        if gap_limit <= 0 {
+            throw_sdk_exception(env, 1, "gapLimit must be positive");
+            return;
+        }
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_set_gap_limit(
+                wallet_handle as Handle,
+                account_type,
+                account_index as u32,
+                gap_limit as u32,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
     })
 }
 
@@ -3111,15 +3168,22 @@ fn ffi_network(value: jni::sys::jint) -> dash_network::ffi::FFINetwork {
     }
 }
 
-/// Map the Kotlin core account-type int (0 BIP44, 1 BIP32, 2 CoinJoin) to
-/// `CoreAccountTypeFFI`. Returns `None` for an out-of-range / negative value
-/// so the caller can throw `ErrorInvalidParameter` rather than bit-casting
-/// into an undefined discriminant.
+/// Map the Kotlin core account-type int (0 BIP44, 1 BIP32, 2 CoinJoin,
+/// 3 AllSpendable) to `CoreAccountTypeFFI`. Returns `None` for an
+/// out-of-range / negative value so the caller can throw
+/// `ErrorInvalidParameter` rather than bit-casting into an undefined
+/// discriminant.
+///
+/// 3 is the pooled selector (BIP44 + BIP32 + every DashPay receiving account,
+/// change to BIP44) and is the default for sends; the single-account APIs
+/// (gap limits, per-account UTXO listing) reject it with
+/// `ErrorInvalidParameter` since they address exactly one account.
 fn core_account_type(value: jni::sys::jint) -> Option<platform_wallet_ffi::CoreAccountTypeFFI> {
     match value {
         0 => Some(platform_wallet_ffi::CoreAccountTypeFFI::BIP44),
         1 => Some(platform_wallet_ffi::CoreAccountTypeFFI::BIP32),
         2 => Some(platform_wallet_ffi::CoreAccountTypeFFI::CoinJoin),
+        3 => Some(platform_wallet_ffi::CoreAccountTypeFFI::AllSpendable),
         _ => None,
     }
 }

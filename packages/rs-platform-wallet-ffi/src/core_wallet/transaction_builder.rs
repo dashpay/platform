@@ -61,14 +61,38 @@ pub enum CoreAccountTypeFFI {
     BIP44,
     BIP32,
     CoinJoin,
+    /// Pool every spendable transparent source: BIP44 + BIP32 + all DashPay
+    /// contact-receiving accounts (`platform_wallet::SEND_FUNDING_SOURCES`).
+    /// Change returns to BIP44 (the first pooled source). CoinJoin stays out
+    /// (separate privacy domain), as do a contact's watch-only external
+    /// coins. The default selector for a plain send.
+    AllSpendable,
 }
 
-impl From<CoreAccountTypeFFI> for AccountTypePreference {
-    fn from(value: CoreAccountTypeFFI) -> Self {
-        match value {
-            CoreAccountTypeFFI::BIP44 => AccountTypePreference::BIP44,
-            CoreAccountTypeFFI::BIP32 => AccountTypePreference::BIP32,
-            CoreAccountTypeFFI::CoinJoin => AccountTypePreference::CoinJoin,
+impl CoreAccountTypeFFI {
+    /// The single account family this selector names, or `None` for the
+    /// pooled [`AllSpendable`](Self::AllSpendable) — used by APIs that address
+    /// exactly one account (gap limits, per-account UTXO listing), which must
+    /// reject the pooled selector with a typed parameter error.
+    pub(crate) fn single_preference(self) -> Option<AccountTypePreference> {
+        match self {
+            CoreAccountTypeFFI::BIP44 => Some(AccountTypePreference::BIP44),
+            CoreAccountTypeFFI::BIP32 => Some(AccountTypePreference::BIP32),
+            CoreAccountTypeFFI::CoinJoin => Some(AccountTypePreference::CoinJoin),
+            CoreAccountTypeFFI::AllSpendable => None,
+        }
+    }
+
+    /// The funding sources this selector pools, in funding order — handed to
+    /// [`CoreWallet::finalize_transaction`]'s multi-source API, whose first
+    /// source supplies the change address. A single-family selector yields a
+    /// one-element list, which keeps that API's strict one-account semantics.
+    pub(crate) fn funding_sources(self) -> &'static [AccountTypePreference] {
+        match self {
+            CoreAccountTypeFFI::BIP44 => &[AccountTypePreference::BIP44],
+            CoreAccountTypeFFI::BIP32 => &[AccountTypePreference::BIP32],
+            CoreAccountTypeFFI::CoinJoin => &[AccountTypePreference::CoinJoin],
+            CoreAccountTypeFFI::AllSpendable => &platform_wallet::SEND_FUNDING_SOURCES,
         }
     }
 }
@@ -120,7 +144,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
         MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
     let finalized = runtime().block_on(wallet.core().finalize_transaction(
         inner,
-        account_type.into(),
+        account_type.funding_sources(),
         account_index,
         &signer,
     ));
@@ -255,7 +279,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     // Atomic select + reserve + sign in one wallet-manager critical section.
     let finalized = runtime().block_on(wallet.core().finalize_transaction(
         inner,
-        account_type.into(),
+        account_type.funding_sources(),
         account_index,
         &signer,
     ));
@@ -391,11 +415,9 @@ fn managed_account(
     source: AccountTypePreference,
     account_index: u32,
 ) -> Option<&ManagedCoreFundsAccount> {
-    match source {
-        AccountTypePreference::BIP44 => accounts.standard_bip44_accounts.get(&account_index),
-        AccountTypePreference::BIP32 => accounts.standard_bip32_accounts.get(&account_index),
-        AccountTypePreference::CoinJoin => accounts.coinjoin_accounts.get(&account_index),
-    }
+    source
+        .account_type(account_index)
+        .and_then(|at| accounts.funds_account(&at))
 }
 
 impl FFITransactionBuilder {
@@ -710,7 +732,12 @@ pub unsafe extern "C" fn core_wallet_tx_builder_add_inputs_from_outpoints(
     }
 
     let wallet_id = wallet.wallet_id();
-    let source: AccountTypePreference = account_type.into();
+    let Some(source) = account_type.single_preference() else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "AllSpendable pools multiple accounts; this API addresses exactly one".to_string(),
+        );
+    };
 
     let requested: Vec<OutPoint> = if outpoints_len == 0 {
         Vec::new()

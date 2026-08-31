@@ -159,6 +159,185 @@ impl Drive {
                                 )))
                             })?;
 
+                        // indexOnly documents have no primary row: the executed
+                        // transition is verified against the single entry its
+                        // values produce under the proof index — rebuilt here
+                        // from the transition through the same builder the
+                        // prover used.
+                        {
+                            use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+                            use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
+                            if document_type.index_only() {
+                                let values = match document_transition {
+                                    DocumentTransition::Create(create_transition) => {
+                                        create_transition.data().clone()
+                                    }
+                                    // The indexOnlyDelete kind always
+                                    // carries its values.
+                                    DocumentTransition::IndexOnlyDelete(delete_transition) => {
+                                        delete_transition.data().clone()
+                                    }
+                                    _ => {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "indexOnly documents only support create and \
+                                             indexOnlyDelete"
+                                                .to_string(),
+                                        )));
+                                    }
+                                };
+                                let path_query = crate::query::index_only_synthesis::index_only_transition_entry_path_query(
+                                    contract.id(),
+                                    document_type,
+                                    &values,
+                                    documents_batch_transition.owner_id(),
+                                    platform_version,
+                                )?;
+                                let (root_hash, mut proved) = grovedb::GroveDb::verify_query(
+                                    proof,
+                                    &path_query,
+                                    &platform_version.drive.grove_version,
+                                )?;
+                                let entry_element =
+                                    proved.pop().and_then(|(_path, _key, element)| element);
+
+                                let (root_hash, result) = match document_transition {
+                                    DocumentTransition::Create(create_transition) => {
+                                        let expected_document =
+                                            Document::try_from_create_transition(
+                                                create_transition,
+                                                documents_batch_transition.owner_id(),
+                                                block_info,
+                                                &contract,
+                                                &document_type,
+                                                platform_version,
+                                            )?;
+                                        // The entry's element shape follows the
+                                        // proof index's sum axis: a summable
+                                        // index stores `ItemWithSumItem(
+                                        // commitment, amount)`, a plain one
+                                        // stores `Item(commitment)`. The shapes
+                                        // are checked strictly — an element of
+                                        // the wrong shape is a wrong proof, and
+                                        // for the sum-bearing shape the proved
+                                        // amount must equal the created
+                                        // document's contribution (the value
+                                        // the write path froze into the
+                                        // element).
+                                        let proof_index = crate::query::index_only_synthesis::index_only_proof_index(&document_type)?;
+                                        let payload = match (
+                                            entry_element,
+                                            proof_index.summable.as_deref(),
+                                        ) {
+                                            (Some(grovedb::Element::Item(payload, _)), None) => {
+                                                payload
+                                            }
+                                            (
+                                                Some(grovedb::Element::ItemWithSumItem(
+                                                    payload,
+                                                    sum_value,
+                                                    _,
+                                                )),
+                                                Some(sum_property),
+                                            ) => {
+                                                let expected_sum =
+                                                    crate::drive::document::read_document_sum_contribution(
+                                                        &expected_document,
+                                                        sum_property,
+                                                    )?;
+                                                if sum_value != expected_sum {
+                                                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                        "the proved indexOnly entry's sum contribution does not match the created document {}",
+                                                        create_transition.base().id()
+                                                    ))));
+                                                }
+                                                payload
+                                            }
+                                            _ => {
+                                                return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                    "proof did not contain the indexOnly entry item expected to exist after create of {}",
+                                                    create_transition.base().id()
+                                                ))));
+                                            }
+                                        };
+                                        // Entry presence alone only proves that
+                                        // SOME row projects onto this position;
+                                        // the stored row commitment binds the
+                                        // entry to its document's full tuple,
+                                        // so a pre-existing row with the same
+                                        // projection but different values in
+                                        // other indexes cannot masquerade as
+                                        // this create. (`$createdAt`, when the
+                                        // type requires it, enters the
+                                        // commitment from the caller-supplied
+                                        // block info — the same execution-block
+                                        // assumption the expected document is
+                                        // built under.)
+                                        let expected_commitment =
+                                            crate::drive::document::index_only_row_commitment(
+                                                &expected_document,
+                                                document_type,
+                                                platform_version,
+                                            )?;
+                                        if payload != expected_commitment {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                "the proved indexOnly entry's row commitment does not match the created document {}: the entry belongs to a different row",
+                                                create_transition.base().id()
+                                            ))));
+                                        }
+                                        (
+                                            root_hash,
+                                            VerifiedDocuments(BTreeMap::from([(
+                                                expected_document.id(),
+                                                Some(expected_document),
+                                            )])),
+                                        )
+                                    }
+                                    DocumentTransition::IndexOnlyDelete(delete_transition) => {
+                                        if entry_element.is_some() {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                "proof still contained the indexOnly entry after delete of {}",
+                                                delete_transition.base().id()
+                                            ))));
+                                        }
+                                        (
+                                            root_hash,
+                                            VerifiedDocuments(BTreeMap::from([(
+                                                delete_transition.base().id(),
+                                                None,
+                                            )])),
+                                        )
+                                    }
+                                    _ => {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "indexOnly documents only support create and \
+                                             indexOnlyDelete"
+                                                .to_string(),
+                                        )))
+                                    }
+                                };
+
+                                // The classifier below is the single
+                                // authority on binding, and it returns false
+                                // for every indexOnly document transition: a
+                                // second create with identical owner/values
+                                // (different entropy) shares the proven entry
+                                // while only one of them executed, and a
+                                // delete's absence proof may describe state
+                                // that was already absent — the proof attests
+                                // the resulting STATE (`AffectedState`), not
+                                // the execution.
+                                let outcome = if Self::state_transition_proof_binds_execution(
+                                    state_transition,
+                                    known_contracts_provider_fn,
+                                )? {
+                                    StateTransitionProofOutcome::ExecutionProved(result)
+                                } else {
+                                    StateTransitionProofOutcome::AffectedState(result)
+                                };
+                                return Ok((root_hash, outcome));
+                            }
+                        }
+
                         let contested_status =
                             if let DocumentTransition::Create(create_transition) =
                                 document_transition
@@ -311,6 +490,18 @@ impl Drive {
                                         Some(document),
                                     )])),
                                 ))
+                            }
+                            DocumentTransition::IndexOnlyDelete(_) => {
+                                // Only reachable when the doctype is NOT
+                                // indexOnly (the indexOnly branch above
+                                // returns first): an indexOnlyDelete aimed at
+                                // a stored type can never have executed, so
+                                // there is nothing a proof could attest.
+                                Err(Error::Proof(ProofError::InvalidTransition(
+                                    "an indexOnlyDelete cannot execute against a stored \
+                                     document type"
+                                        .to_string(),
+                                )))
                             }
                         }
                     }
@@ -1931,8 +2122,25 @@ impl Drive {
                 // consulted; classify fail-closed regardless.
                 None => false,
                 // Document proofs bind the exact document (or its absence
-                // after deletion), including contested status and history.
-                Some(BatchedTransitionRef::Document(_)) => true,
+                // after deletion), including contested status and history —
+                // EXCEPT indexOnly types: their snapshot authenticates the
+                // commitment-checked entry (or its absence), which carries
+                // neither id, entropy nor nonce and so cannot bind one
+                // specific transition's execution.
+                Some(BatchedTransitionRef::Document(document_transition)) => {
+                    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+                    let data_contract_id = document_transition.data_contract_id();
+                    let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
+                        Error::Proof(ProofError::UnknownContract(format!(
+                            "unknown contract with id {} in document verification",
+                            data_contract_id
+                        ))),
+                    )?;
+                    !contract
+                        .document_type_for_name(document_transition.document_type_name())
+                        .map_err(|e| Error::Proof(ProofError::UnknownContract(e.to_string())))?
+                        .index_only()
+                }
                 Some(BatchedTransitionRef::Token(token_transition)) => {
                     let data_contract_id = token_transition.data_contract_id();
                     let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(

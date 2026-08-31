@@ -214,7 +214,7 @@ pub(super) fn create_domain_data_trigger_v1(
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (
@@ -241,6 +241,7 @@ pub(super) fn create_domain_data_trigger_v1(
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         // Diff vs `_v0` (parent-domain query):
@@ -337,7 +338,7 @@ pub(super) fn create_domain_data_trigger_v1(
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
             primary_key_equal_clause: None,
-            in_clause: None,
+            in_clauses: Vec::new(),
             range_clause: None,
             equal_clauses: BTreeMap::from([(
                 "saltedDomainHash".to_string(),
@@ -354,6 +355,7 @@ pub(super) fn create_domain_data_trigger_v1(
         start_at: None,
         start_at_included: false,
         block_time_ms: None,
+        resolved_time_ranges: vec![],
     };
 
     // Diff vs `_v0` (preorder query): same change as above. `_v0`

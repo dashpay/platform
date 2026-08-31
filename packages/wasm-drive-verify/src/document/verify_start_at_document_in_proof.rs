@@ -7,7 +7,7 @@ use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersion
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use indexmap::IndexMap;
-use js_sys::{Object, Reflect, Uint8Array};
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde_wasm_bindgen::from_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
@@ -107,6 +107,13 @@ pub fn verify_start_at_document_in_proof(
         start_at: start_at_bytes,
         start_at_included,
         block_time_ms,
+        // KNOWN LIMITATION: this surface has no input for time-range
+        // (IN_TIME_RANGE) resolution provenance, so proofs the server
+        // produced for a time-range query cannot be verified here — with
+        // empty provenance every bucketed index is inadmissible and
+        // verification fails closed. Use the SDK's FromProof path (which
+        // resolves from the signed metadata time) for those proofs.
+        resolved_time_ranges: vec![],
     };
 
     let (root_hash, document_option) = query
@@ -160,10 +167,27 @@ fn parse_internal_clauses(where_clauses: &JsValue) -> Result<InternalClauses, Js
         }
     }
 
-    // Parse in_clause
+    // Parse in_clause (single clause key, kept for backward compatibility)
     if let Ok(clause) = Reflect::get(&obj, &JsValue::from_str("in_clause")) {
         if !clause.is_null() && !clause.is_undefined() {
-            internal_clauses.in_clause = Some(parse_where_clause(&clause)?);
+            internal_clauses
+                .in_clauses
+                .push(parse_where_clause(&clause)?);
+        }
+    }
+
+    // Parse in_clauses (array form; protocol version 14+ accepts several)
+    if let Ok(clauses) = Reflect::get(&obj, &JsValue::from_str("in_clauses")) {
+        if !clauses.is_null() && !clauses.is_undefined() {
+            if !Array::is_array(&clauses) {
+                return Err(JsValue::from_str("in_clauses must be an array"));
+            }
+            let clauses_array = Array::from(&clauses);
+            for i in 0..clauses_array.length() {
+                internal_clauses
+                    .in_clauses
+                    .push(parse_where_clause(&clauses_array.get(i))?);
+            }
         }
     }
 

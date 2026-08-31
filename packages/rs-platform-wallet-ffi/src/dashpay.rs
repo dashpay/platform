@@ -598,6 +598,20 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 /// The wallet seed is never made resident; every signature is produced
 /// inside the signer's atomic derive-and-sign step.
 ///
+/// # Seed binding
+///
+/// The send begins by draining any deferred contact-crypto build for this
+/// contact, which derives and registers contact accounts from whatever seed
+/// the resolver resolves. That drain runs behind the same gate as
+/// `platform_wallet_drain_pending_contact_crypto`: whenever there is drainable
+/// work, the resolver is checked against this wallet's persisted BIP44
+/// account-0 xpub first. A resolver mapped to a different wallet fails the
+/// call with `ErrorInvalidParameter`, derives NOTHING, and leaves the queue
+/// intact. Without the gate the wrong-seed contact account would be written
+/// permanently (`register_contact_account` keys its existence check on the
+/// contact pair, not the xpub) and the payment would then fail anyway on the
+/// funding signatures — corruption first, error second.
+///
 /// # Safety
 /// - `core_signer_handle` must be a valid, non-destroyed
 ///   `*mut MnemonicResolverHandle`. Ownership is retained by the caller —
@@ -664,7 +678,22 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
         })
     });
     let result = unwrap_option_or_return!(option);
-    let (txid, _entry, fee_duffs) = unwrap_result_or_return!(result);
+    // The send opens with the SEED-VERIFIED contact-crypto drain, so a
+    // resolver mapped to a different wallet is refused here instead of
+    // registering a wrong-seed contact account and only then failing on the
+    // funding signatures. Reported with the same code the standalone verify
+    // and the drain entry point use, so a host recognizes the wrong-seed
+    // condition identically however it arrives.
+    let (txid, _entry, fee_duffs) = match result {
+        Ok(v) => v,
+        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e.to_string(),
+            );
+        }
+        Err(e) => return e.into(),
+    };
     // Exact network fee of the broadcast transaction — Σ(selected input
     // values) − Σ(output values), computed by the transaction builder
     // itself since rust-dashcore#872, so a sub-dust change remainder
@@ -839,6 +868,24 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
 /// identity `signer_handle` to send the reciprocal). Writes the total number of
 /// completed entries (drained + auto-accepted) to `out_drained`.
 ///
+/// # Seed binding
+///
+/// Whenever there is drainable work, the resolver behind `core_signer_handle`
+/// is first checked against this wallet's persisted BIP44 account-0 xpub
+/// (`PlatformWallet::drain_pending_contact_crypto_verified`, the same gate the
+/// startup sequence drains through). A resolver mapped to a different wallet
+/// fails the call with `ErrorInvalidParameter` and derives NOTHING — the queue
+/// is left intact for the next correct-seed drain. This is not advisory: a
+/// wrong-seed drain writes contact receiving accounts that no later
+/// correct-seed pass revisits (`register_contact_account` keys its existence
+/// check on the contact pair, not on the xpub), so the corruption would be
+/// permanent and its only symptom payments that never arrive. Any other
+/// verification failure — a resolver that simply cannot answer — fails closed
+/// the same way, with `ErrorWalletOperation`.
+///
+/// An empty queue skips the check entirely, so a poll with nothing to do still
+/// costs no key material.
+///
 /// # Safety
 /// - `signer_handle` (the identity document signer) is **optional**: pass null to
 ///   run only the provider-derived ops (account build / contactInfo decrypt) and
@@ -856,6 +903,10 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
 ) -> PlatformWalletFFIResult {
     check_ptr!(core_signer_handle);
     check_ptr!(out_drained);
+    // Zero-init before any fallible work so a refused drain leaves a truthful
+    // count rather than whatever the caller's stack held — same discipline as
+    // the cached seed-binding verify.
+    unsafe { *out_drained = 0 };
 
     // The identity signer is optional — null means "provider-only drain".
     let signer_addr = if signer_handle.is_null() {
@@ -866,7 +917,6 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
     let core_signer_addr = core_signer_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
         let wallet_id = wallet.wallet_id();
         let network = wallet.network();
         // SAFETY: same lifetime contract as platform_wallet_send_dashpay_payment —
@@ -878,30 +928,45 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
                 network,
             )
         };
+        let wallet = wallet.clone();
         block_on_worker(async move {
-            let drained = identity
-                .dashpay()
-                .drain_pending_contact_crypto(&provider)
-                .await;
             // The auto-accept pass needs the identity signer for the reciprocal;
-            // skip it when no identity signer was supplied.
-            let accepted = if signer_addr != 0 {
-                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                identity
-                    .dashpay()
-                    .drain_auto_accepts(signer, &provider)
-                    .await
+            // `None` skips it, matching a null `signer_handle`.
+            let signer: Option<&VTableSigner> = if signer_addr != 0 {
+                Some(&*(signer_addr as *const VTableSigner))
             } else {
-                0
+                None
             };
-            drained + accepted
+            // Unbounded, as this entry point has always been: it is called off
+            // the main thread by a host that decided the work is worth waiting
+            // for, not from the Core-SPV-gating startup path that owns a budget.
+            wallet
+                .drain_pending_contact_crypto_verified(&provider, signer, None)
+                .await
         })
     });
-    let total = unwrap_option_or_return!(option);
-    unsafe {
-        *out_drained = total as u32;
+    let result = unwrap_option_or_return!(option);
+    match result {
+        Ok(total) => {
+            unsafe {
+                *out_drained = total as u32;
+            }
+            PlatformWalletFFIResult::ok()
+        }
+        // Same code the standalone verify reports for a mis-mapped resolver, so
+        // a host recognizes the wrong-seed condition identically whether it
+        // checked up front or was refused at the drain.
+        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e.to_string(),
+            )
+        }
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            e.to_string(),
+        ),
     }
-    PlatformWalletFFIResult::ok()
 }
 
 /// Number of deferred **account-build** contact-crypto ops queued for this

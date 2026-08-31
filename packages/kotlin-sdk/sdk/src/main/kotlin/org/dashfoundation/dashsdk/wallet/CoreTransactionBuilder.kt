@@ -36,6 +36,14 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         BIP44(0),
         BIP32(1),
         COIN_JOIN(2),
+
+        /**
+         * Pool every spendable transparent source: BIP44 + BIP32 + all DashPay
+         * contact-receiving accounts. Change returns to BIP44 (the first
+         * pooled source). CoinJoin stays out (separate privacy domain), as do
+         * a contact's watch-only external coins. The default for a plain send.
+         */
+        ALL_SPENDABLE(3),
     }
 
     /**

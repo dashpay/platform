@@ -11,7 +11,7 @@ use dash_sdk::platform::documents::document_history_query::DocumentHistoryQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
-use drive::query::{OrderClause, WhereClause, WhereOperator};
+use drive::query::{OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClause, WhereOperator};
 use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
@@ -119,6 +119,30 @@ export interface DocumentsQuery {
    * @default []
    */
   groupBy?: string[];
+
+  /**
+   * Time-range bucket selections for "trending"-style queries. Each entry
+   * picks a single bucket of a timestamp field covered by a `timeRange`
+   * index. The server resolves the bucket from the current block time and
+   * the proof verifier re-derives it from the signed response metadata, so
+   * the result is provable. Requires protocol version 14+ (the first
+   * version whose contract grammar hosts `timeRange` indexes).
+   *
+   * - `selector: "oldest"` → the oldest still-active range (a near-full
+   *   trailing window of ~`range`; best for "trending over the last window").
+   * - `selector: "newest"` → the freshest started range (latest partial slice).
+   *
+   * `grid` names one of the field's grids in the contract's own declared
+   * seconds (`{ range, step, phase? }`) — required when the contract buckets
+   * the field with more than one `timeRange` grid, where the bare selector
+   * is ambiguous and rejected. A zero phase is spelled by omission.
+   * @default []
+   */
+  timeRange?: {
+    field: string;
+    selector: "newest" | "oldest";
+    grid?: { range: number; step: number; phase?: number };
+  }[];
 }
 
 /**
@@ -195,6 +219,10 @@ struct DocumentsQueryInput {
     // `orderBy` field — the first clause's direction controls
     // split-mode entry ordering and `(In + prove)` walk order. No
     // separate `orderByAscending` knob.
+    /// Time-range bucket selections (`IN_TIME_RANGE`), each `{ field,
+    /// selector }`. v1-only; resolved server-side from block time.
+    #[serde(rename = "timeRange", default)]
+    time_range: Option<Vec<JsonValue>>,
 }
 
 #[derive(Deserialize)]
@@ -243,6 +271,7 @@ async fn build_documents_query(
         start_after,
         start_at,
         group_by: _,
+        time_range,
     } = input;
 
     let contract_id: Identifier = data_contract_id.into();
@@ -274,6 +303,16 @@ async fn build_documents_query(
         for clause_json in where_values.iter() {
             let where_clause = parse_where_clause(clause_json)?;
             query = query.with_where(where_clause);
+        }
+    }
+
+    if let Some(time_range_values) = time_range {
+        for clause_json in time_range_values.iter() {
+            let (field, selector, grid) = parse_time_range_clause(clause_json)?;
+            query = match grid {
+                Some(grid) => query.with_time_range_grid(field, selector, grid),
+                None => query.with_time_range(field, selector),
+            };
         }
     }
 
@@ -406,7 +445,12 @@ async fn parse_documents_average_query(
 }
 
 /// Parse JSON where clause into WhereClause
-fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkError> {
+///
+/// `pub(super)` so the ranked / having-range surface in
+/// [`super::document_ranked`] can reuse the same `[field, operator, value]`
+/// spelling a caller already learned here, rather than growing a second
+/// where-clause dialect.
+pub(super) fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkError> {
     let clause_array = json_clause
         .as_array()
         .ok_or_else(|| WasmSdkError::invalid_argument("where clause must be an array"))?;
@@ -456,6 +500,75 @@ fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkErr
     })
 }
 
+/// Parse a JSON time-range clause `{ field, selector, grid? }` for
+/// [`DocumentQuery::with_time_range`] / `with_time_range_grid`.
+///
+/// `grid` is `{ range, step, phase? }` in the contract's own declared
+/// seconds, naming one of the field's grids — required when the contract
+/// buckets the field with more than one `timeRange` grid (the bare selector
+/// is ambiguous there and the server rejects it). Like the contract grammar
+/// and the wire, a zero phase is spelled by omission.
+fn parse_time_range_clause(
+    json_clause: &JsonValue,
+) -> Result<(String, TimeRangeSelector, Option<TimeRangeGridSpec>), WasmSdkError> {
+    let object = json_clause.as_object().ok_or_else(|| {
+        WasmSdkError::invalid_argument(
+            "timeRange clause must be an object { field, selector, grid? }",
+        )
+    })?;
+    let field = object
+        .get("field")
+        .and_then(JsonValue::as_str)
+        .ok_or_else(|| {
+            WasmSdkError::invalid_argument("timeRange clause requires a string `field`")
+        })?
+        .to_string();
+    let selector = object
+        .get("selector")
+        .and_then(JsonValue::as_str)
+        .and_then(TimeRangeSelector::from_string)
+        .ok_or_else(|| {
+            WasmSdkError::invalid_argument(
+                "timeRange clause `selector` must be \"newest\" or \"oldest\"",
+            )
+        })?;
+    let grid = match object.get("grid") {
+        None | Some(JsonValue::Null) => None,
+        Some(grid_json) => {
+            let grid_object = grid_json.as_object().ok_or_else(|| {
+                WasmSdkError::invalid_argument(
+                    "timeRange clause `grid` must be an object { range, step, phase? } in \
+                     the contract's declared seconds",
+                )
+            })?;
+            let grid_number = |key: &str| -> Result<u64, WasmSdkError> {
+                grid_object
+                    .get(key)
+                    .and_then(JsonValue::as_u64)
+                    .ok_or_else(|| {
+                        WasmSdkError::invalid_argument(format!(
+                            "timeRange clause `grid.{}` must be an unsigned integer of seconds, \
+                         exactly as the contract declares it",
+                            key
+                        ))
+                    })
+            };
+            let range_seconds = grid_number("range")?;
+            let step_seconds = grid_number("step")?;
+            let phase_seconds = match grid_object.get("phase") {
+                None | Some(JsonValue::Null) => 0,
+                Some(_) => grid_number("phase")?,
+            };
+            Some(TimeRangeGridSpec {
+                range_seconds,
+                step_seconds,
+                phase_seconds,
+            })
+        }
+    };
+    Ok((field, selector, grid))
+}
+
 /// Parse JSON order by clause into OrderClause
 fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, WasmSdkError> {
     let clause_array = json_clause
@@ -491,7 +604,10 @@ fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, WasmSdkErr
 }
 
 /// Convert JSON value to platform Value
-fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
+///
+/// `pub(super)` for [`super::document_ranked`], which needs the same
+/// conversion for a HAVING clause's right-hand operand.
+pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
     match json_val {
         JsonValue::Null => Ok(Value::Null),
         JsonValue::Bool(b) => Ok(Value::Bool(*b)),
@@ -1036,4 +1152,118 @@ fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Result<Map
         }
     }
     Ok(map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// This parser is the only boundary turning the public JavaScript
+    /// `{ field, selector, grid? }` shape into a typed time-range clause —
+    /// native and protobuf tests construct their queries after it, so a
+    /// parser that dropped the grid or mis-typed a member would not fail
+    /// them. Pin every branch here.
+    #[test]
+    fn parses_a_bare_selector_without_a_grid() {
+        let (field, selector, grid) =
+            parse_time_range_clause(&json!({ "field": "$createdAt", "selector": "newest" }))
+                .expect("the bare shape parses");
+        assert_eq!(field, "$createdAt");
+        assert_eq!(selector, TimeRangeSelector::Newest);
+        assert_eq!(grid, None, "no grid member means the field's sole grid");
+    }
+
+    #[test]
+    fn parses_a_grid_with_zero_phase_spelled_by_omission() {
+        let (_, selector, grid) = parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "oldest",
+            "grid": { "range": 21_600, "step": 7_200 },
+        }))
+        .expect("the grid shape parses");
+        assert_eq!(selector, TimeRangeSelector::Oldest);
+        assert_eq!(
+            grid,
+            Some(TimeRangeGridSpec {
+                range_seconds: 21_600,
+                step_seconds: 7_200,
+                phase_seconds: 0,
+            }),
+            "an omitted (or null) phase is the canonical zero"
+        );
+    }
+
+    #[test]
+    fn parses_a_grid_with_an_explicit_phase() {
+        let (_, _, grid) = parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": 86_400, "step": 86_400, "phase": 3_600 },
+        }))
+        .expect("the phased grid shape parses");
+        assert_eq!(
+            grid,
+            Some(TimeRangeGridSpec {
+                range_seconds: 86_400,
+                step_seconds: 86_400,
+                phase_seconds: 3_600,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_an_invalid_selector() {
+        parse_time_range_clause(&json!({ "field": "$createdAt", "selector": "latest" }))
+            .expect_err("only \"newest\" and \"oldest\" are selectors");
+    }
+
+    #[test]
+    fn rejects_a_missing_field() {
+        parse_time_range_clause(&json!({ "selector": "newest" }))
+            .expect_err("the field is required");
+    }
+
+    #[test]
+    fn rejects_a_malformed_grid() {
+        // not an object
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": [21_600, 7_200],
+        }))
+        .expect_err("a grid must be an object");
+        // missing step
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": 21_600 },
+        }))
+        .expect_err("range and step are both required");
+    }
+
+    #[test]
+    fn rejects_non_unsigned_grid_members() {
+        // negative — the contract's declared units are unsigned seconds
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": -21_600, "step": 7_200 },
+        }))
+        .expect_err("a negative range is not a contract-declared value");
+        // fractional — sub-second grids don't exist in the grammar
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": 21_600, "step": 7_200.5 },
+        }))
+        .expect_err("a fractional step is not a contract-declared value");
+        // fractional phase through the optional member
+        parse_time_range_clause(&json!({
+            "field": "$createdAt",
+            "selector": "newest",
+            "grid": { "range": 21_600, "step": 7_200, "phase": 0.5 },
+        }))
+        .expect_err("a fractional phase is not a contract-declared value");
+    }
 }

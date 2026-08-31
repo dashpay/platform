@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.tokens.Dashpay
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.util.generateQrBitmap
@@ -45,8 +46,10 @@ import org.dashfoundation.example.util.toHex
 
 /**
  * Create-invitation sheet — port of `CreateInvitationSheet.swift`. Amount
- * entry (default **0.03 DASH**, UI range mirror of the Rust-enforced
- * 0.003–0.05) + the "send a contact request back to me" toggle (drives the
+ * entry (default **0.03 DASH**; the help copy renders the Rust-enforced
+ * bounds from [Dashpay.minInvitationDuffs] / [Dashpay.maxInvitationDuffs]
+ * rather than mirroring them) + the "send a contact request back to me"
+ * toggle (drives the
  * optional inviter info; disabled without a DPNS username), then
  * `dashpay.createInvitation` → QR + share + copy.
  *
@@ -175,7 +178,8 @@ fun CreateInvitationSheet(
             )
             Text(
                 "Funds a one-time voucher your friend uses to register their identity " +
-                    "and a username. Between 0.003 and 0.05 DASH.",
+                    "and a username. Between ${bareDash(Dashpay.minInvitationDuffs)} " +
+                    "and ${bareDash(Dashpay.maxInvitationDuffs)} DASH.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -313,3 +317,11 @@ private fun clearClipboardIfLabelMatches(context: Context, label: String): Boole
     }
     return true
 }
+
+/**
+ * duffs → a bare DASH decimal ("0.26", not "0.26000000" or "0,26") for the
+ * help copy — [java.math.BigDecimal]-backed like [parseDashToDuffs], so it
+ * is exact and locale-independent (the amount field parses "." input).
+ */
+private fun bareDash(duffs: Long): String =
+    java.math.BigDecimal(duffs).movePointLeft(8).stripTrailingZeros().toPlainString()

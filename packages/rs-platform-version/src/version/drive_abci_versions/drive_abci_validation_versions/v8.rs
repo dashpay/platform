@@ -115,6 +115,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            data_contract_reference_validation: 0,
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
                 advanced_structure: 0,
@@ -167,6 +168,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                         // outer execution_context. v0 versions remain
                         // byte-identical to PV11 (don't bill).
                         create_contact_request_data_trigger: 1,
+                        validate_profile_payment_addresses_data_trigger: 0,
                         create_domain_data_trigger: 1,
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
@@ -179,6 +181,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 is_allowed: 0,
                 document_create_transition_structure_validation: 0,
                 document_delete_transition_structure_validation: 0,
+                document_index_only_delete_transition_structure_validation: 0,
                 document_replace_transition_structure_validation: 0,
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
@@ -186,10 +189,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 document_base_transition_state_validation: 0,
                 document_create_transition_state_validation: 1,
                 document_delete_transition_state_validation: 0,
+                document_index_only_delete_transition_state_validation: 0,
                 document_replace_transition_state_validation: 0,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,
                 document_update_price_transition_state_validation: 0,
+                document_reference_validation: 0,
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,
@@ -334,6 +339,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
             // same rate the flat fee prices the ~5 ms base (100M ≈ 4.5× this), so the fee
             // tracks the per-action cost and the margin stays uniform as actions grow.
             shielded_per_action_processing_fee: 22_000_000,
+            // The declared physical payload (312 note bytes + 32 nullifier
+            // bytes); locked — released versions replay what they charged.
+            shielded_storage_bytes_per_action: 344,
             shielded_implicit_fee_cap: 20_000_000_000,
             // 0.1, 0.3, 0.5, 1.0 DASH in credits (1 DASH = 10^8 duffs, CREDITS_PER_DUFF = 1000).
             shielded_identity_create_denominations: &[

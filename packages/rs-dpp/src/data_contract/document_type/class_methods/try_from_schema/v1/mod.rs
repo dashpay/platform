@@ -88,6 +88,9 @@ impl DocumentTypeV1 {
             token_configurations,
             data_contact_config,
             full_validation,
+            // indexOnly is a generation-3 doctype keyword; below generation 3
+            // no document type can be index-only.
+            false,
             validation_operations,
             &common::ParserGeneration {
                 document_type_schema_version,
@@ -96,9 +99,20 @@ impl DocumentTypeV1 {
                 meta_schema_method_name: "DocumentTypeV1::try_from_schema (document_type_schema)",
                 // RANKED: generation 1 predates the ranked aggregates entirely
                 // — its index grammar has no `ranked*` keywords, and it
-                // therefore has no ranked key ceiling to enforce.
+                // therefore has no ranked key ceiling to enforce. Both
+                // admissions are always `false` below generation 3; see the
+                // shared mapping `IndexGrammarAdmissions::for_schema_generation`.
                 admit_ranked: false,
                 ranked_index_key_length_check: common::no_ranked_index_key_length_check,
+                ranked_index_structure_check: common::no_ranked_index_structure_check,
+                // TIME RANGE: also a generation-3 keyword; not in this grammar.
+                admit_time_range: false,
+                // INDEX ONLY: also a generation-3 keyword; not in this grammar.
+                admit_index_terminal: false,
+                // PREALLOCATED: also a generation-3 keyword; not in this grammar.
+                admit_index_preallocated: false,
+                // SKIP IF ABSENT: also a generation-3 keyword; not in this grammar.
+                admit_index_skip_if_absent: false,
             },
             platform_version,
         )

@@ -75,6 +75,19 @@ final class PlatformWalletEventHandler: @unchecked Sendable {
         callbacks.on_shielded_tree_progress_fn = shieldedTreeProgressCallback
         return callbacks
     }
+
+    /// Build the size/version-tagged additive event extension. It shares the
+    /// retained context and release callback carried by `makeCallbacks()`;
+    /// Rust copies this callback slot during manager creation and does not
+    /// retain the extension pointer.
+    func makeCallbacksExtension() -> EventHandlerCallbacksExtension {
+        var callbacks = EventHandlerCallbacksExtension()
+        callbacks.struct_size = UInt(MemoryLayout<EventHandlerCallbacksExtension>.size)
+        callbacks.version = UInt32(PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION)
+        callbacks.reserved = 0
+        callbacks.on_dpns_marketplace_sync_completed_fn = dpnsMarketplaceSyncCompletedCallback
+        return callbacks
+    }
 }
 
 private func platformAddressSyncCompletedCallback(

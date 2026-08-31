@@ -68,7 +68,8 @@ where
                 errors,
                 state_read_guard.last_block_info(),
                 transaction,
-                None, // address_balances_in_update not needed for check_tx
+                None,   // address_balances_in_update not needed for check_tx
+                &mut 0, // check_tx's transaction is discarded, its mints are never recorded
                 platform_ref.state.current_platform_version()?,
                 platform_ref.state.previous_fee_versions(),
             )
@@ -644,7 +645,7 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002489210
+            24002816630
         );
 
         let check_result = platform
@@ -1159,7 +1160,7 @@ mod tests {
         // Plus we have 24_000_000_000 in base costs
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24004978420
+            24005633260
         );
 
         let check_result = platform
@@ -1634,7 +1635,7 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002489210
+            24002816630
         );
 
         platform
@@ -1721,7 +1722,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            27002504030
+            27002879350
         );
 
         let check_result = platform
@@ -2093,7 +2094,7 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002489210
+            24002816630
         );
 
         platform

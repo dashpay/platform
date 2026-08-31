@@ -9,7 +9,11 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // PROTOCOL_VERSION_14: bump `document_create_transition_structure_validation` to
 // 1, which cross-checks the index named by a document create transition's
 // prefunded voting balance against the contested index the document itself
-// resolves to. v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
+// resolves to. Also bump document create state validation to 2 and document
+// replace state validation to 1, adding `refersTo` document reference
+// validation (referenced identities and contracts must exist), and introduce
+// the `document_reference_validation` feature version.
+// v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
@@ -91,11 +95,11 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             },
             masternode_vote_state_transition_balance_pre_check: 0,
             contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                basic_structure: Some(1),
+                basic_structure: Some(2), // changed: rejects `requiredSince` other than 1 on a newly created contract — the annotation must name the version the change arrives with, and a fresh contract is version 1
                 advanced_structure: Some(1),
                 identity_signatures: None,
                 nonce: Some(0),
-                state: 0,
+                state: 1, // changed: runs data_contract_reference_validation on the created contract's refersTo declarations
                 transform_into_action: 0,
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
@@ -103,9 +107,10 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 advanced_structure: None,
                 identity_signatures: None,
                 nonce: Some(0),
-                state: 0,
+                state: 1, // changed: runs data_contract_reference_validation on the updated contract's refersTo declarations
                 transform_into_action: 0,
             },
+            data_contract_reference_validation: 0,
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 basic_structure: 0,
                 advanced_structure: 0,
@@ -150,10 +155,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 fetch_documents_for_transitions_knowing_contract_and_document_type: 1,
                 fetch_document_with_id: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
-                    // PROTOCOL_VERSION_13: v1 drops the reject bindings for
-                    // Transfer, Purchase and UpdatePrice on DPNS `domain`
-                    // documents, enabling username transfers and sales.
-                    bindings: 1,
+                    // PROTOCOL_VERSION_14: v2 adds DashPay `profile`
+                    // Create/Replace triggers enforcing the DIP-33
+                    // payment-address type byte (0x00 P2PKH / 0x01 P2SH).
+                    // It keeps v1's PROTOCOL_VERSION_13 change: no reject
+                    // bindings for Transfer, Purchase and UpdatePrice on
+                    // DPNS `domain` documents (username transfers/sales).
+                    bindings: 2,
                     triggers: DriveAbciValidationDataTriggerVersions {
                         // PROTOCOL_VERSION_12 (v3.1 hard fork): triggers
                         // that perform drive reads now have `_v1` versions
@@ -161,6 +169,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         // outer execution_context. v0 versions remain
                         // byte-identical to PV11 (don't bill).
                         create_contact_request_data_trigger: 1,
+                        validate_profile_payment_addresses_data_trigger: 0,
                         create_domain_data_trigger: 1,
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
@@ -173,17 +182,20 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 is_allowed: 0,
                 document_create_transition_structure_validation: 1,
                 document_delete_transition_structure_validation: 0,
+                document_index_only_delete_transition_structure_validation: 0,
                 document_replace_transition_structure_validation: 0,
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
                 document_update_price_transition_structure_validation: 0,
                 document_base_transition_state_validation: 0,
-                document_create_transition_state_validation: 1,
+                document_create_transition_state_validation: 2,
                 document_delete_transition_state_validation: 0,
-                document_replace_transition_state_validation: 0,
+                document_index_only_delete_transition_state_validation: 0,
+                document_replace_transition_state_validation: 1,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,
                 document_update_price_transition_state_validation: 0,
+                document_reference_validation: 0,
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,
@@ -323,11 +335,30 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             minimum_pool_notes_for_outgoing: 250,
             shielded_anchor_retention_blocks: 1000,
             shielded_anchor_pruning_interval: 100,
-            shielded_proof_verification_fee: 100_000_000,
-            // Per-action processing prices the ~1.1 ms/action Halo 2 verification CPU at the
-            // same rate the flat fee prices the ~5 ms base (100M ≈ 4.5× this), so the fee
-            // tracks the per-action cost and the margin stays uniform as actions grow.
+            // Rebalanced for protocol 14: one Halo 2 bundle verification is
+            // ~5 ms; at the fee model's ~8M credits/ms of CPU this prices it
+            // at ~27x a BLS signature verification — reserved for compute
+            // alone, never for database work (the storage allowance below
+            // covers that independently).
+            shielded_proof_verification_fee: 40_000_000,
+            // Retained from protocol 13, versioned independently of the
+            // rebalanced bundle proof fee above: it prices the per-action
+            // work — the marginal Halo 2 verification CPU (~1.1 ms/action),
+            // the RedPallas spend-auth check, the nullifier duplicate check
+            // and the tree-insertion processing — and its ~18M headroom over
+            // the ~3.5M credits of metered per-append GroveDB processing is
+            // deliberate, not a shared calibration rate with the 40M bundle
+            // fee.
             shielded_per_action_processing_fee: 22_000_000,
+            // Rebalanced for protocol 14 alongside the proof fee: the
+            // GROVE_V4 fixed per-append model meters a 1-action transfer at
+            // 17,882,707 credits total, 14,337,000 of it storage — 523
+            // bytes at the full 27,400 credits/byte rate, the declared
+            // 344-byte payload plus Merk framing, dense path records and
+            // the amortized chunk framing. 550 covers that with headroom,
+            // so the storage component alone pays for the database work and
+            // the compute fees above stay reserved for compute.
+            shielded_storage_bytes_per_action: 550,
             shielded_implicit_fee_cap: 20_000_000_000,
             // 0.1, 0.3, 0.5, 1.0 DASH in credits (1 DASH = 10^8 duffs, CREDITS_PER_DUFF = 1000).
             // v13 revises the v8 set: adds 0.03 and 0.25 DASH, retires 0.3 DASH.

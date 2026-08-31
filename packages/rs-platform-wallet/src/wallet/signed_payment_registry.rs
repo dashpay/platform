@@ -41,7 +41,8 @@
 //!   recreation needs the manager write lock, so it cannot slip between that
 //!   check and the release; a stale token can therefore never free a re-created
 //!   generation's reservation.
-//! * A token has a bounded lifetime ([`RESERVATION_MAX_AGE_BLOCKS`]). Once the
+//! * A token has a bounded lifetime
+//!   ([`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS)). Once the
 //!   wallet's `last_processed_height` has advanced far enough past the height at
 //!   which `build_signed` / `finalize_transaction` stamped the reservation that
 //!   key-wallet's own `ReservationSet` TTL could have swept and re-selected the
@@ -71,7 +72,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use dashcore::{Transaction, Txid};
-use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 // key-wallet's UTXO-reservation token, distinct from this registry's own
 // `ReservationToken` (the u64 payment handle below). Aliased so the two never
 // blur: the funding token identifies the reserved *inputs* for an owner-guarded
@@ -80,6 +80,10 @@ use key_wallet::ReservationToken as FundingReservationToken;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::wallet::core::{CoreWallet, SignedCoreTransaction};
+// The age bound and its predicate are shared with the atomic finalized-
+// transaction handle path (`broadcast_finalized_transaction`), so both surfaces
+// measure a reservation's lifetime against key-wallet's TTL with one number.
+use crate::wallet::reservations::reservation_expired;
 use crate::PlatformWalletError;
 
 /// Opaque handle to a registered, signed-but-unsent payment. Minted by
@@ -122,48 +126,6 @@ impl std::fmt::Display for ReservationToken {
     }
 }
 
-/// Maximum age, in `last_processed_height` blocks, of a registered token before
-/// its broadcast or release is refused.
-///
-/// Kept strictly below key-wallet's `RESERVATION_TTL_BLOCKS` (24, ~1h at the
-/// mainnet block target): a `build_signed` / `finalize_transaction` reservation
-/// is stamped at the wallet's `last_processed_height` (via `set_current_height`)
-/// and swept by a later `reserve`/`reserved` call — itself stamped with the same
-/// `last_processed_height` clock — once it is `RESERVATION_TTL_BLOCKS` old,
-/// silently returning the outpoint to the selectable pool where an unrelated
-/// build can re-select and re-reserve it.
-/// `ReservationSet::release` removes an outpoint unconditionally, with no
-/// ownership/generation check, so acting on a token whose reservation was
-/// already swept could free (or broadcast against) a newer, unrelated
-/// reservation. Refusing at this lower bound guarantees the guard always trips
-/// **before** the underlying reservation could have been swept, leaving a margin
-/// for `last_processed_height` to lag a few blocks behind the true tip.
-const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
-
-/// Whether a token stamped at `registered_height` is too old to act on at
-/// `current_height` (see [`RESERVATION_MAX_AGE_BLOCKS`]). The registration
-/// height is mandatory — it is derived from the finalized
-/// [`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction)
-/// the registry consumed.
-///
-/// An unknown *current* height means the wallet is gone from the manager, which
-/// disables the guard (`None` → not expired). That is safe only because every
-/// caller establishes liveness first and so never reaches here with a removed
-/// wallet: [`broadcast`](SignedPaymentRegistry::broadcast) refuses with
-/// [`SignedPaymentError::WalletRemoved`] before sampling the height, and
-/// [`reconcile_removed_entry`](SignedPaymentRegistry::reconcile_removed_entry)'s
-/// release is itself generation-bound and no-ops on a missing wallet. The
-/// earlier claim that "the wallet-mismatch / account-lookup paths already reject
-/// those cases" was wrong for the broadcast path — `is_same_generation` compares
-/// handles (a removed generation matches itself) and the broadcast path performs
-/// no account lookup at all (`dashpay/platform#4185`).
-fn reservation_expired(registered_height: u32, current_height: Option<u32>) -> bool {
-    match current_height {
-        Some(current) => current.saturating_sub(registered_height) >= RESERVATION_MAX_AGE_BLOCKS,
-        None => false,
-    }
-}
-
 /// Failure of a deferred broadcast/release token operation.
 #[derive(Debug, thiserror::Error)]
 pub enum SignedPaymentError {
@@ -197,11 +159,15 @@ pub enum SignedPaymentError {
     #[error("reservation token {0} belongs to a wallet that is no longer in the manager")]
     WalletRemoved(ReservationToken),
 
-    /// The token has outlived [`RESERVATION_MAX_AGE_BLOCKS`], so its underlying
+    /// The token has outlived
+    /// [`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS), so its underlying
     /// UTXO reservation may already have been swept by key-wallet's TTL and
-    /// re-selected by an unrelated build. Acting on it (broadcast or release)
-    /// could touch a newer reservation, so it is refused and the caller must
-    /// rebuild the payment.
+    /// re-selected by an unrelated build. The *broadcast* is refused and the
+    /// caller must rebuild the payment — but the reservation itself is
+    /// reconciled on the way out: with the build's owner token present the
+    /// release is owner-guarded and safe at any age (it no-ops once ownership
+    /// transferred), freeing still-owned inputs for the rebuild. Only a
+    /// token-less entry is dropped without releasing.
     #[error("reservation token {0} has outlived its reservation lifetime; rebuild the payment")]
     StaleReservationToken(ReservationToken),
 
@@ -249,23 +215,22 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
     core: CoreWallet<B>,
     /// The signed transaction to broadcast.
     tx: Transaction,
-    /// The releasable funding-account handle — the account whose reservation
-    /// `finalize` took and which a rejected broadcast or an explicit release
-    /// must reconcile. An [`AccountTypePreference`] (not the narrower
-    /// `StandardAccountType`) so CoinJoin-funded deferred payments retain a
-    /// releasable handle too: `finalize` reserves the selected inputs for EVERY
-    /// account variant, so a CoinJoin token must be able to release them
-    /// immediately on rejection/abandon rather than stranding them until the
-    /// key-wallet TTL backstop.
-    account_type: AccountTypePreference,
-    account_index: u32,
+    /// Every account whose reservation `finalize` took — a pooled build spans
+    /// the standard families and DashPay receiving accounts, and a rejected
+    /// broadcast or an explicit release must reconcile EACH of them (the one
+    /// build token stamps every account's reserved inputs). Concrete
+    /// [`AccountType`]s so CoinJoin- and DashPay-funded deferred payments
+    /// retain releasable handles too.
+    funding_accounts: Vec<key_wallet::account::AccountType>,
     /// Wallet `last_processed_height` captured inside the funding critical
     /// section — the exact clock `finalize_transaction` stamps the funding
     /// reservation with (`SignedCoreTransaction::reservation_height`). Compared
     /// against the wallet's current `last_processed_height` to refuse a
     /// broadcast/release once the reservation could plausibly have been swept by
-    /// key-wallet's TTL (see [`RESERVATION_MAX_AGE_BLOCKS`]). Mandatory: it is
-    /// derived from the consumed ownership object, never sampled independently.
+    /// key-wallet's TTL (see
+    /// [`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS)).
+    /// Mandatory: it is derived from the consumed ownership object, never
+    /// sampled independently.
     registered_height: u32,
     /// The key-wallet [`FundingReservationToken`] stamped onto the funding
     /// inputs when `finalize_transaction` reserved them
@@ -404,8 +369,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
             RegisteredPayment {
                 core,
                 tx: parts.transaction,
-                account_type: parts.funding_account_type,
-                account_index: parts.funding_account_index,
+                funding_accounts: parts.funding_accounts,
                 registered_height: parts.reservation_height,
                 funding_reservation_token: parts.reservation_token,
             },
@@ -503,40 +467,45 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
             return Err(SignedPaymentError::WalletRemoved(token));
         }
 
-        // Refuse to SEND a token whose reservation could already have been
-        // swept and re-selected by an unrelated build — but reconcile its
-        // reservation first. With the build's owner token present the release
-        // is safe at ANY age: `release_reservation_if_owner` frees the inputs
-        // only while this build still owns them and no-ops after a TTL sweep
-        // or re-reservation transferred ownership. Between the guard bound
-        // (RESERVATION_MAX_AGE_BLOCKS) and key-wallet's TTL the reservation is
-        // typically STILL HELD, so dropping without releasing would strand the
-        // inputs for several more blocks while telling the caller to rebuild —
-        // and the rebuild would fail selection. Only a token-less entry falls
-        // back to the drop-without-release policy (an unguarded by-outpoint
-        // release could free a newer build's reservation).
-        if reservation_expired(
-            entry.registered_height,
-            current.last_processed_height().await,
-        ) {
-            Self::reconcile_removed_entry(entry).await;
-            return Err(SignedPaymentError::StaleReservationToken(token));
-        }
-
         // One releasing-broadcast path for every funding variant, CoinJoin
         // included: a definitive rejection releases the reservation for an
         // immediate rebuild, an ambiguous outcome keeps it, and the release is
         // bound to the token's own wallet generation.
-        let txid = entry
+        //
+        // The age bound is NOT pre-checked here: it is re-validated at
+        // dispatch time inside `broadcast_payment_releasing_reservation`
+        // (height sampled under the manager read guard, which drops before
+        // the broadcaster await) — a check made out here is stale by the
+        // time the send begins (catch-up can advance the clock, and a
+        // concurrent finalization can sweep + re-reserve the inputs in
+        // the gap). On the stale outcome the
+        // broadcaster was never touched and the entry is reconciled below
+        // exactly as the old pre-check did: with the build's owner token
+        // present the release is safe at ANY age
+        // (`release_reservation_if_owner` no-ops once ownership was
+        // transferred); between the guard bound and key-wallet's TTL the
+        // reservation is typically STILL HELD, so releasing is what lets
+        // the instructed immediate rebuild reselect the inputs. Only a
+        // token-less entry falls back to drop-without-release (an
+        // unguarded by-outpoint release could free a newer build's
+        // reservation).
+        match entry
             .core
             .broadcast_payment_releasing_reservation(
-                entry.account_type,
-                entry.account_index,
+                &entry.funding_accounts,
                 &entry.tx,
                 entry.funding_reservation_token,
+                entry.registered_height,
             )
-            .await?;
-        Ok(txid)
+            .await
+        {
+            Ok(txid) => Ok(txid),
+            Err(PlatformWalletError::StaleReservation) => {
+                Self::reconcile_removed_entry(entry).await;
+                Err(SignedPaymentError::StaleReservationToken(token))
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// Reconcile one already-removed entry's reservation, bound to the token's
@@ -566,8 +535,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         entry
             .core
             .release_transaction_reservation(
-                entry.account_type,
-                entry.account_index,
+                &entry.funding_accounts,
                 &entry.tx,
                 entry.funding_reservation_token,
             )
@@ -674,13 +642,13 @@ mod tests {
 
     use super::{
         RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,
-        RESERVATION_MAX_AGE_BLOCKS,
     };
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::test_support::{
         funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
     use crate::wallet::core::{CoreWallet, SignedCoreTransaction};
+    use crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS;
     use crate::PlatformWalletError;
 
     /// The [`AccountTypePreference`] a `build_signed_tx` funding account maps to
@@ -824,7 +792,7 @@ mod tests {
         let mut builder = TransactionBuilder::new()
             .set_current_height(current_height)
             .set_selection_strategy(SelectionStrategy::LargestFirst)
-            .set_funding(managed_account, account);
+            .add_funding(managed_account, account);
         for (addr, amount) in outputs {
             builder = builder.add_output(addr, *amount);
         }
@@ -837,8 +805,9 @@ mod tests {
         Ok(SignedCoreTransaction::new_for_test(
             tx,
             fee,
-            preference(account_type),
-            account_index,
+            vec![preference(account_type)
+                .account_type(account_index)
+                .expect("standard preference resolves to one account")],
             current_height,
             reservation_token,
             // Stamp the finalizing generation so registering through this same
@@ -961,7 +930,7 @@ mod tests {
         let finalized = core
             .finalize_transaction(
                 sweep_builder(&recipient),
-                AccountTypePreference::CoinJoin,
+                &[AccountTypePreference::CoinJoin],
                 0,
                 &signer,
             )
@@ -976,7 +945,7 @@ mod tests {
         let blocked = core
             .finalize_transaction(
                 sweep_builder(&recipient),
-                AccountTypePreference::CoinJoin,
+                &[AccountTypePreference::CoinJoin],
                 0,
                 &signer,
             )
@@ -997,7 +966,7 @@ mod tests {
         let rebuilt = core
             .finalize_transaction(
                 sweep_builder(&recipient),
-                AccountTypePreference::CoinJoin,
+                &[AccountTypePreference::CoinJoin],
                 0,
                 &signer,
             )
@@ -1878,7 +1847,7 @@ mod tests {
         let finalized = core
             .finalize_transaction(
                 payment_builder(&outputs),
-                AccountTypePreference::BIP44,
+                &[AccountTypePreference::BIP44],
                 0,
                 &signer,
             )
@@ -1900,7 +1869,7 @@ mod tests {
         let retaken = core
             .finalize_transaction(
                 payment_builder(&outputs),
-                AccountTypePreference::BIP44,
+                &[AccountTypePreference::BIP44],
                 0,
                 &signer,
             )
@@ -1926,7 +1895,7 @@ mod tests {
         let third = core
             .finalize_transaction(
                 payment_builder(&outputs),
-                AccountTypePreference::BIP44,
+                &[AccountTypePreference::BIP44],
                 0,
                 &signer,
             )

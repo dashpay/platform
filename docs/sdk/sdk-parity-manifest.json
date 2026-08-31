@@ -609,7 +609,7 @@
           "host": "kotlin",
           "kind": "unit",
           "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/InvitationReclaimLogicTest.kt",
-          "id": "consensusConsumedWithMarkerIsExplicitlyAmbiguousNeverReclaimed",
+          "id": "consensusConsumedWithMarkerIsUnknown",
           "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*InvitationReclaimLogicTest*'",
           "covers_restart": false
         },
@@ -1060,7 +1060,7 @@
           "sdk": "not-applicable",
           "example_app": "not-applicable",
           "restart": "not_applicable",
-          "reason": "Android derives contact payment attribution from transaction history on reads and does not consume PaymentEntry rows (confirmed by the Android team during the sent-payment reconstruction review), so the JNI vtable deliberately leaves the slot None and there is nothing to persist or restore on this host."
+          "reason": null
         }
       },
       "verification": [

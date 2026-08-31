@@ -27,6 +27,20 @@ pub fn apply(
     cs: &AssetLockChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.asset_locks.is_empty() {
+        // The upsert's WHERE clause enforces the one terminal lifecycle
+        // rule: a stored `consumed` row is never overwritten by a
+        // non-consumed snapshot. Racing writers persist through
+        // different paths (the wallet-event adapter's batched drain vs
+        // the live flows' synchronous changeset queue), so a stale
+        // reconstruction/enrichment snapshot can land AFTER the
+        // consumption write — this guard makes that arrival order
+        // immaterial. Every other transition is deliberately
+        // last-write-wins: non-terminal statuses move both ways (live
+        // advances overwrite `recovered_from_chain`, defensive resumes
+        // re-enter `broadcast`), so terminality is the only ordering
+        // the store can enforce without vetoing legitimate writes.
+        // `AssetLockChangeSet::merge` applies the same rule when
+        // batches fold before reaching the store.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO asset_locks \
                 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
@@ -36,7 +50,8 @@ pub fn apply(
                 account_index = excluded.account_index, \
                 identity_index = excluded.identity_index, \
                 amount_duffs = excluded.amount_duffs, \
-                lifecycle_blob = excluded.lifecycle_blob",
+                lifecycle_blob = excluded.lifecycle_blob \
+             WHERE asset_locks.status != 'consumed' OR excluded.status = 'consumed'",
         )?;
         for (op, entry) in &cs.asset_locks {
             let op_bytes = blob::encode_outpoint(op)?;
@@ -56,8 +71,16 @@ pub fn apply(
         }
     }
     if !cs.removed.is_empty() {
-        let mut stmt =
-            tx.prepare_cached("DELETE FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2")?;
+        // Same terminal rule as the upsert guard: a stored `consumed`
+        // row is never deleted by a stale tombstone. Consumed rows are
+        // deliberately retained for historical lookup, and the only
+        // removal emitter (`untrack_asset_lock`) fires exclusively for
+        // Built rows whose broadcast was rejected — so a removal
+        // reaching a consumed row is by construction a stale write.
+        let mut stmt = tx.prepare_cached(
+            "DELETE FROM asset_locks \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND status != 'consumed'",
+        )?;
         for op in &cs.removed {
             let op_bytes = blob::encode_outpoint(op)?;
             stmt.execute(params![wallet_id.as_slice(), &op_bytes[..]])?;
@@ -66,25 +89,38 @@ pub fn apply(
     Ok(())
 }
 
-/// Single source of truth for the `asset_locks.status` TEXT-column
-/// domain.
+/// Test-only drift guard for the `asset_locks.status` TEXT-column
+/// domain **as the writer sees it** (production code never reads this
+/// — the writer maps through [`status_str`] and the on-disk CHECK
+/// lives frozen inside the migrations).
 ///
 /// Mirrors every variant of
 /// [`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`]
-/// (writer side: [`status_str`]). The migration in
-/// `migrations/V001__initial.rs` interpolates this array into the
-/// `CHECK (status IN (...))` clause so an unknown label is rejected at
-/// insert time rather than landing as silent garbage. The
-/// `asset_lock_status_labels_match_enum` unit test below enforces
-/// set-equality between this array and the writer's output — drift (a
-/// renamed/added variant) becomes a failing test, not a runtime
-/// divergence between Rust and SQLite.
+/// (writer side: [`status_str`]). The on-disk `CHECK (status IN (...))`
+/// clause rejects an unknown label at insert time rather than letting
+/// it land as silent garbage — but the migrations do NOT interpolate
+/// this const: each migration freezes its own copy of the domain,
+/// because a generated-SQL change breaks that migration's Refinery
+/// checksum on every database that already applied it
+/// (`abort_divergent` default). `V001__initial.rs` carries the original
+/// five labels; `V004__asset_lock_recovered_status.rs` rebuilt the
+/// table with the current six.
+///
+/// Two unit tests below keep the three copies honest:
+/// - `asset_lock_status_labels_match_enum` — this array ⇔ the writer's
+///   codomain ([`status_str`]);
+/// - `asset_lock_status_labels_frozen_in_latest_migration` — this array
+///   ⇔ the latest migration's frozen list, so ADDING a variant fails
+///   with instructions to append a new table-rebuild migration (V005+)
+///   instead of editing a shipped one.
+#[cfg(test)]
 pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
     "built",
     "broadcast",
     "is_locked",
     "chain_locked",
     "consumed",
+    "recovered_from_chain",
 ];
 
 fn status_str(s: &AssetLockStatus) -> &'static str {
@@ -94,6 +130,7 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
         AssetLockStatus::InstantSendLocked => "is_locked",
         AssetLockStatus::ChainLocked => "chain_locked",
         AssetLockStatus::Consumed => "consumed",
+        AssetLockStatus::RecoveredFromChain => "recovered_from_chain",
     }
 }
 
@@ -198,6 +235,7 @@ mod tests {
             AssetLockStatus::InstantSendLocked,
             AssetLockStatus::ChainLocked,
             AssetLockStatus::Consumed,
+            AssetLockStatus::RecoveredFromChain,
         ];
         for v in &variants {
             match v {
@@ -205,7 +243,8 @@ mod tests {
                 | AssetLockStatus::Broadcast
                 | AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
-                | AssetLockStatus::Consumed => {}
+                | AssetLockStatus::Consumed
+                | AssetLockStatus::RecoveredFromChain => {}
             }
         }
         variants
@@ -223,5 +262,29 @@ mod tests {
             "ASSET_LOCK_STATUS_LABELS ({:?}) drifted from status_str codomain ({:?})",
             from_const, from_writer
         );
+    }
+
+    /// Pins the live label set to the domain frozen in the LATEST
+    /// asset-lock migration (`V004__asset_lock_recovered_status.rs`).
+    /// Shipped migrations interpolate nothing — their generated SQL is
+    /// checksummed by Refinery, so widening the domain means APPENDING
+    /// a new table-rebuild migration (V005+) with the new frozen list
+    /// and updating this pin, never editing V001/V004 in place.
+    ///
+    /// IF THIS FAILS: do NOT edit a shipped migration (its Refinery
+    /// checksum would diverge on already-migrated databases). Append a
+    /// new migration that rebuilds `asset_locks` with the widened
+    /// CHECK, then update this pin to the new migration's list.
+    #[test]
+    fn asset_lock_status_labels_frozen_in_latest_migration() {
+        let frozen_in_v004 = [
+            "built",
+            "broadcast",
+            "is_locked",
+            "chain_locked",
+            "consumed",
+            "recovered_from_chain",
+        ];
+        assert_eq!(ASSET_LOCK_STATUS_LABELS, &frozen_in_v004);
     }
 }

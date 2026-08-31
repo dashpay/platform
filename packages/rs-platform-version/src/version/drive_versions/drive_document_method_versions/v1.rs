@@ -18,6 +18,11 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             detect_count_mode: 0,
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
+            detect_having_mode: 0,
+            non_primary_key_path_query: 0,
+            non_primary_key_single_in_path_query: 0,
+            non_primary_key_multiple_in_path_query: 0,
+            where_clause_grouping: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
@@ -31,6 +36,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             delete_document_for_contract_id_with_named_type_operations: 0,
             delete_document_for_contract_with_named_type_operations: 0,
             delete_document_for_contract_operations: 0,
+            delete_index_only_document_for_contract_operations: 0,
+            delete_index_only_document_for_contract: 0,
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document: 0,

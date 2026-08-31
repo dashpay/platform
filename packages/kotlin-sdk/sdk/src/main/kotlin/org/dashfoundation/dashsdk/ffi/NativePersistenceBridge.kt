@@ -328,6 +328,35 @@ abstract class NativePersistenceBridge {
     /** One identity-id removal. Descriptor `([B[B)I`. */
     open fun onPersistIdentityRemoval(walletId: ByteArray, identityId: ByteArray): Int = 0
 
+    // ── DPNS marketplace state extension ─────────────────────────────
+
+    /**
+     * `PersistenceCallbacksExtension.on_persist_dpns_name_states_fn`, one
+     * call per upsert row. Descriptor
+     * `([B[B[BZ[BLjava/lang/String;Ljava/lang/String;Ljava/lang/String;ZJBJJJJ)I`.
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistDpnsNameState(
+        walletId: ByteArray,
+        documentId: ByteArray,
+        walletIdentityId: ByteArray,
+        hasCounterparty: Boolean,
+        counterpartyId: ByteArray,
+        label: String,
+        normalizedLabel: String,
+        normalizedParentDomainName: String,
+        hasPrice: Boolean,
+        priceCredits: Long,
+        status: Byte,
+        createdAtMs: Long,
+        updatedAtMs: Long,
+        transferredAtMs: Long,
+        lastSyncedAtMs: Long,
+    ): Int = 0
+
+    /** DPNS marketplace removal; descriptor `([B[B)I`. */
+    open fun onRemoveDpnsNameState(walletId: ByteArray, documentId: ByteArray): Int = 0
+
     // ── Identity keys ─────────────────────────────────────────────────
 
     /** One `IdentityKeyEntryFFI` upsert. Descriptor `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I`. */

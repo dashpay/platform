@@ -254,12 +254,247 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
     (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
+}
+
+/// The `WalletEvent` the wallet emits when it first observes `tx` spending
+/// its outpoints — the real shape the spend-observation seam
+/// ([`SpendObservationHandler`](crate::wallet::core::SpendObservationHandler))
+/// consumes off the event fan-out.
+///
+/// `input_details` claims EVERY input as ours, which is what upstream
+/// populates for inputs that spent this wallet's outpoints — and the only
+/// part of the record either the in-broadcast fence or
+/// `CoreChangeSet::spent_utxos` reads.
+///
+/// Shared between the broadcast-fence release tests
+/// (`wallet::core::broadcast`) and the manager-level fan-out wiring test
+/// (`manager::tests`), so the two cannot drift onto different event shapes.
+#[cfg(test)]
+pub(crate) fn observed_spend_event(
+    wallet_id: WalletId,
+    tx: &Transaction,
+) -> key_wallet_manager::WalletEvent {
+    use dashcore::Address as DashAddress;
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::transaction_router::TransactionType;
+
+    let record = TransactionRecord::new(
+        tx.clone(),
+        key_wallet::account::AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        TransactionContext::InBlock(BlockInfo::new(
+            1_000,
+            dashcore::BlockHash::from([7u8; 32]),
+            1_234_567_890,
+        )),
+        TransactionType::Standard,
+        TransactionDirection::Outgoing,
+        tx.input
+            .iter()
+            .enumerate()
+            .map(|(index, _)| InputDetail {
+                index: index as u32,
+                value: 0,
+                address: DashAddress::dummy(Network::Testnet, 1),
+            })
+            .collect(),
+        Vec::new(),
+        0,
+    );
+    key_wallet_manager::WalletEvent::TransactionDetected {
+        wallet_id,
+        record: Box::new(record),
+        balance: key_wallet::WalletCoreBalance::default(),
+        account_balances: std::collections::BTreeMap::new(),
+        addresses_derived: Vec::new(),
+    }
+}
+
+/// Funds BOTH standard families — BIP44 account 0 and BIP32 account 0 — each
+/// with its own chain-locked UTXO set, for the pooled-send tests: a spend
+/// larger than either family's balance must draw from both.
+///
+/// `cfg(test)`-gated like [`RejectFirstBroadcaster`]: only this crate's own
+/// unit tests consume it, so a `test-utils`-only build would flag it unused.
+#[cfg(test)]
+pub(crate) async fn funded_wallet_manager_dual_standard(
+    bip44_outputs: &[u64],
+    bip32_outputs: &[u64],
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+) {
+    let mut ctx = TestWalletContext::new_random();
+
+    let bip44_address = ctx.receive_address.clone();
+    let bip32_address = {
+        let xpub = ctx
+            .wallet
+            .accounts
+            .standard_bip32_accounts
+            .get(&0)
+            .expect("bip32 account")
+            .account_xpub;
+        ctx.managed_wallet
+            .first_bip32_managed_account_mut()
+            .expect("bip32 managed account")
+            .next_receive_address(Some(&xpub), true)
+            .expect("bip32 receive address")
+    };
+
+    for (address, outputs, tag) in [
+        (&bip44_address, bip44_outputs, 0..1),
+        (&bip32_address, bip32_outputs, 1..2),
+    ] {
+        let funding_tx = Transaction::dummy(address, tag, outputs);
+        let result = ctx
+            .check_transaction(
+                &funding_tx,
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    1,
+                    BlockHash::all_zeros(),
+                    1_700_000_000,
+                )),
+            )
+            .await;
+        assert!(result.is_relevant, "funding tx should be relevant");
+    }
+
+    let signer = WalletSigner {
+        wallet: ctx.wallet.clone(),
+    };
+    let generation = Arc::new(WalletGeneration::new());
+    let info = PlatformWalletInfo {
+        core_wallet: ctx.managed_wallet,
+        generation: Arc::clone(&generation),
+        identity_manager: IdentityManager::new(),
+        tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
+    };
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+    (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
+}
+
+/// Funds BIP44 account 0 and a real `DashpayReceivingFunds` contact account,
+/// so the pooled-send tests can prove that contact funds are actually SPENT —
+/// the point of pulling `AllDashpayReceivingFunds` into `SEND_FUNDING_SOURCES`.
+///
+/// The contact account is built exactly as `DashPayView::register_contact_account`
+/// builds it (DIP-15 xpub, `Account` in the key collection, funds-bearing managed
+/// account in the managed collection) minus the persistence round, which needs a
+/// full manager the fixture does not have. Returns the contact's `AccountType`
+/// so the test can assert on the recorded funding accounts by identity.
+#[cfg(test)]
+pub(crate) async fn funded_wallet_manager_with_contact(
+    bip44_outputs: &[u64],
+    contact_outputs: &[u64],
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+    key_wallet::account::AccountType,
+) {
+    use dpp::identifier::Identifier;
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::ManagedCoreFundsAccount;
+
+    let mut ctx = TestWalletContext::new_random();
+    let bip44_address = ctx.receive_address.clone();
+
+    let owner = Identifier::from([0xAA; 32]);
+    let contact = Identifier::from([0xBB; 32]);
+    let account_type = AccountType::DashpayReceivingFunds {
+        index: 0,
+        user_identity_id: owner.to_buffer(),
+        friend_identity_id: contact.to_buffer(),
+    };
+    let account_xpub = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+        &ctx.wallet,
+        Network::Testnet,
+        0,
+        &owner,
+        &contact,
+    )
+    .expect("derive contact xpub")
+    .xpub;
+
+    let mut managed = ManagedCoreFundsAccount::from_account(&key_wallet::Account {
+        parent_wallet_id: Some(ctx.wallet.wallet_id),
+        account_type,
+        network: Network::Testnet,
+        account_xpub,
+        is_watch_only: false,
+    });
+    // DashPay accounts are non-standard: one external pool via
+    // `next_address_with_info`, not the standard receive/change split.
+    let contact_address = managed
+        .next_address_with_info(Some(&account_xpub), true)
+        .expect("contact receive address")
+        .address;
+    ctx.wallet
+        .add_account(account_type, Some(account_xpub))
+        .expect("add contact account to key collection");
+    ctx.managed_wallet
+        .accounts
+        .insert_funds_bearing_account(managed)
+        .expect("insert managed contact account");
+
+    for (address, outputs, tag) in [
+        (&bip44_address, bip44_outputs, 0..1),
+        (&contact_address, contact_outputs, 1..2),
+    ] {
+        let funding_tx = Transaction::dummy(address, tag, outputs);
+        let result = ctx
+            .check_transaction(
+                &funding_tx,
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    1,
+                    BlockHash::all_zeros(),
+                    1_700_000_000,
+                )),
+            )
+            .await;
+        assert!(
+            result.is_relevant,
+            "funding tx should be relevant (the contact account's pool must be monitored)"
+        );
+    }
+
+    let signer = WalletSigner {
+        wallet: ctx.wallet.clone(),
+    };
+    let generation = Arc::new(WalletGeneration::new());
+    let info = PlatformWalletInfo {
+        core_wallet: ctx.managed_wallet,
+        generation: Arc::clone(&generation),
+        identity_manager: IdentityManager::new(),
+        tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
+    };
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+    (
+        Arc::new(RwLock::new(wm)),
+        wallet_id,
+        generation,
+        signer,
+        account_type,
+    )
 }
 
 /// Like [`funded_wallet_manager`] but funds the wallet's CoinJoin account 0
@@ -325,6 +560,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -352,6 +588,38 @@ pub async fn funded_spv_core_wallet(
         crate::CoreWallet::new(sdk, manager, wallet_id, broadcaster, generation),
         signer,
     )
+}
+
+/// Advance `core`'s `last_processed_height` to just past the reservation age
+/// guard bound ([`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS))
+/// but below key-wallet's `ReservationSet` TTL, so a handle finalized at the
+/// current height ages enough to trip the software guard while its underlying
+/// reservation is provably still held (no key-wallet sweep yet). Returns the new
+/// height.
+///
+/// FFI lifecycle tests use this to exercise aged owner-guarded cleanup — the
+/// deinit/GC backstop and the broadcast/abandon failure paths that route their
+/// cleanup through `abandon_transaction`, which releases owner-guarded at any
+/// age (only a token-less build skips its by-outpoint release).
+pub async fn age_core_past_reservation_guard<B>(core: &crate::CoreWallet<B>) -> u32
+where
+    B: crate::broadcaster::TransactionBroadcaster + ?Sized,
+{
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+    let stamped = core
+        .last_processed_height()
+        .await
+        .expect("wallet present in manager");
+    let target = stamped + crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS + 2;
+    {
+        let mut wm = core.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_and_info_mut(&core.wallet_id())
+            .expect("wallet present in manager");
+        info.core_wallet.update_last_processed_height(target);
+    }
+    target
 }
 
 /// No-op persister satisfying [`PlatformWalletManager`] construction for tests
@@ -496,6 +764,7 @@ pub(crate) async fn mnemonic_wallet_manager(
         generation: Arc::new(WalletGeneration::new()),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
+        dpns_name_states: BTreeMap::new(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);

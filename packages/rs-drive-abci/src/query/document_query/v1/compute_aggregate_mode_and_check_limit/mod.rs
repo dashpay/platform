@@ -5,11 +5,13 @@
 //! against the v1 query surface is executed: as one of the four
 //! `(group_by × where)` grouped modes, or — from feature version 1 —
 //! as a *ranked* request when the request orders by the aggregate it
-//! selects (`GROUP BY p ORDER BY <the selected aggregate>`). Routing
-//! here only asks whether the `order_by` names that aggregate; the
-//! direction, the limit's bounds and the offset are drive's call and
-//! are made in `detect_ranked_mode`. It also enforces the per-mode
-//! `accepts_limit()` contract on the grouped path.
+//! selects (`GROUP BY p ORDER BY <the selected aggregate>`), or — from
+//! feature version 2 — as a *having-range* request when a grouped
+//! aggregate carries exactly one `having` clause. Routing here only
+//! asks which shape the request has; the direction, the bounds, the
+//! limit's contract and the offset are drive's call and are made in
+//! `detect_ranked_mode` / `detect_having_mode`. It also enforces the
+//! per-mode `accepts_limit()` contract on the grouped path.
 //!
 //! The routing rules it embeds are part of the query contract clients
 //! see on the wire — a change to which `(group_by × where_clauses ×
@@ -17,10 +19,10 @@
 //! dispatcher runs on every v1 query request. Versioning it lets later
 //! protocol bumps adjust the routing table without breaking older
 //! nodes' replay of historical traffic, and is what keeps a
-//! mixed-version network in agreement across the ranked-query
-//! activation: protocol version 13 and earlier select v0, which has no
-//! ranked path at all, while protocol version 14 selects v1 and answers
-//! ranked queries.
+//! mixed-version network in agreement across the ranked-query and
+//! having-range activations: protocol version 13 and earlier select v0,
+//! which has neither path, while protocol version 14 selects v2 and
+//! answers both.
 //!
 //! Lives next to the v1 query handler (the only call site today) and
 //! is dispatched via the `DriveAbciDocumentQueryHelperVersions` slot
@@ -28,6 +30,7 @@
 
 mod v0;
 mod v1;
+mod v2;
 
 use crate::error::query::QueryError;
 use dpp::version::PlatformVersion;
@@ -56,6 +59,15 @@ pub(super) enum AggregateRouting {
     Grouped(CountMode),
     /// Ranked aggregate: execute through the ranked (top-k) surface.
     Ranked,
+    /// Boolean-`HAVING` range: a grouped aggregate carrying exactly one
+    /// `having` clause, executed through
+    /// `Drive::execute_document_having_request` as a value-bounded range
+    /// read of the covering ranked index's axis secondary. The
+    /// feature-version-2 addition. Carries no data for the same reason
+    /// `Ranked` carries none: drive owns the having grammar
+    /// (`detect_having_mode`), and routing only decides *where* the
+    /// request goes.
+    HavingRange,
 }
 
 /// Decide how a `SELECT COUNT` / `SUM` / `AVG` request executes.
@@ -113,10 +125,19 @@ pub(super) fn compute_aggregate_mode_and_check_limit(
             having,
             function_name,
         ),
+        2 => v2::compute_aggregate_mode_and_check_limit_v2(
+            select,
+            group_by,
+            where_clauses,
+            order_by,
+            limit,
+            having,
+            function_name,
+        ),
         version => Err(QueryError::Drive(drive::error::Error::Drive(
             drive::error::drive::DriveError::UnknownVersionMismatch {
                 method: "compute_aggregate_mode_and_check_limit".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             },
         ))),

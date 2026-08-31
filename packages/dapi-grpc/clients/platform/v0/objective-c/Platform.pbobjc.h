@@ -385,6 +385,21 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
   GetDocumentsRequest_WhereOperator_BetweenExcludeRight = 8,
   GetDocumentsRequest_WhereOperator_In = 9,
   GetDocumentsRequest_WhereOperator_StartsWith = 10,
+
+  /**
+   * Time-range bucket selection (v1 only; the v0 CBOR surface is
+   * unaffected). `field` names a timestamp covered by a `timeRange`
+   * index. Operand: `text` selector `"newest"`/`"oldest"` when one grid
+   * buckets the field, or `list` `[selector, range, step(, phase)]` in
+   * the contract's declared seconds to name one of several grids (zero
+   * phase is spelled by omission — one wire spelling per grid). The
+   * server resolves it to a bucket-start equality from current block
+   * time; the verifier re-derives the same bucket from the quorum-signed
+   * metadata time — an ordinary index/count proof. See `timeRange` in
+   * the document meta-schema and
+   * `drive::query::resolve_time_range_bucket_clause`.
+   **/
+  GetDocumentsRequest_WhereOperator_InTimeRange = 11,
 };
 
 GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void);
@@ -2648,12 +2663,21 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Right_OneOfCase) {
  * before release rather than deprecated, because it invented
  * non-SQL grammar for something SQL already expresses.
  *
- * **`HAVING` cannot yet combine with an aggregate `ORDER BY`.**
- * The ranked executor reads a pre-sorted per-axis secondary and
- * has no way to drop groups from the middle of that walk, so a
- * request carrying both a non-empty `having` and a ranking
- * `order_by` is rejected with `Unsupported` rather than served
- * with one of the two silently ignored.
+ * **From protocol v14 a single `HAVING` clause is served as a
+ * bounded range read** (having-range mode): `SELECT <agg> GROUP BY
+ * p HAVING <agg> <op> <value> [ORDER BY <order-key> ASC|DESC]
+ * LIMIT n` answers from the same per-axis secondary as ranked
+ * mode, on an index declaring the matching ranked axis. The
+ * clause's aggregate must be the selected aggregate, the operator
+ * must describe one contiguous range (`NOT_EQUAL` / `IN` are
+ * rejected), and the optional `ORDER BY` picks the walk direction
+ * using the same order-key spelling as ranked mode: `f` for
+ * `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)` —
+ * never an explicit `OrderClause.aggregate` target, which is
+ * rejected. See the supported-shape table on
+ * `GetDocumentsRequestV1`. On protocol v13 and earlier every
+ * non-empty `having` stays rejected with `Unsupported`, exactly as
+ * before.
  *
  * The operator set mirrors `WhereOperator` minus `STARTS_WITH`
  * (prefix matching has no natural meaning against a scalar
@@ -2897,12 +2921,16 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  * It returns `ResultData.ranked`. See `order_by` and the
  * supported-shape table below.
  *
- * `having` is a boolean per-group predicate and is **still**
- * `Unsupported` at every protocol version, ranked mode or not
- * (`"HAVING clause is not yet implemented"`). It carries no ranking
- * spelling: an earlier draft put cross-group ranking on the right of
- * a `HAVING` (`HAVING AVG(grade) IN TOP(5)`) and that grammar was
- * removed before release in favour of `ORDER BY` + `LIMIT`.
+ * **Having-range mode** is served from protocol v14: a single
+ * `having` clause whose aggregate is the selected aggregate turns
+ * the request into a bounded range read over the same per-axis
+ * secondary ranked mode walks, answered in `ResultData.ranked`.
+ * On protocol v13 and earlier every non-empty `having` is rejected
+ * (`"HAVING clause is not yet implemented"`). `having` carries no
+ * ranking spelling: an earlier draft put cross-group ranking on the
+ * right of a `HAVING` (`HAVING AVG(grade) IN TOP(5)`) and that
+ * grammar was removed before release in favour of `ORDER BY` +
+ * `LIMIT`. See the supported-shape table below.
  *
  * **Supported shapes** (everything else rejects with a typed
  * `QuerySyntaxError::Unsupported` so callers can detect un-wired
@@ -2928,12 +2956,16 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  * - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
  *
  * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], order_by=[<the selected aggregate>]` (protocol v14+) — **ranked mode**:
- * - exactly one `group_by` property, exactly one `order_by` clause naming the select's aggregate (`f` for `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)`), a `limit` in `1 ..= 100`, an optional `offset`, and no `where` / `having` / `start_at`, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`.
+ * - exactly one `group_by` property, exactly one `order_by` clause naming the select's aggregate (`f` for `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)`), a `limit` in `1 ..= 100`, an optional `offset`, and no `having` / `start_at`, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`. On a single-property ranked index no `where` is accepted; on a compound ranked index every leading index property must be pinned (one clause per property, `group_by` names the trailing property) — `EQUAL` pins one prefix, and **at most one** clause may be `IN` (2..=10 distinct elements, `null` legal; a single-element `IN` normalizes to the equality pin; an element whose prefix was never written — at any depth of its pinned chain — contributes an empty branch, union semantics), fanning the walk out across one prefix branch per element and merging by `(aggregate, encoded prefix, group key)`; merged entries carry `in_key`. A non-zero `offset` is rejected together with `IN` (rank-skip is per-secondary; `OFFSET 0` is the offset-free request).
  * - `DESC` is the "top n" reading (walk the axis from the largest aggregate down), `ASC` the "bottom n" reading. Worked example: `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 1 OFFSET 4` is the 5th-best restaurant.
  *
+ * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], having=[<the selected aggregate> <op> <value>]` (protocol v14+) — **having-range mode**:
+ * - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one pin per leading index property on a compound ranked index, at most one of them an `IN` (2..=10 distinct elements) that fans the bound out across prefix branches and merges, entries carrying `in_key`.
+ * - no offset or cursor pagination: a page cut at `limit` continues only by tightening the bound past the last *distinct* aggregate value seen; a cut inside a tie (several groups sharing the boundary aggregate) cannot be continued, so size `limit` above the widest expected tie.
+ *
  * **Rejected shapes** (return `Unsupported`):
- * - any non-empty `having`, at every protocol version.
- * - at v14+: a ranked-shaped request carrying a `where` clause, a `start_at` / `start_after` cursor, more than one `order_by`, or an `order_by` naming anything but the selected aggregate.
+ * - any non-empty `having` on protocol v13 and earlier; at v14+, any `having` shape outside having-range mode above (multiple clauses, an aggregate other than the select's, `NOT_EQUAL` / `IN` as the having operator, a `where` shape other than the compound-index prefix pins above — equality pins plus at most one bounded `IN` — or a carried `offset` / cursor).
+ * - at v14+: a ranked-shaped request carrying a `where` shape other than the compound-index prefix pins above (an operator other than `EQUAL` or the one permitted `IN`, more than one `IN`, a `null` pin combined with an `IN`, a repeated or non-leading property, or a missing pin), a `start_at` / `start_after` cursor, more than one `order_by`, or an `order_by` naming anything but the selected aggregate.
  * - `select=DOCUMENTS` with non-empty `group_by`.
  * - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
  * - `select=COUNT` with `group_by.len() > 2`.
@@ -3110,12 +3142,13 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
  * `HavingClause` / `HavingAggregate` for the operator and
  * aggregate-function catalogs.
  *
- * **Every non-empty `having` is rejected**, at every protocol
- * version, with `Unsupported("HAVING clause is not yet
- * implemented")`. The wire shape ships ahead of evaluation so
- * callers can construct full `HAVING COUNT(*) > 5 AND
- * SUM(amount) > 100` requests in their builders, and so the
- * capability can land without another version bump.
+ * **From protocol v14 a single clause is served** as a bounded
+ * range read — having-range mode; see the message-level
+ * supported-shape table. On v13 and earlier every non-empty
+ * `having` is rejected with `Unsupported("HAVING clause is not
+ * yet implemented")`. Multi-clause `HAVING COUNT(*) > 5 AND
+ * SUM(amount) > 100` requests can still be constructed on the
+ * wire, but stay rejected until a multi-clause evaluator lands.
  *
  * **`having` does not express ranking.** "The n highest-scoring
  * groups" is `ORDER BY <the selected aggregate> DESC LIMIT n`
@@ -3137,13 +3170,17 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
  * routes to the ranked executor (`group_by` + a single `order_by`
  * naming the selected aggregate), `offset` skips that many ranks
  * before the returned page, so `ORDER BY avg(grade) DESC LIMIT 1
- * OFFSET 4` is the 5th-best group. The skip is **count-attested**,
- * not walked: grovedb proves it from the counted subtree
- * commitments, so the proof stays `O(log n + k)` at any offset and
- * the response echoes the attested number in
- * `RankedEntries.skipped`. There is deliberately no ceiling — an
- * offset of 4 and an offset of four billion cost the same, so
- * there is no denial-of-service lever a cap would close. An offset
+ * OFFSET 4` is the 5th-best group. The skip is **counted, not
+ * walked**: grovedb descends on each subtree's aggregate count and
+ * collapses whole subtrees that fit inside the remaining offset, so
+ * the work stays `O(log n + k)` at any offset and the response
+ * reports the skip it performed in `RankedEntries.skipped`. On a
+ * proved request that count is additionally *attested* — committed
+ * to by the proof and re-derived by the verifier; on an unproved
+ * one it is the node's own report. See `RankedEntries.skipped`. There is deliberately no ceiling — an
+ * offset of 4 and an offset of four billion cost the same *order*
+ * of work — neither walks the region it skips — so there is no
+ * denial-of-service lever a cap would close. An offset
  * past the end of the ranking is a provable answer rather than an
  * error: `entries` comes back empty and `skipped` is the ranking's
  * whole population.
@@ -3695,6 +3732,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNu
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Count = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Sum = 3,
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Avg = 4,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_InKey = 5,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase) {
@@ -3779,6 +3817,19 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry : G
  **/
 @property(nonatomic, readwrite) double avg;
 
+/**
+ * The prefix branch this entry came from, set **only** on an
+ * `IN`-pinned request (see the supported-shape table): the
+ * encoded index-key bytes of the `IN` property's pinned value —
+ * empty bytes for the `null` (absent-value) branch. Absent on
+ * single-prefix responses. The same group key can legally appear
+ * under two prefixes, so `(in_key, key)` is the entry's identity
+ * on a merged page, exactly as on `CountEntry`.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
+
 @end
 
 /**
@@ -3824,20 +3875,31 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries :
  * group rather than the best.
  *
  * **When a requested offset exceeds the population**, `entries`
- * is empty and `skipped` is the ranking's attested *total*
+ * is empty and `skipped` is the ranking's *total* reported
  * population — a positive, useful answer ("there are only 12
  * groups") rather than a bare empty list.
  *
- * On the proved path the number is grovedb's cryptographically
- * attested count, re-derived by the verifier from the counted
- * subtree commitments in the proof bytes rather than trusted
- * from this field; a proving client should use the verified
- * value. On the unproven read there is nothing to attest and
- * grovedb's read API does not report a short walk, so the server
- * echoes the requested offset. The two therefore disagree in
- * exactly one case — an offset past the end, where the unproven
- * read reports the request and the proved one reports the truth.
- * Callers who need the population must prove.
+ * Both paths report the same quantity: the offset you asked for
+ * when the skip succeeded, and the ranking's total population
+ * when the walk ran out of groups first. They no longer disagree
+ * anywhere, including past the end.
+ *
+ * What differs is the *warrant*, not the value. On the proved
+ * path the number is cryptographically attested — re-derived by
+ * the verifier from the counted subtree commitments in the proof
+ * bytes rather than trusted from this field — so a proving client
+ * should use the verified value and ignore this one. On the
+ * unproven path it is an **unverified claim**, exactly like the
+ * entries beside it: it equals the attested value on an honest
+ * node, and nothing forces a node to be honest. Read "the true
+ * population" as "what this node says the population is".
+ * Callers who need to trust it, rather than merely receive it,
+ * must still prove.
+ *
+ * Do not assume this field equals the offset you requested. It
+ * equals the offset only when the skip succeeded; when the walk
+ * ran out of groups first it is smaller, and that is the answer
+ * rather than an inconsistency.
  **/
 @property(nonatomic, readwrite) uint64_t skipped;
 

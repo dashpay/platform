@@ -260,6 +260,7 @@ fn insert_widget_document(
     properties.insert("serial".to_string(), Value::U64(row));
 
     let document: Document = DocumentV0 {
+        contract_version: None,
         id: Identifier::from(document_id(row)),
         owner_id: Identifier::from([7u8; 32]),
         properties,
@@ -1800,6 +1801,7 @@ fn display_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersio
                 let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
                     document_type.indexes(),
                     &case.structured,
+                    &[],
                 )
                 .expect("countable picker must find a covering index for the display case");
                 let query = DriveDocumentCountQuery {
@@ -1817,6 +1819,7 @@ fn display_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersio
                 let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
                     document_type.indexes(),
                     &case.structured,
+                    &[],
                 )
                 .expect("range_countable picker must find a covering index");
                 let query = DriveDocumentCountQuery {
@@ -2268,7 +2271,7 @@ fn count_request<'a>(
     // bench keeps its compact fixture vocabulary while the
     // dispatcher consumes the same typed form the v1 ABCI handler
     // produces.
-    let where_clauses = where_clauses_from_value(&raw_where_value)
+    let where_clauses = where_clauses_from_value(&raw_where_value, PlatformVersion::latest())
         .expect("bench fixture builds a valid `where` shape");
     let order_clauses = order_clauses_from_value(&raw_order_by_value)
         .expect("bench fixture builds a valid `order_by` shape");
@@ -2282,6 +2285,7 @@ fn count_request<'a>(
         limit,
         prove,
         drive_config: &fixture.drive_config,
+        resolved_time_ranges: vec![],
     }
 }
 

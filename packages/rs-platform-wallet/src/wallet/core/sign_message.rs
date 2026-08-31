@@ -79,7 +79,10 @@ const RECOVERY_IDS: [i32; 4] = [0, 1, 2, 3];
 /// module does not exist on this branch. Keeping the predicate here — same
 /// name, same body — means the two converge to a single call site by deleting
 /// this function when that module lands, with no behavior change to review.
-fn is_signable_funding_account(managed_type: &ManagedAccountType) -> bool {
+/// Funding accounts whose keys this wallet can sign for: everything except
+/// the DashPay external (watch-only, contact-owned) accounts. Shared with the
+/// masternode payout-key lookup.
+pub(crate) fn is_signable_funding_account(managed_type: &ManagedAccountType) -> bool {
     !matches!(
         managed_type,
         ManagedAccountType::DashpayExternalAccount { .. }

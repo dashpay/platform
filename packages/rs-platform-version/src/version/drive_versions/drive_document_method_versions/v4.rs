@@ -5,8 +5,14 @@ use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
 };
 
-/// V4 is protocol version 14's document-method table. It hosts two
-/// independent changes that both gate at v14.
+/// V4 is protocol version 14's document-method table. It hosts three
+/// independent changes that all gate at v14 (ranked aggregates, the
+/// shared-prefix aggregate index fix, and the reworked non-primary-key
+/// query lowering via `query.non_primary_key_path_query: 1` — multiple
+/// `In` clauses, sibling-branch-correct cursor pagination over
+/// multi-branch levels, and order-by-aware left-over directions; v13
+/// and earlier keep the v0 lowering, which rejects more than one `In`
+/// clause and bakes the cursor's start keys into every sibling branch).
 ///
 /// ## 1. Contract-level ranked aggregates
 ///
@@ -71,6 +77,11 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             detect_count_mode: 0,
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
+            detect_having_mode: 0,
+            non_primary_key_path_query: 1,
+            non_primary_key_single_in_path_query: 0,
+            non_primary_key_multiple_in_path_query: 0,
+            where_clause_grouping: 1,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
@@ -78,19 +89,29 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             delete_document_for_contract_id: 0,
             delete_document_for_contract_apply_and_add_to_operations: 0,
             remove_document_from_primary_storage: 0,
-            remove_reference_for_index_level_for_contract_operations: 0,
+            // v1 at protocol v14: the empty-tree pruning climb stops at the
+            // member level on `preallocated` indexOnly indexes, keeping the
+            // trees the referenced document's insert paid for.
+            remove_reference_for_index_level_for_contract_operations: 1,
             remove_indices_for_index_level_for_contract_operations: 2,
             remove_indices_for_top_index_level_for_contract_operations: 2,
             delete_document_for_contract_id_with_named_type_operations: 0,
             delete_document_for_contract_with_named_type_operations: 0,
             delete_document_for_contract_operations: 0,
+            delete_index_only_document_for_contract_operations: 0,
+            delete_index_only_document_for_contract: 0,
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document: 0,
             add_history_operations: 0,
             add_document_for_contract: 0,
             add_document_for_contract_apply_and_add_to_operations: 0,
-            add_document_for_contract_operations: 0,
+            // v1 at protocol v14: inserting a document also preallocates the
+            // dynamic trees of `preallocated` indexOnly indexes bound to its
+            // type through refersTo declarations. Insert and delete bump
+            // together: the delete-side no-prune rule is what makes the
+            // preallocated trees permanent structure.
+            add_document_for_contract_operations: 1,
             add_document_to_primary_storage: 0,
             add_indices_for_index_level_for_contract_operations: 2,
             add_indices_for_top_index_level_for_contract_operations: 2,

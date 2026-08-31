@@ -69,7 +69,7 @@ zeroize = "1"
 log = "0.4"
 
 # Shielded pool (optional, behind `shielded` feature)
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a2791bbdca756d6a6113024aec48f09f7a33faa9", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "0a3b3f9b8b44a18ff7f53a3bd88b93d20485fe03", optional = true }
 # Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set
 # WAL + synchronous=NORMAL pragmas before handing the connection to
 # `ClientPersistentCommitmentTree`. Version locked to match the rev grovedb
@@ -100,6 +100,9 @@ name = "shielded_chunk_timing_bench"
 required-features = ["shielded"]
 
 [dev-dependencies]
+# In-process Signer<IdentityPublicKey> for the manual testnet
+# verification example (`examples/dpns_marketplace_testnet.rs`).
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 # Used by `examples/shielded_chunk_timing_bench.rs` and
 # `tests/shielded_decrypt_bench.rs` to assemble per-chunk wire
 # fixtures and decode the `ShieldedEncryptedNote` wire type.

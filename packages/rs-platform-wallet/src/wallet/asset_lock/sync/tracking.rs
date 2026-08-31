@@ -4,6 +4,8 @@ use crate::broadcaster::TransactionBroadcaster;
 use dashcore::OutPoint;
 
 use crate::changeset::changeset::AssetLockChangeSet;
+use crate::changeset::changeset::PlatformWalletChangeSet;
+use crate::changeset::PersistenceCapabilities;
 use crate::error::PlatformWalletError;
 
 use super::super::manager::AssetLockManager;
@@ -82,6 +84,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
         cs
     }
+
+    // NOTE: there is deliberately no `untrack_unproven_broadcast_asset_lock`
+    // companion here. A `Rejected` verdict from a re-broadcast describes only
+    // that attempt (with the production `SpvBroadcaster`: an unstarted client
+    // or zero connected peers), never the ORIGINAL broadcast that moved the
+    // row to `Broadcast` in an earlier process — so it is not evidence that
+    // the transaction is absent from the network, and removing the row on it
+    // deleted tracking for possibly-mined asset locks during ordinary offline
+    // relaunches. `resume_asset_lock` now surfaces the typed error and leaves
+    // the row untouched.
 
     /// Mark a tracked asset lock as
     /// [`Consumed`](AssetLockStatus::Consumed) after a successful
@@ -164,6 +176,94 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             cs
         };
         self.queue_asset_lock_changeset(cs.clone());
+        Ok(cs)
+    }
+
+    /// Record that Platform reported an asset lock as already consumed without
+    /// claiming authenticated Platform-side completion.
+    ///
+    /// The supplied proof must be a Core-chain-authenticated ChainLock proof.
+    /// The row moves to [`RecoveredFromChain`](AssetLockStatus::RecoveredFromChain),
+    /// whose contract is deliberately nonterminal: Core finality is known, but
+    /// Platform consumption is not. The proof is retained so a future explicit
+    /// recovery remains possible.
+    ///
+    /// Unlike the ordinary queued status updates, this user-visible recovery
+    /// marker is stored and flushed synchronously. A failure rolls back the
+    /// in-memory mutation only when the backend has not committed the store and
+    /// did not retain a transient retry buffer. Before mutating, the backend
+    /// must attest atomic tracked-asset-lock persistence and restart restore.
+    pub(crate) async fn mark_asset_lock_consumption_unknown(
+        &self,
+        out_point: &OutPoint,
+        chain_proof: dpp::prelude::AssetLockProof,
+    ) -> Result<AssetLockChangeSet, PlatformWalletError> {
+        if !matches!(&chain_proof, dpp::prelude::AssetLockProof::Chain(_)) {
+            return Err(PlatformWalletError::AssetLockProofWait(format!(
+                "Asset lock {} cannot enter consumption-unknown state without a ChainLock proof",
+                out_point
+            )));
+        }
+
+        let capabilities = self.persister.persistence_capabilities();
+        let required = PersistenceCapabilities::ASSET_LOCK_RECONCILIATION;
+        if !capabilities.contains(required) {
+            let missing = capabilities.missing(required);
+            return Err(PlatformWalletError::Persistence(format!(
+                "asset-lock reconciliation requires persistence capabilities {:?} \
+                 (missing mask 0x{:x})",
+                missing.names(),
+                missing.bits(),
+            )));
+        }
+
+        let (previous, candidate, cs) = {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let entry = info
+                .tracked_asset_locks
+                .get_mut(out_point)
+                .ok_or_else(|| PlatformWalletError::AssetLockNotTracked(*out_point))?;
+            let previous = entry.clone();
+            entry.status = AssetLockStatus::RecoveredFromChain;
+            entry.proof = Some(chain_proof);
+            let candidate = entry.clone();
+            let mut cs = AssetLockChangeSet::default();
+            cs.asset_locks.insert(*out_point, (&*entry).into());
+            (previous, candidate, cs)
+        };
+
+        let store_commits_inline = self.persister.store_commits_inline();
+        let persist_failure = match self.persister.store(PlatformWalletChangeSet {
+            asset_locks: Some(cs.clone()),
+            ..Default::default()
+        }) {
+            Err(error) => Some((error, true)),
+            Ok(()) => self.persister.flush().err().map(|error| {
+                let may_rollback = !store_commits_inline;
+                (error, may_rollback)
+            }),
+        };
+        if let Some((error, may_rollback)) = persist_failure {
+            if error.is_transient() || !may_rollback {
+                return Err(PlatformWalletError::Persistence(error.to_string()));
+            }
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(current) = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .and_then(|info| info.tracked_asset_locks.get_mut(out_point))
+            {
+                // Do not overwrite a concurrent lifecycle advance. Roll back
+                // only while the exact candidate written above is still live.
+                if current.status == candidate.status && current.proof == candidate.proof {
+                    *current = previous;
+                }
+            }
+            return Err(PlatformWalletError::Persistence(error.to_string()));
+        }
+
         Ok(cs)
     }
 

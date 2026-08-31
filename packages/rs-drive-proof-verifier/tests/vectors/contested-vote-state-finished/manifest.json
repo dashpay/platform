@@ -1,0 +1,51 @@
+{
+  "description": "Finished DPNS name contest ('bob'): winner recorded with finalization block info.",
+  "source": {
+    "platform_repo_tag": "v4.0.0",
+    "grovedb_repo_tag": "v5.0.0",
+    "generated_protocol_version": 12
+  },
+  "request": {
+    "type": "contested_vote_state",
+    "contract_id": "e668c659af66aee1e72c186dde7b5b7e0a1d712a09c40d5721f622bf53c53155",
+    "document_type_name": "domain",
+    "index_name": "parentNameAndLabel",
+    "index_values": [
+      "dash",
+      "bob"
+    ],
+    "count": 100
+  },
+  "block": {
+    "height": 123456,
+    "core_chain_locked_height": 2000000,
+    "epoch": 0,
+    "time_ms": 1700000000000,
+    "protocol_version": 12,
+    "chain_id": "dash-testnet-51"
+  },
+  "proof_meta": {
+    "round": 0,
+    "quorum_type": 106,
+    "quorum_hash_hex": "01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3da",
+    "block_id_hash_hex": "090c0f1215181b1e2124272a2d303336393c3f4245484b4e5154575a5d606366"
+  },
+  "expected": {
+    "kind": "contested",
+    "contenders": [
+      {
+        "identity_id": "7777777777777777777777777777777777777777777777777777777777777777",
+        "votes": 5
+      },
+      {
+        "identity_id": "8888888888888888888888888888888888888888888888888888888888888888",
+        "votes": 2
+      }
+    ],
+    "abstain_votes": 2,
+    "lock_votes": 1,
+    "finished": true,
+    "winner_identity_id": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "expected_root_hash_hex": "dad905d8fddd7a31089ed57521ff006ec5946b5648d48056bce493357675ab72"
+}

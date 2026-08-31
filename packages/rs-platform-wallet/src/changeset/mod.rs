@@ -14,6 +14,7 @@ pub mod client_start_state;
 pub mod client_wallet_start_state;
 pub mod core_bridge;
 pub mod identity_manager_start_state;
+pub mod identity_scan_state;
 pub mod merge;
 pub mod persistence_capabilities;
 pub mod platform_address_sync_start_state;
@@ -29,18 +30,20 @@ pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{
     upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,
     AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, CoreChangeSet,
-    HighestUsedIndexes, IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices,
-    IdentityKeyEntry, IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry,
-    InvitationStatus, KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto,
-    PendingContactCryptoKey, PendingContactCryptoKind, PendingContactCryptoOp,
-    PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey,
-    ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
+    DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, HighestUsedIndexes,
+    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
+    IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry, InvitationStatus,
+    KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey,
+    PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
+    PlatformAddressChangeSet, PlatformWalletChangeSet, ProviderKeyAccountEntry,
+    ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey,
+    SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
 pub use core_bridge::spawn_wallet_event_adapter;
 pub use identity_manager_start_state::IdentityManagerStartState;
+pub use identity_scan_state::IdentityScanStateEntry;
 pub use merge::Merge;
 pub use persistence_capabilities::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
