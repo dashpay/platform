@@ -11,16 +11,14 @@
 
 use crate::documents::document_query::DocumentQuery;
 use crate::error::Error;
-use dapi_grpc::platform::v0::get_chained_documents_request::GetChainedDocumentsRequestV0;
-use dapi_grpc::platform::v0::get_chained_documents_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{
-    GetChainedDocumentsRequest, GetChainedDocumentsResponse, Proof, ResponseMetadata,
-};
+use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::ChainedJoin;
+use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_documents_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::platform_value::Value;
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use dpp::ProtocolError;
 use drive::query::drive_chained_document_query::DriveChainedDocumentQuery;
@@ -65,12 +63,12 @@ impl ChainedDocumentQuery {
     }
 }
 
-impl TryFromPlatformVersioned<ChainedDocumentQuery> for GetChainedDocumentsRequest {
+impl TryFromPlatformVersioned<ChainedDocumentQuery> for GetDocumentsRequest {
     type Error = Error;
 
     fn try_from_platform_versioned(
         value: ChainedDocumentQuery,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         let ChainedDocumentQuery {
             inner,
@@ -99,54 +97,29 @@ impl TryFromPlatformVersioned<ChainedDocumentQuery> for GetChainedDocumentsReque
             ));
         }
 
-        // The chained wire carries the inner clauses in the same CBOR
-        // encoding as `GetDocumentsRequestV0.where` / `.order_by`.
-        let where_bytes = if inner.where_clauses.is_empty() {
-            Vec::new()
-        } else {
-            let where_value =
-                Value::Array(inner.where_clauses.into_iter().map(Value::from).collect());
-            where_value.to_cbor_buffer().map_err(|e| {
-                Error::Protocol(ProtocolError::EncodingError(format!(
-                    "failed to CBOR-encode chained inner where clauses: {e}"
-                )))
-            })?
-        };
-        let order_by_bytes = if inner.order_by_clauses.is_empty() {
-            Vec::new()
-        } else {
-            let order_value = Value::Array(
-                inner
-                    .order_by_clauses
-                    .into_iter()
-                    .map(Value::from)
-                    .collect(),
-            );
-            order_value.to_cbor_buffer().map_err(|e| {
-                Error::Protocol(ProtocolError::EncodingError(format!(
-                    "failed to CBOR-encode chained inner order_by clauses: {e}"
-                )))
-            })?
-        };
-
-        Ok(GetChainedDocumentsRequest {
-            version: Some(
-                dapi_grpc::platform::v0::get_chained_documents_request::Version::V0(
-                    GetChainedDocumentsRequestV0 {
-                        data_contract_id: inner.data_contract.id().to_vec(),
-                        inner_document_type: inner.document_type_name,
-                        inner_where: where_bytes,
-                        inner_order_by: order_by_bytes,
-                        inner_limit: inner.limit,
-                        join_property,
-                        outer_document_type: outer_document_type_name,
-                        // Chained fetch always proves — the whole point
-                        // of the surface is the verifiable composition.
-                        prove: true,
-                    },
-                ),
-            ),
-        })
+        // The chained surface rides the typed V1 wire: encode the
+        // inner query through the standard versioned encoder, then
+        // attach the join spec. A network still on the V0 (CBOR) wire
+        // cannot express the field, so refuse rather than silently
+        // sending a plain documents query.
+        let mut request =
+            GetDocumentsRequest::try_from_platform_versioned(inner, platform_version)?;
+        match request.version.as_mut() {
+            Some(RequestVersion::V1(v1)) => {
+                v1.chained = Some(ChainedJoin {
+                    join_property,
+                    outer_document_type: outer_document_type_name,
+                });
+            }
+            _ => {
+                return Err(Error::Config(
+                    "chained document queries require the V1 documents wire (Platform \
+                     v3.1+); this network's protocol version encodes V0"
+                        .to_string(),
+                ));
+            }
+        }
+        Ok(request)
     }
 }
 
@@ -170,7 +143,7 @@ impl<'a> TryFrom<&'a ChainedDocumentQuery> for DriveChainedDocumentQuery<'a> {
 
 impl FromProof<ChainedDocumentQuery> for ChainedDocuments {
     type Request = ChainedDocumentQuery;
-    type Response = GetChainedDocumentsResponse;
+    type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -200,7 +173,7 @@ impl FromProof<ChainedDocumentQuery> for ChainedDocuments {
             .metadata()
             .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
         let hint: Vec<dpp::prelude::Identifier> = match &response.version {
-            Some(ResponseVersion::V0(v0)) => v0
+            Some(ResponseVersion::V1(v1)) => v1
                 .proven_join_values
                 .iter()
                 .map(|bytes| {
@@ -212,6 +185,13 @@ impl FromProof<ChainedDocumentQuery> for ChainedDocuments {
                     })
                 })
                 .collect::<Result<_, _>>()?,
+            Some(ResponseVersion::V0(_)) => {
+                return Err(drive_proof_verifier::Error::ResponseDecodeError {
+                    error: "chained results are a V1-only response shape; got a V0 \
+                            getDocuments response"
+                        .to_string(),
+                })
+            }
             None => return Err(drive_proof_verifier::Error::EmptyVersion),
         };
 
@@ -233,17 +213,17 @@ impl FromProof<ChainedDocumentQuery> for ChainedDocuments {
 
 #[cfg(test)]
 mod tests {
-    //! Offline tests for the chained client surface: the request→wire
-    //! encoding, the unsupported-feature rejections, and the
-    //! rich→drive conversion + shared shape validation against the
-    //! yappr-likes fixture. Proof verification is exercised end-to-end
-    //! in rs-drive's `chained_query_e2e_tests` and rs-drive-abci's
-    //! `chained_document_query` handler tests, where a populated Drive
-    //! exists.
+    //! Offline tests for the chained client surface: the V1
+    //! request-wire encoding (typed clauses, no CBOR), the
+    //! unsupported-feature rejections, and the rich→drive conversion +
+    //! shared shape validation against the yappr-likes fixture. Proof
+    //! verification is exercised end-to-end in rs-drive's
+    //! `chained_query_e2e_tests` and rs-drive-abci's v1 chained
+    //! dispatch tests, where a populated Drive exists.
 
     use super::*;
-    use dapi_grpc::platform::v0::get_chained_documents_request::Version as RequestVersion;
     use dpp::data_contract::DataContract;
+    use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract;
     use drive::query::{WhereClause, WhereOperator};
     use std::sync::Arc;
@@ -276,40 +256,29 @@ mod tests {
     }
 
     #[test]
-    fn encodes_the_v0_wire_shape() {
-        let request = GetChainedDocumentsRequest::try_from_platform_versioned(
-            posts_i_liked(10),
-            platform_version(),
-        )
-        .expect("encodes");
-        let Some(RequestVersion::V0(v0)) = request.version else {
-            panic!("expected a V0 request");
+    fn encodes_the_v1_wire_shape() {
+        let request =
+            GetDocumentsRequest::try_from_platform_versioned(posts_i_liked(10), platform_version())
+                .expect("encodes");
+        let Some(RequestVersion::V1(v1)) = request.version else {
+            panic!("expected a V1 request");
         };
-        assert_eq!(v0.inner_document_type, "like");
-        assert_eq!(v0.join_property, "postId");
-        assert_eq!(v0.outer_document_type, "post");
-        assert_eq!(v0.inner_limit, 10);
-        assert!(v0.prove, "chained fetch always proves");
-        assert!(v0.inner_order_by.is_empty());
-        // The where bytes are the same CBOR the server decodes for
-        // GetDocumentsRequestV0.where: an array of clause arrays —
-        // byte-identical to encoding the clause list directly.
-        let expected = Value::Array(vec![Value::from(WhereClause {
-            field: "$ownerId".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Identifier(OWNER),
-        })])
-        .to_cbor_buffer()
-        .expect("encode expected clauses");
-        assert_eq!(v0.inner_where, expected);
+        assert_eq!(v1.document_type, "like");
+        assert_eq!(v1.limit, Some(10));
+        assert!(v1.prove, "chained fetch always proves");
+        assert!(v1.order_by.is_empty());
+        // Typed clauses on the wire — no CBOR anywhere on this surface.
+        assert_eq!(v1.where_clauses.len(), 1);
+        assert_eq!(v1.where_clauses[0].field, "$ownerId");
+        let chained = v1.chained.expect("the join spec rides the request");
+        assert_eq!(chained.join_property, "postId");
+        assert_eq!(chained.outer_document_type, "post");
     }
 
     #[test]
     fn requires_an_inner_limit() {
-        let refused = GetChainedDocumentsRequest::try_from_platform_versioned(
-            posts_i_liked(0),
-            platform_version(),
-        );
+        let refused =
+            GetDocumentsRequest::try_from_platform_versioned(posts_i_liked(0), platform_version());
         assert!(
             matches!(refused, Err(Error::Config(_))),
             "a zero inner limit must be refused, got {refused:?}"
@@ -320,8 +289,7 @@ mod tests {
     fn refuses_unsupported_inner_features() {
         let mut query = posts_i_liked(10);
         query.inner.group_by = vec!["hashtag".to_string()];
-        let refused =
-            GetChainedDocumentsRequest::try_from_platform_versioned(query, platform_version());
+        let refused = GetDocumentsRequest::try_from_platform_versioned(query, platform_version());
         assert!(
             matches!(refused, Err(Error::Config(_))),
             "an inner group_by must be refused, got {refused:?}"

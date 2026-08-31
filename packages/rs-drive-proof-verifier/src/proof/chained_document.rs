@@ -24,8 +24,8 @@
 use crate::error::MapGroveDbError;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::get_chained_documents_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{GetChainedDocumentsResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::get_documents_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::document::Document;
@@ -89,7 +89,7 @@ where
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
-    type Response = GetChainedDocumentsResponse;
+    type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -117,7 +117,7 @@ where
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
         let hint: Vec<dpp::prelude::Identifier> = match &response.version {
-            Some(ResponseVersion::V0(v0)) => v0
+            Some(ResponseVersion::V1(v1)) => v1
                 .proven_join_values
                 .iter()
                 .map(|bytes| {
@@ -129,6 +129,13 @@ where
                     })
                 })
                 .collect::<Result<_, _>>()?,
+            Some(ResponseVersion::V0(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "chained results are a V1-only response shape; got a V0 \
+                            getDocuments response"
+                        .to_string(),
+                })
+            }
             None => return Err(Error::EmptyVersion),
         };
 
