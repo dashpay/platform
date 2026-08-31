@@ -1006,7 +1006,15 @@ fn query_error_into_status(error: QueryError) -> Status {
 }
 
 fn error_into_status(error: Error) -> Status {
-    Status::internal(format!("query: {}", error))
+    match error {
+        // Not a server fault: the state was restored via state sync and the block proof
+        // metadata arrives with the first block finalized after the restore. UNAVAILABLE
+        // tells clients to retry (or drop the proof request) rather than report a bug.
+        Error::Abci(crate::abci::AbciError::StateSyncProofMetadataUnavailable(message)) => {
+            Status::unavailable(message)
+        }
+        error => Status::internal(format!("query: {}", error)),
+    }
 }
 
 fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<(), Status> {
