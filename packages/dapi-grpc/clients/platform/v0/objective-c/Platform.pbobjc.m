@@ -7667,14 +7667,14 @@ void GetChainedDocumentsResponse_ClearVersionOneOfCase(GetChainedDocumentsRespon
 @dynamic documents;
 @dynamic proof;
 @dynamic hasMetadata, metadata;
-@dynamic outerGrovedbProof;
+@dynamic provenJoinValuesArray, provenJoinValuesArray_Count;
 
 typedef struct GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_ {
   uint32_t _has_storage_[2];
   GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments *documents;
   Proof *proof;
   ResponseMetadata *metadata;
-  NSData *outerGrovedbProof;
+  NSMutableArray *provenJoinValuesArray;
 } GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -7711,12 +7711,12 @@ typedef struct GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storag
         .dataType = GPBDataTypeMessage,
       },
       {
-        .name = "outerGrovedbProof",
+        .name = "provenJoinValuesArray",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_OuterGrovedbProof,
-        .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_, outerGrovedbProof),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .number = GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_ProvenJoinValuesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_, provenJoinValuesArray),
+        .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeBytes,
       },
     };

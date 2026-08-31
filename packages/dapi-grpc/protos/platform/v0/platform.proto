@@ -1563,15 +1563,22 @@ message GetChainedDocumentsResponse {
 
     oneof result {
       ChainedDocuments documents = 1; // Both halves, if no proof requested
-      Proof proof = 2; // Proof of the INNER query, standard envelope
+      // ONE merged grovedb proof covering BOTH halves: the limited
+      // inner query and the outer by-ids query derived from its
+      // results, merged by the server (grovedb lifts the inner limit
+      // into a per-instance branch limit). A single proof binds the
+      // whole composition to one state root by construction.
+      Proof proof = 2;
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
-    // Proof of the derived outer by-ids query, generated in the same
-    // grove transaction as `proof` (both verify to one root hash).
-    // Present exactly when `proof` is set AND the proven inner page is
-    // non-empty; empty otherwise. Sits beside the result oneof so the
-    // standard single-`Proof` response tooling applies unchanged.
-    bytes outer_grovedb_proof = 4;
+    // The server's join values (32-byte ids, deduplicated, in first-
+    // appearance order) — the UNTRUSTED bootstrap hint the verifier
+    // uses to re-derive the outer component of the merged query before
+    // verifying. A hint that disagrees with the proof's actual inner
+    // content fails verification, so soundness never rests on it.
+    // Populated only with `proof`, and empty when the inner page is
+    // empty.
+    repeated bytes proven_join_values = 4;
   }
   oneof version { GetChainedDocumentsResponseV0 v0 = 1; }
 }

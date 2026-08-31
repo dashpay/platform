@@ -2823,7 +2823,7 @@ if (goog.DEBUG && !COMPILED) {
  * @constructor
  */
 proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.oneofGroups_);
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.repeatedFields_, proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.oneofGroups_);
 };
 goog.inherits(proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
@@ -32614,6 +32614,13 @@ proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.serializeBinaryToWri
 
 
 /**
+ * List of repeated fields within this message type.
+ * @private {!Array<number>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.repeatedFields_ = [4];
+
+/**
  * Oneof group definitions for this message. Each group defines the field
  * numbers belonging to that group. When of these fields' value is set, all
  * other fields in the group are cleared. During deserialization, if multiple
@@ -32673,7 +32680,7 @@ proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsR
     documents: (f = msg.getDocuments()) && proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.toObject(includeInstance, f),
     proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
     metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f),
-    outerGrovedbProof: msg.getOuterGrovedbProof_asB64()
+    provenJoinValuesList: msg.getProvenJoinValuesList_asB64()
   };
 
   if (includeInstance) {
@@ -32727,7 +32734,7 @@ proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsR
       break;
     case 4:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setOuterGrovedbProof(value);
+      msg.addProvenJoinValues(value);
       break;
     default:
       reader.skipField();
@@ -32782,9 +32789,9 @@ proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsR
       proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
     );
   }
-  f = message.getOuterGrovedbProof_asU8();
+  f = message.getProvenJoinValuesList_asU8();
   if (f.length > 0) {
-    writer.writeBytes(
+    writer.writeRepeatedBytes(
       4,
       f
     );
@@ -33157,44 +33164,63 @@ proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsR
 
 
 /**
- * optional bytes outer_grovedb_proof = 4;
- * @return {string}
+ * repeated bytes proven_join_values = 4;
+ * @return {!Array<string>}
  */
-proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.getOuterGrovedbProof = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, ""));
+proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.getProvenJoinValuesList = function() {
+  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 4));
 };
 
 
 /**
- * optional bytes outer_grovedb_proof = 4;
- * This is a type-conversion wrapper around `getOuterGrovedbProof()`
- * @return {string}
+ * repeated bytes proven_join_values = 4;
+ * This is a type-conversion wrapper around `getProvenJoinValuesList()`
+ * @return {!Array<string>}
  */
-proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.getOuterGrovedbProof_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getOuterGrovedbProof()));
+proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.getProvenJoinValuesList_asB64 = function() {
+  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
+      this.getProvenJoinValuesList()));
 };
 
 
 /**
- * optional bytes outer_grovedb_proof = 4;
+ * repeated bytes proven_join_values = 4;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getOuterGrovedbProof()`
- * @return {!Uint8Array}
+ * This is a type-conversion wrapper around `getProvenJoinValuesList()`
+ * @return {!Array<!Uint8Array>}
  */
-proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.getOuterGrovedbProof_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getOuterGrovedbProof()));
+proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.getProvenJoinValuesList_asU8 = function() {
+  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
+      this.getProvenJoinValuesList()));
+};
+
+
+/**
+ * @param {!(Array<!Uint8Array>|Array<string>)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.setProvenJoinValuesList = function(value) {
+  return jspb.Message.setField(this, 4, value || []);
 };
 
 
 /**
  * @param {!(string|Uint8Array)} value
+ * @param {number=} opt_index
  * @return {!proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.setOuterGrovedbProof = function(value) {
-  return jspb.Message.setProto3BytesField(this, 4, value);
+proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.addProvenJoinValues = function(value, opt_index) {
+  return jspb.Message.addToRepeatedField(this, 4, value, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.prototype.clearProvenJoinValuesList = function() {
+  return this.setProvenJoinValuesList([]);
 };
 
 

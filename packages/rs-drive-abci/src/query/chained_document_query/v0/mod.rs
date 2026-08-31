@@ -23,10 +23,11 @@ use drive::util::grove_operations::GroveDBToUse;
 impl<C> Platform<C> {
     /// v0 of the chained documents query.
     ///
-    /// The proof path generates both proofs under drive's root-hash
-    /// bracket (grovedb proves against committed state only) — that is
-    /// the same-root guarantee the verifier depends on (it refuses
-    /// proof pairs with differing root hashes).
+    /// The proof path returns ONE merged grovedb proof covering both
+    /// halves (drive brackets its materialize/prove sequence with
+    /// root-hash reads, since grovedb proves committed state only),
+    /// plus the join-value bootstrap hint the verifier re-derives the
+    /// outer component from.
     pub(super) fn query_chained_documents_v0(
         &self,
         GetChainedDocumentsRequestV0 {
@@ -198,13 +199,13 @@ impl<C> Platform<C> {
         }
 
         let response = if prove {
-            // The same-root guarantee lives inside the drive call:
-            // grovedb proves against committed state only, so the pair
-            // is bracketed by root-hash reads and retried if a block
-            // commit interleaves.
-            let (bundle, _result) = match self
+            // ONE merged proof for both halves; the drive call brackets
+            // its materialize/prove sequence with root-hash reads
+            // (grovedb proves committed state only) and retries if a
+            // block commit interleaves.
+            let (merged_proof, result) = match self
                 .drive
-                .query_chained_documents_with_proofs(&chained_query, platform_version)
+                .query_chained_documents_with_proof(&chained_query, platform_version)
             {
                 Ok(result) => result,
                 Err(drive::error::Error::Query(query_error)) => {
@@ -215,13 +216,21 @@ impl<C> Platform<C> {
                 Err(e) => return Err(e.into()),
             };
 
+            // The bootstrap hint the verifier re-derives the outer
+            // component from — untrusted by design.
+            let proven_join_values = chained_query
+                .join_values(&result.inner_documents)?
+                .into_iter()
+                .map(|id| id.to_vec())
+                .collect();
+
             let (grovedb_used, proof) =
-                self.response_proof_v0(platform_state, bundle.inner_proof, GroveDBToUse::Current)?;
+                self.response_proof_v0(platform_state, merged_proof, GroveDBToUse::Current)?;
 
             GetChainedDocumentsResponseV0 {
                 result: Some(get_chained_documents_response_v0::Result::Proof(proof)),
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
-                outer_grovedb_proof: bundle.outer_proof.unwrap_or_default(),
+                proven_join_values,
             }
         } else {
             let outcome = match self.drive.query_chained_documents(
@@ -269,7 +278,7 @@ impl<C> Platform<C> {
                     },
                 )),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
-                outer_grovedb_proof: Vec::new(),
+                proven_join_values: Vec::new(),
             }
         };
 
@@ -373,7 +382,7 @@ mod tests {
             .expect("query executes");
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
         let response = result.data.expect("response data");
-        assert!(response.outer_grovedb_proof.is_empty());
+        assert!(response.proven_join_values.is_empty());
         let Some(ResponseResult::Documents(documents)) = response.result else {
             panic!("expected a documents result");
         };
@@ -410,9 +419,10 @@ mod tests {
         let Some(ResponseResult::Proof(proof)) = response.result else {
             panic!("expected a proof result");
         };
-        assert!(
-            !response.outer_grovedb_proof.is_empty(),
-            "non-empty inner page must carry an outer proof"
+        assert_eq!(
+            response.proven_join_values,
+            vec![POST_A.to_vec(), POST_B.to_vec()],
+            "the bootstrap hint carries the proven join values in first-appearance order"
         );
 
         // Client-side composition: rebuild the same chained query and
@@ -447,12 +457,15 @@ mod tests {
                 .document_type_for_name("post")
                 .expect("post doctype"),
         };
+        let hint: Vec<Identifier> = response
+            .proven_join_values
+            .iter()
+            .map(|bytes| {
+                Identifier::from_bytes(bytes).expect("hint entries are 32-byte identifiers")
+            })
+            .collect();
         let (_root_hash, verified) = chained
-            .verify_chained_documents_proof(
-                proof.grovedb_proof.as_slice(),
-                Some(response.outer_grovedb_proof.as_slice()),
-                version,
-            )
+            .verify_chained_documents_proof(proof.grovedb_proof.as_slice(), &hint, version)
             .expect("chained proof verifies");
         assert_eq!(verified.outer_documents.len(), 2);
         assert_eq!(

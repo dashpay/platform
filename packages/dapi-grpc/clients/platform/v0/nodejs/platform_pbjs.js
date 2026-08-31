@@ -27989,7 +27989,7 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.IChainedDocuments|null} [documents] GetChainedDocumentsResponseV0 documents
                              * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetChainedDocumentsResponseV0 proof
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetChainedDocumentsResponseV0 metadata
-                             * @property {Uint8Array|null} [outerGrovedbProof] GetChainedDocumentsResponseV0 outerGrovedbProof
+                             * @property {Array.<Uint8Array>|null} [provenJoinValues] GetChainedDocumentsResponseV0 provenJoinValues
                              */
 
                             /**
@@ -28001,6 +28001,7 @@ $root.org = (function() {
                              * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.IGetChainedDocumentsResponseV0=} [properties] Properties to set
                              */
                             function GetChainedDocumentsResponseV0(properties) {
+                                this.provenJoinValues = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -28032,12 +28033,12 @@ $root.org = (function() {
                             GetChainedDocumentsResponseV0.prototype.metadata = null;
 
                             /**
-                             * GetChainedDocumentsResponseV0 outerGrovedbProof.
-                             * @member {Uint8Array} outerGrovedbProof
+                             * GetChainedDocumentsResponseV0 provenJoinValues.
+                             * @member {Array.<Uint8Array>} provenJoinValues
                              * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
                              * @instance
                              */
-                            GetChainedDocumentsResponseV0.prototype.outerGrovedbProof = $util.newBuffer([]);
+                            GetChainedDocumentsResponseV0.prototype.provenJoinValues = $util.emptyArray;
 
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
@@ -28083,8 +28084,9 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
                                     $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                                if (message.outerGrovedbProof != null && Object.hasOwnProperty.call(message, "outerGrovedbProof"))
-                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.outerGrovedbProof);
+                                if (message.provenJoinValues != null && message.provenJoinValues.length)
+                                    for (var i = 0; i < message.provenJoinValues.length; ++i)
+                                        writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.provenJoinValues[i]);
                                 return writer;
                             };
 
@@ -28129,7 +28131,9 @@ $root.org = (function() {
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
                                         break;
                                     case 4:
-                                        message.outerGrovedbProof = reader.bytes();
+                                        if (!(message.provenJoinValues && message.provenJoinValues.length))
+                                            message.provenJoinValues = [];
+                                        message.provenJoinValues.push(reader.bytes());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -28190,9 +28194,13 @@ $root.org = (function() {
                                     if (error)
                                         return "metadata." + error;
                                 }
-                                if (message.outerGrovedbProof != null && message.hasOwnProperty("outerGrovedbProof"))
-                                    if (!(message.outerGrovedbProof && typeof message.outerGrovedbProof.length === "number" || $util.isString(message.outerGrovedbProof)))
-                                        return "outerGrovedbProof: buffer expected";
+                                if (message.provenJoinValues != null && message.hasOwnProperty("provenJoinValues")) {
+                                    if (!Array.isArray(message.provenJoinValues))
+                                        return "provenJoinValues: array expected";
+                                    for (var i = 0; i < message.provenJoinValues.length; ++i)
+                                        if (!(message.provenJoinValues[i] && typeof message.provenJoinValues[i].length === "number" || $util.isString(message.provenJoinValues[i])))
+                                            return "provenJoinValues: buffer[] expected";
+                                }
                                 return null;
                             };
 
@@ -28223,11 +28231,16 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.metadata: object expected");
                                     message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
                                 }
-                                if (object.outerGrovedbProof != null)
-                                    if (typeof object.outerGrovedbProof === "string")
-                                        $util.base64.decode(object.outerGrovedbProof, message.outerGrovedbProof = $util.newBuffer($util.base64.length(object.outerGrovedbProof)), 0);
-                                    else if (object.outerGrovedbProof.length >= 0)
-                                        message.outerGrovedbProof = object.outerGrovedbProof;
+                                if (object.provenJoinValues) {
+                                    if (!Array.isArray(object.provenJoinValues))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.provenJoinValues: array expected");
+                                    message.provenJoinValues = [];
+                                    for (var i = 0; i < object.provenJoinValues.length; ++i)
+                                        if (typeof object.provenJoinValues[i] === "string")
+                                            $util.base64.decode(object.provenJoinValues[i], message.provenJoinValues[i] = $util.newBuffer($util.base64.length(object.provenJoinValues[i])), 0);
+                                        else if (object.provenJoinValues[i].length >= 0)
+                                            message.provenJoinValues[i] = object.provenJoinValues[i];
+                                }
                                 return message;
                             };
 
@@ -28244,16 +28257,10 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults) {
+                                if (options.arrays || options.defaults)
+                                    object.provenJoinValues = [];
+                                if (options.defaults)
                                     object.metadata = null;
-                                    if (options.bytes === String)
-                                        object.outerGrovedbProof = "";
-                                    else {
-                                        object.outerGrovedbProof = [];
-                                        if (options.bytes !== Array)
-                                            object.outerGrovedbProof = $util.newBuffer(object.outerGrovedbProof);
-                                    }
-                                }
                                 if (message.documents != null && message.hasOwnProperty("documents")) {
                                     object.documents = $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.toObject(message.documents, options);
                                     if (options.oneofs)
@@ -28266,8 +28273,11 @@ $root.org = (function() {
                                 }
                                 if (message.metadata != null && message.hasOwnProperty("metadata"))
                                     object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
-                                if (message.outerGrovedbProof != null && message.hasOwnProperty("outerGrovedbProof"))
-                                    object.outerGrovedbProof = options.bytes === String ? $util.base64.encode(message.outerGrovedbProof, 0, message.outerGrovedbProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.outerGrovedbProof) : message.outerGrovedbProof;
+                                if (message.provenJoinValues && message.provenJoinValues.length) {
+                                    object.provenJoinValues = [];
+                                    for (var j = 0; j < message.provenJoinValues.length; ++j)
+                                        object.provenJoinValues[j] = options.bytes === String ? $util.base64.encode(message.provenJoinValues[j], 0, message.provenJoinValues[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.provenJoinValues[j]) : message.provenJoinValues[j];
+                                }
                                 return object;
                             };
 

@@ -4093,7 +4093,7 @@ typedef GPB_ENUM(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_Field
   GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_Documents = 1,
   GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_Proof = 2,
   GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_Metadata = 3,
-  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_OuterGrovedbProof = 4,
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_ProvenJoinValuesArray = 4,
 };
 
 typedef GPB_ENUM(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_Result_OneOfCase) {
@@ -4109,7 +4109,13 @@ GPB_FINAL @interface GetChainedDocumentsResponse_GetChainedDocumentsResponseV0 :
 /** Both halves, if no proof requested */
 @property(nonatomic, readwrite, strong, null_resettable) GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments *documents;
 
-/** Proof of the INNER query, standard envelope */
+/**
+ * ONE merged grovedb proof covering BOTH halves: the limited
+ * inner query and the outer by-ids query derived from its
+ * results, merged by the server (grovedb lifts the inner limit
+ * into a per-instance branch limit). A single proof binds the
+ * whole composition to one state root by construction.
+ **/
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
@@ -4118,13 +4124,17 @@ GPB_FINAL @interface GetChainedDocumentsResponse_GetChainedDocumentsResponseV0 :
 @property(nonatomic, readwrite) BOOL hasMetadata;
 
 /**
- * Proof of the derived outer by-ids query, generated in the same
- * grove transaction as `proof` (both verify to one root hash).
- * Present exactly when `proof` is set AND the proven inner page is
- * non-empty; empty otherwise. Sits beside the result oneof so the
- * standard single-`Proof` response tooling applies unchanged.
+ * The server's join values (32-byte ids, deduplicated, in first-
+ * appearance order) — the UNTRUSTED bootstrap hint the verifier
+ * uses to re-derive the outer component of the merged query before
+ * verifying. A hint that disagrees with the proof's actual inner
+ * content fails verification, so soundness never rests on it.
+ * Populated only with `proof`, and empty when the inner page is
+ * empty.
  **/
-@property(nonatomic, readwrite, copy, null_resettable) NSData *outerGrovedbProof;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *provenJoinValuesArray;
+/** The number of items in @c provenJoinValuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger provenJoinValuesArray_Count;
 
 @end
 

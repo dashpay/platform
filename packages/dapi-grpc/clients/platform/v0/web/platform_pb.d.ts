@@ -3477,10 +3477,12 @@ export namespace GetChainedDocumentsResponse {
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
-    getOuterGrovedbProof(): Uint8Array | string;
-    getOuterGrovedbProof_asU8(): Uint8Array;
-    getOuterGrovedbProof_asB64(): string;
-    setOuterGrovedbProof(value: Uint8Array | string): void;
+    clearProvenJoinValuesList(): void;
+    getProvenJoinValuesList(): Array<Uint8Array | string>;
+    getProvenJoinValuesList_asU8(): Array<Uint8Array>;
+    getProvenJoinValuesList_asB64(): Array<string>;
+    setProvenJoinValuesList(value: Array<Uint8Array | string>): void;
+    addProvenJoinValues(value: Uint8Array | string, index?: number): Uint8Array | string;
 
     getResultCase(): GetChainedDocumentsResponseV0.ResultCase;
     serializeBinary(): Uint8Array;
@@ -3498,7 +3500,7 @@ export namespace GetChainedDocumentsResponse {
       documents?: GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.AsObject,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
-      outerGrovedbProof: Uint8Array | string,
+      provenJoinValuesList: Array<Uint8Array | string>,
     }
 
     export class ChainedDocuments extends jspb.Message {
