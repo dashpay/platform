@@ -44,6 +44,14 @@ use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 
+/// The most join values one chained query can carry — the derived
+/// outer query is a single `$id IN [...]` clause, and `in` clauses
+/// admit at most 100 values (`WhereClause::in_values`). `validate`
+/// caps the inner limit here so every reachable page fits, and
+/// [`DriveChainedDocumentQuery::proof_path_queries`] enforces it on
+/// the (untrusted, verifier-supplied) join-value list itself.
+pub const MAX_CHAINED_JOIN_VALUES: usize = 100;
+
 /// A chained document query: an inner indexOnly query whose proven join
 /// values become the outer query's primary keys.
 ///
@@ -102,12 +110,22 @@ impl<'a> DriveChainedDocumentQuery<'a> {
                     .to_string(),
             ));
         }
-        if self.inner.limit.is_none() {
-            return Err(unsupported(
-                "chained document queries require an explicit limit on the inner query: \
-                 the inner page size is what bounds the derived outer query"
-                    .to_string(),
-            ));
+        match self.inner.limit {
+            None => {
+                return Err(unsupported(
+                    "chained document queries require an explicit limit on the inner query: \
+                     the inner page size is what bounds the derived outer query"
+                        .to_string(),
+                ));
+            }
+            Some(limit) if limit as usize > MAX_CHAINED_JOIN_VALUES => {
+                return Err(unsupported(format!(
+                    "a chained inner limit of {} exceeds {}: the derived outer query is a \
+                     single `$id IN` clause, which admits at most that many values",
+                    limit, MAX_CHAINED_JOIN_VALUES,
+                )));
+            }
+            Some(_) => {}
         }
         if self.inner.offset.is_some() {
             return Err(unsupported(
@@ -330,6 +348,18 @@ impl<'a> DriveChainedDocumentQuery<'a> {
         join_values: &[Identifier],
         platform_version: &PlatformVersion,
     ) -> Result<Vec<grovedb::PathQuery>, Error> {
+        // `join_values` may be an UNTRUSTED verifier-side hint; cap it
+        // before deriving, so an oversized list fails here with a clear
+        // message instead of deep in the `in`-clause lowering. An
+        // honest list cannot exceed this: it is deduplicated from an
+        // inner page whose limit `validate` bounds to the same cap.
+        if join_values.len() > MAX_CHAINED_JOIN_VALUES {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "{} chained join values exceed the {} an outer `$id IN` clause admits",
+                join_values.len(),
+                MAX_CHAINED_JOIN_VALUES,
+            ))));
+        }
         let inner = self.inner.construct_path_query(None, platform_version)?;
         if join_values.is_empty() {
             return Ok(vec![inner]);

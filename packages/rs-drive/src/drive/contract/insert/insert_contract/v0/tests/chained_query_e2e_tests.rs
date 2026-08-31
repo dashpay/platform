@@ -141,7 +141,7 @@ fn chained_posts_i_liked<'a>(
 /// verifier's composed result must agree half for half, and both proofs
 /// must verify to one root hash.
 #[test]
-fn chained_query_returns_liked_posts_with_proof_parity() {
+fn should_return_liked_posts_with_proof_parity() {
     let (drive, contract) = setup_likes();
     let pv = platform_version();
 
@@ -232,7 +232,7 @@ fn chained_query_returns_liked_posts_with_proof_parity() {
 /// the inner component), and a hint claiming otherwise is refused: the
 /// derived outer branch demands documents the proof cannot cover.
 #[test]
-fn chained_query_empty_inner_proves_alone() {
+fn should_prove_an_empty_inner_page_alone() {
     let (drive, contract) = setup_likes();
     let pv = platform_version();
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
@@ -261,7 +261,7 @@ fn chained_query_empty_inner_proves_alone() {
 /// Pagination lives on the INNER query alone: each page re-derives its
 /// own outer half from that page's proven join values.
 #[test]
-fn chained_query_paginates_through_inner_cursor() {
+fn should_paginate_through_the_inner_cursor() {
     let (drive, contract) = setup_likes();
     let pv = platform_version();
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
@@ -306,7 +306,7 @@ fn chained_query_paginates_through_inner_cursor() {
 /// refused identically on the server and the verifier (both call
 /// `validate`).
 #[test]
-fn chained_query_validation_rejections() {
+fn should_reject_invalid_chained_shapes() {
     let (drive, contract) = setup_likes();
     let pv = platform_version();
 
@@ -344,13 +344,37 @@ fn chained_query_validation_rejections() {
         ),
         "the outer type must be the refersTo target"
     );
+
+    // Inner limit above the outer `$id IN` clause's 100-value cap.
+    let over_cap = chained_posts_i_liked(&contract, OWNER_1, None, Some(101));
+    assert!(
+        matches!(
+            drive.query_chained_documents(&over_cap, None, None, pv),
+            Err(Error::Query(_))
+        ),
+        "an inner limit above MAX_CHAINED_JOIN_VALUES must be refused"
+    );
+
+    // An oversized (necessarily lying) verifier-side hint is refused
+    // before the outer derivation runs.
+    let capped = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
+    let oversized_hint: Vec<dpp::identifier::Identifier> = (0..101u8)
+        .map(|i| dpp::identifier::Identifier::from([i; 32]))
+        .collect();
+    assert!(
+        matches!(
+            capped.verify_chained_documents_proof(&[], &oversized_hint, pv),
+            Err(Error::Query(_))
+        ),
+        "an oversized join-value hint must be refused"
+    );
 }
 
 /// A like whose referenced post is missing is corrupted state at the
 /// drive level (consensus validates references on write): the chained
 /// execution refuses to return a partial join.
 #[test]
-fn chained_query_refuses_dangling_reference() {
+fn should_refuse_a_dangling_reference() {
     let (drive, contract) = setup_likes();
     let pv = platform_version();
     // A like referencing POST_A — which was never inserted.
@@ -369,7 +393,7 @@ fn chained_query_refuses_dangling_reference() {
 /// substituted id — produces a merged query the proof cannot satisfy,
 /// and verification fails rather than returning a steered join.
 #[test]
-fn chained_query_rejects_tampered_hints() {
+fn should_reject_tampered_hints() {
     use dpp::identifier::Identifier;
 
     let (drive, contract) = setup_likes();
