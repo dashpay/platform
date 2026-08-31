@@ -51,3 +51,8 @@ impl Fetch for DocumentHavingEntries {
     type Query = DocumentQuery;
     type Request = GetDocumentsRequest;
 }
+
+impl Fetch for drive_proof_verifier::ChainedDocuments {
+    type Query = dash_platform_queries::documents::chained_document_query::ChainedDocumentQuery;
+    type Request = dapi_grpc::platform::v0::GetChainedDocumentsRequest;
+}
