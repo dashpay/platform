@@ -824,15 +824,15 @@ mod tests {
     }
 
     /// A wallets map — the production `BTreeMap<WalletId, Arc<PlatformWallet>>`
-    /// behind its own `RwLock` — holding one entry per fixture wallet.
+    /// behind its own `ArcSwap` — holding one entry per fixture wallet.
     fn wallets_map<B: TransactionBroadcaster>(
         cores: &[&CoreWallet<B>],
     ) -> Arc<
-        tokio::sync::RwLock<
+        arc_swap::ArcSwap<
             std::collections::BTreeMap<WalletId, Arc<crate::wallet::PlatformWallet>>,
         >,
     > {
-        Arc::new(tokio::sync::RwLock::new(
+        Arc::new(arc_swap::ArcSwap::from_pointee(
             cores
                 .iter()
                 .map(|core| (core.wallet_id(), platform_wallet_sharing(core)))
@@ -1141,26 +1141,27 @@ mod tests {
         core.abandon_transaction(&after).await;
     }
 
-    /// `dashpay/platform#4309` — A CONTENDED WALLETS MAP MUST DEFER A SPEND
-    /// OBSERVATION, NEVER DISCARD IT.
+    /// `dashpay/platform#4309` — A WALLETS-MAP WRITE IN FLIGHT MUST NOT COST
+    /// A SPEND OBSERVATION.
     ///
-    /// `SpendObservationHandler::on_wallet_event` is synchronous, so it probes
-    /// the wallets map with `try_read`. That probe fails while wallet
-    /// registration/removal holds the map's write lock — and the handler used
-    /// to DROP the observation on that failure. For a DAPI-path dispatch the
-    /// dropped `TransactionDetected` can be the only spend-bearing event the
-    /// wallet ever gets: InstantLock promotions carry no record here by
-    /// design, and an evicted or never-confirmed transaction produces no
-    /// inserted `BlockProcessed` record. With no deadline behind the
-    /// pending-spend fence, one moment of lock contention then left the input
-    /// fenced for the manager's lifetime even though the wallet HAD observed
-    /// it spent.
+    /// `SpendObservationHandler::on_wallet_event` is synchronous, so while the
+    /// wallets map was a `tokio::sync::RwLock` it could only probe with
+    /// `try_read` — a probe that fails while wallet registration/removal holds
+    /// the write lock. For a DAPI-path dispatch the observation lost that way
+    /// can be the only spend-bearing event the wallet ever gets: InstantLock
+    /// promotions carry no record here by design, and an evicted or
+    /// never-confirmed transaction produces no inserted `BlockProcessed`
+    /// record. With no deadline behind the pending-spend fence, one moment of
+    /// lock contention left the input fenced for the manager's lifetime even
+    /// though the wallet HAD observed it spent.
     ///
-    /// The handler now queues the observation and applies it on the next
-    /// delivered event — ANY event, including one carrying no spend at all —
-    /// so the evidence survives the contention instead of vanishing with it.
+    /// The map is now an `ArcSwap`, so the read cannot fail and the handler
+    /// applies every observation at delivery — no deferral queue, no window
+    /// to lose it in. The closest reachable analogue of the old contention is
+    /// a lifecycle writer parked mid-`rcu`, which this test pins open across
+    /// the delivery: the fence must clear anyway, before that writer commits.
     #[tokio::test]
-    async fn a_contended_wallets_map_defers_but_never_drops_a_spend_observation() {
+    async fn a_wallets_map_write_in_flight_does_not_cost_a_spend_observation() {
         let (core, signer, outputs) = funded_core_wallet(
             StandardAccountType::BIP44Account,
             Arc::new(AlwaysOkBroadcaster),
@@ -1189,40 +1190,37 @@ mod tests {
         let map = wallets_map(&[&core]);
         let handler = SpendObservationHandler::new(Arc::clone(&map));
 
-        // Wallet registration/removal holds the wallets-map WRITE lock at the
-        // instant the wallet's own spend event is delivered: `try_read` fails.
-        let contended = map.write().await;
+        // Park a lifecycle writer mid-publication: its `rcu` closure has read
+        // the current map but not yet committed the replacement. This is the
+        // window the lock-based map failed its `try_read` in.
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let map_for_writer = Arc::clone(&map);
+        let writer = std::thread::spawn(move || {
+            map_for_writer.rcu(|current| {
+                let _ = entered_tx.send(());
+                let _ = release_rx.recv();
+                Arc::clone(current)
+            });
+        });
+        entered_rx
+            .recv()
+            .expect("the writer must reach its rcu closure");
+
         dash_spv::EventHandler::on_wallet_event(&handler, &spend_event(&core, &sent_tx));
-        drop(contended);
 
-        // The observation was deferred, not applied: the fence still stands.
-        // (Pre-fix this holds too — by discarding rather than deferring — so
-        // the discriminating half is what the NEXT event does.)
-        expect_mid_broadcast(
-            try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await,
-            "a deferred observation must not have been applied under contention",
-        );
-
-        // The next delivered event drains the queue — even a bare watermark
-        // advance that resolves no wallet and carries no spend of its own.
-        // This does NOT retire the fence by chain progress: it applies
-        // evidence that already arrived and was queued.
-        dash_spv::EventHandler::on_wallet_event(
-            &handler,
-            &key_wallet_manager::WalletEvent::SyncHeightAdvanced {
-                wallet_id: core.wallet_id(),
-                height: stamped + 17_001,
-            },
-        );
-
+        // Applied at delivery — before the parked writer commits.
         let after = try_finalize_tx(&core, AccountTypePreference::BIP44, &outputs, &signer).await;
         let after = after.unwrap_or_else(|error| {
             panic!(
-                "an observation deferred by wallets-map contention must be \
-                 applied on the next event, not dropped — the fence never \
-                 cleared: {error:?}"
+                "an observation delivered while a wallets-map write was in \
+                 flight must still release the fence: {error:?}"
             )
         });
+
+        release_tx.send(()).expect("writer still parked");
+        writer.join().expect("writer thread completes");
+
         core.abandon_transaction(&after).await;
     }
 

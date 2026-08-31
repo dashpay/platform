@@ -58,11 +58,10 @@ fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
 /// publish a NEW generation into both maps — the id is free in the inner
 /// manager from the moment the removal above completes, and nothing gates
 /// registration. Reproducing it deterministically from outside is not possible:
-/// the window is bounded by two *different* locks, and the only lock a test
-/// could hold to park the remover inside it (`self.wallets`) is the same lock
-/// the registration must acquire to publish, so parking the remover would also
-/// block the registration — and `tokio`'s `RwLock` hands the writer queue out
-/// in FIFO order, which puts the remover first. A rendezvous is therefore the
+/// the window is bounded by two *different* synchronization domains — the
+/// inner manager's lock and the public map's `ArcSwap` publication — and a
+/// test holds no lock that could park the remover between them without also
+/// stalling the registration's own publish. A rendezvous is therefore the
 /// only way to pin this ordering without a sleep or a completion-order race.
 ///
 /// Compiled under `cfg(test)` only: neither this static nor its call site
@@ -579,11 +578,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_wallet = Arc::new(platform_wallet);
 
-        // Register the PlatformWallet handle.
-        {
-            let mut wallets = self.wallets.write().await;
+        // Register the PlatformWallet handle. `rcu` publishes a new map
+        // snapshot; the closure can rerun under a concurrent-writer
+        // retry, so it must stay pure map manipulation.
+        self.wallets.rcu(|wallets| {
+            let mut wallets = std::collections::BTreeMap::clone(wallets);
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
-        }
+            wallets
+        });
 
         // Re-seed the lock-free balance atomic from the wallet's inner
         // balance now that the wallet is in `self.wallets`.
@@ -695,7 +697,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// So once this method has removed generation G1 from the inner
     /// `wallet_manager`, the id is free and a concurrent registration can publish
     /// a *different* generation G2 into both maps before this method reaches its
-    /// own `self.wallets` removal — the two removals are separately locked, with
+    /// own `self.wallets` removal — the two removals are separately synchronized, with
     /// no happens-before edge between them and the registration. Removing by key
     /// there would take G2 out of the public map (leaving it registered in the
     /// inner manager, invisible and unremovable) and hand G2 to `tear_down`,
@@ -736,7 +738,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // matched against.
         let (removed, _teardown) = loop {
             let candidate = {
-                let wallets = self.wallets.read().await;
+                let wallets = self.wallets.load();
                 match wallets.get(wallet_id) {
                     None => {
                         return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))
@@ -746,7 +748,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             };
             let guard = candidate.generation().teardown_guard().await;
             let still_current = {
-                let wallets = self.wallets.read().await;
+                let wallets = self.wallets.load();
                 wallets
                     .get(wallet_id)
                     .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), candidate.generation()))
@@ -877,13 +879,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // this method); removing by key would evict that live wallet and hand it
         // to `tear_down` under the wrong gate.
         {
-            let mut wallets = self.wallets.write().await;
-            let entry_is_ours = wallets
-                .get(wallet_id)
-                .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
-            if entry_is_ours {
-                wallets.remove(wallet_id);
-            } else {
+            // `rcu` keeps the generation check and the removal atomic: the
+            // closure sees the map the CAS will replace, and a concurrent
+            // publication retries the whole closure against the new map.
+            // The `Cell` therefore ends up holding the verdict of the
+            // attempt that actually committed.
+            let entry_is_ours = std::cell::Cell::new(false);
+            self.wallets.rcu(|wallets| {
+                let ours = wallets
+                    .get(wallet_id)
+                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
+                entry_is_ours.set(ours);
+                if ours {
+                    let mut next = std::collections::BTreeMap::clone(wallets);
+                    next.remove(wallet_id);
+                    Arc::new(next)
+                } else {
+                    // Not ours: publish the map unchanged.
+                    Arc::clone(wallets)
+                }
+            });
+            if !entry_is_ours.get() {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     "remove_wallet: a new generation was registered under this id while the \

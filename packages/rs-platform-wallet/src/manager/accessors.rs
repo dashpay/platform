@@ -374,20 +374,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Get a clone of a wallet by its ID.
     pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
-        let wallets = self.wallets.read().await;
+        let wallets = self.wallets.load();
         wallets.get(wallet_id).cloned()
     }
 
-    /// Blocking twin of [`Self::get_wallet`] for synchronous FFI entry
-    /// points that need to clone the `Arc<PlatformWallet>` out before doing
-    /// network work outside the handle-storage guard.
+    /// Synchronous twin of [`Self::get_wallet`] for FFI entry points that
+    /// need to clone the `Arc<PlatformWallet>` out before doing network work
+    /// outside the handle-storage guard.
+    ///
+    /// Named `_blocking` for the callers it serves, not for what it does: the
+    /// wallets map is an `ArcSwap`, so this load is wait-free and cannot block
+    /// or panic inside a runtime the way the previous `blocking_read` could.
     pub fn get_wallet_blocking(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
-        self.wallets.blocking_read().get(wallet_id).cloned()
+        self.wallets.load().get(wallet_id).cloned()
     }
 
     /// List all wallet IDs.
     pub async fn wallet_ids(&self) -> Vec<WalletId> {
-        let wallets = self.wallets.read().await;
+        let wallets = self.wallets.load();
         wallets.keys().copied().collect()
     }
 
@@ -452,10 +456,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     // -----------------------------------------------------------------
 
     /// Atomic snapshot of every wallet id currently registered on the
-    /// manager. Cheap (`Arc<RwLock>` read + `BTreeMap` key clone).
+    /// manager. Cheap (wait-free `ArcSwap` load + `BTreeMap` key clone).
     pub fn list_wallet_ids_blocking(&self) -> Vec<WalletId> {
-        let wallets = self.wallets.blocking_read();
-        wallets.keys().copied().collect()
+        self.wallets.load().keys().copied().collect()
     }
 
     /// Network a registered wallet belongs to, or `None` when the id is
@@ -476,9 +479,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// registered wallet participates in each pass since the sync
     /// manager doesn't keep a separate watch list.
     pub fn platform_address_sync_config_blocking(&self) -> PlatformAddressSyncConfigSnapshot {
-        let wallets = self.wallets.blocking_read();
-        let count = wallets.len();
-        drop(wallets);
+        let count = self.wallets.load().len();
         let interval = self.platform_address_sync_manager.interval();
         let last = self
             .platform_address_sync_manager
@@ -641,9 +642,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Option<PlatformAddressProviderStateSnapshot> {
-        let wallets = self.wallets.blocking_read();
-        let wallet = wallets.get(wallet_id)?.clone();
-        drop(wallets);
+        let wallet = self.wallets.load().get(wallet_id)?.clone();
         let provider_lock = wallet.platform().provider_for_diagnostics();
         let guard = provider_lock.blocking_read();
         let Some(provider) = guard.as_ref() else {
@@ -1008,10 +1007,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // byte strings for the same G1 point — no collision).
         let mut operator_index: std::collections::HashMap<[u8; 48], u32> =
             std::collections::HashMap::new();
-        // Clone the `Arc<PlatformWallet>` out and drop the `wallets` read
-        // guard before deriving (the derive calls take the wallet's own
-        // state lock — don't hold `wallets` across them).
-        let platform_wallet = self.wallets.blocking_read().get(wallet_id).cloned();
+        // Clone the `Arc<PlatformWallet>` out of the map snapshot before
+        // deriving (the derive calls take the wallet's own state lock).
+        let platform_wallet = self.wallets.load().get(wallet_id).cloned();
         if let Some(platform_wallet) = platform_wallet {
             use crate::wallet::provider_key_at_index::ProviderKeyKind;
             for index in 0..operator_scan_max {
