@@ -400,6 +400,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_chained_documents,
+        dapi_grpc::platform::v0::GetChainedDocumentsRequest,
+        dapi_grpc::platform::v0::GetChainedDocumentsResponse
+    );
+
+    drive_method!(
         get_document_history,
         dapi_grpc::platform::v0::GetDocumentHistoryRequest,
         dapi_grpc::platform::v0::GetDocumentHistoryResponse
