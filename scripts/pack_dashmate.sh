@@ -157,7 +157,7 @@ rewrite_deb_versions() {
     apt-ftparchive -c "$FTPARCHIVE_CONF" release . > Release
 
     # The signatures oclif made cover the metadata from before the rewrite.
-    if [ -n "$DASHMATE_DEB_KEY" ]
+    if [ -n "${DASHMATE_DEB_KEY:-}" ]
     then
       gpg --digest-algo SHA512 --clearsign -u "$DASHMATE_DEB_KEY" -o InRelease Release
       gpg --digest-algo SHA512 -abs -u "$DASHMATE_DEB_KEY" -o Release.gpg Release

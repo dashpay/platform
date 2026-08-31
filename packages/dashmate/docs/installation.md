@@ -24,17 +24,17 @@ Download the newest dashmate installation package for your architecture from the
 The file name contains the version, so it changes with every release; this downloads the one matching the architecture you are on:
 
 ```bash
-curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
+DASHMATE_DEB="$(curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
   | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb" \
-  | head -n 1 \
-  | xargs curl -fLO
+  | head -n 1)"
+curl -fLO "$DASHMATE_DEB"
 ```
 
-Install dashmate using apt:
+Install the package that was just downloaded:
 
 ```bash
 sudo apt update
-sudo apt install ./dashmate_*.deb
+sudo apt install "./$(basename "$DASHMATE_DEB")"
 ```
 
 > **Note:** At the end of the installation process, apt may display an error due to installing a downloaded package.
