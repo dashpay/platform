@@ -30,10 +30,11 @@ export class DocumentsFacade {
    *
    * "Posts I liked" in one verified round trip: inner `like` through
    * its byLiker-style index, join `postId`, outer `post`. Both halves
-   * are proof-verified against one quorum-signed state root, and the
-   * outer half is re-derived from the proven inner values — the
-   * responding node cannot steer the join. Paginate on the inner query
-   * with a range clause on the join property.
+   * ride ONE merged proof — a single quorum-signed state root by
+   * construction — and the outer query is re-derived and checked
+   * against the proven inner values, so the responding node cannot
+   * steer the join. Paginate on the inner query with a range clause on
+   * the join property.
    */
   async chained(query: wasm.ChainedDocumentsQuery): Promise<wasm.ChainedDocumentsResult> {
     const w = await this.sdk.getWasmSdkConnected();

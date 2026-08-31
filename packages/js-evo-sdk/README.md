@@ -191,7 +191,7 @@ try {
 
 ## Chained queries (provable semi-join)
 
-A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents with two proofs bound to one quorum-signed state root, and the SDK re-derives the outer query from the *proven* inner values — the node cannot substitute, omit, or inject joined documents (a missing referenced document fails verification outright, since `permanentDocument` references cannot dangle).
+A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents (a missing referenced document fails verification outright, since `permanentDocument` references cannot dangle).
 
 ```ts
 // The posts I liked, newest page first by postId.

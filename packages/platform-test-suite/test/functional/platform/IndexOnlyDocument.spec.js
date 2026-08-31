@@ -302,9 +302,10 @@ describe('Platform', () => {
       // The provable semi-join: SELECT * FROM post WHERE $id IN
       // (SELECT postId FROM like WHERE $ownerId = me). Served by the
       // dedicated getChainedDocuments endpoint through the WASM SDK,
-      // which verifies BOTH grovedb proofs against one quorum-signed
-      // root and re-derives the outer query from the proven inner
-      // values — the node cannot steer the join.
+      // which verifies ONE merged grovedb proof against the
+      // quorum-signed root, re-deriving the outer query and checking
+      // it against the proven inner values — the node cannot steer
+      // the join.
       const { sdk: evoSdk } = await createPlatformProofVerifier
         .getEvoSdkForNetwork(process.env.NETWORK);
 

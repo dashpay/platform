@@ -3,11 +3,11 @@
 //! `SELECT * FROM <outer> WHERE $id IN (SELECT <joinProperty> FROM
 //! <inner> WHERE …)` served by the dedicated `getChainedDocuments` RPC:
 //! the inner indexOnly page and the outer by-ids fetch derived from its
-//! proven values come back as TWO grovedb proofs bound to ONE
-//! quorum-signed state root. The SDK verifies the composition — the
-//! outer query is re-derived from the PROVEN inner results, never taken
-//! from the node — so the join cannot be steered by the responding
-//! server. The request deliberately carries no outer clauses; filter
+//! proven values come back as ONE merged grovedb proof — a single
+//! quorum-signed state root by construction. The SDK verifies the
+//! composition — the outer query is re-derived from the response's
+//! untrusted join-value hint and checked against the PROVEN inner
+//! results — so the join cannot be steered by the responding server. The request deliberately carries no outer clauses; filter
 //! the returned outer documents locally if needed.
 //!
 //! Pagination lives on the inner query alone: order by the join
@@ -172,11 +172,11 @@ impl WasmSdk {
     /// Run a chained document query (provable semi-join) and return
     /// both verified halves.
     ///
-    /// The composition is always proof-verified: the two grovedb proofs
-    /// must commit to one quorum-signed root, and the outer half must
-    /// match the query the SDK derives from the proven inner values —
-    /// exactly (a missing referenced document is a verification error,
-    /// not an absence).
+    /// The composition is always proof-verified: one merged grovedb
+    /// proof commits to one quorum-signed root, and the proven outer
+    /// documents must match the proven inner join values exactly (a
+    /// missing referenced document is a verification error, not an
+    /// absence).
     #[wasm_bindgen(
         js_name = "getChainedDocuments",
         unchecked_return_type = "ChainedDocumentsResult"
