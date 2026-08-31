@@ -960,8 +960,7 @@ mod tests {
         .expect("DashPay receiving path");
 
         // Old route: resident-seed wallet from the same mnemonic.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -1012,8 +1011,7 @@ mod tests {
 
         // Old route: resident-seed wallet from the same mnemonic → derive the
         // scalar at `path` → ECDH through the single crypto source.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -1065,8 +1063,7 @@ mod tests {
 
         // Old route: resident-seed wallet from the same mnemonic → derive the
         // scalar at `path` → mask through the single accountReference source.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -1153,8 +1150,7 @@ mod tests {
         );
 
         // Parity: encToUserId equals a resident wallet's derive+encrypt.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
