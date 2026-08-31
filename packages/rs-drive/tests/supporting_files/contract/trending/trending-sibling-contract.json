@@ -1,0 +1,390 @@
+{
+  "$formatVersion": "0",
+  "id": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "like": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byAuthorPost",
+          "properties": [
+            {
+              "postAuthor": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": {
+            "at": "postAuthor"
+          }
+        },
+        {
+          "name": "byAuthorTimePost",
+          "properties": [
+            {
+              "postAuthor": "asc"
+            },
+            {
+              "day": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        }
+      ],
+      "properties": {
+        "postAuthor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 61,
+          "position": 0
+        },
+        "day": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "position": 1
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 2
+        }
+      },
+      "required": [
+        "postAuthor",
+        "day",
+        "postId"
+      ],
+      "additionalProperties": false
+    },
+    "slike": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byAuthorPost",
+          "properties": [
+            {
+              "postAuthor": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": {
+            "at": "postAuthor"
+          }
+        },
+        {
+          "name": "byAuthorTimePost",
+          "properties": [
+            {
+              "postAuthor": "asc"
+            },
+            {
+              "day": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "postAuthor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 61,
+          "position": 0
+        },
+        "day": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "position": 1
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 2
+        }
+      },
+      "required": [
+        "postAuthor",
+        "day",
+        "postId"
+      ],
+      "additionalProperties": false
+    },
+    "deep": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byTagRegionPost",
+          "properties": [
+            {
+              "tag": "asc"
+            },
+            {
+              "region": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": {
+            "at": "tag"
+          }
+        },
+        {
+          "name": "byTagRegionDay",
+          "properties": [
+            {
+              "tag": "asc"
+            },
+            {
+              "region": "asc"
+            },
+            {
+              "day": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 61,
+          "position": 0
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 1
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 2
+        },
+        "day": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "position": 3
+        }
+      },
+      "required": [
+        "tag",
+        "region",
+        "postId",
+        "day"
+      ],
+      "additionalProperties": false
+    },
+    "ext": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byAuthorPost",
+          "properties": [
+            {
+              "postAuthor": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": {
+            "at": "postAuthor"
+          }
+        },
+        {
+          "name": "byAuthorPostDay",
+          "properties": [
+            {
+              "postAuthor": "asc"
+            },
+            {
+              "postId": "asc"
+            },
+            {
+              "day": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "postAuthor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 61,
+          "position": 0
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 1
+        },
+        "day": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "position": 2
+        }
+      },
+      "required": [
+        "postAuthor",
+        "postId",
+        "day"
+      ],
+      "additionalProperties": false
+    },
+    "post": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byHashtag",
+          "properties": [
+            {
+              "hashtag": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 61,
+          "position": 0
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "plike": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byHashtagPost",
+          "properties": [
+            {
+              "hashtag": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": {
+            "at": "hashtag"
+          },
+          "preallocated": true,
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byHashtagDayPost",
+          "properties": [
+            {
+              "hashtag": "asc"
+            },
+            {
+              "day": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byPostDay",
+          "properties": [
+            {
+              "postId": "asc"
+            },
+            {
+              "day": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 61,
+          "position": 0
+        },
+        "day": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "position": 1
+        },
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "propertyAgreement": {
+              "hashtag": "hashtag"
+            }
+          },
+          "position": 2
+        }
+      },
+      "required": [
+        "postId",
+        "day"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
