@@ -5,6 +5,7 @@ use crate::abci::app::CheckTxAbciApplication;
 use crate::abci::app::ConsensusAbciApplication;
 use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::snapshot::{SnapshotManager, SERVING_PIN_SWEEP_INTERVAL};
 use crate::query::QueryService;
 use crate::rpc::core::DefaultCoreRPC;
 use std::sync::Arc;
@@ -31,8 +32,30 @@ pub fn start(
     )
     .expect("failed to open check tx core rpc");
 
-    let check_tx_service =
-        CheckTxAbciApplication::new(Arc::clone(&platform), Arc::new(check_tx_core_rpc));
+    // The snapshot manager pins the checkpoints being served to state-syncing peers.
+    // It lives with the gRPC application below (which answers ListSnapshots and
+    // LoadSnapshotChunk), but that application never sees blocks, so nothing on its
+    // request path would ever release the pin of an ABANDONED transfer — the peer
+    // simply stops asking. A shared handle and a timer task make expiry autonomous.
+    let snapshot_manager = Arc::new(SnapshotManager::new());
+
+    let serving_pin_sweep_cancel = cancel.clone();
+    let serving_pin_sweep_manager = Arc::clone(&snapshot_manager);
+    runtime.spawn(async move {
+        let mut interval = tokio::time::interval(SERVING_PIN_SWEEP_INTERVAL);
+        loop {
+            tokio::select! {
+                _ = serving_pin_sweep_cancel.cancelled() => break,
+                _ = interval.tick() => serving_pin_sweep_manager.release_expired_pins(),
+            }
+        }
+    });
+
+    let check_tx_service = CheckTxAbciApplication::new(
+        Arc::clone(&platform),
+        Arc::new(check_tx_core_rpc),
+        snapshot_manager,
+    );
 
     let grpc_server = dapi_grpc::tonic::transport::Server::builder()
         .add_service(

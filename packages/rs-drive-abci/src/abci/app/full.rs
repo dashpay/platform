@@ -1,6 +1,5 @@
 use crate::abci::app::{
-    BlockExecutionApplication, PlatformApplication, SnapshotManagerApplication,
-    StateSyncApplication, TransactionalApplication,
+    BlockExecutionApplication, PlatformApplication, StateSyncApplication, TransactionalApplication,
 };
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
@@ -49,12 +48,6 @@ impl<'a, C> FullAbciApplication<'a, C> {
 impl<C> PlatformApplication<C> for FullAbciApplication<'_, C> {
     fn platform(&self) -> &Platform<C> {
         self.platform
-    }
-}
-
-impl<C> SnapshotManagerApplication for FullAbciApplication<'_, C> {
-    fn snapshot_manager(&self) -> &SnapshotManager {
-        &self.snapshot_manager
     }
 }
 
@@ -279,14 +272,15 @@ where
         &self,
         request: proto::RequestListSnapshots,
     ) -> Result<proto::ResponseListSnapshots, proto::ResponseException> {
-        handler::list_snapshots(self, request).map_err(error_into_exception)
+        handler::list_snapshots(self.platform, request).map_err(error_into_exception)
     }
 
     fn load_snapshot_chunk(
         &self,
         request: proto::RequestLoadSnapshotChunk,
     ) -> Result<proto::ResponseLoadSnapshotChunk, proto::ResponseException> {
-        handler::load_snapshot_chunk(self, request).map_err(error_into_exception)
+        handler::load_snapshot_chunk(self.platform, &self.snapshot_manager, request)
+            .map_err(error_into_exception)
     }
 
     fn offer_snapshot(

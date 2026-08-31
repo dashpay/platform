@@ -1,8 +1,7 @@
-use crate::abci::app::PlatformApplication;
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::encode_snapshot_metadata;
-use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
 
 /// Lists the state sync snapshots this node can serve.
@@ -11,21 +10,20 @@ use tenderdash_abci::proto::abci as proto;
 /// Only checkpoints that contain the reduced platform state are offered: a checkpoint
 /// taken before the protocol version that introduced it (v15) cannot be restored, since
 /// a state-synced node would have no way to reconstruct its platform state.
-pub fn list_snapshots<A, C>(
-    app: &A,
+///
+/// Takes the platform directly rather than an application trait so the gRPC serving
+/// application can run it on the blocking pool from an owned `Arc`.
+pub fn list_snapshots<C>(
+    platform: &Platform<C>,
     _request: proto::RequestListSnapshots,
-) -> Result<proto::ResponseListSnapshots, Error>
-where
-    A: PlatformApplication<C>,
-    C: CoreRPCLike,
-{
+) -> Result<proto::ResponseListSnapshots, Error> {
     tracing::trace!("[state_sync] api list_snapshots called");
 
-    if !app.platform().config.abci.state_sync.snapshots_enabled {
+    if !platform.config.abci.state_sync.snapshots_enabled {
         return Ok(Default::default());
     }
 
-    let checkpoints = app.platform().drive.checkpoints.load();
+    let checkpoints = platform.drive.checkpoints.load();
 
     let mut snapshots = Vec::new();
     for (height, checkpoint_info) in checkpoints.iter() {
@@ -96,7 +94,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abci::app::FullAbciApplication;
     use crate::config::PlatformConfig;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -113,9 +110,9 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
-        let app = FullAbciApplication::new(&platform);
 
-        let response = list_snapshots(&app, Default::default()).expect("should list snapshots");
+        let response =
+            list_snapshots(&platform, Default::default()).expect("should list snapshots");
         assert!(response.snapshots.is_empty());
     }
 
@@ -126,7 +123,6 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
         let platform_version = PlatformVersion::latest();
-        let app = FullAbciApplication::new(&platform);
 
         // A checkpoint taken before the reduced platform state exists (pre-v15
         // activation) is unrestorable and must not be offered.
@@ -135,7 +131,8 @@ mod tests {
             .create_grovedb_checkpoint(platform_version)
             .expect("should create checkpoint");
 
-        let response = list_snapshots(&app, Default::default()).expect("should list snapshots");
+        let response =
+            list_snapshots(&platform, Default::default()).expect("should list snapshots");
         assert!(
             response.snapshots.is_empty(),
             "checkpoints without the reduced platform state must be filtered out"
@@ -161,7 +158,8 @@ mod tests {
             .create_grovedb_checkpoint(platform_version)
             .expect("should create checkpoint");
 
-        let response = list_snapshots(&app, Default::default()).expect("should list snapshots");
+        let response =
+            list_snapshots(&platform, Default::default()).expect("should list snapshots");
         assert_eq!(response.snapshots.len(), 1);
         let snapshot = &response.snapshots[0];
         assert_eq!(snapshot.height, 20);

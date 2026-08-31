@@ -225,6 +225,14 @@ const SERVING_PIN_INACTIVITY_TTL: Duration = Duration::from_secs(600);
 /// can outlive its checkpoint.
 const SERVING_PIN_MAX_LIFETIME: Duration = Duration::from_secs(6 * 3600);
 
+/// How often the autonomous sweep task releases expired serving pins.
+///
+/// Expiry must not depend on peers making further requests (an abandoned transfer makes
+/// none) nor on this process seeing blocks (the gRPC serving application does not).
+/// The interval only bounds how long an expired pin lingers past its deadline, so it is
+/// uncritical; once a minute is nothing next to the TTLs it enforces.
+pub const SERVING_PIN_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
+
 /// How many pins are allowed on top of the number of snapshots the node retains.
 ///
 /// The interesting pins are the ones for checkpoints pruning has ALREADY dropped from the
@@ -274,8 +282,10 @@ impl ServingPin {
 /// [`SERVING_PIN_MAX_LIFETIME`] since it was taken (not refreshable), and
 /// [`max_serving_pins`] in total. Expiry also must not depend on peers making further
 /// requests, or an abandoned transfer would hold its directory forever:
-/// [`SnapshotManager::release_expired_pins`] runs once per block and every read of a pin
-/// re-checks both deadlines.
+/// [`SnapshotManager::release_expired_pins`] runs autonomously (every
+/// [`SERVING_PIN_SWEEP_INTERVAL`] from the sweep task `server::start` spawns next to the
+/// gRPC serving application, and once per block in the all-in-one test application) and
+/// every read of a pin re-checks both deadlines.
 #[derive(Default)]
 pub struct SnapshotManager {
     /// Height -> the pin held for a transfer of that snapshot
