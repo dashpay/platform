@@ -3,7 +3,7 @@
 use crate::address_ban_info::AddressBanInfo;
 use crate::Uri;
 use chrono::Utc;
-use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
+use rand::{rngs::SmallRng, seq::IteratorRandom, Rng, SeedableRng};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -14,12 +14,24 @@ use std::time::Duration;
 
 const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
 
+/// Longest ban window either ban path can produce. Bounds `e^ban_count`,
+/// which otherwise overflows `DateTime + Duration` arithmetic (a panic that
+/// poisons the shared lock) once `ban_count` reaches the mid-20s.
+const MAX_BAN_PERIOD: Duration = Duration::from_secs(24 * 60 * 60);
+
 /// Default number of addresses that receive traffic at a time.
 ///
 /// Kept small so requests reuse warm connections instead of sampling the whole
 /// list (hundreds of nodes on mainnet), where nearly every request would land
 /// on a cold host and pay a fresh TCP + TLS handshake.
 const DEFAULT_ACTIVE_SET_SIZE: usize = 5;
+
+/// How long an address may hold an active-set slot before it is retired and a
+/// random live standby is promoted in its place. Bounding slot tenure keeps
+/// connections warm for minutes at a time while preventing any small set of
+/// nodes from observing the client's entire query stream for the whole
+/// process lifetime.
+const SLOT_LIFETIME: Duration = Duration::from_secs(5 * 60);
 
 /// DAPI address.
 #[derive(Debug, Clone, Eq)]
@@ -98,7 +110,8 @@ impl AddressStatus {
     /// Ban the [Address] and record the `reason` for the ban.
     ///
     /// Applies exponential backoff: the ban window is `base × e^ban_count`
-    /// (where `ban_count` is the value *before* this call), and `banned_until`
+    /// (where `ban_count` is the value *before* this call), capped at 24 hours
+    /// (or `base` itself if larger), and `banned_until`
     /// is always re-based to `now + window` unconditionally, regardless of any
     /// existing active ban.  Concretely, a health failure on a node that already
     /// holds a longer rate-limit window (set via [`AddressStatus::ban_for`]) will
@@ -111,7 +124,14 @@ impl AddressStatus {
     /// The counter resets to 0 on [`AddressStatus::unban`].
     pub fn ban_with_reason(&mut self, base_ban_period: &Duration, reason: Option<String>) {
         let coefficient = (self.ban_count as f64).exp();
-        let ban_period = Duration::from_secs_f64(base_ban_period.as_secs_f64() * coefficient);
+        let max_ban_period = MAX_BAN_PERIOD.max(*base_ban_period);
+        let ban_secs = base_ban_period.as_secs_f64() * coefficient;
+        // NaN/inf compare false, so any overflowing window falls to the cap.
+        let ban_period = if ban_secs < max_ban_period.as_secs_f64() {
+            Duration::from_secs_f64(ban_secs)
+        } else {
+            max_ban_period
+        };
 
         self.banned_until = Some(chrono::Utc::now() + ban_period);
         self.ban_count += 1;
@@ -121,7 +141,8 @@ impl AddressStatus {
     /// Ban the address for an exact `period` (server-advertised), bypassing the
     /// exponential ladder used by [`AddressStatus::ban_with_reason`].
     ///
-    /// The ban window is flat (not exponential).  `banned_until` is advanced to
+    /// The ban window is flat (not exponential) and capped at 24 hours.
+    /// `banned_until` is advanced to
     /// `now + period` only when that timestamp is **later** than the current
     /// `banned_until`, so a short-reset call never shortens a longer active ban
     /// (health ban or a prior longer rate-limit ban).  `ban_reason` is updated
@@ -138,6 +159,9 @@ impl AddressStatus {
     /// sequences.  [`AddressStatus::ban_with_reason`] re-bases `banned_until`
     /// unconditionally — see its docs for the intentional cross-method semantics.
     pub fn ban_for(&mut self, period: Duration, reason: Option<String>) {
+        // A server-advertised window is clamped like the ladder: a hostile or
+        // buggy period must not overflow `DateTime + Duration`.
+        let period = period.min(MAX_BAN_PERIOD);
         let advertised_until = chrono::Utc::now() + period;
         if self
             .banned_until
@@ -181,26 +205,47 @@ pub enum AddressListError {
     InvalidAddressUri(String),
 }
 
-/// Sticky rotation state: the addresses currently receiving traffic, and the
-/// most recently served one that round-robin selection advances from.
-#[derive(Debug, Default)]
+/// One member of the sticky active set: the address plus the moment its slot
+/// expires and a random standby replaces it.
+#[derive(Debug)]
+struct ActiveMember {
+    address: Address,
+    slot_expires_at: chrono::DateTime<Utc>,
+}
+
+/// Sticky rotation state: the addresses currently receiving traffic, the most
+/// recently served one that round-robin selection advances from, and the
+/// configured active-set size. Shared (behind one lock) by every clone of an
+/// [AddressList] so all clones drive the same rotation.
+#[derive(Debug)]
 struct Rotation {
-    active: Vec<Address>,
+    active: Vec<ActiveMember>,
     last_served: Option<Address>,
+    active_set_size: usize,
+}
+
+impl Default for Rotation {
+    fn default() -> Self {
+        Rotation {
+            active: Vec::new(),
+            last_served: None,
+            active_set_size: DEFAULT_ACTIVE_SET_SIZE,
+        }
+    }
 }
 
 /// A structure to manage DAPI addresses to select from
 /// for [DapiRequest](crate::DapiRequest) execution.
 ///
 /// Address selection is sticky: requests rotate over a small active set of
-/// addresses and the rest of the list serves as failover standby (see
+/// addresses (5 by default, see [AddressList::with_active_set_size]) and the
+/// rest of the list serves as failover standby (see
 /// [AddressList::get_live_address]).
 #[derive(Debug, Clone)]
 pub struct AddressList {
     addresses: Arc<RwLock<HashMap<Address, AddressStatus>>>,
     rotation: Arc<RwLock<Rotation>>,
     base_ban_period: Duration,
-    active_set_size: usize,
 }
 
 impl Default for AddressList {
@@ -227,16 +272,22 @@ impl AddressList {
             addresses: Arc::new(RwLock::new(HashMap::new())),
             rotation: Arc::new(RwLock::new(Rotation::default())),
             base_ban_period,
-            active_set_size: DEFAULT_ACTIVE_SET_SIZE,
         }
     }
 
-    /// Set how many addresses receive traffic at a time (minimum 1).
+    /// Set how many addresses receive traffic at a time.
     ///
-    /// Smaller values maximize connection reuse, larger values spread load over
-    /// more nodes.
-    pub fn with_active_set_size(mut self, size: usize) -> Self {
-        self.active_set_size = size.max(1);
+    /// Defaults to 5. `0` is clamped to 1. Smaller values maximize connection
+    /// reuse, larger values spread load over more nodes. The effective size is
+    /// additionally capped by the number of live addresses, so a very large
+    /// value (e.g. `usize::MAX`) disables stickiness and round-robins over the
+    /// whole list.
+    ///
+    /// The size lives in the rotation state shared by every clone of this
+    /// list, so it applies to all clones and takes effect on the next
+    /// selection (shrinking drops the excess members).
+    pub fn with_active_set_size(self, size: usize) -> Self {
+        self.rotation.write().unwrap().active_set_size = size.max(1);
         self
     }
 
@@ -336,66 +387,110 @@ impl AddressList {
 
     /// Select a not-banned address to send the next request to.
     ///
+    /// Not a pure getter: every call advances the shared rotation cursor and
+    /// may promote or retire active-set members, steering traffic for all
+    /// clones of this list.
+    ///
     /// Selection is sticky: requests rotate round-robin over a small active
     /// set of addresses (see [AddressList::with_active_set_size]) instead of
     /// sampling the whole list, so connections to those hosts stay warm. An
-    /// active address that got banned or removed is dropped from the set here
-    /// and a random live standby address is promoted in its place, so the ban
-    /// ladder remains the only health signal.
+    /// active address that got banned, removed or evicted on failover (see
+    /// [AddressList::evict_from_rotation]) is dropped from the set here and a
+    /// random live standby address is promoted in its place. Each slot also
+    /// expires after a jittered lifetime (5–7.5 minutes), so no node holds a
+    /// slot — and a view of this client's query stream — indefinitely.
     ///
     /// An address is considered live when it has never been banned or when its
     /// ban period has already expired.
     pub fn get_live_address(&self) -> Option<Address> {
         // TODO(low): module-wide `.read()/.write().unwrap()` panics on a
-        // poisoned lock; adopt poison-tolerant locking consistently (SEC-003).
+        // poisoned lock; adopt poison-tolerant locking consistently.
         let guard = self.addresses.read().unwrap();
 
         let now = chrono::Utc::now();
+
+        // Seeded outside the critical section: `from_entropy` panics if the OS
+        // entropy source fails, and a panic while holding the write lock would
+        // poison it and permanently disable address selection.
+        let mut rng = SmallRng::from_entropy();
 
         // Lock ordering: `addresses` before `rotation`; this is the only place
         // both locks are held at once.
         let mut rotation = self.rotation.write().unwrap();
 
-        // Drop active addresses that are banned or no longer in the list.
-        rotation.active.retain(|address| {
-            guard
-                .get(address)
-                .map(|status| status.is_live(now))
-                .unwrap_or(false)
+        // Drop active addresses that are banned, no longer in the list, or
+        // whose slot lifetime expired.
+        rotation.active.retain(|member| {
+            now < member.slot_expires_at
+                && guard
+                    .get(&member.address)
+                    .map(|status| status.is_live(now))
+                    .unwrap_or(false)
         });
 
-        // Refill vacancies with random live standby addresses.
-        let vacancies = self.active_set_size.saturating_sub(rotation.active.len());
+        // Honor a shrunken size (the rotation state is shared, so it may have
+        // been reconfigured through any clone).
+        let size = rotation.active_set_size;
+        rotation.active.truncate(size);
+
+        // Refill vacancies with random live standby addresses. Bounded by the
+        // list length so an oversized configured value cannot over-allocate in
+        // `choose_multiple`.
+        let vacancies = size.saturating_sub(rotation.active.len()).min(guard.len());
         if vacancies > 0 {
             let promoted = guard
                 .iter()
                 .filter(|&(address, status)| {
-                    status.is_live(now) && !rotation.active.contains(address)
+                    status.is_live(now)
+                        && !rotation
+                            .active
+                            .iter()
+                            .any(|member| member.address == *address)
                 })
-                .choose_multiple(&mut SmallRng::from_entropy(), vacancies);
+                .choose_multiple(&mut rng, vacancies);
 
             rotation
                 .active
-                .extend(promoted.into_iter().map(|(address, _)| address.clone()));
+                .extend(promoted.into_iter().map(|(address, _)| ActiveMember {
+                    address: address.clone(),
+                    // Jitter staggers expiries so slots retire one at a time
+                    // instead of the whole set at once.
+                    slot_expires_at: now + SLOT_LIFETIME.mul_f64(rng.gen_range(1.0..1.5)),
+                }));
         }
 
         if rotation.active.is_empty() {
             return None;
         }
 
-        // Advance relative to the last-served address rather than a bare index:
-        // eviction shifts indices, and an index-based cursor could serve the
-        // same address twice in a row after churn. Start from the head when the
-        // last-served address is gone (or nothing has been served yet).
-        let last_position = rotation
-            .last_served
-            .as_ref()
-            .and_then(|last| rotation.active.iter().position(|address| address == last));
+        // Advance from the last-served address: eviction re-orders the active
+        // set, so a positional cursor would not survive churn. Start from the
+        // head when the last-served address is gone (or nothing has been
+        // served yet).
+        let last_position = rotation.last_served.as_ref().and_then(|last| {
+            rotation
+                .active
+                .iter()
+                .position(|member| member.address == *last)
+        });
 
         let index = last_position.map_or(0, |position| (position + 1) % rotation.active.len());
-        let address = rotation.active[index].clone();
+        let address = rotation.active[index].address.clone();
         rotation.last_served = Some(address.clone());
         Some(address)
+    }
+
+    /// Drop `address` from the sticky active set, leaving its ban state
+    /// untouched; the next selection promotes a random live standby in its
+    /// place.
+    ///
+    /// This is the failover path for callers that disable banning
+    /// ([RequestSettings::ban_failed_address](crate::RequestSettings)): a
+    /// failing node must stop receiving its slot's traffic even when it is
+    /// never banned.
+    pub fn evict_from_rotation(&self, address: &Address) {
+        let mut rotation = self.rotation.write().unwrap();
+        rotation.active.retain(|member| member.address != *address);
     }
 
     /// Get all not banned addresses.
@@ -823,9 +918,6 @@ mod tests {
 
     #[test]
     fn test_get_live_address_no_immediate_repeat_after_other_member_evicted() {
-        // Regression: with an index-based cursor, evicting an active member
-        // other than the one just served shifted indices and could serve the
-        // same address twice in a row.
         let mut list = AddressList::new().with_active_set_size(2);
         for i in 0..3 {
             list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
@@ -881,6 +973,210 @@ mod tests {
         assert!(list.get_live_address().is_some());
         list.ban(&addr);
         assert!(list.get_live_address().is_none());
+    }
+
+    #[test]
+    fn test_get_live_address_expired_slot_is_recycled() {
+        let mut list = AddressList::new();
+        for i in 0..10 {
+            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
+        }
+
+        // Populate the active set, then back-date every slot's expiry.
+        list.get_live_address().unwrap();
+        {
+            let mut rotation = list.rotation.write().unwrap();
+            assert_eq!(rotation.active.len(), DEFAULT_ACTIVE_SET_SIZE);
+            for member in rotation.active.iter_mut() {
+                member.slot_expires_at = chrono::Utc::now() - Duration::from_secs(1);
+            }
+        }
+
+        let before = chrono::Utc::now();
+        assert!(
+            list.get_live_address().is_some(),
+            "selection must survive whole-set expiry"
+        );
+
+        let rotation = list.rotation.read().unwrap();
+        assert_eq!(rotation.active.len(), DEFAULT_ACTIVE_SET_SIZE);
+        assert!(
+            rotation
+                .active
+                .iter()
+                .all(|member| member.slot_expires_at > before),
+            "expired slots must be retired and re-issued with fresh expiries"
+        );
+    }
+
+    #[test]
+    fn test_get_live_address_sole_address_survives_slot_expiry() {
+        let mut list = AddressList::new().with_active_set_size(1);
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        assert_eq!(list.get_live_address().unwrap(), addr);
+        list.rotation.write().unwrap().active[0].slot_expires_at =
+            chrono::Utc::now() - Duration::from_secs(1);
+
+        assert_eq!(
+            list.get_live_address().unwrap(),
+            addr,
+            "the only live address must be re-promoted after its slot expires"
+        );
+    }
+
+    #[test]
+    fn test_evict_from_rotation_removes_member_without_ban() {
+        let mut list = AddressList::new().with_active_set_size(2);
+        for i in 0..3 {
+            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
+        }
+
+        let served = list.get_live_address().unwrap();
+        list.evict_from_rotation(&served);
+
+        assert!(
+            !list
+                .rotation
+                .read()
+                .unwrap()
+                .active
+                .iter()
+                .any(|member| member.address == served),
+            "evicted address must leave the active set"
+        );
+        assert!(
+            !list.is_banned(&served),
+            "eviction must not touch ban state"
+        );
+        assert!(list.get_live_address().is_some());
+    }
+
+    #[test]
+    fn test_update_address_ban_status_evicts_when_banning_disabled() {
+        use crate::{transport::AppliedRequestSettings, CanRetry, ExecutionError, ExecutionResult};
+
+        #[derive(Debug)]
+        struct RetryableError;
+        impl std::fmt::Display for RetryableError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "retryable")
+            }
+        }
+        impl CanRetry for RetryableError {
+            fn can_retry(&self) -> bool {
+                true
+            }
+        }
+
+        let mut list = AddressList::new().with_active_set_size(2);
+        for i in 0..3 {
+            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
+        }
+        let failed = list.get_live_address().unwrap();
+
+        let result: ExecutionResult<i32, RetryableError> = Err(ExecutionError {
+            inner: RetryableError,
+            retries: 0,
+            address: Some(failed.clone()),
+        });
+        let settings = AppliedRequestSettings {
+            connect_timeout: None,
+            timeout: Duration::from_secs(10),
+            retries: 5,
+            ban_failed_address: false,
+            max_decoding_message_size: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            ca_certificate: None,
+        };
+        crate::update_address_ban_status(&list, &result, &settings);
+
+        assert!(
+            !list
+                .rotation
+                .read()
+                .unwrap()
+                .active
+                .iter()
+                .any(|member| member.address == failed),
+            "failed address must leave the rotation even when banning is disabled"
+        );
+        assert!(!list.is_banned(&failed), "banning stays disabled");
+    }
+
+    #[test]
+    fn test_with_active_set_size_is_shared_across_clones_and_shrinks() {
+        let mut list = AddressList::new();
+        for i in 0..10 {
+            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
+        }
+
+        // Fill the default-sized active set through the original handle.
+        list.get_live_address().unwrap();
+        assert_eq!(
+            list.rotation.read().unwrap().active.len(),
+            DEFAULT_ACTIVE_SET_SIZE
+        );
+
+        // Reconfiguring through a clone applies to the shared rotation.
+        let _clone = list.clone().with_active_set_size(2);
+
+        let distinct: std::collections::HashSet<String> = (0..20)
+            .map(|_| list.get_live_address().unwrap().to_string())
+            .collect();
+        assert_eq!(
+            distinct.len(),
+            2,
+            "shrunken size set through a clone must constrain every handle"
+        );
+    }
+
+    #[test]
+    fn test_with_active_set_size_max_uses_whole_list() {
+        let mut list = AddressList::new().with_active_set_size(usize::MAX);
+        for i in 0..3 {
+            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
+        }
+
+        // Must not over-allocate or panic; effectively disables stickiness.
+        let distinct: std::collections::HashSet<String> = (0..9)
+            .map(|_| list.get_live_address().unwrap().to_string())
+            .collect();
+        assert_eq!(distinct.len(), 3, "all live addresses rotate");
+    }
+
+    #[test]
+    fn test_ban_ladder_window_is_capped() {
+        let mut status = AddressStatus::default();
+        let base = Duration::from_secs(60);
+
+        // Pre-cap, ban #27 overflowed `DateTime + Duration` and panicked.
+        for _ in 0..40 {
+            status.ban(&base);
+        }
+
+        let until = status.banned_until.expect("banned_until set");
+        let window = until - chrono::Utc::now();
+        assert!(
+            window <= chrono::TimeDelta::from_std(MAX_BAN_PERIOD).unwrap(),
+            "ban window must be capped at MAX_BAN_PERIOD"
+        );
+    }
+
+    #[test]
+    fn test_ban_for_huge_period_is_clamped() {
+        let mut status = AddressStatus::default();
+
+        // Pre-clamp this overflowed `DateTime + Duration` and panicked.
+        status.ban_for(Duration::from_secs(u64::MAX), None);
+
+        let until = status.banned_until.expect("banned_until set");
+        let window = until - chrono::Utc::now();
+        assert!(
+            window <= chrono::TimeDelta::from_std(MAX_BAN_PERIOD).unwrap(),
+            "advertised ban window must be clamped to MAX_BAN_PERIOD"
+        );
     }
 
     #[test]

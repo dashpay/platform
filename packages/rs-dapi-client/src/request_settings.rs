@@ -80,6 +80,10 @@ impl RequestSettings {
 }
 
 /// DAPI settings ready to use.
+///
+/// When adding a field, decide whether it affects the constructed transport
+/// client and update `connection_key` accordingly (its exhaustive
+/// destructuring will not compile until you do).
 #[derive(Debug, Clone)]
 pub struct AppliedRequestSettings {
     /// Timeout for establishing a connection.
@@ -112,20 +116,55 @@ impl AppliedRequestSettings {
     /// Per-request knobs (request timeout, retries, address banning) are
     /// deliberately excluded so requests that differ only in those reuse the
     /// same pooled connection.
-    pub fn connection_key(&self) -> String {
+    pub(crate) fn connection_key(&self) -> String {
+        // Exhaustive destructuring: adding a settings field breaks this
+        // binding, forcing an explicit connection-affecting-or-not decision.
         #[cfg(not(target_arch = "wasm32"))]
-        let ca_certificate = self.ca_certificate.as_ref().map(|cert| {
-            use std::hash::{DefaultHasher, Hash, Hasher};
-            let mut hasher = DefaultHasher::new();
-            cert.as_ref().hash(&mut hasher);
-            hasher.finish()
+        let Self {
+            connect_timeout,
+            timeout: _,
+            retries: _,
+            ban_failed_address: _,
+            max_decoding_message_size,
+            ca_certificate,
+        } = self;
+        #[cfg(target_arch = "wasm32")]
+        let Self {
+            connect_timeout,
+            timeout: _,
+            retries: _,
+            ban_failed_address: _,
+            max_decoding_message_size,
+        } = self;
+
+        // The wasm transport ignores all settings when building its client
+        // (see `wasm_channel::create_channel`), so nothing may split the key
+        // there.
+        #[cfg(target_arch = "wasm32")]
+        let connect_timeout = {
+            let _ = connect_timeout;
+            &None::<Duration>
+        };
+
+        // The full certificate bytes (hex), not a short hash: two trust
+        // anchors must never share a pool key, or a request pinned to one CA
+        // silently reuses a channel built against the other.
+        #[cfg(not(target_arch = "wasm32"))]
+        let ca_certificate = ca_certificate.as_ref().map(|cert| {
+            use std::fmt::Write;
+            let bytes = cert.as_ref();
+            let mut hex = String::with_capacity(bytes.len() * 2);
+            for byte in bytes {
+                write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
+            }
+            hex
         });
         #[cfg(target_arch = "wasm32")]
-        let ca_certificate: Option<u64> = None;
+        let ca_certificate: Option<String> = None;
 
         format!(
             "connect_timeout={:?},max_decoding_message_size={:?},ca_certificate={:?}",
-            self.connect_timeout, self.max_decoding_message_size, ca_certificate
+            connect_timeout, max_decoding_message_size, ca_certificate
         )
     }
 }

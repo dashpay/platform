@@ -100,9 +100,12 @@ impl ConnectionPool {
         // Only connection-affecting settings participate in the key (see
         // `AppliedRequestSettings::connection_key`), so requests differing only
         // in per-request knobs (timeout, retries, banning) share a connection.
+        // The settings segment is always present (and contains no `:`), so the
+        // two branches cannot produce colliding shapes even for a URI whose
+        // path mimics a key fragment.
         match settings {
             Some(settings) => format!("{}:{}:{}", prefix, uri, settings.connection_key()),
-            None => format!("{}:{}", prefix, uri),
+            None => format!("{}:{}:none", prefix, uri),
         }
     }
 }
