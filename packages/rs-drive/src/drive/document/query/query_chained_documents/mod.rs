@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::drive_chained_document_query::{
-    ChainedDocumentsResult, ChainedProofBundle, DriveChainedDocumentQuery,
+    ChainedDocumentsResult, DriveChainedDocumentQuery,
 };
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
@@ -39,19 +39,20 @@ impl Drive {
         }
     }
 
-    /// Executes a chained document query AND generates its two proofs.
-    ///
-    /// Same-root contract: grovedb proves against committed state only,
-    /// so the pair is bracketed by root-hash reads and retried when a
-    /// block commit interleaves — see
-    /// [`DriveChainedDocumentQuery::execute_with_proofs_internal`].
+    /// Executes a chained document query AND generates its single
+    /// merged proof (the limited inner page and the derived outer
+    /// by-ids fetch merged by `prove_query_many` — one proof, one root
+    /// by construction). Grovedb proves committed state only, so the
+    /// materialize/prove sequence is bracketed by root-hash reads and
+    /// retried when a block commit interleaves — see
+    /// [`DriveChainedDocumentQuery::execute_with_proof_internal`].
     /// Shares the `query_chained_documents` version slot with the
     /// no-proof path (one surface, one version).
-    pub fn query_chained_documents_with_proofs(
+    pub fn query_chained_documents_with_proof(
         &self,
         query: &DriveChainedDocumentQuery,
         platform_version: &PlatformVersion,
-    ) -> Result<(ChainedProofBundle, ChainedDocumentsResult), Error> {
+    ) -> Result<(Vec<u8>, ChainedDocumentsResult), Error> {
         match platform_version
             .drive
             .methods
@@ -59,9 +60,9 @@ impl Drive {
             .query
             .query_chained_documents
         {
-            0 => self.query_chained_documents_with_proofs_v0(query, platform_version),
+            0 => self.query_chained_documents_with_proof_v0(query, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "query_chained_documents_with_proofs".to_string(),
+                method: "query_chained_documents_with_proof".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

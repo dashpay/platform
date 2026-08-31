@@ -4,16 +4,13 @@
 //! $ownerId = <me>)` — the INNER query runs against an indexOnly document
 //! type and projects a `refersTo: permanentDocument` property (the JOIN
 //! property); its proven values are reinjected as the OUTER query's
-//! primary keys. Both halves are proven against the SAME state root —
-//! grovedb proves against committed state only, so the server brackets
-//! the pair with root-hash reads and retries if a block commit
-//! interleaved (see [`execute_with_proofs_internal`]); the verifier
-//! accepts only two proofs whose root hashes are equal (the surrounding
-//! tenderdash composition then binds that root to the quorum-signed app
-//! hash; see `rs-drive-proof-verifier`).
-//!
-//! [`execute_with_proofs_internal`]:
-//!     DriveChainedDocumentQuery::execute_with_proofs_internal
+//! primary keys. Both halves are proven as ONE merged grovedb proof —
+//! `prove_query_many` merges the limited inner query with the derived
+//! outer by-ids query (grovedb merge slot 2 lifts the inner limit into
+//! a per-instance branch limit), so a single root binds the whole
+//! composition by construction; the surrounding tenderdash layer then
+//! binds that root to the quorum-signed app hash (see
+//! `rs-drive-proof-verifier`).
 //!
 //! Soundness never rests on the server's join: the verifier re-derives
 //! the outer query from the INNER proof's results ([`Self::join_values`]
@@ -81,20 +78,6 @@ pub struct ChainedDocumentsResult {
     /// The referenced outer documents, ordered by FIRST APPEARANCE of
     /// their id in `inner_documents` (deduplicated).
     pub outer_documents: Vec<Document>,
-}
-
-/// The two grovedb proofs of a chained query. Soundness requires both
-/// to verify to the SAME root hash; the server guarantees it by
-/// bracketing the pair with root-hash reads (grovedb proves against
-/// committed state only, so a transaction cannot pin the pair).
-#[derive(Debug)]
-pub struct ChainedProofBundle {
-    /// Proof of the inner query (the standard proof the inner
-    /// [`DriveDocumentQuery`] alone would produce).
-    pub inner_proof: Vec<u8>,
-    /// Proof of the derived outer by-ids query. `None` if and only if
-    /// the inner page is empty (there is nothing to derive).
-    pub outer_proof: Option<Vec<u8>>,
 }
 
 impl<'a> DriveChainedDocumentQuery<'a> {
@@ -323,6 +306,31 @@ impl<'a> DriveChainedDocumentQuery<'a> {
         }
         Ok(ordered)
     }
+
+    /// The component path queries the chained proof covers: the inner
+    /// query's own path query, plus — for a non-empty join — the outer
+    /// by-ids path query derived from `join_values`. ONE builder both
+    /// the prover (`prove_query_many` merges these) and the verifier
+    /// (`PathQuery::merge` on the same inputs at the same grove
+    /// version) call, so the merged query is byte-identical on both
+    /// sides. Grovedb's merge lifts the inner query's global
+    /// `SizedQuery::limit` into its branch's per-instance
+    /// `Query::limit`, which is exact here: the branch instance
+    /// executes once.
+    pub fn proof_path_queries(
+        &self,
+        join_values: &[Identifier],
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<grovedb::PathQuery>, Error> {
+        let inner = self.inner.construct_path_query(None, platform_version)?;
+        if join_values.is_empty() {
+            return Ok(vec![inner]);
+        }
+        let outer = self
+            .derive_outer_query(join_values)
+            .construct_path_query(None, platform_version)?;
+        Ok(vec![inner, outer])
+    }
 }
 
 #[cfg(feature = "server")]
@@ -381,23 +389,31 @@ impl DriveChainedDocumentQuery<'_> {
         })
     }
 
-    /// Executes the chained query AND generates both proofs.
+    /// Executes the chained query AND generates its single merged
+    /// proof.
     ///
-    /// Same-root contract: grovedb generates proofs against COMMITTED
-    /// state only (`prove_query` rejects transactions), so the pair
-    /// cannot be pinned to a snapshot. Instead the whole sequence —
-    /// materialize, inner proof, outer proof — is BRACKETED by root-hash
-    /// reads: if the root moved, a block commit interleaved and the
-    /// halves may describe different states, so the attempt is discarded
-    /// and retried. On a quiet root the bracket proves both proofs
-    /// commit to that root — exactly what the verifier's root-equality
-    /// check demands.
-    pub(crate) fn execute_with_proofs_internal(
+    /// The inner page and the derived outer by-ids fetch are proven as
+    /// ONE grovedb proof: [`Self::proof_path_queries`] builds the
+    /// component path queries and `prove_query_many` merges them
+    /// (grovedb merge slot 2 LIFTS the inner query's global limit into
+    /// its merged branch's per-instance `Query::limit` — semantically
+    /// exact, since the branch executes once). One proof means one root
+    /// by construction.
+    ///
+    /// The materialize pass (which produces the join values the outer
+    /// component derives from) and the prove pass still both read
+    /// committed state — grovedb proves committed state only — so the
+    /// sequence is BRACKETED by root-hash reads and retried if a block
+    /// commit interleaved; otherwise the proof's inner branch could
+    /// disagree with the outer branch derived from the stale
+    /// materialization, and every verifier would reject the
+    /// composition.
+    pub(crate) fn execute_with_proof_internal(
         &self,
         drive: &crate::drive::Drive,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<(ChainedProofBundle, ChainedDocumentsResult), Error> {
+    ) -> Result<(Vec<u8>, ChainedDocumentsResult), Error> {
         // Block commits are seconds apart while an attempt is
         // milliseconds, so a bracket collision is rare and two in a row
         // vanishingly so; three attempts is generosity, not need.
@@ -409,33 +425,19 @@ impl DriveChainedDocumentQuery<'_> {
                 .unwrap()?;
 
             // Materializes both halves (validating on the way in) — the
-            // join values drive the outer proof's query, and the
-            // documents ride back for callers that want proof + results
-            // in one pass.
+            // join values drive the outer component, and the documents
+            // ride back for callers that want proof + results in one
+            // pass.
             let result =
                 self.execute_no_proof_internal(drive, None, drive_operations, platform_version)?;
-
-            let inner_proof = self.inner.clone().execute_with_proof_internal(
-                drive,
-                None,
-                drive_operations,
-                platform_version,
-            )?;
-
             let join_values = self.join_values(&result.inner_documents)?;
-            let outer_proof = if join_values.is_empty() {
-                None
-            } else {
-                Some(
-                    self.derive_outer_query(&join_values)
-                        .execute_with_proof_internal(
-                            drive,
-                            None,
-                            drive_operations,
-                            platform_version,
-                        )?,
-                )
-            };
+
+            let path_queries = self.proof_path_queries(&join_values, platform_version)?;
+            let path_query_refs: Vec<&grovedb::PathQuery> = path_queries.iter().collect();
+            let proof = drive
+                .grove
+                .prove_query_many(path_query_refs, None, &platform_version.drive.grove_version)
+                .unwrap()?;
 
             let root_after = drive
                 .grove
@@ -445,13 +447,7 @@ impl DriveChainedDocumentQuery<'_> {
                 continue;
             }
 
-            return Ok((
-                ChainedProofBundle {
-                    inner_proof,
-                    outer_proof,
-                },
-                result,
-            ));
+            return Ok((proof, result));
         }
         Err(Error::Drive(DriveError::NotSupported(
             "chained proof generation raced a block commit on every attempt; \

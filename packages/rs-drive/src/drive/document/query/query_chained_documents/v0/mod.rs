@@ -2,7 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::drive_chained_document_query::{
-    ChainedDocumentsResult, ChainedProofBundle, DriveChainedDocumentQuery,
+    ChainedDocumentsResult, DriveChainedDocumentQuery,
 };
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
@@ -51,12 +51,12 @@ impl Drive {
     }
 
     #[inline(always)]
-    pub(super) fn query_chained_documents_with_proofs_v0(
+    pub(super) fn query_chained_documents_with_proof_v0(
         &self,
         query: &DriveChainedDocumentQuery,
         platform_version: &PlatformVersion,
-    ) -> Result<(ChainedProofBundle, ChainedDocumentsResult), Error> {
+    ) -> Result<(Vec<u8>, ChainedDocumentsResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        query.execute_with_proofs_internal(self, &mut drive_operations, platform_version)
+        query.execute_with_proof_internal(self, &mut drive_operations, platform_version)
     }
 }

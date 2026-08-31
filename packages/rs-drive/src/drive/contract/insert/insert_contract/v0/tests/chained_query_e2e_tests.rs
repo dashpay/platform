@@ -190,16 +190,16 @@ fn chained_query_returns_liked_posts_with_proof_parity() {
         "outer documents are the full post bodies"
     );
 
-    // Proof round trip.
-    let (bundle, proved_result) = drive
-        .query_chained_documents_with_proofs(&chained, pv)
-        .expect("chained proofs generate");
-    let outer_proof = bundle
-        .outer_proof
-        .as_deref()
-        .expect("non-empty inner page must carry an outer proof");
+    // Proof round trip: ONE merged proof, verified against the query
+    // re-derived from the server's join-value hint.
+    let (proof, proved_result) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let hint = chained
+        .join_values(&proved_result.inner_documents)
+        .expect("join values extract");
     let (_root_hash, verified) = chained
-        .verify_chained_documents_proof(bundle.inner_proof.as_slice(), Some(outer_proof), pv)
+        .verify_chained_documents_proof(proof.as_slice(), &hint, pv)
         .expect("chained proof verifies");
     assert_eq!(
         verified
@@ -229,36 +229,33 @@ fn chained_query_returns_liked_posts_with_proof_parity() {
     );
 }
 
-/// An empty inner page proves alone: no outer proof exists, and the
-/// verifier refuses a spurious one.
+/// An empty inner page proves alone (the merged query degenerates to
+/// the inner component), and a hint claiming otherwise is refused: the
+/// derived outer branch demands documents the proof cannot cover.
 #[test]
-fn chained_query_empty_inner_has_no_outer_proof() {
+fn chained_query_empty_inner_proves_alone() {
     let (drive, contract) = setup_likes();
     let pv = platform_version();
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
 
     let chained = chained_posts_i_liked(&contract, OWNER_3, None, Some(10));
-    let (bundle, result) = drive
-        .query_chained_documents_with_proofs(&chained, pv)
-        .expect("chained proofs generate");
+    let (proof, result) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
     assert!(result.inner_documents.is_empty());
-    assert!(bundle.outer_proof.is_none(), "empty inner ⇒ no outer proof");
 
     let (_root, verified) = chained
-        .verify_chained_documents_proof(bundle.inner_proof.as_slice(), None, pv)
+        .verify_chained_documents_proof(proof.as_slice(), &[], pv)
         .expect("empty chained proof verifies");
     assert!(verified.outer_documents.is_empty());
 
-    // A spurious outer proof (any bytes prove SOMETHING here — reuse the
-    // inner proof) must be refused before it is even parsed.
-    let refused = chained.verify_chained_documents_proof(
-        bundle.inner_proof.as_slice(),
-        Some(bundle.inner_proof.as_slice()),
-        pv,
-    );
+    // A fabricated hint over an empty page: the merged query gains an
+    // outer branch this proof never covered.
+    let fake_hint = vec![dpp::identifier::Identifier::from(POST_A)];
+    let refused = chained.verify_chained_documents_proof(proof.as_slice(), &fake_hint, pv);
     assert!(
-        matches!(refused, Err(Error::Proof(_))),
-        "outer proof with an empty inner page must be refused, got {refused:?}"
+        refused.is_err(),
+        "a non-empty hint over an empty proven page must be refused, got {refused:?}"
     );
 }
 
@@ -293,15 +290,14 @@ fn chained_query_paginates_through_inner_cursor() {
         .to_buffer();
 
     let page_2 = chained_posts_i_liked(&contract, OWNER_1, Some(cursor), Some(1));
-    let (bundle, _) = drive
-        .query_chained_documents_with_proofs(&page_2, pv)
-        .expect("page 2 proofs generate");
+    let (proof, result_2) = drive
+        .query_chained_documents_with_proof(&page_2, pv)
+        .expect("page 2 proof generates");
+    let hint = page_2
+        .join_values(&result_2.inner_documents)
+        .expect("join values extract");
     let (_root, verified) = page_2
-        .verify_chained_documents_proof(
-            bundle.inner_proof.as_slice(),
-            bundle.outer_proof.as_deref(),
-            pv,
-        )
+        .verify_chained_documents_proof(proof.as_slice(), &hint, pv)
         .expect("page 2 verifies");
     assert_eq!(verified.outer_documents.len(), 1);
     assert_eq!(verified.outer_documents[0].id().to_buffer(), POST_B);
@@ -371,40 +367,66 @@ fn chained_query_refuses_dangling_reference() {
     );
 }
 
-/// Two individually valid proofs that straddle a state change describe
-/// two different states — the verifier's root-equality check refuses the
-/// composition.
+/// The hint is untrusted: any lie — a dropped id, an extra id, a
+/// substituted id — produces a merged query the proof cannot satisfy,
+/// and verification fails rather than returning a steered join.
 #[test]
-fn chained_query_rejects_proofs_of_different_roots() {
+fn chained_query_rejects_tampered_hints() {
+    use dpp::identifier::Identifier;
+
     let (drive, contract) = setup_likes();
     let pv = platform_version();
     insert_post(&drive, &contract, POST_A, "dash", "post a", 10);
-    let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
-    insert_like(&drive, &contract, &like, true).expect("insert like");
+    insert_post(&drive, &contract, POST_B, "dash", "post b", 11);
+    insert_post(&drive, &contract, POST_C, "btc", "post c", 12);
+    for (post, hashtag, seed) in [(POST_A, "dash", 1u64), (POST_B, "dash", 2)] {
+        let like = build_like(&contract, hashtag, post, OWNER_1, seed);
+        insert_like(&drive, &contract, &like, true).expect("insert like");
+    }
 
     let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
-    let (bundle, result) = drive
-        .query_chained_documents_with_proofs(&chained, pv)
-        .expect("chained proofs generate");
-
-    // Mutate state, then regenerate ONLY the outer proof — it now
-    // proves the same documents against a different root.
-    insert_post(&drive, &contract, POST_B, "dash", "post b", 11);
-    let join_values = chained
+    let (proof, result) = drive
+        .query_chained_documents_with_proof(&chained, pv)
+        .expect("chained proof generates");
+    let honest_hint = chained
         .join_values(&result.inner_documents)
         .expect("join values extract");
-    let (stale_outer_proof, _) = chained
-        .derive_outer_query(&join_values)
-        .execute_with_proof(&drive, None, None, pv)
-        .expect("outer proof at the new root");
+    assert_eq!(honest_hint.len(), 2);
 
-    let refused = chained.verify_chained_documents_proof(
-        bundle.inner_proof.as_slice(),
-        Some(stale_outer_proof.as_slice()),
-        pv,
-    );
+    // Dropped id: the merged query's outer branch misses a proven
+    // reference.
+    let dropped: Vec<Identifier> = honest_hint[..1].to_vec();
     assert!(
-        matches!(refused, Err(Error::Proof(_))),
-        "proofs of different roots must be refused, got {refused:?}"
+        chained
+            .verify_chained_documents_proof(proof.as_slice(), &dropped, pv)
+            .is_err(),
+        "a hint missing a proven join value must be refused"
     );
+
+    // Extra id: the merged query demands a document no proven join
+    // value references (POST_C exists on chain, making this the
+    // interesting injection case).
+    let mut extra = honest_hint.clone();
+    extra.push(Identifier::from(POST_C));
+    assert!(
+        chained
+            .verify_chained_documents_proof(proof.as_slice(), &extra, pv)
+            .is_err(),
+        "a hint with an injected id must be refused"
+    );
+
+    // Substituted id.
+    let mut substituted = honest_hint.clone();
+    substituted[0] = Identifier::from(POST_C);
+    assert!(
+        chained
+            .verify_chained_documents_proof(proof.as_slice(), &substituted, pv)
+            .is_err(),
+        "a hint with a substituted id must be refused"
+    );
+
+    // And the honest hint still verifies after all that.
+    chained
+        .verify_chained_documents_proof(proof.as_slice(), &honest_hint, pv)
+        .expect("the honest hint verifies");
 }
