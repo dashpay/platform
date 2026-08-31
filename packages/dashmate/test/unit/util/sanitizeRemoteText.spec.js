@@ -33,4 +33,25 @@ describe('sanitizeRemoteText', () => {
     expect(sanitizeRemoteText(undefined)).to.be.undefined();
     expect(sanitizeRemoteText(null)).to.equal(null);
   });
+
+  describe('invisible and bidi characters', () => {
+    // Each of these is invisible or reorders what follows it, so a registry can
+    // use them to hide text in a message an operator is reading to decide what
+    // to do next. They are named by code point because writing them literally
+    // makes this file itself unreadable.
+    const HIDDEN = {
+      ESC: 0x1b, CR: 0x0d, DEL: 0x7f,
+      LRM: 0x200e, ALM: 0x061c, RLO: 0x202e,
+      ZWSP: 0x200b, ZWJ: 0x200d,
+      LS: 0x2028, PS: 0x2029, BOM: 0xfeff,
+    };
+
+    Object.entries(HIDDEN).forEach(([name, codePoint]) => {
+      it(`should not let a registry hide text behind ${name}`, () => {
+        const text = `left${String.fromCodePoint(codePoint)}right`;
+
+        expect(sanitizeRemoteText(text)).to.equal('left right');
+      });
+    });
+  });
 });
