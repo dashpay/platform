@@ -152,6 +152,106 @@ impl SecretString {
         self.expose_secret().trim().is_empty()
     }
 
+    /// Replace the plaintext bytes in `range` with `replacement`, growing
+    /// the guarded buffer when it does not fit.
+    ///
+    /// The type's single mutation primitive, mirroring
+    /// [`String::replace_range`]: insertion is an empty range, deletion an
+    /// empty `replacement`, whole-buffer replacement `..`. Bytes vacated
+    /// by a shrinking edit are wiped rather than merely orphaned past the
+    /// length, and a buffer outgrown by a growing edit is wiped before it
+    /// is freed. Byte offsets, not character indices — derive them from
+    /// [`expose_secret`](Self::expose_secret).
+    ///
+    /// Capacity only grows: a shrinking edit keeps its allocation, since
+    /// giving it back would cost another copy and another lock cycle for
+    /// no security gain, and the trailing capacity is wiped regardless.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `range` is inverted, ends past [`len`](Self::len), or has
+    /// an endpoint off a UTF-8 character boundary — each a caller bug, as
+    /// for [`String::replace_range`]. The secret is left unmodified, and
+    /// the panic message names only indices, never a byte of plaintext.
+    ///
+    /// # Memory
+    ///
+    /// No length ceiling is applied here: a value type cannot report a
+    /// refusal, and both real trust boundaries already enforce one — the
+    /// UI that accepts the input, and
+    /// [`MAX_PLAINTEXT_LEN`](crate::secrets::MAX_PLAINTEXT_LEN) at the
+    /// vault write. The consequence is that growth driven by untrusted
+    /// input (a paste into a text field) is unbounded `mlock`ed,
+    /// page-rounded memory, and the locks fail open once `RLIMIT_MEMLOCK`
+    /// runs out. Bound such input at your own boundary.
+    ///
+    /// ```
+    /// use platform_wallet_storage::secrets::SecretString;
+    /// let mut s = SecretString::new("hello");
+    /// s.replace_range(5.., " world");
+    /// assert_eq!(s.expose_secret(), "hello world");
+    /// ```
+    pub fn replace_range<R: std::ops::RangeBounds<usize>>(&mut self, range: R, replacement: &str) {
+        let (start, end) = self.resolve_range(range);
+        let replacement = replacement.as_bytes();
+        let old_len = self.len;
+        // `resolve_range` guarantees `start <= end <= old_len`.
+        let new_len = old_len - (end - start) + replacement.len();
+        self.reserve(new_len);
+
+        let Some(buf) = &mut self.buf else {
+            // `reserve` allocates whenever `new_len > 0`, so an absent
+            // buffer means the edit was a no-op on an empty secret.
+            return;
+        };
+        let bytes = buf.as_mut_slice(old_len.max(new_len));
+        bytes.copy_within(end..old_len, start + replacement.len());
+        bytes[start..start + replacement.len()].copy_from_slice(replacement);
+        // A shrinking edit leaves the old tail above the new length; wipe
+        // it now rather than wait for an overwrite that may never come.
+        if new_len < old_len {
+            bytes[new_len..old_len].zeroize();
+        }
+        self.len = new_len;
+    }
+
+    /// Resolve `range` against the live plaintext, panicking on any shape
+    /// [`String::replace_range`] would reject.
+    fn resolve_range<R: std::ops::RangeBounds<usize>>(&self, range: R) -> (usize, usize) {
+        use std::ops::Bound;
+        let start = match range.start_bound() {
+            Bound::Included(&i) => i,
+            Bound::Excluded(&i) => i.saturating_add(1),
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(&i) => i.saturating_add(1),
+            Bound::Excluded(&i) => i,
+            Bound::Unbounded => self.len,
+        };
+        check_edit_range(self.expose_secret(), start, end);
+        (start, end)
+    }
+
+    /// Grow the buffer to hold at least `needed` bytes, preserving the
+    /// live plaintext. A no-op when it already fits.
+    fn reserve(&mut self, needed: usize) {
+        let capacity = self.buf.as_ref().map_or(0, GuardedBuf::capacity);
+        if needed == 0 || needed <= capacity {
+            return;
+        }
+        let mut grown =
+            GuardedBuf::new(needed.max(capacity.saturating_mul(2)).max(DEFAULT_CAPACITY));
+        if let Some(old) = &self.buf {
+            grown
+                .as_mut_slice(self.len)
+                .copy_from_slice(old.as_slice(self.len));
+        }
+        // Assigning drops the outgrown buffer, wiping it before
+        // `memsec::free` hands its pages back.
+        self.buf = Some(grown);
+    }
+
     /// Whether the trimmed secret is shorter than [`MIN_PASSPHRASE_LEN`].
     pub(crate) fn is_below_minimum_passphrase_len(&self) -> bool {
         self.expose_secret().trim().len() < MIN_PASSPHRASE_LEN
@@ -165,6 +265,40 @@ impl SecretString {
     pub(crate) fn exceeds_maximum_passphrase_len(&self) -> bool {
         self.len > MAX_PASSPHRASE_LEN
     }
+}
+
+/// Reject an inverted, out-of-bounds, or non-character-boundary edit
+/// range over `text`.
+///
+/// **Every message carries indices only.** Slicing `text` to let std
+/// raise the error instead — `&text[start..end]`, `str::split_at`,
+/// `String::replace_range` — would print the surrounding characters,
+/// which here are plaintext, onto stderr and into every log capture
+/// (CWE-209/CWE-532). That is why the bounds are hand-rolled from
+/// [`str::is_char_boundary`], and why a refactor back to slicing would
+/// be a vulnerability rather than a simplification.
+///
+/// Takes the text rather than a `SecretString` so it never calls
+/// `expose_secret` itself, keeping `tests/secrets_guard.rs`'s
+/// sink-near-plaintext scan honest instead of merely quiet.
+fn check_edit_range(text: &str, start: usize, end: usize) {
+    assert!(
+        start <= end,
+        "secret edit range start {start} exceeds end {end}"
+    );
+    assert!(
+        end <= text.len(),
+        "secret edit range end {end} exceeds secret length {}",
+        text.len()
+    );
+    assert!(
+        text.is_char_boundary(start),
+        "secret edit range start {start} is not a character boundary"
+    );
+    assert!(
+        text.is_char_boundary(end),
+        "secret edit range end {end} is not a character boundary"
+    );
 }
 
 impl fmt::Debug for SecretString {
@@ -820,6 +954,263 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Insertion, deletion and replacement in place, all within the
+    /// pre-allocated capacity so no reallocation is involved.
+    #[test]
+    fn replace_range_inserts_deletes_and_replaces() {
+        let mut s = SecretString::new("bcd");
+        s.replace_range(0..0, "a");
+        assert_eq!(s.expose_secret(), "abcd");
+        s.replace_range(4..4, "e");
+        assert_eq!(s.expose_secret(), "abcde");
+        s.replace_range(2..2, "XY");
+        assert_eq!(s.expose_secret(), "abXYcde");
+
+        s.replace_range(2..4, "");
+        assert_eq!(s.expose_secret(), "abcde");
+        s.replace_range(1..4, "-");
+        assert_eq!(s.expose_secret(), "a-e");
+        assert_eq!(s.len(), 3);
+    }
+
+    /// Every `RangeBounds` shape resolves the way `String::replace_range`
+    /// resolves it — differential, so the contract is pinned to std's
+    /// rather than to this implementation's own behaviour.
+    #[test]
+    fn replace_range_bounds_match_std() {
+        let cases: Vec<(
+            &str,
+            Box<dyn Fn(&mut String)>,
+            Box<dyn Fn(&mut SecretString)>,
+        )> = vec![
+            (
+                "..",
+                Box::new(|s: &mut String| s.replace_range(.., "Z")),
+                Box::new(|s: &mut SecretString| s.replace_range(.., "Z")),
+            ),
+            (
+                "2..",
+                Box::new(|s: &mut String| s.replace_range(2.., "Z")),
+                Box::new(|s: &mut SecretString| s.replace_range(2.., "Z")),
+            ),
+            (
+                "..3",
+                Box::new(|s: &mut String| s.replace_range(..3, "Z")),
+                Box::new(|s: &mut SecretString| s.replace_range(..3, "Z")),
+            ),
+            (
+                "1..=3",
+                Box::new(|s: &mut String| s.replace_range(1..=3, "Z")),
+                Box::new(|s: &mut SecretString| s.replace_range(1..=3, "Z")),
+            ),
+            (
+                "..=2",
+                Box::new(|s: &mut String| s.replace_range(..=2, "Z")),
+                Box::new(|s: &mut SecretString| s.replace_range(..=2, "Z")),
+            ),
+        ];
+        for (label, on_std, on_secret) in cases {
+            let mut std_string = String::from("abcdef");
+            let mut secret = SecretString::new("abcdef");
+            on_std(&mut std_string);
+            on_secret(&mut secret);
+            assert_eq!(
+                secret.expose_secret(),
+                std_string,
+                "range `{label}` diverged"
+            );
+        }
+    }
+
+    /// A shrinking edit wipes the bytes it vacates instead of merely
+    /// orphaning them past the length — otherwise a deleted passphrase
+    /// character would sit in locked memory until the next overwrite.
+    #[test]
+    fn replace_range_wipes_the_bytes_it_vacates() {
+        let mut s = SecretString::new("secret-tail-KEEPOUT");
+        let cap = s.buf.as_ref().unwrap().capacity();
+        s.replace_range(6.., "");
+        assert_eq!(s.expose_secret(), "secret");
+
+        let buf = s.buf.as_ref().unwrap();
+        assert!(
+            buf.as_slice(cap)[6..].iter().all(|&b| b == 0),
+            "the vacated tail must be wiped, not orphaned past the length"
+        );
+    }
+
+    /// Multi-byte characters survive splices on both sides of a 2-byte
+    /// and a 4-byte character; a botched offset would corrupt UTF-8 and
+    /// trip `expose_secret`'s validity check.
+    #[test]
+    fn replace_range_handles_multibyte_utf8() {
+        // "é" is 2 bytes, "🦡" is 4.
+        let mut s = SecretString::new("aébc🦡d");
+        assert_eq!(s.len(), 1 + 2 + 2 + 4 + 1);
+        s.replace_range(1..3, "É");
+        assert_eq!(s.expose_secret(), "aÉbc🦡d");
+        s.replace_range(5..9, "🦘");
+        assert_eq!(s.expose_secret(), "aÉbc🦘d");
+        s.replace_range(0..1, "ααα");
+        assert_eq!(s.expose_secret(), "αααÉbc🦘d");
+    }
+
+    /// Growth past the pre-allocated capacity preserves the content —
+    /// both as one large edit and as the long run of small appends a
+    /// text widget actually produces.
+    #[test]
+    fn replace_range_grows_past_capacity() {
+        let long = "x".repeat(DEFAULT_CAPACITY + 500);
+        let mut one_shot = SecretString::new("seed:");
+        one_shot.replace_range(5.., &long);
+        // Built in its own statement: `tests/secrets_guard.rs` rejects a
+        // formatting sink sharing a statement with `expose_secret`.
+        let expected = format!("seed:{long}");
+        assert_eq!(one_shot.expose_secret(), expected);
+
+        // An empty secret holds no allocation, so the first edit is also
+        // the first allocation.
+        let mut typed = SecretString::empty();
+        assert!(typed.buf.is_none());
+        let mut expected = String::new();
+        for i in 0..DEFAULT_CAPACITY + 100 {
+            let ch = char::from(b'a' + (i % 26) as u8);
+            let at = typed.len();
+            typed.replace_range(at.., &ch.to_string());
+            expected.push(ch);
+        }
+        assert_eq!(typed.expose_secret(), expected);
+    }
+
+    /// A buffer outgrown by a reallocation is wiped before it is freed,
+    /// and the replacement still ends flush against its guard page — the
+    /// page-isolation invariant must survive growth.
+    #[test]
+    fn growth_wipes_the_old_buffer_and_preserves_page_isolation() {
+        let mut s = SecretString::new("needle-in-guarded-memory");
+        let old_addr = s.buf.as_ref().unwrap().addr();
+        let old_cap = s.buf.as_ref().unwrap().capacity();
+
+        s.replace_range(s.len().., &"y".repeat(DEFAULT_CAPACITY));
+        let buf = s.buf.as_ref().unwrap();
+        assert_ne!(buf.addr(), old_addr, "the edit must have reallocated");
+        assert!(buf.capacity() > old_cap);
+
+        let page = region::page::size();
+        assert_eq!(
+            (buf.addr() + buf.capacity()) % page,
+            0,
+            "a grown buffer must still abut its guard page"
+        );
+        // The outgrown allocation was wiped by `GuardedBuf::drop` before
+        // `memsec::free` returned its pages; reading it back would be a
+        // use-after-free, so `Drop`'s wipe is pinned by
+        // `zeroize_wipes_full_capacity_not_just_len` on a live value and
+        // by this reallocation going through the same `Drop`.
+        let expected = format!("needle-in-guarded-memory{}", "y".repeat(DEFAULT_CAPACITY));
+        assert_eq!(s.expose_secret(), expected);
+    }
+
+    /// Each rejected range shape panics, matching `String::replace_range`.
+    #[test]
+    fn replace_range_panics_on_invalid_ranges() {
+        let cases: Vec<(&str, Box<dyn Fn(&mut SecretString)>)> = vec![
+            (
+                "inverted",
+                Box::new(|s: &mut SecretString| s.replace_range(3..1, "")),
+            ),
+            (
+                "end past len",
+                Box::new(|s: &mut SecretString| s.replace_range(0..99, "")),
+            ),
+            (
+                "start off a char boundary",
+                Box::new(|s: &mut SecretString| s.replace_range(2..4, "")),
+            ),
+            (
+                "end off a char boundary",
+                Box::new(|s: &mut SecretString| s.replace_range(1..2, "")),
+            ),
+        ];
+        for (label, edit) in cases {
+            // "é" occupies bytes 1..3, so 2 is mid-character.
+            let mut s = SecretString::new("aéb");
+            let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| edit(&mut s)));
+            assert!(caught.is_err(), "`{label}` must panic");
+        }
+    }
+
+    /// The regression guard for CWE-209/CWE-532: a rejected range must
+    /// not print the secret. `str`'s own slicing panic embeds a snippet
+    /// of the surrounding string, so reaching the panic through
+    /// `&s[range]` — the obvious implementation — would put plaintext on
+    /// stderr and into every log capture.
+    #[test]
+    fn replace_range_panic_message_carries_no_plaintext() {
+        // Bound as a literal, never read back out of the secret: pairing
+        // `expose_secret` with an assertion here would trip
+        // `tests/secrets_guard.rs`.
+        let plaintext = "correct-horse-battery-staple";
+        let mut s = SecretString::new(plaintext);
+
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            s.replace_range(0..9_999, "")
+        }))
+        .expect_err("an out-of-range edit must panic");
+        std::panic::set_hook(previous);
+
+        let message = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|m| (*m).to_string()))
+            .expect("panic payload must be a string");
+        assert!(
+            !message.contains(plaintext) && !message.contains("horse"),
+            "panic message leaked the secret: {message}"
+        );
+        assert!(
+            message.contains("9999"),
+            "panic message should name the offending index: {message}"
+        );
+    }
+
+    /// Validation runs before the first byte moves, so a caught panic
+    /// leaves the secret exactly as it was — a `catch_unwind`-ing GUI
+    /// host must never observe a half-spliced, invalid-UTF-8 buffer.
+    #[test]
+    fn a_rejected_edit_leaves_the_secret_untouched() {
+        let mut s = SecretString::new("aéb");
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            s.replace_range(2..3, "zzz")
+        }));
+        std::panic::set_hook(previous);
+
+        assert!(caught.is_err());
+        assert_eq!(s.expose_secret(), "aéb");
+        assert_eq!(s.len(), 4);
+    }
+
+    /// An empty replacement into an empty range is a no-op, including on
+    /// an empty secret that holds no allocation at all.
+    #[test]
+    fn replace_range_empty_into_empty_is_a_no_op() {
+        let mut empty = SecretString::empty();
+        empty.replace_range(0..0, "");
+        assert_eq!(empty.expose_secret(), "");
+        assert!(
+            empty.buf.is_none(),
+            "a no-op edit must not allocate a guarded page"
+        );
+
+        let mut s = SecretString::new("unchanged");
+        s.replace_range(4..4, "");
+        assert_eq!(s.expose_secret(), "unchanged");
     }
 
     /// Proves zeroize wipes the buffer. Every read is on a STILL-LIVE

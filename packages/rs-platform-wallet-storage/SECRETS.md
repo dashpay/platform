@@ -321,6 +321,21 @@ does the same for a moved-in `String`; `From<&str>` and the
 `secret-serde` `visit_str` bypass the intermediate allocation entirely.
 `Debug` is redacted on both.
 
+`SecretString` is additionally **editable in place**, through the single
+`replace_range(range, replacement)` primitive (insertion is an empty
+range, deletion an empty replacement, wholesale replacement `..`) — it
+backs live text-input widgets downstream without them keeping a
+duplicate guarded buffer of their own. No plaintext leaves the wrapper
+through it: an edit that outgrows the buffer allocates a fresh guarded
+one, copies through a safe slice, and lets the outgrown one wipe itself
+on drop; a shrinking edit wipes the bytes it vacates. An invalid range
+panics (matching `String::replace_range`) with a message naming **only
+indices** — never content, since `str`'s own slicing panic would print
+the surrounding plaintext (CWE-209/CWE-532). The buffer is deliberately
+**uncapped** here: a value type cannot report a refusal, so enforcement
+stays at the UI that accepts the input and at the vault write, which
+applies `MAX_PLAINTEXT_LEN`.
+
 **Every secret owns its own guarded pages.** The buffer comes from
 `memsec`'s hardened allocator (`src/secrets/guarded.rs`, the crate's
 only `unsafe`): page-aligned, fenced by inaccessible `PROT_NONE` guard

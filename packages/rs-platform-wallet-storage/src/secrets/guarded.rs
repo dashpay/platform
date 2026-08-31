@@ -100,10 +100,10 @@ impl GuardedBuf {
         buf
     }
 
-    /// The usable payload length. Only the tests need it: production
-    /// code tracks a secret's live length separately and wipes through
-    /// [`GuardedBuf::zeroize_all`].
-    #[cfg(test)]
+    /// The usable payload length — what a growing edit compares its
+    /// required size against, and what [`zeroize_all`](Self::zeroize_all)
+    /// wipes. Distinct from a secret's live length, which each wrapper
+    /// tracks itself.
     pub(super) fn capacity(&self) -> usize {
         self.cap
     }
