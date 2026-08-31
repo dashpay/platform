@@ -1387,7 +1387,9 @@ export default {
                         },
                         {
                           type: 'string',
-                          // At least 5 seconds: 5s+, 5000ms+, or minutes/hours down to 0.1
+                          // At least 5 seconds: 5s+, 5000ms+, or minutes/hours down to 0.1.
+                          // The m/h floor is conservative (5s = 0.0833...m has no exact regex
+                          // boundary); durations below it must be spelled in s or ms instead
                           pattern: '^(([5-9]|[1-9][0-9]+)(\\.[0-9]+)?s|([5-9][0-9]{3}|[1-9][0-9]{4,})(\\.[0-9]+)?ms|([1-9][0-9]*(\\.[0-9]+)?|0\\.[1-9][0-9]*)[mh])$',
                         },
                       ],
