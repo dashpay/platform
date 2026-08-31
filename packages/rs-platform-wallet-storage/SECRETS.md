@@ -309,11 +309,33 @@ operation (defence in depth — credentials are long-lived).
 never crosses the public boundary. Internally, the upstream SPI returns
 plaintext as `Vec<u8>` from `CredentialApi::get_secret`; that result is
 wrapped into `SecretBytes::new(...)` **immediately**, with no named
-intermediate `Vec` binding. `SecretBytes::new` takes the
-`Vec<u8>` by value and `std::mem::take`s it into a `Zeroizing<Vec<u8>>` —
-no copy of the bare buffer ever survives past the constructor
-expression, so the bare-`Vec` exposure window is zero statements. The
-wrapper is also best-effort `mlock`ed and `Debug` is redacted.
+intermediate `Vec` binding.
+
+`SecretBytes::new` takes the `Vec<u8>` by value, **copies** it into
+guarded memory, then zeroizes the source before it drops. The copy is
+unavoidable and load-bearing: guarded memory comes from a dedicated
+allocator, so a `Vec`'s own allocation can never *become* the protected
+buffer — wiping the original is the only thing that keeps an
+unprotected duplicate off the general-purpose heap. `SecretString::new`
+does the same for a moved-in `String`; `From<&str>` and the
+`secret-serde` `visit_str` bypass the intermediate allocation entirely.
+`Debug` is redacted on both.
+
+**Every secret owns its own guarded pages.** The buffer comes from
+`memsec`'s hardened allocator (`src/secrets/guarded.rs`, the crate's
+only `unsafe`): page-aligned, fenced by inaccessible `PROT_NONE` guard
+pages, canary-checked, `mlock`ed, and excluded from core dumps
+(`MADV_DONTDUMP` on Linux). Because the data pages belong to one buffer
+outright, **no two live secrets ever share a page**, so freeing one can
+never unlock memory another still holds — the failure mode that makes
+page-granular locking hazardous over ordinary allocations. The wipe
+covers the buffer's full capacity, not just the live length.
+
+The `mlock` remains **best-effort / fail-open**: if the kernel refuses
+the lock the secret is still allocated, guard-paged and wiped, merely
+swappable. That refusal is logged at `warn` (with no address, length or
+content), so a degraded lock is observable rather than silent. An
+opt-in fail-closed strict mode is not implemented.
 
 `SecretStore::set` takes `&SecretBytes`, exposing the wrapped bytes to
 the SPI's `set_secret(&[u8])` only at the last moment; no long-lived
@@ -347,10 +369,16 @@ unwrapped copy is allocated.
   `SecretStoreError::InsecureParentDir` (the A1 guarantee depends on it).
   A read-only group-accessible parent (`0o750`) is accepted — it only
   leaks filenames, never the 0600-protected vault contents.
-  Each secret is capped at `MAX_SECRET_LEN` (64 KiB) at the write
-  boundary — generously above any mnemonic/seed/xpriv — so a single
-  oversized entry cannot inflate the shared document past the read-side
-  128 MiB ceiling and brick every wallet on the next open. (Through
+  Each secret is capped at `MAX_SECRET_LEN` (8176 B = `2 * 4096 - 16`)
+  at the write boundary — still ~30× any mnemonic/seed/xpriv — so a
+  single oversized entry cannot inflate the shared document past the
+  read-side 128 MiB ceiling and brick every wallet on the next open.
+  The value is set by locked memory, not by the document: secrets live
+  in `mlock`ed pages, and 8176 is the largest secret whose stored
+  envelope still fits two guarded pages instead of a third. The full
+  budget — which path peaks, at what, against a 64 KiB
+  `RLIMIT_MEMLOCK` — is documented at the constant and measured by
+  `store::tests::file_reprotect_peak_matches_the_documented_budget`. (Through
   `SecretStore::set_secret`/`set` the user-facing plaintext cap is the
   slightly lower `MAX_PLAINTEXT_LEN`, leaving room for the envelope
   overhead; see **Two-tier secret protection**.)
@@ -362,6 +390,16 @@ unwrapped copy is allocated.
   `SecretStore::file_unprotected(path)` door instead (use it only where the
   stored secrets carry their own Tier-2 object password, or as a staging
   step before `rekey` to a real passphrase — the empty→real migration).
+  **Over-long passphrases are rejected too.** `open`/`rekey` and both
+  sides of the Tier-2 object-password path refuse anything past
+  `MAX_PASSPHRASE_LEN` (4080 B, one guarded page) with
+  `SecretStoreError::PassphraseTooLong`. This is a memory bound, not a
+  policy one: a passphrase stays resident in `mlock`ed pages for its
+  store's whole lifetime, and three are live at once during a
+  `reprotect`, so an unbounded one would break the locked-memory budget
+  above. The `secret-serde` `Deserialize` impl applies the same ceiling,
+  since config is the one construction path whose size this crate does
+  not control.
 - **OS keyring (`SecretStore::os` / `default_credential_store`)** —
   returns an `Arc<dyn CredentialStoreApi + Send + Sync>` over the
   platform's default credential store. The backend on Linux/FreeBSD is
@@ -521,9 +559,41 @@ The CI advisory check runs `rustsec/audit-check` over `Cargo.lock`;
 because `secrets` is in the default feature set, the pinned
 `argon2` / `chacha20poly1305` / `zeroize` / `subtle` / `getrandom`
 (the `OsRng` source for the salt + per-entry nonces, specified as the
-exact pin `getrandom = "=0.2.17"`) / `region` / `keyring-core` /
+exact pin `getrandom = "=0.2.17"`) / `memsec` / `keyring-core` /
 per-platform store crate versions are unconditionally in the lockfile
-and therefore unconditionally in audit scope.
+and therefore unconditionally in audit scope. `memsec` (exact pin
+`=0.7.0`) deserves the closest reading of the set: it performs every
+page lock, every guard-page `mprotect`, and backs the crate's only
+`unsafe`, all inside `src/secrets/guarded.rs`. `region` is a
+**dev-dependency only** — the page-size query for the page-isolation
+tests — and is not in the production dependency graph.
+
+## Integration constraints
+
+Guarded allocation is not free, and it constrains what a consuming
+binary may do. Three consequences, none of them visible from the public
+API:
+
+- **Every non-empty secret costs at least one locked page** (4 KiB),
+  plus guard pages of address space, however small it is — a 32-byte
+  AEAD key included. That is the price of the no-shared-page guarantee.
+  Empty secrets are the one case optimised away: `SecretString::empty()`
+  and an empty `SecretBytes` hold no allocation at all. Budget one page
+  per live secret and check `RLIMIT_MEMLOCK` against it; if the limit is
+  too low the locks fail open (see "Memory hygiene at the seam") and a
+  `warn` is logged per affected allocation.
+- **No custom global allocator.** `memsec` takes its pages from the Rust
+  global allocator and `mprotect`s them in place. A binary installing
+  `mimalloc`/`jemalloc`/`snmalloc` may hand it pages whose allocator
+  metadata sits inside the protected block; the failure mode is a
+  segfault or silently ineffective guard pages, on the secret path.
+- **No Miri, ASan, LSan or libFuzzer over this crate.** Miri cannot
+  execute the `mprotect`/`mlock` FFI, and the sanitizers segfault on
+  memsec's guard pages (memsec issue #14). A sanitizer or fuzz job must
+  build without the `secrets` feature. The `unsafe` this forecloses
+  verification of is confined to `src/secrets/guarded.rs` and is small
+  enough to review by inspection — which is now the only line of
+  defence, and the reason it stays that small.
 
 ## Backup retention and secrets
 

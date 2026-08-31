@@ -44,7 +44,7 @@ pub use file::{
     SERVICE_PREFIX,
 };
 pub use keyring::default_credential_store;
-pub use secret::{SecretBytes, SecretString, MIN_PASSPHRASE_LEN};
+pub use secret::{SecretBytes, SecretString, MAX_PASSPHRASE_LEN, MIN_PASSPHRASE_LEN};
 pub use store::SecretStore;
 pub use validate::WalletId;
 pub use wire::envelope::MAX_PLAINTEXT_LEN;

@@ -320,10 +320,14 @@ impl SecretStore {
             Self::File(s) => {
                 let params = s.kdf_params();
                 s.reprotect_bytes(service, label, |stored| {
-                    let Some(stored) = stored else {
-                        return Err(SecretStoreError::NoEntry);
+                    // Scoped so the old envelope's guarded pages are freed
+                    // before the rewrap allocates the new one. Holding both
+                    // live is what made this the crate's deepest
+                    // locked-memory path; see the budget at `MAX_SECRET_LEN`.
+                    let secret = {
+                        let stored = stored.ok_or(SecretStoreError::NoEntry)?;
+                        envelope::unwrap(service, label, current, stored.expose_secret())?
                     };
-                    let secret = envelope::unwrap(service, label, current, stored.expose_secret())?;
                     envelope::wrap_with_params(service, label, new, secret.expose_secret(), params)
                 })
             }
@@ -467,6 +471,48 @@ mod tests {
 
     fn wid(b: u8) -> WalletId {
         WalletId::from([b; 32])
+    }
+
+    /// The locked-memory budget documented at `MAX_SECRET_LEN` is measured
+    /// against the code, not asserted in prose.
+    ///
+    /// `reprotect` on the `File` arm is the crate's deepest path: it runs a
+    /// full read and then a rewrap while the caller holds two object
+    /// passwords. Every row of the table is driven to its ceiling here.
+    /// The budget only holds because `reprotect` scopes the old envelope
+    /// away before the rewrap allocates and `wrap_with_params` scopes its
+    /// derived key away before encoding. Remove both and this measures
+    /// 44 KiB, leaving too little of a 64 KiB `RLIMIT_MEMLOCK` for the
+    /// concurrent read the budget promises to cover.
+    #[test]
+    fn file_reprotect_peak_matches_the_documented_budget() {
+        use crate::secrets::guarded::gauge;
+        use crate::secrets::{MAX_PASSPHRASE_LEN, MAX_PLAINTEXT_LEN};
+
+        let max_pw = || SecretString::new("p".repeat(MAX_PASSPHRASE_LEN));
+        let dir = tempfile::tempdir().unwrap();
+        // `file_mock` floors the Argon2 params; the buffers it allocates
+        // are the same sizes a production store's would be.
+        let store = SecretStore::file_mock(secure_vault_path(dir.path()), max_pw()).unwrap();
+        let secret = SecretBytes::from_slice(&vec![0x5Au8; MAX_PLAINTEXT_LEN]);
+        let (old_pw, new_pw) = (max_pw(), max_pw());
+        store
+            .set_secret(&wid(1), "seed", &secret, Some(&old_pw))
+            .unwrap();
+        drop(secret);
+
+        gauge::reset_peak();
+        store
+            .reprotect(&wid(1), "seed", Some(&old_pw), Some(&new_pw))
+            .unwrap();
+        let peak = gauge::peak();
+
+        assert_eq!(
+            peak,
+            36 * 1024,
+            "reprotect peaked at {} KiB; the table at MAX_SECRET_LEN says 36",
+            peak / 1024
+        );
     }
 
     #[test]

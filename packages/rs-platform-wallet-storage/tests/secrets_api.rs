@@ -13,7 +13,7 @@ use keyring_core::api::CredentialStoreApi;
 use keyring_core::{Error as KeyringError, Result as KeyringResult};
 use platform_wallet_storage::secrets::{
     EncryptedFileStore, SecretBytes, SecretStore, SecretStoreError, SecretString, WalletId,
-    SERVICE_PREFIX,
+    MAX_PASSPHRASE_LEN, MAX_SECRET_LEN, SERVICE_PREFIX,
 };
 
 fn vault_path(dir: &Path) -> PathBuf {
@@ -248,4 +248,50 @@ fn unknown_version_vault_is_refused_at_open() {
         matches!(err, SecretStoreError::VersionUnsupported { found: 999 }),
         "expected VersionUnsupported{{999}}, got {err:?}"
     );
+}
+
+/// The passphrase ceiling is part of the public contract, not an
+/// internal detail: `MAX_PASSPHRASE_LEN` is re-exported, the boundary is
+/// inclusive, and a violation surfaces as the typed
+/// `PassphraseTooLong` carrying lengths only — never the passphrase.
+#[test]
+fn passphrase_cap_is_public_typed_and_leak_free() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = vault_path(dir.path());
+
+    // At the cap: accepted, and the vault it opens is fully usable.
+    let store = EncryptedFileStore::open(&path, SecretString::new("p".repeat(MAX_PASSPHRASE_LEN)))
+        .expect("a passphrase exactly at MAX_PASSPHRASE_LEN must be accepted");
+    let w = WalletId::from([7; 32]);
+    store
+        .build(&service(w), "seed", None)
+        .unwrap()
+        .set_secret(b"still works")
+        .unwrap();
+    drop(store);
+
+    // Past it: refused, typed, and the message carries no plaintext.
+    let needle = "PLAINTEXTNEEDLE".repeat(MAX_PASSPHRASE_LEN / 15 + 1);
+    let err = EncryptedFileStore::open(&path, SecretString::new(needle.clone()))
+        .expect_err("a passphrase past MAX_PASSPHRASE_LEN must be refused");
+    assert!(
+        matches!(err, SecretStoreError::PassphraseTooLong { found, max }
+            if found == needle.len() && max == MAX_PASSPHRASE_LEN),
+        "got {err:?}"
+    );
+    let rendered = format!("{err} {err:?}");
+    assert!(
+        !rendered.contains("PLAINTEXTNEEDLE"),
+        "error leaked the passphrase: {rendered}"
+    );
+}
+
+/// The two size ceilings stay consistent with the locked-memory budget
+/// they are derived from: a secret's stored envelope must fit two
+/// guarded pages and a passphrase one, or the budget documented at
+/// `MAX_SECRET_LEN` no longer describes the crate.
+#[test]
+fn public_size_ceilings_stay_page_aligned() {
+    assert_eq!(MAX_SECRET_LEN, 2 * 4096 - 16);
+    assert_eq!(MAX_PASSPHRASE_LEN, 4096 - 16);
 }

@@ -25,6 +25,12 @@ use super::guarded::GuardedBuf;
 /// still fits a single 4 KiB data page — ample for any passphrase or
 /// 24-word mnemonic, and one page is the minimum a guarded allocation can
 /// cost regardless.
+///
+/// A guarded page is also the minimum a *non-empty* secret can cost, so a
+/// 32-byte key occupies one whole locked page. That overhead is inherent
+/// to memsec's page-granular isolation and is accepted as the price of the
+/// no-shared-page guarantee; the only case worth avoiding is the empty
+/// one, which allocates nothing at all.
 const DEFAULT_CAPACITY: usize = 4096 - 16;
 
 /// Minimum post-trim byte length for a vault passphrase or Tier-2 password.
@@ -33,6 +39,16 @@ const DEFAULT_CAPACITY: usize = 4096 - 16;
 /// strength estimator. Dictionary checks, UX feedback, and the real entropy
 /// policy remain the consumer's responsibility (see `SECRETS.md`).
 pub const MIN_PASSPHRASE_LEN: usize = 8;
+
+/// Maximum byte length for a vault passphrase or Tier-2 object password.
+///
+/// Equal to the largest payload that still fits one guarded page.
+/// Passphrases are held resident for a store's whole lifetime and up to
+/// three are live at once during a re-protect, so this ceiling is what
+/// keeps them a fixed one-page row in the locked-memory budget documented
+/// at [`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN) instead of an
+/// unbounded one. Far above any human-typed passphrase.
+pub const MAX_PASSPHRASE_LEN: usize = DEFAULT_CAPACITY;
 
 /// Zeroize-on-drop wrapper for secret UTF-8 strings (BIP-39 mnemonic,
 /// `EncryptedFileStore` passphrase).
@@ -51,8 +67,11 @@ pub const MIN_PASSPHRASE_LEN: usize = 8;
 /// let b = SecretString::new("pw");
 /// let _ = a == b; // `==` on SecretString is forbidden; use ConstantTimeEq::ct_eq
 /// ```
+#[derive(Default)]
 pub struct SecretString {
-    buf: GuardedBuf,
+    /// `None` for an empty secret: a guarded allocation costs a whole
+    /// page, which is pure waste when there is nothing to protect.
+    buf: Option<GuardedBuf>,
     /// Byte length of the UTF-8 plaintext held at the start of `buf`.
     len: usize,
 }
@@ -72,18 +91,21 @@ impl SecretString {
     }
 
     /// Copy `text` straight into a fresh guarded buffer, with no
-    /// intermediate unprotected allocation.
+    /// intermediate unprotected allocation. Empty text allocates nothing.
     fn from_plaintext(text: &str) -> Self {
+        if text.is_empty() {
+            return Self::default();
+        }
         let mut buf = GuardedBuf::new(text.len().max(DEFAULT_CAPACITY));
         buf.as_mut_slice(text.len())
             .copy_from_slice(text.as_bytes());
         Self {
-            buf,
+            buf: Some(buf),
             len: text.len(),
         }
     }
 
-    /// An empty, capacity-padded, guarded buffer.
+    /// An empty secret, holding no allocation.
     pub fn empty() -> Self {
         Self::default()
     }
@@ -96,7 +118,10 @@ impl SecretString {
     /// values are ever written into it, so that signals a bug in this
     /// module rather than a recoverable condition.
     pub fn expose_secret(&self) -> &str {
-        std::str::from_utf8(self.buf.as_slice(self.len)).expect("SecretString holds valid UTF-8")
+        let Some(buf) = &self.buf else {
+            return "";
+        };
+        std::str::from_utf8(buf.as_slice(self.len)).expect("SecretString holds valid UTF-8")
     }
 
     /// Secret length in bytes.
@@ -131,14 +156,14 @@ impl SecretString {
     pub(crate) fn is_below_minimum_passphrase_len(&self) -> bool {
         self.expose_secret().trim().len() < MIN_PASSPHRASE_LEN
     }
-}
 
-impl Default for SecretString {
-    fn default() -> Self {
-        Self {
-            buf: GuardedBuf::new(DEFAULT_CAPACITY),
-            len: 0,
-        }
+    /// Whether the secret is longer than [`MAX_PASSPHRASE_LEN`].
+    ///
+    /// Untrimmed, unlike the floor: the whole value occupies guarded
+    /// pages whether or not its edges are whitespace, and it is the page
+    /// cost this ceiling exists to bound.
+    pub(crate) fn exceeds_maximum_passphrase_len(&self) -> bool {
+        self.len > MAX_PASSPHRASE_LEN
     }
 }
 
@@ -162,7 +187,9 @@ impl Zeroize for SecretString {
     /// Wipe the buffer in place on a live value. `Drop` runs the same
     /// wipe automatically; this lets a holder zeroize early.
     fn zeroize(&mut self) {
-        self.buf.zeroize_all();
+        if let Some(buf) = &mut self.buf {
+            buf.zeroize_all();
+        }
         self.len = 0;
     }
 }
@@ -203,6 +230,23 @@ impl<'de> serde::Deserialize<'de> for SecretString {
     where
         D: serde::Deserializer<'de>,
     {
+        /// Refuse a value past [`MAX_PASSPHRASE_LEN`] before it reaches
+        /// guarded memory.
+        ///
+        /// Config is the one construction path this crate does not
+        /// control the size of, and an over-long value here would lock
+        /// page-rounded memory that the budget at `MAX_SECRET_LEN` does
+        /// not account for. Reports the length only — never the value.
+        fn reject_oversized<E: serde::de::Error>(len: usize) -> Result<(), E> {
+            if len > MAX_PASSPHRASE_LEN {
+                return Err(E::invalid_length(
+                    len,
+                    &"a secret within MAX_PASSPHRASE_LEN",
+                ));
+            }
+            Ok(())
+        }
+
         struct SecretStringVisitor;
 
         impl<'v> serde::de::Visitor<'v> for SecretStringVisitor {
@@ -216,15 +260,23 @@ impl<'de> serde::Deserialize<'de> for SecretString {
             where
                 E: serde::de::Error,
             {
+                reject_oversized(v.len())?;
                 // Copy the borrowed bytes straight into guarded memory —
                 // no owned `String` is created, so none can linger.
                 Ok(SecretString::from_plaintext(v))
             }
 
-            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            fn visit_string<E>(self, mut v: String) -> Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
+                if let Err(e) = reject_oversized(v.len()) {
+                    // The rejected value is still an unprotected copy we
+                    // own; wipe it rather than let the error path drop it
+                    // intact.
+                    v.zeroize();
+                    return Err(e);
+                }
                 // `SecretString::new` zeroizes the moved-in `String`.
                 Ok(SecretString::new(v))
             }
@@ -440,6 +492,76 @@ mod tests {
         assert_eq!(SecretString::default().len(), 0);
     }
 
+    /// Mirrors `empty_secret_bytes_constructs_without_allocating`: the two
+    /// sibling wrappers must answer "what does an empty secret cost?" the
+    /// same way. `open_unprotected` holds an empty passphrase resident for
+    /// a whole store's lifetime, so a padded buffer here would lock a page
+    /// per keyless vault to protect nothing.
+    #[test]
+    fn empty_secret_string_constructs_without_allocating() {
+        for s in [
+            SecretString::empty(),
+            SecretString::default(),
+            SecretString::new(""),
+            SecretString::from(""),
+        ] {
+            assert!(s.is_empty());
+            assert_eq!(s.expose_secret(), "");
+            assert!(s.buf.is_none(), "an empty secret must hold no allocation");
+        }
+        // Wiping a populated secret keeps its allocation; only
+        // construction decides whether one exists.
+        let mut s = SecretString::new("something worth protecting");
+        s.zeroize();
+        assert!(s.is_empty());
+        assert!(s.buf.is_some());
+    }
+
+    /// The passphrase ceiling counts raw bytes, not trimmed ones — the
+    /// whole value occupies the guarded pages the ceiling bounds.
+    #[test]
+    fn passphrase_ceiling_boundary_is_inclusive() {
+        let at_cap = SecretString::new("x".repeat(MAX_PASSPHRASE_LEN));
+        let over = SecretString::new("x".repeat(MAX_PASSPHRASE_LEN + 1));
+        let padded = SecretString::new(format!("{}  ", "x".repeat(MAX_PASSPHRASE_LEN - 1)));
+        assert!(!at_cap.exceeds_maximum_passphrase_len());
+        assert!(over.exceeds_maximum_passphrase_len());
+        assert!(
+            padded.exceeds_maximum_passphrase_len(),
+            "whitespace still costs guarded bytes, so it counts"
+        );
+    }
+
+    /// `Send`/`Sync` exercised for real, not just asserted: a secret is
+    /// built on one thread, moved to another, read and dropped there,
+    /// while a second secret is shared by reference across two more.
+    #[test]
+    fn secrets_cross_thread_boundaries() {
+        let moved = SecretString::new("moved across a thread boundary");
+        let handle = std::thread::spawn(move || {
+            assert_eq!(moved.expose_secret(), "moved across a thread boundary");
+            assert_eq!(moved.len(), 30);
+            // Dropped here: the wipe and free run off the allocating thread.
+        });
+        handle.join().expect("moved secret must survive the send");
+
+        let shared = std::sync::Arc::new(SecretBytes::from_slice(&[0x7Eu8; 64]));
+        let readers: Vec<_> = (0..2)
+            .map(|_| {
+                let shared = std::sync::Arc::clone(&shared);
+                std::thread::spawn(move || {
+                    assert!(bool::from(
+                        shared.ct_eq(&SecretBytes::from_slice(&[0x7Eu8; 64]))
+                    ));
+                })
+            })
+            .collect();
+        for reader in readers {
+            reader.join().expect("shared secret must survive the share");
+        }
+        assert_eq!(shared.expose_secret(), &[0x7Eu8; 64]);
+    }
+
     /// Multi-byte content survives the copy into guarded memory intact.
     /// The buffer is raw bytes now, so a botched length would corrupt
     /// UTF-8 and trip `expose_secret`'s validity check.
@@ -536,6 +658,30 @@ mod tests {
             s.ct_eq(&SecretString::new("correct horse battery staple"))
         ));
         assert_eq!(s.len(), 28);
+    }
+
+    /// Config is untrusted input, so `Deserialize` refuses a value past
+    /// [`MAX_PASSPHRASE_LEN`] before it reaches guarded memory — and the
+    /// error message carries the length only, never the value.
+    #[cfg(feature = "secret-serde")]
+    #[test]
+    fn deserialize_rejects_oversized_value() {
+        let at_cap = format!("\"{}\"", "a".repeat(MAX_PASSPHRASE_LEN));
+        let s: SecretString = serde_json::from_str(&at_cap).expect("the cap itself is accepted");
+        assert_eq!(s.len(), MAX_PASSPHRASE_LEN);
+
+        let over = format!("\"{}\"", "z".repeat(MAX_PASSPHRASE_LEN + 1));
+        let err = serde_json::from_str::<SecretString>(&over)
+            .expect_err("a value past the cap must be refused");
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains(&(MAX_PASSPHRASE_LEN + 1).to_string()),
+            "{rendered}"
+        );
+        assert!(
+            !rendered.contains("zzz"),
+            "error leaked the value: {rendered}"
+        );
     }
 
     /// `JsonSchema` renders a plain `string` and leaks no
@@ -653,7 +799,8 @@ mod tests {
         // (start address, payload capacity, label) for every live buffer.
         let mut regions: Vec<(usize, usize, String)> = Vec::new();
         for (i, s) in strings.iter().enumerate() {
-            regions.push((s.buf.addr(), s.buf.capacity(), format!("SecretString {i}")));
+            let buf = s.buf.as_ref().expect("a non-empty secret is allocated");
+            regions.push((buf.addr(), buf.capacity(), format!("SecretString {i}")));
         }
         for (i, b) in bytes.iter().enumerate() {
             let buf = b.buf.as_ref().expect("a 48-byte secret is allocated");
@@ -711,10 +858,10 @@ mod tests {
     #[test]
     fn zeroize_wipes_full_capacity_not_just_len() {
         let mut s = SecretString::new("sensitive_seed_material");
-        let cap = s.buf.capacity();
         s.zeroize();
+        let buf = s.buf.as_ref().expect("allocation survives zeroize");
         assert!(
-            s.buf.as_slice(cap).iter().all(|&b| b == 0),
+            buf.as_slice(buf.capacity()).iter().all(|&b| b == 0),
             "zeroize left residue in the buffer's trailing capacity"
         );
 

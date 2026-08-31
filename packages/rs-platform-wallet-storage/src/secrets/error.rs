@@ -63,6 +63,27 @@ pub enum SecretStoreError {
     #[error("passphrase or password is blank or too short")]
     BlankPassphrase,
 
+    /// A vault passphrase (Tier-1 `open`/`rekey`) or an object password
+    /// (Tier-2 enrol/unwrap) was longer than [`MAX_PASSPHRASE_LEN`].
+    ///
+    /// Passphrases live in guarded, `mlock`ed pages for as long as the
+    /// store they unlock, and up to three are resident at once during a
+    /// re-protect, so an unbounded one would blow the crate's
+    /// locked-memory budget (documented at
+    /// [`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN)). The ceiling is
+    /// far above any human-typed passphrase; only a programmatic or
+    /// config-supplied value realistically reaches it. Carries lengths
+    /// only, never any part of the value (CWE-209).
+    ///
+    /// [`MAX_PASSPHRASE_LEN`]: crate::secrets::MAX_PASSPHRASE_LEN
+    #[error("passphrase exceeds maximum length of {max} bytes (got {found})")]
+    PassphraseTooLong {
+        /// Length of the offending passphrase, in bytes.
+        found: usize,
+        /// The enforced ceiling, in bytes.
+        max: usize,
+    },
+
     /// AEAD tag failure on a stored entry (or rekey re-encrypt) *after*
     /// the header verify-token passed: the entry ciphertext is corrupt or
     /// tampered, **not** a wrong passphrase. No plaintext (CWE-347).
@@ -248,6 +269,7 @@ impl SecretStoreError {
             | Self::NeedsPassword
             | Self::WrongPassword
             | Self::BlankPassphrase
+            | Self::PassphraseTooLong { .. }
             | Self::Corruption
             | Self::KdfFailure
             | Self::EntropyUnavailable
@@ -278,6 +300,7 @@ impl SecretStoreError {
             Self::NeedsPassword => "needs_password",
             Self::WrongPassword => "wrong_password",
             Self::BlankPassphrase => "blank_passphrase",
+            Self::PassphraseTooLong { .. } => "passphrase_too_long",
             Self::Corruption => "corruption",
             Self::KdfFailure => "kdf_failure",
             Self::EntropyUnavailable => "entropy_unavailable",
@@ -421,6 +444,7 @@ impl From<SecretStoreError> for KeyringError {
             | E::InsecurePermissions { .. }
             | E::InsecureParentDir { .. }
             | E::SecretTooLarge { .. }
+            | E::PassphraseTooLong { .. }
             | E::VaultTooLarge { .. }
             | E::Decrypt
             | E::Encrypt

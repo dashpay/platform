@@ -58,7 +58,7 @@ use format::{EntryBody, Vault};
 
 use super::error::SecretStoreError;
 
-use super::secret::{SecretBytes, SecretString};
+use super::secret::{SecretBytes, SecretString, MAX_PASSPHRASE_LEN};
 use super::validate::{validated_label, WalletId};
 
 /// Service-prefix for vault entries: the full `service` string is
@@ -81,7 +81,7 @@ pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 /// [`SecretStoreError::SecretTooLarge`] at the write boundary before the
 /// secret is sealed or inserted.
 ///
-/// # Why 8 KiB
+/// # Why `2 * 4096 - 16`
 ///
 /// Secrets live in guarded, `mlock`ed pages (one allocation per secret,
 /// never shared), so this ceiling also sets the process's worst-case
@@ -89,28 +89,86 @@ pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 /// — the Docker/Kubernetes default — with room to spare.
 ///
 /// `memsec` locks `page_round(16 + payload)`, the 16 bytes being its
-/// canary. The deepest read path (OS-keyring backend, Tier-2
-/// password-protected entry) holds these buffers live at once:
+/// canary, so 8176 is the largest secret whose stored envelope still fits
+/// **two** guarded pages instead of spilling into a third — the same
+/// one-below-a-page-multiple shape as `DEFAULT_CAPACITY`. The last 16
+/// bytes of an 8 KiB allowance would cost a whole extra page on both the
+/// envelope and the plaintext row below.
+///
+/// The deepest path is a **`File`-arm [`reprotect`]**, not a read: it runs
+/// a full read and then a rewrap while the caller holds *two* object
+/// passwords. Its peak is the instant the AEAD open allocates the
+/// plaintext, with these buffers live at once:
 ///
 /// | live buffer | payload | locked |
 /// |---|---|---|
-/// | stored envelope (`MAX_SECRET_LEN` + `MAX_ENVELOPE_OVERHEAD`, 112 B) | 8304 B | 12 KiB |
-/// | decrypted plaintext ([`MAX_PLAINTEXT_LEN`]) | 8080 B | 8 KiB |
-/// | derived AEAD key | 32 B | 4 KiB |
+/// | stored envelope (`MAX_SECRET_LEN`) | 8176 B | 8 KiB |
+/// | derived unwrap key | 32 B | 4 KiB |
+/// | decrypted plaintext ([`MAX_PLAINTEXT_LEN`]) | 8064 B | 8 KiB |
 /// | resident vault AEAD key | 32 B | 4 KiB |
-/// | vault passphrase | ≤ 4080 B | 4 KiB |
-/// | Tier-2 object password | ≤ 4080 B | 4 KiB |
+/// | vault passphrase ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 4 KiB |
+/// | `current` object password ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 4 KiB |
+/// | `new` object password ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 4 KiB |
 ///
-/// That totals 36 KiB, leaving 28 KiB of the budget — enough for a second
-/// concurrent read of a maximum-size secret (20 KiB) and still 8 KiB
-/// clear. Raising this constant eats that headroom roughly twice over per
-/// KiB, since the envelope and its plaintext are both live.
+/// That totals 36 KiB, leaving 28 KiB — enough for a second concurrent
+/// max-size read (its own envelope, key and plaintext: 20 KiB) and still
+/// 8 KiB clear. The rewrap half of the same call peaks lower (32 KiB),
+/// because [`reprotect`] scopes the old envelope away before allocating
+/// the new one and [`wrap_with_params`] scopes its derived key away before
+/// encoding. Both scopes are load-bearing: without them this path peaks at
+/// 44 KiB, and at 52 KiB if the ceiling also loses its page alignment.
+/// `store::tests::file_reprotect_peak_matches_the_documented_budget`
+/// measures the peak rather than trusting this table.
 ///
-/// 8 KiB remains ~30× the largest legitimate secret: a 24-word BIP-39
+/// Every row is enforced, not assumed: the first three by this constant
+/// and [`MAX_PLAINTEXT_LEN`], the passphrase rows by
+/// [`MAX_PASSPHRASE_LEN`] on both the enrol and the read side. Raising
+/// this constant eats the headroom roughly twice over per KiB, since the
+/// envelope and its plaintext are both live.
+///
+/// 8176 bytes remains ~30× the largest legitimate secret: a 24-word BIP-39
 /// mnemonic is under 256 bytes, a BIP-32 seed is 64, an xpriv ~112.
 ///
 /// [`MAX_PLAINTEXT_LEN`]: crate::secrets::MAX_PLAINTEXT_LEN
-pub const MAX_SECRET_LEN: usize = 8 * 1024;
+/// [`MAX_PASSPHRASE_LEN`]: crate::secrets::MAX_PASSPHRASE_LEN
+/// [`reprotect`]: crate::secrets::SecretStore::reprotect
+pub const MAX_SECRET_LEN: usize = 2 * 4096 - 16;
+
+/// The budget table documented at [`MAX_SECRET_LEN`], made executable.
+///
+/// A future edit to any of the three ceilings that pushes the deepest
+/// path past a constrained `RLIMIT_MEMLOCK` fails the build instead of
+/// silently degrading every secret to swappable (the failure is
+/// fail-open, so nothing else would notice).
+const _: () = {
+    use super::guarded::locked_cost;
+
+    /// The `RLIMIT_MEMLOCK` this crate budgets against.
+    const MEMLOCK_BUDGET: usize = 64 * 1024;
+    /// `File`-arm `reprotect`, at the instant the AEAD open allocates.
+    const REPROTECT_PEAK: usize = locked_cost(MAX_SECRET_LEN)
+        + locked_cost(32)
+        + locked_cost(crate::secrets::MAX_PLAINTEXT_LEN)
+        + locked_cost(32)
+        + 3 * locked_cost(crate::secrets::MAX_PASSPHRASE_LEN);
+    /// A max-size read racing it, sharing the resident rows.
+    const CONCURRENT_READ: usize = locked_cost(MAX_SECRET_LEN)
+        + locked_cost(32)
+        + locked_cost(crate::secrets::MAX_PLAINTEXT_LEN);
+
+    assert!(
+        locked_cost(MAX_SECRET_LEN) == 2 * 4096,
+        "a max-size envelope must still fit two guarded pages"
+    );
+    assert!(
+        REPROTECT_PEAK == 36 * 1024,
+        "the documented 36 KiB peak no longer matches the constants"
+    );
+    assert!(
+        REPROTECT_PEAK + CONCURRENT_READ <= MEMLOCK_BUDGET,
+        "the deepest path plus one concurrent read must fit RLIMIT_MEMLOCK"
+    );
+};
 
 /// A passphrase-encrypted file-backed credential store.
 ///
@@ -191,9 +249,10 @@ impl EncryptedFileStore {
         path: impl AsRef<Path>,
         passphrase: SecretString,
     ) -> Result<Self, SecretStoreError> {
-        // Reject a sub-floor passphrase before touching the filesystem. A
-        // deliberate keyless vault uses `open_unprotected` instead.
-        reject_weak_passphrase(&passphrase)?;
+        // Reject an out-of-range passphrase before touching the
+        // filesystem. A deliberate keyless vault uses
+        // `open_unprotected` instead.
+        validate_passphrase(&passphrase)?;
         Self::open_inner(path.as_ref(), passphrase, KdfParams::default_target())
     }
 
@@ -235,7 +294,7 @@ impl EncryptedFileStore {
         // Ahead of every other check, so a rejected passphrase cannot mask the
         // release-build panic behind a plain `Err`.
         let kdf = KdfParams::floor_target();
-        reject_weak_passphrase(&passphrase)?;
+        validate_passphrase(&passphrase)?;
         Self::open_inner(path.as_ref(), passphrase, kdf)
     }
 
@@ -370,9 +429,9 @@ impl EncryptedFileStore {
     /// The vault is one shared fault domain: a corrupt entry blocks rekeying
     /// every wallet in the vault until that entry is manually removed.
     pub fn rekey(&self, new_passphrase: SecretString) -> Result<(), SecretStoreError> {
-        // Rekey always advances to a passphrase meeting the same floor as
+        // Rekey always advances to a passphrase meeting the same bounds as
         // open. Rejection leaves the resident and on-disk vault unchanged.
-        reject_weak_passphrase(&new_passphrase)?;
+        validate_passphrase(&new_passphrase)?;
         let (new_vault, new_key) = build_fresh_vault(&new_passphrase, self.kdf)?;
         lock_inner(&self.inner).rekey(new_vault, new_key, new_passphrase)
     }
@@ -664,10 +723,18 @@ fn lock_path_for(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Reject a passphrase below the configured post-trim length floor.
-fn reject_weak_passphrase(passphrase: &SecretString) -> Result<(), SecretStoreError> {
+/// Reject a passphrase outside the accepted length range: below the
+/// post-trim floor, or past the one-guarded-page ceiling that keeps the
+/// resident passphrase a bounded row in [`MAX_SECRET_LEN`]'s budget.
+fn validate_passphrase(passphrase: &SecretString) -> Result<(), SecretStoreError> {
     if passphrase.is_below_minimum_passphrase_len() {
         return Err(SecretStoreError::BlankPassphrase);
+    }
+    if passphrase.exceeds_maximum_passphrase_len() {
+        return Err(SecretStoreError::PassphraseTooLong {
+            found: passphrase.len(),
+            max: MAX_PASSPHRASE_LEN,
+        });
     }
     Ok(())
 }
@@ -1806,6 +1873,49 @@ mod tests {
         let minimum_path = vault_path(minimum_dir.path());
         EncryptedFileStore::open(&minimum_path, SecretString::new("12345678"))
             .expect("eight-byte passphrase must be accepted");
+    }
+
+    /// The passphrase ceiling holds at `open` and at `rekey`: it is what
+    /// keeps the resident-passphrase row of `MAX_SECRET_LEN`'s
+    /// locked-memory budget a bounded one, so it cannot be assumed.
+    /// Rejection leaves no vault behind and no vault changed.
+    #[test]
+    fn open_and_rekey_accept_the_passphrase_cap_and_reject_past_it() {
+        let at_cap = || SecretString::new("p".repeat(MAX_PASSPHRASE_LEN));
+        let over = || SecretString::new("p".repeat(MAX_PASSPHRASE_LEN + 1));
+
+        let over_dir = tempfile::tempdir().unwrap();
+        let over_path = vault_path(over_dir.path());
+        let err = EncryptedFileStore::open(&over_path, over())
+            .expect_err("a passphrase past the cap must be rejected");
+        assert!(
+            matches!(
+                err,
+                SecretStoreError::PassphraseTooLong { found, max }
+                    if found == MAX_PASSPHRASE_LEN + 1 && max == MAX_PASSPHRASE_LEN
+            ),
+            "got {err:?}"
+        );
+        assert!(!over_path.exists(), "rejection must not create a vault");
+        assert!(!lock_path_for(&over_path).exists(), "nor a lock sidecar");
+
+        // The cap itself is accepted, and rekey applies the same bounds.
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = EncryptedFileStore::open(&path, at_cap())
+            .expect("a passphrase exactly at the cap must be accepted");
+        entry(&s, wid(1), "seed").set_secret(b"v1").unwrap();
+
+        let err = s.rekey(over()).expect_err("rekey must apply the cap too");
+        assert!(
+            matches!(err, SecretStoreError::PassphraseTooLong { .. }),
+            "got {err:?}"
+        );
+        assert_eq!(
+            entry(&s, wid(1), "seed").get_secret().unwrap(),
+            b"v1",
+            "a rejected rekey must leave the vault readable under the old passphrase"
+        );
     }
 
     /// A blank passphrase is rejected at `rekey`; the resident
