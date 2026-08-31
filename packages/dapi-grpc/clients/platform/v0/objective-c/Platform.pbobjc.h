@@ -49,6 +49,9 @@ CF_EXTERN_C_BEGIN
 @class GetAddressesInfosResponse_GetAddressesInfosResponseV0;
 @class GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0;
 @class GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0;
+@class GetChainedDocumentsRequest_GetChainedDocumentsRequestV0;
+@class GetChainedDocumentsResponse_GetChainedDocumentsResponseV0;
+@class GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments;
 @class GetConsensusParamsRequest_GetConsensusParamsRequestV0;
 @class GetConsensusParamsResponse_ConsensusParamsBlock;
 @class GetConsensusParamsResponse_ConsensusParamsEvidence;
@@ -2960,7 +2963,7 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  * - `DESC` is the "top n" reading (walk the axis from the largest aggregate down), `ASC` the "bottom n" reading. Worked example: `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 1 OFFSET 4` is the 5th-best restaurant.
  *
  * `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], having=[<the selected aggregate> <op> <value>]` (protocol v14+) — **having-range mode**:
- * - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one pin per leading index property on a compound ranked index, at most one of them an `IN` (2..=10 distinct elements) that fans the bound out across prefix branches and merges, entries carrying `in_key`.
+ * - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one pin per leading index property on a compound ranked index, at most one of them an `IN` (2..=10 distinct elements; a never-written element contributes an empty branch) that fans the bound out across prefix branches and merges, entries carrying `in_key`.
  * - no offset or cursor pagination: a page cut at `limit` continues only by tightening the bound past the last *distinct* aggregate value seen; a cut inside a tie (several groups sharing the boundary aggregate) cannot be continued, so size `limit` above the widest expected tie.
  *
  * **Rejected shapes** (return `Unsupported`):
@@ -3980,6 +3983,185 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
  * Clears whatever value was set for the oneof 'variant'.
  **/
 void GetDocumentsResponse_GetDocumentsResponseV1_ResultData_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_ResultData *message);
+
+#pragma mark - GetChainedDocumentsRequest
+
+typedef GPB_ENUM(GetChainedDocumentsRequest_FieldNumber) {
+  GetChainedDocumentsRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetChainedDocumentsRequest_Version_OneOfCase) {
+  GetChainedDocumentsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetChainedDocumentsRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * A chained document query — a provable semi-join:
+ * `SELECT * FROM <outer> WHERE $id IN
+ *   (SELECT <join_property> FROM <inner> WHERE ...)`.
+ * The inner query must target an indexOnly document type and resolve to
+ * an index carrying `join_property`, and `join_property` must declare a
+ * same-contract `refersTo: permanentDocument` targeting
+ * `outer_document_type`. The outer half is DERIVED from the inner
+ * results — the request carries no outer clauses, and the verifier
+ * rebuilds the outer query from the proven inner values itself.
+ **/
+GPB_FINAL @interface GetChainedDocumentsRequest : GPBMessage
+
+@property(nonatomic, readonly) GetChainedDocumentsRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetChainedDocumentsRequest_GetChainedDocumentsRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetChainedDocumentsRequest_ClearVersionOneOfCase(GetChainedDocumentsRequest *message);
+
+#pragma mark - GetChainedDocumentsRequest_GetChainedDocumentsRequestV0
+
+typedef GPB_ENUM(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber) {
+  GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_DataContractId = 1,
+  GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_InnerDocumentType = 2,
+  GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_InnerWhere = 3,
+  GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_InnerOrderBy = 4,
+  GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_InnerLimit = 5,
+  GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_JoinProperty = 6,
+  GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_OuterDocumentType = 7,
+  GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_Prove = 8,
+};
+
+GPB_FINAL @interface GetChainedDocumentsRequest_GetChainedDocumentsRequestV0 : GPBMessage
+
+/** The contract both types live in */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+/** The indexOnly type queried directly */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *innerDocumentType;
+
+/** CBOR clauses, as GetDocumentsRequestV0.where */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *innerWhere;
+
+/** CBOR ordering, as GetDocumentsRequestV0.order_by */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *innerOrderBy;
+
+/**
+ * Maximum inner entries to return. REQUIRED (must be non-zero): the
+ * inner page size is what bounds the derived outer query.
+ **/
+@property(nonatomic, readwrite) uint32_t innerLimit;
+
+/** The inner property whose proven values become the outer `$id`s. */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *joinProperty;
+
+/** The `refersTo` target type the joined documents belong to. */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *outerDocumentType;
+
+/** Flag to request proofs as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetChainedDocumentsResponse
+
+typedef GPB_ENUM(GetChainedDocumentsResponse_FieldNumber) {
+  GetChainedDocumentsResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetChainedDocumentsResponse_Version_OneOfCase) {
+  GetChainedDocumentsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetChainedDocumentsResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetChainedDocumentsResponse : GPBMessage
+
+@property(nonatomic, readonly) GetChainedDocumentsResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetChainedDocumentsResponse_GetChainedDocumentsResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetChainedDocumentsResponse_ClearVersionOneOfCase(GetChainedDocumentsResponse *message);
+
+#pragma mark - GetChainedDocumentsResponse_GetChainedDocumentsResponseV0
+
+typedef GPB_ENUM(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber) {
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_Documents = 1,
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_Proof = 2,
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_Metadata = 3,
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_OuterGrovedbProof = 4,
+};
+
+typedef GPB_ENUM(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_Result_OneOfCase) {
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_Result_OneOfCase_Documents = 1,
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetChainedDocumentsResponse_GetChainedDocumentsResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** Both halves, if no proof requested */
+@property(nonatomic, readwrite, strong, null_resettable) GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments *documents;
+
+/** Proof of the INNER query, standard envelope */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+/**
+ * Proof of the derived outer by-ids query, generated in the same
+ * grove transaction as `proof` (both verify to one root hash).
+ * Present exactly when `proof` is set AND the proven inner page is
+ * non-empty; empty otherwise. Sits beside the result oneof so the
+ * standard single-`Proof` response tooling applies unchanged.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *outerGrovedbProof;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ClearResultOneOfCase(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0 *message);
+
+#pragma mark - GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments
+
+typedef GPB_ENUM(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments_FieldNumber) {
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments_FieldNumber_InnerDocumentsArray = 1,
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments_FieldNumber_OuterDocumentsArray = 2,
+};
+
+/**
+ * Both halves of the join, each serialized with its own type.
+ **/
+GPB_FINAL @interface GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments : GPBMessage
+
+/**
+ * The inner projections in query order — the last one carries the
+ * pagination cursor (its join-property value).
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *innerDocumentsArray;
+/** The number of items in @c innerDocumentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger innerDocumentsArray_Count;
+
+/**
+ * The joined outer documents, ordered by first appearance of
+ * their id among the inner projections (deduplicated).
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *outerDocumentsArray;
+/** The number of items in @c outerDocumentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger outerDocumentsArray_Count;
+
+@end
 
 #pragma mark - GetDocumentHistoryRequest
 

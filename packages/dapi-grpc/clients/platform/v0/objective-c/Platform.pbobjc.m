@@ -57,6 +57,11 @@ GPBObjCClassDeclaration(GetAddressesTrunkStateRequest);
 GPBObjCClassDeclaration(GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0);
 GPBObjCClassDeclaration(GetAddressesTrunkStateResponse);
 GPBObjCClassDeclaration(GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0);
+GPBObjCClassDeclaration(GetChainedDocumentsRequest);
+GPBObjCClassDeclaration(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0);
+GPBObjCClassDeclaration(GetChainedDocumentsResponse);
+GPBObjCClassDeclaration(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0);
+GPBObjCClassDeclaration(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments);
 GPBObjCClassDeclaration(GetConsensusParamsRequest);
 GPBObjCClassDeclaration(GetConsensusParamsRequest_GetConsensusParamsRequestV0);
 GPBObjCClassDeclaration(GetConsensusParamsResponse);
@@ -7418,6 +7423,390 @@ void GetDocumentsResponse_GetDocumentsResponseV1_ResultData_ClearVariantOneOfCas
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - GetChainedDocumentsRequest
+
+@implementation GetChainedDocumentsRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetChainedDocumentsRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetChainedDocumentsRequest_GetChainedDocumentsRequestV0 *v0;
+} GetChainedDocumentsRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0),
+        .number = GetChainedDocumentsRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetChainedDocumentsRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetChainedDocumentsRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetChainedDocumentsRequest_ClearVersionOneOfCase(GetChainedDocumentsRequest *message) {
+  GPBDescriptor *descriptor = [GetChainedDocumentsRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetChainedDocumentsRequest_GetChainedDocumentsRequestV0
+
+@implementation GetChainedDocumentsRequest_GetChainedDocumentsRequestV0
+
+@dynamic dataContractId;
+@dynamic innerDocumentType;
+@dynamic innerWhere;
+@dynamic innerOrderBy;
+@dynamic innerLimit;
+@dynamic joinProperty;
+@dynamic outerDocumentType;
+@dynamic prove;
+
+typedef struct GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t innerLimit;
+  NSData *dataContractId;
+  NSString *innerDocumentType;
+  NSData *innerWhere;
+  NSData *innerOrderBy;
+  NSString *joinProperty;
+  NSString *outerDocumentType;
+} GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "dataContractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_DataContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_, dataContractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "innerDocumentType",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_InnerDocumentType,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_, innerDocumentType),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "innerWhere",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_InnerWhere,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_, innerWhere),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "innerOrderBy",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_InnerOrderBy,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_, innerOrderBy),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "innerLimit",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_InnerLimit,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_, innerLimit),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "joinProperty",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_JoinProperty,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_, joinProperty),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "outerDocumentType",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_OuterDocumentType,
+        .hasIndex = 6,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_, outerDocumentType),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsRequest_GetChainedDocumentsRequestV0_FieldNumber_Prove,
+        .hasIndex = 7,
+        .offset = 8,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetChainedDocumentsRequest_GetChainedDocumentsRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetChainedDocumentsRequest_GetChainedDocumentsRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetChainedDocumentsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetChainedDocumentsResponse
+
+@implementation GetChainedDocumentsResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetChainedDocumentsResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0 *v0;
+} GetChainedDocumentsResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0),
+        .number = GetChainedDocumentsResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetChainedDocumentsResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetChainedDocumentsResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetChainedDocumentsResponse_ClearVersionOneOfCase(GetChainedDocumentsResponse *message) {
+  GPBDescriptor *descriptor = [GetChainedDocumentsResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetChainedDocumentsResponse_GetChainedDocumentsResponseV0
+
+@implementation GetChainedDocumentsResponse_GetChainedDocumentsResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic documents;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+@dynamic outerGrovedbProof;
+
+typedef struct GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments *documents;
+  Proof *proof;
+  ResponseMetadata *metadata;
+  NSData *outerGrovedbProof;
+} GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "documents",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments),
+        .number = GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_Documents,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_, documents),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "outerGrovedbProof",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_FieldNumber_OuterGrovedbProof,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_, outerGrovedbProof),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetChainedDocumentsResponse_GetChainedDocumentsResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetChainedDocumentsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ClearResultOneOfCase(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetChainedDocumentsResponse_GetChainedDocumentsResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments
+
+@implementation GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments
+
+@dynamic innerDocumentsArray, innerDocumentsArray_Count;
+@dynamic outerDocumentsArray, outerDocumentsArray_Count;
+
+typedef struct GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *innerDocumentsArray;
+  NSMutableArray *outerDocumentsArray;
+} GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "innerDocumentsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments_FieldNumber_InnerDocumentsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments__storage_, innerDocumentsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "outerDocumentsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments_FieldNumber_OuterDocumentsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments__storage_, outerDocumentsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0_ChainedDocuments__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetChainedDocumentsResponse_GetChainedDocumentsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetDocumentHistoryRequest
 
 @implementation GetDocumentHistoryRequest

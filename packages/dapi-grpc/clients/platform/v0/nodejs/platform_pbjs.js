@@ -615,6 +615,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getChainedDocuments}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getChainedDocumentsCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse} [response] GetChainedDocumentsResponse
+                         */
+
+                        /**
+                         * Calls getChainedDocuments.
+                         * @function getChainedDocuments
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsRequest} request GetChainedDocumentsRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getChainedDocumentsCallback} callback Node-style callback called with the error, if any, and GetChainedDocumentsResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getChainedDocuments = function getChainedDocuments(request, callback) {
+                            return this.rpcCall(getChainedDocuments, $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest, $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse, request, callback);
+                        }, "name", { value: "getChainedDocuments" });
+
+                        /**
+                         * Calls getChainedDocuments.
+                         * @function getChainedDocuments
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsRequest} request GetChainedDocumentsRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetChainedDocumentsResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityByPublicKeyHash}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getIdentityByPublicKeyHashCallback
@@ -27157,6 +27190,1350 @@ $root.org = (function() {
                         })();
 
                         return GetDocumentsResponse;
+                    })();
+
+                    v0.GetChainedDocumentsRequest = (function() {
+
+                        /**
+                         * Properties of a GetChainedDocumentsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetChainedDocumentsRequest
+                         * @property {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.IGetChainedDocumentsRequestV0|null} [v0] GetChainedDocumentsRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetChainedDocumentsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetChainedDocumentsRequest.
+                         * @implements IGetChainedDocumentsRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsRequest=} [properties] Properties to set
+                         */
+                        function GetChainedDocumentsRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetChainedDocumentsRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.IGetChainedDocumentsRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @instance
+                         */
+                        GetChainedDocumentsRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetChainedDocumentsRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetChainedDocumentsRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetChainedDocumentsRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsRequest} GetChainedDocumentsRequest instance
+                         */
+                        GetChainedDocumentsRequest.create = function create(properties) {
+                            return new GetChainedDocumentsRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetChainedDocumentsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsRequest} message GetChainedDocumentsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetChainedDocumentsRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetChainedDocumentsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsRequest} message GetChainedDocumentsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetChainedDocumentsRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetChainedDocumentsRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsRequest} GetChainedDocumentsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetChainedDocumentsRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetChainedDocumentsRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsRequest} GetChainedDocumentsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetChainedDocumentsRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetChainedDocumentsRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetChainedDocumentsRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetChainedDocumentsRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsRequest} GetChainedDocumentsRequest
+                         */
+                        GetChainedDocumentsRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetChainedDocumentsRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetChainedDocumentsRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetChainedDocumentsRequest} message GetChainedDocumentsRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetChainedDocumentsRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetChainedDocumentsRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetChainedDocumentsRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetChainedDocumentsRequest.GetChainedDocumentsRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetChainedDocumentsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                             * @interface IGetChainedDocumentsRequestV0
+                             * @property {Uint8Array|null} [dataContractId] GetChainedDocumentsRequestV0 dataContractId
+                             * @property {string|null} [innerDocumentType] GetChainedDocumentsRequestV0 innerDocumentType
+                             * @property {Uint8Array|null} [innerWhere] GetChainedDocumentsRequestV0 innerWhere
+                             * @property {Uint8Array|null} [innerOrderBy] GetChainedDocumentsRequestV0 innerOrderBy
+                             * @property {number|null} [innerLimit] GetChainedDocumentsRequestV0 innerLimit
+                             * @property {string|null} [joinProperty] GetChainedDocumentsRequestV0 joinProperty
+                             * @property {string|null} [outerDocumentType] GetChainedDocumentsRequestV0 outerDocumentType
+                             * @property {boolean|null} [prove] GetChainedDocumentsRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetChainedDocumentsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest
+                             * @classdesc Represents a GetChainedDocumentsRequestV0.
+                             * @implements IGetChainedDocumentsRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.IGetChainedDocumentsRequestV0=} [properties] Properties to set
+                             */
+                            function GetChainedDocumentsRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetChainedDocumentsRequestV0 dataContractId.
+                             * @member {Uint8Array} dataContractId
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @instance
+                             */
+                            GetChainedDocumentsRequestV0.prototype.dataContractId = $util.newBuffer([]);
+
+                            /**
+                             * GetChainedDocumentsRequestV0 innerDocumentType.
+                             * @member {string} innerDocumentType
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @instance
+                             */
+                            GetChainedDocumentsRequestV0.prototype.innerDocumentType = "";
+
+                            /**
+                             * GetChainedDocumentsRequestV0 innerWhere.
+                             * @member {Uint8Array} innerWhere
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @instance
+                             */
+                            GetChainedDocumentsRequestV0.prototype.innerWhere = $util.newBuffer([]);
+
+                            /**
+                             * GetChainedDocumentsRequestV0 innerOrderBy.
+                             * @member {Uint8Array} innerOrderBy
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @instance
+                             */
+                            GetChainedDocumentsRequestV0.prototype.innerOrderBy = $util.newBuffer([]);
+
+                            /**
+                             * GetChainedDocumentsRequestV0 innerLimit.
+                             * @member {number} innerLimit
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @instance
+                             */
+                            GetChainedDocumentsRequestV0.prototype.innerLimit = 0;
+
+                            /**
+                             * GetChainedDocumentsRequestV0 joinProperty.
+                             * @member {string} joinProperty
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @instance
+                             */
+                            GetChainedDocumentsRequestV0.prototype.joinProperty = "";
+
+                            /**
+                             * GetChainedDocumentsRequestV0 outerDocumentType.
+                             * @member {string} outerDocumentType
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @instance
+                             */
+                            GetChainedDocumentsRequestV0.prototype.outerDocumentType = "";
+
+                            /**
+                             * GetChainedDocumentsRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @instance
+                             */
+                            GetChainedDocumentsRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetChainedDocumentsRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.IGetChainedDocumentsRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0} GetChainedDocumentsRequestV0 instance
+                             */
+                            GetChainedDocumentsRequestV0.create = function create(properties) {
+                                return new GetChainedDocumentsRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetChainedDocumentsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.IGetChainedDocumentsRequestV0} message GetChainedDocumentsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetChainedDocumentsRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.dataContractId != null && Object.hasOwnProperty.call(message, "dataContractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractId);
+                                if (message.innerDocumentType != null && Object.hasOwnProperty.call(message, "innerDocumentType"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.innerDocumentType);
+                                if (message.innerWhere != null && Object.hasOwnProperty.call(message, "innerWhere"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.innerWhere);
+                                if (message.innerOrderBy != null && Object.hasOwnProperty.call(message, "innerOrderBy"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.innerOrderBy);
+                                if (message.innerLimit != null && Object.hasOwnProperty.call(message, "innerLimit"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.innerLimit);
+                                if (message.joinProperty != null && Object.hasOwnProperty.call(message, "joinProperty"))
+                                    writer.uint32(/* id 6, wireType 2 =*/50).string(message.joinProperty);
+                                if (message.outerDocumentType != null && Object.hasOwnProperty.call(message, "outerDocumentType"))
+                                    writer.uint32(/* id 7, wireType 2 =*/58).string(message.outerDocumentType);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 8, wireType 0 =*/64).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetChainedDocumentsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.IGetChainedDocumentsRequestV0} message GetChainedDocumentsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetChainedDocumentsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetChainedDocumentsRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0} GetChainedDocumentsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetChainedDocumentsRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.dataContractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.innerDocumentType = reader.string();
+                                        break;
+                                    case 3:
+                                        message.innerWhere = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.innerOrderBy = reader.bytes();
+                                        break;
+                                    case 5:
+                                        message.innerLimit = reader.uint32();
+                                        break;
+                                    case 6:
+                                        message.joinProperty = reader.string();
+                                        break;
+                                    case 7:
+                                        message.outerDocumentType = reader.string();
+                                        break;
+                                    case 8:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetChainedDocumentsRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0} GetChainedDocumentsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetChainedDocumentsRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetChainedDocumentsRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetChainedDocumentsRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    if (!(message.dataContractId && typeof message.dataContractId.length === "number" || $util.isString(message.dataContractId)))
+                                        return "dataContractId: buffer expected";
+                                if (message.innerDocumentType != null && message.hasOwnProperty("innerDocumentType"))
+                                    if (!$util.isString(message.innerDocumentType))
+                                        return "innerDocumentType: string expected";
+                                if (message.innerWhere != null && message.hasOwnProperty("innerWhere"))
+                                    if (!(message.innerWhere && typeof message.innerWhere.length === "number" || $util.isString(message.innerWhere)))
+                                        return "innerWhere: buffer expected";
+                                if (message.innerOrderBy != null && message.hasOwnProperty("innerOrderBy"))
+                                    if (!(message.innerOrderBy && typeof message.innerOrderBy.length === "number" || $util.isString(message.innerOrderBy)))
+                                        return "innerOrderBy: buffer expected";
+                                if (message.innerLimit != null && message.hasOwnProperty("innerLimit"))
+                                    if (!$util.isInteger(message.innerLimit))
+                                        return "innerLimit: integer expected";
+                                if (message.joinProperty != null && message.hasOwnProperty("joinProperty"))
+                                    if (!$util.isString(message.joinProperty))
+                                        return "joinProperty: string expected";
+                                if (message.outerDocumentType != null && message.hasOwnProperty("outerDocumentType"))
+                                    if (!$util.isString(message.outerDocumentType))
+                                        return "outerDocumentType: string expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetChainedDocumentsRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0} GetChainedDocumentsRequestV0
+                             */
+                            GetChainedDocumentsRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0();
+                                if (object.dataContractId != null)
+                                    if (typeof object.dataContractId === "string")
+                                        $util.base64.decode(object.dataContractId, message.dataContractId = $util.newBuffer($util.base64.length(object.dataContractId)), 0);
+                                    else if (object.dataContractId.length >= 0)
+                                        message.dataContractId = object.dataContractId;
+                                if (object.innerDocumentType != null)
+                                    message.innerDocumentType = String(object.innerDocumentType);
+                                if (object.innerWhere != null)
+                                    if (typeof object.innerWhere === "string")
+                                        $util.base64.decode(object.innerWhere, message.innerWhere = $util.newBuffer($util.base64.length(object.innerWhere)), 0);
+                                    else if (object.innerWhere.length >= 0)
+                                        message.innerWhere = object.innerWhere;
+                                if (object.innerOrderBy != null)
+                                    if (typeof object.innerOrderBy === "string")
+                                        $util.base64.decode(object.innerOrderBy, message.innerOrderBy = $util.newBuffer($util.base64.length(object.innerOrderBy)), 0);
+                                    else if (object.innerOrderBy.length >= 0)
+                                        message.innerOrderBy = object.innerOrderBy;
+                                if (object.innerLimit != null)
+                                    message.innerLimit = object.innerLimit >>> 0;
+                                if (object.joinProperty != null)
+                                    message.joinProperty = String(object.joinProperty);
+                                if (object.outerDocumentType != null)
+                                    message.outerDocumentType = String(object.outerDocumentType);
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetChainedDocumentsRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0} message GetChainedDocumentsRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetChainedDocumentsRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.dataContractId = "";
+                                    else {
+                                        object.dataContractId = [];
+                                        if (options.bytes !== Array)
+                                            object.dataContractId = $util.newBuffer(object.dataContractId);
+                                    }
+                                    object.innerDocumentType = "";
+                                    if (options.bytes === String)
+                                        object.innerWhere = "";
+                                    else {
+                                        object.innerWhere = [];
+                                        if (options.bytes !== Array)
+                                            object.innerWhere = $util.newBuffer(object.innerWhere);
+                                    }
+                                    if (options.bytes === String)
+                                        object.innerOrderBy = "";
+                                    else {
+                                        object.innerOrderBy = [];
+                                        if (options.bytes !== Array)
+                                            object.innerOrderBy = $util.newBuffer(object.innerOrderBy);
+                                    }
+                                    object.innerLimit = 0;
+                                    object.joinProperty = "";
+                                    object.outerDocumentType = "";
+                                    object.prove = false;
+                                }
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
+                                if (message.innerDocumentType != null && message.hasOwnProperty("innerDocumentType"))
+                                    object.innerDocumentType = message.innerDocumentType;
+                                if (message.innerWhere != null && message.hasOwnProperty("innerWhere"))
+                                    object.innerWhere = options.bytes === String ? $util.base64.encode(message.innerWhere, 0, message.innerWhere.length) : options.bytes === Array ? Array.prototype.slice.call(message.innerWhere) : message.innerWhere;
+                                if (message.innerOrderBy != null && message.hasOwnProperty("innerOrderBy"))
+                                    object.innerOrderBy = options.bytes === String ? $util.base64.encode(message.innerOrderBy, 0, message.innerOrderBy.length) : options.bytes === Array ? Array.prototype.slice.call(message.innerOrderBy) : message.innerOrderBy;
+                                if (message.innerLimit != null && message.hasOwnProperty("innerLimit"))
+                                    object.innerLimit = message.innerLimit;
+                                if (message.joinProperty != null && message.hasOwnProperty("joinProperty"))
+                                    object.joinProperty = message.joinProperty;
+                                if (message.outerDocumentType != null && message.hasOwnProperty("outerDocumentType"))
+                                    object.outerDocumentType = message.outerDocumentType;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetChainedDocumentsRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsRequest.GetChainedDocumentsRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetChainedDocumentsRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetChainedDocumentsRequestV0;
+                        })();
+
+                        return GetChainedDocumentsRequest;
+                    })();
+
+                    v0.GetChainedDocumentsResponse = (function() {
+
+                        /**
+                         * Properties of a GetChainedDocumentsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetChainedDocumentsResponse
+                         * @property {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.IGetChainedDocumentsResponseV0|null} [v0] GetChainedDocumentsResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetChainedDocumentsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetChainedDocumentsResponse.
+                         * @implements IGetChainedDocumentsResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsResponse=} [properties] Properties to set
+                         */
+                        function GetChainedDocumentsResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetChainedDocumentsResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.IGetChainedDocumentsResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @instance
+                         */
+                        GetChainedDocumentsResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetChainedDocumentsResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetChainedDocumentsResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetChainedDocumentsResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse} GetChainedDocumentsResponse instance
+                         */
+                        GetChainedDocumentsResponse.create = function create(properties) {
+                            return new GetChainedDocumentsResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetChainedDocumentsResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsResponse} message GetChainedDocumentsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetChainedDocumentsResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetChainedDocumentsResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetChainedDocumentsResponse} message GetChainedDocumentsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetChainedDocumentsResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetChainedDocumentsResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse} GetChainedDocumentsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetChainedDocumentsResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetChainedDocumentsResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse} GetChainedDocumentsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetChainedDocumentsResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetChainedDocumentsResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetChainedDocumentsResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetChainedDocumentsResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse} GetChainedDocumentsResponse
+                         */
+                        GetChainedDocumentsResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetChainedDocumentsResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetChainedDocumentsResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse} message GetChainedDocumentsResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetChainedDocumentsResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetChainedDocumentsResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetChainedDocumentsResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetChainedDocumentsResponse.GetChainedDocumentsResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetChainedDocumentsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                             * @interface IGetChainedDocumentsResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.IChainedDocuments|null} [documents] GetChainedDocumentsResponseV0 documents
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetChainedDocumentsResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetChainedDocumentsResponseV0 metadata
+                             * @property {Uint8Array|null} [outerGrovedbProof] GetChainedDocumentsResponseV0 outerGrovedbProof
+                             */
+
+                            /**
+                             * Constructs a new GetChainedDocumentsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse
+                             * @classdesc Represents a GetChainedDocumentsResponseV0.
+                             * @implements IGetChainedDocumentsResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.IGetChainedDocumentsResponseV0=} [properties] Properties to set
+                             */
+                            function GetChainedDocumentsResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetChainedDocumentsResponseV0 documents.
+                             * @member {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.IChainedDocuments|null|undefined} documents
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @instance
+                             */
+                            GetChainedDocumentsResponseV0.prototype.documents = null;
+
+                            /**
+                             * GetChainedDocumentsResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @instance
+                             */
+                            GetChainedDocumentsResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetChainedDocumentsResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @instance
+                             */
+                            GetChainedDocumentsResponseV0.prototype.metadata = null;
+
+                            /**
+                             * GetChainedDocumentsResponseV0 outerGrovedbProof.
+                             * @member {Uint8Array} outerGrovedbProof
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @instance
+                             */
+                            GetChainedDocumentsResponseV0.prototype.outerGrovedbProof = $util.newBuffer([]);
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetChainedDocumentsResponseV0 result.
+                             * @member {"documents"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetChainedDocumentsResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["documents", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetChainedDocumentsResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.IGetChainedDocumentsResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0} GetChainedDocumentsResponseV0 instance
+                             */
+                            GetChainedDocumentsResponseV0.create = function create(properties) {
+                                return new GetChainedDocumentsResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetChainedDocumentsResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.IGetChainedDocumentsResponseV0} message GetChainedDocumentsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetChainedDocumentsResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.documents != null && Object.hasOwnProperty.call(message, "documents"))
+                                    $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.encode(message.documents, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.outerGrovedbProof != null && Object.hasOwnProperty.call(message, "outerGrovedbProof"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.outerGrovedbProof);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetChainedDocumentsResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.IGetChainedDocumentsResponseV0} message GetChainedDocumentsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetChainedDocumentsResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetChainedDocumentsResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0} GetChainedDocumentsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetChainedDocumentsResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.documents = $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        message.outerGrovedbProof = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetChainedDocumentsResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0} GetChainedDocumentsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetChainedDocumentsResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetChainedDocumentsResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetChainedDocumentsResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.documents != null && message.hasOwnProperty("documents")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.verify(message.documents);
+                                        if (error)
+                                            return "documents." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                if (message.outerGrovedbProof != null && message.hasOwnProperty("outerGrovedbProof"))
+                                    if (!(message.outerGrovedbProof && typeof message.outerGrovedbProof.length === "number" || $util.isString(message.outerGrovedbProof)))
+                                        return "outerGrovedbProof: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetChainedDocumentsResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0} GetChainedDocumentsResponseV0
+                             */
+                            GetChainedDocumentsResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0();
+                                if (object.documents != null) {
+                                    if (typeof object.documents !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.documents: object expected");
+                                    message.documents = $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.fromObject(object.documents);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                if (object.outerGrovedbProof != null)
+                                    if (typeof object.outerGrovedbProof === "string")
+                                        $util.base64.decode(object.outerGrovedbProof, message.outerGrovedbProof = $util.newBuffer($util.base64.length(object.outerGrovedbProof)), 0);
+                                    else if (object.outerGrovedbProof.length >= 0)
+                                        message.outerGrovedbProof = object.outerGrovedbProof;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetChainedDocumentsResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0} message GetChainedDocumentsResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetChainedDocumentsResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.metadata = null;
+                                    if (options.bytes === String)
+                                        object.outerGrovedbProof = "";
+                                    else {
+                                        object.outerGrovedbProof = [];
+                                        if (options.bytes !== Array)
+                                            object.outerGrovedbProof = $util.newBuffer(object.outerGrovedbProof);
+                                    }
+                                }
+                                if (message.documents != null && message.hasOwnProperty("documents")) {
+                                    object.documents = $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.toObject(message.documents, options);
+                                    if (options.oneofs)
+                                        object.result = "documents";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                if (message.outerGrovedbProof != null && message.hasOwnProperty("outerGrovedbProof"))
+                                    object.outerGrovedbProof = options.bytes === String ? $util.base64.encode(message.outerGrovedbProof, 0, message.outerGrovedbProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.outerGrovedbProof) : message.outerGrovedbProof;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetChainedDocumentsResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetChainedDocumentsResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetChainedDocumentsResponseV0.ChainedDocuments = (function() {
+
+                                /**
+                                 * Properties of a ChainedDocuments.
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                                 * @interface IChainedDocuments
+                                 * @property {Array.<Uint8Array>|null} [innerDocuments] ChainedDocuments innerDocuments
+                                 * @property {Array.<Uint8Array>|null} [outerDocuments] ChainedDocuments outerDocuments
+                                 */
+
+                                /**
+                                 * Constructs a new ChainedDocuments.
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0
+                                 * @classdesc Represents a ChainedDocuments.
+                                 * @implements IChainedDocuments
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.IChainedDocuments=} [properties] Properties to set
+                                 */
+                                function ChainedDocuments(properties) {
+                                    this.innerDocuments = [];
+                                    this.outerDocuments = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ChainedDocuments innerDocuments.
+                                 * @member {Array.<Uint8Array>} innerDocuments
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @instance
+                                 */
+                                ChainedDocuments.prototype.innerDocuments = $util.emptyArray;
+
+                                /**
+                                 * ChainedDocuments outerDocuments.
+                                 * @member {Array.<Uint8Array>} outerDocuments
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @instance
+                                 */
+                                ChainedDocuments.prototype.outerDocuments = $util.emptyArray;
+
+                                /**
+                                 * Creates a new ChainedDocuments instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.IChainedDocuments=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments} ChainedDocuments instance
+                                 */
+                                ChainedDocuments.create = function create(properties) {
+                                    return new ChainedDocuments(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ChainedDocuments message. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.IChainedDocuments} message ChainedDocuments message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ChainedDocuments.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.innerDocuments != null && message.innerDocuments.length)
+                                        for (var i = 0; i < message.innerDocuments.length; ++i)
+                                            writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.innerDocuments[i]);
+                                    if (message.outerDocuments != null && message.outerDocuments.length)
+                                        for (var i = 0; i < message.outerDocuments.length; ++i)
+                                            writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.outerDocuments[i]);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ChainedDocuments message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.IChainedDocuments} message ChainedDocuments message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ChainedDocuments.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a ChainedDocuments message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments} ChainedDocuments
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ChainedDocuments.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.innerDocuments && message.innerDocuments.length))
+                                                message.innerDocuments = [];
+                                            message.innerDocuments.push(reader.bytes());
+                                            break;
+                                        case 2:
+                                            if (!(message.outerDocuments && message.outerDocuments.length))
+                                                message.outerDocuments = [];
+                                            message.outerDocuments.push(reader.bytes());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a ChainedDocuments message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments} ChainedDocuments
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ChainedDocuments.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a ChainedDocuments message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ChainedDocuments.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.innerDocuments != null && message.hasOwnProperty("innerDocuments")) {
+                                        if (!Array.isArray(message.innerDocuments))
+                                            return "innerDocuments: array expected";
+                                        for (var i = 0; i < message.innerDocuments.length; ++i)
+                                            if (!(message.innerDocuments[i] && typeof message.innerDocuments[i].length === "number" || $util.isString(message.innerDocuments[i])))
+                                                return "innerDocuments: buffer[] expected";
+                                    }
+                                    if (message.outerDocuments != null && message.hasOwnProperty("outerDocuments")) {
+                                        if (!Array.isArray(message.outerDocuments))
+                                            return "outerDocuments: array expected";
+                                        for (var i = 0; i < message.outerDocuments.length; ++i)
+                                            if (!(message.outerDocuments[i] && typeof message.outerDocuments[i].length === "number" || $util.isString(message.outerDocuments[i])))
+                                                return "outerDocuments: buffer[] expected";
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a ChainedDocuments message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments} ChainedDocuments
+                                 */
+                                ChainedDocuments.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments();
+                                    if (object.innerDocuments) {
+                                        if (!Array.isArray(object.innerDocuments))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.innerDocuments: array expected");
+                                        message.innerDocuments = [];
+                                        for (var i = 0; i < object.innerDocuments.length; ++i)
+                                            if (typeof object.innerDocuments[i] === "string")
+                                                $util.base64.decode(object.innerDocuments[i], message.innerDocuments[i] = $util.newBuffer($util.base64.length(object.innerDocuments[i])), 0);
+                                            else if (object.innerDocuments[i].length >= 0)
+                                                message.innerDocuments[i] = object.innerDocuments[i];
+                                    }
+                                    if (object.outerDocuments) {
+                                        if (!Array.isArray(object.outerDocuments))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.outerDocuments: array expected");
+                                        message.outerDocuments = [];
+                                        for (var i = 0; i < object.outerDocuments.length; ++i)
+                                            if (typeof object.outerDocuments[i] === "string")
+                                                $util.base64.decode(object.outerDocuments[i], message.outerDocuments[i] = $util.newBuffer($util.base64.length(object.outerDocuments[i])), 0);
+                                            else if (object.outerDocuments[i].length >= 0)
+                                                message.outerDocuments[i] = object.outerDocuments[i];
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a ChainedDocuments message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments} message ChainedDocuments
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ChainedDocuments.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults) {
+                                        object.innerDocuments = [];
+                                        object.outerDocuments = [];
+                                    }
+                                    if (message.innerDocuments && message.innerDocuments.length) {
+                                        object.innerDocuments = [];
+                                        for (var j = 0; j < message.innerDocuments.length; ++j)
+                                            object.innerDocuments[j] = options.bytes === String ? $util.base64.encode(message.innerDocuments[j], 0, message.innerDocuments[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.innerDocuments[j]) : message.innerDocuments[j];
+                                    }
+                                    if (message.outerDocuments && message.outerDocuments.length) {
+                                        object.outerDocuments = [];
+                                        for (var j = 0; j < message.outerDocuments.length; ++j)
+                                            object.outerDocuments[j] = options.bytes === String ? $util.base64.encode(message.outerDocuments[j], 0, message.outerDocuments[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.outerDocuments[j]) : message.outerDocuments[j];
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ChainedDocuments to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ChainedDocuments.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ChainedDocuments;
+                            })();
+
+                            return GetChainedDocumentsResponseV0;
+                        })();
+
+                        return GetChainedDocumentsResponse;
                     })();
 
                     v0.GetDocumentHistoryRequest = (function() {

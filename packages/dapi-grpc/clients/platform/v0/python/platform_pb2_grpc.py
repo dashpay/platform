@@ -94,6 +94,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetDocumentsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDocumentsResponse.FromString,
                 )
+        self.getChainedDocuments = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getChainedDocuments',
+                request_serializer=platform__pb2.GetChainedDocumentsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetChainedDocumentsResponse.FromString,
+                )
         self.getIdentityByPublicKeyHash = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityByPublicKeyHash',
                 request_serializer=platform__pb2.GetIdentityByPublicKeyHashRequest.SerializeToString,
@@ -412,6 +417,13 @@ class PlatformServicer(object):
 
     def getDocuments(self, request, context):
         """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getChainedDocuments(self, request, context):
+        """@sdk-ignore: rs-sdk support lands in the follow-up SDK PR
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -768,6 +780,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getDocuments,
                     request_deserializer=platform__pb2.GetDocumentsRequest.FromString,
                     response_serializer=platform__pb2.GetDocumentsResponse.SerializeToString,
+            ),
+            'getChainedDocuments': grpc.unary_unary_rpc_method_handler(
+                    servicer.getChainedDocuments,
+                    request_deserializer=platform__pb2.GetChainedDocumentsRequest.FromString,
+                    response_serializer=platform__pb2.GetChainedDocumentsResponse.SerializeToString,
             ),
             'getIdentityByPublicKeyHash': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityByPublicKeyHash,
@@ -1268,6 +1285,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDocuments',
             platform__pb2.GetDocumentsRequest.SerializeToString,
             platform__pb2.GetDocumentsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getChainedDocuments(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getChainedDocuments',
+            platform__pb2.GetChainedDocumentsRequest.SerializeToString,
+            platform__pb2.GetChainedDocumentsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

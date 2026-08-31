@@ -511,6 +511,37 @@ public final class PlatformGrpc {
     return getGetDocumentsMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse> getGetChainedDocumentsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getChainedDocuments",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse> getGetChainedDocumentsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse> getGetChainedDocumentsMethod;
+    if ((getGetChainedDocumentsMethod = PlatformGrpc.getGetChainedDocumentsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetChainedDocumentsMethod = PlatformGrpc.getGetChainedDocumentsMethod) == null) {
+          PlatformGrpc.getGetChainedDocumentsMethod = getGetChainedDocumentsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getChainedDocuments"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getChainedDocuments"))
+              .build();
+        }
+      }
+    }
+    return getGetChainedDocumentsMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse> getGetIdentityByPublicKeyHashMethod;
 
@@ -2039,6 +2070,16 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: rs-sdk support lands in the follow-up SDK PR
+     * </pre>
+     */
+    public void getChainedDocuments(org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetChainedDocumentsMethod(), responseObserver);
+    }
+
+    /**
      */
     public void getIdentityByPublicKeyHash(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse> responseObserver) {
@@ -2478,6 +2519,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse>(
                   this, METHODID_GET_DOCUMENTS)))
+          .addMethod(
+            getGetChainedDocumentsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse>(
+                  this, METHODID_GET_CHAINED_DOCUMENTS)))
           .addMethod(
             getGetIdentityByPublicKeyHashMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -2933,6 +2981,17 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetDocumentsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * &#64;sdk-ignore: rs-sdk support lands in the follow-up SDK PR
+     * </pre>
+     */
+    public void getChainedDocuments(org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetChainedDocumentsMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -3436,6 +3495,16 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: rs-sdk support lands in the follow-up SDK PR
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse getChainedDocuments(org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetChainedDocumentsMethod(), getCallOptions(), request);
+    }
+
+    /**
      */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse getIdentityByPublicKeyHash(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
@@ -3908,6 +3977,17 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * &#64;sdk-ignore: rs-sdk support lands in the follow-up SDK PR
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse> getChainedDocuments(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetChainedDocumentsMethod(), getCallOptions()), request);
+    }
+
+    /**
      */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse> getIdentityByPublicKeyHash(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request) {
@@ -4294,50 +4374,51 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_DATA_CONTRACTS = 13;
   private static final int METHODID_GET_DOCUMENT_HISTORY = 14;
   private static final int METHODID_GET_DOCUMENTS = 15;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 16;
-  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 17;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 18;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 19;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 20;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 21;
-  private static final int METHODID_GET_EPOCHS_INFO = 22;
-  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 23;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 24;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 25;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 26;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 27;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 28;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 29;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 30;
-  private static final int METHODID_GET_PATH_ELEMENTS = 31;
-  private static final int METHODID_GET_STATUS = 32;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 33;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 34;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 35;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 36;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 37;
-  private static final int METHODID_GET_TOKEN_STATUSES = 38;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 39;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 40;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 41;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 42;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 43;
-  private static final int METHODID_GET_GROUP_INFO = 44;
-  private static final int METHODID_GET_GROUP_INFOS = 45;
-  private static final int METHODID_GET_GROUP_ACTIONS = 46;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 47;
-  private static final int METHODID_GET_ADDRESS_INFO = 48;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 49;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 50;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 51;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 52;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 53;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 54;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 55;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 56;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 57;
-  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 58;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 59;
+  private static final int METHODID_GET_CHAINED_DOCUMENTS = 16;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 17;
+  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 18;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 19;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 20;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 21;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 22;
+  private static final int METHODID_GET_EPOCHS_INFO = 23;
+  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 24;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 25;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 26;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 27;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 28;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 29;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 30;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 31;
+  private static final int METHODID_GET_PATH_ELEMENTS = 32;
+  private static final int METHODID_GET_STATUS = 33;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 34;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 35;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 36;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 37;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 38;
+  private static final int METHODID_GET_TOKEN_STATUSES = 39;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 40;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 41;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 42;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 43;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 44;
+  private static final int METHODID_GET_GROUP_INFO = 45;
+  private static final int METHODID_GET_GROUP_INFOS = 46;
+  private static final int METHODID_GET_GROUP_ACTIONS = 47;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 48;
+  private static final int METHODID_GET_ADDRESS_INFO = 49;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 50;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 51;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 52;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 53;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 54;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 55;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 56;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 57;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 58;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 59;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 60;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -4419,6 +4500,10 @@ public final class PlatformGrpc {
         case METHODID_GET_DOCUMENTS:
           serviceImpl.getDocuments((org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse>) responseObserver);
+          break;
+        case METHODID_GET_CHAINED_DOCUMENTS:
+          serviceImpl.getChainedDocuments((org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetChainedDocumentsResponse>) responseObserver);
           break;
         case METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH:
           serviceImpl.getIdentityByPublicKeyHash((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest) request,
@@ -4673,6 +4758,7 @@ public final class PlatformGrpc {
               .addMethod(getGetDataContractsMethod())
               .addMethod(getGetDocumentHistoryMethod())
               .addMethod(getGetDocumentsMethod())
+              .addMethod(getGetChainedDocumentsMethod())
               .addMethod(getGetIdentityByPublicKeyHashMethod())
               .addMethod(getGetIdentityByNonUniquePublicKeyHashMethod())
               .addMethod(getWaitForStateTransitionResultMethod())

@@ -403,6 +403,39 @@
              responseClass:[GetDocumentsResponse class]];
 }
 
+#pragma mark getChainedDocuments(GetChainedDocumentsRequest) returns (GetChainedDocumentsResponse)
+
+/**
+ * @sdk-ignore: rs-sdk support lands in the follow-up SDK PR
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getChainedDocumentsWithRequest:(GetChainedDocumentsRequest *)request handler:(void(^)(GetChainedDocumentsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetChainedDocumentsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * @sdk-ignore: rs-sdk support lands in the follow-up SDK PR
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetChainedDocumentsWithRequest:(GetChainedDocumentsRequest *)request handler:(void(^)(GetChainedDocumentsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getChainedDocuments"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetChainedDocumentsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * @sdk-ignore: rs-sdk support lands in the follow-up SDK PR
+ */
+- (GRPCUnaryProtoCall *)getChainedDocumentsWithMessage:(GetChainedDocumentsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getChainedDocuments"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetChainedDocumentsResponse class]];
+}
+
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
 - (void)getIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler{

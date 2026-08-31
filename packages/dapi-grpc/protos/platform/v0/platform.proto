@@ -38,6 +38,9 @@ service Platform {
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
+  // @sdk-ignore: rs-sdk support lands in the follow-up SDK PR
+  rpc getChainedDocuments(GetChainedDocumentsRequest)
+      returns (GetChainedDocumentsResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
   rpc getIdentityByNonUniquePublicKeyHash(
@@ -1517,6 +1520,60 @@ message GetDocumentsResponse {
     GetDocumentsResponseV0 v0 = 1;
     GetDocumentsResponseV1 v1 = 2;
   }
+}
+
+// A chained document query — a provable semi-join:
+// `SELECT * FROM <outer> WHERE $id IN
+//   (SELECT <join_property> FROM <inner> WHERE ...)`.
+// The inner query must target an indexOnly document type and resolve to
+// an index carrying `join_property`, and `join_property` must declare a
+// same-contract `refersTo: permanentDocument` targeting
+// `outer_document_type`. The outer half is DERIVED from the inner
+// results — the request carries no outer clauses, and the verifier
+// rebuilds the outer query from the proven inner values itself.
+message GetChainedDocumentsRequest {
+  message GetChainedDocumentsRequestV0 {
+    bytes data_contract_id = 1;      // The contract both types live in
+    string inner_document_type = 2;  // The indexOnly type queried directly
+    bytes inner_where = 3;  // CBOR clauses, as GetDocumentsRequestV0.where
+    bytes inner_order_by = 4; // CBOR ordering, as GetDocumentsRequestV0.order_by
+    // Maximum inner entries to return. REQUIRED (must be non-zero): the
+    // inner page size is what bounds the derived outer query.
+    uint32 inner_limit = 5;
+    // The inner property whose proven values become the outer `$id`s.
+    string join_property = 6;
+    // The `refersTo` target type the joined documents belong to.
+    string outer_document_type = 7;
+    bool prove = 8; // Flag to request proofs as the response
+  }
+  oneof version { GetChainedDocumentsRequestV0 v0 = 1; }
+}
+
+message GetChainedDocumentsResponse {
+  message GetChainedDocumentsResponseV0 {
+    // Both halves of the join, each serialized with its own type.
+    message ChainedDocuments {
+      // The inner projections in query order — the last one carries the
+      // pagination cursor (its join-property value).
+      repeated bytes inner_documents = 1;
+      // The joined outer documents, ordered by first appearance of
+      // their id among the inner projections (deduplicated).
+      repeated bytes outer_documents = 2;
+    }
+
+    oneof result {
+      ChainedDocuments documents = 1; // Both halves, if no proof requested
+      Proof proof = 2; // Proof of the INNER query, standard envelope
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+    // Proof of the derived outer by-ids query, generated in the same
+    // grove transaction as `proof` (both verify to one root hash).
+    // Present exactly when `proof` is set AND the proven inner page is
+    // non-empty; empty otherwise. Sits beside the result oneof so the
+    // standard single-`Proof` response tooling applies unchanged.
+    bytes outer_grovedb_proof = 4;
+  }
+  oneof version { GetChainedDocumentsResponseV0 v0 = 1; }
 }
 
 message GetDocumentHistoryRequest {

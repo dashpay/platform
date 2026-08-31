@@ -1,4 +1,5 @@
 mod address_funds;
+mod chained_document_query;
 mod data_contract_based_queries;
 mod document_history;
 mod document_query;
