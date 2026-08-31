@@ -1520,18 +1520,20 @@ mod tests {
     /// Code 26 is a promise about cleanup, not about the broadcaster's
     /// verdict: the row was untracked and the funding reservation released,
     /// so a rebuild is safe. An asset-lock build whose rejection raced a
-    /// concurrent resume keeps both — the guard retains the advanced row and
-    /// the release is skipped — and reports the unknown outcome instead. The
-    /// two must never collapse to one code across the boundary: a host that
-    /// read 26 there would rebuild from other UTXOs and create a second asset
-    /// lock beside a transaction the advance says reached the network.
+    /// concurrent resume keeps both — a guard retains the row, either
+    /// because the resume already advanced it or because the resume holds
+    /// its dispatch window, and the release is skipped — and reports the
+    /// unknown outcome instead. The two must never collapse to one code
+    /// across the boundary: a host that read 26 there would rebuild from
+    /// other UTXOs and create a second asset lock beside a transaction that
+    /// has either reached the network already or is about to.
     #[test]
     fn a_retained_asset_lock_row_reports_the_unknown_outcome_not_the_rejection() {
         let retained: PlatformWalletFFIResult =
             PlatformWalletError::TransactionBroadcastUnconfirmed(
                 "asset lock 0000..:0 stays tracked and reserved: the broadcast was \
-                 rejected, but a concurrent resume had already advanced the row past \
-                 Built, so the transaction may be on the network"
+                 rejected, but a concurrent resume is driving the same row, so the \
+                 transaction may be on the network or about to reach it"
                     .to_string(),
             )
             .into();

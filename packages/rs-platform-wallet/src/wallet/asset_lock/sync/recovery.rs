@@ -193,6 +193,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 // Resumable asset lock
 // ---------------------------------------------------------------------------
 
+/// Longest a resume holds a broadcast waiting for the broadcaster's transport
+/// to come up.
+///
+/// Sized for the gap it exists to cover — an SPV client that is mid-startup
+/// while the launch catch-up runs — and no larger. The ceiling is what keeps
+/// the wait a delay rather than a deadlock: the hosts drive the catch-up
+/// through the FFI's blocking entry point, several locks at a time, on the
+/// same fixed-width thread pool the host itself needs in order to reach
+/// `start_spv` and bring that transport up. Parking those threads without a
+/// ceiling parks the transport's own start.
+///
+/// Expiry costs nothing beyond the delay: the broadcast is attempted anyway
+/// and reports exactly what it would have reported with no wait at all.
+const BROADCAST_TRANSPORT_READY_WAIT: Duration = Duration::from_secs(15);
+
 /// Find the first outpoint of `lock`'s transaction that some **other,
 /// confirmed** transaction of this wallet already spent, returning
 /// `(conflicting_input, spending_txid, spender_height)`.
@@ -446,6 +461,52 @@ pub(crate) fn seed_observed_input_conflicts(info: &PlatformWalletInfo) {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Wait for the broadcaster's transport to come up before a resume
+    /// broadcasts, and return the finality budget left over.
+    ///
+    /// A resume that still needs a broadcast (`Built` / `Broadcast`) is
+    /// typically driven by the app-launch catch-up, which runs while the SPV
+    /// client is still starting. Broadcasting into an unstarted client — or
+    /// one with no connected peers yet — fails as
+    /// [`BroadcastError::Rejected`], the never-sent verdict, which on both
+    /// broadcasting arms ends the resume in an unconfirmed outcome. Nothing
+    /// reschedules the catch-up, so a lock that loses this race is left
+    /// exactly as it was and the next session repeats it, with the funds
+    /// sitting behind it the whole time.
+    ///
+    /// The wait is bounded twice over: by
+    /// [`BROADCAST_TRANSPORT_READY_WAIT`], and by the caller's own `timeout`
+    /// when it asked for one. Whatever it consumes is deducted from that
+    /// timeout, so a bounded caller's total stays inside the budget it asked
+    /// for, and `None` stays `None` — the recovery policy's own
+    /// [`UNCONFIRMED_BROADCAST_PROOF_TIMEOUT`] default still applies to the
+    /// proof wait downstream.
+    async fn await_broadcast_ready(
+        &self,
+        out_point: &OutPoint,
+        timeout: Option<Duration>,
+    ) -> Option<Duration> {
+        let budget = timeout.map_or(BROADCAST_TRANSPORT_READY_WAIT, |t| {
+            t.min(BROADCAST_TRANSPORT_READY_WAIT)
+        });
+        let started = tokio::time::Instant::now();
+        if !self.broadcaster.wait_until_ready(budget).await {
+            tracing::warn!(
+                outpoint = %out_point,
+                ?budget,
+                "resume_asset_lock: broadcast transport still not ready; \
+                 attempting the broadcast anyway"
+            );
+        }
+        let waited = started.elapsed();
+        tracing::debug!(
+            outpoint = %out_point,
+            ?waited,
+            "resume_asset_lock: broadcast transport wait finished"
+        );
+        timeout.map(|t| t.saturating_sub(waited))
+    }
+
     /// Re-run the double-spend screen once a proof wait has expired, and
     /// render a conflict that still stands as the verdict explaining that
     /// expiry.
@@ -617,11 +678,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// caller passes `derivation_path` to the same signer used for the
     /// build phase when the credit output is later consumed on Platform.
     ///
+    /// Before either broadcasting arm touches the transport, the local
+    /// record is probed once under a zero bound: a row that already holds
+    /// finality — the ordinary state after a send whose proof arrived with
+    /// no waiter active — completes offline, sending nothing and waiting for
+    /// nothing. Only a row that still needs a send gives the broadcaster's
+    /// transport a bounded chance to come up (see
+    /// [`await_broadcast_ready`](Self::await_broadcast_ready)), so a resume
+    /// driven by the app-launch catch-up doesn't spend its one send on an
+    /// SPV client that has not started yet. `InstantSendLocked` /
+    /// `ChainLocked` / `RecoveredFromChain` broadcast nothing at all and
+    /// never wait for the transport.
+    ///
     /// `timeout` is `Option<Duration>` and is only consulted when the lock
-    /// still needs a proof (`Built` / `Broadcast`, or the defensive
-    /// proof-less `RecoveredFromChain` fallback). For `InstantSendLocked` /
-    /// `ChainLocked` the proof already exists and no wait happens, so the
-    /// value is moot.
+    /// still needs a proof: `Built` / `Broadcast` rows that the local probe
+    /// did not settle, and the defensive fallback for a `RecoveredFromChain`
+    /// row whose persisted proof was lost. Everywhere else — including a
+    /// `RecoveredFromChain` row that still carries its proof, which is what
+    /// reconstruction assigns that status with — the proof already exists
+    /// and no wait happens, so the value is moot.
     ///
     /// `None` does not request an unbounded wait — it declines to name a
     /// bound, and every proof-waiting path then substitutes
@@ -674,7 +749,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
 
         // 1. Look up the tracked lock — snapshot the fields we need.
-        let (tx, status, existing_proof, account_index, input_conflict) = {
+        let (tx, status, existing_proof, account_index, input_conflict, mut dispatch_claim) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -711,12 +786,26 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 | AssetLockStatus::RecoveredFromChain
                 | AssetLockStatus::Consumed => None,
             };
+            // Claim the dispatch window for the two statuses that can still
+            // send, while the read guard that produced this snapshot is
+            // still held. From here until the send is made and recorded, the
+            // initial build's rejection cleanup cannot remove the row and
+            // release its inputs — see `untrack_asset_lock`. The claim is
+            // taken HERE rather than at the broadcast because the whole
+            // point is to cover the suspension points in between; taking it
+            // later would leave the same window under a shorter name.
+            let dispatch_claim = matches!(
+                lock.status,
+                AssetLockStatus::Built | AssetLockStatus::Broadcast
+            )
+            .then(|| self.claim_resume_dispatch(*out_point));
             (
                 lock.transaction.clone(),
                 lock.status.clone(),
                 lock.proof.clone(),
                 lock.account_index,
                 input_conflict,
+                dispatch_claim,
             )
         };
 
@@ -753,23 +842,80 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             );
         }
 
+        // Local finality is probed BEFORE anything touching the transport.
+        // A row can already carry its proof in the record while sitting at
+        // `Built` or `Broadcast` — finality that lands with no waiter active
+        // enriches the record without advancing the tracked status — and
+        // that is exactly the state the launch catch-up resumes from, before
+        // the SPV client has started. Such a resume needs no transport at
+        // all: waiting for one first made an already-final lock pay the
+        // readiness ceiling on every offline launch, and then completed it
+        // from the same record anyway. The probe is a single local
+        // record/persister check under a zero bound — it never touches the
+        // network and never waits. A proof outranks a sighted input conflict
+        // here for the same reason it outranks one at every other point in
+        // this function: the transaction is final, so no sibling can take it.
+        let local_finality = match status {
+            AssetLockStatus::Built | AssetLockStatus::Broadcast => self
+                .wait_for_proof(out_point, Some(Duration::ZERO))
+                .await
+                .ok(),
+            AssetLockStatus::InstantSendLocked
+            | AssetLockStatus::ChainLocked
+            | AssetLockStatus::RecoveredFromChain
+            | AssetLockStatus::Consumed => None,
+        };
+        if status == AssetLockStatus::Built && local_finality.is_some() {
+            dispatch_claim
+                .as_mut()
+                .expect("Built resumes hold a cleanup-exclusion claim")
+                .preserve_on_drop();
+        }
+
         // 2. Resume from the current status.
-        let proof = match status {
-            AssetLockStatus::Built => {
-                // Re-broadcast and wait for proof.
-                //
+        let proof = match (&status, local_finality) {
+            // Already final locally: no send, no transport wait, no proof
+            // wait. The row is advanced and the proof attached below exactly
+            // as a waited-for proof would be.
+            (AssetLockStatus::Built | AssetLockStatus::Broadcast, Some(proof)) => {
+                // The claim is deliberately NOT released here. Nothing will
+                // be dispatched, but a `Built` row stays `Built` until the
+                // status advance at the end of this function, and a
+                // rejection cleanup that removed it in between would release
+                // the reservation and the fence of a transaction the record
+                // says is already final — reporting the definite rejection,
+                // whose contract licenses a rebuild, for an outpoint that is
+                // settled on chain. Everything from here to that advance is
+                // record reads and one lock acquisition, so holding the
+                // claim across them costs a racing cleanup nothing it would
+                // have been right to do.
+                tracing::info!(
+                    outpoint = %out_point,
+                    status = ?status,
+                    "resume_asset_lock: the local record already holds finality — \
+                     completing the resume without waiting for the broadcast \
+                     transport or sending anything"
+                );
+                self.validate_or_upgrade_proof(proof, account_index, out_point)
+                    .await?
+            }
+            (AssetLockStatus::Built, None) => {
+                // Nothing final locally, so this row still needs a send:
+                // re-broadcast and wait for proof — but not into a transport
+                // that cannot carry the send. See `await_broadcast_ready`.
+                let timeout = self.await_broadcast_ready(out_point, timeout).await;
+
                 // No verdict this broadcaster can return ends the resume by
-                // itself. `MaybeSent`
-                // means the outcome is unknown — and for a lock stuck at
-                // `Built` that is the expected answer when the app died
-                // between a successful broadcast and this status advance:
-                // the tx is in a mempool (or mined) and every re-broadcast
-                // reports the same ambiguity. Failing on it left the lock at
-                // `Built` forever, so each recovery pass repeated the same
-                // broadcast and the same abort, and the top-up never
-                // completed. Advancing to `Broadcast` and waiting matches
-                // what the `Broadcast` arm below already does with the
-                // identical signal.
+                // itself. `MaybeSent` means the outcome is unknown — and for
+                // a lock stuck at `Built` that is the expected answer when
+                // the app died between a successful broadcast and this
+                // status advance: the tx is in a mempool (or mined) and
+                // every re-broadcast reports the same ambiguity. Failing on
+                // it left the lock at `Built` forever, so each recovery pass
+                // repeated the same broadcast and the same abort, and the
+                // top-up never completed. Advancing to `Broadcast` and
+                // waiting matches what the `Broadcast` arm below already
+                // does with the identical signal.
                 //
                 // `MaybeSent` is however ALSO what the broadcaster reports
                 // for a genuinely rejected transaction: `DapiBroadcaster`
@@ -810,6 +956,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 let mut local_proof = None;
                 let mut maybe_sent_reason = None;
                 let mut undispatched = None;
+                // The broadcaster cannot report whether it had side effects
+                // until the await completes. Make the claim sticky before
+                // entering it, so cancellation during or immediately after a
+                // possible send cannot license cleanup of the inputs.
+                dispatch_claim
+                    .as_mut()
+                    .expect("Built resumes hold a cleanup-exclusion claim")
+                    .preserve_on_drop();
                 match self.broadcaster.broadcast(&tx).await {
                     Ok(_) => {}
                     Err(BroadcastError::MaybeSent { reason }) => {
@@ -824,8 +978,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         maybe_sent_reason = Some(reason);
                     }
                     Err(rejected @ BroadcastError::Rejected { .. }) => {
+                        // This verdict proves the current attempt never left
+                        // the device. Unless the local record supplies proof,
+                        // cancellation from here is a clean pre-dispatch exit.
+                        dispatch_claim
+                            .as_mut()
+                            .expect("Built resumes hold a cleanup-exclusion claim")
+                            .release_on_drop();
                         match self.wait_for_proof(out_point, Some(Duration::ZERO)).await {
                             Ok(proof) => {
+                                dispatch_claim
+                                    .as_mut()
+                                    .expect("Built resumes hold a cleanup-exclusion claim")
+                                    .preserve_on_drop();
                                 tracing::info!(
                                     outpoint = %out_point,
                                     error = %rejected,
@@ -880,6 +1045,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                 }
                 let proof = if let Some(proof) = local_proof {
+                    // Held to the status advance for the same reason as the
+                    // already-final arm above: this send never left the
+                    // device and none will follow, but the row reads `Built`
+                    // until then and its transaction is final, so a cleanup
+                    // that removed it would free inputs that are spent.
                     proof
                 } else {
                     // The status advance belongs to a send that actually
@@ -892,7 +1062,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
                             .await?;
                         self.queue_asset_lock_changeset(cs);
+                        drop(dispatch_claim.take());
                     }
+                    // A dispatched attempt no longer needs the claim once the
+                    // row is `Broadcast`: that status excludes the cleanup on
+                    // its own. A proven-undispatched attempt keeps its ordinary
+                    // RAII claim during the proof wait below. It releases on a
+                    // timeout or other pre-dispatch exit, but becomes sticky if
+                    // the wait observes local finality.
                     // Every resumed lock waits under a deadline, and a
                     // sighting only shortens it. An accepted re-broadcast is
                     // evidence the transaction reached the network, never
@@ -913,7 +1090,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         timeout.or(Some(UNCONFIRMED_BROADCAST_PROOF_TIMEOUT))
                     };
                     match self.wait_for_proof(out_point, bounded).await {
-                        Ok(proof) => proof,
+                        Ok(proof) => {
+                            if undispatched.is_some() {
+                                dispatch_claim
+                                    .as_mut()
+                                    .expect("Built resumes hold a cleanup-exclusion claim")
+                                    .preserve_on_drop();
+                            }
+                            proof
+                        }
                         Err(expiry @ PlatformWalletError::FinalityTimeout(_)) => {
                             // The wait has now given live synchronization its
                             // window, so the screen is re-read and what it says
@@ -986,12 +1171,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
-            AssetLockStatus::Broadcast => {
-                // Defensive re-broadcast, then wait for proof. A lock can
-                // sit at `Broadcast` across app restarts long enough for
-                // its funding tx to be evicted from every mempool (Core's
-                // default `-mempoolexpiry` is two weeks), or the original
-                // broadcast may have reached no peers at all (SPV
+            (AssetLockStatus::Broadcast, None) => {
+                // Defensive re-broadcast, then wait for proof — and, as on
+                // the `Built` arm, not into a transport that cannot carry
+                // the send. See `await_broadcast_ready`.
+                let timeout = self.await_broadcast_ready(out_point, timeout).await;
+
+                // A lock can sit at `Broadcast` across app restarts long
+                // enough for its funding tx to be evicted from every mempool
+                // (Core's default `-mempoolexpiry` is two weeks), or the
+                // original broadcast may have reached no peers at all (SPV
                 // connectivity gap). Once no node holds the tx, no IS/CL
                 // proof can ever arrive and the wait below can only run out
                 // its bound. A re-broadcast revives an evicted/undelivered
@@ -1064,7 +1253,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // original send IS provable: a row can sit at `Built` after a
                 // successful broadcast too (app killed between the send and
                 // the status advance), which is precisely why the `Built` arm
-                // above also only surfaces the error and leaves its row alone.
+                // above reaches the same verdict from the same position.
                 let mut local_proof = None;
                 if let Err(e) = self.broadcaster.broadcast(&tx).await {
                     if matches!(e, BroadcastError::Rejected { .. }) {
@@ -1114,6 +1303,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         );
                     }
                 }
+                // The send is done and this arm records nothing about it (the
+                // row is already at `Broadcast`), so the dispatch window ends
+                // here; everything below only waits.
+                drop(dispatch_claim.take());
+
                 // Bounded like the `Built` arm, and for the same reason. This
                 // arm is only entered on a RESUME, i.e. for a transaction
                 // whose earlier broadcast window already failed to produce a
@@ -1173,7 +1367,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
-            AssetLockStatus::InstantSendLocked | AssetLockStatus::ChainLocked => {
+            (AssetLockStatus::InstantSendLocked | AssetLockStatus::ChainLocked, _) => {
                 // Already have a proof — validate / upgrade if stale.
                 let proof = existing_proof.ok_or_else(|| {
                     PlatformWalletError::AssetLockProofWait(format!(
@@ -1184,7 +1378,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
-            AssetLockStatus::RecoveredFromChain => {
+            (AssetLockStatus::RecoveredFromChain, _) => {
                 // Reconstructed from a chain-locked record after a
                 // restore — Platform-side consumption is unknown. An
                 // explicit resume is allowed to try consuming it:
@@ -1232,7 +1426,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                 }
             }
-            AssetLockStatus::Consumed => {
+            (AssetLockStatus::Consumed, _) => {
                 // Terminal tombstone — the asset lock was already
                 // burned by a successful identity registration / top-up.
                 // Retaining this state makes the typed distinction from
@@ -1263,6 +1457,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .advance_asset_lock_status(out_point, new_status, Some(proof.clone()))
             .await?;
         self.queue_asset_lock_changeset(cs);
+        drop(dispatch_claim.take());
 
         // 4. Re-derive the one-time credit-output derivation path.
         let path = {
@@ -1383,6 +1578,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -1406,13 +1602,14 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::{Notify, RwLock};
 
+    use super::BROADCAST_TRANSPORT_READY_WAIT;
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::changeset::{
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::error::PlatformWalletError;
     use crate::test_support::{
-        funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysRejectedBroadcaster,
+        funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -1455,6 +1652,31 @@ mod tests {
                 });
             }
             Ok(transaction.txid())
+        }
+    }
+
+    /// `Rejected` on every send — the production `SpvBroadcaster`'s verdict
+    /// for an unstarted client — while counting the sends it was asked for.
+    /// The count is what separates "completed from the local record" from
+    /// "retried the broadcast until something worked".
+    #[derive(Default)]
+    struct CountingRejectedBroadcaster {
+        sends: AtomicU32,
+    }
+
+    impl CountingRejectedBroadcaster {
+        fn sends(&self) -> u32 {
+            self.sends.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for CountingRejectedBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            self.sends.fetch_add(1, Ordering::SeqCst);
+            Err(BroadcastError::Rejected {
+                reason: "SPV broadcast not sent: client not started".to_string(),
+            })
         }
     }
 
@@ -1712,9 +1934,18 @@ mod tests {
     /// Builds a tracked `Built`-status lock on a funded wallet and resumes it
     /// through `broadcaster`, returning the resume error and the lock's status
     /// afterwards. Shared by the two ambiguity/rejection cases below.
+    ///
+    /// The manager and signer come back too, so a caller can attempt a second
+    /// build on the SAME wallet — the only way to observe from outside that
+    /// the funding inputs are still reserved.
     async fn resume_built_lock_with(
         broadcaster: Arc<dyn TransactionBroadcaster>,
-    ) -> (PlatformWalletError, AssetLockStatus) {
+    ) -> (
+        PlatformWalletError,
+        AssetLockStatus,
+        AssetLockManager<dyn TransactionBroadcaster>,
+        WalletSigner,
+    ) {
         let (wallet_manager, wallet_id, _balance, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
@@ -1776,7 +2007,7 @@ mod tests {
             .expect("lock stays tracked")
             .status
             .clone();
-        (error, status)
+        (error, status, manager, signer)
     }
 
     /// An AMBIGUOUS re-broadcast must not end the resume. A lock sitting at
@@ -1787,7 +2018,8 @@ mod tests {
     /// to wait for the proof — here, until the 10ms test timeout.
     #[tokio::test]
     async fn built_resume_survives_an_ambiguous_rebroadcast_and_advances() {
-        let (error, status) = resume_built_lock_with(Arc::new(AlwaysMaybeSentBroadcaster)).await;
+        let (error, status, ..) =
+            resume_built_lock_with(Arc::new(AlwaysMaybeSentBroadcaster)).await;
 
         assert!(
             matches!(error, PlatformWalletError::FinalityTimeout(_)),
@@ -1818,25 +2050,53 @@ mod tests {
     /// and release, may emit 26.
     #[tokio::test]
     async fn built_resume_of_a_rejected_rebroadcast_reports_an_unknown_outcome() {
-        let (error, status) = resume_built_lock_with(Arc::new(AlwaysRejectedBroadcaster)).await;
+        let (error, status, manager, signer) =
+            resume_built_lock_with(Arc::new(AlwaysRejectedBroadcaster)).await;
 
+        let PlatformWalletError::TransactionBroadcastUnconfirmed(reason) = &error else {
+            panic!(
+                "a rejection that never dispatched must not be reported as a \
+                 definite rejection, whose contract is that the inputs were \
+                 released and a rebuild is safe: {error:?}"
+            );
+        };
         assert!(
-            !matches!(error, PlatformWalletError::TransactionBroadcast(_)),
-            "a re-broadcast that never left the device is not evidence that an earlier \
-             send was rejected, so it must not claim the definite-rejection contract \
-             while the row and its reservation are kept: {error:?}"
-        );
-        assert!(
-            matches!(
-                error,
-                PlatformWalletError::TransactionBroadcastUnconfirmed(_)
-            ),
-            "a rejected re-broadcast must fail the resume as an unknown outcome: {error:?}"
+            reason.contains("rejected before dispatch"),
+            "the failure must name the undispatched send: {reason}"
         );
         assert_eq!(
             status,
             AssetLockStatus::Built,
-            "a send that never dispatched must leave the row resumable at Built"
+            "a send that never dispatched must leave the row resumable at \
+             Built, with its inputs still reserved"
+        );
+
+        // "Inputs still reserved" is half of the contract the non-terminal
+        // verdict promises, and the status alone does not carry it: a resume
+        // that kept the row at `Built` while releasing its reservation would
+        // satisfy every assertion above and still hand the host exactly what
+        // the definite-rejection code was rejected for — a wallet whose funds
+        // look free for a rebuild while a possibly-live asset lock holds them.
+        // A second build on the same wallet is what tells the two apart. The
+        // fixture funds one UTXO, so the reservation leaves nothing to select
+        // and the build fails with the typed shortfall rather than any
+        // unrelated error.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityTopUp,
+                4,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { available: 0, .. })
+            ),
+            "the rejected resume must keep the funding reservation, leaving a \
+             same-wallet rebuild zero available funds, got {rebuild:?}"
         );
     }
 
@@ -2336,7 +2596,9 @@ mod tests {
     /// mempool. Refusing to broadcast or wait on that evidence returned the
     /// contested verdict on every resume and every launch for a lock whose
     /// own funding transaction was sitting in history chain-locked, ready
-    /// to settle. The resume must run and take the proof.
+    /// to settle. The resume must run and take the proof — which it now
+    /// does before the transport is consulted at all, since the record is
+    /// already final; the sighting must not stand in the way of that either.
     #[tokio::test]
     async fn a_standing_conflict_never_costs_the_lock_a_proof_that_has_arrived() {
         let fixture = ConflictFixture::new().await;
@@ -2376,13 +2638,17 @@ mod tests {
     /// dispatches must still take a proof that has already arrived.
     ///
     /// This is the launch catch-up shape: `catchUpStuckAssetLocks` resumes
-    /// a restored row before SPV connects, so the re-broadcast draws the
+    /// a restored row before SPV connects, where every send draws the
     /// DEFINITE `Rejected` (unstarted client / zero peers), while history
     /// carries both a restored spender of the lock's input and the lock's
     /// own chain-locked funding record. Returning the rejection there
     /// skipped the record entirely — an already-final lock failed on every
     /// launch until connectivity returned, and it failed as the FFI's code
     /// 26, whose released-reservation contract this path does not honour.
+    /// The record is now read before a send is even considered, so this
+    /// fixture's rejecting broadcaster is never reached; what the test still
+    /// pins is that the standing sighting does not cost the lock the proof
+    /// its own record already holds.
     #[tokio::test]
     async fn a_rejected_rebroadcast_of_a_conflicted_built_lock_still_takes_an_arrived_proof() {
         let fixture = ConflictFixture::rejecting().await;
@@ -2550,9 +2816,10 @@ mod tests {
                 let stub = Arc::new(InterleavedPersistence::new(
                     wallet_manager,
                     wallet_id,
-                    // Lookup 0 is the expiring proof wait's own miss; lookup
-                    // 1 is the verdict's probe, the gap under test.
-                    1,
+                    // Lookup 0 is the pre-transport local-finality probe's
+                    // miss and lookup 1 is the expiring proof wait's own;
+                    // lookup 2 is the verdict's probe, the gap under test.
+                    2,
                     move |info| {
                         let transaction = handle
                             .lock()
@@ -2643,9 +2910,10 @@ mod tests {
                 let stub = Arc::new(InterleavedPersistence::new(
                     wallet_manager,
                     wallet_id,
-                    // Lookup 0 is the expiring proof wait's own miss; lookup
-                    // 1 is the verdict's probe, the gap under test.
-                    1,
+                    // Lookup 0 is the pre-transport local-finality probe's
+                    // miss and lookup 1 is the expiring proof wait's own;
+                    // lookup 2 is the verdict's probe, the gap under test.
+                    2,
                     move |info| {
                         let transaction = handle
                             .lock()
@@ -2757,7 +3025,11 @@ mod tests {
                 let stub = Arc::new(InterleavedPersistence::new(
                     wallet_manager,
                     wallet_id,
-                    1,
+                    // Lookup 0 is the pre-transport local-finality probe's
+                    // miss and lookup 1 is the expiring proof wait's own;
+                    // lookup 2 is the verdict's probe, the gap the settling
+                    // has to land in.
+                    2,
                     |info| {
                         let (out_point, lock) = info
                             .tracked_asset_locks
@@ -2832,10 +3104,11 @@ mod tests {
                 let stub = Arc::new(InterleavedPersistence::new(
                     wallet_manager,
                     wallet_id,
-                    // Lookup 0 is the rejection's own local-proof probe,
-                    // lookup 1 the expiring wait, lookup 2 the verdict's
+                    // Lookup 0 is the pre-transport local-finality probe's
+                    // miss, lookup 1 the rejection's own local-proof probe,
+                    // lookup 2 the expiring wait, lookup 3 the verdict's
                     // probe — the gap the retraction has to land in.
-                    2,
+                    3,
                     move |info| {
                         let transaction = handle
                             .lock()
@@ -3638,8 +3911,8 @@ mod tests {
         );
     }
 
-    /// A definite rejection must consult the LOCAL record before failing
-    /// the resume.
+    /// A resume must consult the LOCAL record rather than fail on a
+    /// transport that cannot carry a send it does not need.
     ///
     /// A row can sit at `Broadcast` while its transaction record already
     /// carries finality: `LockNotifyHandler` only wakes waiters, so an
@@ -3647,11 +3920,14 @@ mod tests {
     /// but never advances the tracked status, and `enrich_from_record`
     /// upgrades only `InChainLockedBlock` records on scan paths — an
     /// `InstantSend` context is invisible to it. On the next launch
-    /// `catchUpStuckAssetLocks` resumes the row before SPV connects, the
-    /// defensive re-broadcast draws `Rejected` (unstarted client / zero
-    /// peers), and the pre-fix arm failed the resume even though
-    /// `wait_for_proof` would have returned the proof on its first
-    /// iteration, straight from the record, without any network at all.
+    /// `catchUpStuckAssetLocks` resumes the row before SPV connects, where
+    /// every send draws `Rejected` (unstarted client / zero peers), and the
+    /// pre-fix arm failed the resume even though `wait_for_proof` would have
+    /// returned the proof on its first iteration, straight from the record,
+    /// without any network at all. The record is now read before the send is
+    /// even considered, so this broadcaster's rejection is never reached —
+    /// the outcome the test pins is the same one either ordering owes the
+    /// caller.
     #[tokio::test]
     async fn definite_rejection_on_a_broadcast_lock_yields_the_local_proof() {
         use dashcore::ephemerealdata::instant_lock::InstantLock;
@@ -3754,6 +4030,152 @@ mod tests {
         );
     }
 
+    /// The `Built` twin of the test above — the same offline relaunch, one
+    /// status earlier.
+    ///
+    /// A row sits at `Built` after a successful broadcast too, whenever the
+    /// app died between the send and the status advance; the finality that
+    /// followed is then filed on the funding account by the ordinary SPV scan
+    /// while nothing is waiting for it. On the next launch the catch-up
+    /// resumes the row before SPV connects, where every send draws
+    /// `Rejected` (unstarted client), and the resume must complete from the
+    /// record it already holds instead of failing a lock that is finished.
+    ///
+    /// What it must NOT do on the way is send at all, or advance the row to
+    /// `Broadcast` first. That advance is the record of a send that reached
+    /// the network, and the only send this pass made never left the device —
+    /// writing it would tell the next reader that an undispatched attempt
+    /// was broadcast. The final status is no evidence either way, since a
+    /// `Broadcast` step would be overwritten by the same
+    /// `InstantSendLocked` a moment later, so it is the persisted trail that
+    /// is asserted.
+    #[tokio::test]
+    async fn definite_rejection_on_a_built_lock_yields_the_local_proof() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let broadcaster = Arc::new(CountingRejectedBroadcaster::default());
+        let persistence = Arc::new(RecordingPersistence::default());
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&broadcaster) as Arc<dyn TransactionBroadcaster>,
+            WalletPersister::new(wallet_id, Arc::clone(&persistence) as Arc<_>),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered");
+            // The finality that arrived while nobody was waiting: an
+            // IS-locked record for the funding tx, filed under the BIP44
+            // account the lock was built from.
+            let record = TransactionRecord::new(
+                transaction.clone(),
+                AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+                TransactionContext::InstantSend(InstantLock::default()),
+                TransactionType::Standard,
+                TransactionDirection::Outgoing,
+                Vec::new(),
+                Vec::new(),
+                0,
+            );
+            info.core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("funded wallet has BIP44 account 0")
+                .transactions_mut()
+                .insert(record.txid, record);
+            info.tracked_asset_locks.insert(
+                out_point,
+                TrackedAssetLock {
+                    out_point,
+                    transaction,
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+                    identity_index: 4,
+                    amount: 1_000_000,
+                    status: AssetLockStatus::Built,
+                    proof: None,
+                },
+            );
+        }
+
+        let (proof, _path) = manager
+            .resume_asset_lock(&out_point, None)
+            .await
+            .expect("a locally-proven Built lock must survive a rejected re-broadcast");
+        assert!(
+            matches!(proof, dpp::prelude::AssetLockProof::Instant(_)),
+            "the proof must come from the record's InstantSend context: {proof:?}"
+        );
+        assert_eq!(
+            wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("lock stays tracked")
+                .status,
+            AssetLockStatus::InstantSendLocked,
+            "the resume must advance the row exactly as a waited-for proof would"
+        );
+        assert_eq!(
+            broadcaster.sends(),
+            0,
+            "an already-final row needs no send at all: the record is read \
+             before the transport is even consulted, so nothing is dispatched \
+             and nothing waits for a transport to dispatch it"
+        );
+        let persisted: Vec<AssetLockStatus> = persistence
+            .stored
+            .lock()
+            .expect("recording mutex")
+            .iter()
+            .filter_map(|cs| cs.asset_locks.as_ref())
+            .filter_map(|al| al.asset_locks.get(&out_point))
+            .map(|entry| entry.status.clone())
+            .collect();
+        assert_eq!(
+            persisted,
+            vec![AssetLockStatus::InstantSendLocked],
+            "the row must go straight to its proven status: an intermediate \
+             Broadcast write would durably claim a send that never left the \
+             device"
+        );
+    }
+
     /// Regression: the `Broadcast` arm's proof wait must terminate on the
     /// UNBOUNDED resume path too.
     ///
@@ -3834,6 +4256,730 @@ mod tests {
             status,
             Some(AssetLockStatus::RecoveredFromChain),
             "the row keeps its status — the resume proved nothing new about it"
+        );
+    }
+    /// How long the fake transport takes to "come up", expressed in
+    /// readiness polls so the tests stay deterministic under a paused clock.
+    const TRANSPORT_COMES_UP_AFTER_POLLS: u32 = 3;
+
+    /// Broadcaster whose transport comes up partway through the resume, the
+    /// way the SPV client does while an app is launching.
+    ///
+    /// Until it is up, `broadcast` reproduces `SpvRuntime`'s pre-send
+    /// verdict for an unstarted client: `Rejected` — definitively never
+    /// sent. Each attempt is recorded together with the readiness state at
+    /// the moment it was made, so a test can tell "held the send until the
+    /// transport was up" apart from "sent into a dead transport and got
+    /// lucky".
+    struct StartingUpBroadcaster {
+        /// Readiness polls before the transport comes up; `None` never
+        /// comes up at all.
+        comes_up_after: Option<u32>,
+        polls: AtomicU32,
+        ready: AtomicBool,
+        /// Every budget handed to `wait_until_ready`, in call order.
+        readiness_budgets: Mutex<Vec<Duration>>,
+        attempts: Mutex<Vec<(Transaction, bool)>>,
+    }
+
+    impl StartingUpBroadcaster {
+        fn comes_up_after(polls: u32) -> Self {
+            Self {
+                comes_up_after: Some(polls),
+                polls: AtomicU32::new(0),
+                ready: AtomicBool::new(false),
+                readiness_budgets: Mutex::new(Vec::new()),
+                attempts: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn never_comes_up() -> Self {
+            Self {
+                comes_up_after: None,
+                polls: AtomicU32::new(0),
+                ready: AtomicBool::new(false),
+                readiness_budgets: Mutex::new(Vec::new()),
+                attempts: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn readiness_budgets(&self) -> Vec<Duration> {
+            self.readiness_budgets
+                .lock()
+                .expect("readiness budget mutex")
+                .clone()
+        }
+
+        fn attempts(&self) -> Vec<(Transaction, bool)> {
+            self.attempts.lock().expect("attempts mutex").clone()
+        }
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for StartingUpBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            let ready = self.ready.load(Ordering::SeqCst);
+            self.attempts
+                .lock()
+                .expect("attempts mutex")
+                .push((transaction.clone(), ready));
+            if !ready {
+                return Err(BroadcastError::Rejected {
+                    reason: "SPV broadcast not sent: client not started".to_string(),
+                });
+            }
+            Ok(transaction.txid())
+        }
+
+        async fn wait_until_ready(&self, timeout: Duration) -> bool {
+            self.readiness_budgets
+                .lock()
+                .expect("readiness budget mutex")
+                .push(timeout);
+            tokio::time::timeout(timeout, async {
+                let comes_up_after = match self.comes_up_after {
+                    Some(polls) => polls,
+                    // Never comes up. Park rather than spin, so a paused
+                    // clock jumps straight to the budget's expiry however
+                    // large that budget is.
+                    None => match std::future::pending::<std::convert::Infallible>().await {},
+                };
+                loop {
+                    let polls = self.polls.fetch_add(1, Ordering::SeqCst) + 1;
+                    if polls >= comes_up_after {
+                        self.ready.store(true, Ordering::SeqCst);
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .is_ok()
+        }
+    }
+
+    /// The launch catch-up resumes a `Built` lock while the SPV client is
+    /// still starting. The resume gets exactly one send, and a send into an
+    /// unstarted client draws `Rejected` — the never-sent verdict, which
+    /// ends the `Built` arm. Nothing reschedules the catch-up, so a lock
+    /// that loses that race stays at `Built` with its funds behind it, and
+    /// every later session repeats the identical race. The send has to be
+    /// held until the transport is actually up.
+    #[tokio::test(start_paused = true)]
+    async fn built_resume_holds_the_broadcast_until_the_transport_is_up() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::comes_up_after(
+            TRANSPORT_COMES_UP_AFTER_POLLS,
+        ));
+        let (error, status) = resume_lock_at(
+            broadcaster.clone(),
+            AssetLockStatus::Built,
+            Some(Duration::from_secs(300)),
+        )
+        .await;
+
+        let attempts = broadcaster.attempts();
+        assert_eq!(attempts.len(), 1, "the resume gets exactly one send");
+        let (_broadcast_tx, was_ready) = &attempts[0];
+        assert!(
+            was_ready,
+            "the send must land after the transport came up, not into a \
+             client that cannot dispatch it"
+        );
+        assert_eq!(
+            status,
+            Some(AssetLockStatus::Broadcast),
+            "a send that actually dispatched must advance the row: {error:?}"
+        );
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "the resume must go on to the proof wait, not fail on the \
+             broadcast: {error:?}"
+        );
+    }
+
+    /// The transport wait must stay a delay and never become a park.
+    ///
+    /// Hosts drive the catch-up through the FFI's blocking entry point,
+    /// several locks at a time, on a fixed-width thread pool — the same
+    /// pool the host needs in order to reach `start_spv` and bring the
+    /// transport up. A wait with no ceiling there parks the transport's own
+    /// start, and the `None` these production call sites pass would be
+    /// exactly that ceiling-free wait if the caller's budget were the only
+    /// bound. `None` must draw the constant instead, and the resume must
+    /// still terminate with the verdict it would have reported without any
+    /// wait at all.
+    ///
+    /// That verdict is the non-terminal one. A pre-dispatch rejection says
+    /// only that *this* attempt never left the device: a row sits at `Built`
+    /// after a successful broadcast too, so an earlier send may be in a
+    /// mempool or already mined. The resume keeps the row and its input
+    /// reservation, which is exactly what the definite-rejection code
+    /// promises it has released — a host honouring that promise would
+    /// rebuild from other UTXOs and create a second asset lock beside a
+    /// possibly-live one.
+    #[tokio::test(start_paused = true)]
+    async fn transport_wait_is_bounded_even_when_the_caller_named_no_timeout() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::never_comes_up());
+        let (error, status) =
+            resume_lock_at(broadcaster.clone(), AssetLockStatus::Built, None).await;
+
+        assert_eq!(
+            broadcaster.readiness_budgets(),
+            vec![BROADCAST_TRANSPORT_READY_WAIT],
+            "an unbounded caller must still hand the transport wait a ceiling"
+        );
+        let PlatformWalletError::TransactionBroadcastUnconfirmed(reason) = &error else {
+            panic!(
+                "once the wait expires the send is attempted anyway, and the \
+                 pre-dispatch rejection it draws must surface as an unknown \
+                 outcome — never as the definite rejection whose contract is \
+                 that the inputs were released and a rebuild is safe: {error:?}"
+            );
+        };
+        assert!(
+            reason.contains("rejected before dispatch"),
+            "the failure must name the undispatched send, so it is not \
+             confused with the proof wait running out on a send that did \
+             dispatch: {reason}"
+        );
+        assert_eq!(
+            status,
+            Some(AssetLockStatus::Built),
+            "the row and its reservation stay exactly as they were — the \
+             attempt proved nothing about any earlier send"
+        );
+        let attempts = broadcaster.attempts();
+        assert_eq!(
+            attempts.len(),
+            1,
+            "an expired wait still costs exactly ONE send. A second attempt \
+             here would be a retry of a send whose outcome is unknown, which \
+             is the double-broadcast this arm's contract exists to prevent"
+        );
+        assert!(
+            !attempts[0].1,
+            "and that one send goes into the transport as it actually is — \
+             still down. The ceiling bounds the race, it does not resolve it"
+        );
+    }
+
+    /// A caller that named its own budget keeps it: the transport wait is
+    /// capped by the constant, and whatever it consumes is deducted so the
+    /// resume's total stays inside what the caller asked for.
+    #[tokio::test(start_paused = true)]
+    async fn transport_wait_is_capped_and_deducted_from_the_caller_budget() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::never_comes_up());
+        let caller_budget = Duration::from_secs(300);
+        let started = tokio::time::Instant::now();
+        let (_error, _status) = resume_lock_at(
+            broadcaster.clone(),
+            AssetLockStatus::Broadcast,
+            Some(caller_budget),
+        )
+        .await;
+        let elapsed = started.elapsed();
+
+        assert_eq!(
+            broadcaster.readiness_budgets(),
+            vec![BROADCAST_TRANSPORT_READY_WAIT],
+            "the caller's 300s must not become a 300s transport wait"
+        );
+        assert!(
+            elapsed <= caller_budget,
+            "the transport wait must come out of the caller's budget, not \
+             on top of it: {elapsed:?} > {caller_budget:?}"
+        );
+    }
+
+    /// The deduction is only observable once the transport actually comes
+    /// up: the resume then goes on to the proof wait, and what that wait
+    /// gets is the caller's budget MINUS what readiness spent.
+    ///
+    /// Without the subtraction the proof wait starts a fresh full budget
+    /// and the resume overruns the bound its caller asked for — by the
+    /// transport wait's whole length, up to 15s of a budget the host sized
+    /// for its own timeout. Under a paused clock the total is exact, so it
+    /// is the total that is asserted: readiness plus proof, inside the
+    /// caller's budget, to the millisecond.
+    #[tokio::test(start_paused = true)]
+    async fn a_ready_transport_leaves_the_rest_of_the_budget_to_the_proof_wait() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::comes_up_after(
+            TRANSPORT_COMES_UP_AFTER_POLLS,
+        ));
+        let caller_budget = Duration::from_secs(300);
+        let started = tokio::time::Instant::now();
+        let (error, _status) = resume_lock_at(
+            broadcaster.clone(),
+            AssetLockStatus::Built,
+            Some(caller_budget),
+        )
+        .await;
+        let elapsed = started.elapsed();
+
+        assert!(
+            broadcaster
+                .attempts()
+                .first()
+                .is_some_and(|(_, ready)| *ready),
+            "the premise: the transport came up and the send dispatched, so \
+             the resume reached the proof wait this test measures"
+        );
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "and that proof wait is what ran out, not the broadcast: {error:?}"
+        );
+        assert_eq!(
+            elapsed, caller_budget,
+            "readiness plus proof must total exactly the caller's budget — \
+             a proof wait handed the undiminished budget overruns it by \
+             however long readiness took"
+        );
+    }
+
+    /// A caller whose budget is already below the ceiling gets its own
+    /// number, not the ceiling.
+    ///
+    /// `min(caller, 15s)` is the whole policy: the constant is an upper
+    /// bound on the wait, never a floor under it. A host that asks for a 5s
+    /// resume has usually sized that against something of its own — a
+    /// foreground refresh, a watchdog — and spending 15s in the transport
+    /// wait alone would blow through it three times over before the send is
+    /// even attempted.
+    #[tokio::test(start_paused = true)]
+    async fn a_caller_budget_under_the_ceiling_is_the_whole_transport_wait() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::never_comes_up());
+        let caller_budget = Duration::from_secs(5);
+        let started = tokio::time::Instant::now();
+        let (error, _status) = resume_lock_at(
+            broadcaster.clone(),
+            AssetLockStatus::Built,
+            Some(caller_budget),
+        )
+        .await;
+        let elapsed = started.elapsed();
+
+        assert_eq!(
+            broadcaster.readiness_budgets(),
+            vec![caller_budget],
+            "a caller under the ceiling hands the transport wait its own \
+             budget — the constant caps the wait, it never extends it"
+        );
+        assert_eq!(
+            elapsed, caller_budget,
+            "and the resume ends inside that budget rather than at the \
+             ceiling: {error:?}"
+        );
+    }
+
+    /// The `Broadcast` arm's defensive re-broadcast is worth attempting only
+    /// once the transport can carry it: rejected before dispatch it proves
+    /// nothing, ends the resume as an unknown outcome, and leaves the row to
+    /// be retried on some later launch. It has to wait too.
+    #[tokio::test(start_paused = true)]
+    async fn broadcast_resume_also_holds_its_rebroadcast_for_the_transport() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::comes_up_after(
+            TRANSPORT_COMES_UP_AFTER_POLLS,
+        ));
+        let (error, status) = resume_lock_at(
+            broadcaster.clone(),
+            AssetLockStatus::Broadcast,
+            Some(Duration::from_secs(300)),
+        )
+        .await;
+
+        let attempts = broadcaster.attempts();
+        assert_eq!(attempts.len(), 1, "one defensive re-broadcast");
+        assert!(
+            attempts[0].1,
+            "the defensive re-broadcast must wait for the transport too — \
+             rejected before dispatch it proves nothing and only ends the \
+             resume early"
+        );
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "a dispatched re-broadcast leaves the resume in the proof wait: \
+             {error:?}"
+        );
+        assert_eq!(status, Some(AssetLockStatus::Broadcast));
+    }
+
+    /// An arm that broadcasts nothing must not consult the transport at all.
+    ///
+    /// The proof-less `RecoveredFromChain` fallback resolves from an
+    /// already chain-locked record, and four production call sites reach it
+    /// with `timeout: None`. Gating it would buy nothing and cost every one
+    /// of them the full transport wait on a device whose SPV client is
+    /// down.
+    #[tokio::test(start_paused = true)]
+    async fn a_resume_that_broadcasts_nothing_never_waits_for_the_transport() {
+        let broadcaster = Arc::new(StartingUpBroadcaster::never_comes_up());
+        let (error, _status) = resume_lock_at(
+            broadcaster.clone(),
+            AssetLockStatus::RecoveredFromChain,
+            None,
+        )
+        .await;
+
+        assert!(
+            broadcaster.readiness_budgets().is_empty(),
+            "a proof-only arm must not wait on a transport it never uses"
+        );
+        assert!(
+            broadcaster.attempts().is_empty(),
+            "a proof-only arm must not broadcast"
+        );
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "unchanged verdict for a record that never becomes final: {error:?}"
+        );
+    }
+
+    /// Resume a row at `status` whose funding record is ALREADY IS-locked,
+    /// over a transport that never comes up, and report what the resume
+    /// cost in virtual time.
+    ///
+    /// The IS-locked record is the ordinary state of a lock whose proof
+    /// arrived while nothing was waiting for it: `LockNotifyHandler` only
+    /// wakes waiters, so the record is enriched and the tracked status is
+    /// left where it was.
+    async fn locally_final_resume_over_a_down_transport(
+        status: AssetLockStatus,
+    ) -> (
+        dpp::prelude::AssetLockProof,
+        Duration,
+        Arc<StartingUpBroadcaster>,
+        AssetLockStatus,
+    ) {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let broadcaster = Arc::new(StartingUpBroadcaster::never_comes_up());
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&broadcaster) as Arc<dyn TransactionBroadcaster>,
+            WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered");
+            let record = TransactionRecord::new(
+                transaction.clone(),
+                AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+                TransactionContext::InstantSend(InstantLock::default()),
+                TransactionType::Standard,
+                TransactionDirection::Outgoing,
+                Vec::new(),
+                Vec::new(),
+                0,
+            );
+            info.core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("funded wallet has BIP44 account 0")
+                .transactions_mut()
+                .insert(record.txid, record);
+            info.tracked_asset_locks.insert(
+                out_point,
+                TrackedAssetLock {
+                    out_point,
+                    transaction,
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+                    identity_index: 4,
+                    amount: 1_000_000,
+                    status,
+                    proof: None,
+                },
+            );
+        }
+
+        let started = tokio::time::Instant::now();
+        let (proof, _path) = manager
+            .resume_asset_lock(&out_point, None)
+            .await
+            .expect("an already-final lock must resume with no transport at all");
+        let elapsed = started.elapsed();
+        let tracked = wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&out_point)
+            .expect("lock stays tracked")
+            .status
+            .clone();
+        (proof, elapsed, broadcaster, tracked)
+    }
+
+    /// Broadcaster whose transport comes up carrying the finality the record
+    /// was missing, and whose sends never leave the device anyway.
+    ///
+    /// This is the second half of the launch window: the resume's opening
+    /// probe reads a record with no proof in it, SPV connects and delivers
+    /// the lock event while the resume is waiting for exactly that, and the
+    /// send that follows still draws the pre-dispatch rejection because the
+    /// client has no peers yet. Filing the record from inside
+    /// `wait_until_ready` is what puts finality in that gap deterministically.
+    struct FinalityArrivesWithTheTransport {
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        transaction: Mutex<Option<Transaction>>,
+        sends: AtomicU32,
+    }
+
+    impl FinalityArrivesWithTheTransport {
+        fn sends(&self) -> u32 {
+            self.sends.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for FinalityArrivesWithTheTransport {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            self.sends.fetch_add(1, Ordering::SeqCst);
+            Err(BroadcastError::Rejected {
+                reason: "SPV broadcast not sent: no connected peers".to_string(),
+            })
+        }
+
+        async fn wait_until_ready(&self, _timeout: Duration) -> bool {
+            let transaction = self
+                .transaction
+                .lock()
+                .expect("funding transaction slot")
+                .clone()
+                .expect("the fixture files the transaction before resuming");
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet must remain registered");
+            insert_record(
+                info,
+                record_for(
+                    transaction,
+                    TransactionContext::InstantSend(
+                        dashcore::ephemerealdata::instant_lock::InstantLock::default(),
+                    ),
+                ),
+            );
+            true
+        }
+    }
+
+    /// Regression: finality that lands DURING the transport wait must still
+    /// complete the resume, even though the send it makes afterwards is
+    /// rejected before dispatch.
+    ///
+    /// The opening probe is not the only place a proof can appear. The
+    /// transport wait is what SPV needs in order to connect, and connecting
+    /// is what delivers the lock event — so on the launch pass the record is
+    /// routinely enriched inside the very wait that precedes the send, while
+    /// the send itself still draws the never-sent verdict from a client with
+    /// no peers. Reading the record again after that rejection is the only
+    /// thing standing between an already-final lock and a resume that fails
+    /// it every launch.
+    async fn finality_landing_in_the_transport_wait_completes_the_resume(status: AssetLockStatus) {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let broadcaster = Arc::new(FinalityArrivesWithTheTransport {
+            wallet_manager: Arc::clone(&wallet_manager),
+            wallet_id,
+            transaction: Mutex::new(None),
+            sends: AtomicU32::new(0),
+        });
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&broadcaster) as Arc<dyn TransactionBroadcaster>,
+            WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        *broadcaster
+            .transaction
+            .lock()
+            .expect("funding transaction slot") = Some(transaction.clone());
+        {
+            let mut wm = wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered")
+                .tracked_asset_locks
+                .insert(
+                    out_point,
+                    TrackedAssetLock {
+                        out_point,
+                        transaction,
+                        account_index: 0,
+                        funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+                        identity_index: 4,
+                        amount: 1_000_000,
+                        status,
+                        proof: None,
+                    },
+                );
+        }
+
+        let (proof, _path) = manager
+            .resume_asset_lock(&out_point, None)
+            .await
+            .expect("a lock made final during the transport wait must still resume");
+        assert!(
+            matches!(proof, dpp::prelude::AssetLockProof::Instant(_)),
+            "the proof must come from the record the transport wait filed: {proof:?}"
+        );
+        assert_eq!(
+            broadcaster.sends(),
+            1,
+            "the resume must have gone through the send — this is the arm that \
+             reads the record AFTER a rejection, not the opening probe"
+        );
+        assert_eq!(
+            wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("lock stays tracked")
+                .status,
+            AssetLockStatus::InstantSendLocked,
+            "the resume must advance the row exactly as a waited-for proof would"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn finality_landing_in_the_transport_wait_completes_a_built_resume() {
+        finality_landing_in_the_transport_wait_completes_the_resume(AssetLockStatus::Built).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn finality_landing_in_the_transport_wait_completes_a_broadcast_resume() {
+        finality_landing_in_the_transport_wait_completes_the_resume(AssetLockStatus::Broadcast)
+            .await;
+    }
+
+    /// Regression: a `Built` row that is already final locally must complete
+    /// offline, without paying the transport-readiness ceiling first.
+    ///
+    /// This is the canonical launch shape — `catchUpStuckAssetLocks` resumes
+    /// rows before `start_spv` — and for a row whose proof is already in the
+    /// record there is nothing for the transport to carry. Consulting
+    /// readiness first cost that resume the full ceiling on every launch of
+    /// an offline device and then completed it from the same record anyway.
+    ///
+    /// `start_paused` makes the cost measurable: the assertion is that
+    /// virtual time does not advance at all, which no arrangement of a
+    /// sleeping wait can satisfy.
+    #[tokio::test(start_paused = true)]
+    async fn a_locally_final_built_row_completes_without_touching_the_transport() {
+        let (proof, elapsed, broadcaster, status) =
+            locally_final_resume_over_a_down_transport(AssetLockStatus::Built).await;
+
+        assert!(
+            matches!(proof, dpp::prelude::AssetLockProof::Instant(_)),
+            "the proof must come from the record's InstantSend context: {proof:?}"
+        );
+        assert!(
+            broadcaster.readiness_budgets().is_empty(),
+            "a row that needs no send must not wait for a transport to carry \
+             it: readiness was consulted with {:?}",
+            broadcaster.readiness_budgets()
+        );
+        assert!(
+            broadcaster.attempts().is_empty(),
+            "and it must not broadcast either — the transaction is already final"
+        );
+        assert_eq!(
+            elapsed,
+            Duration::ZERO,
+            "the whole resume must cost no time at all; anything else is the \
+             readiness ceiling being paid by a lock that is already finished"
+        );
+        assert_eq!(
+            status,
+            AssetLockStatus::InstantSendLocked,
+            "the row is advanced exactly as a waited-for proof would advance it"
+        );
+    }
+
+    /// The `Broadcast` twin: the defensive re-broadcast exists to revive a
+    /// transaction no node still holds, which an already-final record proves
+    /// is not this one.
+    #[tokio::test(start_paused = true)]
+    async fn a_locally_final_broadcast_row_completes_without_touching_the_transport() {
+        let (proof, elapsed, broadcaster, status) =
+            locally_final_resume_over_a_down_transport(AssetLockStatus::Broadcast).await;
+
+        assert!(
+            matches!(proof, dpp::prelude::AssetLockProof::Instant(_)),
+            "the proof must come from the record's InstantSend context: {proof:?}"
+        );
+        assert!(
+            broadcaster.readiness_budgets().is_empty(),
+            "the defensive re-broadcast is skipped outright, so its transport \
+             wait must be skipped with it: readiness was consulted with {:?}",
+            broadcaster.readiness_budgets()
+        );
+        assert!(
+            broadcaster.attempts().is_empty(),
+            "nothing to revive: the record already holds finality"
+        );
+        assert_eq!(
+            elapsed,
+            Duration::ZERO,
+            "the whole resume must cost no time at all; anything else is the \
+             readiness ceiling being paid by a lock that is already finished"
+        );
+        assert_eq!(
+            status,
+            AssetLockStatus::InstantSendLocked,
+            "the row is advanced exactly as a waited-for proof would advance it"
         );
     }
 }
