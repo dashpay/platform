@@ -44,6 +44,8 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Check package version matches tag
         uses: geritol/match-tag-to-package-version@dd6acafe4382a73f4282687d5ee384b238ea1df7 # 0.2.0
@@ -176,6 +178,8 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Download JS build artifacts
         uses: actions/download-artifact@v4
@@ -368,6 +372,8 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # apt reads a deb whose version does not sort above the installed one as a
       # downgrade and refuses it, leaving operators silently stuck on the older
@@ -462,6 +468,7 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Download JS build artifacts

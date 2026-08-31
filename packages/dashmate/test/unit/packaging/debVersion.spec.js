@@ -278,10 +278,18 @@ describe('deb_version.js', () => {
   });
 
   describe('command line', () => {
+    // Both variables are always given a value, so a rebuild that exports
+    // DASHMATE_DEB_REVISION in the shell running the tests cannot reach the
+    // script and change the version a test asserts.
     function run(version, env) {
       return execFileSync(process.execPath, [SCRIPT_PATH, version], {
         encoding: 'utf8',
-        env: { ...process.env, ...env },
+        env: {
+          ...process.env,
+          DASHMATE_DEB_REVISION: '1',
+          DASHMATE_DEB_EPOCH: '',
+          ...env,
+        },
       }).trim();
     }
 
