@@ -79,7 +79,15 @@ subtle = { version = "=2.6.1", optional = true }
 # CSPRNG for AEAD nonces and the vault salt; exact-pinned like the rest
 # of the crypto stack so the random source is not the loose one.
 getrandom = { version = "=0.2.17", optional = true }
-region = { version = "=3.0.2", optional = true }
+# Guarded allocator for `secrets::SecretString`/`SecretBytes`: every
+# secret gets page-aligned, guard-paged, canary-checked, mlocked memory,
+# so two live secrets can never share a page. Pure Rust (libc /
+# windows-sys), no C toolchain or libsodium. Its `getrandom 0.2` and
+# `windows-sys 0.45` deps are already in the workspace lock, so it adds
+# no transitive crates. Exact-pinned like the rest of the
+# soundness-critical stack: it holds seeds and xprivs, so a version
+# change deserves a human reading the diff, not an automatic pickup.
+memsec = { version = "=0.7.0", optional = true }
 keyring-core = { version = "=1.0.0", optional = true }
 # Cross-process advisory file lock for the vault read-modify-write.
 # `fd-lock` 4.x is pure-rustix and replaces the `fs2`/`fs4` family that
@@ -130,6 +138,9 @@ apple-native-keyring-store = { version = "=1.0.0", features = ["keychain"], opti
 windows-native-keyring-store = { version = "=1.0.0", optional = true }
 
 [dev-dependencies]
+# Page-size query for the secret page-isolation tests only. `memsec` owns
+# the locking itself, so nothing in the shipped library needs this.
+region = "=3.0.2"
 proptest = "1"
 assert_cmd = "2"
 static_assertions = "1"
@@ -222,7 +233,7 @@ secrets = [
     "dep:zeroize",
     "dep:subtle",
     "dep:getrandom",
-    "dep:region",
+    "dep:memsec",
     "dep:keyring-core",
     "dep:fd-lock",
     "dep:libc",

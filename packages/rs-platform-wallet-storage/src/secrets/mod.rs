@@ -31,6 +31,7 @@
 
 mod error;
 mod file;
+mod guarded;
 mod keyring;
 mod secret;
 mod store;

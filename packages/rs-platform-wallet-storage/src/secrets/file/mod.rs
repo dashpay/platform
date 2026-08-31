@@ -77,11 +77,40 @@ pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 
 /// Per-secret write-side ceiling. The vault is ONE shared document, so an
 /// uncapped oversized entry would inflate it past [`MAX_VAULT_SIZE_BYTES`]
-/// and brick every wallet on reopen. 64 KiB is far above any legitimate
-/// mnemonic / seed / xpriv. Enforced with
+/// and brick every wallet on reopen. Enforced with
 /// [`SecretStoreError::SecretTooLarge`] at the write boundary before the
 /// secret is sealed or inserted.
-pub const MAX_SECRET_LEN: usize = 64 * 1024;
+///
+/// # Why 8 KiB
+///
+/// Secrets live in guarded, `mlock`ed pages (one allocation per secret,
+/// never shared), so this ceiling also sets the process's worst-case
+/// locked-memory demand. It is sized to fit a **64 KiB `RLIMIT_MEMLOCK`**
+/// — the Docker/Kubernetes default — with room to spare.
+///
+/// `memsec` locks `page_round(16 + payload)`, the 16 bytes being its
+/// canary. The deepest read path (OS-keyring backend, Tier-2
+/// password-protected entry) holds these buffers live at once:
+///
+/// | live buffer | payload | locked |
+/// |---|---|---|
+/// | stored envelope (`MAX_SECRET_LEN` + `MAX_ENVELOPE_OVERHEAD`, 112 B) | 8304 B | 12 KiB |
+/// | decrypted plaintext ([`MAX_PLAINTEXT_LEN`]) | 8080 B | 8 KiB |
+/// | derived AEAD key | 32 B | 4 KiB |
+/// | resident vault AEAD key | 32 B | 4 KiB |
+/// | vault passphrase | ≤ 4080 B | 4 KiB |
+/// | Tier-2 object password | ≤ 4080 B | 4 KiB |
+///
+/// That totals 36 KiB, leaving 28 KiB of the budget — enough for a second
+/// concurrent read of a maximum-size secret (20 KiB) and still 8 KiB
+/// clear. Raising this constant eats that headroom roughly twice over per
+/// KiB, since the envelope and its plaintext are both live.
+///
+/// 8 KiB remains ~30× the largest legitimate secret: a 24-word BIP-39
+/// mnemonic is under 256 bytes, a BIP-32 seed is 64, an xpriv ~112.
+///
+/// [`MAX_PLAINTEXT_LEN`]: crate::secrets::MAX_PLAINTEXT_LEN
+pub const MAX_SECRET_LEN: usize = 8 * 1024;
 
 /// A passphrase-encrypted file-backed credential store.
 ///

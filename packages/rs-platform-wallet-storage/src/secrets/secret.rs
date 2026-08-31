@@ -1,19 +1,31 @@
 //! Zeroizing secret wrappers: [`SecretString`] for UTF-8 secrets and
 //! [`SecretBytes`] for byte secrets (seeds, xprivs, KDF output, AEAD
 //! keys, decrypted plaintext). Both have a redacting `Debug`, no
-//! `Display`/`Deref`/`Serialize`, a full buffer wipe on drop, and a
-//! best-effort `region` mlock (CWE-316).
+//! `Display`/`Deref`/`Serialize`, a full buffer wipe on drop, and live in
+//! guard-paged, `mlock`ed memory (CWE-316) supplied by
+//! [`GuardedBuf`](super::guarded::GuardedBuf).
+//!
+//! Each secret owns its data pages outright, so no two live secrets share
+//! a page and freeing one can never unlock memory another still holds.
+//! The cost is at least a page per secret, which is what sizes
+//! [`MAX_SECRET_LEN`](super::MAX_SECRET_LEN) against a constrained
+//! `RLIMIT_MEMLOCK`.
 
 use std::fmt;
 
 use subtle::ConstantTimeEq;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
-/// Pre-allocation capacity for [`SecretString`] buffers. `mlock` is
-/// page-granular (a sub-page buffer locks a whole page anyway), and 4096
-/// bytes makes a reallocation — which would leave an un-zeroed freed
-/// buffer behind — virtually impossible for any human-entered secret.
-const DEFAULT_CAPACITY: usize = 4096;
+use super::guarded::GuardedBuf;
+
+/// Pre-allocation capacity for [`SecretString`] buffers.
+///
+/// `memsec` prefixes every allocation with a 16-byte canary and rounds
+/// the total up to whole pages, so 4080 bytes is the largest payload that
+/// still fits a single 4 KiB data page — ample for any passphrase or
+/// 24-word mnemonic, and one page is the minimum a guarded allocation can
+/// cost regardless.
+const DEFAULT_CAPACITY: usize = 4096 - 16;
 
 /// Minimum post-trim byte length for a vault passphrase or Tier-2 password.
 ///
@@ -22,65 +34,6 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// policy remain the consumer's responsibility (see `SECRETS.md`).
 pub const MIN_PASSPHRASE_LEN: usize = 8;
 
-/// An `mlock`ed region that releases best-effort, never fatally.
-///
-/// Used in place of [`region::LockGuard`], whose `Drop` runs
-/// `debug_assert!(result.is_ok())` on the unlock and so aborts a debug
-/// build when the OS reports the region was already unlocked. That is a
-/// routine outcome, not a caller bug: locking is page-granular, so two
-/// secrets allocated close together share a page, and `VirtualUnlock` is
-/// not reference-counted — the first secret to drop releases the shared
-/// page and the second sees `ERROR_NOT_LOCKED`. A destructor must not
-/// fail on an expected, benign condition, so this one logs instead.
-///
-/// The address is held as a `usize` and only ever handed back to
-/// [`region::unlock`], never dereferenced. That keeps the lock — and so
-/// [`SecretString`]/[`SecretBytes`] — `Send + Sync` without the
-/// `unsafe impl`s `region::LockGuard` relies on, which this crate's
-/// `deny(unsafe_code)` forbids.
-struct PageLock {
-    address: usize,
-    size: usize,
-}
-
-impl PageLock {
-    /// Lock `[address, address + size)` into RAM.
-    ///
-    /// Callers log their own failures: the two `SecretString` call sites
-    /// deliberately report at different levels with distinct wording, so
-    /// this returns the error rather than emitting one message for all.
-    ///
-    /// # Errors
-    ///
-    /// Propagates [`region::lock`] — a zero `size`, or an OS refusal
-    /// (a low `RLIMIT_MEMLOCK` being the usual cause).
-    fn acquire<T>(address: *const T, size: usize) -> Result<Self, region::Error> {
-        let guard = region::lock(address, size)?;
-        // Leak the guard object, not the lock: its `Drop` is the aborting
-        // one, and it exposes no accessors, so releasing the region has to
-        // go through the address and size recorded here. `region::unlock`
-        // rounds to page boundaries exactly as `region::lock` did, so this
-        // releases precisely the region that was locked.
-        std::mem::forget(guard);
-        Ok(Self {
-            address: address.addr(),
-            size,
-        })
-    }
-}
-
-impl Drop for PageLock {
-    fn drop(&mut self) {
-        let address = std::ptr::without_provenance::<u8>(self.address);
-        if let Err(e) = region::unlock(address, self.size) {
-            tracing::debug!(
-                "munlock failed while releasing a secret buffer; a secret \
-                 sharing the page may already have released it: {e}"
-            );
-        }
-    }
-}
-
 /// Zeroize-on-drop wrapper for secret UTF-8 strings (BIP-39 mnemonic,
 /// `EncryptedFileStore` passphrase).
 ///
@@ -88,7 +41,7 @@ impl Drop for PageLock {
 /// [`subtle::ConstantTimeEq`] (`==` is forbidden so bridge code cannot
 /// inherit a non-constant-time path). `Display`/`Deref`/`Serialize`/`Eq`
 /// are deliberately absent, `Debug` is redacted, and the buffer wipes
-/// over its full capacity on drop and is best-effort `mlock`ed.
+/// over its full capacity on drop and lives in guarded, `mlock`ed pages.
 ///
 /// [`expose_secret`]: SecretString::expose_secret
 ///
@@ -99,63 +52,67 @@ impl Drop for PageLock {
 /// let _ = a == b; // `==` on SecretString is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretString {
-    // Field order is load-bearing: `inner` drops (Zeroizing wipes it)
-    // before `_lock` releases the page, so the wipe runs while mlock'ed.
-    inner: Zeroizing<String>,
-    _lock: Option<PageLock>,
+    buf: GuardedBuf,
+    /// Byte length of the UTF-8 plaintext held at the start of `buf`.
+    len: usize,
 }
 
 impl SecretString {
-    /// Wrap a string, copying it into a capacity-padded buffer,
-    /// zeroizing the source, and best-effort `mlock`ing the buffer.
+    /// Wrap a string, copying it into guarded memory and zeroizing the
+    /// source so no unprotected copy outlives the call.
     pub fn new(s: impl Into<String>) -> Self {
         let mut source: String = s.into();
-        let cap = source.len().max(DEFAULT_CAPACITY);
-        let mut buf = String::with_capacity(cap);
-        buf.push_str(&source);
-        // Do not remove: wipes the moved-in plaintext source before it drops.
-        // A direct freed-buffer scan would require `unsafe`, which this crate
-        // forbids; the test `secret_string_new_zeroizes_string_source` instead
-        // pins the `String::zeroize` primitive and this call site.
+        let secret = Self::from_plaintext(&source);
+        // Do not remove: wipes the moved-in plaintext source before it
+        // drops. A direct freed-buffer scan would be a use-after-free, so
+        // the test `secret_string_new_zeroizes_string_source` pins the
+        // `String::zeroize` primitive and this call site instead.
         source.zeroize();
-        let lock = PageLock::acquire(buf.as_ptr(), buf.capacity())
-            .map_err(|e| {
-                tracing::warn!(
-                    "mlock failed for SecretString; secret may be swappable to disk: {e}"
-                );
-                e
-            })
-            .ok();
+        secret
+    }
+
+    /// Copy `text` straight into a fresh guarded buffer, with no
+    /// intermediate unprotected allocation.
+    fn from_plaintext(text: &str) -> Self {
+        let mut buf = GuardedBuf::new(text.len().max(DEFAULT_CAPACITY));
+        buf.as_mut_slice(text.len())
+            .copy_from_slice(text.as_bytes());
         Self {
-            inner: Zeroizing::new(buf),
-            _lock: lock,
+            buf,
+            len: text.len(),
         }
     }
 
-    /// An empty, capacity-padded, locked buffer.
+    /// An empty, capacity-padded, guarded buffer.
     pub fn empty() -> Self {
         Self::default()
     }
 
     /// Borrow the plaintext. The only read path.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer does not hold valid UTF-8. Only whole `&str`
+    /// values are ever written into it, so that signals a bug in this
+    /// module rather than a recoverable condition.
     pub fn expose_secret(&self) -> &str {
-        &self.inner
+        std::str::from_utf8(self.buf.as_slice(self.len)).expect("SecretString holds valid UTF-8")
     }
 
     /// Secret length in bytes.
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.len
     }
 
     /// Whether the secret is empty.
     pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+        self.len == 0
     }
 
     /// A new `SecretString` holding the whitespace-trimmed content,
     /// keeping the trimmed copy inside the wrapper.
     pub fn trimmed(&self) -> Self {
-        Self::new(self.inner.trim().to_string())
+        Self::from_plaintext(self.expose_secret().trim())
     }
 
     /// Whether the secret is empty or all Unicode-whitespace.
@@ -167,33 +124,20 @@ impl SecretString {
     /// [`is_below_minimum_passphrase_len`](Self::is_below_minimum_passphrase_len)
     /// instead. Always available — **not** feature-gated.
     pub fn is_blank(&self) -> bool {
-        self.inner.trim().is_empty()
+        self.expose_secret().trim().is_empty()
     }
 
     /// Whether the trimmed secret is shorter than [`MIN_PASSPHRASE_LEN`].
     pub(crate) fn is_below_minimum_passphrase_len(&self) -> bool {
-        self.inner.trim().len() < MIN_PASSPHRASE_LEN
+        self.expose_secret().trim().len() < MIN_PASSPHRASE_LEN
     }
 }
 
 impl Default for SecretString {
     fn default() -> Self {
-        let s = String::with_capacity(DEFAULT_CAPACITY);
-        let lock = PageLock::acquire(s.as_ptr(), s.capacity())
-            .map_err(|e| {
-                // Empty buffer — no secret at risk, so this is diagnostic
-                // noise, not a confidentiality event. `debug!` (not the
-                // `new()` path's `warn!`) and distinct wording keep the two
-                // call sites individually greppable.
-                tracing::debug!(
-                    "mlock failed for empty default SecretString buffer; no secret at risk: {e}"
-                );
-                e
-            })
-            .ok();
         Self {
-            inner: Zeroizing::new(s),
-            _lock: lock,
+            buf: GuardedBuf::new(DEFAULT_CAPACITY),
+            len: 0,
         }
     }
 }
@@ -218,7 +162,8 @@ impl Zeroize for SecretString {
     /// Wipe the buffer in place on a live value. `Drop` runs the same
     /// wipe automatically; this lets a holder zeroize early.
     fn zeroize(&mut self) {
-        self.inner.zeroize();
+        self.buf.zeroize_all();
+        self.len = 0;
     }
 }
 
@@ -229,14 +174,14 @@ impl From<String> for SecretString {
 }
 
 impl From<&str> for SecretString {
+    /// Copies straight into guarded memory, with no transient `String`.
     fn from(s: &str) -> Self {
-        Self::new(s.to_string())
+        Self::from_plaintext(s)
     }
 }
 
 /// Deserialize a UTF-8 secret (a vault passphrase or a Tier-2 object
-/// password arriving via config), routing the owned `String` through
-/// [`SecretString::new`] — which zeroizes its source — so no
+/// password arriving via config) straight into guarded memory, so no
 /// intermediate plaintext buffer **we own** lingers (CWE-316).
 ///
 /// Gated behind the dedicated, default-off `secret-serde` feature, NOT the
@@ -271,9 +216,9 @@ impl<'de> serde::Deserialize<'de> for SecretString {
             where
                 E: serde::de::Error,
             {
-                // Take ownership of the borrowed bytes, then hand the owned
-                // `String` to the zeroizing constructor below.
-                self.visit_string(v.to_owned())
+                // Copy the borrowed bytes straight into guarded memory —
+                // no owned `String` is created, so none can linger.
+                Ok(SecretString::from_plaintext(v))
             }
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
@@ -322,7 +267,12 @@ impl schemars::JsonSchema for SecretString {
 /// [`subtle::ConstantTimeEq`] only (`==` is forbidden so bridge code
 /// cannot inherit a non-constant-time path). `Display`/`Deref`/`Serialize`
 /// /`Eq` are absent, `Debug` is redacted, and the buffer wipes on drop
-/// and is best-effort `mlock`ed.
+/// and lives in guarded, `mlock`ed pages.
+///
+/// Unlike [`SecretString`] the buffer is sized exactly to the secret:
+/// this type never grows, and key material is small and known, so padding
+/// every 32-byte key out to a full page would buy nothing. An empty
+/// `SecretBytes` holds no allocation at all.
 ///
 /// ```compile_fail
 /// use platform_wallet_storage::secrets::SecretBytes;
@@ -331,66 +281,70 @@ impl schemars::JsonSchema for SecretString {
 /// let _ = a == b; // `==` on SecretBytes is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretBytes {
-    // Field order is load-bearing: `inner` drops (Zeroizing wipes it)
-    // before `_lock` releases the page, so the wipe runs while mlock'ed.
-    inner: Zeroizing<Vec<u8>>,
-    _lock: Option<PageLock>,
+    /// `None` for an empty secret: a guarded allocation costs a whole
+    /// page, which is pure waste when there is nothing to protect.
+    buf: Option<GuardedBuf>,
+    len: usize,
 }
 
 impl SecretBytes {
-    /// Wrap a byte vector, moving it into the wrapper and best-effort
-    /// `mlock`ing the buffer.
-    pub fn new(bytes: Vec<u8>) -> Self {
-        // Skip an empty allocation: an empty `Vec`'s `as_ptr()` is
-        // dangling and `region::lock` rejects a 0-length region.
-        let lock = if bytes.capacity() > 0 {
-            PageLock::acquire(bytes.as_ptr(), bytes.capacity())
-                .map_err(|e| {
-                    tracing::warn!(
-                        "mlock failed for SecretBytes; secret may be swappable to disk: {e}"
-                    );
-                    e
-                })
-                .ok()
-        } else {
-            None
-        };
-        Self {
-            inner: Zeroizing::new(bytes),
-            _lock: lock,
-        }
+    /// Wrap a byte vector, copying it into guarded memory and zeroizing
+    /// the source.
+    ///
+    /// The copy is unavoidable: guarded memory comes from a dedicated
+    /// allocator, so a `Vec`'s own allocation can never *become* the
+    /// protected buffer. Wiping `bytes` is therefore load-bearing — the
+    /// caller's plaintext would otherwise be left on the ordinary heap.
+    pub fn new(mut bytes: Vec<u8>) -> Self {
+        let secret = Self::from_slice(&bytes);
+        // Do not remove: without this the general-purpose heap keeps an
+        // unprotected copy of every secret that passes through here.
+        bytes.zeroize();
+        secret
     }
 
-    /// A zeroed buffer of `len` bytes, best-effort `mlock`ed — for
-    /// in-place fills (KDF output, decrypt target).
+    /// A zeroed buffer of `len` bytes in guarded memory — for in-place
+    /// fills (KDF output, decrypt target).
     pub fn zeroed(len: usize) -> Self {
-        Self::new(vec![0u8; len])
+        Self {
+            buf: (len > 0).then(|| GuardedBuf::new(len)),
+            len,
+        }
     }
 
     /// Copy a borrowed slice into a fresh wrapper. Deliberate, explicit
     /// copy — the only way to duplicate secret bytes.
     pub fn from_slice(bytes: &[u8]) -> Self {
-        Self::new(bytes.to_vec())
+        let mut secret = Self::zeroed(bytes.len());
+        secret.expose_secret_mut().copy_from_slice(bytes);
+        secret
     }
 
     /// Borrow the plaintext bytes. The only read path.
     pub fn expose_secret(&self) -> &[u8] {
-        &self.inner
+        match &self.buf {
+            Some(buf) => buf.as_slice(self.len),
+            None => &[],
+        }
     }
 
     /// Mutably borrow the plaintext bytes (in-place KDF/decrypt fill).
     pub fn expose_secret_mut(&mut self) -> &mut [u8] {
-        &mut self.inner
+        let len = self.len;
+        match &mut self.buf {
+            Some(buf) => buf.as_mut_slice(len),
+            None => &mut [],
+        }
     }
 
     /// Secret length in bytes.
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.len
     }
 
     /// Whether the secret is empty.
     pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+        self.len == 0
     }
 }
 
@@ -399,7 +353,7 @@ impl ConstantTimeEq for SecretBytes {
     /// yield `0` without leaking *where* they differ; only the non-secret
     /// length is observable.
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
-        self.inner.as_slice().ct_eq(other.inner.as_slice())
+        self.expose_secret().ct_eq(other.expose_secret())
     }
 }
 
@@ -407,18 +361,23 @@ impl Zeroize for SecretBytes {
     /// Wipe the buffer in place on a live value. `Drop` runs the same
     /// wipe automatically; this lets a holder zeroize early.
     fn zeroize(&mut self) {
-        self.inner.zeroize();
+        if let Some(buf) = &mut self.buf {
+            buf.zeroize_all();
+        }
+        self.len = 0;
     }
 }
 
 impl fmt::Debug for SecretBytes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SecretBytes([REDACTED; {}])", self.inner.len())
+        write!(f, "SecretBytes([REDACTED; {}])", self.len)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
@@ -436,11 +395,11 @@ mod tests {
         assert_eq!(s.trimmed().expose_secret(), "abandon ability");
     }
 
-    /// Two sound checks (a direct freed-buffer scan would be use-after-free,
-    /// and this crate forbids `unsafe`): (1) `String::zeroize` empties a
-    /// buffer — the primitive `new` relies on; (2) `new` copies the content
-    /// into the wrapper faithfully. That `new` actually calls
-    /// `source.zeroize()` on its moved-in source is pinned by the
+    /// Two sound checks (the moved-in source is gone by the time `new`
+    /// returns, so scanning it would be a use-after-free): (1)
+    /// `String::zeroize` empties a buffer — the primitive `new` relies on;
+    /// (2) `new` copies the content into the wrapper faithfully. That
+    /// `new` actually calls `source.zeroize()` is pinned by the
     /// do-not-remove comment at that call site, not asserted here.
     #[test]
     fn secret_string_new_zeroizes_string_source() {
@@ -449,6 +408,19 @@ mod tests {
         assert!(source.is_empty(), "String::zeroize must empty the source");
         let s = SecretString::new(String::from("super secret seed material"));
         assert_eq!(s.expose_secret(), "super secret seed material");
+    }
+
+    /// The `SecretBytes::new` counterpart. Guarded memory cannot adopt a
+    /// `Vec`'s allocation, so `new` copies and must wipe the original;
+    /// without that an unprotected duplicate of every secret would stay on
+    /// the ordinary heap. Pinned the same way as the `String` source.
+    #[test]
+    fn secret_bytes_new_zeroizes_vec_source() {
+        let mut source = vec![0xABu8; 64];
+        source.zeroize();
+        assert!(source.is_empty(), "Vec::zeroize must empty the source");
+        let b = SecretBytes::new(vec![0xABu8; 64]);
+        assert_eq!(b.expose_secret(), &[0xABu8; 64]);
     }
 
     #[test]
@@ -466,6 +438,28 @@ mod tests {
     fn secret_string_empty_default() {
         assert!(SecretString::empty().is_empty());
         assert_eq!(SecretString::default().len(), 0);
+    }
+
+    /// Multi-byte content survives the copy into guarded memory intact.
+    /// The buffer is raw bytes now, so a botched length would corrupt
+    /// UTF-8 and trip `expose_secret`'s validity check.
+    #[test]
+    fn secret_string_handles_multibyte_utf8() {
+        let text = "héllo wörld 🦡";
+        let s = SecretString::new(text);
+        assert_eq!(s.expose_secret(), text);
+        assert_eq!(s.len(), text.len());
+        assert!(s.len() > text.chars().count(), "multi-byte chars expected");
+    }
+
+    /// A secret larger than the padded default still round-trips: the
+    /// buffer sizes to the content instead of truncating it.
+    #[test]
+    fn secret_string_larger_than_default_capacity() {
+        let long = "x".repeat(DEFAULT_CAPACITY + 1234);
+        let s = SecretString::new(long.clone());
+        assert_eq!(s.expose_secret(), long);
+        assert_eq!(s.len(), DEFAULT_CAPACITY + 1234);
     }
 
     /// `is_blank()` truth table. The boundary deliberately
@@ -532,9 +526,8 @@ mod tests {
         static_assertions::assert_not_impl_any!(SecretString: serde::Serialize);
     }
 
-    /// `Deserialize` round-trips the value through the
-    /// zeroizing constructor; the result `ct_eq`s a directly-built secret
-    /// and has the right length.
+    /// `Deserialize` routes the value into guarded memory; the result
+    /// `ct_eq`s a directly-built secret and has the right length.
     #[cfg(feature = "secret-serde")]
     #[test]
     fn deserialize_routes_value_through_zeroizing_constructor() {
@@ -592,15 +585,17 @@ mod tests {
     }
 
     #[test]
-    fn empty_secret_bytes_constructs_without_mlocking_dangling_ptr() {
-        // A capacity-0 `Vec` has a dangling `as_ptr()`; `new` must not
-        // pass it to `region::lock` or panic.
+    fn empty_secret_bytes_constructs_without_allocating() {
+        // An empty secret has nothing to protect, so it must not burn a
+        // guarded page (four pages of mapping) on it.
         let b = SecretBytes::new(Vec::new());
         assert!(b.is_empty());
         assert_eq!(b.len(), 0);
         assert_eq!(b.expose_secret(), &[] as &[u8]);
+        assert!(b.buf.is_none(), "an empty secret must hold no allocation");
         let z = SecretBytes::zeroed(0);
         assert!(z.is_empty());
+        assert!(z.buf.is_none());
     }
 
     #[test]
@@ -628,97 +623,56 @@ mod tests {
         assert!(std::mem::needs_drop::<SecretBytes>());
     };
 
-    /// Regression: releasing a lock the OS reports as not held must not
-    /// panic or abort. `region::LockGuard`, which [`PageLock`] exists to
-    /// avoid, runs `debug_assert!(result.is_ok())` there and so aborts a
-    /// debug build on exactly the `Err` this test provokes.
-    ///
-    /// Drives the failure deterministically by releasing a never-mapped
-    /// page instead of a shared one: on Linux `munlock` *succeeds* on a
-    /// mapped-but-unlocked region, so page sharing alone cannot produce
-    /// the error here — it is `VirtualUnlock`/`ERROR_NOT_LOCKED` on Windows
-    /// that does. Unmapped is the one input that fails everywhere, and it
-    /// yields the very `Err` the old `debug_assert` fired on. The first
-    /// assertion pins that trigger, so this cannot rot into a test that
-    /// passes because the unlock quietly started succeeding.
-    #[test]
-    fn page_lock_release_failure_does_not_panic() {
-        let page = region::page::size();
-        // The second page: page-aligned and below the default
-        // `mmap_min_addr` (64 KiB), so no allocation can ever land here.
-        let unmapped = page;
-        assert!(
-            region::unlock(std::ptr::without_provenance::<u8>(unmapped), page).is_err(),
-            "test needs a region whose unlock fails; {unmapped:#x} was accepted"
-        );
-
-        // Dropping a lock over that region must swallow the error.
-        drop(PageLock {
-            address: unmapped,
-            size: page,
-        });
-    }
-
-    /// Secrets small enough to share one locked page must all drop
-    /// cleanly, whichever order they go in.
-    ///
-    /// A smoke test on Linux by construction (see
-    /// `page_lock_release_failure_does_not_panic` for why the error
-    /// cannot be provoked here); it is the Windows arm of CI that would
-    /// catch a regression, where the second release of a shared page
-    /// reports `ERROR_NOT_LOCKED`.
-    #[test]
-    fn secrets_sharing_a_page_drop_cleanly() {
-        let a = SecretBytes::from_slice(&[0x11u8; 32]);
-        let b = SecretBytes::from_slice(&[0x22u8; 32]);
-        let c = SecretBytes::zeroed(16);
-        // Reverse and interleaved drop order: no ordering may abort.
-        drop(b);
-        let d = SecretString::new("shares a page with the survivors");
-        drop(a);
-        drop(d);
-        drop(c);
-
-        // Many small secrets alive at once, then released in FIFO order.
-        let many: Vec<SecretBytes> = (0..64u8)
-            .map(|i| SecretBytes::from_slice(&[i; 8]))
-            .collect();
-        drop(many);
-    }
-
-    /// The locked region can never go stale, because no API reallocates
-    /// the buffer: the address recorded at construction still addresses
-    /// the live buffer after every in-place mutation.
-    ///
-    /// This is what stands in for a relock path — unlike egui-facing
-    /// secret wrappers, neither type here exposes a growth API, so there
-    /// is no window in which the lock could describe a freed allocation.
-    /// A future `push`/`extend` method breaks this test, which is the
-    /// point: it must arrive with a relock.
-    #[test]
-    fn locked_region_is_stable_across_mutation() {
-        let mut b = SecretBytes::zeroed(64);
-        let before = b.expose_secret().as_ptr();
-        b.expose_secret_mut().copy_from_slice(&[0x5Au8; 64]);
-        assert_eq!(before, b.expose_secret().as_ptr(), "in-place fill moved it");
-        b.zeroize();
-        assert_eq!(before, b.expose_secret().as_ptr(), "zeroize moved it");
-
-        let mut s = SecretString::new("locked buffer must not move");
-        let before = s.expose_secret().as_ptr();
-        s.zeroize();
-        assert_eq!(before, s.expose_secret().as_ptr(), "zeroize moved it");
-    }
-
-    /// Both wrappers are `Send + Sync`. `region::LockGuard` earns those
-    /// with its own `unsafe impl`s; [`PageLock`] must match while holding
-    /// only a `usize`, since this crate denies `unsafe_code`. Losing
-    /// either would silently break cross-thread holders.
+    /// Both wrappers are `Send + Sync`. `GuardedBuf` owns the raw pointer
+    /// and the `unsafe impl`s that earn these, so losing them here would
+    /// silently break cross-thread holders.
     #[test]
     fn secret_wrappers_stay_send_and_sync() {
         static_assertions::assert_impl_all!(SecretString: Send, Sync);
         static_assertions::assert_impl_all!(SecretBytes: Send, Sync);
-        static_assertions::assert_impl_all!(PageLock: Send, Sync);
+    }
+
+    /// The structural guarantee: no two live secrets touch a common page.
+    ///
+    /// A shared page means one secret's lifetime governs its neighbour's
+    /// anti-swap protection — freeing the first unlocks memory the second
+    /// still holds. Guarded allocation makes that impossible rather than
+    /// merely survivable, which is the point of the design. This fails on
+    /// a `String`/`Vec`-backed layout, where the general-purpose allocator
+    /// packs several secrets into one page.
+    #[test]
+    fn secrets_never_share_a_page() {
+        let page = region::page::size();
+        let strings: Vec<SecretString> = (0..32)
+            .map(|i| SecretString::new(format!("s{i}")))
+            .collect();
+        let bytes: Vec<SecretBytes> = (0..32)
+            .map(|i| SecretBytes::from_slice(&[i as u8; 48]))
+            .collect();
+
+        // (start address, payload capacity, label) for every live buffer.
+        let mut regions: Vec<(usize, usize, String)> = Vec::new();
+        for (i, s) in strings.iter().enumerate() {
+            regions.push((s.buf.addr(), s.buf.capacity(), format!("SecretString {i}")));
+        }
+        for (i, b) in bytes.iter().enumerate() {
+            let buf = b.buf.as_ref().expect("a 48-byte secret is allocated");
+            regions.push((buf.addr(), buf.capacity(), format!("SecretBytes {i}")));
+        }
+
+        let mut owner: HashMap<usize, String> = HashMap::new();
+        for (start, cap, label) in regions {
+            assert_eq!(
+                (start + cap) % page,
+                0,
+                "{label}: the buffer must end on a page boundary, where memsec's guard page begins"
+            );
+            for page_index in (start / page)..=((start + cap - 1) / page) {
+                if let Some(previous) = owner.insert(page_index, label.clone()) {
+                    panic!("{previous} and {label} share page {page_index:#x}");
+                }
+            }
+        }
     }
 
     /// Proves zeroize wipes the buffer. Every read is on a STILL-LIVE
@@ -747,5 +701,29 @@ mod tests {
         s.zeroize();
         assert!(s.is_empty(), "SecretString::zeroize must empty the buffer");
         assert_eq!(s.expose_secret(), "");
+    }
+
+    /// The wipe clears the WHOLE buffer, not just the bytes below the old
+    /// length. Guarded allocation is what makes this directly checkable —
+    /// the buffer is still alive and inspectable through a safe accessor,
+    /// where a freed `String` allocation could only be scanned via
+    /// use-after-free.
+    #[test]
+    fn zeroize_wipes_full_capacity_not_just_len() {
+        let mut s = SecretString::new("sensitive_seed_material");
+        let cap = s.buf.capacity();
+        s.zeroize();
+        assert!(
+            s.buf.as_slice(cap).iter().all(|&b| b == 0),
+            "zeroize left residue in the buffer's trailing capacity"
+        );
+
+        let mut b = SecretBytes::from_slice(&[0xEEu8; 200]);
+        b.zeroize();
+        let buf = b.buf.as_ref().expect("allocation survives zeroize");
+        assert!(
+            buf.as_slice(buf.capacity()).iter().all(|&x| x == 0),
+            "zeroize left residue in SecretBytes' buffer"
+        );
     }
 }
