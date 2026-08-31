@@ -14,6 +14,13 @@ use std::time::Duration;
 
 const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
 
+/// Default number of addresses that receive traffic at a time.
+///
+/// Kept small so requests reuse warm connections instead of sampling the whole
+/// list (hundreds of nodes on mainnet), where nearly every request would land
+/// on a cold host and pay a fresh TCP + TLS handshake.
+const DEFAULT_ACTIVE_SET_SIZE: usize = 5;
+
 /// DAPI address.
 #[derive(Debug, Clone, Eq)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
@@ -148,6 +155,14 @@ impl AddressStatus {
         self.ban_count > 0
     }
 
+    /// Check if [Address] is live at `now`: never banned, or its ban period has
+    /// already expired.
+    fn is_live(&self, now: chrono::DateTime<Utc>) -> bool {
+        self.banned_until
+            .map(|banned_until| banned_until < now)
+            .unwrap_or(true)
+    }
+
     /// Clears ban record.
     pub fn unban(&mut self) {
         self.ban_count = 0;
@@ -166,12 +181,26 @@ pub enum AddressListError {
     InvalidAddressUri(String),
 }
 
+/// Sticky rotation state: the addresses currently receiving traffic, and the
+/// most recently served one that round-robin selection advances from.
+#[derive(Debug, Default)]
+struct Rotation {
+    active: Vec<Address>,
+    last_served: Option<Address>,
+}
+
 /// A structure to manage DAPI addresses to select from
 /// for [DapiRequest](crate::DapiRequest) execution.
+///
+/// Address selection is sticky: requests rotate over a small active set of
+/// addresses and the rest of the list serves as failover standby (see
+/// [AddressList::get_live_address]).
 #[derive(Debug, Clone)]
 pub struct AddressList {
     addresses: Arc<RwLock<HashMap<Address, AddressStatus>>>,
+    rotation: Arc<RwLock<Rotation>>,
     base_ban_period: Duration,
+    active_set_size: usize,
 }
 
 impl Default for AddressList {
@@ -196,8 +225,19 @@ impl AddressList {
     pub fn with_settings(base_ban_period: Duration) -> Self {
         AddressList {
             addresses: Arc::new(RwLock::new(HashMap::new())),
+            rotation: Arc::new(RwLock::new(Rotation::default())),
             base_ban_period,
+            active_set_size: DEFAULT_ACTIVE_SET_SIZE,
         }
+    }
+
+    /// Set how many addresses receive traffic at a time (minimum 1).
+    ///
+    /// Smaller values maximize connection reuse, larger values spread load over
+    /// more nodes.
+    pub fn with_active_set_size(mut self, size: usize) -> Self {
+        self.active_set_size = size.max(1);
+        self
     }
 
     /// Bans address
@@ -294,7 +334,14 @@ impl AddressList {
         self.add(Address::try_from(uri).expect("valid uri"))
     }
 
-    /// Randomly select a not-banned address.
+    /// Select a not-banned address to send the next request to.
+    ///
+    /// Selection is sticky: requests rotate round-robin over a small active
+    /// set of addresses (see [AddressList::with_active_set_size]) instead of
+    /// sampling the whole list, so connections to those hosts stay warm. An
+    /// active address that got banned or removed is dropped from the set here
+    /// and a random live standby address is promoted in its place, so the ban
+    /// ladder remains the only health signal.
     ///
     /// An address is considered live when it has never been banned or when its
     /// ban period has already expired.
@@ -303,19 +350,52 @@ impl AddressList {
         // poisoned lock; adopt poison-tolerant locking consistently (SEC-003).
         let guard = self.addresses.read().unwrap();
 
-        let mut rng = SmallRng::from_entropy();
         let now = chrono::Utc::now();
 
-        guard
-            .iter()
-            .filter(|(_, status)| {
-                status
-                    .banned_until
-                    .map(|banned_until| banned_until < now)
-                    .unwrap_or(true)
-            })
-            .choose(&mut rng)
-            .map(|(addr, _)| addr.clone())
+        // Lock ordering: `addresses` before `rotation`; this is the only place
+        // both locks are held at once.
+        let mut rotation = self.rotation.write().unwrap();
+
+        // Drop active addresses that are banned or no longer in the list.
+        rotation.active.retain(|address| {
+            guard
+                .get(address)
+                .map(|status| status.is_live(now))
+                .unwrap_or(false)
+        });
+
+        // Refill vacancies with random live standby addresses.
+        let vacancies = self.active_set_size.saturating_sub(rotation.active.len());
+        if vacancies > 0 {
+            let promoted = guard
+                .iter()
+                .filter(|&(address, status)| {
+                    status.is_live(now) && !rotation.active.contains(address)
+                })
+                .choose_multiple(&mut SmallRng::from_entropy(), vacancies);
+
+            rotation
+                .active
+                .extend(promoted.into_iter().map(|(address, _)| address.clone()));
+        }
+
+        if rotation.active.is_empty() {
+            return None;
+        }
+
+        // Advance relative to the last-served address rather than a bare index:
+        // eviction shifts indices, and an index-based cursor could serve the
+        // same address twice in a row after churn. Start from the head when the
+        // last-served address is gone (or nothing has been served yet).
+        let last_position = rotation
+            .last_served
+            .as_ref()
+            .and_then(|last| rotation.active.iter().position(|address| address == last));
+
+        let index = last_position.map_or(0, |position| (position + 1) % rotation.active.len());
+        let address = rotation.active[index].clone();
+        rotation.last_served = Some(address.clone());
+        Some(address)
     }
 
     /// Get all not banned addresses.
@@ -344,12 +424,7 @@ impl AddressList {
 
         guard
             .iter()
-            .filter(|(_, status)| {
-                status
-                    .banned_until
-                    .map(|banned_until| banned_until < now)
-                    .unwrap_or(true)
-            })
+            .filter(|(_, status)| status.is_live(now))
             .map(|(addr, _)| addr.clone())
             .collect()
     }
@@ -370,11 +445,7 @@ impl AddressList {
         guard
             .iter()
             .map(|(addr, status)| {
-                let banned = status.ban_count > 0
-                    && status
-                        .banned_until
-                        .map(|banned_until| banned_until >= now)
-                        .unwrap_or(false);
+                let banned = status.ban_count > 0 && !status.is_live(now);
                 AddressBanInfo {
                     uri: addr.to_string(),
                     banned,
@@ -681,6 +752,134 @@ mod tests {
     #[test]
     fn test_address_list_get_live_address_returns_none_when_empty() {
         let list = AddressList::new();
+        assert!(list.get_live_address().is_none());
+    }
+
+    #[test]
+    fn test_get_live_address_sticks_to_small_active_set() {
+        let mut list = AddressList::new();
+        for i in 0..50 {
+            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
+        }
+
+        let distinct: std::collections::HashSet<String> = (0..200)
+            .map(|_| list.get_live_address().unwrap().to_string())
+            .collect();
+
+        assert_eq!(
+            distinct.len(),
+            DEFAULT_ACTIVE_SET_SIZE,
+            "all traffic must rotate over exactly the active set"
+        );
+    }
+
+    #[test]
+    fn test_get_live_address_round_robins_over_active_set() {
+        let mut list = AddressList::new().with_active_set_size(2);
+        for i in 0..5 {
+            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
+        }
+
+        let picks: Vec<String> = (0..6)
+            .map(|_| list.get_live_address().unwrap().to_string())
+            .collect();
+
+        // Strict alternation between the two active members.
+        assert_ne!(picks[0], picks[1]);
+        assert_eq!(picks[0], picks[2]);
+        assert_eq!(picks[1], picks[3]);
+        assert_eq!(picks[0], picks[4]);
+        assert_eq!(picks[1], picks[5]);
+    }
+
+    #[test]
+    fn test_get_live_address_ban_evicts_active_and_promotes_standby() {
+        let mut list = AddressList::new().with_active_set_size(1);
+        for i in 0..3 {
+            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
+        }
+
+        let first = list.get_live_address().unwrap();
+        for _ in 0..5 {
+            assert_eq!(
+                list.get_live_address().unwrap(),
+                first,
+                "selection must be sticky until the active address fails"
+            );
+        }
+
+        list.ban(&first);
+
+        let second = list.get_live_address().unwrap();
+        assert_ne!(second, first, "banned address must leave the active set");
+        for _ in 0..5 {
+            assert_eq!(
+                list.get_live_address().unwrap(),
+                second,
+                "selection must stick to the promoted standby"
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_live_address_no_immediate_repeat_after_other_member_evicted() {
+        // Regression: with an index-based cursor, evicting an active member
+        // other than the one just served shifted indices and could serve the
+        // same address twice in a row.
+        let mut list = AddressList::new().with_active_set_size(2);
+        for i in 0..3 {
+            list.add(format!("http://127.0.0.1:{}", 3000 + i).parse().unwrap());
+        }
+
+        let first = list.get_live_address().unwrap();
+        let second = list.get_live_address().unwrap();
+        let third = list.get_live_address().unwrap();
+        assert_eq!(first, third, "two-member set alternates");
+
+        // Ban the member that was NOT just served; a standby gets promoted.
+        list.ban(&second);
+
+        let next = list.get_live_address().unwrap();
+        assert_ne!(
+            next, third,
+            "must not serve the same address twice in a row after eviction"
+        );
+        assert_ne!(next, second, "banned address must not be served");
+    }
+
+    #[test]
+    fn test_get_live_address_removed_address_pruned_from_active_set() {
+        let mut list = AddressList::new().with_active_set_size(1);
+        list.add("http://127.0.0.1:3000".parse().unwrap());
+        list.add("http://127.0.0.1:3001".parse().unwrap());
+
+        let first = list.get_live_address().unwrap();
+        list.remove(&first);
+
+        let second = list.get_live_address().unwrap();
+        assert_ne!(second, first);
+    }
+
+    #[test]
+    fn test_get_live_address_with_fewer_live_addresses_than_active_set() {
+        let mut list = AddressList::new(); // default active set size 5
+        list.add("http://127.0.0.1:3000".parse().unwrap());
+        list.add("http://127.0.0.1:3001".parse().unwrap());
+
+        let distinct: std::collections::HashSet<String> = (0..10)
+            .map(|_| list.get_live_address().unwrap().to_string())
+            .collect();
+        assert_eq!(distinct.len(), 2, "both live addresses rotate");
+    }
+
+    #[test]
+    fn test_get_live_address_all_banned_returns_none() {
+        let mut list = AddressList::new().with_active_set_size(1);
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        assert!(list.get_live_address().is_some());
+        list.ban(&addr);
         assert!(list.get_live_address().is_none());
     }
 

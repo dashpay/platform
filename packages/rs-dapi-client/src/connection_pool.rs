@@ -97,7 +97,13 @@ impl ConnectionPool {
         settings: Option<&AppliedRequestSettings>,
     ) -> String {
         let prefix: PoolPrefix = class.into();
-        format!("{}:{}{:?}", prefix, uri, settings)
+        // Only connection-affecting settings participate in the key (see
+        // `AppliedRequestSettings::connection_key`), so requests differing only
+        // in per-request knobs (timeout, retries, banning) share a connection.
+        match settings {
+            Some(settings) => format!("{}:{}:{}", prefix, uri, settings.connection_key()),
+            None => format!("{}:{}", prefix, uri),
+        }
     }
 }
 
@@ -176,8 +182,10 @@ impl From<&PoolItem> for PoolPrefix {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RequestSettings;
     use dapi_grpc::tonic::transport::Channel;
     use std::str::FromStr;
+    use std::time::Duration;
 
     fn test_uri() -> Uri {
         Uri::from_str("http://127.0.0.1:3000").unwrap()
@@ -334,6 +342,42 @@ mod tests {
     async fn test_pool_item_platform_into_core_panics() {
         let item = make_platform_pool_item();
         let _client: CoreGrpcClient = item.into();
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_shares_client_across_per_request_settings() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+
+        // Settings differing only in per-request knobs (timeout, retries,
+        // banning) must map to the same pooled connection...
+        let stored = RequestSettings {
+            timeout: Some(Duration::from_secs(30)),
+            retries: Some(3),
+            ban_failed_address: Some(false),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        pool.put(&uri, Some(&stored), make_platform_pool_item());
+
+        let default = RequestSettings::default().finalize();
+        assert!(
+            pool.get(PoolPrefix::Platform, &uri, Some(&default))
+                .is_some(),
+            "per-request settings must not split pooled connections"
+        );
+
+        // ...while connection-affecting settings still get their own entry.
+        let connect = RequestSettings {
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert!(
+            pool.get(PoolPrefix::Platform, &uri, Some(&connect))
+                .is_none(),
+            "connection-affecting settings must key separate connections"
+        );
     }
 
     #[tokio::test]
