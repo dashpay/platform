@@ -39,6 +39,20 @@ then
   exit 2
 fi
 
+# Both tools are needed before anything is downloaded: the baseline version is
+# read with dpkg-deb and compared with dpkg. Checking here keeps a host without
+# them reporting the documented "could not compare" status rather than dying on
+# a missing command part way through.
+for tool in dpkg dpkg-deb
+do
+  if ! command -v "$tool" > /dev/null 2>&1
+  then
+    echo "check-release-deb-version.sh: $tool not found, cannot compare Debian versions." >&2
+    echo "Run this on a Debian based host or inside a container that has dpkg." >&2
+    exit 3
+  fi
+done
+
 DIR_PATH=$(dirname "$(realpath "$0")")
 
 compare="${DIR_PATH}/check-deb-version.sh"
