@@ -1,7 +1,8 @@
 //! Chained document queries — the provable semi-join surface.
 //!
 //! `SELECT * FROM <outer> WHERE $id IN (SELECT <joinProperty> FROM
-//! <inner> WHERE …)` served by the dedicated `getChainedDocuments` RPC:
+//! <inner> WHERE …)` riding the typed `getDocuments` V1 wire (the
+//! request's `chained` message):
 //! the inner indexOnly page and the outer by-ids fetch derived from its
 //! proven values come back as ONE merged grovedb proof — a single
 //! quorum-signed state root by construction. The SDK verifies the
