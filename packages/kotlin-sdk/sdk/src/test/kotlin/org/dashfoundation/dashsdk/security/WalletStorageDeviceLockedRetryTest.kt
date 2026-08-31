@@ -32,6 +32,13 @@ import org.robolectric.RobolectricTestRunner
  *    whose sampled `KeyguardManager` state says the device is NOT locked
  *    (the Keystore2 misreporting defect) is retried up to 3 times; a
  *    genuinely-locked denial fails fast with no retry.
+ * 3. The last-rung DEGRADATION when that schedule exhausts still
+ *    false-locked (the persistent defect — an OEM unlock class that never
+ *    satisfies `UNLOCKED_DEVICE_REQUIRED`): the store re-encrypts under
+ *    the never-lock-bound [KeystoreManager.MASTER_ALIAS_UNBOUND], records
+ *    the defect durably, and from then on writes go straight to the
+ *    unbound alias, reads route by the blob's recorded alias, and
+ *    still-lock-bound blobs are re-wrapped on their first successful read.
  *
  * The real AndroidKeyStore crypto cannot run on the JVM (see
  * [KeySecurityPolicyTest]), so a fake [KeystoreManager] scripts the
@@ -43,6 +50,7 @@ import org.robolectric.RobolectricTestRunner
 class WalletStorageDeviceLockedRetryTest {
 
     private val walletId = ByteArray(32) { (it + 1).toByte() }
+    private val siblingWalletId = ByteArray(32) { (it + 101).toByte() }
     private val mnemonic = "abandon abandon abandon abandon abandon abandon " +
         "abandon abandon abandon abandon abandon about"
 
@@ -53,7 +61,8 @@ class WalletStorageDeviceLockedRetryTest {
     fun setUp() = runBlocking {
         fake = FalseLockedFakeKeystoreManager()
         storage = WalletStorage(ApplicationProvider.getApplicationContext(), fake)
-        // Isolate from any state a prior test left in the shared DataStore file.
+        // Isolate from any state a prior test left in the shared DataStore
+        // file — including the durable false-locked defect record.
         storage.deleteAll()
     }
 
@@ -66,7 +75,7 @@ class WalletStorageDeviceLockedRetryTest {
         fake.lockState = DeviceLockState(isDeviceLocked = true, isKeyguardLocked = true)
 
         val thrown = assertThrows(KeystoreDeviceLockedException::class.java) {
-            storage.ensureMasterKeyNotLockBlocked(operation = "createWallet")
+            runBlocking { storage.ensureMasterKeyNotLockBlocked(operation = "createWallet") }
         }
         assertEquals("createWallet", thrown.operation)
         assertEquals(KeystoreManager.MASTER_ALIAS, thrown.alias)
@@ -78,7 +87,7 @@ class WalletStorageDeviceLockedRetryTest {
     }
 
     @Test
-    fun shouldPassPreCheckWhenDeviceIsUnlocked() {
+    fun shouldPassPreCheckWhenDeviceIsUnlocked() = runBlocking {
         fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
         storage.ensureMasterKeyNotLockBlocked(operation = "createWallet") // must not throw
         // Unlocked is decided from KeyguardManager alone — prompt-free AND
@@ -87,7 +96,7 @@ class WalletStorageDeviceLockedRetryTest {
     }
 
     @Test
-    fun shouldPassPreCheckWhenKeyguardShowsButDeviceIsNotSecurelyLocked() {
+    fun shouldPassPreCheckWhenKeyguardShowsButDeviceIsNotSecurelyLocked() = runBlocking {
         // isKeyguardLocked without isDeviceLocked (e.g. a non-secure swipe
         // screen): the Keystore unlocked-device gate keys off the SECURE
         // lock, so this state must not block wallet creation.
@@ -97,7 +106,7 @@ class WalletStorageDeviceLockedRetryTest {
     }
 
     @Test
-    fun shouldPassPreCheckWhenDeviceIsLockedButMasterKeyIsNotLockBound() {
+    fun shouldPassPreCheckWhenDeviceIsLockedButMasterKeyIsNotLockBound() = runBlocking {
         // A master key generated while the device had NO secure lock screen
         // carries no setUnlockedDeviceRequired
         // ([KeystoreManager]'s generateWithLockScreenDegradation) and existing
@@ -115,6 +124,24 @@ class WalletStorageDeviceLockedRetryTest {
         assertEquals(1, fake.masterEncryptCalls)
     }
 
+    @Test
+    fun shouldPassPreCheckOnLockedDeviceOnceDefectIsOnRecord() = runBlocking {
+        // Demonstrate the persistent defect (unlocked, denials outlast the
+        // schedule) so the degradation records it...
+        fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        storage.storeMnemonic(walletId, mnemonic)
+        assertTrue(storage.isMasterKeyLockBindingDefectObserved())
+        val masterEncryptsSoFar = fake.masterEncryptCalls
+
+        // ...then a GENUINELY locked entry must proceed with no probe at
+        // all: writes target the never-lock-bound alias, which no lock
+        // state can deny — there is nothing to preflight.
+        fake.lockState = DeviceLockState(isDeviceLocked = true, isKeyguardLocked = true)
+        storage.ensureMasterKeyNotLockBlocked(operation = "createWallet") // must not throw
+        assertEquals(masterEncryptsSoFar, fake.masterEncryptCalls)
+    }
+
     // ── storeMnemonic bounded FALSE-LOCKED retry ─────────────────────────
 
     @Test
@@ -125,34 +152,20 @@ class WalletStorageDeviceLockedRetryTest {
         storage.storeMnemonic(walletId, mnemonic)
 
         assertEquals(2, fake.masterEncryptCalls)
+        // A transient blip must NOT record the persistent defect or touch
+        // the unbound alias — the retry alone absorbed it.
+        assertEquals(0, fake.unboundEncryptCalls)
+        assertFalse(storage.isMasterKeyLockBindingDefectObserved())
         // The store really landed: the mnemonic round-trips.
         assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
     }
 
     @Test
-    fun shouldGiveUpAfterThreeFalseLockedRetries() = runBlocking {
-        fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
-        fake.failMasterEncrypts = Int.MAX_VALUE // never heals
-
-        var thrown: KeystoreDeviceLockedException? = null
-        try {
-            storage.storeMnemonic(walletId, mnemonic)
-        } catch (e: KeystoreDeviceLockedException) {
-            thrown = e
-        }
-
-        assertTrue("expected the typed denial to propagate", thrown != null)
-        assertFalse(thrown!!.deviceReportsLocked)
-        // Initial attempt + the full 3-retry schedule (250/750/1000ms),
-        // then give up.
-        assertEquals(4, fake.masterEncryptCalls)
-        assertEquals(null, storage.retrieveMnemonic(walletId))
-    }
-
-    @Test
     fun shouldNotRetryWhenDeviceIsGenuinelyLocked() = runBlocking {
         // The denial is CORRECT here — a 2s in-process retry cannot unlock
-        // a phone, so the exception must propagate immediately.
+        // a phone, so the exception must propagate immediately, and the
+        // degradation must NOT fire (a locked phone denying a lock-bound
+        // key is the gate working, not the defect).
         fake.lockState = DeviceLockState(isDeviceLocked = true, isKeyguardLocked = true)
         fake.failMasterEncrypts = Int.MAX_VALUE
 
@@ -166,6 +179,8 @@ class WalletStorageDeviceLockedRetryTest {
         assertTrue("expected the typed denial to propagate", thrown != null)
         assertTrue(thrown!!.deviceReportsLocked)
         assertEquals(1, fake.masterEncryptCalls)
+        assertEquals(0, fake.unboundEncryptCalls)
+        assertFalse(storage.isMasterKeyLockBindingDefectObserved())
     }
 
     @Test
@@ -175,7 +190,111 @@ class WalletStorageDeviceLockedRetryTest {
         storage.storeMnemonic(walletId, mnemonic)
 
         assertEquals(1, fake.masterEncryptCalls)
+        assertEquals(0, fake.unboundEncryptCalls)
         assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+    }
+
+    // ── last-rung degradation: the PERSISTENT false-locked defect ────────
+
+    @Test
+    fun shouldDegradeToUnboundAliasWhenFalseLockedRetriesExhaust() = runBlocking {
+        fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
+        fake.failMasterEncrypts = Int.MAX_VALUE // never heals — the persistent defect
+
+        storage.storeMnemonic(walletId, mnemonic)
+
+        // Initial attempt + the full 3-retry schedule (250/750/1000ms),
+        // then ONE unbound-alias encrypt instead of giving up.
+        assertEquals(4, fake.masterEncryptCalls)
+        assertEquals(1, fake.unboundEncryptCalls)
+        assertTrue(storage.isMasterKeyLockBindingDefectObserved())
+        // The store really landed, and the read routes to the recorded
+        // alias (the fake rejects a blob decrypted under the wrong one).
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+        assertEquals(1, fake.unboundDecryptCalls)
+        assertEquals(0, fake.masterDecryptCalls)
+    }
+
+    @Test
+    fun shouldWriteStraightToUnboundAliasOnceDefectIsOnRecord() = runBlocking {
+        fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        storage.storeMnemonic(walletId, mnemonic) // demonstrates + records the defect
+        val masterEncryptsSoFar = fake.masterEncryptCalls
+
+        storage.storeMnemonic(siblingWalletId, mnemonic)
+
+        // No lock-bound attempt, no retry dance — straight to the alias
+        // that works on this device.
+        assertEquals(masterEncryptsSoFar, fake.masterEncryptCalls)
+        assertEquals(2, fake.unboundEncryptCalls)
+        assertEquals(mnemonic, storage.retrieveMnemonic(siblingWalletId))
+    }
+
+    @Test
+    fun shouldPropagateOriginalDenialWhenDegradationEncryptAlsoFails() = runBlocking {
+        fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        fake.failUnboundEncrypts = Int.MAX_VALUE // even the last rung fails
+
+        var thrown: KeystoreDeviceLockedException? = null
+        try {
+            storage.storeMnemonic(walletId, mnemonic)
+        } catch (e: KeystoreDeviceLockedException) {
+            thrown = e
+        }
+
+        assertTrue("expected the typed denial to propagate", thrown != null)
+        assertFalse(thrown!!.deviceReportsLocked)
+        assertEquals(4, fake.masterEncryptCalls)
+        assertEquals(1, fake.unboundEncryptCalls)
+        // The heal failure rides along for diagnosis...
+        assertTrue(thrown.suppressed.any { it is IllegalStateException })
+        // ...and nothing was recorded or persisted: the failed heal must
+        // not brand the device defective with no healed blob to show.
+        assertFalse(storage.isMasterKeyLockBindingDefectObserved())
+        assertEquals(null, storage.retrieveMnemonic(walletId))
+    }
+
+    @Test
+    fun shouldRewrapLockBoundBlobOnFirstSuccessfulReadAfterDefectRecorded() = runBlocking {
+        fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
+        // A pre-existing wallet stored healthily under the lock-bound alias...
+        storage.storeMnemonic(walletId, mnemonic)
+        // ...then a sibling wallet's store demonstrates the persistent defect.
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        storage.storeMnemonic(siblingWalletId, mnemonic)
+        fake.failMasterEncrypts = 0
+
+        // The first successful read of the still-lock-bound blob re-wraps it
+        // under the unbound alias (sibling's heal + this re-wrap = 2).
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+        assertEquals(1, fake.masterDecryptCalls)
+        assertEquals(2, fake.unboundEncryptCalls)
+
+        // Subsequent reads route to the unbound alias — the lock-bound key
+        // is no longer consulted.
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+        assertEquals(1, fake.masterDecryptCalls)
+        assertTrue(fake.unboundDecryptCalls >= 1)
+    }
+
+    @Test
+    fun shouldKeepLockBoundBlobReadableWhenRewrapFails() = runBlocking {
+        fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
+        storage.storeMnemonic(walletId, mnemonic)
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        storage.storeMnemonic(siblingWalletId, mnemonic) // records the defect
+        fake.failMasterEncrypts = 0
+
+        // Re-wrap is best-effort: its failure must not fail the read or
+        // corrupt the blob, and the next successful read tries again.
+        fake.failUnboundEncrypts = 1
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId)) // retried re-wrap landed
+        assertEquals(2, fake.masterDecryptCalls)
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+        assertEquals(2, fake.masterDecryptCalls) // now routed to unbound
     }
 
     // ── storeMnemonic plaintext-buffer scrubbing ─────────────────────────
@@ -195,9 +314,23 @@ class WalletStorageDeviceLockedRetryTest {
     }
 
     @Test
+    fun shouldScrubMnemonicBufferAfterDegradedStore() = runBlocking {
+        fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
+        fake.failMasterEncrypts = Int.MAX_VALUE // the degradation path runs
+
+        storage.storeMnemonic(walletId, mnemonic)
+
+        assertBufferScrubbed(fake.lastMasterPlaintextRef)
+        // The unbound encrypt saw the same (single) buffer — scrubbed too.
+        assertBufferScrubbed(fake.lastUnboundPlaintextRef)
+        assertEquals(mnemonic, storage.retrieveMnemonic(walletId))
+    }
+
+    @Test
     fun shouldScrubMnemonicBufferWhenFinalDenialPropagates() = runBlocking {
         fake.lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
-        fake.failMasterEncrypts = Int.MAX_VALUE // never heals — the schedule exhausts
+        fake.failMasterEncrypts = Int.MAX_VALUE
+        fake.failUnboundEncrypts = Int.MAX_VALUE // degradation fails too — it propagates
 
         var thrown = false
         try {
@@ -246,14 +379,25 @@ class WalletStorageDeviceLockedRetryTest {
  * `setUnlockedDeviceRequired`), any encrypt while [lockState] reports the
  * device locked is denied, exactly as the real Keystore gate behaves; when
  * false (a key generated on a then-lockless device, never regenerated),
- * encrypts succeed regardless of lock state. Identity-key aliases are out of
- * scope here — see [WalletStorageUpgradeMatrixTest]'s fake for that ladder.
+ * encrypts succeed regardless of lock state.
+ *
+ * [KeystoreManager.MASTER_ALIAS_UNBOUND] is modeled per ITS contract: never
+ * lock-bound, so never denied by any lock state; [failUnboundEncrypts]
+ * scripts unclassified failures for the degradation-also-fails paths. Each
+ * blob's iv marks the alias that produced it and [decrypt] rejects a
+ * mismatch, so the tests prove reads route to the recorded alias. Identity-
+ * key aliases are out of scope here — see [WalletStorageUpgradeMatrixTest]'s
+ * fake for that ladder.
  */
 private class FalseLockedFakeKeystoreManager : KeystoreManager() {
 
     var lockState = DeviceLockState(isDeviceLocked = false, isKeyguardLocked = false)
     var failMasterEncrypts = 0
     var masterEncryptCalls = 0
+    var failUnboundEncrypts = 0
+    var unboundEncryptCalls = 0
+    var masterDecryptCalls = 0
+    var unboundDecryptCalls = 0
 
     /** Whether the fake master key carries the unlocked-device requirement. */
     var masterKeyLockBound = true
@@ -264,31 +408,66 @@ private class FalseLockedFakeKeystoreManager : KeystoreManager() {
     /** Snapshot of that buffer's content AT CALL TIME (pre-scrub evidence). */
     var lastMasterPlaintextAtCall: ByteArray? = null
 
+    /** The exact buffer reference the last unbound-alias encrypt received. */
+    var lastUnboundPlaintextRef: ByteArray? = null
+
     /** Invoked at each master encrypt attempt (test synchronization hook). */
     var onMasterEncrypt: (() -> Unit)? = null
 
     override fun sampleDeviceLockState(): DeviceLockState = lockState
 
-    override fun encrypt(plaintext: ByteArray, alias: String): EncryptedBlob {
-        check(alias == MASTER_ALIAS) { "test fake only models the master alias" }
-        masterEncryptCalls++
-        lastMasterPlaintextRef = plaintext
-        lastMasterPlaintextAtCall = plaintext.copyOf()
-        onMasterEncrypt?.invoke()
-        val scriptedDenial = failMasterEncrypts > 0
-        if (scriptedDenial) failMasterEncrypts--
-        if (scriptedDenial || (masterKeyLockBound && lockState.isDeviceLocked)) {
-            throw KeystoreDeviceLockedException(
-                alias = alias,
-                operation = "encrypt",
-                lockState = sampleDeviceLockState(),
-            )
+    override fun encrypt(plaintext: ByteArray, alias: String): EncryptedBlob = when (alias) {
+        MASTER_ALIAS -> {
+            masterEncryptCalls++
+            lastMasterPlaintextRef = plaintext
+            lastMasterPlaintextAtCall = plaintext.copyOf()
+            onMasterEncrypt?.invoke()
+            val scriptedDenial = failMasterEncrypts > 0
+            if (scriptedDenial) failMasterEncrypts--
+            if (scriptedDenial || (masterKeyLockBound && lockState.isDeviceLocked)) {
+                throw KeystoreDeviceLockedException(
+                    alias = alias,
+                    operation = "encrypt",
+                    lockState = sampleDeviceLockState(),
+                )
+            }
+            blob(MASTER_IV_MARKER, plaintext)
         }
-        return EncryptedBlob(iv = ByteArray(12) { 7 }, ciphertext = plaintext.copyOf())
+        MASTER_ALIAS_UNBOUND -> {
+            unboundEncryptCalls++
+            lastUnboundPlaintextRef = plaintext
+            val scriptedFailure = failUnboundEncrypts > 0
+            if (scriptedFailure) failUnboundEncrypts--
+            check(!scriptedFailure) { "scripted unbound-alias encrypt failure" }
+            blob(UNBOUND_IV_MARKER, plaintext)
+        }
+        else -> error("test fake only models the master aliases, got '$alias'")
     }
 
     override fun decrypt(blob: EncryptedBlob, alias: String): ByteArray {
-        check(alias == MASTER_ALIAS) { "test fake only models the master alias" }
+        val expectedMarker = when (alias) {
+            MASTER_ALIAS -> {
+                masterDecryptCalls++
+                MASTER_IV_MARKER
+            }
+            MASTER_ALIAS_UNBOUND -> {
+                unboundDecryptCalls++
+                UNBOUND_IV_MARKER
+            }
+            else -> error("test fake only models the master aliases, got '$alias'")
+        }
+        check(blob.iv.all { it == expectedMarker }) {
+            "blob was decrypted under the wrong alias: '$alias' cannot open a blob " +
+                "whose iv marker is ${blob.iv.firstOrNull()}"
+        }
         return blob.ciphertext.copyOf()
+    }
+
+    private fun blob(ivMarker: Byte, plaintext: ByteArray) =
+        EncryptedBlob(iv = ByteArray(12) { ivMarker }, ciphertext = plaintext.copyOf())
+
+    private companion object {
+        const val MASTER_IV_MARKER: Byte = 7
+        const val UNBOUND_IV_MARKER: Byte = 9
     }
 }

@@ -767,10 +767,14 @@ class PlatformWalletManager(
      *   encrypt, and thrown BEFORE the native create, so nothing was
      *   created and nothing needs rolling back — or if the Keystore denies
      *   the mnemonic store as device-locked after the false-locked bounded
-     *   retry in [WalletStorage.storeMnemonic] is exhausted (that path runs
-     *   the full rollback below first). A locked device whose master key is
-     *   NOT lock-bound (generated before a PIN was enrolled) proceeds
-     *   normally.
+     *   retry in [WalletStorage.storeMnemonic] is exhausted AND its
+     *   last-rung degradation (re-encrypting under the never-lock-bound
+     *   master alias) also failed (that path runs the full rollback below
+     *   first). A locked device whose master key is NOT lock-bound
+     *   (generated before a PIN was enrolled) proceeds normally, as does a
+     *   device whose false-locked Keystore defect is already on record
+     *   (mnemonic writes target the never-lock-bound alias, which no lock
+     *   state can deny).
      */
     suspend fun createWallet(
         mnemonic: String,

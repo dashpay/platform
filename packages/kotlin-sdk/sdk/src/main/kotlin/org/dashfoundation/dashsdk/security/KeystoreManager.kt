@@ -34,6 +34,15 @@ import javax.crypto.spec.PSource
  * - [MASTER_ALIAS] `org.dashfoundation.wallet.master` — mnemonics and
  *   general wallet secrets, under a non-auth AES-256-GCM key (name parity
  *   with the iOS keychain service `org.dashfoundation.wallet`).
+ * - [MASTER_ALIAS_UNBOUND] `org.dashfoundation.wallet.master.unbound` —
+ *   the same non-auth AES-256-GCM parameters as [MASTER_ALIAS] but
+ *   guaranteed to NEVER carry `setUnlockedDeviceRequired`. The degradation
+ *   target [WalletStorage] moves mnemonic blobs to on devices whose
+ *   Keystore denies lock-bound operations while `KeyguardManager` reports
+ *   the device unlocked (the persistent false-locked defect — an OEM
+ *   unlock that never satisfies `UNLOCKED_DEVICE_REQUIRED`; see
+ *   [KeystoreDeviceLockedException]). Provisioned lazily on first use,
+ *   only ever on a device that demonstrated the defect.
  * - [KEYS_ALIAS_AUTH_GATED] `org.dashfoundation.wallet.keys.authgated` —
  *   identity private keys under the default [KeySecurityPolicy.AUTH_GATED],
  *   wrapped by an RSA-2048 OAEP(SHA-256) keypair. The PUBLIC key encrypts and
@@ -640,6 +649,19 @@ open class KeystoreManager(
             KeyProperties.KEY_ALGORITHM_AES,
             ANDROID_KEYSTORE,
         )
+        // MASTER_ALIAS_UNBOUND's whole contract is the ABSENCE of lock
+        // binding — it exists only as the false-locked degradation target —
+        // so it never enters the lock-screen ladder: the params are dropped
+        // unconditionally, not probed. StrongBox→TEE fallback still applies.
+        if (alias == MASTER_ALIAS_UNBOUND) {
+            return try {
+                generator.init(spec(strongBox = true, lockBound = false))
+                generator.generateKey()
+            } catch (_: StrongBoxUnavailableException) {
+                generator.init(spec(strongBox = false, lockBound = false))
+                generator.generateKey()
+            }
+        }
         return generateWithLockScreenDegradation(alias) { strongBox, lockBound ->
             generator.init(spec(strongBox, lockBound))
             generator.generateKey()
@@ -872,6 +894,24 @@ open class KeystoreManager(
 
     companion object {
         const val MASTER_ALIAS = "org.dashfoundation.wallet.master"
+
+        /**
+         * Never-lock-bound variant of [MASTER_ALIAS]: identical non-auth
+         * AES-256-GCM parameters, but `setUnlockedDeviceRequired` is never
+         * applied at generation regardless of the lock-screen probe (see
+         * [generateAesKey]). [WalletStorage] writes mnemonic blobs under
+         * this alias INSTEAD of [MASTER_ALIAS] once a device has
+         * demonstrated the persistent false-locked Keystore defect — the
+         * Keystore denying a lock-bound operation while `KeyguardManager`
+         * reports the device unlocked, past the bounded retry (an OEM
+         * unlock class that never satisfies `UNLOCKED_DEVICE_REQUIRED`;
+         * Google Issue Tracker 506989112). The same downgrade
+         * [generateWithLockScreenDegradation] already performs for lockless
+         * devices (dashpay/platform#4060), here triggered by operational
+         * evidence instead of a missing lock screen. Healthy devices never
+         * provision this alias.
+         */
+        const val MASTER_ALIAS_UNBOUND = "org.dashfoundation.wallet.master.unbound"
 
         /**
          * **Legacy** identity-keys alias. Across the SDK's history this single
