@@ -117,12 +117,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.locked(),
             );
             let platform_info = PlatformWalletInfo {
+                observed_input_conflicts: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
             };
+            // Seed the double-spend screen's session memory from the
+            // freshly restored state: it closes the race where SPV's
+            // chainlock dispatcher promotion-evicts a restored spender
+            // before the first catch-up resume ever reads it.
+            crate::wallet::asset_lock::sync::recovery::seed_observed_input_conflicts(
+                &platform_info,
+            );
 
             if wallet_id != expected_wallet_id {
                 load_error = Some(PlatformWalletError::WalletCreation(format!(

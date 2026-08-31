@@ -114,9 +114,10 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 48** — 27–47 are all claimed (27, 29, 31, 34–42
-and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47
-proposed by active #4356 (renumbered from 42 — see its row below); 28, 30,
+**Next allocatable integer: 49** — 27–48 are all claimed (27, 29, 31, 34–42
+and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
+48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
+rows below); 28, 30,
 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
@@ -124,7 +125,7 @@ reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
 unclaimed rather than back-filled, so no number is reused within a single
 review cycle. Rule 1's "do not reuse a gap unless this file marks it free"
 applies — this file does **not** mark any of them free, so the frontier is
-the only allocation source and a new code takes 48. (42 is a cautionary tale:
+the only allocation source and a new code takes 49. (42 is a cautionary tale:
 merged #4451 minted it while active #4356 held the claim — merged ABI wins,
 the open PR renumbers. 46's near-miss went the other way: caught in review,
 renumbered before merge.)
@@ -149,7 +150,8 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | Code | Name | Owning PR | Status |
 | ---: | --- | --- | --- |
 | 28 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
-| 47 | `ErrorAssetLockInputConflict` | #4356 | Proposed — **47 is reserved for this active PR, but the three-layer renumber is still PENDING.** Merged #4451 took 42 for `ErrorMasternodeWithdrawalUnconfirmed` on 2026-08-22, and merged ABI wins. At the cited #4356 head `7d9be71a08`, Rust still defines and tests `ErrorAssetLockInputConflict = 42`, Swift still declares `errorAssetLockInputConflict = 42`, and Kotlin still maps and tests native 42 — #4356 must move all three layers and their tests together to 47 before it can merge. Rule 1 makes 47 unavailable to any other contributor while #4356 is active |
+| 47 | `ErrorAssetLockInputConflict` | #4356 | Proposed — three-layer renumber from 42 **complete** on the branch (Rust value + pin test, Swift raw case, Kotlin arm + test all at 47). Merged #4451 had taken 42 for `ErrorMasternodeWithdrawalUnconfirmed` on 2026-08-22; merged ABI won and #4356 moved. **Reserved-with-no-emitter**: the wallet currently constructs only the provisional 48 — 47 is the terminal discard-licensing verdict, held for a future finalized-ancestry proof the SPV layer does not yet expose. The number is claimed ABI either way; Rule 1 makes 47 unavailable to any other contributor while #4356 is active |
+| 48 | `ErrorAssetLockInputContested` | #4356 | Proposed — renumbered from 43 (which active #4313 holds) alongside 47's move. The provisional double-spend verdict the conflict screen always emits: the sighting BOUNDS the proof wait rather than replacing it, so the lock is still (re-)broadcast and waited on, and 48 is emitted only when that bounded wait expires with the conflict still standing; carries no discard licence. Rust value + Swift raw case + Kotlin typed arm and tests all at 48 on the branch |
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 32 | *(reserved — lapsed)* | — | Owner #4310 (successor of fork-era #4247) closed without merging; RESERVED, not reissuable |
 | 33 | *(reserved — lapsed)* | — | Owner #4311 (successor of fork-era #4256) closed without merging; RESERVED, not reissuable |
