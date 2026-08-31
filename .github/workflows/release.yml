@@ -224,13 +224,8 @@ jobs:
           echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
           echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
-      # npm rejects a provenance attestation unless the package declares a public
-      # `repository` matching, case-sensitively, the repository the build runs
-      # in, so the flag is applied per workspace rather than to the whole set: a
-      # manifest that does not qualify publishes exactly as it does today, with a
-      # warning naming the file to fix, instead of failing the release.
-      # Attested packages go first: publishing cannot be undone, so the batch
-      # carrying the newer machinery is the one to fail early.
+      # Every publishable workspace declares this repository, which is what npm
+      # requires before it will accept a provenance attestation.
       - name: Publish NPM packages
         env:
           NPM_RELEASE_TAG: ${{ steps.tag.outputs.result }}
@@ -240,43 +235,8 @@ jobs:
             echo "Refusing to publish outside CI"
             exit 1
           fi
-
-          # Written to a file rather than piped into the loop: a process
-          # substitution hides its own failure, so an empty or failed listing
-          # would publish nothing and still report success.
-          workspaces="${RUNNER_TEMP}/publishable-workspaces"
-          yarn workspaces list --no-private --json | jq -r '.location' > "${workspaces}"
-          if [ ! -s "${workspaces}" ]; then
-            echo "::error::Found no publishable workspaces"
-            exit 1
-          fi
-
-          expected="https://github.com/${GITHUB_REPOSITORY}"
-          attested=()
-          plain=()
-          while IFS= read -r location; do
-            manifest="${location}/package.json"
-            name="$(jq -r '.name' "${manifest}")"
-            url="$(jq -r 'if (.repository | type) == "string" then .repository else .repository.url // "" end' "${manifest}")"
-            normalized="${url#git+}"
-            normalized="${normalized%.git}"
-            if [ "${normalized}" = "${expected}" ]; then
-              attested+=(--include "${name}")
-            else
-              plain+=(--include "${name}")
-              echo "::warning file=${manifest}::published without provenance: repository must be \"${expected}\", found \"${url:-<missing>}\""
-            fi
-          done < "${workspaces}"
-
-          if [ "${#attested[@]}" -gt 0 ]; then
-            yarn workspaces foreach --all --no-private --parallel "${attested[@]}" \
-              npm publish --tolerate-republish --access public --provenance --tag "${NPM_RELEASE_TAG}"
-          fi
-
-          if [ "${#plain[@]}" -gt 0 ]; then
-            yarn workspaces foreach --all --no-private --parallel "${plain[@]}" \
-              npm publish --tolerate-republish --access public --tag "${NPM_RELEASE_TAG}"
-          fi
+          yarn workspaces foreach --all --no-private --parallel \
+            npm publish --tolerate-republish --access public --provenance --tag "${NPM_RELEASE_TAG}"
 
   release-drive-image:
     name: Release Drive image

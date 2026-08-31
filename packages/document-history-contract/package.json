@@ -1,6 +1,11 @@
 {
   "name": "@dashevo/document-history-contract",
   "version": "4.2.0-dev.7",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashpay/platform.git",
+    "directory": "packages/document-history-contract"
+  },
   "description": "The document history contract",
   "scripts": {
     "lint": "eslint .",

@@ -1,6 +1,11 @@
 {
   "name": "@dashevo/token-history-contract",
   "version": "4.2.0-dev.7",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashpay/platform.git",
+    "directory": "packages/token-history-contract"
+  },
   "description": "The token history contract",
   "scripts": {
     "lint": "eslint .",

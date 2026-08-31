@@ -1,6 +1,11 @@
 {
   "name": "@dashevo/dapi-client",
   "version": "4.2.0-dev.7",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashpay/platform.git",
+    "directory": "packages/js-dapi-client"
+  },
   "description": "Client library used to access Dash DAPI endpoints",
   "main": "lib/index.js",
   "contributors": [

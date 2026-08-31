@@ -1,6 +1,11 @@
 {
   "name": "@dashevo/evo-sdk",
   "version": "4.2.0-dev.7",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashpay/platform.git",
+    "directory": "packages/js-evo-sdk"
+  },
   "type": "module",
   "main": "./dist/evo-sdk.module.js",
   "types": "./dist/sdk.d.ts",
