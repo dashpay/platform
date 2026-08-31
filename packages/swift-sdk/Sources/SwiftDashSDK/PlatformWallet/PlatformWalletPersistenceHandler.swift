@@ -169,8 +169,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// recursive entry. The internal helpers in this file all
     /// assume they are already on the queue and call
     /// `backgroundContext` directly.
+    /// Every caller arrives from a Rust-owned tokio worker thread, and such a
+    /// thread has no autorelease pool: nothing on it ever drains, because the
+    /// drain is normally done by the run loop or by GCD's own worker wrapper,
+    /// and `serialQueue.sync` can execute the block right on the calling
+    /// thread rather than hopping to a GCD worker.
+    ///
+    /// That matters here because SwiftData is Core Data underneath, and
+    /// resolving a managed object hands back autoreleased Foundation objects —
+    /// `-[_NSCoreManagedObjectID URIRepresentation]` alone allocates an
+    /// `NSURL`, an `NSPathStore2` and two `CFString`s per call. Per input, per
+    /// transaction, per block, with nothing draining them, a large wallet's
+    /// initial scan accumulated 7.5 million `NSURL`s and over 2 GB before the
+    /// app was killed.
+    ///
+    /// The pool goes inside the `sync` so it wraps exactly one unit of work
+    /// and is drained before the Rust caller is resumed.
     private func onQueue<T>(_ body: () throws -> T) rethrows -> T {
-        try serialQueue.sync(execute: body)
+        try serialQueue.sync {
+            try autoreleasepool { try body() }
+        }
     }
 
     // MARK: - Platform Address Balances
@@ -963,30 +981,40 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
 
         // Transactions.
+        //
+        // One pool per row, not one around the loop. SwiftData is Core Data
+        // underneath, and every object-ID it resolves in here autoreleases an
+        // `NSURL`, an `NSPathStore2` and two `CFString`s — see the pool in
+        // `onQueue`. That outer pool drains only when the whole changeset is
+        // done, and a large wallet's initial scan sends changesets big enough
+        // for the interim to reach millions of live objects and gigabytes.
+        // Draining per row keeps the peak flat regardless of batch size.
         if acc.transactions_count > 0, let txsPtr = acc.transactions {
             for i in 0..<Int(acc.transactions_count) {
-                upsertTransaction(account: account, tx: txsPtr[i])
+                autoreleasepool {
+                    upsertTransaction(account: account, tx: txsPtr[i])
+                }
             }
         }
 
         // UTXOs added.
         if acc.utxos_added_count > 0, let utxosPtr = acc.utxos_added {
             for i in 0..<Int(acc.utxos_added_count) {
-                upsertUtxo(account: account, utxo: utxosPtr[i])
+                autoreleasepool { upsertUtxo(account: account, utxo: utxosPtr[i]) }
             }
         }
 
         // UTXOs spent — mark them spent (keep for history).
         if acc.utxos_spent_count > 0, let spentPtr = acc.utxos_spent {
             for i in 0..<Int(acc.utxos_spent_count) {
-                markUtxoSpent(spentPtr[i])
+                autoreleasepool { markUtxoSpent(spentPtr[i]) }
             }
         }
 
         // UTXOs became InstantSend-locked — update flag.
         if acc.utxos_instant_locked_count > 0, let ilPtr = acc.utxos_instant_locked {
             for i in 0..<Int(acc.utxos_instant_locked_count) {
-                markUtxoInstantLocked(ilPtr[i])
+                autoreleasepool { markUtxoInstantLocked(ilPtr[i]) }
             }
         }
     }
