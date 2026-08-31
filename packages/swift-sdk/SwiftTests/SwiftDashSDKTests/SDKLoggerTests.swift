@@ -47,7 +47,7 @@ final class SDKLoggerTests: XCTestCase {
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         let fields: [String: SDKLogValue] = [
             "zeta": .boolean(true),
-            "alpha": .publicText("first\nsecond"),
+            "alpha": .publicText("first\nsecond\u{0085}third\u{2028}fourth\u{2029}fifth"),
             "middle": .integer(-2),
         ]
 
@@ -60,8 +60,13 @@ final class SDKLoggerTests: XCTestCase {
         )
 
         XCTAssertTrue(info.hasPrefix("2023-11-14T22:13:20.000Z INFO swift.lifecycle event=format_test "))
-        XCTAssertTrue(info.hasSuffix(#"alpha="first\nsecond" middle=-2 zeta=true"#))
+        XCTAssertTrue(
+            info.hasSuffix(
+                #"alpha="first\nsecond\u0085third\u2028fourth\u2029fifth" middle=-2 zeta=true"#
+            )
+        )
         XCTAssertFalse(info.contains("first\nsecond"))
+        XCTAssertFalse(info.contains { $0.isNewline })
 
         for severity in [SDKLogSeverity.debug, .warning, .error] {
             let line = SDKLogFormatter.format(

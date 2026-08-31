@@ -203,7 +203,7 @@ enum SDKLogFormatter {
             case 0x0a: escaped += "\\n"
             case 0x0d: escaped += "\\r"
             case 0x09: escaped += "\\t"
-            case 0x00...0x1f, 0x7f:
+            case 0x00...0x1f, 0x7f, 0x85, 0x2028, 0x2029:
                 escaped += String(format: "\\u%04x", scalar.value)
             default:
                 escaped.unicodeScalars.append(scalar)
