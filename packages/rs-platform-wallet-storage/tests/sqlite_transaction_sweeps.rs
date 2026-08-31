@@ -2962,6 +2962,96 @@ fn a_materialised_claim_is_never_collected() {
     );
 }
 
+/// A MATERIALISED claim is releasable, and release is the only thing that
+/// frees it.
+///
+/// The collector deliberately never takes such a row
+/// (`a_materialised_claim_is_never_collected`): once the funding output has
+/// classified, the row carries real funding data and is the wallet's own coin
+/// held spent, so no finality boundary may reclaim it. That leaves exactly one
+/// way back — a later sweep naming the outpoint in `released_outpoints`, which
+/// the unmaterialised path handles by DELETE and this one by an in-place
+/// `spent = 0, spent_in_txid = NULL`.
+///
+/// Pinned because the two paths diverge on `height IS NULL` and every other
+/// release test exercises the placeholder half; without this one, a release
+/// that silently skipped materialised rows would leave a live coin spent
+/// forever with nothing else able to free it.
+#[test]
+fn a_release_frees_a_materialised_claim_in_place() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xF7);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x62);
+    let funding_txid = Txid::from_byte_array([0x71; 32]);
+    let p = OutPoint::new(funding_txid, 0);
+    let loser = Txid::from_byte_array([0x72; 32]);
+    let winner = Txid::from_byte_array([0x73; 32]);
+    let final_winner = Txid::from_byte_array([0x74; 32]);
+
+    let mut conn = persister.lock_conn_for_test();
+    derive_address(&conn, &w, 0, &addr);
+    apply_heights(&mut conn, &w, 100);
+    seed_tombstone(&mut conn, &w, p, loser, winner, Some(WINNER_HEIGHT));
+
+    // The funding output classifies: real data, stamp cleared, still spent.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((true, Some(10), None)),
+        "sanity: materialised — real height, stamp cleared, still spent"
+    );
+    assert!(
+        !unspent(&conn, &w).contains(&p),
+        "sanity: a held coin is not spendable"
+    );
+
+    // The winner is itself swept, and this time the coin comes back free.
+    {
+        let tx = conn.transaction().unwrap();
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![winner],
+                superseded_by: final_winner,
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![p],
+            }],
+            ..Default::default()
+        };
+        core_state::apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    assert_eq!(
+        utxo_row_state(&conn, &w, &p),
+        Some((false, Some(10), None)),
+        "a released materialised claim is freed in place, keeping its funding data"
+    );
+    assert!(
+        unspent(&conn, &w).contains(&p),
+        "and the coin is spendable again"
+    );
+
+    // Durable: the in-place release is not a memory-only flip.
+    drop(conn);
+    drop(persister);
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        unspent(&conn, &w).contains(&p),
+        "the release must hold across a restart"
+    );
+}
+
 /// A held, unmaterialised row with a NULL winner height is never
 /// collected. The mempool-context sweep path writes exactly this shape
 /// (an IS-locked, unmined winner has no finality horizon to stamp), and
