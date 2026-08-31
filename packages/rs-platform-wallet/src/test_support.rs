@@ -263,6 +263,64 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
     (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
 }
 
+/// The `WalletEvent` the wallet emits when it first observes `tx` spending
+/// its outpoints — the real shape the spend-observation seam
+/// ([`SpendObservationHandler`](crate::wallet::core::SpendObservationHandler))
+/// consumes off the event fan-out.
+///
+/// `input_details` claims EVERY input as ours, which is what upstream
+/// populates for inputs that spent this wallet's outpoints — and the only
+/// part of the record either the in-broadcast fence or
+/// `CoreChangeSet::spent_utxos` reads.
+///
+/// Shared between the broadcast-fence release tests
+/// (`wallet::core::broadcast`) and the manager-level fan-out wiring test
+/// (`manager::tests`), so the two cannot drift onto different event shapes.
+#[cfg(test)]
+pub(crate) fn observed_spend_event(
+    wallet_id: WalletId,
+    tx: &Transaction,
+) -> key_wallet_manager::WalletEvent {
+    use dashcore::Address as DashAddress;
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::transaction_router::TransactionType;
+
+    let record = TransactionRecord::new(
+        tx.clone(),
+        key_wallet::account::AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        TransactionContext::InBlock(BlockInfo::new(
+            1_000,
+            dashcore::BlockHash::from([7u8; 32]),
+            1_234_567_890,
+        )),
+        TransactionType::Standard,
+        TransactionDirection::Outgoing,
+        tx.input
+            .iter()
+            .enumerate()
+            .map(|(index, _)| InputDetail {
+                index: index as u32,
+                value: 0,
+                address: DashAddress::dummy(Network::Testnet, 1),
+            })
+            .collect(),
+        Vec::new(),
+        0,
+    );
+    key_wallet_manager::WalletEvent::TransactionDetected {
+        wallet_id,
+        record: Box::new(record),
+        balance: key_wallet::WalletCoreBalance::default(),
+        account_balances: std::collections::BTreeMap::new(),
+        addresses_derived: Vec::new(),
+    }
+}
+
 /// Funds BOTH standard families — BIP44 account 0 and BIP32 account 0 — each
 /// with its own chain-locked UTXO set, for the pooled-send tests: a spend
 /// larger than either family's balance must draw from both.
@@ -530,6 +588,38 @@ pub async fn funded_spv_core_wallet(
         crate::CoreWallet::new(sdk, manager, wallet_id, broadcaster, generation),
         signer,
     )
+}
+
+/// Advance `core`'s `last_processed_height` to just past the reservation age
+/// guard bound ([`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS))
+/// but below key-wallet's `ReservationSet` TTL, so a handle finalized at the
+/// current height ages enough to trip the software guard while its underlying
+/// reservation is provably still held (no key-wallet sweep yet). Returns the new
+/// height.
+///
+/// FFI lifecycle tests use this to exercise aged owner-guarded cleanup — the
+/// deinit/GC backstop and the broadcast/abandon failure paths that route their
+/// cleanup through `abandon_transaction`, which releases owner-guarded at any
+/// age (only a token-less build skips its by-outpoint release).
+pub async fn age_core_past_reservation_guard<B>(core: &crate::CoreWallet<B>) -> u32
+where
+    B: crate::broadcaster::TransactionBroadcaster + ?Sized,
+{
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+    let stamped = core
+        .last_processed_height()
+        .await
+        .expect("wallet present in manager");
+    let target = stamped + crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS + 2;
+    {
+        let mut wm = core.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_and_info_mut(&core.wallet_id())
+            .expect("wallet present in manager");
+        info.core_wallet.update_last_processed_height(target);
+    }
+    target
 }
 
 /// No-op persister satisfying [`PlatformWalletManager`] construction for tests

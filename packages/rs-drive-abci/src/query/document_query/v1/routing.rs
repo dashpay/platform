@@ -279,9 +279,11 @@ pub(super) fn validate_and_route(
 /// The `OFFSET` gate, applied **after** routing.
 ///
 /// Offset pagination exists on exactly one path: the ranked executor,
-/// where `OFFSET m` is the rank the returned page starts at and costs
-/// nothing to prove (grovedb attests the skipped region from counted
-/// subtree commitments rather than walking it). Every other v1 shape —
+/// where `OFFSET m` is the rank the returned page starts at; skipping
+/// is a counted tree descent on either `prove` setting — grovedb counts
+/// the skipped region from the subtree aggregates rather than walking
+/// it, so the work is bounded by tree depth and does not grow with `m`. Only the proved result
+/// additionally *attests* the count. Every other v1 shape —
 /// documents, and the grouped count / sum / average modes — has no
 /// offset primitive behind it and keeps the rejection it has always
 /// had, **message for message**: those callers paginate with
@@ -366,7 +368,22 @@ pub(super) fn validate_and_route_for_tests(
     //    `where_clauses` slice for the routing decision, because
     //    the depth-cap and similar decode-time contracts aren't
     //    exercisable otherwise.
-    conversions::where_clauses_from_proto(request_v1.where_clauses.clone())?;
+    //
+    //    Time-range (IN_TIME_RANGE) clauses are partitioned out first —
+    //    the same order `query_documents_v1` decodes in. The real handler
+    //    resolves them into bucket equalities from committed block time;
+    //    this stateless helper has no block time (or contract), so it
+    //    only validates the clause shape here. Routing-relevant callers
+    //    pass the resolved equality in their pre-decoded slice.
+    let (time_range_proto, normal_proto): (Vec<_>, Vec<_>) = request_v1
+        .where_clauses
+        .clone()
+        .into_iter()
+        .partition(conversions::is_time_range_clause);
+    for proto_wc in time_range_proto {
+        conversions::time_range_clause_from_proto(proto_wc)?;
+    }
+    conversions::where_clauses_from_proto(normal_proto)?;
     // 2. ORDER BY decoding — aggregate-target reject as
     //    `Unsupported("ORDER BY on aggregate keys …")`.
     let order_by_clauses = conversions::order_clauses_from_proto(request_v1.order_by.clone())?;

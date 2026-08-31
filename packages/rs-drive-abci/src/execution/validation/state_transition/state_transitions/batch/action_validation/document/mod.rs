@@ -1,6 +1,7 @@
 mod document_base_transaction_action;
 pub(crate) mod document_create_transition_action;
 pub(crate) mod document_delete_transition_action;
+pub(crate) mod document_index_only_delete_transition_action;
 pub(crate) mod document_purchase_transition_action;
 pub(crate) mod document_reference_validation;
 pub(crate) mod document_replace_transition_action;

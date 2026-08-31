@@ -5,6 +5,7 @@ use dpp::identity::Identity;
 use key_wallet::bip32::ExtendedPrivKey;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::network::contact_requests::budget_spent;
 
 use super::*;
 
@@ -182,7 +183,31 @@ impl IdentityWallet {
         &self,
         opts: IdentityDiscoveryOptions,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
-        self.discover_inner(opts, KeyHashSource::ResidentWallet)
+        self.discover_inner(opts, KeyHashSource::ResidentWallet, None)
+            .await
+    }
+
+    /// [`Self::discover`], bounding the best-effort DPNS enrichment tail.
+    ///
+    /// Crate-private on purpose. The deadline is a property of the one caller
+    /// that owns a budget — the startup sequence, which gates Core SPV — not
+    /// of the discovery options every client passes, so it does not belong on
+    /// the public [`IdentityDiscoveryOptions`].
+    ///
+    /// It bounds the enrichment only, never the scan: enrichment runs *after*
+    /// the scan verdict is published, so stopping in it costs a username
+    /// lookup and never a verdict. A caller that instead wraps the whole call
+    /// in one outer timeout cannot tell "the scan was abandoned mid-walk" from
+    /// "the scan finished and its enrichment ran long", and has to assume the
+    /// former — recording an abandoned-scan verdict over a scan that answered
+    /// every index, which sets a sticky `unlocated_gap` and forces a from-zero
+    /// rescan on every launch for as long as DPNS stays slow.
+    pub(crate) async fn discover_until(
+        &self,
+        opts: IdentityDiscoveryOptions,
+        enrichment_deadline: Option<std::time::Instant>,
+    ) -> Result<Vec<Identity>, PlatformWalletError> {
+        self.discover_inner(opts, KeyHashSource::ResidentWallet, enrichment_deadline)
             .await
     }
 
@@ -209,7 +234,21 @@ impl IdentityWallet {
         opts: IdentityDiscoveryOptions,
         master: &ExtendedPrivKey,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
-        self.discover_inner(opts, KeyHashSource::Master(master))
+        self.discover_inner(opts, KeyHashSource::Master(master), None)
+            .await
+    }
+
+    /// [`Self::discover_from_master`], bounding the DPNS enrichment tail.
+    ///
+    /// Crate-private sibling of [`Self::discover_until`]; see there for why
+    /// the deadline is not an option field.
+    pub(crate) async fn discover_from_master_until(
+        &self,
+        opts: IdentityDiscoveryOptions,
+        master: &ExtendedPrivKey,
+        enrichment_deadline: Option<std::time::Instant>,
+    ) -> Result<Vec<Identity>, PlatformWalletError> {
+        self.discover_inner(opts, KeyHashSource::Master(master), enrichment_deadline)
             .await
     }
 
@@ -300,6 +339,7 @@ impl IdentityWallet {
         &self,
         opts: IdentityDiscoveryOptions,
         source: KeyHashSource<'_>,
+        enrichment_deadline: Option<std::time::Instant>,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
         use super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
         use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
@@ -340,124 +380,173 @@ impl IdentityWallet {
         let mut discovered: Vec<Identity> = Vec::new();
         let mut tally = ScanTally::default();
 
-        while tally.should_continue(gap_limit) {
-            // Derive the MASTER auth pubkey hash for this identity index
-            // from whichever source the caller picked. The per-index read
-            // lock is only needed for the wallet-internal derive (it reads
-            // the resident key material); the master derive is a pure,
-            // lock-free secp256k1 pass.
-            let key_hash_array = match source {
-                KeyHashSource::ResidentWallet => {
-                    let wm = self.wallet_manager.read().await;
-                    let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
-                        crate::error::PlatformWalletError::WalletNotFound(
-                            "Wallet not found in wallet manager".to_string(),
-                        )
-                    })?;
-                    derive_identity_auth_key_hash(
-                        wallet,
+        // The scan runs inside its own block so its early returns cannot skip
+        // the verdict below. Every `?` in here is a LOCAL fault — a wallet that
+        // left the manager, a persistence write that failed — not a probe that
+        // went unanswered, and each of them abandons the scan part-way through
+        // the index space. Returning straight out left no verdict at all, and
+        // "unknown" is what keeps the warm-launch shortcut: the next launch saw
+        // the identities this scan had already folded in, took the shortcut,
+        // and never looked at the indices it never reached. That is #4365's
+        // shape on the local-fault path, so the error is carried out to the
+        // publish below rather than thrown from the middle of the walk.
+        let scan_outcome: Result<(), PlatformWalletError> = async {
+            while tally.should_continue(gap_limit) {
+                // Derive the MASTER auth pubkey hash for this identity index
+                // from whichever source the caller picked. The per-index read
+                // lock is only needed for the wallet-internal derive (it reads
+                // the resident key material); the master derive is a pure,
+                // lock-free secp256k1 pass.
+                let key_hash_array = match source {
+                    KeyHashSource::ResidentWallet => {
+                        let wm = self.wallet_manager.read().await;
+                        let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                            crate::error::PlatformWalletError::WalletNotFound(
+                                "Wallet not found in wallet manager".to_string(),
+                            )
+                        })?;
+                        derive_identity_auth_key_hash(
+                            wallet,
+                            network,
+                            identity_index,
+                            MASTER_KEY_INDEX,
+                        )?
+                    }
+                    KeyHashSource::Master(master) => derive_identity_auth_key_hash_from_master(
+                        master,
                         network,
                         identity_index,
                         MASTER_KEY_INDEX,
-                    )?
-                }
-                KeyHashSource::Master(master) => derive_identity_auth_key_hash_from_master(
-                    master,
-                    network,
-                    identity_index,
-                    MASTER_KEY_INDEX,
-                )?,
-            };
+                    )?,
+                };
 
-            // Query Platform for an identity registered with this key
-            // hash. No locks are held during this network call.
-            let fetch_result = Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await;
+                // Query Platform for an identity registered with this key
+                // hash. No locks are held during this network call.
+                let fetch_result = Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await;
 
-            match fetch_result {
-                Ok(Some(identity)) => {
-                    let identity_id = identity.id();
+                match fetch_result {
+                    Ok(Some(identity)) => {
+                        let identity_id = identity.id();
 
-                    // Derive + verify a candidate for every on-chain key
-                    // (shared with the index-load path) BEFORE taking the write
-                    // lock — candidate derivation borrows the resident wallet /
-                    // master xpriv, while breadcrumb emission needs `&mut info`.
-                    let key_decisions = self
-                        .derive_key_breadcrumbs(
-                            &identity,
+                        // Derive + verify a candidate for every on-chain key
+                        // (shared with the index-load path) BEFORE taking the write
+                        // lock — candidate derivation borrows the resident wallet /
+                        // master xpriv, while breadcrumb emission needs `&mut info`.
+                        let key_decisions = self
+                            .derive_key_breadcrumbs(
+                                &identity,
+                                identity_index,
+                                network,
+                                match source {
+                                    KeyHashSource::Master(master) => Some(master),
+                                    KeyHashSource::ResidentWallet => None,
+                                },
+                            )
+                            .await?;
+
+                        // Acquire write lock to add/enrich the identity, then emit
+                        // every per-key breadcrumb in one batched changeset.
+                        let mut wm_guard = self.wallet_manager.write().await;
+                        let info_guard =
+                            wm_guard
+                                .get_wallet_info_mut(&self.wallet_id)
+                                .ok_or_else(|| {
+                                    crate::error::PlatformWalletError::WalletNotFound(
+                                        "Wallet info not found in wallet manager".to_string(),
+                                    )
+                                })?;
+                        let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
+                        if is_new {
+                            info_guard.identity_manager.add_identity(
+                                identity.clone(),
+                                identity_index,
+                                wallet_id,
+                                &self.persister,
+                            )?;
+                        }
+
+                        if let Some(managed) = info_guard
+                            .identity_manager
+                            .managed_identity_mut(&identity_id)
+                        {
+                            managed.set_status(IdentityStatus::Active, &self.persister);
+                            managed.wallet_id = Some(wallet_id);
+                            // Breadcrumbs for every re-derivable key (not just the
+                            // MASTER key) so the client (iOS Keychain) can
+                            // re-derive each signing key's private key — without
+                            // this only the master key is materialized and the
+                            // imported identity cannot sign with its HIGH /
+                            // CRITICAL authentication keys. A failed persist here
+                            // would silently leave the identity watch-only after
+                            // restart, so surface it (matching `add_identity` above).
+                            managed
+                                .add_keys(key_decisions, &self.persister)
+                                .map_err(|e| {
+                                    PlatformWalletError::Persistence(format!(
+                                        "identity keys not persisted during discovery: {e}"
+                                    ))
+                                })?;
+                        }
+                        drop(wm_guard);
+
+                        if is_new {
+                            discovered.push(identity.clone());
+                        }
+                        tally.record_sighting();
+                    }
+                    Ok(None) => {
+                        tally.record_miss();
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to query identity at index {}: {}",
                             identity_index,
-                            network,
-                            match source {
-                                KeyHashSource::Master(master) => Some(master),
-                                KeyHashSource::ResidentWallet => None,
-                            },
-                        )
-                        .await?;
-
-                    // Acquire write lock to add/enrich the identity, then emit
-                    // every per-key breadcrumb in one batched changeset.
-                    let mut wm_guard = self.wallet_manager.write().await;
-                    let info_guard =
-                        wm_guard
-                            .get_wallet_info_mut(&self.wallet_id)
-                            .ok_or_else(|| {
-                                crate::error::PlatformWalletError::WalletNotFound(
-                                    "Wallet info not found in wallet manager".to_string(),
-                                )
-                            })?;
-                    let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
-                    if is_new {
-                        info_guard.identity_manager.add_identity(
-                            identity.clone(),
-                            identity_index,
-                            wallet_id,
-                            &self.persister,
-                        )?;
+                            e
+                        );
+                        tally.record_failure(identity_index, e);
                     }
+                }
 
-                    if let Some(managed) = info_guard
-                        .identity_manager
-                        .managed_identity_mut(&identity_id)
-                    {
-                        managed.set_status(IdentityStatus::Active, &self.persister);
-                        managed.wallet_id = Some(wallet_id);
-                        // Breadcrumbs for every re-derivable key (not just the
-                        // MASTER key) so the client (iOS Keychain) can
-                        // re-derive each signing key's private key — without
-                        // this only the master key is materialized and the
-                        // imported identity cannot sign with its HIGH /
-                        // CRITICAL authentication keys. A failed persist here
-                        // would silently leave the identity watch-only after
-                        // restart, so surface it (matching `add_identity` above).
-                        managed
-                            .add_keys(key_decisions, &self.persister)
-                            .map_err(|e| {
-                                PlatformWalletError::Persistence(format!(
-                                    "identity keys not persisted during discovery: {e}"
-                                ))
-                            })?;
-                    }
-                    drop(wm_guard);
-
-                    if is_new {
-                        discovered.push(identity.clone());
-                    }
-                    tally.record_sighting();
-                }
-                Ok(None) => {
-                    tally.record_miss();
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to query identity at index {}: {}",
-                        identity_index,
-                        e
-                    );
-                    tally.record_failure(e);
-                }
+                identity_index += 1;
             }
-
-            identity_index += 1;
+            Ok(())
         }
+        .await;
+
+        // A local fault stopped the walk at `identity_index`, so that index and
+        // everything above it went unanswered. Record the index it died on
+        // before the verdict is built: without it `verdict` sees an empty
+        // failed-index list and would publish this abandoned scan as COMPLETE —
+        // strictly worse than the missing verdict this fixes, since a complete
+        // verdict actively re-arms the shortcut.
+        let probed_through = match &scan_outcome {
+            Ok(()) => identity_index,
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    index = identity_index,
+                    error = %e,
+                    "identity discovery hit a local fault mid-scan; recording the index it \
+                     stopped at as unanswered so a later launch rescans instead of trusting \
+                     a walk that never finished"
+                );
+                tally.record_local_fault(identity_index);
+                identity_index.saturating_add(1)
+            }
+        };
+
+        // Record what this scan could and could not answer, before the verdict
+        // on whether its *result* is usable. The two are independent: a scan
+        // that found an identity despite an unanswered probe returns `Ok` and
+        // is still not a scan anybody may build a "nothing left to find"
+        // conclusion on. Published on every ending — an unreachable Platform is
+        // the strongest possible reason to scan again, and so is a scan that
+        // was cut short by a fault on this device.
+        self.publish_scan_verdict(wallet_id, tally.verdict(start_index, probed_through))
+            .await;
+
+        // Only now, with the verdict on record either way.
+        scan_outcome?;
 
         if tally.is_trustworthy() {
             // Found something despite a failed probe: the discovered
@@ -476,7 +565,26 @@ impl IdentityWallet {
         }
 
         // --- DPNS lookup for all discovered identities ---
-        for identity in &discovered {
+        for (enriched, identity) in discovered.iter().enumerate() {
+            // Stopped between identities, the same discipline the contact
+            // drains use. This loop is the only unbudgeted network walk inside
+            // a call the startup sequence bounds from the outside, and it runs
+            // AFTER `publish_scan_verdict` above — so an outer timeout that
+            // fires in here cancels a scan whose verdict already landed, and
+            // the caller, seeing only a cancelled future, records it as an
+            // abandoned scan. Enrichment is best-effort: a username this pass
+            // does not fetch is picked up by the next one, while a scan
+            // verdict wrongly overwritten with "abandoned" costs a from-zero
+            // rescan on every launch until a clean scan gets all the way
+            // through.
+            if budget_spent(enrichment_deadline) {
+                tracing::info!(
+                    enriched,
+                    total = discovered.len(),
+                    "identity discovery: budget spent; leaving DPNS enrichment for a later pass"
+                );
+                break;
+            }
             let identity_id = identity.id();
             match self
                 .sdk
@@ -526,6 +634,53 @@ impl IdentityWallet {
 
         Ok(discovered)
     }
+
+    /// Record and persist what a gap-limit scan managed to probe.
+    ///
+    /// Best-effort by design, and on the persist half only: the in-memory
+    /// record always lands, so a second bring-up in this process already sees
+    /// an incomplete scan and rescans. A failed persist costs the verdict its
+    /// survival across a restart, which is the same exposure a host that has
+    /// no slot for the field already has — it must not be allowed to fail the
+    /// scan that just succeeded.
+    async fn publish_scan_verdict(
+        &self,
+        wallet_id: crate::wallet::platform_wallet::WalletId,
+        verdict: crate::changeset::IdentityScanStateEntry,
+    ) {
+        // What lands in memory is the verdict folded over the one already on
+        // record, so that is what gets persisted too — persisting this scan's
+        // own verdict instead would drop the gaps the fold carried forward.
+        let recorded = {
+            let mut wm = self.wallet_manager.write().await;
+            match wm.get_wallet_info_mut(&wallet_id) {
+                Some(info) => info
+                    .identity_manager
+                    .record_identity_scan(wallet_id, verdict),
+                None => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "identity scan finished for a wallet that is no longer managed; \
+                         dropping its verdict"
+                    );
+                    return;
+                }
+            }
+        };
+
+        let changeset = crate::changeset::PlatformWalletChangeSet {
+            identity_scan_state: Some(recorded),
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to persist the identity-scan verdict; a partial scan may not be \
+                 retried after a restart"
+            );
+        }
+    }
 }
 
 /// Running bookkeeping for one gap-limit scan, and the verdict it produces.
@@ -548,6 +703,13 @@ struct ScanTally {
     consecutive_misses: u32,
     /// Probes that never reached Platform.
     failed_probes: u32,
+    /// The indices behind [`Self::failed_probes`], ascending.
+    ///
+    /// The count alone says a scan was partial; the indices say *where*, which
+    /// is what makes the verdict actionable — a later launch knows exactly
+    /// which slots were never answered, and a reader of the persisted verdict
+    /// can tell an unanswered probe from a scan that was simply cut short.
+    failed_indices: Vec<u32>,
     /// Every index Platform answered with an identity — including ones the
     /// manager already tracked, which never reach the returned `discovered`
     /// list. A rescan from index 0 (what the app's "Find identities" command
@@ -558,6 +720,15 @@ struct ScanTally {
     /// Last probe failure, kept typed so callers can inspect the variant
     /// rather than parse a rendered string.
     last_probe_error: Option<dash_sdk::Error>,
+    /// The index a LOCAL fault stopped the scan at, if one did.
+    ///
+    /// Held apart from [`Self::failed_indices`] so [`Self::failed_probes`] and
+    /// the incomplete-scan error keep meaning exactly "probes Platform never
+    /// answered" — a persistence write that failed is not a network condition
+    /// and must not be reported as one. [`Self::verdict`] folds the two
+    /// together, because to a later launch they are the same fact: an index
+    /// nobody answered.
+    aborted_at_index: Option<u32>,
 }
 
 impl ScanTally {
@@ -580,10 +751,64 @@ impl ScanTally {
     /// The probe never got an answer. It still advances the miss counter — the
     /// scan has to terminate when the network is down — but it is remembered
     /// separately, because the verdict depends on telling the two apart.
-    fn record_failure(&mut self, error: dash_sdk::Error) {
+    fn record_failure(&mut self, index: u32, error: dash_sdk::Error) {
         self.last_probe_error = Some(error);
         self.failed_probes += 1;
+        self.failed_indices.push(index);
         self.consecutive_misses += 1;
+    }
+
+    /// A local fault abandoned the scan at `index` — the walk stopped there,
+    /// so that index and every one above it went unanswered.
+    ///
+    /// Recorded so [`Self::verdict`] cannot call an abandoned scan complete.
+    /// It does not touch the probe counters: the scan did not fail to REACH
+    /// Platform, it failed on this device, and conflating the two would make
+    /// the incomplete-scan error claim a network cause it has no evidence for.
+    fn record_local_fault(&mut self, index: u32) {
+        self.aborted_at_index = Some(index);
+    }
+
+    /// Every index this scan did not answer, ascending — unanswered probes
+    /// plus the index a local fault abandoned it at.
+    fn unanswered_indices(&self) -> Vec<u32> {
+        let mut indices = self.failed_indices.clone();
+        if let Some(index) = self.aborted_at_index {
+            if !indices.contains(&index) {
+                indices.push(index);
+                indices.sort_unstable();
+            }
+        }
+        indices
+    }
+
+    /// The verdict to persist for this scan, over the index range
+    /// `probed_from..probed_through` it walked.
+    ///
+    /// The range is carried into the verdict because a later scan may only
+    /// clear a recorded gap it actually covered — a suffix scan that resumes
+    /// past an unanswered index has said nothing about it.
+    ///
+    /// Separate from [`Self::is_trustworthy`] and not its mirror: a scan that
+    /// found an identity despite an unanswered probe IS trustworthy — its
+    /// findings are real and worth keeping — and is still not complete. That
+    /// gap is precisely where an identity goes missing for the life of an
+    /// installation, so the two questions get two methods.
+    fn verdict(
+        &self,
+        probed_from: u32,
+        probed_through: u32,
+    ) -> crate::changeset::IdentityScanStateEntry {
+        let unanswered = self.unanswered_indices();
+        if unanswered.is_empty() {
+            crate::changeset::IdentityScanStateEntry::completed(probed_from, probed_through)
+        } else {
+            crate::changeset::IdentityScanStateEntry::incomplete(
+                probed_from,
+                probed_through,
+                unanswered,
+            )
+        }
     }
 
     /// Whether the scan's literal result may be reported as-is.
@@ -886,14 +1111,18 @@ mod tests {
         outcomes: impl IntoIterator<Item = Result<Option<()>, ()>>,
     ) -> ScanTally {
         let mut tally = ScanTally::default();
-        for outcome in outcomes {
+        // Index-carrying like the production loop, which probes from
+        // `start_index` upward — the harness scans from 0, so the element
+        // position IS the index.
+        for (index, outcome) in outcomes.into_iter().enumerate() {
             if !tally.should_continue(gap_limit) {
                 break;
             }
+            let index = index as u32;
             match outcome {
                 Ok(Some(())) => tally.record_sighting(),
                 Ok(None) => tally.record_miss(),
-                Err(()) => tally.record_failure(probe_failure()),
+                Err(()) => tally.record_failure(index, probe_failure()),
             }
         }
         tally
@@ -908,6 +1137,64 @@ mod tests {
         assert_eq!(tally.failed_probes, 5);
         assert_eq!(tally.identities_seen, 0);
         assert!(!tally.is_trustworthy());
+    }
+
+    /// The #4365 shape: an identity at index 0, no answer at index 1. The
+    /// scan is trustworthy — its findings are real — and it is NOT complete,
+    /// and those are different questions. Reporting only the first is what let
+    /// an identity at the unanswered index stay hidden for the life of an
+    /// installation.
+    #[test]
+    fn a_scan_that_found_something_despite_a_failed_probe_is_trustworthy_but_incomplete() {
+        let tally = run_scan(5, [Ok(Some(())), Err(()), Ok(None), Ok(None), Ok(None)]);
+
+        assert!(
+            tally.is_trustworthy(),
+            "the identity it found is real and must not be discarded"
+        );
+        let verdict = tally.verdict(0, 5);
+        assert!(
+            !verdict.complete,
+            "an unanswered index means the identity set is not settled"
+        );
+        assert_eq!(
+            verdict.failed_indices,
+            vec![1],
+            "the verdict names which index went unanswered"
+        );
+        assert_eq!(verdict.probed_through, 5);
+    }
+
+    /// A scan that answered everything is the only one that may let a later
+    /// launch skip discovery.
+    #[test]
+    fn a_fully_answered_scan_produces_a_complete_verdict() {
+        let tally = run_scan(
+            5,
+            [
+                Ok(Some(())),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+                Ok(None),
+            ],
+        );
+
+        let verdict = tally.verdict(0, 6);
+        assert!(verdict.complete);
+        assert!(verdict.failed_indices.is_empty());
+    }
+
+    /// Every probe unanswered: the verdict records all of them, so a rescan
+    /// knows the whole range is open.
+    #[test]
+    fn a_scan_that_reached_nobody_records_every_failed_index() {
+        let tally = run_scan(3, [Err(()), Err(()), Err(())]);
+
+        let verdict = tally.verdict(0, 3);
+        assert!(!verdict.complete);
+        assert_eq!(verdict.failed_indices, vec![0, 1, 2]);
     }
 
     /// The genuinely-empty wallet: every probe answered, all of them "none".
@@ -995,5 +1282,194 @@ mod tests {
         }
         assert!(error.source().is_some(), "source must survive for callers");
         assert!(error.to_string().contains("dapi unreachable"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Local faults: the scan aborted by something on THIS device rather than
+    // by an unanswered probe.
+    // -----------------------------------------------------------------------
+
+    /// A scan abandoned part-way through must never be published as complete.
+    ///
+    /// This is the trap in the fix: a local fault records no failed *probe*,
+    /// so a verdict built from the probe bookkeeping alone sees an empty
+    /// failed-index list and calls the abandoned walk clean. That is worse
+    /// than the missing verdict it replaces — a complete verdict actively
+    /// re-arms the warm-launch shortcut over an index space nobody finished.
+    #[test]
+    fn a_locally_aborted_scan_is_never_complete() {
+        let mut tally = run_scan(5, [Ok(Some(())), Ok(None)]);
+        // Fault on the index the walk stopped at, exactly as `discover_inner`
+        // records it.
+        tally.record_local_fault(2);
+
+        let verdict = tally.verdict(0, 3);
+        assert!(
+            !verdict.complete,
+            "a scan that stopped early cannot claim it answered everything"
+        );
+        assert_eq!(
+            verdict.failed_indices,
+            vec![2],
+            "the verdict names the index the walk died on"
+        );
+        assert_eq!(verdict.probed_through, 3);
+    }
+
+    /// The two kinds of gap are merged, ascending, for the reader: to a later
+    /// launch an unanswered probe and an abandoned index are the same fact.
+    #[test]
+    fn an_abort_is_merged_with_the_unanswered_probes() {
+        let mut tally = run_scan(5, [Ok(Some(())), Err(()), Ok(None)]);
+        tally.record_local_fault(3);
+
+        let verdict = tally.verdict(0, 4);
+        assert!(!verdict.complete);
+        assert_eq!(verdict.failed_indices, vec![1, 3]);
+        assert_eq!(
+            tally.failed_probes, 1,
+            "a device-side fault is not a probe Platform failed to answer"
+        );
+    }
+
+    /// A local fault at an index that ALSO went unanswered is recorded once.
+    #[test]
+    fn an_abort_at_an_already_unanswered_index_is_not_duplicated() {
+        let mut tally = run_scan(5, [Err(())]);
+        tally.record_local_fault(0);
+
+        assert_eq!(tally.verdict(0, 1).failed_indices, vec![0]);
+    }
+
+    /// End to end, with a real local fault injected mid-scan: a stale
+    /// **complete** verdict must not survive it.
+    ///
+    /// The fault is genuine rather than mocked — `discover()` derives each
+    /// probe hash from resident key material, and this wallet is
+    /// external-signable (its seed lives outside the manager), so the derive
+    /// fails on the first index. That is one of the `?` early returns above
+    /// `publish_scan_verdict`, and before this fix every one of them returned
+    /// without publishing anything at all: the previous verdict stood, and a
+    /// verdict that says "complete" is exactly what keeps the warm-launch
+    /// shortcut armed. The wallet would then trust an index space this scan
+    /// abandoned — #4365's shape reached from the local-fault side.
+    #[tokio::test]
+    async fn a_local_fault_mid_scan_replaces_a_stale_complete_verdict() {
+        use crate::changeset::IdentityScanStateEntry;
+        use crate::wallet::identity::network::IdentityDiscoveryOptions;
+
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+
+        assert!(
+            !wallet.state().await.wallet().has_seed(),
+            "precondition: the resident derive must be the thing that faults"
+        );
+
+        // The state the defect preserves: a wallet whose last scan answered
+        // everything, so the next launch takes the shortcut.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .record_identity_scan(wallet_id, IdentityScanStateEntry::completed(0, 9));
+        }
+        {
+            let wm = manager.wallet_manager.read().await;
+            assert!(
+                !wm.get_wallet_info(&wallet_id)
+                    .expect("wallet info")
+                    .identity_manager
+                    .identity_scan_is_incomplete(&wallet_id),
+                "precondition: the warm shortcut is armed"
+            );
+        }
+
+        let err = wallet
+            .identity()
+            .discover(IdentityDiscoveryOptions {
+                start_index: Some(0),
+                gap_limit: 5,
+            })
+            .await
+            .expect_err("the resident derive cannot work for a seedless wallet");
+        assert!(
+            !matches!(err, PlatformWalletError::IdentityDiscoveryIncomplete { .. }),
+            "precondition: this must be a LOCAL fault, not an unanswered probe: {err:?}"
+        );
+
+        let wm = manager.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+        let verdict = info
+            .identity_manager
+            .identity_scan_state(&wallet_id)
+            .expect("a verdict must have been published on the fault path");
+        assert!(
+            !verdict.complete,
+            "the stale complete verdict must not have survived an abandoned scan"
+        );
+        assert_eq!(
+            verdict.failed_indices,
+            vec![0],
+            "the index the walk died on is on record as unanswered"
+        );
+        assert!(
+            info.identity_manager
+                .identity_scan_is_incomplete(&wallet_id),
+            "the next launch must re-scan instead of taking the warm shortcut"
+        );
+    }
+
+    /// The enrichment deadline bounds the DPNS tail and nothing else.
+    ///
+    /// This is the guard for the split itself. The defect it exists to remove
+    /// is a scan whose identity probes all answered being reported as
+    /// abandoned because its enrichment ran past the caller's budget — so the
+    /// one way this fix could go wrong is the deadline reaching the scan. A
+    /// scan run with an already-spent enrichment deadline must still walk its
+    /// window and still leave its own verdict on record; if it ever stops
+    /// short, the caller sees a cancelled call and overwrites that verdict
+    /// with an abandoned-scan one, which is where the sticky `unlocated_gap`
+    /// and the per-launch from-zero rescan come from.
+    #[tokio::test]
+    async fn a_spent_enrichment_deadline_does_not_cut_the_scan() {
+        use crate::wallet::identity::network::IdentityDiscoveryOptions;
+
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+
+        // Already in the past, so every enrichment iteration would stop on its
+        // first check. The scan must be untouched by it.
+        let spent = std::time::Instant::now() - std::time::Duration::from_secs(1);
+
+        // The result itself is the mock's business — what matters is what the
+        // scan recorded on its way through.
+        let _ = wallet
+            .identity()
+            .discover_until(
+                IdentityDiscoveryOptions {
+                    start_index: Some(0),
+                    gap_limit: 2,
+                },
+                Some(spent),
+            )
+            .await;
+
+        let wm = manager.wallet_manager.read().await;
+        let verdict = wm
+            .get_wallet_info(&wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .identity_scan_state(&wallet_id)
+            .expect("the scan published a verdict despite the spent enrichment deadline")
+            .clone();
+        assert_eq!(
+            verdict.probed_from, 0,
+            "the scan started where it was told to, not where the deadline was"
+        );
+        assert!(
+            verdict.probed_through > 0,
+            "the scan walked its window; only the enrichment tail is bounded"
+        );
     }
 }

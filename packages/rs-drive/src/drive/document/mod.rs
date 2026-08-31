@@ -12,7 +12,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 #[cfg(feature = "server")]
 use dpp::data_contract::document_type::DocumentTypeRef;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::Document;
 #[cfg(feature = "server")]
 use dpp::document::DocumentV0Getters;
@@ -60,6 +60,23 @@ pub(crate) mod ranked_index_tree_type;
 /// Shared index-walker tree-type derivation for the v2 walkers
 #[cfg(feature = "server")]
 pub(crate) mod index_level_tree_types;
+
+/// indexOnly entry probes: entry path/key derivation shared by the write
+/// path and the ABCI state-validation probes
+#[cfg(feature = "server")]
+pub mod index_only;
+
+/// The indexOnly row commitment: the payload every indexOnly terminal item
+/// stores, binding one document's index projections into one logical row
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod index_only_row_commitment;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_row_commitment::index_only_row_commitment;
+#[cfg(feature = "server")]
+pub use index_only_row_commitment::index_only_row_commitment_with_preimage_size;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_row_commitment::INDEX_ONLY_ROW_COMMITMENT_SIZE;
 
 /// How many document history entries to fetch at once. This mirrors contract history
 /// and prevents unbounded history reads.
@@ -171,10 +188,13 @@ pub(crate) fn make_document_reference_with_sum_item(
     )
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Read a document's `<sum_property>` field and convert it to `i64`
 /// for use as the sum contribution in
-/// [`make_document_item_with_sum_item`].
+/// [`make_document_item_with_sum_item`]. Also used on the verify side:
+/// the executed-transition verifier recomputes the expected sum
+/// contribution of a proved summable indexOnly entry from the created
+/// document.
 ///
 /// The DPP validator guarantees the named property exists and is in
 /// the document's `required` array — a missing value here means

@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -43,9 +44,21 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            // v1 (protocol version 14): v0 plus preallocated index trees for
+            // refersTo-bound `preallocated` indexes of referring indexOnly
+            // document types.
+            1 => self.add_document_for_contract_operations_v1(
+                document_and_contract_info,
+                override_document,
+                block_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_document_for_contract_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

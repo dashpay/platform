@@ -360,7 +360,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.6.0',
+              image: 'dashpay/tenderdash:1.7',
             },
             p2p: {
               host: '0.0.0.0',
@@ -417,10 +417,6 @@ export default function getBaseConfigFactory() {
                 vote: {
                   timeout: null,
                   delta: null,
-                },
-                commit: {
-                  timeout: null,
-                  bypass: null,
                 },
               },
             },

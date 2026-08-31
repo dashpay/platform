@@ -403,6 +403,29 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()
             .map_err(Error::from)?;
 
+        // Defensive re-check of the protocol-version-14 matcher's
+        // contiguity guarantee (`Index::matches_contiguous`): the
+        // positional split below pairs `intermediate_values` with the
+        // index's leading properties in order, so a gap in the equality
+        // cover — or a range/`in` clause not sitting right after it —
+        // would misalign every level below the hole.
+        if !query_covers_index_prefix_contiguously(
+            &index.properties,
+            &|field| self.internal_clauses.equal_clauses.contains_key(field),
+            last_clause,
+            subquery_clause,
+            intermediate_values.len(),
+        ) {
+            return Err(Error::Query(
+                QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                    "query fields do not contiguously cover the index's properties from the \
+                     first: equality clauses must cover the index prefix and any range or in \
+                     clause must immediately follow it; index: {:?}",
+                    index
+                )),
+            ));
+        }
+
         let final_query = match last_clause {
             None => {
                 // There is no last_clause which means we are using an index most likely because of an order_by, however we have no
@@ -459,8 +482,24 @@ impl<'a> DriveDocumentQuery<'a> {
                 // We should set the starts at document to be included for the query if there are
                 // left over index properties.
 
+                // A time-range index's transformed first level stores bucket
+                // *starts*, so the cursor document's raw timestamp is not
+                // comparable to this level's keys: an included cursor created
+                // mid-bucket orders after the bucket-start key and would
+                // suppress it, validly proving an empty page. The resolved
+                // equality already pins this level to one key; the terminal
+                // document-id query attached below applies the cursor.
+                let last_clause_is_on_transformed_source = index
+                    .time_range
+                    .as_ref()
+                    .is_some_and(|transform| transform.source == where_clause.field);
+
                 let query_starts_at_document = if left_over_index_properties.is_empty() {
-                    &starts_at_document
+                    if last_clause_is_on_transformed_source {
+                        &None
+                    } else {
+                        &starts_at_document
+                    }
                 } else if sibling_aware_cursor_lowering {
                     // The cursor's branch always stays included at this level,
                     // trimming only the branches ordered before it; whether
@@ -534,6 +573,72 @@ impl<'a> DriveDocumentQuery<'a> {
                                 &self.order_by,
                                 platform_version,
                             )?;
+                        } else if last_clause_is_on_transformed_source
+                            && left_over_index_properties.is_empty()
+                        {
+                            // The cursor was deliberately withheld from the
+                            // bucket-keyed level above; apply it here by
+                            // bucket membership instead. A cursor inside the
+                            // selected bucket continues the walk at its
+                            // document id (for a unique index the bucket
+                            // holds exactly the cursor document, so excluded
+                            // means the page is exhausted); a cursor from
+                            // outside the bucket cannot order within it and
+                            // is ignored.
+                            let cursor_in_bucket = match &starts_at_document {
+                                None => None,
+                                Some((document, included)) => {
+                                    let transform = index
+                                        .time_range
+                                        .as_ref()
+                                        .expect("checked by last_clause_is_on_transformed_source");
+                                    let bucket_key = self.document_type.serialize_value_for_key(
+                                        where_clause.field.as_str(),
+                                        &where_clause.value,
+                                        platform_version,
+                                    )?;
+                                    document
+                                        .get_raw_for_document_type(
+                                            where_clause.field.as_str(),
+                                            self.document_type,
+                                            None,
+                                            platform_version,
+                                        )?
+                                        .filter(|raw| {
+                                            transform.entry_keys_for_raw(raw).contains(&bucket_key)
+                                        })
+                                        .map(|_| (document, *included))
+                                }
+                            };
+                            match cursor_in_bucket {
+                                Some((document, included)) if !index.unique => {
+                                    query.set_subquery_key(vec![0]);
+                                    query.set_subquery(Self::inner_query_from_starts_at_for_id(
+                                        Some(&StartAtDocument {
+                                            document: document.clone(),
+                                            document_type: self.document_type,
+                                            included,
+                                        }),
+                                        left_to_right,
+                                    ));
+                                }
+                                cursor => {
+                                    if matches!(cursor, Some((_, false))) {
+                                        // Unique: the excluded cursor is the
+                                        // bucket's only document.
+                                        query = Query::new_with_direction(left_to_right);
+                                    }
+                                    Self::recursive_insert_on_query_ordered_with_cursor(
+                                        &mut query,
+                                        left_over_index_properties.as_slice(),
+                                        index.unique,
+                                        None,
+                                        left_to_right,
+                                        &self.order_by,
+                                        platform_version,
+                                    )?;
+                                }
+                            }
                         } else {
                             Self::recursive_insert_on_query_ordered_with_cursor(
                                 &mut query,
@@ -602,18 +707,167 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let mut path = document_type_path;
 
+        // Path segments are level keys: grid-qualified for a time-range
+        // index's first property (`Index::level_key_for_property`), the bare
+        // property name everywhere else. The values pushed between them are
+        // untouched — a bucket start is encoded exactly like a timestamp.
         for (intermediate_index, intermediate_value) in
             intermediate_indexes.iter().zip(intermediate_values.iter())
         {
-            path.push(intermediate_index.name.as_bytes().to_vec());
+            path.push(
+                index
+                    .level_key_for_property(&intermediate_index.name)
+                    .into_bytes(),
+            );
             path.push(intermediate_value.as_slice().to_vec());
         }
 
-        path.push(last_index.name.as_bytes().to_vec());
+        path.push(index.level_key_for_property(&last_index.name).into_bytes());
 
         Ok(PathQuery::new(
             path,
             SizedQuery::new(final_query, self.limit, self.offset),
         ))
+    }
+}
+
+/// True when the query's clauses line up with the positional path
+/// construction: the first `equality_prefix_len` index properties all
+/// carry equality clauses (they are the levels `intermediate_values`
+/// keys), the terminal clause (equality, range, or `in`) sits on the
+/// property right after that prefix, and a subquery clause (the later
+/// of an `in`/range pair) on the property after it. Unreachable-false
+/// once index selection ran through the protocol-version-14 contiguous
+/// matcher; kept as defense in depth for this file's `split_at`.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn query_covers_index_prefix_contiguously(
+    index_properties: &[IndexProperty],
+    is_equality_field: &dyn Fn(&str) -> bool,
+    last_clause: Option<&WhereClause>,
+    subquery_clause: Option<&WhereClause>,
+    equality_prefix_len: usize,
+) -> bool {
+    if index_properties.len() < equality_prefix_len {
+        return false;
+    }
+    let prefix_covered = index_properties[..equality_prefix_len]
+        .iter()
+        .all(|property| is_equality_field(property.name.as_str()));
+    let clause_sits_at = |clause: Option<&WhereClause>, position: usize| match clause {
+        Some(clause) => index_properties
+            .get(position)
+            .is_some_and(|property| property.name == clause.field),
+        None => true,
+    };
+    prefix_covered
+        && clause_sits_at(last_clause, equality_prefix_len)
+        && clause_sits_at(subquery_clause, equality_prefix_len + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::conditions::WhereOperator;
+    use dpp::platform_value::Value;
+
+    fn properties(names: &[&str]) -> Vec<IndexProperty> {
+        names
+            .iter()
+            .map(|name| IndexProperty {
+                name: name.to_string(),
+                ascending: true,
+            })
+            .collect()
+    }
+
+    fn clause(field: &str, operator: WhereOperator) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator,
+            value: Value::U64(0),
+        }
+    }
+
+    #[test]
+    fn aligned_shapes_pass() {
+        let index_properties = properties(&["a", "b", "c"]);
+        let is_equality = |field: &str| field == "a" || field == "b";
+
+        // Pure equalities: the deepest one is the terminal clause and is
+        // not among the intermediate values.
+        let terminal = clause("b", WhereOperator::Equal);
+        assert!(query_covers_index_prefix_contiguously(
+            &index_properties,
+            &is_equality,
+            Some(&terminal),
+            None,
+            1,
+        ));
+
+        // Equality prefix + adjacent range.
+        let range = clause("c", WhereOperator::GreaterThan);
+        assert!(query_covers_index_prefix_contiguously(
+            &index_properties,
+            &is_equality,
+            Some(&range),
+            None,
+            2,
+        ));
+
+        // Equality + in + range on consecutive properties.
+        let in_clause = clause("b", WhereOperator::In);
+        assert!(query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|field| field == "a",
+            Some(&in_clause),
+            Some(&range),
+            1,
+        ));
+
+        // No clauses at all (order-by-only use of the index).
+        assert!(query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|_| false,
+            None,
+            None,
+            0,
+        ));
+    }
+
+    #[test]
+    fn misaligned_shapes_fail() {
+        let index_properties = properties(&["a", "b", "c"]);
+
+        // Equality gap: values collected for a and c would be keyed at
+        // a's and b's levels.
+        let terminal = clause("c", WhereOperator::Equal);
+        assert!(!query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|field| field == "a" || field == "c",
+            Some(&terminal),
+            None,
+            1,
+        ));
+
+        // Range skipping the unbound middle property: its items would be
+        // applied at b's level.
+        let range = clause("c", WhereOperator::GreaterThan);
+        assert!(!query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|field| field == "a",
+            Some(&range),
+            None,
+            1,
+        ));
+
+        // Equality on a property the index does not lead with.
+        let terminal = clause("b", WhereOperator::Equal);
+        assert!(!query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|field| field == "b",
+            Some(&terminal),
+            None,
+            0,
+        ));
     }
 }

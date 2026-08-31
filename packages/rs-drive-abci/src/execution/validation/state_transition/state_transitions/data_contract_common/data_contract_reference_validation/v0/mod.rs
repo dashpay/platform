@@ -3,6 +3,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentPropertyReferenceTarget, DocumentPropertyType};
 use dpp::data_contract::DataContract;
+use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -37,6 +38,20 @@ use crate::execution::types::state_transition_execution_context::{
 ///
 /// The error paths name the failing declaration as
 /// `documentTypeName.propertyPath`. Validation stops at the first invalid
+/// Whether two property types hold the same KIND of value for agreement
+/// purposes: sizes and other constraints may differ (both sides validated
+/// their own documents already), and an identifier is one kind whether or
+/// not it carries its own reference annotation.
+fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
+    let normalized_kind = |property_type: &DocumentPropertyType| match property_type {
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+            std::mem::discriminant(&DocumentPropertyType::Identifier)
+        }
+        other => std::mem::discriminant(other),
+    };
+    normalized_kind(a) == normalized_kind(b)
+}
+
 /// declaration: this bounds the billed work an invalid contract can cause and
 /// matches document write-time reference validation. Foreign contract
 /// resolutions are memoized per contract id, so a contract declaring many
@@ -101,6 +116,7 @@ pub(super) fn validate_data_contract_references_v0(
             let DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id,
                 document_type_name,
+                property_agreement,
             } = reference_target
             else {
                 continue;
@@ -179,6 +195,59 @@ pub(super) fn validate_data_contract_references_v0(
                     )
                     .into(),
                 ));
+            }
+
+            // propertyAgreement declarations: both sides must exist, be
+            // plain values (not containers), and share one value kind — a
+            // cross-kind equality could never be satisfied and would brick
+            // every create of the declaring document type.
+            for (referring_property, referenced_property) in property_agreement {
+                let invalid = |reason: &str| {
+                    SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentPropertyAgreementInvalidError::new(
+                            declaration_path.clone(),
+                            referring_property.clone(),
+                            referenced_property.clone(),
+                            reason.to_string(),
+                        )
+                        .into(),
+                    )
+                };
+                if referring_property == path {
+                    return Ok(invalid(
+                        "the referring property cannot be the reference property itself",
+                    ));
+                }
+                let declaring_document_type = document_type.as_ref();
+                let Some(referring) = declaring_document_type
+                    .flattened_properties()
+                    .get(referring_property)
+                else {
+                    return Ok(invalid(
+                        "the declaring document type does not define the referring property",
+                    ));
+                };
+                let Some(referenced) = referenced_document_type
+                    .flattened_properties()
+                    .get(referenced_property)
+                else {
+                    return Ok(invalid(
+                        "the referenced document type does not define the referenced property",
+                    ));
+                };
+                if matches!(referring.property_type, DocumentPropertyType::Object(_))
+                    || matches!(referenced.property_type, DocumentPropertyType::Object(_))
+                {
+                    return Ok(invalid(
+                        "agreement properties must be plain values, not object containers",
+                    ));
+                }
+                if !same_value_kind(&referring.property_type, &referenced.property_type) {
+                    return Ok(invalid(
+                        "the two properties must share one value kind: a cross-kind \
+                         equality could never be satisfied",
+                    ));
+                }
             }
         }
     }

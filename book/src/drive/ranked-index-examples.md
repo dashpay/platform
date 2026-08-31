@@ -321,11 +321,11 @@ The response carries the skip back in `RankedEntries.skipped` (see [The Response
 
 Three properties worth stating plainly:
 
-- **The skip is attested, not walked.** grovedb proves the skipped region from the counted subtree commitments (`HashWithCount` / `HashWithCountAndSum`) rather than by traversing it. Both the prover's work and the proof's size stay `O(log n + k)` **at any offset**.
-- **There is therefore no offset ceiling.** An offset of 4 and an offset of four billion cost the same, so there is no denial-of-service lever a cap would close — and a cap would only stop honest deep pagination.
-- **An offset past the end is a positive answer.** `entries` comes back empty and `skipped` is the ranking's *entire attested population*. "There are only 12 groups" is more information than a bare empty list.
+- **The skip is counted, not walked.** grovedb descends the secondary reading each subtree's aggregate count and collapses any subtree that fits entirely inside the remaining offset, instead of stepping through it. Both paths do this: the prover attests the skipped region from the counted subtree commitments (`HashWithCount` / `HashWithCountAndSum`), and the unproven read performs the same counted descent without building a proof. Work and proof size stay `O(log n + k)` **at any offset**.
+- **There is therefore no offset ceiling.** An offset of 4 and an offset of four billion cost the same order of work — on either path, the deeper one in fact cheaper, since a tree that fits entirely inside the offset collapses at the root. There is no denial-of-service lever a cap would close, and a cap would only stop honest deep pagination.
+- **An offset past the end is a positive answer.** `entries` comes back empty and `skipped` is the ranking's *entire reported population*. "There are only 12 groups" is more information than a bare empty list.
 
-On the **unproven** read there is nothing to attest and grovedb's read API does not report a short walk, so `skipped` simply echoes the requested offset. The proved and unproven paths therefore disagree in exactly one case — an offset past the end, where the unproven read reports the request and the proved one reports the truth. **Callers who need the population must prove.**
+Both paths report the same `skipped`: the offset you asked for when the skip succeeded, and the ranking's total population when the walk ran out of groups first. What differs is the warrant, not the value. On the proved path it is cryptographically attested, re-derived by the verifier from the counted commitments. On the unproven path it is an **unverified claim, exactly like the entries beside it** — equal to the attested value on an honest node, with nothing forcing a node to be honest. **Callers who need to trust the population, rather than merely receive it, must still prove.**
 
 ## The Response
 

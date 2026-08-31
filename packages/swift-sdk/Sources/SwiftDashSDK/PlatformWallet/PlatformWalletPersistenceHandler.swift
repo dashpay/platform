@@ -94,6 +94,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `markUtxoSpent`, …) assume they are already on the queue.
     private let backgroundContext: ModelContext
 
+    /// Context dedicated to tracked-masternode whole-set writes. Those writes
+    /// are not part of a wallet changeset and must become durable before their
+    /// synchronous FFI callback reports success. Keeping them off
+    /// `backgroundContext` prevents an unrelated changeset rollback from
+    /// discarding a successful track/untrack/rename operation.
+    private let trackedMasternodeContext: ModelContext
+
     /// Serial queue that owns `backgroundContext` and any other
     /// non-Sendable handler state (`loadAllocations`). All public
     /// entry points — both the FFI callback shims and the
@@ -144,6 +151,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         self.network = network
         self.backgroundContext = ModelContext(modelContainer)
         self.backgroundContext.autosaveEnabled = true
+        self.trackedMasternodeContext = ModelContext(modelContainer)
+        self.trackedMasternodeContext.autosaveEnabled = false
     }
 
     /// Synchronously run `body` on `serialQueue`.
@@ -160,8 +169,26 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// recursive entry. The internal helpers in this file all
     /// assume they are already on the queue and call
     /// `backgroundContext` directly.
+    /// Every caller arrives from a Rust-owned tokio worker thread, and such a
+    /// thread has no autorelease pool: nothing on it ever drains, because the
+    /// drain is normally done by the run loop or by GCD's own worker wrapper,
+    /// and `serialQueue.sync` can execute the block right on the calling
+    /// thread rather than hopping to a GCD worker.
+    ///
+    /// That matters here because SwiftData is Core Data underneath, and
+    /// resolving a managed object hands back autoreleased Foundation objects —
+    /// `-[_NSCoreManagedObjectID URIRepresentation]` alone allocates an
+    /// `NSURL`, an `NSPathStore2` and two `CFString`s per call. Per input, per
+    /// transaction, per block, with nothing draining them, a large wallet's
+    /// initial scan accumulated 7.5 million `NSURL`s and over 2 GB before the
+    /// app was killed.
+    ///
+    /// The pool goes inside the `sync` so it wraps exactly one unit of work
+    /// and is drained before the Rust caller is resumed.
     private func onQueue<T>(_ body: () throws -> T) rethrows -> T {
-        try serialQueue.sync(execute: body)
+        try serialQueue.sync {
+            try autoreleasepool { try body() }
+        }
     }
 
     // MARK: - Platform Address Balances
@@ -954,30 +981,40 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
 
         // Transactions.
+        //
+        // One pool per row, not one around the loop. SwiftData is Core Data
+        // underneath, and every object-ID it resolves in here autoreleases an
+        // `NSURL`, an `NSPathStore2` and two `CFString`s — see the pool in
+        // `onQueue`. That outer pool drains only when the whole changeset is
+        // done, and a large wallet's initial scan sends changesets big enough
+        // for the interim to reach millions of live objects and gigabytes.
+        // Draining per row keeps the peak flat regardless of batch size.
         if acc.transactions_count > 0, let txsPtr = acc.transactions {
             for i in 0..<Int(acc.transactions_count) {
-                upsertTransaction(account: account, tx: txsPtr[i])
+                autoreleasepool {
+                    upsertTransaction(account: account, tx: txsPtr[i])
+                }
             }
         }
 
         // UTXOs added.
         if acc.utxos_added_count > 0, let utxosPtr = acc.utxos_added {
             for i in 0..<Int(acc.utxos_added_count) {
-                upsertUtxo(account: account, utxo: utxosPtr[i])
+                autoreleasepool { upsertUtxo(account: account, utxo: utxosPtr[i]) }
             }
         }
 
         // UTXOs spent — mark them spent (keep for history).
         if acc.utxos_spent_count > 0, let spentPtr = acc.utxos_spent {
             for i in 0..<Int(acc.utxos_spent_count) {
-                markUtxoSpent(spentPtr[i])
+                autoreleasepool { markUtxoSpent(spentPtr[i]) }
             }
         }
 
         // UTXOs became InstantSend-locked — update flag.
         if acc.utxos_instant_locked_count > 0, let ilPtr = acc.utxos_instant_locked {
             for i in 0..<Int(acc.utxos_instant_locked_count) {
-                markUtxoInstantLocked(ilPtr[i])
+                autoreleasepool { markUtxoInstantLocked(ilPtr[i]) }
             }
         }
     }
@@ -1477,6 +1514,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.walletRestore
                 | PlatformWalletPersistenceCapabilities.dpnsNameStates
                 | PlatformWalletPersistenceCapabilities.trackedAssetLocks
+                | PlatformWalletPersistenceCapabilities.trackedMasternodes
         )
     }
 
@@ -1489,6 +1527,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.version = UInt32(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION)
         extensionCallbacks.reserved = 0
         extensionCallbacks.on_persist_dpns_name_states_fn = persistDpnsNameStatesCallback
+        extensionCallbacks.on_persist_tracked_masternodes_fn = persistTrackedMasternodesCallback
+        extensionCallbacks.on_load_tracked_masternodes_fn = loadTrackedMasternodesCallback
+        extensionCallbacks.on_load_tracked_masternodes_free_fn = loadTrackedMasternodesFreeCallback
         return extensionCallbacks
     }
 
@@ -6094,6 +6135,147 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// we handed to Rust. Drained by `loadWalletListFree`.
     private var loadAllocations: [UnsafeRawPointer: LoadAllocation] = [:]
 
+    // MARK: - Tracked (wallet-independent) masternodes
+
+    /// One tracked-masternode row crossing the persistence boundary.
+    struct TrackedMasternodeRow {
+        let proTxHash: Data
+        let label: String?
+        let addedAt: UInt64
+        let snapshotJSON: String
+    }
+
+    /// Replace the stored tracked-masternode set for `networkRaw` with
+    /// `rows` (whole-set semantics, mirroring the Rust trait contract).
+    ///
+    /// Registry writes arrive OUTSIDE Rust `store()` rounds and use their own
+    /// context, so this method always saves before returning success. An
+    /// unrelated wallet changeset can therefore neither absorb nor roll back
+    /// a tracked-node mutation.
+    func persistTrackedMasternodes(networkRaw: UInt32, rows: [TrackedMasternodeRow]) -> Bool {
+        onQueue {
+            do {
+                let existing = try trackedMasternodeContext.fetch(
+                    FetchDescriptor<PersistentTrackedMasternode>(
+                        predicate: #Predicate { $0.networkRaw == networkRaw }
+                    )
+                )
+                var stale: [Data: PersistentTrackedMasternode] = [:]
+                for row in existing {
+                    stale[row.proTxHash] = row
+                }
+                for row in rows {
+                    if let found = stale.removeValue(forKey: row.proTxHash) {
+                        found.label = row.label
+                        found.addedAt = row.addedAt
+                        found.snapshotJSON = row.snapshotJSON
+                    } else {
+                        trackedMasternodeContext.insert(PersistentTrackedMasternode(
+                            networkRaw: networkRaw,
+                            proTxHash: row.proTxHash,
+                            label: row.label,
+                            addedAt: row.addedAt,
+                            snapshotJSON: row.snapshotJSON
+                        ))
+                    }
+                }
+                for removed in stale.values {
+                    trackedMasternodeContext.delete(removed)
+                }
+                try trackedMasternodeContext.save()
+                return true
+            } catch {
+                print("⚠️ persistTrackedMasternodes: \(error)")
+                // A failed save leaves pending inserts/deletes registered on
+                // the context. Discard them before returning failure so a
+                // later load or successful mutation cannot expose/commit a
+                // registry state Rust has already rolled back.
+                trackedMasternodeContext.rollback()
+                return false
+            }
+        }
+    }
+
+    /// Load every tracked-masternode row for `networkRaw` into
+    /// Rust-readable C rows. The allocation is loaned to Rust and released
+    /// by `loadTrackedMasternodesFree`.
+    func loadTrackedMasternodes(
+        networkRaw: UInt32
+    ) -> (entries: UnsafePointer<TrackedMasternodeFFI>?, count: Int, errored: Bool) {
+        onQueue {
+            let rows: [PersistentTrackedMasternode]
+            do {
+                var descriptor = FetchDescriptor<PersistentTrackedMasternode>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw }
+                )
+                descriptor.sortBy = [
+                    SortDescriptor(\.addedAt, order: .forward)
+                ]
+                rows = try trackedMasternodeContext.fetch(descriptor)
+            } catch {
+                print("⚠️ loadTrackedMasternodes: \(error)")
+                return (nil, 0, true)
+            }
+            guard !rows.isEmpty else {
+                return (nil, 0, false)
+            }
+            let allocation = TrackedMasternodeLoadAllocation()
+            let buf = UnsafeMutablePointer<TrackedMasternodeFFI>.allocate(capacity: rows.count)
+            allocation.entries = buf
+            var written = 0
+            for row in rows {
+                // A proTxHash that is not 32 bytes has no usable identity —
+                // skip the row (same convention as the shielded loaders)
+                // rather than keying a phantom masternode on zeros.
+                guard row.proTxHash.count == 32 else {
+                    print("⚠️ loadTrackedMasternodes: skipping a row with a \(row.proTxHash.count)-byte proTxHash")
+                    continue
+                }
+                var entry = TrackedMasternodeFFI()
+                withUnsafeMutableBytes(of: &entry.pro_tx_hash) { dst in
+                    row.proTxHash.withUnsafeBytes { src in
+                        dst.copyMemory(from: src)
+                    }
+                }
+                if let label = row.label, let dup = strdup(label) {
+                    allocation.strings.append(dup)
+                    entry.label = UnsafePointer(dup)
+                }
+                entry.added_at = row.addedAt
+                if let dup = strdup(row.snapshotJSON) {
+                    allocation.strings.append(dup)
+                    entry.snapshot_json = UnsafePointer(dup)
+                }
+                buf[written] = entry
+                written += 1
+            }
+            allocation.count = written
+            guard written > 0 else {
+                allocation.release()
+                return (nil, 0, false)
+            }
+            trackedMasternodeLoadAllocations[UnsafeRawPointer(buf)] = allocation
+            return (UnsafePointer(buf), written, false)
+        }
+    }
+
+    /// Release a loan handed out by `loadTrackedMasternodes`.
+    func loadTrackedMasternodesFree(entries: UnsafeRawPointer?) {
+        onQueue {
+            guard let entries = entries,
+                  let allocation = trackedMasternodeLoadAllocations.removeValue(forKey: entries)
+            else {
+                return
+            }
+            allocation.release()
+        }
+    }
+
+    /// Outstanding tracked-masternode load allocations keyed by the
+    /// entries pointer we handed to Rust.
+    private var trackedMasternodeLoadAllocations:
+        [UnsafeRawPointer: TrackedMasternodeLoadAllocation] = [:]
+
     /// Human-readable name for a persisted account, mirroring the
     /// top-level `AccountTypeTagFFI` discriminant plus — for tag 0
     /// (Standard) — the `StandardAccountTypeTagFFI` sub-discriminant.
@@ -6327,6 +6509,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
 /// Retains all heap allocations produced by a single
 /// `loadWalletList` call. Released wholesale by `loadWalletListFree`.
+/// Owned allocations behind one `loadTrackedMasternodes` answer: the
+/// entries buffer plus every strdup'd label / snapshot string. Trivial C
+/// structs — deallocate only.
+private final class TrackedMasternodeLoadAllocation {
+    var entries: UnsafeMutablePointer<TrackedMasternodeFFI>?
+    var count: Int = 0
+    var strings: [UnsafeMutablePointer<CChar>] = []
+
+    func release() {
+        for string in strings {
+            free(string)
+        }
+        strings.removeAll()
+        entries?.deallocate()
+        entries = nil
+        count = 0
+    }
+}
+
 private final class LoadAllocation {
     var entries: UnsafeMutablePointer<WalletRestoreEntryFFI>?
     /// Allocated capacity — equal to `restorable.count`. Used for
@@ -6816,6 +7017,93 @@ private func loadWalletListFreeCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
     handler.loadWalletListFree(entries: entries.map(UnsafeRawPointer.init))
+}
+
+/// Map the `network` C string Rust passes to the tracked-masternode
+/// persistence callbacks onto `Network.rawValue`. Unknown names return
+/// `nil` and the callback reports failure rather than filing rows under
+/// the wrong network.
+private func networkRawFromCString(_ ptr: UnsafePointer<CChar>?) -> UInt32? {
+    guard let ptr = ptr else { return nil }
+    switch String(cString: ptr) {
+    case "mainnet": return Network.mainnet.rawValue
+    case "testnet": return Network.testnet.rawValue
+    case "devnet": return Network.devnet.rawValue
+    case "regtest": return Network.regtest.rawValue
+    default: return nil
+    }
+}
+
+/// C shim for `on_persist_tracked_masternodes_fn`. Deep-copies every row
+/// (label + snapshot strings included) before invoking the handler, so
+/// Rust can drop its allocations the moment we return.
+private func persistTrackedMasternodesCallback(
+    context: UnsafeMutableRawPointer?,
+    networkPtr: UnsafePointer<CChar>?,
+    rowsPtr: UnsafePointer<TrackedMasternodeFFI>?,
+    rowsCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let networkRaw = networkRawFromCString(networkPtr) else {
+        return 1
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    var rows: [PlatformWalletPersistenceHandler.TrackedMasternodeRow] = []
+    if rowsCount > 0, let rowsPtr = rowsPtr {
+        rows.reserveCapacity(Int(rowsCount))
+        for i in 0..<Int(rowsCount) {
+            var entry = rowsPtr[i]
+            rows.append(.init(
+                proTxHash: withUnsafeBytes(of: &entry.pro_tx_hash) { Data($0) },
+                label: entry.label.map { String(cString: $0) },
+                addedAt: entry.added_at,
+                snapshotJSON: entry.snapshot_json.map { String(cString: $0) } ?? "{}"
+            ))
+        }
+    }
+    return handler.persistTrackedMasternodes(networkRaw: networkRaw, rows: rows) ? 0 : 1
+}
+
+/// C shim for `on_load_tracked_masternodes_fn`. Hands Rust a loaned
+/// array released by the free shim below.
+private func loadTrackedMasternodesCallback(
+    context: UnsafeMutableRawPointer?,
+    networkPtr: UnsafePointer<CChar>?,
+    outRows: UnsafeMutablePointer<UnsafePointer<TrackedMasternodeFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context = context,
+          let outRows = outRows,
+          let outCount = outCount else {
+        return 1
+    }
+    outRows.pointee = nil
+    outCount.pointee = 0
+    guard let networkRaw = networkRawFromCString(networkPtr) else {
+        return 1
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let (entries, count, errored) = handler.loadTrackedMasternodes(networkRaw: networkRaw)
+    outRows.pointee = entries
+    outCount.pointee = UInt(count)
+    return errored ? 1 : 0
+}
+
+/// C shim for `on_load_tracked_masternodes_free_fn`.
+private func loadTrackedMasternodesFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    rows: UnsafePointer<TrackedMasternodeFFI>?,
+    _ count: UInt
+) {
+    guard let context = context else { return }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    handler.loadTrackedMasternodesFree(entries: rows.map(UnsafeRawPointer.init))
 }
 
 /// C shim for `on_persist_account_address_pools_fn`. Walks the

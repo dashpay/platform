@@ -113,7 +113,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
-                &platform_version.drive,
+                platform_version,
             )?;
         }
 
@@ -131,6 +131,15 @@ impl Drive {
         // sum, or both) — decides whether continuation children go
         // through the zero-contribution helper or the plain one.
         let parent_value_tree_aggregates = !matches!(parent_value_tree_type, TreeType::NormalTree);
+        // A prefix-ranking chain level (`rankedCountable: { at }`) inverts
+        // that choice: its value trees count exactly their single
+        // continuation — the subtree total the grouping secondary ranks by
+        // — so the continuation is inserted unwrapped and CONTRIBUTES its
+        // count instead of being zero-wrapped. Contract validation
+        // guarantees no other continuation or terminator shares such a
+        // level, so nothing else can pollute the total.
+        let continuations_contribute =
+            index_level.ranked_count_grouping() || index_level.count_propagating();
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
@@ -199,7 +208,7 @@ impl Drive {
                 .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            if parent_value_tree_aggregates {
+            if parent_value_tree_aggregates && !continuations_contribute {
                 // A ranked terminal level reaching this branch is
                 // rejected inside the helper (it passes `ranked_axes`
                 // straight through): an indexed tree can neither be

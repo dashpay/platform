@@ -11,6 +11,7 @@ pub enum DocumentTransitionActionType {
     Purchase,
     UpdatePrice,
     IgnoreWhileBumpingRevision,
+    IndexOnlyDelete,
 }
 
 pub trait DocumentTransitionActionTypeGetter {
@@ -26,6 +27,7 @@ impl DocumentTransitionActionTypeGetter for DocumentTransition {
             DocumentTransition::Transfer(_) => DocumentTransitionActionType::Transfer,
             DocumentTransition::UpdatePrice(_) => DocumentTransitionActionType::UpdatePrice,
             DocumentTransition::Purchase(_) => DocumentTransitionActionType::Purchase,
+            DocumentTransition::IndexOnlyDelete(_) => DocumentTransitionActionType::IndexOnlyDelete,
         }
     }
 }
@@ -41,6 +43,9 @@ impl TryFrom<&str> for DocumentTransitionActionType {
             "transfer" => Ok(DocumentTransitionActionType::Transfer),
             "updatePrice" | "update_price" => Ok(DocumentTransitionActionType::UpdatePrice),
             "purchase" => Ok(DocumentTransitionActionType::Purchase),
+            "indexOnlyDelete" | "index_only_delete" => {
+                Ok(DocumentTransitionActionType::IndexOnlyDelete)
+            }
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown action type {action_type}"
             ))),

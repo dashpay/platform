@@ -10,14 +10,20 @@
  * @param {string} options.provider
  * @param {number} options.expirationDays
  * @param {function(Config): Listr} options.obtainCertificateTask
+ * @param {number|null} [options.generation] - the scheduling chain's fence, so
+ *   an install performed inside a renewal does not lock that renewal out of
+ *   recording the success it just achieved
  * @param {ConfigFileJsonRepository} options.configFileRepository
  * @param {writeConfigTemplates} options.writeConfigTemplates
  * @return {Promise<{config: Config, renewed: boolean}>}
  */
+
+import ConfigurationLockLostError from '../ssl/errors/ConfigurationLockLostError.js';
 export default async function renewCertificate({
   configName,
   provider,
   expirationDays,
+  generation = null,
   obtainCertificateTask,
   configFileRepository,
   writeConfigTemplates,
@@ -44,6 +50,7 @@ export default async function renewCertificate({
       await tasks.run({
         expirationDays,
         noRetry: true,
+        renewalGeneration: generation,
       });
     } catch (e) {
       if (config.isChanged()) {
@@ -60,7 +67,7 @@ export default async function renewCertificate({
       // this configuration would overwrite that, and the save's own check comes
       // too late to prevent it.
       if (!configFileRepository.isExclusive()) {
-        throw new Error('Lost the configuration lock while renewing the certificate,'
+        throw new ConfigurationLockLostError('Lost the configuration lock while renewing the certificate,'
           + ' so the gateway service files were not written. The certificate was'
           + ' obtained; re-run renewal once no other command is changing configuration.');
       }

@@ -7,12 +7,11 @@
 //! and the SDK verifier both call these so they land on the same index
 //! (and therefore the same grove path) for the same request.
 
-use super::{DocumentRankedMode, DriveDocumentRankedQuery, RankedAxis};
+use super::{DocumentRankedMode, DriveDocumentRankedQuery, PrefixPin, RankedAxis};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
-use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -22,13 +21,19 @@ use std::collections::BTreeMap;
 ///
 /// An index qualifies when **all** of:
 ///
-/// - it has exactly one more property than there are pins, and its
-///   **last** property is `group_by_property` — the ranked secondary's
-///   group keys are the values of an index's last property;
-/// - every **leading** property is pinned: each appears (by name) among
-///   `equality_pin_fields`. Lengths matching plus the pins being
-///   distinct (enforced upstream by
-///   [`super::mode_detection::equality_pins_from_where_clauses`]) makes
+/// - one of its **ranked levels** for `axis` is `group_by_property`,
+///   with exactly one pin per property before it. For the boolean axes
+///   the ranked level is the index's **last** property; a prefix-level
+///   `rankedCountable: { at }` hosts a Count secondary at the `at`
+///   property as well, ranking its values by whole-subtree count — an
+///   index may declare both, and the (group property, pin count) pair
+///   singles out which level a request addresses. At a prefix level the
+///   properties *after* `at` never appear in the request at all (they
+///   are interior to the subtrees being counted);
+/// - every property **before** the ranked level is pinned: each appears
+///   (by name) among `equality_pin_fields`. Lengths matching plus the
+///   pins being distinct (enforced upstream by
+///   [`super::mode_detection::prefix_pins_from_where_clauses`]) makes
 ///   this set equality, so no pin is left over either;
 /// - it declares the ranking keyword for `axis`
 ///   ([`RankedAxis::required_index_keyword`]);
@@ -37,9 +42,14 @@ use std::collections::BTreeMap;
 ///   the same running sum the index maintains (`Avg` is that sum over the
 ///   group's count), so summing a *different* field than the one the
 ///   index accumulates would silently answer about the wrong property.
+///   A prefix-level Count ranking excludes both (the grammar rejects the
+///   combination), so those arms never see an `at` index;
+/// - it carries no time-range transform.
 ///
-/// With no pins this degenerates to the original single-property rule.
-/// A partial pin (some but not all leading properties) matches nothing —
+/// With no pins this degenerates to the original single-property rule —
+/// or, for an index ranked at its FIRST property, to the global group
+/// ranking ("top hashtags by total likes" with nothing pinned). A
+/// partial pin (some but not all leading properties) matches nothing —
 /// the per-prefix secondary lives under one value tree per leading
 /// property, so there is no subtree an unpinned prefix could address —
 /// and callers turn the `None` into a loud
@@ -71,29 +81,60 @@ pub fn find_ranked_index_for_axis<'b>(
     aggregate_field: &str,
 ) -> Option<&'b Index> {
     indexes.values().find(|index| {
-        // Trailing property is the grouping property; every leading
-        // property is pinned exactly once (length equality + distinct
-        // pins ⇒ set equality).
-        let Some((terminal, leading)) = index.properties.split_last() else {
+        // Ranking over bucket keys is an undesigned surface: a document is
+        // stored once per bucket that contains it, so it would contribute to
+        // `overlap_factor` groups at once, and a ranked query carries no
+        // where clauses that could pin a single bucket. Exclude bucketed
+        // indexes until the semantics are deliberately designed.
+        if index.time_range.is_some() {
             return false;
-        };
-        if terminal.name != group_by_property
-            || leading.len() != equality_pin_fields.len()
-            || !leading
+        }
+        // The positions whose levels host this axis's secondaries — for
+        // the Count axis every `at` level plus the terminal when the
+        // boolean is on (any subset of an index's levels may rank); empty
+        // when the index does not declare the axis (or aggregates a
+        // different field than requested).
+        let candidate_positions: Vec<usize> = match axis {
+            RankedAxis::Count => index
+                .ranked_countable_at
                 .iter()
-                .all(|property| equality_pin_fields.iter().any(|f| f == &property.name))
-        {
-            return false;
-        }
-        match axis {
-            RankedAxis::Count => index.ranked_countable,
-            RankedAxis::Sum => {
-                index.ranked_summable && index.summable.as_deref() == Some(aggregate_field)
-            }
-            RankedAxis::Avg => {
-                index.ranked_averageable && index.summable.as_deref() == Some(aggregate_field)
-            }
-        }
+                .filter_map(|at| index.properties.iter().position(|p| &p.name == at))
+                .chain(
+                    index
+                        .ranked_countable
+                        .then(|| index.properties.len().checked_sub(1))
+                        .flatten(),
+                )
+                .collect(),
+            RankedAxis::Sum => (index.ranked_summable
+                && index.summable.as_deref() == Some(aggregate_field))
+            .then(|| index.properties.len().checked_sub(1))
+            .flatten()
+            .into_iter()
+            .collect(),
+            RankedAxis::Avg => (index.ranked_averageable
+                && index.summable.as_deref() == Some(aggregate_field))
+            .then(|| index.properties.len().checked_sub(1))
+            .flatten()
+            .into_iter()
+            .collect(),
+        };
+        // A candidate matches when its property is the grouping property
+        // and every property before it is pinned exactly once (length
+        // equality + distinct pins ⇒ set equality). At most one candidate
+        // can match a given request: the two levels are distinct
+        // positions, and the pin count singles one out.
+        candidate_positions.into_iter().any(|ranked_position| {
+            let Some(ranked_property) = index.properties.get(ranked_position) else {
+                return false;
+            };
+            let leading = &index.properties[..ranked_position];
+            ranked_property.name == group_by_property
+                && leading.len() == equality_pin_fields.len()
+                && leading
+                    .iter()
+                    .all(|property| equality_pin_fields.iter().any(|f| f == &property.name))
+        })
     })
 }
 
@@ -104,9 +145,9 @@ pub fn find_ranked_index_for_mode<'b>(
     mode: &DocumentRankedMode,
 ) -> Option<&'b Index> {
     let pin_fields: Vec<String> = mode
-        .equality_pins
+        .prefix_pins
         .iter()
-        .map(|(field, _)| field.clone())
+        .map(|pin| pin.field.clone())
         .collect();
     find_ranked_index_for_axis(
         indexes,
@@ -119,8 +160,9 @@ pub fn find_ranked_index_for_mode<'b>(
 
 /// Resolve a validated [`DocumentRankedMode`] against a document type's
 /// indexes into the executable [`DriveDocumentRankedQuery`]: pick the
-/// covering index, encode the equality pins into prefix-value path
-/// segments, and assemble the query.
+/// covering index, encode the prefix pins into prefix **branches** (one
+/// branch for all-`==` pins, one branch per element of the single
+/// permitted `IN`), and assemble the query.
 ///
 /// This is the **one** resolution path — the server's executors and the
 /// SDK's proof helpers both call it, which is what guarantees a proof
@@ -152,19 +194,19 @@ pub fn resolve_ranked_query_for_mode<'a>(
                 "ranked",
                 mode.axis,
                 &mode.group_by_property,
-                &mode.equality_pins,
+                &mode.prefix_pins,
                 &mode.aggregate_field,
             ),
         ))
     })?;
-    let equality_prefix_values =
-        encode_equality_prefix_values(document_type, index, &mode.equality_pins, platform_version)?;
+    let prefix_branches =
+        encode_prefix_branches(document_type, index, &mode.prefix_pins, platform_version)?;
     Ok(DriveDocumentRankedQuery {
         document_type,
         contract_id,
         document_type_name,
         index,
-        equality_prefix_values,
+        prefix_branches,
         axis: mode.axis,
         descending: mode.descending,
         k: mode.k,
@@ -182,32 +224,32 @@ pub fn no_covering_index_message(
     surface: &str,
     axis: RankedAxis,
     group_by_property: &str,
-    equality_pins: &[(String, Value)],
+    prefix_pins: &[PrefixPin],
     aggregate_field: &str,
 ) -> String {
     let pin_fields = || {
-        equality_pins
+        prefix_pins
             .iter()
-            .map(|(field, _)| field.as_str())
+            .map(|pin| pin.field.as_str())
             .collect::<Vec<_>>()
             .join(", ")
     };
-    let index_shape = if equality_pins.is_empty() {
+    let index_shape = if prefix_pins.is_empty() {
         format!("a single-property index on `{group_by_property}`")
     } else {
         format!(
             "a compound index on [{}, {group_by_property}] (every leading property pinned \
-             by an equality `where` clause, the trailing property grouped over)",
+             by an equality or `IN` `where` clause, the trailing property grouped over)",
             pin_fields()
         )
     };
     format!(
         "no ranked index covers `group_by = [{group_by_property}]`{} on the {axis:?} axis \
          for this {surface} query: the document type needs {index_shape} declaring `{}`{}",
-        if equality_pins.is_empty() {
+        if prefix_pins.is_empty() {
             String::new()
         } else {
-            format!(" with equality pins on [{}]", pin_fields())
+            format!(" with pins on [{}]", pin_fields())
         },
         axis.required_index_keyword(),
         if aggregate_field.is_empty() {
@@ -218,61 +260,189 @@ pub fn no_covering_index_message(
     )
 }
 
-/// Encode the equality pins into the grove path's prefix-value
-/// segments: for each **leading** property of `index`, in index order,
-/// the pinned value's index-key bytes
-/// (`DocumentType::serialize_value_for_key` — the same encoding the
-/// write path used to key that prefix's value tree).
+/// Encode the resolved prefix pins into **branches** — one
+/// `Vec<Vec<u8>>` of prefix path segments per branch, in index-property
+/// order (the same order and encoding the write path used to key those
+/// prefix value trees). A request with only `==` pins yields exactly
+/// one branch; the (at most one) `IN` pin yields one branch per
+/// element.
 ///
 /// This is part of the prover/verifier agreement: server executors and
 /// the SDK's proof helpers both come through here, so a pinned value
-/// can only ever name one subtree, identically on both sides.
+/// can only ever name one subtree — and a branch *set* only ever one
+/// ordered subtree list — identically on both sides. Branch order is
+/// canonical: ascending by encoded segment bytes, independent of the
+/// caller's element order (which also makes `null`, the empty segment,
+/// sort first deterministically).
 ///
 /// `index` must have been picked by [`find_ranked_index_for_axis`]
 /// against these same pins — every leading property is then guaranteed
-/// a pin. A value the property's type cannot encode (a string against
-/// an integer property, an out-of-range integer) is a caller error,
-/// reported as a query-syntax rejection naming the property.
-pub fn encode_equality_prefix_values(
+/// a pin. A value the property's type cannot encode is a caller error
+/// naming the property; two `IN` elements that encode to the same
+/// segment (two spellings of one value) are one branch and are rejected
+/// as a duplicate rather than walked twice.
+pub fn encode_prefix_branches(
     document_type: DocumentTypeRef,
     index: &Index,
-    equality_pins: &[(String, Value)],
+    prefix_pins: &[PrefixPin],
     platform_version: &PlatformVersion,
-) -> Result<Vec<Vec<u8>>, Error> {
-    let leading = &index.properties[..index.properties.len().saturating_sub(1)];
-    leading
+) -> Result<Vec<Vec<Vec<u8>>>, Error> {
+    // The pinnable properties end at the ranked level the pin count
+    // addresses (an index may host secondaries at both its `at` property
+    // and its terminal — the pin count singles one out; properties past
+    // it are interior to the counted subtrees and never pinned).
+    let (leading, _) = super::path::ranked_level_split(index, prefix_pins.len())?;
+    // Enforced BEFORE any encoding: the ceiling bounds every downstream
+    // cost (encode, sort, clone, walk, proof size), so an oversized pin
+    // must not buy that work first. The post-product branch count check
+    // below stays as a backstop.
+    if prefix_pins
+        .iter()
+        .any(|pin| pin.values.len() > super::MAX_PREFIX_IN_BRANCHES)
+    {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "an `IN` prefix pin fans out into more branches than the ranked surface serves \
+             — narrow the element list or issue several requests",
+            ),
+        ));
+    }
+    let per_property: Vec<Vec<Vec<u8>>> = leading
         .iter()
         .map(|property| {
-            let (_, value) = equality_pins
+            let pin = prefix_pins
                 .iter()
-                .find(|(field, _)| field == &property.name)
+                .find(|pin| pin.field == property.name)
                 .ok_or_else(|| {
                     Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
                         "internal resolution mismatch: the picked compound ranked index has \
-                         a leading property with no equality pin — the index picker and the \
-                         prefix encoder disagreed on the pins",
+                         a leading property with no pin — the index picker and the prefix \
+                         encoder disagreed on the pins",
                     ))
                 })?;
-            // A null pin addresses the subtree the write walkers create
-            // for an **absent** value: they encode it as
-            // `get_raw_for_document_type(..).unwrap_or_default()` — an
-            // empty path segment — for user and system properties alike.
-            // Null must short-circuit here because the system-property
-            // encoders (`$updatedAt`, `$creatorId`, …) reject null before
-            // any encoding happens, which would make the stored
-            // empty-segment prefix unaddressable.
-            if value.is_null() {
-                return Ok(Vec::new());
-            }
-            document_type
-                .serialize_value_for_key(&property.name, value, platform_version)
-                .map_err(|e| {
-                    Error::Query(QuerySyntaxError::InvalidParameter(format!(
-                        "the equality pin on `{}` does not encode as that property's \
-                         index key: {e}",
-                        property.name
-                    )))
+            let mut encoded = pin
+                .values
+                .iter()
+                .map(|value| {
+                    // A null pin addresses the subtree the write walkers
+                    // create for an **absent** value: they encode it as
+                    // `get_raw_for_document_type(..).unwrap_or_default()`
+                    // — an empty path segment — for user and system
+                    // properties alike. Null must short-circuit here
+                    // because the system-property encoders (`$updatedAt`,
+                    // `$creatorId`, …) reject null before any encoding
+                    // happens, which would make the stored empty-segment
+                    // prefix unaddressable.
+                    if value.is_null() {
+                        return Ok(Vec::new());
+                    }
+                    document_type
+                        .serialize_value_for_key(&property.name, value, platform_version)
+                        .map_err(|e| {
+                            Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                                "the pin on `{}` does not encode as that property's \
+                                 index key: {e}",
+                                property.name
+                            )))
+                        })
                 })
+                .collect::<Result<Vec<_>, Error>>()?;
+            if encoded.len() > 1 {
+                encoded.sort();
+                if encoded.windows(2).any(|pair| pair[0] == pair[1]) {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "an `IN` pin's elements encode to the same index key: two \
+                             spellings of one value are one prefix branch — deduplicate \
+                             the element list",
+                        ),
+                    ));
+                }
+            }
+            Ok(encoded)
         })
-        .collect()
+        .collect::<Result<Vec<_>, Error>>()?;
+
+    // Defense in depth at the shared choke point: the grammar enforces
+    // both invariants upstream, but this function is `pub` and the
+    // prover/verifier agreement hangs off it, so a mis-built pin set
+    // must fail here rather than collapse to zero branches (a
+    // downstream panic) or fan out into an unbounded cartesian product
+    // (which would also break the one-varying-position assumption
+    // `in_key` and the merge order rely on).
+    if per_property.iter().any(|candidates| candidates.is_empty()) {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "internal resolution mismatch: a prefix pin carries no values",
+            ),
+        ));
+    }
+    if per_property
+        .iter()
+        .filter(|candidates| candidates.len() > 1)
+        .count()
+        > 1
+    {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "internal resolution mismatch: more than one branching pin — the grammar \
+             admits at most one `IN` across the prefix properties",
+            ),
+        ));
+    }
+
+    // A single `null` pin encodes as the empty path segment; the branched
+    // proof grammar (`PathQuery::new_branched_axis`) cannot address an
+    // empty segment in the shared prefix or suffix, so a null `==` pin
+    // combined with an `IN` would serve the unproved read and fail the
+    // prove — the exact proved/unproved divergence this surface forbids.
+    // Rejected for any non-branching pin position, conservatively: issue
+    // one request per `IN` element to combine null pins with multiple
+    // prefixes. `null` as an ELEMENT of the `IN` itself stays legal — it
+    // is a branch key, which the envelope addresses and authenticates
+    // like any other.
+    let has_branching_pin = per_property.iter().any(|candidates| candidates.len() > 1);
+    if has_branching_pin
+        && per_property
+            .iter()
+            .any(|candidates| candidates.len() == 1 && candidates[0].is_empty())
+    {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "an `IN` prefix pin cannot be combined with a `null` pin: null addresses the \
+             absent-value prefix through an empty path segment, which the branched proof \
+             cannot express — issue one request per `IN` element instead",
+            ),
+        ));
+    }
+
+    // The grammar admits at most one multi-value pin, so this product
+    // is |IN| branches (or exactly one), already in canonical order
+    // because the only varying position was sorted above.
+    let mut branches: Vec<Vec<Vec<u8>>> = vec![Vec::with_capacity(leading.len())];
+    for candidates in per_property {
+        branches = branches
+            .into_iter()
+            .flat_map(|prefix| {
+                candidates.iter().map(move |segment| {
+                    let mut branch = prefix.clone();
+                    branch.push(segment.clone());
+                    branch
+                })
+            })
+            .collect();
+    }
+    // The documented hard ceiling on branch fan-out, enforced at the
+    // shared choke point too: this function is `pub`, and everything
+    // downstream (encoding, sorting, per-branch walks, proof size) is
+    // linear in the branch count.
+    if branches.len() > super::MAX_PREFIX_IN_BRANCHES {
+        return Err(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "an `IN` prefix pin fans out into more branches than the ranked surface serves \
+             — narrow the element list or issue several requests",
+            ),
+        ));
+    }
+    Ok(branches)
 }

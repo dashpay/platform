@@ -510,7 +510,7 @@ struct ContentView: View {
             // history), falling back to genesis only for wallets that predate
             // that metadata — never the current tip, which would skip the
             // history recovery exists to recover.
-            let managed = try recoveryManager.createWallet(
+            let managed = try await recoveryManager.createWallet(
                 mnemonic: mnemonic,
                 network: restoredNetwork,
                 name: restoredName,
