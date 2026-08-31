@@ -616,6 +616,30 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_fee_rate(
     PlatformWalletFFIResult::ok()
 }
 
+/// Fund the build from the inputs `core_wallet_tx_builder_add_inputs_from_outpoints`
+/// supplied, and nothing else.
+///
+/// Without this, the wallet-aware finalizers add every unreserved UTXO of the
+/// funding account to the candidate pool, so seeding a subset does not restrict
+/// what gets selected. A caller draining an account in batches that each stay
+/// under the standard-transaction input limit needs this, or every batch sees
+/// the whole account and fails with a too-many-inputs error.
+///
+/// # Safety
+/// `builder` must be a valid, non-destroyed pointer.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_tx_builder_use_only_added_inputs(
+    builder: *mut FFITransactionBuilder,
+) -> PlatformWalletFFIResult {
+    check_ptr!(builder);
+
+    let b = (*builder).take_builder();
+    let b = b.use_only_added_inputs();
+    (*builder).store_builder(b);
+
+    PlatformWalletFFIResult::ok()
+}
+
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer.
 #[no_mangle]
