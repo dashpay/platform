@@ -3,9 +3,7 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::drive_chained_document_query::{
-    ChainedDocumentsResult, DriveChainedDocumentQuery,
-};
+use crate::query::drive_chained_document_query::DriveChainedDocumentQuery;
 use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
