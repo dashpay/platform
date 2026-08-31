@@ -260,6 +260,83 @@ pub enum PlatformWalletFFIResultCode {
     /// all of these to key repair / address correction rather than to an
     /// opaque wallet-operation failure.
     ErrorSigningKeyUnavailable = 31,
+    /// Maps `PlatformWalletError::ShieldedInviteAlreadyClaimed`. A one-time-key
+    /// (shielded invitation) claim found the invitation note's nullifier already
+    /// spent on chain, and could NOT produce positive evidence that this claim's
+    /// Type-20 transition created an identity — either an identity owns the
+    /// submitted MASTER auth key hash but carries a different id than this
+    /// claim's nullifiers derive (the chargeable `UnshieldAction` fallback: the
+    /// spend was finalized, the value went to the creation-failure address and no
+    /// identity was created), or an identity exists at this claim's derived id
+    /// but under someone else's keys (another holder of the same bearer one-time
+    /// key won the race), or the id is not re-derivable at all.
+    ///
+    /// TERMINAL and NOT retryable — unlike
+    /// [`Self::ErrorShieldedBroadcastUnconfirmed`], which means "executed, not yet
+    /// resolvable, retry later". The note is consumed, so no retry can spend it
+    /// again. `out_identity_id` is NOT written: this wallet has no identity to
+    /// hold a slot for, and writing one would be the very false-ownership claim
+    /// this code exists to prevent. Hosts should surface the invitation as spent
+    /// rather than registering any identity.
+    ///
+    /// Code 43 — the allocation frontier after the v4.2-dev merge. This
+    /// variant briefly held 32 (collided with `ErrorTransactionBuild`,
+    /// dashpay/platform#4247/#4256, as an `E0081`), then 37 — which v4.2-dev
+    /// has since allocated to `ErrorDocumentNotForSale` (the 37-40 DPNS
+    /// username-marketplace block below), with 41 taken by
+    /// `ErrorShieldedInsufficientBalance` and 42 reserved. 43 matches the
+    /// integration-branch allocation already shipped in QA AARs, so the
+    /// number is FROZEN; renumbering it would silently corrupt every host
+    /// built against those artifacts.
+    ErrorShieldedInviteAlreadyClaimed = 43,
+
+    /// Maps `PlatformWalletError::ShieldedForeignScanBudgetExhausted`
+    /// (dashpay/platform#4306). The one-time-key claim's transient note scan
+    /// consumed its per-attempt work budget before finding the invitation's
+    /// funding note; progress is checkpointed, so a retry RESUMES rather than
+    /// restarts.
+    ///
+    /// RETRYABLE, and cheap to retry — the opposite pole from
+    /// [`Self::ErrorShieldedInviteAlreadyClaimed`] (43): nothing was spent,
+    /// built, or broadcast, the scan simply has not looked far enough yet.
+    /// Hosts MUST render this as "still searching — try again", never as an
+    /// invalid, unfunded, or already-claimed invitation: treating it as
+    /// terminal strands a genuinely funded claim whose note sits deep in the
+    /// tree.
+    ///
+    /// Code 44 — the next frontier past the frozen 43 above; add it to
+    /// ERROR_CODE_REGISTRY.md (dashpay/platform#4318) when that registry
+    /// lands.
+    ErrorShieldedScanBudgetExhausted = 44,
+
+    /// Maps `PlatformWalletError::ShieldedLifecycleBusy`. A shielded lifecycle
+    /// operation was refused admission at the store rather than allowed to run
+    /// concurrently with the operation that holds it. Two directions, both
+    /// reaching this one code:
+    ///
+    /// * a one-time-key claim refused because `clear` / `unregister_wallet` /
+    ///   `remove_wallet` holds destructive admission over its wallet, or
+    ///   because another claimant already holds this invitation's claim-record
+    ///   key;
+    /// * a destructive operation refused because in-flight claims did not
+    ///   drain within its wait.
+    ///
+    /// RETRYABLE in both directions, and nothing was consumed: the claim
+    /// direction scanned, built and broadcast nothing, and the destructive
+    /// direction purged nothing. The refusal is the safe outcome of a
+    /// contended lifecycle, not a failure of the operation itself, so hosts
+    /// MUST render it as "busy — try again" and MUST NOT surface it as an
+    /// invalid or already-claimed invitation. Without a code of its own it
+    /// flattened to the generic `ErrorWalletOperation` (6), which hosts
+    /// classify as non-retryable — the same defect
+    /// [`Self::ErrorShieldedScanBudgetExhausted`] (44) fixes for the paused
+    /// scan.
+    ///
+    /// Code 45 — the next free integer past 44 above, taken from the frontier
+    /// rather than from a vacated gap (28, 30, 32 and 33 are RESERVED, not
+    /// reissuable). Swift mirror and the ERROR_CODE_REGISTRY.md row
+    /// (dashpay/platform#4318) are follow-ups.
+    ErrorShieldedLifecycleBusy = 45,
 
     // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
     // The deferred-token trio below therefore occupies the contiguous block
@@ -428,6 +505,45 @@ pub enum PlatformWalletFFIResultCode {
     /// `ErrorShieldedScanBudgetExhausted` / `ErrorShieldedLifecycleBusy`),
     /// per the error-code registry (#4318).
     ErrorMasternodeListUnavailable = 46,
+
+    /// A panic was caught inside the one-time-key (shielded invitation)
+    /// claim export, so the claim's outcome is AMBIGUOUS: the panic can
+    /// strike after the Type-20 transition reached the wire, meaning the
+    /// transition may already have executed and the new identity may
+    /// already exist on chain. `out_identity_id` is NOT written (the panic
+    /// destroyed the in-flight result, so there is no id to write —
+    /// unlike [`Self::ErrorShieldedBroadcastUnconfirmed`] (17), whose
+    /// contract writes it).
+    ///
+    /// RETRYABLE — as a RESUME, not a fresh attempt, and not immediately.
+    /// The claim's durable recovery record (the retained
+    /// `shielded_pending_spends` row, the only holder of the claim's
+    /// padded identity id) survives the unwind:
+    /// `reserve_one_time_claim_key` finds it on the next attempt and
+    /// `recover_executed_one_time_claim` recovers the identity the first
+    /// attempt created instead of creating a second one. The host MUST
+    /// therefore PRESERVE the local identity slot and re-run the SAME
+    /// invitation claim after the claim lease expires (the panic unwound
+    /// past the deterministic lease release, so admission and the
+    /// per-invitation reservation are reclaimed by expiry; an attempt
+    /// before then is refused as [`Self::ErrorShieldedLifecycleBusy`]).
+    /// Never surface this as terminal, and never release the slot —
+    /// either mistake can strand an identity that already exists on
+    /// chain, whose padded id lives nowhere but the retained row.
+    ///
+    /// Joins the ambiguous-outcome `...Unconfirmed` family (17, 18, 20,
+    /// 42), but with the opposite retry polarity: those forbid retry
+    /// because a retry would REBUILD and double-spend, while this one
+    /// requires a (delayed) retry because a rerun RESUMES the retained
+    /// record. Before this code existed, the guard reported the generic
+    /// [`Self::ErrorUnknown`] (99), which Kotlin exposes as a
+    /// non-retryable `Generic` — a host following the typed retry
+    /// contract would release the identity slot or decline the recovery
+    /// retry (#4313 review finding 4bf998e99652).
+    ///
+    /// Code 48 — the registry frontier as of 2026-08-28 (46 merged via
+    /// #4465, 47 reserved for active #4356); see ERROR_CODE_REGISTRY.md.
+    ErrorShieldedClaimUnconfirmed = 48,
 
     /// The named thing does not exist.
     ///
@@ -640,6 +756,29 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
             }
+            // Terminal, and deliberately NOT flattened into the retryable
+            // unconfirmed code: the invitation note is spent and this wallet
+            // could not prove its claim created an identity, so a host that
+            // retried (or registered an identity) would be acting on exactly the
+            // false-ownership signal this variant exists to replace.
+            PlatformWalletError::ShieldedInviteAlreadyClaimed { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedInviteAlreadyClaimed
+            }
+            // Retryable-and-cheap: the claim's transient scan paused at its
+            // per-attempt budget with progress checkpointed (#4306). Kept
+            // typed so hosts render "still searching — retry" instead of
+            // collapsing it into an unknown/terminal failure.
+            PlatformWalletError::ShieldedForeignScanBudgetExhausted { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedScanBudgetExhausted
+            }
+            // Retryable in both of its directions (a refused claim, or a
+            // refused purge) and consuming nothing in either. Typed for the
+            // same reason as the scan-budget code above: flattened to the
+            // generic `ErrorWalletOperation` a contended lifecycle reads as a
+            // hard failure, and the host stops instead of retrying.
+            PlatformWalletError::ShieldedLifecycleBusy { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy
+            }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
             }
@@ -816,7 +955,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // mid-string and is deliberately not matched.
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
-        PlatformWalletFFIResult::err(code, error.to_string())
+        // Classification above already consumed the machine prefix; strip it so
+        // the internal token does not reach user-visible host error text.
+        PlatformWalletFFIResult::err(code, strip_signer_machine_prefix(&error.to_string()))
     }
 }
 
@@ -931,8 +1072,33 @@ impl From<dpp::ProtocolError> for PlatformWalletFFIResult {
         } else {
             PlatformWalletFFIResultCode::ErrorWalletOperation
         };
-        Self::err(code, format!("DPP protocol error: {msg}"))
+        Self::err(
+            code,
+            format!("DPP protocol error: {}", strip_signer_machine_prefix(&msg)),
+        )
     }
+}
+
+/// Remove the signer's internal machine prefix
+/// ([`rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`]) from a rendered
+/// error message.
+///
+/// The prefix is a transport detail: it exists only so the typed
+/// `SigningKeyUnavailable` completion code survives being flattened into
+/// `ProtocolError::Generic`'s string (dashpay/platform#4060 finding 7). Once the
+/// code has been restored it has done its job, and leaving it in place would
+/// surface an internal token in user-visible Kotlin/Swift error text.
+///
+/// Both call sites read the prefix to pick the code BEFORE calling this, so
+/// stripping never costs classification. `replace` rather than `strip_prefix`:
+/// on the catch-all `From<PlatformWalletError>` path the prefix sits mid-string
+/// inside the nested `Sdk(Protocol(..))` `Display` rendering, not at position 0.
+///
+/// The host-side fallback matcher keys on the human tail (`"no private key
+/// stored for"`, `DashSdkError.MESSAGE_MARKER`), not on this prefix, so it is
+/// unaffected.
+fn strip_signer_machine_prefix(message: &str) -> String {
+    message.replace(rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX, "")
 }
 
 impl From<&str> for PlatformWalletFFIResult {
@@ -1768,6 +1934,79 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance as i32,
             41
+        );
+    }
+
+    /// This PR's three shielded-invite codes, pinned for the same reason the
+    /// marketplace block above is: the numeric values are the ABI contract with
+    /// the Swift/Kotlin mirrors and nothing checks them across the boundary at
+    /// compile time.
+    ///
+    /// 43 is FROZEN (it matches the integration-branch allocation already
+    /// shipped in QA AARs); 44 and 45 were taken from the registry frontier,
+    /// never from a vacated gap.
+    #[test]
+    fn shielded_invite_codes_are_pinned_at_43_through_45() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedInviteAlreadyClaimed as i32,
+            43
+        );
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedScanBudgetExhausted as i32,
+            44
+        );
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy as i32,
+            45
+        );
+    }
+
+    /// This PR's fourth shielded-invite code, pinned like 43-45 above. 48 is
+    /// from the registry frontier (46 merged via #4465, 47 reserved for
+    /// active #4356) — moving it silently reclassifies an ambiguous claim
+    /// outcome on every host built against the shipped numbering.
+    #[test]
+    fn shielded_claim_unconfirmed_code_is_pinned_at_48() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedClaimUnconfirmed as i32,
+            48
+        );
+    }
+
+    /// A contended shielded lifecycle is RETRYABLE and consumed nothing, in
+    /// both of its directions. Without a typed code it flattened to the generic
+    /// `ErrorWalletOperation` (6), which hosts classify as non-retryable —
+    /// so a claim refused for a few seconds by a concurrent purge, or by
+    /// another claimant holding the same invitation's claim-record key,
+    /// surfaced as a hard failure of the invitation itself.
+    #[test]
+    fn shielded_lifecycle_busy_maps_to_its_own_retryable_code() {
+        let claim_refused = PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "this wallet's shielded state is being cleared or removed".to_string(),
+        };
+        let rendered = claim_refused.to_string();
+        let result: PlatformWalletFFIResult = claim_refused.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy,
+            "a refused lifecycle admission must not flatten into ErrorWalletOperation"
+        );
+        assert_eq!(
+            message_of(&result),
+            rendered,
+            "Display payload must survive verbatim"
+        );
+
+        // The other direction — a purge that could not drain in-flight claims —
+        // rides the same code, because hosts handle both identically: wait and
+        // retry.
+        let purge_refused: PlatformWalletFFIResult = PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "clear_shielded: 1 one-time-key claim(s) still in flight".to_string(),
+        }
+        .into();
+        assert_eq!(
+            purge_refused.code,
+            PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy
         );
     }
 

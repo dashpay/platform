@@ -751,6 +751,18 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
         ))
     });
     let result = unwrap_option_or_return!(option);
+    remove_wallet_ffi_result(result, wallet_id_value)
+}
+
+/// Marshal `remove_wallet_and_tear_down_generation`'s outcome into the result
+/// the host sees.
+///
+/// Split out of the `extern "C"` shim above purely so the classification is
+/// reachable from a unit test — the shim itself needs a live manager handle.
+fn remove_wallet_ffi_result(
+    result: Result<(), platform_wallet::PlatformWalletError>,
+    wallet_id: [u8; 32],
+) -> PlatformWalletFFIResult {
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         // Idempotency: a wallet that's already gone is the success
@@ -758,13 +770,24 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
         Err(platform_wallet::PlatformWalletError::WalletNotFound(_)) => {
             PlatformWalletFFIResult::ok()
         }
+        // ...except a removal refused because a one-time-key claim still holds
+        // the shielded store's destructive admission. That refusal is RETRYABLE
+        // and changed nothing — the wallet is still fully registered — so it
+        // has to reach the host as code 45 rather than flattening into the
+        // generic wallet-operation error below. Making the removal fallible
+        // (#4313 review finding coordinator.rs:805) is what put this outcome on
+        // this path at all.
+        //
+        // Flattened to 6 a host reads it as a hard failure and never retries,
+        // and the wallet then stays registered with its shielded state on disk
+        // — the exact stuck state the fallible removal exists to make
+        // recoverable.
+        Err(e @ platform_wallet::PlatformWalletError::ShieldedLifecycleBusy { .. }) => {
+            PlatformWalletFFIResult::from(e)
+        }
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!(
-                "Failed to remove wallet {}: {}",
-                hex::encode(wallet_id_value),
-                e
-            ),
+            format!("Failed to remove wallet {}: {}", hex::encode(wallet_id), e),
         ),
     }
 }
@@ -772,6 +795,58 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `remove_wallet` must keep the retryable shielded-lifecycle refusal as
+    /// its own code. The removal became fallible in #4313 (review finding
+    /// coordinator.rs:805) so a purge that cannot be admitted aborts instead of
+    /// half-completing — but that only helps if the host can tell "busy, retry"
+    /// apart from "removal failed", which it does by code alone.
+    #[test]
+    fn remove_wallet_preserves_the_retryable_lifecycle_busy_code() {
+        let wallet_id = [0x7A; 32];
+
+        let mut busy = remove_wallet_ffi_result(
+            Err(
+                platform_wallet::PlatformWalletError::ShieldedLifecycleBusy {
+                    reason: "a one-time-key claim is still in flight".to_string(),
+                },
+            ),
+            wallet_id,
+        );
+        assert_eq!(
+            busy.code as i32,
+            PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy as i32,
+            "a contended removal must surface as 45, not as the generic wallet-operation code"
+        );
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut busy) };
+
+        // A wallet that is already gone is still the success state.
+        let mut missing = remove_wallet_ffi_result(
+            Err(platform_wallet::PlatformWalletError::WalletNotFound(
+                hex::encode(wallet_id),
+            )),
+            wallet_id,
+        );
+        assert_eq!(
+            missing.code as i32,
+            PlatformWalletFFIResultCode::Success as i32,
+            "removing an absent wallet stays idempotent"
+        );
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut missing) };
+
+        // And an unrelated failure still takes the generic mapping.
+        let mut other = remove_wallet_ffi_result(
+            Err(platform_wallet::PlatformWalletError::ShieldedStoreError(
+                "disk gone".to_string(),
+            )),
+            wallet_id,
+        );
+        assert_eq!(
+            other.code as i32,
+            PlatformWalletFFIResultCode::ErrorWalletOperation as i32
+        );
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut other) };
+    }
 
     unsafe extern "C" fn begin_changeset(_context: *mut c_void, _wallet_id: *const u8) -> i32 {
         0

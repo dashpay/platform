@@ -53,6 +53,35 @@ interface ShieldedDao {
     @Query("SELECT * FROM shielded_notes WHERE walletId = :walletId AND isSpent = 0")
     fun observeUnspentNotesByWallet(walletId: ByteArray): Flow<List<ShieldedNoteEntity>>
 
+    /**
+     * Shielded-username confirmation gate: the earliest-anchored unspent
+     * funding note's `blockHeight` for [walletId]. Only mined notes count
+     * (`blockHeight > 0` excludes mempool/height-0 rows); `MIN` yields the
+     * most-confirmed anchor. Returns null when the wallet has no anchored
+     * unspent note. Wallet scoping mirrors [observeUnspentNotesByWallet]
+     * (`walletId = :walletId AND isSpent = 0`).
+     */
+    @Query(
+        "SELECT MIN(blockHeight) FROM shielded_notes " +
+            "WHERE walletId = :walletId AND isSpent = 0 AND blockHeight > 0"
+    )
+    suspend fun minUnspentAnchoredBlockHeight(walletId: ByteArray): Long?
+
+    /**
+     * Companion to [minUnspentAnchoredBlockHeight] for the gate's
+     * denomination-coverage check: every unspent, anchored (mined) note for
+     * [walletId], youngest anchor first (`blockHeight DESC`), so the app can
+     * decide whether an anchored note set covers the required amount and
+     * inspect each note's `value` / `blockHeight` / `createdAt`. Wallet
+     * scoping mirrors [observeUnspentNotesByWallet].
+     */
+    @Query(
+        "SELECT * FROM shielded_notes " +
+            "WHERE walletId = :walletId AND isSpent = 0 AND blockHeight > 0 " +
+            "ORDER BY blockHeight DESC"
+    )
+    suspend fun getUnspentAnchoredNotesByWallet(walletId: ByteArray): List<ShieldedNoteEntity>
+
     @Upsert
     suspend fun upsertNote(note: ShieldedNoteEntity)
 

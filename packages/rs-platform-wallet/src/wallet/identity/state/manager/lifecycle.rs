@@ -33,7 +33,50 @@ impl IdentityManager {
     /// bucket.
     ///
     /// Persists the resulting changeset via `persister` and returns `()`.
+    ///
+    /// A persistence failure is logged and SWALLOWED here — the in-memory
+    /// insert stands and the next sync heals the host's row. Callers for whom
+    /// the persistence outcome is load-bearing must use
+    /// [`add_identity_persisted`](Self::add_identity_persisted) instead.
     pub fn add_identity(
+        &mut self,
+        identity: Identity,
+        identity_index: u32,
+        wallet_id: WalletId,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
+        if let Err(e) = self.add_identity_persisted(identity, identity_index, wallet_id, persister)
+        {
+            // Distinguish the two failure modes: a rejected insert is a real
+            // error for this caller too, whereas a persistence failure after a
+            // successful insert is the historical swallow.
+            match e {
+                PlatformWalletError::Persistence(_) => {
+                    tracing::error!("Failed to persist changeset: {}", e);
+                }
+                other => return Err(other),
+            }
+        }
+        Ok(())
+    }
+
+    /// [`add_identity`](Self::add_identity), but the persister's failure is
+    /// PROPAGATED as [`PlatformWalletError::Persistence`] rather than logged
+    /// and dropped.
+    ///
+    /// The distinction matters wherever the host's durable acknowledgement is
+    /// what releases some other recovery state. The shielded one-time-key claim
+    /// is exactly that case: it retains the durable record holding the claim's
+    /// padded identity id until this registration is durable, and a swallowed
+    /// `persister.store` error would release it while the host had never
+    /// recorded the identity — after which no retry can reconstruct the id
+    /// (#4313 review finding 325ce9fa8f84).
+    ///
+    /// On a persistence error the in-memory insert still STANDS: it is not
+    /// rolled back, so the manager and the location index remain consistent and
+    /// the next sync can heal the host's row. The error reports only that the
+    /// host has not durably acknowledged the identity yet.
+    pub fn add_identity_persisted(
         &mut self,
         identity: Identity,
         identity_index: u32,
@@ -85,11 +128,12 @@ impl IdentityManager {
             ..Default::default()
         };
 
-        if let Err(e) = persister.store(cs) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
-
-        Ok(())
+        persister.store(cs).map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "identity {identity_id} was inserted into the local manager but the host persister \
+                 rejected its changeset: {e}"
+            ))
+        })
     }
 
     /// Add an identity to the out-of-wallet (observed read-only) bucket.

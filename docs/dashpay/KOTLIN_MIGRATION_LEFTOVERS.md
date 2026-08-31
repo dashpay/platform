@@ -63,7 +63,7 @@ when the four stacked PRs collapse into one.
   mixed old-native/new-Kotlin builds, which the completion JNI arity change
   (3→4 args) makes unsupported outright; delete it (and `MESSAGE_MARKER`'s
   matcher role) in the next minor release. Accepted residual until rs-dpp grows a typed variant: the
-  Rust-internal segment rides the `signer_error:key_unavailable: ` prefix
+  Rust-internal segment rides the `signer_error:key_unavailable:` prefix
   through `ProtocolError::Generic` (typed at both ABI edges, one Rust-owned
   constant bridging the string segment).
 
@@ -71,7 +71,7 @@ when the four stacked PRs collapse into one.
   invalidation recovery (generation-checked alias deletion + re-derive via
   forced repair) is pinned at the unit tier through the fake Keystore seam;
   a REAL KPIE requires biometric re-enrollment mid-test, which CI's emulator
-  cannot do — same residual #4172 accepted. Exercise manually per the device
+  cannot do — the same residual accepted in #4172. Exercise manually per the device
   test plan when touching the invalidation path.
 
 ## Environment-bound (cannot be code-fixed here)

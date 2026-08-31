@@ -436,16 +436,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
-        // A drain that did not complete is NOT an ordinary store failure:
-        // it means callback-capable work may still be running, which the
-        // host must be able to tell apart (it keeps its callback context
-        // alive rather than just retrying the wipe). Route that one case
-        // through the typed conversion and keep the generic mapping for
-        // every other failure.
-        if matches!(
-            e,
-            platform_wallet::PlatformWalletError::ShutdownIncomplete(_)
-        ) {
+        // Some Clear failures carry a code of their own that the host has to
+        // act on differently from "the wipe failed"; everything else is a
+        // generic store failure. Route the typed ones through `From` and keep
+        // the generic mapping for the rest.
+        if clear_failure_is_typed(&e) {
             return PlatformWalletFFIResult::from(e);
         }
         return PlatformWalletFFIResult::err(
@@ -454,6 +449,30 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
         );
     }
     PlatformWalletFFIResult::ok()
+}
+
+/// Whether a `clear_shielded` failure must keep its own FFI code instead of
+/// flattening to the generic `ErrorWalletOperation` (6).
+///
+/// Two cases, and a host has to do something different for each:
+///
+/// * `ShutdownIncomplete` (27) — a drain that did not complete, so
+///   callback-capable work may still be running and the host must keep its
+///   callback context alive rather than simply retrying the wipe.
+/// * `ShieldedLifecycleBusy` (45) — an in-flight one-time-key claim refused
+///   the destructive admission Clear needs. Nothing was purged and the
+///   operation is RETRYABLE; flattened to 6 the host classifies it as a hard
+///   failure and shows a wipe error for what is really "busy, try again in a
+///   moment" (#4313 round-2 review, clear-path pass-through).
+///
+/// Hosts classify by code, so a code that never arrives is a code that does
+/// not exist — hence the pin in `clear_path_tests` below.
+fn clear_failure_is_typed(e: &platform_wallet::PlatformWalletError) -> bool {
+    matches!(
+        e,
+        platform_wallet::PlatformWalletError::ShutdownIncomplete(_)
+            | platform_wallet::PlatformWalletError::ShieldedLifecycleBusy { .. }
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -566,5 +585,48 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded sync failed: {e}"),
         ),
+    }
+}
+
+#[cfg(test)]
+mod clear_path_tests {
+    use super::*;
+
+    /// The `clear` entry point must pass BOTH typed lifecycle failures through
+    /// with their own codes. `ShieldedLifecycleBusy` used to flatten to
+    /// `ErrorWalletOperation` (6) here — precisely the defect code 45 exists to
+    /// fix — because only `ShutdownIncomplete` was listed.
+    #[test]
+    fn clear_path_preserves_typed_lifecycle_codes() {
+        let busy = platform_wallet::PlatformWalletError::ShieldedLifecycleBusy {
+            reason: "a one-time-key claim is still in flight".to_string(),
+        };
+        assert!(
+            clear_failure_is_typed(&busy),
+            "a contended lifecycle must not flatten to the generic wallet-operation code"
+        );
+        let mut result = PlatformWalletFFIResult::from(busy);
+        assert_eq!(
+            result.code as i32,
+            PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy as i32,
+            "the retryable busy refusal must reach the host as 45"
+        );
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+
+        let incomplete =
+            platform_wallet::PlatformWalletError::ShutdownIncomplete("drain timed out".to_string());
+        assert!(clear_failure_is_typed(&incomplete));
+        let mut result = PlatformWalletFFIResult::from(incomplete);
+        assert_eq!(
+            result.code as i32,
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete as i32,
+            "the pre-existing drain pass-through must keep working"
+        );
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+
+        // A genuine store failure still takes the generic mapping.
+        assert!(!clear_failure_is_typed(
+            &platform_wallet::PlatformWalletError::ShieldedStoreError("disk gone".to_string())
+        ));
     }
 }

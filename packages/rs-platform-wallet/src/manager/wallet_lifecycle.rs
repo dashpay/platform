@@ -716,6 +716,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// or through a registration/load rollback for an insert that could not have
     /// happened while G1 occupied the id — so while the gate is held and before
     /// the removal below, the inner entry is still G1 by construction.
+    ///
+    /// ## Refusal
+    ///
+    /// The removal can now be REFUSED, with
+    /// [`PlatformWalletError::ShieldedLifecycleBusy`], when an in-flight
+    /// one-time-key claim still holds the shielded store's destructive
+    /// admission. The refusal happens before the first mutation, so the wallet
+    /// is left exactly as it was found — registered, bindable, and removable by
+    /// a retry once the claim settles. Previously the shielded unregister could
+    /// not fail, so this returned success while the wallet's decrypted notes,
+    /// watermarks and pending-claim record all stayed on disk, and the retry
+    /// the situation called for answered `WalletNotFound`
+    /// (#4313 review finding coordinator.rs:805).
+    ///
+    /// [`PlatformWalletError::ShieldedLifecycleBusy`]: crate::error::PlatformWalletError::ShieldedLifecycleBusy
     pub async fn remove_wallet_with_teardown<F>(
         &self,
         wallet_id: &WalletId,
@@ -806,14 +821,32 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // exactly the state this call exists to drop. The flag is read
         // inside the coordinator's install transaction, which the
         // unregister also takes, so the two cannot interleave.
-        // Unconditional: a removal with no coordinator yet has nothing
-        // to unregister, but the handle must still be barred from
-        // binding onto one a later `configure_shielded` installs.
+        //
+        // Which is why, when a coordinator IS installed, the mark is handed to
+        // `unregister_wallet_with` rather than done here: that call can now
+        // ABORT — a one-time-key claim holding destructive admission makes the
+        // whole removal fail with a retryable
+        // `ShieldedLifecycleBusy` (#4313 review finding coordinator.rs:805) —
+        // and a wallet that survives the abort must not be left permanently
+        // unbindable. The closure runs inside the coordinator's critical
+        // section, after admission is secured and before any registry is
+        // cleared, so the ordering above is preserved exactly while an abort
+        // leaves the flag untouched.
+        //
+        // The abort must also come BEFORE the id-keyed teardown below and the
+        // inner-manager removal: propagating with `?` here is what leaves the
+        // wallet fully intact for the retry the error asks for.
         #[cfg(feature = "shielded")]
-        removed.mark_shielded_detached();
-        #[cfg(feature = "shielded")]
-        if let Some(coordinator) = self.shielded_coordinator().await {
-            coordinator.unregister_wallet(*wallet_id).await;
+        match self.shielded_coordinator().await {
+            Some(coordinator) => {
+                coordinator
+                    .unregister_wallet_with(*wallet_id, || removed.mark_shielded_detached())
+                    .await?;
+            }
+            // No coordinator yet: nothing to unregister and nothing that can
+            // refuse, but the handle must still be barred from binding onto one
+            // a later `configure_shielded` installs.
+            None => removed.mark_shielded_detached(),
         }
 
         for identity_id in &owned_identity_ids {

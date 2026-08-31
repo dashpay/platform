@@ -420,6 +420,98 @@ sealed class DashSdkError(
         )
 
         /**
+         * `ErrorShieldedInviteAlreadyClaimed` (native code 43). A one-time-key
+         * (shielded invitation) claim found the invitation note's nullifier
+         * already spent on chain, and could NOT produce positive evidence that
+         * this claim's Type-20 transition created an identity — the spend was
+         * finalized to the creation-failure address, or another holder of the
+         * same bearer one-time key won the race, or the id is not re-derivable.
+         *
+         * TERMINAL and NOT retryable (the inherited [isRetryable] `false`):
+         * the note is consumed, so no retry can spend it again. Distinct from
+         * [ShieldedCreateUnconfirmed], which means "executed, not yet
+         * resolvable, hold the slot". No identity id is produced — this wallet
+         * has no identity to hold a slot for, and claiming one would be the
+         * false-ownership assertion this code exists to prevent. Hosts should
+         * surface the invitation as spent rather than registering an identity.
+         */
+        class ShieldedInviteAlreadyClaimed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedScanBudgetExhausted` (native code 44,
+         * dashpay/platform#4306). The one-time-key claim's transient note
+         * scan paused at its per-attempt work budget before finding the
+         * invitation's funding note. Progress is checkpointed in the SDK, so
+         * retrying RESUMES the scan where it stopped — attempts compound
+         * until the note is found or the tree is genuinely exhausted.
+         *
+         * RETRYABLE ([isRetryable] `true`) and cheap to retry: nothing was
+         * spent, built, or broadcast. The opposite pole from
+         * [ShieldedInviteAlreadyClaimed] — hosts MUST render this as "still
+         * searching — try again", never as an invalid, unfunded, or
+         * already-claimed invitation.
+         */
+        class ShieldedScanBudgetExhausted(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorShieldedLifecycleBusy` (native code 45,
+         * dashpay/platform#4313). A shielded lifecycle operation was refused
+         * admission at the store instead of being allowed to run concurrently
+         * with the operation that holds it. Two directions, one code:
+         *
+         * * a one-time-key claim refused because a Clear / wallet removal
+         *   holds destructive admission over its wallet, or because another
+         *   claimant already holds this invitation's claim-record key;
+         * * a Clear / wallet removal refused because in-flight claims did not
+         *   drain within its wait.
+         *
+         * RETRYABLE ([isRetryable] `true`) and nothing was consumed in either
+         * direction: the claim scanned, built and broadcast nothing, and the
+         * purge deleted nothing. Hosts MUST render this as "busy — try again"
+         * and MUST NOT surface it as an invalid or already-claimed invitation.
+         */
+        class ShieldedLifecycleBusy(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorShieldedClaimUnconfirmed` (native code 48,
+         * dashpay/platform#4313). A panic was caught inside the
+         * one-time-key (shielded invitation) claim, so the outcome is
+         * AMBIGUOUS: the panic can strike after the Type-20 transition
+         * reached the wire, meaning the transition may already have
+         * executed and the identity may already exist on chain. No
+         * identity id is produced (unlike [ShieldedCreateUnconfirmed],
+         * whose contract delivers one).
+         *
+         * RETRYABLE ([isRetryable] `true`) — as a RESUME, not a fresh
+         * attempt, and not immediately. The claim's durable recovery
+         * record survives in the SDK (it is the only holder of the
+         * claim's padded identity id), and re-running the SAME
+         * invitation claim resumes it: the rerun recovers the identity
+         * the first attempt created rather than creating a second one.
+         * The host MUST preserve the local identity slot and retry after
+         * the claim lease expires — the panic unwound past the lease
+         * release, so an immediate attempt is refused as
+         * [ShieldedLifecycleBusy]. Never surface this as terminal and
+         * never release the slot: either mistake can strand an identity
+         * that already exists on chain. Before this code, the guard
+         * reported the generic native 99, which arrived here as a
+         * non-retryable [Generic] — exactly the slot-forfeiting
+         * misclassification this type exists to end (#4313 review
+         * finding 4bf998e99652).
+         */
+        class ShieldedClaimUnconfirmed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -591,6 +683,30 @@ sealed class DashSdkError(
             // the deferred-token trio sits at 34-36 above. See
             // PlatformWalletFFIResultCode for the authoritative map.)
             31 -> PlatformWallet.SigningKeyUnavailable(message, cause)
+            // ErrorShieldedInviteAlreadyClaimed. Allocated 43 — 37-40 are the
+            // v4.2-dev DPNS username-marketplace block, 41 the shield-capacity
+            // shortfall, 42 reserved; 43 matches the integration-branch
+            // allocation already shipped in QA AARs, so it is frozen. (It
+            // briefly held 32, which belongs to ErrorTransactionBuild —
+            // dashpay/platform#4247/#4256.)
+            43 -> PlatformWallet.ShieldedInviteAlreadyClaimed(message, cause)
+            // ErrorShieldedScanBudgetExhausted (#4306) — retryable-and-cheap:
+            // the claim scan paused at its per-attempt budget with progress
+            // checkpointed; a retry resumes, it never restarts.
+            44 -> PlatformWallet.ShieldedScanBudgetExhausted(message, cause)
+            // ErrorShieldedLifecycleBusy (#4313) — retryable, and nothing was
+            // consumed: a claim refused admission by a concurrent Clear /
+            // wallet removal or by another claimant holding the same
+            // invitation's claim-record key, or a Clear that refused to purge
+            // while claims are still in flight.
+            45 -> PlatformWallet.ShieldedLifecycleBusy(message, cause)
+            // ErrorShieldedClaimUnconfirmed (#4313) — a panic caught inside
+            // the one-time-key claim: outcome ambiguous (the transition may
+            // already be on chain), retryable as a RESUME of the retained
+            // recovery record once the claim lease expires. Preserve the
+            // identity slot. 48 is from the registry frontier (46 merged
+            // ErrorMasternodeListUnavailable, 47 reserved for #4356).
+            48 -> PlatformWallet.ShieldedClaimUnconfirmed(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

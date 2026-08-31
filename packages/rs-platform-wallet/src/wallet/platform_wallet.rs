@@ -1166,12 +1166,24 @@ impl PlatformWallet {
     /// paths check here first, before writing anything.
     #[cfg(feature = "shielded")]
     fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
+        self.ensure_shielded_attached_for("shielded bind")
+    }
+
+    /// [`ensure_shielded_attached`](Self::ensure_shielded_attached) for a
+    /// named operation, so a refusal says which one was refused.
+    ///
+    /// Used by the one-time-key claim, whose reason for checking is not the
+    /// bind paths' key-hygiene one: a claim that begins after a removal has
+    /// committed would arm a pending row and BROADCAST for a wallet the host
+    /// has already deleted (#4313 review finding 4a2c679745bb).
+    #[cfg(feature = "shielded")]
+    fn ensure_shielded_attached_for(&self, operation: &str) -> Result<(), PlatformWalletError> {
         if self
             .shielded_detached
             .load(std::sync::atomic::Ordering::Acquire)
         {
             return Err(PlatformWalletError::WalletNotFound(format!(
-                "{} was removed from the manager; shielded bind refused",
+                "{} was removed from the manager; {operation} refused",
                 hex::encode(self.wallet_id)
             )));
         }
@@ -1535,6 +1547,160 @@ impl PlatformWallet {
                          not found in the manager; skipping local registration (heals on next sync)"
                     );
                 }
+            }
+        }
+
+        Ok(identity_id)
+    }
+
+    /// Create a brand-new Platform identity funded from a ONE-TIME Orchard
+    /// spending key — the L2-invitation *claim* side.
+    ///
+    /// Unlike [`Self::shielded_identity_create_from_pool`], the Orchard spend
+    /// authority is a foreign `one_time_sk` (the invitation's single-use
+    /// spending key), NOT this wallet's own `OrchardKeySet`. The operation
+    /// derives the fvk / ivk / ask from that key, transiently scans the network
+    /// for the note(s) it funds, witnesses them against the shared commitment
+    /// tree, and drives the same key-agnostic Type-20 builder. Any spent value
+    /// above `denomination` re-enters the pool as a change note to
+    /// `change_address` — the claimer's OWN default Orchard address (43 raw
+    /// bytes) — which the claimer's normal sync later discovers.
+    ///
+    /// `funding_birth_height` is an advisory hint (the shielded tree has no
+    /// height→note-index oracle, so it cannot seed the scan start today).
+    ///
+    /// `identity_index` is the DIP-9 registration slot the new identity occupies
+    /// in the local `IdentityManager`; on a successful broadcast the
+    /// proof-verified identity is registered there (mirroring
+    /// [`Self::shielded_identity_create_from_pool`]) so the host persister emits
+    /// the identity row. A failed registration after a successful broadcast is
+    /// logged and swallowed — the identity already exists on chain and the next
+    /// sync heals the local row. Returns the new identity's id.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn identity_create_from_one_time_key<P, IS>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        // Bearer spend authority carried in a `Zeroizing` buffer so this layer's copy
+        // of the one-time spending key is scrubbed on drop (#4204 key-hygiene).
+        one_time_sk: zeroize::Zeroizing<[u8; 32]>,
+        funding_birth_height: Option<u32>,
+        change_address: dpp::address_funds::OrchardAddress,
+        identity_index: u32,
+        public_keys: Vec<(
+            dpp::identity::IdentityPublicKey,
+            dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
+        )>,
+        denomination: u64,
+        send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress,
+        identity_signer: &IS,
+        prover: P,
+    ) -> Result<dpp::prelude::Identifier, PlatformWalletError>
+    where
+        P: dpp::shielded::builder::OrchardProver,
+        IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
+    {
+        // Refuse a claim for a wallet the host has already removed
+        // (#4313 review finding 4a2c679745bb). An FFI caller can resolve and
+        // retain this wallet and its coordinator BEFORE a removal and only
+        // begin executing afterwards, so the entry point has to check rather
+        // than rely on being unreachable.
+        //
+        // This check alone is not sufficient — it can pass a moment before the
+        // removal commits — which is why the same flag is re-checked inside the
+        // operation once the store's claim admission is held. See the
+        // `detached` parameter of `operations::identity_create_from_one_time_key`
+        // for why that second check is the one that actually closes the race.
+        // This one keeps the common case cheap: nothing is derived, scanned, or
+        // reserved for a wallet that is already gone.
+        self.ensure_shielded_attached_for("shielded invitation claim")?;
+
+        let outcome = super::shielded::operations::identity_create_from_one_time_key(
+            &self.sdk,
+            coordinator.store(),
+            coordinator.foreign_claim_guards(),
+            coordinator.foreign_scan_checkpoints(),
+            &self.shielded_detached,
+            self.wallet_id,
+            one_time_sk,
+            funding_birth_height,
+            &change_address,
+            identity_index,
+            public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            identity_signer,
+            &prover,
+        )
+        .await?;
+        let super::shielded::operations::OneTimeClaimOutcome {
+            identity_id,
+            identity,
+            recovery_record,
+        } = outcome;
+
+        // Register the proof-verified identity in the local manager at its HD
+        // slot — the SAME tail as `shielded_identity_create_from_pool`, with one
+        // difference that matters: the claim's recovery record is still on disk,
+        // and whether it may be released depends on the outcome here
+        // (#4313 review finding 325ce9fa8f84).
+        //
+        // `add_identity_persisted`, not `add_identity`: the latter logs and
+        // swallows a `persister.store` failure, which is precisely the case that
+        // must NOT release the record — the identity would be absent from the
+        // host's durable state with nothing left to reconstruct its padded id
+        // from. A registration failure is still not surfaced as an error (the
+        // identity exists on chain and the next sync heals the local row); it
+        // only withholds the acknowledgement.
+        let registered = {
+            let mut wm = self.wallet_manager.write().await;
+            match wm.get_wallet_info_mut(&self.wallet_id) {
+                Some(info) => match info.identity_manager.add_identity_persisted(
+                    identity,
+                    identity_index,
+                    self.wallet_id,
+                    &self.persister,
+                ) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        tracing::warn!(
+                            identity_index,
+                            error = %e,
+                            "IdentityCreateFromOneTimeKey broadcast succeeded but registering the \
+                             identity in the local manager failed; the on-chain identity exists, \
+                             the claim's recovery record is retained so a retry can recover it, \
+                             and the next sync will heal the local row"
+                        );
+                        false
+                    }
+                },
+                None => {
+                    tracing::warn!(
+                        identity_index,
+                        "IdentityCreateFromOneTimeKey broadcast succeeded but the wallet info was \
+                         not found in the manager; skipping local registration (the claim's \
+                         recovery record is retained; heals on next sync)"
+                    );
+                    false
+                }
+            }
+        };
+
+        // The acknowledgement, and the ONLY thing that drops the record. It runs
+        // after the identity is in the manager and its changeset has reached the
+        // host persister, so a process death anywhere before this point leaves a
+        // record a retry can resume — recovering the identity by its declared id
+        // instead of returning the terminal `ShieldedInviteAlreadyClaimed`.
+        //
+        // A retained record costs one stale row that the next claim of this
+        // invitation resolves; releasing it early costs the identity.
+        if let Some(record) = recovery_record {
+            if registered {
+                super::shielded::operations::acknowledge_one_time_claim_registration(
+                    coordinator.store(),
+                    record,
+                )
+                .await;
             }
         }
 
