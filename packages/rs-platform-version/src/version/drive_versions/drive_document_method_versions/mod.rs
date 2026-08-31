@@ -20,6 +20,9 @@ pub struct DriveDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub query_documents: FeatureVersion,
+    /// Chained document queries (provable semi-join): the version slot
+    /// shared by the no-proof and the two-proof execution paths.
+    pub query_chained_documents: FeatureVersion,
     pub query_contested_documents: FeatureVersion,
     pub query_contested_documents_vote_state: FeatureVersion,
     pub query_documents_with_flags: FeatureVersion,

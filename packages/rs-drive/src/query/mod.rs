@@ -287,6 +287,12 @@ pub mod drive_document_ranked_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod index_only_synthesis;
 
+/// Chained document queries — a provable semi-join: an inner indexOnly
+/// query whose proven `refersTo` values become the outer query's
+/// primary keys, proven against one state root. See the module docs.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod drive_chained_document_query;
+
 /// Joint count-and-sum no-prove executor surface — backs the AVG
 /// no-prove path's unified single-walk dispatch. See its module
 /// docstring for the perf / atomicity contract. Server-only because
