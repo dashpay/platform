@@ -819,6 +819,10 @@ impl MockResponse for drive_proof_verifier::DocumentHavingEntries {
     }
 }
 
+/// Wire shape for `ChainedDocuments` mock round-trip: both halves as
+/// per-document CBOR lists.
+type MockChainedHalves = (Vec<Vec<u8>>, Vec<Vec<u8>>);
+
 impl MockResponse for drive_proof_verifier::ChainedDocuments {
     /// Both halves as per-document CBOR, bincode-framed as
     /// `(inner, outer)` — list order IS the answer (inner-proof order,
@@ -826,7 +830,7 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
     /// destroy it.
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         let bincode_config = standard();
-        let halves: (Vec<Vec<u8>>, Vec<Vec<u8>>) = (
+        let halves: MockChainedHalves = (
             self.inner_documents
                 .iter()
                 .map(|d| d.to_cbor().expect("encode inner document"))
@@ -844,7 +848,7 @@ impl MockResponse for drive_proof_verifier::ChainedDocuments {
         Self: Sized,
     {
         let bincode_config = standard();
-        let ((inner, outer), _): ((Vec<Vec<u8>>, Vec<Vec<u8>>), _) =
+        let ((inner, outer), _): (MockChainedHalves, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode ChainedDocuments");
         let decode = |bufs: Vec<Vec<u8>>| {
             bufs.into_iter()
