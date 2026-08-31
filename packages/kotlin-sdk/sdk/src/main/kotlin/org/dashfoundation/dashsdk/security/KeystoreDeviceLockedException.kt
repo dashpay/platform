@@ -46,8 +46,15 @@ data class DeviceLockState(
  *   observed in the field (two QA devices, wallet creation) — the device is
  *   demonstrably unlocked but Keystore2's internal lock-state tracking
  *   still says "locked". A short bounded retry is worthwhile (see
- *   [WalletStorage.storeMnemonic]); persistent recurrence points at the
- *   platform bug, not at this SDK or its keys.
+ *   [WalletStorage.storeMnemonic]); recurrence past that schedule means
+ *   the defect is PERSISTENT for the unlock session (an OEM unlock class
+ *   that never satisfies `UNLOCKED_DEVICE_REQUIRED` — observed on
+ *   HONOR/MagicOS Android 16; same mechanism as Google Issue Tracker
+ *   506989112), at which point [WalletStorage.storeMnemonic] degrades the
+ *   write to the never-lock-bound
+ *   [KeystoreManager.MASTER_ALIAS_UNBOUND] instead of throwing this — so
+ *   escaping this exception false-locked now means even that degradation
+ *   failed (see the suppressed exception).
  *
  * NOT used for the auth-gated identity-key aliases: their
  * `UserNotAuthenticatedException` means "auth window closed" and keeps its

@@ -7,6 +7,7 @@ import android.security.keystore.UserNotAuthenticatedException
 import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -31,7 +32,11 @@ private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore
  * Values are ciphertext under [KeystoreManager]'s non-exportable Keystore
  * keys, stored base64 in a dedicated Preferences DataStore.
  * Key layout mirrors the iOS account naming:
- * - `mnemonic.<walletIdHex>` — wallet mnemonics (master alias, AES-GCM)
+ * - `mnemonic.<walletIdHex>` — wallet mnemonics (master alias, AES-GCM;
+ *   the producing alias is recorded per blob in
+ *   `mnemonicalias.<walletIdHex>` once the false-locked degradation has
+ *   moved writes to [KeystoreManager.MASTER_ALIAS_UNBOUND] — see
+ *   [storeMnemonic])
  * - `privkey.<pubkeyHex>` — identity private keys (the [keystore]'s
  *   [KeystoreManager.keysAlias]: RSA public-key encrypt / private-key
  *   decrypt that is auth-gated or not per the keystore's
@@ -235,11 +240,25 @@ class WalletStorage(
      * re-parameterizes anything — on a fresh install the probe provisions
      * the master key exactly as the first [storeMnemonic] would have. A
      * no-op — no Keystore access at all — when the device is unlocked
-     * (including keyguard-showing-but-not-secured states).
+     * (including keyguard-showing-but-not-secured states), and likewise
+     * once the false-locked defect is on record for this device
+     * ([isMasterKeyLockBindingDefectObserved]): from then on
+     * [storeMnemonic] writes under the never-lock-bound
+     * [MASTER_ALIAS_UNBOUND][KeystoreManager.MASTER_ALIAS_UNBOUND], which
+     * no lock state can deny, so there is nothing to preflight.
      */
-    fun ensureMasterKeyNotLockBlocked(operation: String) {
+    suspend fun ensureMasterKeyNotLockBlocked(operation: String) {
         val state = keystore.sampleDeviceLockState()
         if (!state.isDeviceLocked) return
+        if (isMasterKeyLockBindingDefectObserved()) {
+            Log.i(
+                TAG,
+                "$operation: device is locked but this device's false-locked defect is on " +
+                    "record — mnemonic writes target the never-lock-bound master alias, " +
+                    "which no lock state can deny; proceeding",
+            )
+            return
+        }
         try {
             keystore.encrypt(ByteArray(1))
             Log.i(
@@ -269,18 +288,43 @@ class WalletStorage(
 
     /**
      * Encrypt and persist the mnemonic under the
-     * [MASTER_ALIAS][KeystoreManager.MASTER_ALIAS] AES key.
+     * [MASTER_ALIAS][KeystoreManager.MASTER_ALIAS] AES key — or under the
+     * never-lock-bound
+     * [MASTER_ALIAS_UNBOUND][KeystoreManager.MASTER_ALIAS_UNBOUND] once
+     * this device has demonstrated the PERSISTENT false-locked Keystore
+     * defect (see below); the producing alias is recorded per blob
+     * (`mnemonicalias.<walletIdHex>`, same atomic edit) so reads decrypt
+     * under whichever alias actually wrote it.
      *
-     * Retries the FALSE-LOCKED Keystore denial only: when the encrypt is
-     * denied as device-locked but the sampled `KeyguardManager` state says
-     * the device is NOT actually locked ([KeystoreDeviceLockedException]
-     * with `deviceReportsLocked == false` — the Keystore2 lock-state
-     * misreporting defect, hit on two QA devices during wallet creation),
-     * the store is retried up to 3 times over ~2s (the
-     * [DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS] backoff schedule) before the
-     * exception propagates. A GENUINELY locked
-     * device (`deviceReportsLocked == true`) fails fast with no retry —
-     * waiting 2s cannot unlock a phone; the caller retries after unlock.
+     * Device-locked denial handling, in escalation order:
+     *  - A GENUINELY locked device ([KeystoreDeviceLockedException] with
+     *    `deviceReportsLocked == true`) fails fast with no retry — waiting
+     *    2s cannot unlock a phone; the caller retries after unlock.
+     *  - A FALSE-LOCKED denial (Keystore denies as device-locked while the
+     *    sampled `KeyguardManager` state says unlocked) is retried up to 3
+     *    times over ~2s ([DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS]) — enough
+     *    for the transient Keystore2 misreporting first seen on two QA
+     *    devices.
+     *  - When the schedule exhausts still false-locked, the defect is
+     *    persistent, not transient — an OEM unlock class that never
+     *    satisfies `UNLOCKED_DEVICE_REQUIRED`, so no in-session retry can
+     *    ever succeed (observed on HONOR/MagicOS Android 16; same
+     *    mechanism as Google Issue Tracker 506989112). The store then
+     *    DEGRADES instead of failing: the blob is encrypted under
+     *    [MASTER_ALIAS_UNBOUND][KeystoreManager.MASTER_ALIAS_UNBOUND] and
+     *    the defect durably recorded ([MASTER_LOCK_DEFECT_KEY], in the
+     *    same atomic edit), after which every mnemonic write on this
+     *    device goes straight to the unbound alias and
+     *    [ensureMasterKeyNotLockBlocked] stops preflighting. This is the
+     *    dashpay/platform#4060 no-lock-screen downgrade — hardware-backed
+     *    AES, no lock binding — triggered by operational evidence instead
+     *    of a missing lock screen, and only ever on the defective device.
+     *    Nothing is deleted or re-keyed: existing [MASTER_ALIAS] blobs
+     *    stay decryptable under their recorded alias and are re-wrapped
+     *    opportunistically on their next successful read (see
+     *    [retrieveMnemonicUtf8]). If the unbound encrypt itself fails, the
+     *    original typed denial propagates with the heal failure attached
+     *    as suppressed, and nothing is recorded.
      */
     suspend fun storeMnemonic(walletId: ByteArray, mnemonic: String) {
         // The plaintext copy lives across the whole backoff schedule, so scrub
@@ -289,17 +333,25 @@ class WalletStorage(
         // handling of its other raw secret arrays.
         val plaintext = mnemonic.encodeToByteArray()
         try {
+            if (isMasterKeyLockBindingDefectObserved()) {
+                storeMnemonicUnbound(walletId, plaintext)
+                return
+            }
             var attempt = 0
             while (true) {
                 try {
                     val blob = keystore.encrypt(plaintext)
-                    store.edit { it[mnemonicKey(walletId)] = encode(blob) }
+                    store.edit {
+                        it[mnemonicKey(walletId)] = encode(blob)
+                        // A MASTER_ALIAS blob is the untagged default.
+                        it.remove(mnemonicAliasKey(walletId))
+                    }
                     return
                 } catch (e: KeystoreDeviceLockedException) {
-                    if (e.deviceReportsLocked ||
-                        attempt >= DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS.size
-                    ) {
-                        throw e
+                    if (e.deviceReportsLocked) throw e
+                    if (attempt >= DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS.size) {
+                        healFalseLockedMnemonicStore(walletId, plaintext, e)
+                        return
                     }
                     val delayMs = DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS[attempt]
                     attempt++
@@ -320,14 +372,84 @@ class WalletStorage(
     }
 
     /**
+     * Whether THIS device has demonstrated the persistent false-locked
+     * Keystore defect — a lock-bound master-alias operation denied as
+     * device-locked past [storeMnemonic]'s full bounded retry while
+     * `KeyguardManager` reported the device unlocked. Recorded durably by
+     * the heal path in the same atomic edit as the first unbound-alias
+     * blob; never cleared (the defect is a property of the device's OS
+     * build, not of any wallet — and a healed device staying healed costs
+     * nothing on a healthy one, which never sets it). Host-legible so apps
+     * can surface the degraded protection level in telemetry/support
+     * flows, the [KeystoreManager.effectiveKeySecurityPolicy] discipline.
+     */
+    suspend fun isMasterKeyLockBindingDefectObserved(): Boolean =
+        store.data.first()[MASTER_LOCK_DEFECT_KEY] == true
+
+    /**
+     * Write [plaintext]'s blob under the never-lock-bound
+     * [MASTER_ALIAS_UNBOUND][KeystoreManager.MASTER_ALIAS_UNBOUND], tagging
+     * the blob with its producing alias in the same atomic edit. The write
+     * path once the defect is on record. Does not scrub [plaintext] — the
+     * caller owns the buffer.
+     */
+    private suspend fun storeMnemonicUnbound(walletId: ByteArray, plaintext: ByteArray) {
+        val blob = keystore.encrypt(plaintext, KeystoreManager.MASTER_ALIAS_UNBOUND)
+        store.edit {
+            it[mnemonicKey(walletId)] = encode(blob)
+            it[mnemonicAliasKey(walletId)] = KeystoreManager.MASTER_ALIAS_UNBOUND
+        }
+    }
+
+    /**
+     * [storeMnemonic]'s last rung: the false-locked retry schedule
+     * exhausted, so the device's `UNLOCKED_DEVICE_REQUIRED` implementation
+     * is treated as defective — store under the never-lock-bound alias and
+     * record the defect ([MASTER_LOCK_DEFECT_KEY]) atomically with the
+     * blob, so a crash between them cannot record a defect with no healed
+     * blob or vice versa. A failure of the unbound encrypt itself rethrows
+     * the original typed [denial] (still the truthful signal — retryable
+     * after a credential unlock) with the heal failure suppressed, and
+     * records nothing.
+     */
+    private suspend fun healFalseLockedMnemonicStore(
+        walletId: ByteArray,
+        plaintext: ByteArray,
+        denial: KeystoreDeviceLockedException,
+    ) {
+        Log.w(
+            TAG,
+            "storeMnemonic: Keystore still denied the lock-bound master-alias encrypt as " +
+                "device-locked after the full false-locked retry schedule, with " +
+                "KeyguardManager reporting UNLOCKED (${denial.lockState}) — treating this " +
+                "device's UNLOCKED_DEVICE_REQUIRED implementation as defective and " +
+                "degrading mnemonic storage to the never-lock-bound " +
+                "'${KeystoreManager.MASTER_ALIAS_UNBOUND}' (the dashpay/platform#4060 " +
+                "downgrade, driven by operational evidence; cf. Google Issue Tracker " +
+                "506989112)",
+            denial,
+        )
+        val blob = try {
+            keystore.encrypt(plaintext, KeystoreManager.MASTER_ALIAS_UNBOUND)
+        } catch (healError: Exception) {
+            denial.addSuppressed(healError)
+            throw denial
+        }
+        store.edit {
+            it[mnemonicKey(walletId)] = encode(blob)
+            it[mnemonicAliasKey(walletId)] = KeystoreManager.MASTER_ALIAS_UNBOUND
+            it[MASTER_LOCK_DEFECT_KEY] = true
+        }
+    }
+
+    /**
      * Decrypt the mnemonic as a display `String`. For explicit
      * user-facing reveal flows ONLY (seed backup, biometric reveal) —
      * a String cannot be scrubbed afterwards. Programmatic consumers
      * (the FFI resolver, signers) must use [retrieveMnemonicUtf8].
      */
     suspend fun retrieveMnemonic(walletId: ByteArray): String? {
-        val encoded = store.data.first()[mnemonicKey(walletId)] ?: return null
-        val plain = keystore.decrypt(decode(encoded))
+        val plain = retrieveMnemonicUtf8(walletId) ?: return null
         val phrase = plain.decodeToString()
         plain.fill(0)
         return phrase
@@ -340,10 +462,61 @@ class WalletStorage(
      * bytes are consumed — unlike a String, a ByteArray can actually be
      * scrubbed, so the plaintext exposure window is bounded by the call
      * instead of by the garbage collector.
+     *
+     * Decrypts under the blob's RECORDED alias — the lock-bound
+     * [MASTER_ALIAS][KeystoreManager.MASTER_ALIAS] default, or
+     * [MASTER_ALIAS_UNBOUND][KeystoreManager.MASTER_ALIAS_UNBOUND] for a
+     * blob written after this device's false-locked degradation (see
+     * [storeMnemonic]). On a device with the defect on record, a
+     * successful read of a still-lock-bound blob also re-wraps it under
+     * the unbound alias (best-effort, see [rewrapMnemonicUnbound]) so it
+     * stops being hostage to the defective `UNLOCKED_DEVICE_REQUIRED`
+     * gate.
      */
     suspend fun retrieveMnemonicUtf8(walletId: ByteArray): ByteArray? {
-        val encoded = store.data.first()[mnemonicKey(walletId)] ?: return null
-        return keystore.decrypt(decode(encoded))
+        val prefs = store.data.first()
+        val encoded = prefs[mnemonicKey(walletId)] ?: return null
+        val alias = prefs[mnemonicAliasKey(walletId)] ?: KeystoreManager.MASTER_ALIAS
+        val plain = keystore.decrypt(decode(encoded), alias)
+        if (alias == KeystoreManager.MASTER_ALIAS && prefs[MASTER_LOCK_DEFECT_KEY] == true) {
+            rewrapMnemonicUnbound(walletId, plain)
+        }
+        return plain
+    }
+
+    /**
+     * Opportunistic re-wrap for wallets that predate the false-locked
+     * degradation on a defective device: their blobs still live under the
+     * lock-bound [MASTER_ALIAS][KeystoreManager.MASTER_ALIAS], which this
+     * device's Keystore denies for stretches of every unlock session, so
+     * the first read that DOES get through (e.g. after a credential
+     * unlock) moves the blob to the never-lock-bound alias — after which
+     * it is always readable. Best-effort by design: any failure leaves the
+     * original blob and its key fully intact (decryptable exactly as often
+     * as before) and the next successful read simply tries again. Never
+     * scrubs [plain] — the caller owns that buffer.
+     */
+    private suspend fun rewrapMnemonicUnbound(walletId: ByteArray, plain: ByteArray) {
+        try {
+            storeMnemonicUnbound(walletId, plain)
+            Log.i(
+                TAG,
+                "re-wrapped a lock-bound master-alias mnemonic blob under the " +
+                    "never-lock-bound '${KeystoreManager.MASTER_ALIAS_UNBOUND}' (this " +
+                    "device's false-locked defect is on record) — future reads no longer " +
+                    "depend on the defective UNLOCKED_DEVICE_REQUIRED gate",
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "best-effort re-wrap under '${KeystoreManager.MASTER_ALIAS_UNBOUND}' " +
+                    "failed; the blob remains under the lock-bound master alias and the " +
+                    "next successful read will retry",
+                e,
+            )
+        }
     }
 
     /**
@@ -354,7 +527,10 @@ class WalletStorage(
         store.data.first().contains(mnemonicKey(walletId))
 
     suspend fun deleteMnemonic(walletId: ByteArray) {
-        store.edit { it.remove(mnemonicKey(walletId)) }
+        store.edit {
+            it.remove(mnemonicKey(walletId))
+            it.remove(mnemonicAliasKey(walletId))
+        }
     }
 
     /** Wallet ids (hex) that have a stored mnemonic — drives orphan detection. */
@@ -1038,6 +1214,9 @@ class WalletStorage(
     private fun mnemonicKey(walletId: ByteArray) =
         stringPreferencesKey(MNEMONIC_PREFIX + walletId.toHex())
 
+    private fun mnemonicAliasKey(walletId: ByteArray) =
+        stringPreferencesKey(MNEMONIC_ALIAS_PREFIX + walletId.toHex())
+
     private fun privateKeyKey(pubkeyHex: String) =
         stringPreferencesKey(PRIVKEY_PREFIX + pubkeyHex.lowercase())
 
@@ -1058,6 +1237,18 @@ class WalletStorage(
 
     private companion object {
         const val MNEMONIC_PREFIX = "mnemonic."
+
+        /**
+         * Per-wallet record of the AES alias that produced the mnemonic
+         * blob (`mnemonicalias.<walletIdHex>`), written atomically with the
+         * blob. Routes reads to the exact producing alias after the
+         * false-locked degradation moves writes to
+         * [KeystoreManager.MASTER_ALIAS_UNBOUND]; a missing tag means the
+         * lock-bound [KeystoreManager.MASTER_ALIAS] (every blob written
+         * before the tag existed). The `privkeyalias.` discipline, applied
+         * to mnemonics.
+         */
+        const val MNEMONIC_ALIAS_PREFIX = "mnemonicalias."
         const val PRIVKEY_PREFIX = "privkey."
 
         /** Per-alias [KeystoreManager.keysAliasFingerprint] snapshot, taken at write time. */
@@ -1125,6 +1316,17 @@ class WalletStorage(
          * ~2s total. Genuinely-locked denials never retry.
          */
         internal val DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS = longArrayOf(250, 750, 1000)
+
+        /**
+         * Durable device-scoped record that the false-locked Keystore
+         * defect was demonstrated here — a lock-bound master-alias denial
+         * that outlasted the full [DEVICE_FALSE_LOCKED_RETRY_DELAYS_MS]
+         * schedule while `KeyguardManager` reported the device unlocked.
+         * Set by [storeMnemonic]'s heal path atomically with the first
+         * [KeystoreManager.MASTER_ALIAS_UNBOUND] blob; never cleared. Read
+         * via [isMasterKeyLockBindingDefectObserved].
+         */
+        internal val MASTER_LOCK_DEFECT_KEY = booleanPreferencesKey("masterkeylockdefect")
 
         private const val TAG = "WalletStorage"
     }
