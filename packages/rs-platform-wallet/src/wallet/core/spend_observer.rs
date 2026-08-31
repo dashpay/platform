@@ -138,7 +138,8 @@ fn observing_wallet(event: &WalletEvent) -> Option<&WalletId> {
         | WalletEvent::BlockProcessed { wallet_id, .. } => Some(wallet_id),
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::ChainLockProcessed { .. }
-        | WalletEvent::SyncHeightAdvanced { .. } => None,
+        | WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::TransactionsSwept { .. } => None,
     }
 }
 
@@ -173,6 +174,17 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::ChainLockProcessed { .. }
         | WalletEvent::SyncHeightAdvanced { .. } => Vec::new(),
+        // A sweep names dead transactions, and the coins it DOES report —
+        // `released_outpoints` — are the ones that came back free, the
+        // opposite of a spend. The inputs it kept spent are exactly the ones
+        // it does not name: the event carries txids, not records, so the held
+        // set cannot be derived here at all. When the winner that settled
+        // them is wallet-relevant, its own `TransactionDetected` /
+        // `BlockProcessed` reports those spends and retires the fence
+        // through the arms above; when it is not, this wallet never observes
+        // the spend from any event, which is a gap this handler cannot close
+        // without the loser's inputs travelling on the event.
+        WalletEvent::TransactionsSwept { .. } => Vec::new(),
     }
 }
 

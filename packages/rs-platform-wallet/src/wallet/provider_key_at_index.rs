@@ -710,7 +710,7 @@ impl PlatformWallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
@@ -727,15 +727,13 @@ mod tests {
         "legal winner thank year wave sausage worth useful legal winner thank yellow";
 
     fn seed_bearing_wallet(network: Network) -> Wallet {
-        let mnemonic =
-            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
             .expect("wallet construction")
     }
 
     fn second_seed_bearing_wallet(network: Network) -> Wallet {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC_B, Language::English)
-            .expect("valid test mnemonic B");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC_B).expect("valid test mnemonic B");
         Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
             .expect("wallet B construction")
     }

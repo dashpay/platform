@@ -53,15 +53,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
-
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "93260bf39bac5d9d09e89bfb45e9ea3ff7fdcbcd" }
 tokio-metrics = "0.5"
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which

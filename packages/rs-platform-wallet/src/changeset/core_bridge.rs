@@ -51,9 +51,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
-    AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PlatformWalletChangeSet,
+    AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PlatformWalletChangeSet, SweepBatch,
 };
 use crate::changeset::merge::Merge;
+use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::asset_lock::sync::reconstruction;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -77,10 +78,24 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// Folding every event *already buffered* in the channel into one changeset
 /// per wallet collapses a burst of N events into a single store, so the
 /// drain keeps pace with the producer at projection speed. This is
-/// exactly the fold [`Merge`] was specified for — `CoreChangeSet` merging
-/// is commutative and associative, and its doc comment already anticipates
-/// "a flush can fold multiple events together (TransactionDetected +
-/// BlockProcessed for the same wallet over a sync round)".
+/// exactly the fold [`Merge`] was specified for — an ORDERED left fold in
+/// channel-arrival order. `CoreChangeSet` merging is associative but NOT
+/// commutative, so regrouping the fold is safe but reordering or
+/// parallelizing it is not: sweep-aware merging deliberately depends on
+/// operand order in two ways. A record arriving after a sweep of the same
+/// txid retracts that sweep (reinstatement), while a sweep arriving after
+/// the record survives the merge and deletes the row at apply time —
+/// swapping the operands swaps which of those happens. And sweep batches
+/// append in emission order because each release set is only true of the
+/// wallet as that sweep saw it, so a later batch keeping a coin spent must
+/// replay after the earlier batch that freed it. (The IS-lock map's
+/// last-write-wins and the chain-lock equal-height tie-break also take the
+/// later operand.) A reordered fold can therefore persist a different
+/// spend decision, not just a differently-arranged changeset. The doc
+/// comment on [`Merge`] states the same contract and already anticipates
+/// this fold: "a flush can fold multiple events together
+/// (TransactionDetected + BlockProcessed for the same wallet over a sync
+/// round)".
 ///
 /// The cap bounds the worst-case size of a single merged changeset (and
 /// hence one Room transaction), and keeps a saturated producer from
@@ -587,13 +602,39 @@ where
     P: PlatformWalletPersistence + ?Sized,
 {
     let mut diag = BatchDiagnostics::new(folded, batch.len());
-    for (
-        wallet_id,
-        WalletBatch {
-            mut core,
-            asset_locks,
-        },
-    ) in batch
+    for (wallet_id, wallet_batch) in batch {
+        commit_wallet(
+            persister,
+            wallet_id,
+            wallet_batch,
+            &mut diag,
+            fault,
+            sync_fault,
+            freeze_logged,
+            settled,
+        );
+    }
+    diag
+}
+
+/// Commit one wallet's folded changeset — the per-wallet unit of
+/// [`commit_batch`].
+fn commit_wallet<P>(
+    persister: &P,
+    wallet_id: WalletId,
+    wallet_batch: WalletBatch,
+    diag: &mut BatchDiagnostics,
+    fault: &mut AdapterFaultState,
+    sync_fault: &AtomicBool,
+    freeze_logged: &AtomicBool,
+    settled: &mut Vec<WalletId>,
+) where
+    P: PlatformWalletPersistence + ?Sized,
+{
+    let WalletBatch {
+        mut core,
+        asset_locks,
+    } = wallet_batch;
     {
         // Hold this wallet's durable watermark at the last fully persisted
         // height once it has faulted. Records/UTXOs still persist — only the
@@ -616,11 +657,40 @@ where
             // SyncHeightAdvanced for an unknown wallet, empty BlockProcessed, a
             // watermark-only batch stripped by the fault guard above, etc. —
             // nothing to persist. Skip the round-trip.
-            continue;
+            return;
         }
         // The height this changeset OFFERS to the store. It is counted as
         // persisted only in the `Ok` arm below.
         let offered_height = core.synced_height;
+
+        // Sweeps reach an FFI host only through the persistence extension's
+        // size-negotiated sweep callback, and Rust never calls a slot the
+        // host's declared `struct_size` did not prove — so a persister
+        // predating that slot (an old C host, or a Kotlin subclass that
+        // never overrode `onWalletChangesetTransactionsSwept`) processes the
+        // rest of the round normally and returns success without ever
+        // seeing `core.sweeps` at all. `store()` coming back `Ok` in that
+        // case proves nothing about whether the removal actually happened,
+        // so it is checked separately from the result below rather than
+        // folded into it.
+        let sweep_removal_unsupported = !core.sweeps.is_empty()
+            && !persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
+        if sweep_removal_unsupported {
+            // Strip the watermark from THIS round, not just later ones. The
+            // adapter folds whatever is buffered, so a `TransactionsSwept`
+            // and a following `SyncHeightAdvanced` land in one changeset —
+            // and `synced_height` lives in the unchanged prefix such a
+            // persister does read. Letting it through would commit a height
+            // that claims blocks are scanned while the removal those blocks
+            // implied never landed, and the fault below cannot retract a
+            // watermark the backend has already made durable. `offered_height`
+            // keeps the original so the rejection is still diagnosed as a
+            // withheld advance rather than as a round that carried none.
+            core.synced_height = None;
+        }
+
         let cs = PlatformWalletChangeSet {
             core: Some(core),
             // Tracked-asset-lock rows reconstructed from this drain's
@@ -639,6 +709,38 @@ where
         // `run_wallet_event_adapter`.
         settled.push(wallet_id);
         match store_result {
+            Ok(()) if sweep_removal_unsupported => {
+                // The write nominally succeeded, but a backend that never
+                // attested `CORE_SWEEP_REMOVAL` is not known to have applied
+                // the one subtractive part of this round — reporting it
+                // durable would let the swept loser return at the next
+                // `load()`. Fault exactly like a rejection: the next scan
+                // re-emits the sweep and the idempotent removal is retried
+                // against (hopefully, by then) a capable backend.
+                if fault_and_freeze(
+                    diag,
+                    offered_height,
+                    fault,
+                    sync_fault,
+                    wallet_id,
+                    is_faulted,
+                    freeze_logged,
+                ) {
+                    log::error!(
+                        "SYNC WATERMARK FROZEN: persister for wallet {} does not advertise \
+                         CORE_SWEEP_REMOVAL but this round swept one or more transactions; a \
+                         removal must never be reported durable to a backend that cannot apply \
+                         it, so the sync watermark is held back (dashpay/platform#4406).",
+                        hex::encode(wallet_id)
+                    );
+                }
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "Persister lacks CORE_SWEEP_REMOVAL for a changeset carrying sweeps; \
+                     freezing this wallet's sync watermark rather than trusting an unversioned \
+                     store() success"
+                );
+            }
             Ok(()) => {
                 if let Some(h) = offered_height {
                     diag.record_persisted(h);
@@ -648,19 +750,15 @@ where
                 // A rejected changeset means these rows are not on disk. Fault
                 // THIS wallet's watermark so it can't outrun them; the next
                 // scan re-emits and the idempotent upserts recover the state.
-                if let Some(h) = offered_height {
-                    diag.record_rejected(h);
-                }
-                fault.fault_wallet(wallet_id, sync_fault);
-                // Count each faulted wallet once per drain: a wallet that
-                // entered already faulted was counted at the top of the loop,
-                // and a repeat rejection must not count it again.
-                if !is_faulted {
-                    diag.faulted += 1;
-                }
-                // One-shot, unambiguous logcat marker via the `log` facade
-                // (android_logger forwards `log` to logcat; `tracing` may not).
-                if !freeze_logged.swap(true, Ordering::Relaxed) {
+                if fault_and_freeze(
+                    diag,
+                    offered_height,
+                    fault,
+                    sync_fault,
+                    wallet_id,
+                    is_faulted,
+                    freeze_logged,
+                ) {
                     log::error!(
                         "SYNC WATERMARK FROZEN: persister rejected a changeset for wallet {} ({}); \
                          its durable sync height is now held so the next scan re-persists the \
@@ -677,7 +775,35 @@ where
             }
         }
     }
-    diag
+}
+
+/// The bookkeeping shared by the two ways a round fails to be durably
+/// applied — a rejected `store()`, and a nominal success from a backend
+/// that cannot have applied the round's sweeps. Records the withheld
+/// advance, faults the wallet (counting it once per drain: a wallet that
+/// entered already faulted was counted at the top of the loop, and a
+/// repeat failure must not count it again), and returns whether this is
+/// the drain's first freeze — the caller owns the one-shot `log`-facade
+/// line, whose wording differs per cause (android_logger forwards `log`
+/// to logcat; `tracing` may not).
+fn fault_and_freeze(
+    diag: &mut BatchDiagnostics,
+    offered_height: Option<u32>,
+    fault: &mut AdapterFaultState,
+    sync_fault: &AtomicBool,
+    wallet_id: WalletId,
+    entered_faulted: bool,
+    freeze_logged: &AtomicBool,
+) -> bool {
+    if let Some(h) = offered_height {
+        diag.record_rejected(h);
+    }
+    fault.fault_wallet(wallet_id, sync_fault);
+    if !entered_faulted {
+        diag.faulted += 1;
+    }
+    // One-shot: only the first freeze of the session logs.
+    !freeze_logged.swap(true, Ordering::Relaxed)
 }
 
 /// Durable-watermark guard for dashpay/platform#4069.
@@ -766,6 +892,23 @@ async fn reconstruct_asset_locks_for_event(
                 wallet_id,
                 chain_lock.block_height,
                 locked_transactions,
+            )
+            .await;
+        }
+        // The subtractive arm: a swept funding tx can never confirm, so
+        // every tracked lock it funds is dead. Nothing else cascades the
+        // sweep into this table — without this arm the entry is a zombie
+        // `resume_asset_lock` re-broadcasts and waits on without bound,
+        // mirrored forever by every store. A chainlocked return re-emits
+        // the funding record through the arms above, which re-insert the
+        // entry, so removal here is not a one-way door.
+        WalletEvent::TransactionsSwept {
+            wallet_id, txids, ..
+        } => {
+            return reconstruction::remove_tracked_asset_locks_for_swept(
+                wallet_manager,
+                wallet_id,
+                txids,
             )
             .await;
         }
@@ -937,6 +1080,54 @@ async fn build_core_changeset(
             cs.addresses_marked_used = addresses_marked_used;
             cs.account_highest_used = account_highest_used;
             cs
+        }
+        WalletEvent::TransactionsSwept {
+            txids,
+            superseded_by,
+            winner_mined_height,
+            released_outpoints,
+            ..
+        } => {
+            // The only subtractive event upstream emits. Each txid was a
+            // recorded spend that `superseded_by` beat to an input, so it can
+            // never confirm and the wallet has already dropped it. Mirroring
+            // the removal is not optional: every other arm here appends, so a
+            // persister that skipped this would keep the dead rows, hand them
+            // back on the next load, and re-create the balance the wallet
+            // just corrected — the exact bug the upstream sweep fixes.
+            //
+            // No `spent_utxos` entry for the inputs: a wallet-relevant winner
+            // claims them through its own record. This arm names the dead and
+            // the coins their removal freed — the persister holds every input
+            // of what it deletes, so `released_outpoints` is the only thing
+            // that tells it which of those to hand back. It cannot work that
+            // out from the txids: the transaction that took the rest may
+            // never appear in this wallet's stream at all.
+            tracing::debug!(
+                swept = txids.len(),
+                released = released_outpoints.len(),
+                superseded_by = %superseded_by,
+                winner_mined_height = ?winner_mined_height,
+                "Mirroring swept transactions to the persister"
+            );
+            CoreChangeSet {
+                sweeps: vec![SweepBatch {
+                    txids: txids.clone(),
+                    superseded_by: *superseded_by,
+                    // The winner's finality context rides with the batch:
+                    // only the event has it (the winner may never appear in
+                    // this wallet's records), and every persister keys the
+                    // lifetime of a held-but-unfunded placeholder on it —
+                    // `Some` anchors the hold at a height that chainlocks,
+                    // `None` (IS-locked, unmined) leaves the hold unstamped
+                    // and uncollectible, the durable stand-in for the
+                    // `spent_outpoints` retention upstream cannot rebuild
+                    // once the loser's record is gone.
+                    winner_mined_height: *winner_mined_height,
+                    released_outpoints: released_outpoints.clone(),
+                }],
+                ..CoreChangeSet::default()
+            }
         }
         WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
             synced_height: Some(*height),
@@ -1407,6 +1598,7 @@ impl CoreChangeSet {
     fn is_empty_no_records(&self) -> bool {
         self.records.is_empty()
             && self.account_records.is_empty()
+            && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -1416,6 +1608,289 @@ impl CoreChangeSet {
             && self.addresses_derived.is_empty()
             && self.addresses_marked_used.is_empty()
             && self.account_highest_used.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod swept_transaction_projection_tests {
+    //! Coverage for the one subtractive arm of [`build_core_changeset`].
+    //!
+    //! A sweep carries txids and no records, so it has to survive the
+    //! `is_empty_no_records` filter on the strength of the txids alone —
+    //! that filter is what decides whether the persister is called at all,
+    //! and a sweep that never reaches it leaves the dead rows on disk.
+
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::Txid;
+    use key_wallet::WalletCoreBalance;
+    use key_wallet_manager::WalletManager;
+
+    const WALLET_ID: WalletId = [7u8; 32];
+
+    fn test_manager() -> Arc<RwLock<WalletManager<PlatformWalletInfo>>> {
+        Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            dashcore::Network::Testnet,
+        )))
+    }
+
+    fn txid(byte: u8) -> Txid {
+        Txid::from_byte_array([byte; 32])
+    }
+
+    fn outpoint(byte: u8, vout: u32) -> OutPoint {
+        OutPoint {
+            txid: txid(byte),
+            vout,
+        }
+    }
+
+    /// A minimal record for `txid` — only its identity matters here, since
+    /// the merge keys reinstatement on the txid alone.
+    fn record_for(txid: Txid) -> TransactionRecord {
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let mut record = TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            },
+            TransactionContext::Mempool,
+            key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
+            key_wallet::managed_account::transaction_record::TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        );
+        record.txid = txid;
+        record
+    }
+
+    /// Mined height every block-context sweep event in these tests carries.
+    const WINNER_HEIGHT: u32 = 700;
+
+    fn swept(txids: Vec<Txid>) -> WalletEvent {
+        swept_releasing(txids, vec![])
+    }
+
+    fn swept_releasing(txids: Vec<Txid>, released_outpoints: Vec<OutPoint>) -> WalletEvent {
+        WalletEvent::TransactionsSwept {
+            wallet_id: WALLET_ID,
+            txids,
+            superseded_by: txid(0xff),
+            winner_mined_height: Some(WINNER_HEIGHT),
+            released_outpoints,
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn sweep_names_the_dead_transactions_and_nothing_else() {
+        let cs = build_core_changeset(&test_manager(), &swept(vec![txid(1), txid(2)])).await;
+
+        assert_eq!(
+            cs.sweeps,
+            vec![SweepBatch {
+                txids: vec![txid(1), txid(2)],
+                superseded_by: txid(0xff),
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![],
+            }]
+        );
+        // A wallet-relevant winner claims the inputs through its own
+        // record; this arm must not invent UTXO deltas of its own.
+        assert!(cs.records.is_empty(), "a sweep carries no records");
+        assert!(cs.spent_utxos.is_empty(), "a sweep spends nothing");
+        assert!(cs.new_utxos.is_empty(), "a sweep creates nothing");
+    }
+
+    /// An IS-locked winner's sweep carries `winner_mined_height: None`
+    /// through to the batch untouched. Every persister keys the lifetime of
+    /// a held-but-unfunded placeholder on this field — a bridge that
+    /// fabricated a height here would hand the placeholder a finality
+    /// horizon the winner does not have, and one that dropped the `Some`
+    /// leg would make block-context holds uncollectible.
+    #[tokio::test]
+    async fn sweep_carries_the_winners_finality_context_verbatim() {
+        let event = WalletEvent::TransactionsSwept {
+            wallet_id: WALLET_ID,
+            txids: vec![txid(1)],
+            superseded_by: txid(0xff),
+            winner_mined_height: None,
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+        assert_eq!(
+            cs.sweeps[0].winner_mined_height, None,
+            "an unmined IS-locked winner must cross the bridge with no mined height"
+        );
+    }
+
+    #[tokio::test]
+    async fn sweep_reaches_the_persister() {
+        let cs = build_core_changeset(&test_manager(), &swept(vec![txid(1)])).await;
+
+        assert!(
+            !cs.is_empty_no_records(),
+            "a sweep-only round must not be filtered out as empty — that \
+             filter decides whether the persister is called at all"
+        );
+        assert!(!Merge::is_empty(&cs));
+    }
+
+    /// The released set is what a persister acts on, so it has to survive
+    /// the projection intact — it cannot be recovered from the txids, since
+    /// the transaction that took the remaining inputs may never appear here.
+    #[tokio::test]
+    async fn sweep_carries_the_outpoints_it_released() {
+        let cs = build_core_changeset(
+            &test_manager(),
+            &swept_releasing(vec![txid(1)], vec![outpoint(9, 1)]),
+        )
+        .await;
+
+        assert_eq!(cs.sweeps[0].released_outpoints, vec![outpoint(9, 1)]);
+    }
+
+    /// An ordinary resend frees nothing: the winner took every input the
+    /// removed transaction named.
+    #[tokio::test]
+    async fn a_sweep_that_freed_nothing_releases_nothing() {
+        let cs = build_core_changeset(&test_manager(), &swept(vec![txid(1)])).await;
+
+        assert!(cs.sweeps[0].released_outpoints.is_empty());
+    }
+
+    /// Merging keeps every sweep as its own batch, in arrival order.
+    ///
+    /// Folding them would lose the only thing that makes a later sweep able
+    /// to correct an earlier one — see the ordering test below, which is the
+    /// case that actually breaks.
+    #[tokio::test]
+    async fn merged_sweeps_stay_separate_and_ordered() {
+        let mut cs = build_core_changeset(&test_manager(), &swept(vec![txid(1), txid(2)])).await;
+        let second = build_core_changeset(&test_manager(), &swept(vec![txid(3)])).await;
+
+        cs.merge(second);
+
+        assert_eq!(cs.sweeps.len(), 2);
+        assert_eq!(cs.sweeps[0].txids, vec![txid(1), txid(2)]);
+        assert_eq!(cs.sweeps[1].txids, vec![txid(3)]);
+    }
+
+    /// A record arriving after a sweep of the same transaction reinstates
+    /// it. Every persister writes records before replaying sweeps, so a
+    /// buffered sweep would otherwise delete a row the wallet has since
+    /// brought back.
+    ///
+    /// Reachable through IS-lock precedence: an unconfirmed transaction is
+    /// swept when an IS-locked conflict arrives, then returns chainlocked
+    /// and sweeps that conflict in turn — leaving one round holding both
+    /// removals plus the reinstating record.
+    #[tokio::test]
+    async fn a_record_arriving_after_its_sweep_survives_the_round() {
+        let reinstated = txid(1);
+
+        let mut cs = build_core_changeset(
+            &test_manager(),
+            &swept_releasing(vec![reinstated], vec![outpoint(9, 1)]),
+        )
+        .await;
+        assert_eq!(
+            cs.sweeps.len(),
+            1,
+            "sanity: the sweep is there to begin with"
+        );
+
+        // The wallet records it again, which is the newer fact.
+        let mut later = CoreChangeSet::default();
+        later.records.push(record_for(reinstated));
+        cs.merge(later);
+
+        assert!(
+            cs.sweeps.is_empty(),
+            "the sweep must not delete a transaction the wallet brought back"
+        );
+        assert_eq!(cs.records.len(), 1);
+    }
+
+    /// Only the reinstated transaction leaves the batch; anything else it
+    /// removed still goes — and so does everything that batch freed.
+    ///
+    /// `released_outpoints` is the aggregate for every loser in the batch, so
+    /// dropping it would discard coins freed by the losers still going. The
+    /// entries belonging to the reinstated transaction do no harm: every
+    /// backend either scopes its release to the remaining losers' own inputs
+    /// or withholds an outpoint a surviving record claims, and the
+    /// reinstating record is exactly such a claim.
+    #[tokio::test]
+    async fn a_reinstated_record_only_rescues_its_own_transaction() {
+        let reinstated = txid(1);
+        let still_dead = txid(2);
+        let freed_by_the_survivor = outpoint(9, 2);
+
+        let mut cs = build_core_changeset(
+            &test_manager(),
+            &swept_releasing(vec![reinstated, still_dead], vec![freed_by_the_survivor]),
+        )
+        .await;
+        let mut later = CoreChangeSet::default();
+        later.records.push(record_for(reinstated));
+        cs.merge(later);
+
+        assert_eq!(cs.sweeps.len(), 1);
+        assert_eq!(cs.sweeps[0].txids, vec![still_dead]);
+        assert_eq!(
+            cs.sweeps[0].released_outpoints,
+            vec![freed_by_the_survivor],
+            "a coin the still-swept loser freed must survive the reinstatement"
+        );
+    }
+
+    /// A release is only true of the wallet the sweep that made it saw. A
+    /// later sweep can remove the transaction that re-spent the freed coin
+    /// while keeping the coin spent, because its own winner took it — and
+    /// that answer has to win, since it is the later one.
+    ///
+    /// Unioning the release sets loses exactly this: the earlier "B is free"
+    /// outlives the later "B is spent", and every backend then persists a
+    /// coin the chain consumed as spendable.
+    #[tokio::test]
+    async fn a_later_sweep_that_keeps_a_coin_spent_outlives_an_earlier_release() {
+        let freed = outpoint(9, 1);
+
+        let mut cs = build_core_changeset(
+            &test_manager(),
+            &swept_releasing(vec![txid(1)], vec![freed]),
+        )
+        .await;
+        // The second sweep removes the transaction that took `freed` and
+        // releases nothing: its own winner consumed that coin.
+        let second =
+            build_core_changeset(&test_manager(), &swept_releasing(vec![txid(2)], vec![])).await;
+
+        cs.merge(second);
+
+        assert_eq!(
+            cs.sweeps.len(),
+            2,
+            "the two answers must stay distinguishable"
+        );
+        assert_eq!(cs.sweeps[0].released_outpoints, vec![freed]);
+        assert!(
+            cs.sweeps[1].released_outpoints.is_empty(),
+            "the later sweep kept the coin spent, and applying it after the \
+             first is what makes that stick"
+        );
     }
 }
 
@@ -2859,6 +3334,7 @@ mod tests {
         last_processed_height: Option<u32>,
         n_records: usize,
         n_asset_locks: usize,
+        n_asset_locks_removed: usize,
         rejected: bool,
     }
 
@@ -2880,6 +3356,7 @@ mod tests {
         /// Raised as soon as a blocked `store()` is entered, so a test can wait
         /// for the block to be in effect rather than sleeping and hoping.
         blocked: Arc<AtomicBool>,
+        capabilities: crate::changeset::PersistenceCapabilities,
     }
 
     impl ProbePersister {
@@ -2890,6 +3367,19 @@ mod tests {
                 panic_once: Mutex::new(HashSet::new()),
                 block_until: Mutex::new(None),
                 blocked: Arc::new(AtomicBool::new(false)),
+                capabilities: crate::changeset::PersistenceCapabilities::NONE,
+            }
+        }
+        /// A probe that additionally attests `capabilities` — used by the
+        /// `CORE_SWEEP_REMOVAL` gate tests, which need a persister on record
+        /// as (not) supporting the sweep contract.
+        fn with_capabilities(
+            obs: UnboundedSender<StoreObserved>,
+            capabilities: crate::changeset::PersistenceCapabilities,
+        ) -> Self {
+            Self {
+                capabilities,
+                ..Self::new(obs)
             }
         }
         /// Park the next `store()` until the returned sender is dropped or
@@ -2908,6 +3398,10 @@ mod tests {
     }
 
     impl PlatformWalletPersistence for ProbePersister {
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            self.capabilities
+        }
+
         fn store(
             &self,
             wallet_id: WalletId,
@@ -2935,6 +3429,11 @@ mod tests {
                     .asset_locks
                     .as_ref()
                     .map(|a| a.asset_locks.len())
+                    .unwrap_or(0),
+                n_asset_locks_removed: changeset
+                    .asset_locks
+                    .as_ref()
+                    .map(|a| a.removed.len())
                     .unwrap_or(0),
                 rejected,
             });
@@ -3075,7 +3574,10 @@ mod tests {
         // 3) Sentinel proving the loop moved past the watermark.
         tx.send(block_processed_event(wallet_id, 20)).unwrap();
 
-        let sentinel = obs_rx.recv().await.expect("sentinel store must arrive");
+        let sentinel = tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("the sentinel store must arrive rather than hanging the suite")
+            .expect("sentinel store must arrive");
         assert_eq!(
             sentinel.last_processed_height,
             Some(20),
@@ -3618,6 +4120,212 @@ mod tests {
         }
     }
 
+    /// Mined height every block-context sweep event in this module carries.
+    const WINNER_HEIGHT: u32 = 700;
+
+    /// A `TransactionsSwept` event for a helper below.
+    fn swept_event(wallet_id: WalletId, txid_byte: u8, superseded_by_byte: u8) -> WalletEvent {
+        use dashcore::hashes::Hash as _;
+        WalletEvent::TransactionsSwept {
+            wallet_id,
+            txids: vec![dashcore::Txid::from_byte_array([txid_byte; 32])],
+            superseded_by: dashcore::Txid::from_byte_array([superseded_by_byte; 32]),
+            winner_mined_height: Some(WINNER_HEIGHT),
+            released_outpoints: vec![],
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    /// dashpay/platform#4406 (finding 2): sweeps reach an FFI host only
+    /// through the persistence extension's size-negotiated sweep slot, so a
+    /// persister predating it processes the rest of the round and returns
+    /// success without ever seeing `core.sweeps`. A `store()` that comes
+    /// back `Ok` therefore proves nothing about whether a swept loser's
+    /// row was actually removed unless the persister has separately
+    /// attested `CORE_SWEEP_REMOVAL`. A persister that never declares it
+    /// (the probe's default) must be treated exactly like a rejection when
+    /// a round carries a sweep — even though, unlike the rejection tests
+    /// above, the probe's own `store()` call reports success.
+    #[tokio::test]
+    async fn sweep_without_declared_capability_freezes_the_wallet_despite_a_successful_store() {
+        let wallet_id = [21u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        // No capabilities declared — the pre-`CORE_SWEEP_REMOVAL` shape.
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        tx.send(swept_event(wallet_id, 0x51, 0x52)).unwrap();
+        let first = obs_rx
+            .recv()
+            .await
+            .expect("the round is still handed to store()");
+        assert!(
+            !first.rejected,
+            "the probe's own store() must succeed — the gate lives in the \
+             adapter, not in a persister that has no idea sweeps exist"
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !sync_fault.load(Ordering::Relaxed) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect(
+            "the fail-closed guard must trip for an undeclared sweep even \
+             though store() itself reported success",
+        );
+
+        // A later watermark-only event must be stripped just like it would
+        // be after a real store() rejection.
+        tx.send(sync_height_event(wallet_id, 500)).unwrap();
+        tx.send(block_processed_event(wallet_id, 40)).unwrap();
+        let sentinel = tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("the sentinel store must arrive rather than hanging the suite")
+            .expect("sentinel store must arrive");
+        assert_eq!(sentinel.last_processed_height, Some(40));
+        assert_eq!(
+            sentinel.synced_height, None,
+            "the watermark must stay frozen: a removal must never be \
+             reported durable to a backend that never attested it can apply it"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// The coalesced shape of the same gap, which is the one that actually
+    /// loses data. The adapter folds whatever is buffered, so a sweep and a
+    /// following watermark advance arrive in ONE changeset — and
+    /// `synced_height` sits in the unchanged prefix a pre-sweep persister
+    /// does read and commit.
+    ///
+    /// Faulting after `store()` returns cannot retract a watermark the
+    /// backend has already made durable: on the next launch the wallet
+    /// believes those blocks are scanned, never re-matches them, and the
+    /// removal that round carried is lost for good. So the height has to be
+    /// stripped before the changeset is handed over, not after.
+    #[tokio::test]
+    async fn a_coalesced_sweep_and_watermark_never_commits_the_height() {
+        let wallet_id = [23u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        // Buffered before the adapter starts, so both events are guaranteed
+        // to land in the same drain rather than racing it.
+        tx.send(swept_event(wallet_id, 0x61, 0x62)).unwrap();
+        tx.send(sync_height_event(wallet_id, 900)).unwrap();
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        // No capabilities declared — the pre-`CORE_SWEEP_REMOVAL` shape.
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        // Bounded like the neighbouring capability tests below: both the
+        // adapter and `ProbePersister` hold their own sender, so a
+        // regression that stops the folded round from reaching `store()`
+        // would otherwise hang this test instead of failing its assertion.
+        let observed = tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("the folded round reaches store() within the timeout")
+            .expect("the folded round reaches store()");
+        assert_eq!(
+            observed.synced_height, None,
+            "an unattested persister must never be handed the watermark of a \
+             round whose removal it cannot apply"
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !sync_fault.load(Ordering::Relaxed) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the fail-closed guard must still trip for the folded round");
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// The positive case for the same gate: a persister that attests
+    /// `CORE_SWEEP_REMOVAL` is trusted normally, and the watermark keeps
+    /// advancing through a sweep-bearing round exactly as it would through
+    /// any other.
+    #[tokio::test]
+    async fn sweep_with_declared_capability_does_not_freeze() {
+        let wallet_id = [22u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+        ));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::clone(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        tx.send(swept_event(wallet_id, 0x61, 0x62)).unwrap();
+        // A watermark-bearing event right behind it, folded or not — either
+        // way it must reach the store untouched while the capability holds.
+        tx.send(sync_height_event(wallet_id, 700)).unwrap();
+
+        let mut last_synced = None;
+        // Drain until a store carries the watermark. Each receive is bounded:
+        // the adapter and the probe both hold the sender alive, so a plain
+        // `recv()` would never report the channel quiet — a regression that
+        // stops the watermark would hang here until the suite's own timeout
+        // instead of failing on the assertion below.
+        for _ in 0..10 {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv()).await {
+                Ok(Some(observed)) => {
+                    assert!(!observed.rejected);
+                    if let Some(h) = observed.synced_height {
+                        last_synced = Some(h);
+                        break;
+                    }
+                }
+                Ok(None) | Err(_) => break,
+            }
+        }
+        assert_eq!(
+            last_synced,
+            Some(700),
+            "the watermark must advance normally once the backend attests \
+             CORE_SWEEP_REMOVAL"
+        );
+        assert!(
+            !sync_fault.load(Ordering::Relaxed),
+            "an attested backend must never trip the fail-closed guard"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
     /// End-to-end restore-scan shape through the real adapter loop: a
     /// `BlockProcessed` event whose inserted record is an asset-lock tx
     /// filed under a funding account must (a) repopulate the wallet's
@@ -3745,6 +4453,277 @@ mod tests {
 
         cancel.cancel();
         handle.await.expect("adapter task joins");
+    }
+
+    /// The `TransactionsSwept` arm end to end: a sweep naming a tracked
+    /// lock's funding tx must drop the in-memory entry and carry the
+    /// tombstone to the persister through the same `removed` channel a
+    /// rejected-at-broadcast `Built` row uses. A swept funding tx can
+    /// never confirm, so without this the entry is a zombie
+    /// `resume_asset_lock` re-broadcasts and waits on without bound, and
+    /// every store mirrors it forever.
+    #[tokio::test]
+    async fn transactions_swept_removes_the_tracked_asset_lock_it_funded() {
+        use dashcore::hashes::Hash as _;
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use tokio::sync::Notify;
+
+        use super::spawn_wallet_event_adapter;
+        use crate::test_support::{
+            funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
+        };
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::persister::WalletPersister;
+
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(dashcore::Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let asset_lock_manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+            ),
+        );
+        let (tx, _path) = asset_lock_manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+
+        let record = TransactionRecord::new(
+            tx.clone(),
+            AccountType::IdentityRegistration,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                4321,
+                dashcore::BlockHash::all_zeros(),
+                1_650_000_000,
+            )),
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            vec![],
+            vec![],
+            0,
+        );
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        // Attested for sweeps AND payments: the removal must ride an
+        // ordinary round, and the flip's overlay is only staged for a
+        // payment-durable backend.
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
+                .union(crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS)
+                .union(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS),
+        ));
+        let (event_tx, event_rx) = unbounded_channel();
+        let cancel = CancellationToken::new();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let handle = spawn_wallet_event_adapter(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister),
+            event_rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        );
+
+        // Track the lock the same way a restore scan would.
+        event_tx
+            .send(WalletEvent::BlockProcessed {
+                wallet_id,
+                height: 4321,
+                chain_lock: None,
+                inserted: vec![record],
+                updated: vec![],
+                matured: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+            })
+            .expect("send reconstruction event");
+        let observed = obs_rx.recv().await.expect("reconstruction store");
+        assert_eq!(observed.n_asset_locks, 1, "sanity: the entry is tracked");
+
+        // The funding tx is swept.
+        event_tx
+            .send(WalletEvent::TransactionsSwept {
+                wallet_id,
+                txids: vec![tx.txid()],
+                superseded_by: dashcore::Txid::from_byte_array([0x77; 32]),
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .expect("send sweep event");
+
+        let observed = obs_rx.recv().await.expect("sweep store");
+        assert_eq!(
+            observed.n_asset_locks_removed, 1,
+            "the dead lock's tombstone must ride the sweep's own store()"
+        );
+
+        let out_point = dashcore::OutPoint::new(tx.txid(), 0);
+        {
+            let wm = wallet_manager.read().await;
+            assert!(
+                !wm.get_wallet_info(&wallet_id)
+                    .expect("wallet")
+                    .tracked_asset_locks
+                    .contains_key(&out_point),
+                "the in-memory entry must not outlive its swept funding tx"
+            );
+        }
+
+        cancel.cancel();
+        handle.await.expect("adapter task joins");
+    }
+
+    /// The coalesced sweep-then-chainlocked-reinstatement fold, driven
+    /// through the REAL producers rather than hand-built changesets: the
+    /// sweep arm removes the tracked entry and emits its tombstone, the
+    /// reinstating chainlocked record re-inserts through reconstruction at
+    /// a non-Consumed status, and folding the two — exactly what the
+    /// adapter's batched drain does — must cancel the tombstone. Before
+    /// `AssetLockChangeSet::merge` learned that, the merged changeset
+    /// carried both, and SQLite (upserts before removals) deleted the row
+    /// it had just reinstated while the in-memory wallet kept it: the
+    /// durable tracked lock vanished across a restart even though its
+    /// funding transaction survived.
+    #[tokio::test]
+    async fn a_reinstating_reconstruction_folded_after_a_sweep_cancels_its_tombstone() {
+        use dashcore::hashes::Hash as _;
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use tokio::sync::Notify;
+
+        use crate::changeset::merge::Merge as _;
+        use crate::test_support::{
+            funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
+        };
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::asset_lock::sync::reconstruction;
+        use crate::wallet::asset_lock::tracked::AssetLockStatus;
+        use crate::wallet::persister::WalletPersister;
+
+        let (wallet_manager, wallet_id, _generation, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(dashcore::Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let asset_lock_manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
+            ),
+        );
+        let (tx, _path) = asset_lock_manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let record = TransactionRecord::new(
+            tx.clone(),
+            AccountType::IdentityRegistration,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                4321,
+                dashcore::BlockHash::all_zeros(),
+                1_650_000_000,
+            )),
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            vec![],
+            vec![],
+            0,
+        );
+        let out_point = dashcore::OutPoint::new(tx.txid(), 0);
+
+        // Track the lock the way a restore scan would.
+        let tracked = reconstruction::reconstruct_tracked_asset_locks(
+            &wallet_manager,
+            &wallet_id,
+            &[&record],
+        )
+        .await;
+        assert_eq!(tracked.asset_locks.len(), 1, "sanity: the entry is tracked");
+
+        // The sweep's own changeset, then the reinstating record's — the
+        // two events a single folded drain can carry back to back.
+        let mut folded = reconstruction::remove_tracked_asset_locks_for_swept(
+            &wallet_manager,
+            &wallet_id,
+            &[tx.txid()],
+        )
+        .await;
+        assert!(
+            folded.removed.contains(&out_point),
+            "sanity: the sweep produced the tombstone"
+        );
+        let reinstated = reconstruction::reconstruct_tracked_asset_locks(
+            &wallet_manager,
+            &wallet_id,
+            &[&record],
+        )
+        .await;
+        let reinstated_entry = reinstated
+            .asset_locks
+            .get(&out_point)
+            .expect("reconstruction must re-insert the entry the sweep removed");
+        assert_ne!(
+            reinstated_entry.status,
+            AssetLockStatus::Consumed,
+            "sanity: the load-bearing premise — a reinstating reconstruction is non-Consumed"
+        );
+        folded.merge(reinstated);
+
+        assert!(
+            folded.removed.is_empty(),
+            "the reinstating upsert must cancel the folded sweep tombstone"
+        );
+        assert!(
+            folded.asset_locks.contains_key(&out_point),
+            "and the reinstated entry rides the store round"
+        );
     }
 
     /// The `ChainLockProcessed` arm end to end: a lock the scan
