@@ -157,8 +157,11 @@ impl<C> Platform<C> {
 
         // The inner limit is REQUIRED — it bounds the derived outer
         // query. No `0 = server default` sentinel here: an explicit
-        // bound is part of the chained contract.
-        if inner_limit == 0 || inner_limit > u16::MAX as u32 {
+        // bound is part of the chained contract. Enforce the server's
+        // max up front so the message states the bound this check
+        // applies (the drive layer caps again at the outer `$id IN`
+        // clause's value limit).
+        if inner_limit == 0 || inner_limit > self.config.drive.max_query_limit as u32 {
             return Ok(QueryValidationResult::new_with_error(QueryError::Query(
                 QuerySyntaxError::InvalidLimit(format!(
                     "chained queries require an inner limit in [1, {}], got {}",
