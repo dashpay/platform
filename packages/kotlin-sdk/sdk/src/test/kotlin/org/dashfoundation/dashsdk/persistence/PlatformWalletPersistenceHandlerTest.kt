@@ -22,7 +22,10 @@ import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
 import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
+import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -77,7 +80,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        assertEquals(0x3bfL, handler.persistenceCapabilitiesBits())
+        assertEquals(0xbbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
@@ -90,6 +93,38 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.DPNS_NAME_STATES))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.TRACKED_ASSET_LOCKS))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.CORE_SWEEP_REMOVAL))
+    }
+
+    @Test
+    fun sweepSlotDefaultRefusesARoundOnlyWhenTheCapabilityIsHandDeclared() {
+        // The trampoline is wired for every subclass, so "slot present"
+        // proves nothing — the contract lives in the capability bit. A
+        // subclass declaring CORE_SWEEP_REMOVAL without overriding the slot
+        // has promised removals it would silently swallow while the
+        // watermark advances; the inherited default must refuse the round
+        // instead. One that declares nothing keeps the benign ignore: Rust
+        // strips the watermark before its store(), and failing the round
+        // would throw away its additive slots for no protection gained.
+        val declaringButNotOverriding = object : NativePersistenceBridge() {
+            override fun persistenceCapabilitiesBits(): Long =
+                NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
+        }
+        val walletId = ByteArray(32) { 1 }
+        assertTrue(
+            "a hand-declared capability with the inherited no-op body must fail the round",
+            declaringButNotOverriding.onWalletChangesetTransactionsSwept(
+                walletId, arrayOf(ByteArray(32) { 2 }), arrayOf(ByteArray(32) { 3 }), emptyArray(), 400,
+            ) != 0,
+        )
+
+        val nonAttesting = object : NativePersistenceBridge() {}
+        assertEquals(
+            0,
+            nonAttesting.onWalletChangesetTransactionsSwept(
+                walletId, arrayOf(ByteArray(32) { 2 }), arrayOf(ByteArray(32) { 3 }), emptyArray(), 400,
+            ),
+        )
     }
 
     // ── Standalone (non-bracketed) writes ─────────────────────────────
@@ -2046,6 +2081,1139 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun sweptTransactionIsDeletedAndFreesOnlyItsOwnInputs() = runTest {
+        // A recorded spend that a later, final transaction beat to an input
+        // can never confirm; Rust drops it and names it here. The mirror has
+        // to drop it too — otherwise the row comes back on the next load and
+        // re-creates a balance the wallet already corrected.
+        //
+        // Shape: the loser (unconfirmed, as every swept loser is) spends A
+        // and B; the winner is wallet-relevant, in-block, and takes only A.
+        // A must stay out of the restore set, B must return to it.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 41 }
+        val sweptTxid = ByteArray(32) { 42 }
+        val winnerTxid = ByteArray(32) { 44 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 140_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        // A (vout 0) and B (vout 1).
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 1, 40_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // The doomed transaction: mempool context — upstream only ever
+        // sweeps unconfirmed records, so its inputs are linked to it without
+        // `isSpent` ever flipping.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sweptTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -140_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0) + makeOutpoint(fundingTxid, 1), 2,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, sweptTxid)
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 1, sweptTxid)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, sweptTxid, 0, 60_000, "yUtxoAddr", ByteArray(25) { 6 },
+            0, false, false, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertFalse(
+            "a pre-block spender links but must not flip isSpent",
+            db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent,
+        )
+
+        // The winner confirms, taking A, then the sweep runs — the ordering
+        // the persist path guarantees inside one round.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, winnerTxid, ByteArray(10) { 6 }, 2, 102, ByteArray(32) { 9 },
+            1_700_000_200, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_150,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, winnerTxid)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sweptTxid), arrayOf(winnerTxid),
+            arrayOf(makeOutpoint(fundingTxid, 1)), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull("the swept transaction row is gone", db.transactionDao().getByTxid(sweptTxid))
+        assertNull(
+            "the change it created is gone with it",
+            db.txoDao().getByOutpoint(makeOutpoint(sweptTxid, 0)),
+        )
+        assertNotNull("the funding transaction is untouched", db.transactionDao().getByTxid(fundingTxid))
+
+        val winnerTaken = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!
+        assertTrue("the coin the winner took stays spent", winnerTaken.isSpent)
+        assertTrue(winnerTxid.contentEquals(winnerTaken.spendingTxid))
+
+        // B was only ever claimed by the loser, so it is spendable again.
+        val released = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 1))!!
+        assertFalse("the loser's own input is free again", released.isSpent)
+        assertNull(released.spendingTxid)
+        val restored = handler.onLoadWalletList().single().utxos.single()
+        assertEquals(1, restored.vout)
+    }
+
+    @Test
+    fun anAbsentWinnerStillKeepsItsOwnInputSpent() = runTest {
+        // The winner can spend our coin and pay only outside addresses. It
+        // sweeps the loser all the same, but no record for it ever reaches
+        // the persister — so nothing in this store could work out that the
+        // coin is gone. Upstream can, and reports it by leaving the coin out
+        // of the released set. A swept loser is unconfirmed, so its input is
+        // linked at `isSpent = 0`; deleting the loser and stopping there
+        // would return a coin the chain has already spent as spendable.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 45 }
+        val sweptTxid = ByteArray(32) { 46 }
+        val irrelevantWinner = ByteArray(32) { 47 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sweptTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, sweptTxid)
+        handler.onChangesetEnd(walletId, success = true)
+        assertFalse(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sweptTxid), arrayOf(irrelevantWinner),
+            // Upstream knows the winner took this coin even though it never
+            // reports the winner itself, so nothing is released.
+            emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(db.transactionDao().getByTxid(sweptTxid))
+        val held = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!
+        assertTrue("the coin the unrecorded winner may have taken is held", held.isSpent)
+        assertNull("with no spender invented for it", held.spendingTxid)
+        assertTrue(
+            "but with the winner stamped, the same attribution SQLite " +
+                "records as spent_in_txid",
+            irrelevantWinner.contentEquals(held.supersededByTxid),
+        )
+        assertTrue(
+            "and it stays out of the restore set",
+            handler.onLoadWalletList().single().utxos.isEmpty(),
+        )
+
+        // A re-delivery of the funding output — what a restore-rescan does,
+        // blind to the unconfirmed winner no block carries yet — must NOT
+        // outrank the sweep's verdict: the coin was provably consumed, and
+        // handing it back would resurrect it into the restore set on every
+        // restore-from-seed until the winner confirms. Only an explicit
+        // release frees a stamped hold — the same answer the SQLite store's
+        // upsert valve gives to the identical event stream.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val redelivered = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!
+        assertTrue("the stamped hold survives re-delivery", redelivered.isSpent)
+        assertTrue(irrelevantWinner.contentEquals(redelivered.supersededByTxid))
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
+    fun aWinnersLateSpentEmitDoesNotDowngradeAStampedHold() = runTest {
+        // The winner's own record can reach this store only after the sweep
+        // and the funding TXO already did — IS-locked, not yet in a block.
+        // Its record pass is monotonic and merely links the spender, but
+        // the utxos_spent emit that rides with it resolved the in-block
+        // gate to false and wrote it, flipping a durable stamped hold back
+        // into the restore set until the winner confirmed — contradicting
+        // the verdict the sweep already recorded.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 56 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        val loserTxid = ByteArray(32) { 57 }
+        val winnerTxid = ByteArray(32) { 58 }
+
+        // The doomed spend, before its funding output.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_050,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // The sweep holds the claim; the funding TXO then materializes it
+        // as a stamped hold.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertTrue(db.txoDao().getByOutpoint(pOutpoint)!!.isSpent)
+
+        // The winner's own record finally arrives, IS-locked (context 1 <
+        // in-block), with the spent emit riding along the way a real round
+        // delivers both.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, winnerTxid, ByteArray(10) { 6 }, 1, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_060,
+            pOutpoint, 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, winnerTxid)
+        handler.onChangesetEnd(walletId, success = true)
+
+        val held = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertTrue(
+            "the winner's own unconfirmed arrival must not downgrade the stamped hold",
+            held.isSpent,
+        )
+        assertTrue(winnerTxid.contentEquals(held.supersededByTxid))
+        assertTrue(
+            "the spender is linked all the same",
+            winnerTxid.contentEquals(held.spendingTxid),
+        )
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
+    fun aReleaseNamingACoinASettledSpenderStillClaimsIsRefused() = runTest {
+        // The pruned-finalized-release defect, on this store's terms: a
+        // chainlocked spender F is pruned upstream to a bare txid, so a
+        // later loser L that pays this wallet while reusing F's input (plus
+        // an attacker-owned one) sweeps with F's coin wrongly named in
+        // `releasedOutpoints`. F's row and its `spendingTxid` link survive
+        // HERE, and the link guard keeps L's record pass from stealing the
+        // attribution — so the hold pass never detaches F's coin and
+        // `releaseByOutpoint` refuses it, while the coin only L claimed
+        // still comes free in the same batch. The restore surface is the
+        // restart: what `onLoadWalletList` hands back is what a relaunch
+        // spends from.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 60 }
+        val settledCoin = makeOutpoint(fundingTxid, 0)
+        val losersOwnCoin = makeOutpoint(fundingTxid, 1)
+        val attackerInput = makeOutpoint(ByteArray(32) { 61 }, 0)
+        val finalizedTxid = ByteArray(32) { 62 }
+        val loserTxid = ByteArray(32) { 63 }
+        val winnerTxid = ByteArray(32) { 64 }
+
+        // Fund both coins.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 200_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 1, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // F: the chainlocked spender of `settledCoin` — upstream keeps only
+        // its txid from here on; this store keeps the row and the link.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, finalizedTxid, ByteArray(10) { 5 }, 3, 120, ByteArray(32) { 8 },
+            1_700_000_100, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_050,
+            settledCoin, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        val linked = db.txoDao().getByOutpoint(settledCoin)!!
+        assertTrue("sanity: F's spend marked", linked.isSpent)
+        assertTrue("sanity: F holds the link", finalizedTxid.contentEquals(linked.spendingTxid))
+
+        // L: arrives after F's pruning — pays this wallet, reuses F's input
+        // alongside the attacker's and one coin of its own. Its record pass
+        // must NOT steal F's link.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 6 }, 0, 0, ByteArray(32),
+            0, 0, "Standard", 0, 50_000, 0, false, "", 1_700_000_200,
+            settledCoin + attackerInput + losersOwnCoin, 3,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        val guarded = db.txoDao().getByOutpoint(settledCoin)!!
+        assertTrue(
+            "a settled spender's link is not stolen by a conflicting record",
+            finalizedTxid.contentEquals(guarded.spendingTxid),
+        )
+        assertTrue(
+            "the loser's own coin links normally",
+            loserTxid.contentEquals(db.txoDao().getByOutpoint(losersOwnCoin)!!.spendingTxid),
+        )
+
+        // W (final) beats L on the attacker input alone. Upstream's release
+        // set — computed from live records that no longer include F — wrongly
+        // names F's coin alongside the loser's own.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid),
+            arrayOf(settledCoin, losersOwnCoin), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val settled = db.txoDao().getByOutpoint(settledCoin)!!
+        assertTrue(
+            "a released coin a settled stored spender still claims must stay spent",
+            settled.isSpent,
+        )
+        assertTrue(finalizedTxid.contentEquals(settled.spendingTxid))
+        val freed = db.txoDao().getByOutpoint(losersOwnCoin)!!
+        assertFalse("a coin only the swept loser claimed must come free", freed.isSpent)
+        assertNull(freed.spendingTxid)
+        assertEquals(
+            "the restore surface hands back exactly the freed coin",
+            1,
+            handler.onLoadWalletList().single().utxos.size,
+        )
+    }
+
+    @Test
+    fun aPreStampHoldStillFreesOnRedelivery() = runTest {
+        // The backstop for rows written before holds named their winner: a
+        // coin held spent with neither a spender nor a `supersededByTxid`
+        // stamp has nothing durable behind it, so the wallet re-delivering
+        // it as a UTXO — the authority on what it holds — still lifts the
+        // mark. Every hold written today is stamped; this pins the migration
+        // path for the ones already on disk.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 55 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        db.transactionDao().upsert(
+            TransactionEntity(txid = fundingTxid, transactionData = ByteArray(0)),
+        )
+        db.txoDao().upsert(
+            TxoEntity(
+                outpoint = pOutpoint,
+                vout = 0,
+                amount = 100_000,
+                address = "yUtxoAddr",
+                isSpent = true,
+                walletId = walletId,
+                txid = fundingTxid,
+            ),
+        )
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertFalse(
+            "a hold with nothing durable behind it frees on re-delivery",
+            db.txoDao().getByOutpoint(pOutpoint)!!.isSpent,
+        )
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun aReleasedCoinAlreadyReclaimedInTheSameRoundKeepsItsNewSpender() = runTest {
+        // A round can carry both a release and a later transaction that
+        // legitimately spends the freed coin: merging folds several events
+        // together, and every record is written before sweeps are processed.
+        // By the time the release runs the coin is claimed again, and freeing
+        // it would hand a spent coin back to the restore set.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 50 }
+        val sweptTxid = ByteArray(32) { 51 }
+        val winnerTxid = ByteArray(32) { 52 }
+        val reclaimerTxid = ByteArray(32) { 53 }
+        val freedCoin = makeOutpoint(fundingTxid, 1)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 140_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 1, 40_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // The doomed transaction claims both coins, unconfirmed as every
+        // swept loser is.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sweptTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -140_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0) + freedCoin, 2,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, sweptTxid)
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 1, sweptTxid)
+        handler.onChangesetEnd(walletId, success = true)
+
+        // One round now carries the winner, the sweep releasing the coin the
+        // winner did not take, and a later transaction that already spent
+        // that freed coin. Records are applied first, sweeps last.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, winnerTxid, ByteArray(10) { 6 }, 2, 101, ByteArray(32) { 8 },
+            1_700_000_100, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_090,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, winnerTxid)
+        handler.onWalletChangesetTransaction(
+            walletId, reclaimerTxid, ByteArray(10) { 7 }, 2, 102, ByteArray(32) { 9 },
+            1_700_000_200, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_150,
+            freedCoin, 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 1, reclaimerTxid)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sweptTxid), arrayOf(winnerTxid), arrayOf(freedCoin), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull("the swept transaction row is still gone", db.transactionDao().getByTxid(sweptTxid))
+
+        val reclaimed = db.txoDao().getByOutpoint(freedCoin)!!
+        assertTrue(
+            "the later spender keeps its claim",
+            reclaimerTxid.contentEquals(reclaimed.spendingTxid),
+        )
+        assertTrue("so the coin stays spent", reclaimed.isSpent)
+        assertTrue(
+            "and never returns to the restore set",
+            handler.onLoadWalletList().single().utxos.isEmpty(),
+        )
+    }
+
+    @Test
+    fun aLaterSweepKeepingACoinSpentOverridesAnEarlierRelease() = runTest {
+        // JNI delivers one call per sweep batch, in order. The first frees a
+        // coin, a second transaction spends it, and the second sweep removes
+        // that spender while freeing nothing — its own winner took the coin.
+        // The later answer has to win, which is what applying the calls in
+        // sequence gives: each one holds its losers' inputs before releasing.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yUtxoAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 70 }
+        val firstLoser = ByteArray(32) { 71 }
+        val secondLoser = ByteArray(32) { 72 }
+        val contested = makeOutpoint(fundingTxid, 0)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 100_000, "yUtxoAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Both losers claim the coin; each is unconfirmed, as swept losers are.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, firstLoser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_050,
+            contested, 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, firstLoser)
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, secondLoser, ByteArray(10) { 6 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -100_000, 0, false, "", 1_700_000_100,
+            contested, 1,
+        )
+        handler.onWalletChangesetUtxoSpent(walletId, fundingTxid, 0, secondLoser)
+        handler.onChangesetEnd(walletId, success = true)
+
+        // One round, two batches, in order.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(firstLoser), arrayOf(ByteArray(32) { 73 }), arrayOf(contested), 400,
+        )
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(secondLoser), arrayOf(ByteArray(32) { 74 }), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.txoDao().getByOutpoint(contested)!!
+        assertTrue("the later sweep kept the coin spent", row.isSpent)
+        assertTrue(
+            "so it stays out of the restore set",
+            handler.onLoadWalletList().single().utxos.isEmpty(),
+        )
+    }
+
+    /**
+     * Seed the review finding's exact shape: one loser transaction shared by
+     * two wallets, spending one coin from each. Upstream computes each
+     * wallet's released set independently
+     * (`per_wallet_released_outpoints`), and neither wallet's own winner row
+     * is ever created here — matching the "the winner can pay only outside
+     * addresses" case the released set exists to handle. Both coins live in
+     * the same funding transaction purely for setup convenience; what makes
+     * the loser shared is that it spends a TXO owned by each wallet.
+     *
+     * Returns the funding txid and the loser txid so callers can build the
+     * outpoints and drive the sweep.
+     */
+    private suspend fun seedSharedLoserAcrossTwoWallets(walletA: ByteArray, walletB: ByteArray): Pair<ByteArray, ByteArray> {
+        handler.onPersistWalletMetadata(walletA, testnet, groupId, 0)
+        handler.onPersistWalletMetadata(walletB, testnet, groupId, 0)
+        // Distinct xpubs — `accountExtendedPubKeyBytes` carries a unique
+        // index, so two accounts sharing one would silently fail the second
+        // registration (`guarded` swallows the constraint violation).
+        handler.onPersistAccountRegistration(
+            walletA, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        handler.onPersistAccountRegistration(
+            walletB, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 31 },
+        )
+        val accountA = db.accountDao().observeByWallet(walletA).first().single()
+        val accountB = db.accountDao().observeByWallet(walletB).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yWalletA", poolTypeTag = 0, addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0", accountId = accountA.id,
+            ),
+        )
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yWalletB", poolTypeTag = 0, addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0", accountId = accountB.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 80 }
+        val loserTxid = ByteArray(32) { 81 }
+
+        // P (vout 0) — wallet A's coin.
+        handler.onChangesetBegin(walletA)
+        handler.onWalletChangesetTransaction(
+            walletA, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 140_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletA, fundingTxid, 0, 100_000, "yWalletA", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletA, success = true)
+
+        // Q (vout 1) — wallet B's coin, same funding transaction.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetUtxoAdded(
+            walletB, fundingTxid, 1, 40_000, "yWalletB", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        // The shared loser: unconfirmed, spends both P and Q.
+        handler.onChangesetBegin(walletA)
+        handler.onWalletChangesetTransaction(
+            walletA, loserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -140_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0) + makeOutpoint(fundingTxid, 1), 2,
+        )
+        handler.onWalletChangesetUtxoSpent(walletA, fundingTxid, 0, loserTxid)
+        handler.onWalletChangesetUtxoSpent(walletA, fundingTxid, 1, loserTxid)
+        handler.onChangesetEnd(walletA, success = true)
+
+        return fundingTxid to loserTxid
+    }
+
+    @Test
+    fun sharedLoserAppliesEachWalletsOwnReleaseSetRegardlessOfOrder_walletBThenWalletA() = runTest {
+        // Before the fix, whichever wallet's callback ran FIRST deleted the
+        // shared loser row outright, using only its own released set to
+        // decide every input on the row — including the other wallet's
+        // coin. Running wallet B (which releases nothing) first used to
+        // delete the row before wallet A's release of P ever landed, so
+        // A's later call found nothing to update and P stayed wrongly
+        // spent forever. This pins the fix: the row must survive until
+        // both wallets have weighed in, and each wallet's coin must reflect
+        // only that wallet's own decision.
+        val walletB = ByteArray(32) { 9 }
+        val (fundingTxid, loserTxid) = seedSharedLoserAcrossTwoWallets(walletId, walletB)
+        val winnerTxid = ByteArray(32) { 82 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val q = makeOutpoint(fundingTxid, 1)
+
+        // Wallet B first: its own released set names nothing, so its coin
+        // (Q) is held rather than freed.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertNotNull(
+            "wallet B alone must not delete a row wallet A still has a claim on",
+            db.transactionDao().getByTxid(loserTxid),
+        )
+        val untouchedP = db.txoDao().getByOutpoint(p)!!
+        assertFalse("wallet B's callback must not touch wallet A's coin", untouchedP.isSpent)
+        assertTrue(
+            "P is still linked to the loser, untouched",
+            loserTxid.contentEquals(untouchedP.spendingTxid),
+        )
+
+        // Wallet A second: releases P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(p), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull("the last wallet to run performs the delete", db.transactionDao().getByTxid(loserTxid))
+
+        val freedP = db.txoDao().getByOutpoint(p)!!
+        assertFalse("wallet A's own release must free its own coin", freedP.isSpent)
+        assertNull(freedP.spendingTxid)
+
+        val heldQ = db.txoDao().getByOutpoint(q)!!
+        assertTrue(
+            "wallet B's earlier decision to hold Q must survive wallet A's callback",
+            heldQ.isSpent,
+        )
+        assertNull(heldQ.spendingTxid)
+    }
+
+    @Test
+    fun sharedLoserAppliesEachWalletsOwnReleaseSetRegardlessOfOrder_walletAThenWalletB() = runTest {
+        // Mirror of the ordering above: wallet A (which releases P) runs
+        // first this time. The fix is meant to be order-independent, so
+        // this must land on the exact same end state.
+        val walletB = ByteArray(32) { 9 }
+        val (fundingTxid, loserTxid) = seedSharedLoserAcrossTwoWallets(walletId, walletB)
+        val winnerTxid = ByteArray(32) { 92 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val q = makeOutpoint(fundingTxid, 1)
+
+        // Wallet A first: releases P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(p), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNotNull(
+            "wallet A alone must not delete a row wallet B still has a claim on",
+            db.transactionDao().getByTxid(loserTxid),
+        )
+        val untouchedQ = db.txoDao().getByOutpoint(q)!!
+        assertFalse("wallet A's callback must not touch wallet B's coin", untouchedQ.isSpent)
+        assertTrue(
+            "Q is still linked to the loser, untouched",
+            loserTxid.contentEquals(untouchedQ.spendingTxid),
+        )
+
+        // Wallet B second: releases nothing.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertNull("the last wallet to run performs the delete", db.transactionDao().getByTxid(loserTxid))
+
+        val freedP = db.txoDao().getByOutpoint(p)!!
+        assertFalse("wallet A's earlier release must survive wallet B's callback", freedP.isSpent)
+        assertNull(freedP.spendingTxid)
+
+        val heldQ = db.txoDao().getByOutpoint(q)!!
+        assertTrue("wallet B's own decision to hold its coin must stick", heldQ.isSpent)
+        assertNull(heldQ.spendingTxid)
+    }
+
+    /**
+     * [seedSharedLoserAcrossTwoWallets] plus an output of the loser's own —
+     * phantom money, since a transaction that never confirms funded
+     * nothing. Driven through the ordinary [onWalletChangesetUtxoAdded]
+     * write path, the same as every other row in this fixture, rather than
+     * reaching into the DB directly.
+     */
+    private suspend fun seedSharedLoserWithOwnOutputAcrossTwoWallets(
+        walletA: ByteArray,
+        walletB: ByteArray,
+    ): Pair<ByteArray, ByteArray> {
+        val (fundingTxid, loserTxid) = seedSharedLoserAcrossTwoWallets(walletA, walletB)
+        handler.onChangesetBegin(walletA)
+        handler.onWalletChangesetUtxoAdded(
+            walletA, loserTxid, 2, 60_000, "yLoserChange", ByteArray(25) { 6 },
+            0, false, false, false, false,
+        )
+        handler.onChangesetEnd(walletA, success = true)
+        return fundingTxid to loserTxid
+    }
+
+    @Test
+    fun sharedLoserOutputAndCoreTxRecordAreExcludedAfterOnlyOneWalletsCallbackCommits() = runTest {
+        // The BLOCKING review finding: a shared loser's own output, and its
+        // reachability through onGetCoreTxRecord, must not survive when
+        // only ONE wallet's callback ever commits and the other's never
+        // arrives at all — a crash, a rejection, or simply never coming.
+        //
+        // commit_batch calls store() once per wallet and each commits
+        // independently, so before the fix wallet B alone could not delete
+        // a row wallet A still had an outstanding claim on (see the
+        // sharedLoserAppliesEachWalletsOwnReleaseSet* tests above) — and
+        // the OUTPUT went with the row, because deletion was the only thing
+        // that excluded either. If wallet A's own callback then never runs,
+        // that hold is permanent: the row and its phantom output stay fully
+        // live forever, so `onGetCoreTxRecord` keeps handing the dead
+        // transaction back as though it were still a candidate.
+        //
+        // Only wallet B's callback ever runs here, and it releases nothing
+        // — the worst case, since it gives the row no reason to be
+        // physically deleted at all.
+        val walletB = ByteArray(32) { 9 }
+        val (_, loserTxid) = seedSharedLoserWithOwnOutputAcrossTwoWallets(walletId, walletB)
+        val winnerTxid = ByteArray(32) { 82 }
+        val phantomOutput = makeOutpoint(loserTxid, 2)
+
+        // Only wallet B's callback ever runs, and it releases nothing —
+        // wallet A's own callback (which would release P) never arrives in
+        // this test at all.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertNotNull(
+            "wallet A's own claim on P is still outstanding, so the row itself survives",
+            db.transactionDao().getByTxid(loserTxid),
+        )
+        assertNull(
+            "the loser's own output must not survive even a single committed callback, " +
+                "regardless of which wallet's callback that was",
+            db.txoDao().getByOutpoint(phantomOutput),
+        )
+        val row = db.transactionDao().getByTxid(loserTxid)!!
+        assertTrue(
+            "any callback that reaches the sweep must flag the row, not just wallet A's own",
+            row.isGloballySwept,
+        )
+
+        // "Restart": a fresh handler bound to the same underlying store —
+        // the same pattern `addressBalanceConflictPreservesDerivationIndicesAcrossRestart`
+        // and the pending-key restart tests below use. Wallet A's own
+        // callback never happens in this test, simulating a crash or a
+        // rejection that stops it from ever arriving — the exact scenario
+        // the finding describes.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+
+        assertNull(
+            "the phantom output must not resurrect across a restart",
+            db.txoDao().getByOutpoint(phantomOutput),
+        )
+        assertNull(
+            "wallet A must not be able to read the swept loser back as a live transaction " +
+                "after a restart, even though its own callback never ran",
+            restarted.onGetCoreTxRecord(walletId, loserTxid),
+        )
+        val utxosA = restarted.onLoadWalletList().first { it.walletId.contentEquals(walletId) }.utxos
+        assertFalse(
+            "the phantom output must not be handed back as a restorable UTXO",
+            utxosA.any { it.prevTxid.contentEquals(loserTxid) && it.vout == 2 },
+        )
+    }
+
+    @Test
+    fun twoWalletsReleasedPendingInputsDoNotDeadlockTheRowDelete() = runTest {
+        // Port of the Swift regression of the same name. A shared loser
+        // holds one unresolved pending input per wallet, and each wallet's
+        // own sweep releases its own coin. Released staged rows must be
+        // deleted outright: left attached they read as their wallet's claim
+        // in `hasOtherWalletClaim`, so each callback would see the other's
+        // row and decline the delete, and replaying either would reach the
+        // same stalemate — the dead row and both pending entries stored
+        // forever. The global marker keeps the funds correct either way;
+        // this pins the storage half.
+        val walletB = ByteArray(32) { 8 }
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistWalletMetadata(walletB, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 65 }
+        val pA = makeOutpoint(fundingTxid, 8)
+        val pB = makeOutpoint(fundingTxid, 9)
+        val loserTxid = ByteArray(32) { 66 }
+        val winnerTxid = ByteArray(32) { 67 }
+
+        // The loser's row plus one still-unfunded pending claim per wallet
+        // — what each wallet's own record pass would have staged.
+        db.transactionDao().upsert(
+            TransactionEntity(txid = loserTxid, transactionData = ByteArray(10) { 5 }),
+        )
+        db.documentDao().upsertPendingInput(
+            PendingInputEntity(
+                outpoint = pA,
+                inputIndex = 0,
+                spendingTxid = loserTxid,
+                spendingTransactionTxid = loserTxid,
+                walletId = walletId,
+            ),
+        )
+        db.documentDao().upsertPendingInput(
+            PendingInputEntity(
+                outpoint = pB,
+                inputIndex = 1,
+                spendingTxid = loserTxid,
+                spendingTransactionTxid = loserTxid,
+                walletId = walletB,
+            ),
+        )
+
+        // Each wallet's independently committed callback, each releasing
+        // only its own coin.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(pA), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), arrayOf(pB), 400,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertNull(
+            "a released pending input is not a claim once its own wallet has resolved it",
+            db.transactionDao().getByTxid(loserTxid),
+        )
+        assertTrue(db.documentDao().getPendingInputsByOutpoint(pA).isEmpty())
+        assertTrue(db.documentDao().getPendingInputsByOutpoint(pB).isEmpty())
+    }
+
+    @Test
+    fun aReinstatingRecordInALaterRoundRevivesASweptTransactionAndItsOutputs() = runTest {
+        // Cross-round reinstatement — the BLOCKING finding this round
+        // fixes. The sweep and its reinstating record land in two
+        // SEPARATE callback rounds, with wallet B's still-outstanding
+        // claim keeping the shared row physically present in between,
+        // exactly as
+        // sharedLoserOutputAndCoreTxRecordAreExcludedAfterOnlyOneWalletsCallbackCommits
+        // above establishes on its own. Before the fix,
+        // onWalletChangesetTransaction bailed unconditionally on
+        // isGloballySwept == true, so round 2's record — upstream's newer
+        // word, per CoreChangeSet::merge's documented IS-lock-precedence
+        // sequence (swept by an IS-locked conflict, then returns
+        // chainlocked and sweeps that conflict in turn) — would be
+        // silently discarded forever, and onWalletChangesetUtxoAdded would
+        // keep rejecting its output on the strength of a tombstone nothing
+        // could ever clear.
+        val walletB = ByteArray(32) { 9 }
+        val (fundingTxid, loserTxid) = seedSharedLoserWithOwnOutputAcrossTwoWallets(walletId, walletB)
+        val winnerTxid = ByteArray(32) { 82 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val phantomOutput = makeOutpoint(loserTxid, 2)
+
+        // Round 1: only wallet B's own sweep callback runs, releasing
+        // nothing. Wallet A's own claim on P is still outstanding, so the
+        // shared row survives physically even though the global half of
+        // the sweep already tombstoned it and deleted its phantom output.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        val tombstoned = db.transactionDao().getByTxid(loserTxid)!!
+        assertTrue("sanity: the row is tombstoned after round 1", tombstoned.isGloballySwept)
+        assertNull(
+            "sanity: the loser's own output is gone after round 1",
+            db.txoDao().getByOutpoint(phantomOutput),
+        )
+
+        // Round 2, a SEPARATE callback (not coalesced with round 1's
+        // sweep — the cross-round shape the merge-level fix in
+        // CoreChangeSet::merge cannot reach): the wallet returns
+        // chainlocked and sweeps the erstwhile winner in turn. Arrives
+        // here exactly like any freshly-detected transaction would —
+        // nothing marks it as "the reinstating one" — with its own output
+        // riding along in the same round, transaction before utxo per the
+        // JNI bridge's account ordering.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 5 }, 3, 200, ByteArray(32) { 8 },
+            1_700_000_200, 1, "Standard", 0, -140_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, loserTxid, 2, 60_000, "yLoserChange", ByteArray(25) { 6 },
+            200, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val reinstated = db.transactionDao().getByTxid(loserTxid)!!
+        assertFalse(
+            "a later record naming a tombstoned txid must clear the tombstone",
+            reinstated.isGloballySwept,
+        )
+        assertEquals(200, reinstated.blockHeight)
+
+        val revivedOutput = db.txoDao().getByOutpoint(phantomOutput)
+        assertNotNull("the reinstated transaction's own output must come back", revivedOutput)
+        assertEquals(60_000L, revivedOutput!!.amount)
+
+        val reclaimedP = db.txoDao().getByOutpoint(p)!!
+        assertTrue(
+            "wallet A reclaims its input once its own record is live again",
+            reclaimedP.isSpent,
+        )
+        assertTrue(loserTxid.contentEquals(reclaimedP.spendingTxid))
+
+        assertNotNull(
+            "wallet A must be able to read the reinstated transaction as live again",
+            handler.onGetCoreTxRecord(walletId, loserTxid),
+        )
+
+        // "Restart": a fresh handler bound to the same underlying store —
+        // the same pattern
+        // sharedLoserOutputAndCoreTxRecordAreExcludedAfterOnlyOneWalletsCallbackCommits
+        // above uses. The reinstatement has to be durable, not just
+        // visible to the handler instance that just applied it.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+
+        val survived = db.transactionDao().getByTxid(loserTxid)!!
+        assertFalse("the reinstatement must survive a restart", survived.isGloballySwept)
+        assertNotNull(
+            "the revived output must survive a restart",
+            db.txoDao().getByOutpoint(phantomOutput),
+        )
+        val survivedP = db.txoDao().getByOutpoint(p)!!
+        assertTrue("the reclaimed input must survive a restart", survivedP.isSpent)
+        assertNotNull(
+            "the reinstated transaction must still be readable as live after a restart",
+            restarted.onGetCoreTxRecord(walletId, loserTxid),
+        )
+    }
+
+    @Test
+    fun aSweepReleasingMoreOutpointsThanSqliteCanBindStillCommits() = runTest {
+        // The released set's size follows the input count of a transaction a
+        // remote sender chooses, so it is not bounded by anything this wallet
+        // controls. Binding it one variable per outpoint crosses the
+        // 999-variable ceiling API 29's framework SQLite still carries: the
+        // statement throws, the whole atomic round fails, and the watermark
+        // freezes on a loser that would be re-swept into the same failure
+        // after every restart.
+        //
+        // The count is far past 999 because this suite runs on the host's
+        // SQLite, whose own ceiling is much higher — at 1200 the pre-fix code
+        // passed here while still being broken on API 29. What this pins is
+        // therefore the property that matters, that the query arity does not
+        // grow with the set at all, rather than one platform's exact limit.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+
+        val loser = ByteArray(32) { 80 }
+        // Comfortably past the limit, and past the 1000-variable default of
+        // newer SQLite too.
+        val released = (0 until 40000).map { i ->
+            makeOutpoint(ByteArray(32) { 81 }, i)
+        }
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -1_000, 0, false, "", 1_700_000_000,
+            ByteArray(0), 0,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        val code = handler.onWalletChangesetTransactionsSwept(
+            walletId,
+            arrayOf(loser),
+            arrayOf(ByteArray(32) { 82 }),
+            released.toTypedArray(), 400,
+        )
+        val committed = handler.onChangesetEnd(walletId, success = true)
+
+        assertEquals("the sweep callback must not fail on a large release set", 0, code)
+        assertEquals(0, committed)
+        assertNull("and the round must actually commit", db.transactionDao().getByTxid(loser))
+    }
+
+    @Test
+    fun sweptTransactionRollsBackWithItsRound() = runTest {
+        // The deletion is staged in the same buffered transaction as every
+        // other write in the round, so a round that fails must not take the
+        // rows with it.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val txid = ByteArray(32) { 43 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, txid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 100_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(txid), arrayOf(ByteArray(32) { 44 }), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertNotNull(db.transactionDao().getByTxid(txid))
+    }
+
+    @Test
     fun spendBeforeFundingReconcilesViaPendingInputAndExcludesFromRestore() = runTest {
         // CORE-06, out-of-order arrival: an in-block spending tx is persisted
         // BEFORE its funding TXO is known (Rust's utxos_spent slice is empty
@@ -2107,6 +3275,691 @@ class PlatformWalletPersistenceHandlerTest {
         )
         // The consumed output must NOT be handed back to Rust as spendable.
         assertEquals(0, handler.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun sweptSpendBeforeFundingSurvivesRestartAndStaysSpentWhenFunded() = runTest {
+        // The loser can be persisted before its own funding output ever is
+        // (see spendBeforeFundingReconcilesViaPendingInputAndExcludesFromRestore
+        // above) — the spend arrives as a `pending_inputs` row rather than a
+        // `TxoEntity` update. When the sweep holds that input (it's not in
+        // `releasedOutpoints`), there is no TXO row to mark — the only record
+        // of the claim is the pending row, which cascades away with the loser
+        // it names (`spendingTransactionTxid`'s FK) unless
+        // `onWalletChangesetTransactionsSwept` rescues it first. This is the
+        // regression the review finding described: seed the pending spend,
+        // sweep it, restart the store, and only then let the funding UTXO
+        // arrive. The coin must come back spent, attributed to the winner,
+        // not as a fresh unspent row.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 61 }
+        val sweptTxid = ByteArray(32) { 62 }
+        val winnerTxid = ByteArray(32) { 64 }
+
+        // Changeset 1: the doomed spend arrives with no prior
+        // `onWalletChangesetUtxoAdded` for `fundingTxid:0` — the funding side
+        // of that outpoint has not been observed yet.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sweptTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_050,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(
+            "sanity: the funding TXO has not arrived yet",
+            db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0)),
+        )
+        assertEquals(
+            1,
+            db.documentDao().getPendingInputsByOutpoint(makeOutpoint(fundingTxid, 0)).size,
+        )
+
+        // Changeset 2: the sweep holds the input (not in `releasedOutpoints`),
+        // with nothing on hand to update.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sweptTxid), arrayOf(winnerTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull("the loser is gone", db.transactionDao().getByTxid(sweptTxid))
+
+        // Restart: a fresh persister loading the same on-disk store — same
+        // Room database, new handler, matching this suite's own restart
+        // idiom (e.g. addressBalanceConflictPreservesDerivationIndicesAcrossRestart above).
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+
+        // The funding transaction finally arrives and hands the outpoint
+        // back as a UTXO — the ordinary path a rescan or late block takes.
+        restarted.onChangesetBegin(walletId)
+        restarted.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        restarted.onChangesetEnd(walletId, success = true)
+
+        val coin = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))
+        assertNotNull("the funding UTXO's own upsert must still create the row", coin)
+        assertTrue(
+            "the winner's claim must survive the loser's deletion, a restart, " +
+                "and the funding UTXO's own arrival",
+            coin!!.isSpent,
+        )
+        assertTrue(winnerTxid.contentEquals(coin.supersededByTxid))
+        assertEquals(0, restarted.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun aWinnersOwnPendingRowDoesNotEvaporateTheSweepTombstone() = runTest {
+        // Records precede sweeps within a round, so a wallet-relevant winner
+        // whose own funding side is ALSO unobserved stages an ordinary
+        // pending row for the same outpoint moments before the sweep
+        // repoints the loser's row into a tombstone. The tombstone keeps the
+        // loser's original, older `createdAt`, so the drain's newest-wins
+        // pick would select the winner's ordinary row, take the gated
+        // branch (`isSpent` stays false until the winner confirms — never,
+        // for an IS-locked unconfirmed winner), skip the `supersededByTxid`
+        // stamp, and delete every pending row including the tombstone: the
+        // durable hold evaporates and the consumed coin re-enters the
+        // restore set.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 91 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        val loserTxid = ByteArray(32) { 92 }
+        val winnerTxid = ByteArray(32) { 93 }
+
+        // Changeset 1: the doomed spend arrives before its funding output.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_050,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // The loser's pending row must be strictly older than the winner's,
+        // as it always is in reality — `createdAt` has millisecond
+        // resolution and both rows land in the same test-run instant
+        // otherwise.
+        Thread.sleep(5)
+
+        // Changeset 2: the winner's record (IS-locked, still unconfirmed)
+        // and the sweep it caused, records first — the order the persist
+        // path guarantees inside one round.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, winnerTxid, ByteArray(10) { 6 }, 1, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_060,
+            pOutpoint, 1,
+        )
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(winnerTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Sanity: the coexisting pair this regression is about — the
+        // winner's ordinary row plus the repointed tombstone.
+        val rows = db.documentDao().getPendingInputsByOutpoint(pOutpoint)
+        assertEquals(2, rows.size)
+        assertEquals(1, rows.count { it.isSweptTombstone })
+
+        // The funding TXO finally arrives and drains both rows.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val coin = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertTrue(
+            "the sweep's hold must survive the winner's own coexisting pending row",
+            coin.isSpent,
+        )
+        assertTrue(winnerTxid.contentEquals(coin.supersededByTxid))
+        assertTrue(
+            "the consumed coin must stay out of the restore set",
+            handler.onLoadWalletList().single().utxos.isEmpty(),
+        )
+    }
+
+    @Test
+    fun aBatchSweepingParentAndChildDeletesTheChildsClaimOnTheParentsOutput() = runTest {
+        // The multi-loser batch shape upstream's descendant closure always
+        // produces — parent P and child C removed together — which no
+        // fixture here ever exercised: C spends P:0, still unfunded, so the
+        // claim lives as a pending row. Upstream never releases a
+        // loser-funded outpoint, so without a co-swept check the sweep
+        // tombstones the claim to the winner — and P's chainlocked
+        // reinstatement then re-delivers P:0 straight into the
+        // tombstone-outranks drain: isSpent = true, supersededByTxid =
+        // winner, and the recovery clear refuses stamped holds. A dead
+        // parent's output is nobody's coin; the claim must be deleted with
+        // the batch.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val parentTxid = ByteArray(32) { 101 } // P — record never persisted
+        val pOutpoint = makeOutpoint(parentTxid, 0)
+        val childTxid = ByteArray(32) { 102 } // C
+        val winnerTxid = ByteArray(32) { 103 } // W
+
+        // C arrives spending the still-unfunded P:0 — parked as a pending
+        // claim.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, childTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_100,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertEquals(1, db.documentDao().getPendingInputsByOutpoint(pOutpoint).size)
+
+        // One batch removes both; upstream excludes P:0 from the released
+        // set because its funder is itself a loser.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(parentTxid, childTxid),
+            arrayOf(winnerTxid, winnerTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertTrue(
+            "a claim on a co-swept parent's output must be deleted, not tombstoned",
+            db.documentDao().getPendingInputsByOutpoint(pOutpoint).isEmpty(),
+        )
+
+        // The chainlocked return: P reinstated with its output re-delivered
+        // must land spendable — nothing the batch left behind may hold it.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, parentTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val coin = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertFalse(
+            "the reinstated parent's output must not be wedged by its dead child's claim",
+            coin.isSpent,
+        )
+        assertNull(coin.supersededByTxid)
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun chainedSweepBeforeFundingReleasesAnEarlierTombstoneOnASecondSweep() = runTest {
+        // Regression for the review finding on
+        // sweptSpendBeforeFundingSurvivesRestartAndStaysSpentWhenFunded above:
+        // that fix repoints a held-but-unfunded pending input at its sweep's
+        // winner and detaches it from `spendingTransactionTxid` so it
+        // survives the loser's cascade-delete. But a SECOND sweep of that
+        // winner — the sweep's staged-row fetch matches
+        // `spendingTransactionTxid = :txid`, which the first tombstoning
+        // already cleared to null — cannot find the row that way anymore.
+        // L spends P; W spends P and Q and sweeps L, holding the still-
+        // unfunded P; X spends Q and sweeps W, this time releasing P. P's
+        // funding TXO finally arrives and must come back spendable.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 71 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        val qOutpoint = makeOutpoint(ByteArray(32) { 72 }, 0)
+        val firstLoserTxid = ByteArray(32) { 73 } // L
+        val secondLoserTxid = ByteArray(32) { 74 } // W
+        val finalWinnerTxid = ByteArray(32) { 75 } // X
+
+        // L spends only P, and P's funding side has never been observed.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, firstLoserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_070,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // First sweep: W beats L, holding P (still unfunded).
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(firstLoserTxid), arrayOf(secondLoserTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val tombstone = db.documentDao().getPendingInputsByOutpoint(pOutpoint).single()
+        assertTrue("the first sweep must tombstone the pending row", tombstone.isSweptTombstone)
+        assertTrue(secondLoserTxid.contentEquals(tombstone.spendingTxid))
+        assertNull(
+            "the tombstone must have detached from the doomed loser's FK",
+            tombstone.spendingTransactionTxid,
+        )
+
+        // W's own record — spends P and Q — must be on hand for the second
+        // sweep to find, the same requirement any sweep of a wallet-relevant
+        // loser has.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, secondLoserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_071,
+            pOutpoint + qOutpoint, 2,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Second sweep: X beats W, releasing P this time.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(secondLoserTxid), arrayOf(finalWinnerTxid), arrayOf(pOutpoint), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertTrue(
+            "a released outpoint's tombstone must not survive a chained sweep",
+            db.documentDao().getPendingInputsByOutpoint(pOutpoint).isEmpty(),
+        )
+
+        // P's funding TXO finally arrives.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.onChangesetBegin(walletId)
+        restarted.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        restarted.onChangesetEnd(walletId, success = true)
+
+        val coin = db.txoDao().getByOutpoint(pOutpoint)
+        assertNotNull(coin)
+        assertFalse(
+            "the final sweep released this coin, so it must come back spendable " +
+                "even though an earlier sweep in the chain had tombstoned it",
+            coin!!.isSpent,
+        )
+    }
+
+    @Test
+    fun aReleasedCoinDropsItsDeadWinnersMarker() = runTest {
+        // The funding-BEFORE-release ordering of the chained scenario above:
+        // the funding TXO arrives between the sweep that held the coin and
+        // the sweep that frees it, so the tombstone drains into
+        // `TxoEntity.supersededByTxid` and the pending row is gone by the
+        // time the release runs. `releaseByOutpoint` is the only writer
+        // that ever clears that column — a released coin keeping its dead
+        // winner's marker would turn the next hold on this outpoint
+        // permanent, because the redelivery carry-over in
+        // `onWalletChangesetUtxoAdded` reads a present marker as a durable
+        // claim and refuses to lift `isSpent` ever again.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 96 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        val loserTxid = ByteArray(32) { 97 } // L
+        val intermediateWinner = ByteArray(32) { 98 } // W — never recorded here
+        val finalWinner = ByteArray(32) { 99 } // X
+
+        // L spends the still-unfunded P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_090,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // First sweep: W beats L, holding P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loserTxid), arrayOf(intermediateWinner), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // P's funding TXO arrives NOW — the drain consumes the tombstone
+        // and stamps the claim onto the row itself.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val stamped = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertTrue("sanity: the drained claim holds the coin", stamped.isSpent)
+        assertTrue(intermediateWinner.contentEquals(stamped.supersededByTxid))
+
+        // Second sweep: X beats W, and this time upstream frees P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(intermediateWinner), arrayOf(finalWinner), arrayOf(pOutpoint), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val freed = db.txoDao().getByOutpoint(pOutpoint)!!
+        assertFalse("the released coin is spendable again", freed.isSpent)
+        assertNull(
+            "and its dead winner's marker goes with the hold it carried",
+            freed.supersededByTxid,
+        )
+        assertEquals(1, handler.onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun chainedSweepBeforeFundingRepointsAnEarlierTombstoneToTheNewWinner() = runTest {
+        // The held (not released) half of the chained scenario above: the
+        // second sweep keeps P spent instead of releasing it, and the
+        // tombstone must end up attributed to the NEW winner rather than the
+        // intermediate one that no longer has a row.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 81 }
+        val pOutpoint = makeOutpoint(fundingTxid, 0)
+        val firstLoserTxid = ByteArray(32) { 83 } // L
+        val secondLoserTxid = ByteArray(32) { 84 } // W
+        val finalWinnerTxid = ByteArray(32) { 85 } // X
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, firstLoserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_080,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // First sweep: W beats L, holding P.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(firstLoserTxid), arrayOf(secondLoserTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // W's own record, needed by the second sweep below.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, secondLoserTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_081,
+            pOutpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Second sweep: X beats W, still holding the same input.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(secondLoserTxid), arrayOf(finalWinnerTxid), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val tombstone = db.documentDao().getPendingInputsByOutpoint(pOutpoint).single()
+        assertTrue(tombstone.isSweptTombstone)
+        assertTrue(
+            "the tombstone must be repointed at the FINAL winner, not the " +
+                "intermediate one the second sweep already removed",
+            finalWinnerTxid.contentEquals(tombstone.spendingTxid),
+        )
+
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.onChangesetBegin(walletId)
+        restarted.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        restarted.onChangesetEnd(walletId, success = true)
+
+        val coin = db.txoDao().getByOutpoint(pOutpoint)
+        assertNotNull(coin)
+        assertTrue(
+            "the final winner's claim must survive both sweeps and the " +
+                "funding UTXO's own arrival",
+            coin!!.isSpent,
+        )
+        assertTrue(finalWinnerTxid.contentEquals(coin.supersededByTxid))
+    }
+
+    @Test
+    fun sharedWinnerDeletedByAnotherWalletsCallbackStillReconcilesThisWalletsTombstones() = runTest {
+        // Multi-wallet continuation of the chained-before-funding scenarios
+        // above, confirming this handler is NOT exposed to the Swift-side
+        // review finding on the missing-row early return: every query that
+        // carries a detached tombstone forward keys on the scalar
+        // `spendingTxid` (no FK — see [PendingInputEntity]) and runs
+        // unconditionally in `onWalletChangesetTransactionsSwept`, so the
+        // shared winner row having already been deleted by another wallet's
+        // independently committed callback must change nothing about this
+        // wallet's own release decision reaching its tombstones.
+        val walletB = ByteArray(32) { 9 }
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistWalletMetadata(walletB, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        handler.onPersistAccountRegistration(
+            walletB, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 31 },
+        )
+        val accountA = db.accountDao().observeByWallet(walletId).first().single()
+        val accountB = db.accountDao().observeByWallet(walletB).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yWalletA", poolTypeTag = 0, addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0", accountId = accountA.id,
+            ),
+        )
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yWalletB", poolTypeTag = 0, addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0", accountId = accountB.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 101 }
+        val pA = makeOutpoint(fundingTxid, 0)
+        val pB = makeOutpoint(fundingTxid, 1)
+        val rB = makeOutpoint(fundingTxid, 2)
+        val sharedLoser = ByteArray(32) { 103 } // L
+        val sharedWinner = ByteArray(32) { 104 } // W
+        val finalWinner = ByteArray(32) { 105 } // X
+
+        // The shared loser L claims one still-unfunded coin of wallet A's
+        // and two of wallet B's. Its record arrives through wallet A's
+        // round; a pending row carries the wallet of the round that wrote
+        // it, so wallet B's two claims are seeded directly in the exact
+        // shape B's own round would have written them.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sharedLoser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_090,
+            pA, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        db.documentDao().upsertPendingInput(
+            PendingInputEntity(
+                outpoint = pB, inputIndex = 1, spendingTxid = sharedLoser,
+                spendingTransactionTxid = sharedLoser, walletId = walletB,
+            ),
+        )
+        db.documentDao().upsertPendingInput(
+            PendingInputEntity(
+                outpoint = rB, inputIndex = 2, spendingTxid = sharedLoser,
+                spendingTransactionTxid = sharedLoser, walletId = walletB,
+            ),
+        )
+
+        // First sweep, one independently committed callback per wallet: W
+        // beats L, holding everything (nothing funded, nothing released).
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sharedLoser), arrayOf(sharedWinner), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(sharedLoser), arrayOf(sharedWinner), emptyArray(), 400,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+        assertNull("L is gone once both wallets ran", db.transactionDao().getByTxid(sharedLoser))
+
+        // W's own record arrives claiming all three outpoints. Each
+        // `(outpoint, W)` tombstone occupies the duplicate-guard key, so no
+        // new pending relationship attaches to W's row — the premise that
+        // lets wallet A's callback below delete it.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, sharedWinner, ByteArray(10) { 6 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_091,
+            pA + pB + rB, 3,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Second sweep: X beats W. Wallet A's callback runs first, releases
+        // its own coin, and — finding no attached claim of any other
+        // wallet's — deletes the shared row.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(sharedWinner), arrayOf(finalWinner), arrayOf(pA), 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertNull(
+            "sanity: wallet A's callback deleted the shared winner row — the premise " +
+                "wallet B's callback below has to survive",
+            db.transactionDao().getByTxid(sharedWinner),
+        )
+
+        // Wallet B's callback arrives after the row is gone, releasing one
+        // of its two coins and holding the other.
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetTransactionsSwept(
+            walletB, arrayOf(sharedWinner), arrayOf(finalWinner), arrayOf(rB), 400,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        val heldTombstone = db.documentDao().getPendingInputsByOutpoint(pB).single()
+        assertTrue(heldTombstone.isSweptTombstone)
+        assertTrue(
+            "the held tombstone must follow the chain to X even though W's row was " +
+                "already deleted by wallet A's callback",
+            finalWinner.contentEquals(heldTombstone.spendingTxid),
+        )
+        assertTrue(
+            "wallet B's release decision must reach its tombstone even though W's " +
+                "row was already deleted by wallet A's callback",
+            db.documentDao().getPendingInputsByOutpoint(rB).isEmpty(),
+        )
+
+        // The funding TXOs finally arrive, one round per owning wallet.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yWalletA", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletB)
+        handler.onWalletChangesetUtxoAdded(
+            walletB, fundingTxid, 1, 40_000, "yWalletB", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletB, fundingTxid, 2, 20_000, "yWalletB", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletB, success = true)
+
+        assertFalse(
+            "wallet A's released coin comes back spendable",
+            db.txoDao().getByOutpoint(pA)!!.isSpent,
+        )
+        val heldCoin = db.txoDao().getByOutpoint(pB)!!
+        assertTrue("wallet B's held coin stays spent", heldCoin.isSpent)
+        assertTrue(
+            "the held coin must be attributed to the final winner, not the deleted W",
+            finalWinner.contentEquals(heldCoin.supersededByTxid),
+        )
+        val releasedCoin = db.txoDao().getByOutpoint(rB)!!
+        assertFalse(
+            "wallet B's released coin must not resurrect spent under the obsolete winner",
+            releasedCoin.isSpent,
+        )
+        assertNull(releasedCoin.supersededByTxid)
     }
 
     @Test
@@ -2739,6 +4592,98 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(100_000L, row!!.amountDuffs)
         assertEquals(1, row.statusRaw)
         assertFalse(row.proofBytes != null)
+    }
+
+    @Test
+    fun assetLockUpsertNeverRegressesAConsumedRow() = runTest {
+        // The upsert-side twin of the delete guard below, matching Swift's
+        // skip and SQLite's WHERE clause: Consumed is the terminal state,
+        // and a stale reconstruction/enrichment snapshot folded after the
+        // live consumption write must not regress it.
+        val outpoint = makeOutpoint(ByteArray(32) { 48 }, 0)
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = outpoint,
+            transactionBytes = ByteArray(20) { 49 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 0,
+            amountDuffs = 70_000,
+            status = 4, // Consumed — terminal
+            proofBytes = ByteArray(8) { 50 },
+        )
+        // The stale snapshot arrives after the consumption write.
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = outpoint,
+            transactionBytes = ByteArray(20) { 49 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 0,
+            amountDuffs = 70_000,
+            status = 1, // Broadcast — a stale pre-consumption view
+            proofBytes = null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.assetLockDao().getByOutPointHex(encodeOutPointHex(outpoint))
+        assertNotNull(row)
+        assertEquals(
+            "a stale non-Consumed snapshot must not regress the terminal",
+            4,
+            row!!.statusRaw,
+        )
+    }
+
+    @Test
+    fun assetLockRemovalNeverDeletesAConsumedRow() = runTest {
+        // Parity with SQLite (`status != 'consumed'`) and Swift
+        // (`statusRaw == 4` skip): a Consumed row is deliberately retained
+        // for historical lookup, and neither removal producer — a
+        // rejected-at-broadcast Built row, or the sweep cascade for a swept
+        // funding tx — can legitimately name one, so a removal reaching a
+        // consumed row is by construction a stale write. Kotlin deleted
+        // unconditionally.
+        val liveOutpoint = makeOutpoint(ByteArray(32) { 43 }, 0)
+        val consumedOutpoint = makeOutpoint(ByteArray(32) { 44 }, 1)
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = liveOutpoint,
+            transactionBytes = ByteArray(20) { 45 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 0,
+            amountDuffs = 100_000,
+            status = 1, // Broadcast — a removal may take this one
+            proofBytes = null,
+        )
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = consumedOutpoint,
+            transactionBytes = ByteArray(20) { 46 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 1,
+            amountDuffs = 55_000,
+            status = 4, // Consumed — terminal, retained for history
+            proofBytes = ByteArray(8) { 47 },
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAssetLockRemoval(walletId, liveOutpoint)
+        handler.onPersistAssetLockRemoval(walletId, consumedOutpoint)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(
+            "a live row is removable",
+            db.assetLockDao().getByOutPointHex(encodeOutPointHex(liveOutpoint)),
+        )
+        val consumed = db.assetLockDao().getByOutPointHex(encodeOutPointHex(consumedOutpoint))
+        assertNotNull("a stale removal must never take the Consumed terminal", consumed)
+        assertEquals(4, consumed!!.statusRaw)
     }
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
@@ -3442,6 +5387,296 @@ class PlatformWalletPersistenceHandlerTest {
         )
     }
 
+    // ── Bounded tombstone lifetime ────────────────────────────────────
+
+    /** One committed round: synced height + (optionally) chainlock bytes. */
+    private fun headerRound(
+        h: PlatformWalletPersistenceHandler,
+        synced: Int,
+        chainLockBytes: ByteArray = ByteArray(84) { 9 },
+    ) {
+        h.onChangesetBegin(walletId)
+        h.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = synced,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = chainLockBytes,
+        )
+        h.onChangesetEnd(walletId, success = true)
+    }
+
+    /**
+     * One committed round delivering the numeric chainlock height, the way
+     * the JNI bridge does — its own slot, after the header's.
+     */
+    private fun chainLockHeightRound(h: PlatformWalletPersistenceHandler, height: Int) {
+        h.onChangesetBegin(walletId)
+        h.onWalletChangesetChainLockHeight(walletId, height)
+        h.onChangesetEnd(walletId, success = true)
+    }
+
+    /**
+     * Record a loser spending [outpoint] (funding unknown), then sweep it
+     * in the given winner context — a mined height (default 400) leaves
+     * the block-context tombstone the collection tests reason about, -1
+     * (an IS-locked, unmined winner) leaves the same tombstone unstamped,
+     * which the collector never touches.
+     */
+    private fun seedSweptTombstone(
+        outpoint: ByteArray,
+        loser: ByteArray,
+        winner: ByteArray,
+        winnerMinedHeight: Int = 400,
+    ) {
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, loser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -50_000, 0, false, "", 1_700_000_090,
+            outpoint, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(loser), arrayOf(winner), emptyArray(), winnerMinedHeight,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun aSweptTombstoneIsCollectedAtFinalityAndNotBefore() = runTest {
+        // The attacker-shaped row: a swept incoming payment's foreign input
+        // leaves a pending tombstone that never drains — no funding TXO
+        // ever arrives — and before the collector existed it was permanent,
+        // growable one row per input by repeatedly double-spending payments
+        // at this wallet. The collector deletes it exactly when the
+        // chainlock finality boundary min(chainlockHeight, syncedHeight)
+        // reaches the WINNER'S mined height — no observation-age margin:
+        // the stamp is the winner's own height, carried on the sweep event
+        // itself, so nothing here guesses when the winner mined.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 71 }
+        val p = makeOutpoint(fundingTxid, 0)
+        seedSweptTombstone(p, ByteArray(32) { 72 }, ByteArray(32) { 73 }, winnerMinedHeight = 400)
+
+        val tombstone = db.documentDao().getPendingInputsByOutpoint(p).single()
+        assertTrue("sanity: the sweep flagged the row", tombstone.isSweptTombstone)
+        assertEquals(
+            "the tombstone is stamped with the winner's own mined height, " +
+                "not any observation watermark",
+            400, tombstone.winnerMinedHeight,
+        )
+
+        // Chainlocks race far ahead; the filter scan is one block short of
+        // the winner — the boundary has not reached the spend, so the
+        // funding output could still be delivered by the unscanned range.
+        chainLockHeightRound(handler, 10_000)
+        headerRound(handler, 399)
+        assertEquals(
+            "boundary min(10000, 399) = 399 is below the winner's height 400 — the hold stays",
+            1, db.documentDao().getPendingInputsByOutpoint(p).size,
+        )
+
+        headerRound(handler, 400)
+        assertTrue(
+            "the boundary reaching the winner's height collects the row — no margin",
+            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+        )
+    }
+
+    @Test
+    fun aSweptTombstoneOutlivesAnySyncProgressWithoutAChainLockHeight() = runTest {
+        // Synced height alone is not finality — and neither is the mere
+        // PRESENCE of chainlock bytes on the wallet row: the bincode blob
+        // is opaque here, so "bytes exist" proves nothing about WHICH
+        // block is final (the unsound gate the review flagged). Every
+        // round below carries chainlock bytes; only the numeric height
+        // delivered by onWalletChangesetChainLockHeight supplies a
+        // boundary, and the moment one lands the finalized stamp collects.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        headerRound(handler, 100)
+
+        val fundingTxid = ByteArray(32) { 74 }
+        val p = makeOutpoint(fundingTxid, 0)
+        seedSweptTombstone(p, ByteArray(32) { 75 }, ByteArray(32) { 76 }, winnerMinedHeight = 400)
+
+        headerRound(handler, 100_000)
+        assertEquals(
+            "chainlock bytes are on record but no numeric height is — the " +
+                "hold outlasts any amount of synced-height progress",
+            1, db.documentDao().getPendingInputsByOutpoint(p).size,
+        )
+
+        chainLockHeightRound(handler, 100_000)
+        assertTrue(
+            "the first numeric chainlock height supplies the boundary and " +
+                "the finalized stamp collects",
+            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+        )
+    }
+
+    @Test
+    fun aDrainedClaimIsImmuneToTheCollector() = runTest {
+        // The genuine claim the tombstone exists for: its funding TXO
+        // arrives, the drain moves the hold onto the TXO row
+        // (supersededByTxid) and deletes the pending rows — so no amount of
+        // later sync progress may touch the materialised hold.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+        headerRound(handler, 100)
+
+        val fundingTxid = ByteArray(32) { 77 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val winner = ByteArray(32) { 79 }
+        seedSweptTombstone(p, ByteArray(32) { 78 }, winner, winnerMinedHeight = 400)
+        assertEquals(
+            "sanity: held, undrained, stamped with the winner's height",
+            400, db.documentDao().getPendingInputsByOutpoint(p).single().winnerMinedHeight,
+        )
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        headerRound(handler, 10_000)
+        chainLockHeightRound(handler, 10_000)
+
+        val coin = db.txoDao().getByOutpoint(p)
+        assertNotNull("the materialised claim's row survives collection", coin)
+        assertTrue("still held spent by the winner's claim", coin!!.isSpent)
+        assertTrue(winner.contentEquals(coin.supersededByTxid))
+    }
+
+    @Test
+    fun aTombstoneWithoutAWinnerHeightIsNeverCollected() = runTest {
+        // A tombstone with a NULL stamp is never collected. The
+        // mempool-context sweep path writes exactly this shape — an
+        // IS-locked, unmined winner has no finality horizon to stamp —
+        // and legacy rows (the v12 → v13 migration leaves pre-existing
+        // tombstones NULL) read identically. With no proof of finality
+        // the safe reading is to hold it forever rather than guess it
+        // collectible.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 80 }
+        val p = makeOutpoint(fundingTxid, 0)
+        // The real writer: an IS-context sweep of a loser whose funding
+        // TXO never arrived.
+        seedSweptTombstone(p, ByteArray(32) { 81 }, ByteArray(32) { 82 }, winnerMinedHeight = -1)
+
+        // Two rounds, not one: a back-filling collector (the rejected
+        // design) would stamp the row on the first round and collect it
+        // on the second.
+        chainLockHeightRound(handler, 1_000_000)
+        headerRound(handler, 1_000_000)
+        headerRound(handler, 1_000_010)
+        val row = db.documentDao().getPendingInputsByOutpoint(p).single()
+        assertNull(
+            "no winner height, no proof of finality — the hold outlasts any boundary",
+            row.winnerMinedHeight,
+        )
+        assertTrue(row.isSweptTombstone)
+    }
+
+    @Test
+    fun aRepointedTombstoneIsRestampedToTheLaterSweep() = runTest {
+        // A chained sweep that re-points a still-unfunded claim to a new
+        // BLOCK-CONTEXT winner also re-stamps it with THAT winner's mined
+        // height: the claim now belongs to a spend anchored at a later
+        // block, and its collection horizon moves with it.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 86 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val firstLoser = ByteArray(32) { 87 }
+        val secondLoser = ByteArray(32) { 88 }
+        val finalWinner = ByteArray(32) { 89 }
+        seedSweptTombstone(p, firstLoser, secondLoser, winnerMinedHeight = 400)
+        assertEquals(
+            "sanity: stamped with the first winner's mined height",
+            400, db.documentDao().getPendingInputsByOutpoint(p).single().winnerMinedHeight,
+        )
+
+        // The first winner's own record, then its sweep — mined 50 blocks
+        // later — the carry-forward path that re-points the earlier
+        // tombstone.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, secondLoser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_091,
+            p, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), 450,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val rows = db.documentDao().getPendingInputsByOutpoint(p)
+        assertTrue("sanity: the claim survives the chained sweep", rows.isNotEmpty())
+        for (row in rows) {
+            assertTrue(row.isSweptTombstone)
+            assertTrue(finalWinner.contentEquals(row.spendingTxid))
+            assertEquals(
+                "re-pointed ⇒ re-stamped to the later WINNER'S mined height",
+                450, row.winnerMinedHeight,
+            )
+        }
+    }
+
+    @Test
+    fun aBlockContextTombstoneOutlivesUnrelatedAdvancementBelowItsWinnersHeight() = runTest {
+        // The reviewer's unrelated-advancement scenario: the chainlock can
+        // run arbitrarily far ahead, but while the synced height sits
+        // below the winner's mined height the boundary has not reached the
+        // spend and the hold must survive — the funding output could still
+        // be delivered by the unscanned range. It collects the moment the
+        // scan catches up.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 111 }
+        val p = makeOutpoint(fundingTxid, 0)
+        seedSweptTombstone(p, ByteArray(32) { 112 }, ByteArray(32) { 113 }, winnerMinedHeight = 400)
+
+        // Chainlocks race ahead by thousands of blocks; the filter scan
+        // has only reached one block short of the winner.
+        chainLockHeightRound(handler, 10_400)
+        headerRound(handler, 399)
+        assertEquals(
+            "min(chainlock, synced) = 399 is below the winner's height 400 — any " +
+                "amount of unrelated chainlock progress must not collect the hold",
+            1, db.documentDao().getPendingInputsByOutpoint(p).size,
+        )
+
+        headerRound(handler, 400)
+        assertTrue(
+            "the scan reaching the winner's height completes the boundary and collects",
+            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+        )
+    }
+
     @Test
     fun shouldNotClobberMarketplaceColumnsWhenAnIdentitySnapshotStillCarriesTheLabel() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
@@ -3578,6 +5813,325 @@ class PlatformWalletPersistenceHandlerTest {
 
         // Promote-only and idempotent: a second pass matches nothing.
         assertEquals(0, db.identityDao().healIsLocalFlags())
+    }
+
+    @Test
+    fun aMempoolContextSweepPreservesAnUnstampedTombstone() = runTest {
+        // A mempool-context sweep — an InstantSend-locked winner that has
+        // not mined — preserves an UNSTAMPED tombstone for every
+        // held-but-unfunded input. Under DIP-10 the IS lock alone settles
+        // those inputs: upstream deletes the loser and retains them in the
+        // account's `spent_outpoints`, a hold with no height that no
+        // record survives to rebuild (the winner need not be
+        // wallet-relevant). The tombstone is that hold's only durable
+        // carrier — CORE_SWEEP_REMOVAL requires every non-released input
+        // to keep a durable spend claim before its funding TXO
+        // materializes — and it is unstamped because an IS-locked winner
+        // has no mining deadline, so no boundary may ever collect it.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        for (i in 0 until 3) {
+            val p = makeOutpoint(ByteArray(32) { (114 + i).toByte() }, 0)
+            seedSweptTombstone(
+                p,
+                ByteArray(32) { (117 + i).toByte() },
+                ByteArray(32) { (120 + i).toByte() },
+                winnerMinedHeight = -1,
+            )
+            val row = db.documentDao().getPendingInputsByOutpoint(p).single()
+            assertTrue(
+                "an unmined IS-locked winner must leave a held tombstone for input #$i",
+                row.isSweptTombstone,
+            )
+            assertNull("and it carries no finality stamp", row.winnerMinedHeight)
+        }
+        // Arbitrary chainlock/height advancement never collects an
+        // unstamped hold — two rounds, so a back-filling collector would
+        // be caught too.
+        chainLockHeightRound(handler, 1_000_000)
+        headerRound(handler, 1_000_000)
+        headerRound(handler, 1_000_010)
+        assertEquals(
+            "every unstamped hold outlasts any boundary — only funding " +
+                "materialization, a block-context re-stamp, or a release resolves one",
+            3L, db.documentDao().countPendingInputs().first(),
+        )
+    }
+
+    @Test
+    fun aMempoolContextSweepStillSpendMarksAMaterialisedCoin() = runTest {
+        // The mempool-context sweep still spend-marks a coin that HAS
+        // materialised: the row carries real funding data, so holding it
+        // costs nothing an attacker controls, and the winner's eventual
+        // block delivery is the durable evidence. Only the never-funded
+        // tombstone is what the mempool path refuses to create.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 123 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val loser = ByteArray(32) { 124 }
+        val winner = ByteArray(32) { 125 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, fundingTxid, ByteArray(10) { 4 }, 2, 100, ByteArray(32) { 7 },
+            1_700_000_000, 0, "Standard", 0, 50_000, 0, false, "", 1_699_999_000,
+            ByteArray(0), 0,
+        )
+        handler.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        seedSweptTombstone(p, loser, winner, winnerMinedHeight = -1)
+
+        val coin = db.txoDao().getByOutpoint(p)!!
+        assertTrue(
+            "a materialised coin is spend-marked by the IS-locked winner",
+            coin.isSpent,
+        )
+        assertTrue(winner.contentEquals(coin.supersededByTxid))
+        assertTrue(
+            "and no pending tombstone rides alongside the real row",
+            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+        )
+        assertTrue(handler.onLoadWalletList().single().utxos.isEmpty())
+    }
+
+    @Test
+    fun aFundingOutputArrivingAfterAMempoolSweepAndRestartLandsSpent() = runTest {
+        // The reviewer's named regression: an IS-locked winner sweeps on
+        // the mempool path and never mines, the app restarts, chainlocks
+        // and heights advance arbitrarily, and only then is the funding
+        // output delivered. Under DIP-10 the IS lock already settled that
+        // input — upstream deleted the loser and retained the hold in the
+        // account's `spent_outpoints`, a set rebuilt from records on load
+        // that no surviving record can reconstruct. The unstamped
+        // tombstone is the claim's only durable carrier, so the funding
+        // delivery must drain INTO it and land spent: crediting the coin
+        // would hand coin selection an outpoint the network has provably
+        // consumed.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val account = db.accountDao().observeByWallet(walletId).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = "yFundAddr",
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        val fundingTxid = ByteArray(32) { 126 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val winner = ByteArray(32) { 0x7F }
+        seedSweptTombstone(p, ByteArray(32) { 127 }, winner, winnerMinedHeight = -1)
+        val tombstone = db.documentDao().getPendingInputsByOutpoint(p).single()
+        assertTrue("sanity: the mempool-context sweep left a tombstone", tombstone.isSweptTombstone)
+        assertNull("unstamped — no finality horizon exists", tombstone.winnerMinedHeight)
+
+        // Restart: a fresh handler bound to the same underlying store —
+        // this suite's restart idiom (see
+        // sweptSpendBeforeFundingSurvivesRestartAndStaysSpentWhenFunded).
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+
+        // Arbitrary chainlock/height advancement while the winner stays
+        // unmined — none of it may collect the unstamped hold.
+        headerRound(restarted, 25_000)
+        restarted.onChangesetBegin(walletId)
+        restarted.onWalletChangesetChainLockHeight(walletId, 25_000)
+        restarted.onChangesetEnd(walletId, success = true)
+        assertEquals(
+            "the unstamped hold survives the restart and every boundary",
+            1, db.documentDao().getPendingInputsByOutpoint(p).size,
+        )
+
+        // The funding output is finally delivered and classified: it must
+        // drain into the tombstone and stay spent.
+        restarted.onChangesetBegin(walletId)
+        restarted.onWalletChangesetUtxoAdded(
+            walletId, fundingTxid, 0, 50_000, "yFundAddr", ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        restarted.onChangesetEnd(walletId, success = true)
+
+        val coin = db.txoDao().getByOutpoint(p)
+        assertNotNull(coin)
+        assertTrue(
+            "an input the IS-locked winner consumed must never come back " +
+                "spendable — the sweep's claim outlives the restart",
+            coin!!.isSpent,
+        )
+        assertTrue(
+            "held by the winner the sweep named",
+            winner.contentEquals(coin.supersededByTxid),
+        )
+        assertTrue(
+            "the claim drained into the TXO row",
+            db.documentDao().getPendingInputsByOutpoint(p).isEmpty(),
+        )
+        assertTrue(
+            "a spent coin never reaches the restored UTXO set",
+            restarted.onLoadWalletList().single().utxos.isEmpty(),
+        )
+    }
+
+    @Test
+    fun aMempoolRepointedTombstoneKeepsItsBlockContextStamp() = runTest {
+        // The IS-locked half of the chained case: an unmined winner
+        // re-points the claim but must NOT disturb the earlier
+        // block-context stamp — upstream's observed-spend entry is never
+        // retracted by an unconfirmed conflict. Collection at the retained
+        // height stays sound (the funding output is mined at or below the
+        // FIRST spender's height regardless of who claims the coin now),
+        // so the row still collects at that boundary.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 106 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val firstLoser = ByteArray(32) { 107 }
+        val secondLoser = ByteArray(32) { 108 }
+        val finalWinner = ByteArray(32) { 109 }
+        seedSweptTombstone(p, firstLoser, secondLoser, winnerMinedHeight = 400)
+
+        // The first winner is evicted by an IS-locked, unmined conflict
+        // that also claims the unfunded input.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, secondLoser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_092,
+            p, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), -1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val rows = db.documentDao().getPendingInputsByOutpoint(p)
+            .filter { it.isSweptTombstone }
+        assertTrue("sanity: the tombstone survives the chained sweep", rows.isNotEmpty())
+        for (row in rows) {
+            assertTrue(
+                "an unmined winner re-points the claim",
+                finalWinner.contentEquals(row.spendingTxid),
+            )
+            assertEquals(
+                "without touching the earlier block-context stamp",
+                400, row.winnerMinedHeight,
+            )
+        }
+
+        chainLockHeightRound(handler, 10_000)
+        headerRound(handler, 400)
+        assertTrue(
+            "the retained stamp still bounds the row: the funding output sits at " +
+                "or below the first spender's height, so the boundary reaching it " +
+                "proves delivery-or-never",
+            db.documentDao().getPendingInputsByOutpoint(p)
+                .none { it.isSweptTombstone },
+        )
+    }
+
+    @Test
+    fun anUnstampedTombstoneRestampedByABlockContextSweepBecomesCollectible() = runTest {
+        // The other direction of the chained case: an UNSTAMPED hold
+        // (IS-context sweep) re-pointed by a later BLOCK-context sweep
+        // gains that winner's stamp — the claim now belongs to a spend
+        // anchored in a real block, so it enters the collectible set and
+        // the boundary reaching the new winner's height collects it. One
+        // of the three resolution channels that bound the unstamped
+        // population.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        val fundingTxid = ByteArray(32) { 115 }
+        val p = makeOutpoint(fundingTxid, 0)
+        val firstLoser = ByteArray(32) { 116 }
+        val secondLoser = ByteArray(32) { 118 }
+        val finalWinner = ByteArray(32) { 119 }
+        seedSweptTombstone(p, firstLoser, secondLoser, winnerMinedHeight = -1)
+        assertNull(
+            "sanity: held and unstamped",
+            db.documentDao().getPendingInputsByOutpoint(p).single().winnerMinedHeight,
+        )
+
+        // The IS-locked first winner is itself beaten by a mined conflict
+        // still claiming the unfunded input.
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransaction(
+            walletId, secondLoser, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "Standard", 0, -40_000, 0, false, "", 1_700_000_093,
+            p, 1,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetTransactionsSwept(
+            walletId, arrayOf(secondLoser), arrayOf(finalWinner), emptyArray(), 450,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val rows = db.documentDao().getPendingInputsByOutpoint(p)
+            .filter { it.isSweptTombstone }
+        assertTrue("sanity: the claim survives the chained sweep", rows.isNotEmpty())
+        for (row in rows) {
+            assertEquals(
+                "the block-context re-point stamps the previously unstamped hold",
+                450, row.winnerMinedHeight,
+            )
+        }
+
+        chainLockHeightRound(handler, 10_000)
+        headerRound(handler, 450)
+        assertTrue(
+            "once stamped, the ordinary finality boundary collects the row",
+            db.documentDao().getPendingInputsByOutpoint(p).none { it.isSweptTombstone },
+        )
+    }
+
+    @Test
+    fun onWalletChangesetChainLockHeightStoresMonotonicMaxOnTheWalletRow() = runTest {
+        // The numeric chainlock height is the finality half of the
+        // collection boundary, so a stale round's chainlock must never
+        // lower it — monotonic max, matching the SQLite store's
+        // `upsert_sync_state`.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        assertNull(
+            "no height on record until the slot fires",
+            db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight,
+        )
+
+        chainLockHeightRound(handler, 500)
+        assertEquals(500, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
+
+        chainLockHeightRound(handler, 400)
+        assertEquals(
+            "a stale round must not lower the stored height",
+            500, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight,
+        )
+
+        chainLockHeightRound(handler, 600)
+        assertEquals(600, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
     }
 }
 

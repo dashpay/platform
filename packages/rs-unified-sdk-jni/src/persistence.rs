@@ -56,11 +56,11 @@ use platform_wallet_ffi::{
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
     ContactRequestRemovalFFI, CoreAddressEntryFFI, DpnsNameStateFFI, IdentityEntryFFI,
     IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    InvitationEntryFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
+    InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
     PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
-    SpentOutPointFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
+    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
+    WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -198,6 +198,10 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
 pub(crate) fn build_extension() -> PersistenceCallbacksExtension {
     PersistenceCallbacksExtension {
         on_persist_dpns_name_states_fn: Some(tramp_persist_dpns_name_states),
+        on_persist_wallet_changeset_sweeps_fn: Some(tramp_persist_wallet_changeset_sweeps),
+        on_persist_wallet_changeset_chain_lock_height_fn: Some(
+            tramp_persist_wallet_changeset_chain_lock_height,
+        ),
         ..Default::default()
     }
 }
@@ -637,7 +641,139 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
                 return Ok(code);
             }
         }
+
         Ok(0)
+    })
+}
+
+/// Extension-callback trampoline for the round's sweep batches. These used
+/// to ride at the tail of [`WalletChangeSetFFI`]; they now arrive through
+/// `PersistenceCallbacksExtension`'s size-negotiated sweep slot (the bare
+/// changeset pointer cannot prove to a consumer that its producer allocated
+/// a tail field — see the layout note on that struct). Native fires this
+/// right after `tramp_persist_wallet_changeset` in the same round, so the
+/// Kotlin bridge still sees records before removals.
+///
+/// One bridge call per batch, in order: a later sweep can keep a coin spent
+/// that an earlier one freed, and only replaying them in sequence preserves
+/// that. Each call does its own hold-then-release, so the ordering holds on
+/// the Kotlin side too. The batch count is not bounded by this ABI, so —
+/// as with the account loop in the changeset trampoline — the whole
+/// per-batch construction and call runs inside its own local frame;
+/// without it, `byte_array_cls`, `empty`, and the three per-batch arrays
+/// would all pile up in the trampoline's own frame across every batch, and
+/// a large enough round can exhaust ART's local-reference table before the
+/// callback ever returns.
+unsafe extern "C" fn tramp_persist_wallet_changeset_sweeps(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    sweeps: *const SweepBatchFFI,
+    sweeps_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for batch in slice_or_empty(sweeps, sweeps_count) {
+            let code = env.with_local_frame(16, |env| {
+                persist_changeset_sweep_batch(env, bridge, &wid, batch)
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+unsafe fn persist_changeset_sweep_batch(
+    env: &mut JNIEnv,
+    bridge: &JObject,
+    wid: &JByteArray,
+    batch: &SweepBatchFFI,
+) -> Result<i32, jni::errors::Error> {
+    let byte_array_cls = env.find_class("[B")?;
+    let empty = env.byte_array_from_slice(&[])?;
+
+    let txids = slice_or_empty(batch.txids, batch.txids_count);
+    let txids_arr = env.new_object_array(txids.len() as i32, &byte_array_cls, &empty)?;
+    // The winner is invariant for the whole batch, so it is allocated once
+    // and every slot is initialised to it — `new_object_array` fills the
+    // array with its initial element, so no per-loser set is needed either.
+    // The loser count is network-influenced and this projection runs
+    // synchronously inside the atomic persistence callback, so a per-loser
+    // allocation is work an attacker can scale. Sharing one array across
+    // the slots is safe because the Kotlin consumer only ever reads these
+    // values: `supersededBy[i]` feeds DAO arguments and entity fields, and
+    // nothing writes into the array.
+    let winner = env.byte_array_from_slice(&batch.superseded_by)?;
+    let winners = env.new_object_array(txids.len() as i32, &byte_array_cls, &winner)?;
+    for (i, txid) in txids.iter().enumerate() {
+        env.with_local_frame(8, |env| {
+            let t = env.byte_array_from_slice(txid)?;
+            env.set_object_array_element(&txids_arr, i as i32, &t)
+        })?;
+    }
+
+    // Released outpoints ride as 36-byte keys (raw txid + a
+    // little-endian vout), the shape the handler stores them in.
+    let released = slice_or_empty(batch.released_outpoints, batch.released_outpoints_count);
+    let released_arr = env.new_object_array(released.len() as i32, &byte_array_cls, &empty)?;
+    for (i, outpoint) in released.iter().enumerate() {
+        let key = pack_outpoint_key(outpoint);
+        env.with_local_frame(4, |env| {
+            let k = env.byte_array_from_slice(&key)?;
+            env.set_object_array_element(&released_arr, i as i32, &k)
+        })?;
+    }
+
+    // The winner's finality context: its mined height for a block-context
+    // sweep, -1 for an InstantSend-locked winner still waiting to be mined.
+    // The sentinel is unambiguous — block heights are non-negative — and
+    // the Kotlin bridge maps it back to null. The handler keys a
+    // pending-input tombstone's LIFETIME on it, never its existence: every
+    // non-released input keeps a durable claim in either context, stamped
+    // and collectible at the chainlock finality boundary when the winner
+    // mined, unstamped and held until resolved by proof (funding arrival,
+    // a later block-context re-stamp, or a release) when it did not.
+    let winner_mined_height: i32 = if batch.has_winner_mined_height {
+        batch.winner_mined_height as i32
+    } else {
+        -1
+    };
+
+    env.call_method(
+        bridge,
+        "onWalletChangesetTransactionsSwept",
+        "([B[[B[[B[[BI)I",
+        &[
+            wid.into(),
+            (&txids_arr).into(),
+            (&winners).into(),
+            (&released_arr).into(),
+            JValue::Int(winner_mined_height),
+        ],
+    )?
+    .i()
+}
+
+/// Deliver the round's numeric chainlock height (see
+/// `PersistWalletChangesetChainLockHeightFn`). One scalar, one call — the
+/// bincode chainlock blob on the header call is opaque to Kotlin, and this
+/// is the half of the tombstone-collection boundary
+/// `min(chainlockHeight, syncedHeight)` the handler cannot otherwise know.
+unsafe extern "C" fn tramp_persist_wallet_changeset_chain_lock_height(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    chain_lock_height: u32,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        env.call_method(
+            bridge,
+            "onWalletChangesetChainLockHeight",
+            "([BI)I",
+            &[(&wid).into(), JValue::Int(chain_lock_height as i32)],
+        )?
+        .i()
     })
 }
 
@@ -674,6 +810,26 @@ unsafe fn persist_changeset_account(
         return Ok(code);
     }
 
+    // Transactions before their UTXOs — matches the Swift bridge's
+    // `applyAccountChangeset` order (transactions, then utxos_added, then
+    // utxos_spent) and, since the sweep-reinstatement fix, is load-bearing
+    // here too: `onWalletChangesetUtxoAdded` bails when its parent row is
+    // still `isGloballySwept`, and `onWalletChangesetTransaction` is what
+    // clears that flag on a reinstating record. Emitting a reinstated
+    // transaction's own fresh outputs before its record would have them
+    // walk straight into that guard and be silently dropped, one round
+    // before the record that was supposed to unlock them. Ordinary
+    // first-sighting transactions are unaffected either way — the stub
+    // row `onWalletChangesetUtxoAdded` creates when no parent exists yet
+    // still covers any residual cross-account race.
+    for t in slice_or_empty(acc.transactions, acc.transactions_count) {
+        let code = env.with_local_frame(40, |env| {
+            persist_changeset_transaction(env, bridge, wid, acc, t)
+        })?;
+        if code != 0 {
+            return Ok(code);
+        }
+    }
     for u in slice_or_empty(acc.utxos_added, acc.utxos_added_count) {
         let code =
             env.with_local_frame(24, |env| persist_changeset_utxo_added(env, bridge, wid, u))?;
@@ -684,14 +840,6 @@ unsafe fn persist_changeset_account(
     for s in slice_or_empty(acc.utxos_spent, acc.utxos_spent_count) {
         let code =
             env.with_local_frame(16, |env| persist_changeset_utxo_spent(env, bridge, wid, s))?;
-        if code != 0 {
-            return Ok(code);
-        }
-    }
-    for t in slice_or_empty(acc.transactions, acc.transactions_count) {
-        let code = env.with_local_frame(40, |env| {
-            persist_changeset_transaction(env, bridge, wid, acc, t)
-        })?;
         if code != 0 {
             return Ok(code);
         }
@@ -774,15 +922,14 @@ unsafe fn persist_changeset_transaction(
     let tx_type = cstr(env, t.transaction_type)?;
     let label = cstr(env, t.label)?;
     // Input outpoints (one per tx input, in vin order; empty for coinbase).
-    // Flatten to txid[32] || vout(u32 LE) = 36 bytes each — byte-identical to
-    // Kotlin/Swift makeOutpoint, so the pending-input join key matches with no
-    // per-element conversion on the Kotlin side. Dropping these is what left a
-    // spend-before-funding output restorable as spendable (CORE-06).
+    // Flattened 36-byte keys (see `pack_outpoint_key`), so the pending-input
+    // join key matches with no per-element conversion on the Kotlin side.
+    // Dropping these is what left a spend-before-funding output restorable
+    // as spendable (CORE-06).
     let ops = slice_or_empty(t.input_outpoints, t.input_outpoints_count);
     let mut packed = Vec::with_capacity(ops.len() * 36);
     for op in ops {
-        packed.extend_from_slice(&op.txid);
-        packed.extend_from_slice(&op.vout.to_le_bytes());
+        packed.extend_from_slice(&pack_outpoint_key(op));
     }
     let input_outpoints = env.byte_array_from_slice(&packed)?;
     let input_outpoint_count = ops.len() as i32;
@@ -3951,6 +4098,18 @@ unsafe fn slice_or_empty<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
     }
 }
 
+/// Pack an [`OutPointFFI`] into the 36-byte key (raw txid ‖ little-endian
+/// vout) the Kotlin handler stores outpoints under — byte-identical to
+/// Kotlin's `makeOutpoint` (and Swift's). This is the join key sweep
+/// releases use to find additive-path rows, so every packing site routes
+/// through here rather than re-inlining the layout.
+fn pack_outpoint_key(outpoint: &OutPointFFI) -> [u8; 36] {
+    let mut key = [0u8; 36];
+    key[..32].copy_from_slice(&outpoint.txid);
+    key[32..].copy_from_slice(&outpoint.vout.to_le_bytes());
+    key
+}
+
 /// `Vec<T>` → `(*const T, len)`; empty vec yields `(null, 0)`. A non-null
 /// pointer is a leaked `Box<[T]>` the matching load-free trampoline
 /// reconstructs and drops — mint it only once the whole load succeeded.
@@ -4270,6 +4429,18 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "onWalletChangesetTransaction",
         WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,
     ),
+    // Missing from this table let a sweep-round-only descriptor drift pass
+    // the smoke check and surface only when a live sweep first called it —
+    // right where a failed round freezes the wallet's watermark. Descriptor
+    // must track the literal at the `call_method` site in
+    // `persist_changeset_sweep_batch` above.
+    ("onWalletChangesetTransactionsSwept", "([B[[B[[B[[BI)I"),
+    // Same drift risk as the sweeps descriptor above: this slot fires on
+    // chainlock-advancing rounds only, so a stale descriptor would surface
+    // exactly when the first real chainlock crossed. Must track the
+    // literal at the `call_method` site in
+    // `tramp_persist_wallet_changeset_chain_lock_height`.
+    ("onWalletChangesetChainLockHeight", "([BI)I"),
     (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
