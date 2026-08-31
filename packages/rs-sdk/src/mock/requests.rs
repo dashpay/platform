@@ -818,3 +818,44 @@ impl MockResponse for drive_proof_verifier::DocumentHavingEntries {
         }
     }
 }
+
+impl MockResponse for drive_proof_verifier::ChainedDocuments {
+    /// Both halves as per-document CBOR, bincode-framed as
+    /// `(inner, outer)` — list order IS the answer (inner-proof order,
+    /// outer by first appearance), so a map-shaped encoding would
+    /// destroy it.
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let halves: (Vec<Vec<u8>>, Vec<Vec<u8>>) = (
+            self.inner_documents
+                .iter()
+                .map(|d| d.to_cbor().expect("encode inner document"))
+                .collect(),
+            self.outer_documents
+                .iter()
+                .map(|d| d.to_cbor().expect("encode outer document"))
+                .collect(),
+        );
+        bincode::encode_to_vec(halves, bincode_config).expect("encode ChainedDocuments")
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((inner, outer), _): ((Vec<Vec<u8>>, Vec<Vec<u8>>), _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode ChainedDocuments");
+        let decode = |bufs: Vec<Vec<u8>>| {
+            bufs.into_iter()
+                .map(|b| {
+                    Document::from_cbor(&b, None, None, sdk.version()).expect("decode document")
+                })
+                .collect()
+        };
+        drive_proof_verifier::ChainedDocuments {
+            inner_documents: decode(inner),
+            outer_documents: decode(outer),
+        }
+    }
+}

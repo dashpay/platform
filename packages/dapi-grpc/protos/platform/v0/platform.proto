@@ -38,7 +38,6 @@ service Platform {
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
-  // @sdk-ignore: rs-sdk support lands in the follow-up SDK PR
   rpc getChainedDocuments(GetChainedDocumentsRequest)
       returns (GetChainedDocumentsResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)

@@ -147,6 +147,9 @@ impl MockDashPlatformSdk {
                 "GetDocumentsRequest" => {
                     load_expectation::<proto::GetDocumentsRequest>(&mut dapi, filename)?
                 }
+                "GetChainedDocumentsRequest" => {
+                    load_expectation::<proto::GetChainedDocumentsRequest>(&mut dapi, filename)?
+                }
                 "GetEpochsInfoRequest" => {
                     load_expectation::<proto::GetEpochsInfoRequest>(&mut dapi, filename)?
                 }
