@@ -28,3 +28,20 @@ impl crate::platform::Query<platform_proto::GetChainedDocumentsRequest> for Chai
         .map_err(Error::from)
     }
 }
+
+// `ChainedDocumentQuery` does not implement `TransportRequest` (the wire
+// form is `GetChainedDocumentsRequest`), so the blanket `Query<T> for T`
+// does not apply — provide the identity impl explicitly, same as
+// `DocumentQuery`'s, so the fetch trampoline can use it both as the
+// user-supplied `Q` and as the rich `Self::Query`.
+impl crate::platform::Query<ChainedDocumentQuery> for ChainedDocumentQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<ChainedDocumentQuery, Error> {
+        if !settings.prove {
+            tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
+        }
+        Ok(self.clone())
+    }
+}
