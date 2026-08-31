@@ -144,6 +144,7 @@ fn empty_v1_request() -> GetDocumentsRequestV1 {
         group_by: Vec::new(),
         having: Vec::new(),
         offset: None,
+        chained: None,
     }
 }
 
@@ -952,6 +953,7 @@ fn e2e_documents_select_matches_v0() {
         group_by: Vec::new(),
         having: Vec::new(),
         offset: None,
+        chained: None,
     };
     let v1_result = platform
         .query_documents_v1(request_v1, &state, version)
@@ -988,6 +990,7 @@ fn e2e_having_rejection_surfaces_in_response() {
             Value::U64(100),
         )],
         offset: None,
+        chained: None,
     };
     let result = platform
         .query_documents_v1(request, &state, version)
@@ -1023,6 +1026,7 @@ fn reject_start_with_select_count() {
         group_by: Vec::new(),
         having: Vec::new(),
         offset: None,
+        chained: None,
     };
     let result = platform
         .query_documents_v1(request, &state, version)
@@ -1182,6 +1186,7 @@ mod ported_v0_count_tests {
             group_by,
             having: Vec::new(),
             offset: None,
+            chained: None,
         }
     }
 
@@ -1571,6 +1576,7 @@ mod ported_v0_count_tests {
             Some(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(_),
+                ..
             }) => {
                 assert!(
                     !proof.grovedb_proof.is_empty(),
@@ -1688,6 +1694,7 @@ mod ported_v0_count_tests {
             Some(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(_),
+                ..
             }) => {
                 assert!(
                     !proof.grovedb_proof.is_empty(),
@@ -1916,6 +1923,7 @@ mod ported_v0_count_tests {
             Some(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(_),
+                ..
             }) => {
                 assert!(
                     !proof.grovedb_proof.is_empty(),
@@ -2067,6 +2075,7 @@ mod ranked_tests {
             group_by: vec![GROUP_PROPERTY.to_string()],
             having: Vec::new(),
             offset,
+            chained: None,
         }
     }
 
@@ -2116,6 +2125,7 @@ mod ranked_tests {
                         variant: Some(result_data::Variant::Ranked(ranked)),
                     })),
                 metadata: Some(_),
+                ..
             }) => ranked,
             other => panic!("expected a Ranked ResultData, got {:?}", other),
         }
@@ -2651,6 +2661,7 @@ mod ranked_tests {
             Some(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(_),
+                ..
             }) => {
                 assert!(
                     !proof.grovedb_proof.is_empty(),
@@ -2960,6 +2971,7 @@ mod ranked_tests {
             group_by: vec![GROUP_PROPERTY.to_string()],
             having: Vec::new(),
             offset: None,
+            chained: None,
         };
 
         match ranked_error(&platform, &state, request.clone(), version) {
@@ -3094,6 +3106,7 @@ mod multi_in_wire_tests {
             group_by: Vec::new(),
             having: Vec::new(),
             offset: None,
+            chained: None,
         }
     }
 
@@ -3249,6 +3262,7 @@ mod having_range_tests {
             group_by: vec![GROUP_PROPERTY.to_string()],
             having: vec![clause],
             offset: None,
+            chained: None,
         }
     }
 
@@ -3352,6 +3366,7 @@ mod having_range_tests {
             Some(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(_)),
                 metadata: Some(_),
+                ..
             }) => {}
             other => panic!("expected a Proof result, got {:?}", other),
         }
@@ -3641,6 +3656,7 @@ mod having_range_tests {
             Some(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(_)),
                 metadata: Some(_),
+                ..
             }) => {}
             other => panic!("expected a Proof result, got {:?}", other),
         }
@@ -3676,6 +3692,7 @@ mod having_range_tests {
                 Value::U64(80),
             )],
             offset: None,
+            chained: None,
         };
 
         match ranked_error(&platform, &state, request, version) {
@@ -3829,6 +3846,7 @@ mod having_range_tests {
                 Value::U64(2),
             )],
             offset: None,
+            chained: None,
         };
 
         match ranked_error(&platform, &state, request, version) {
@@ -4577,6 +4595,7 @@ mod time_range_proof_verification {
             group_by: Vec::new(),
             having: Vec::new(),
             offset: None,
+            chained: None,
         }
     }
 
@@ -4889,6 +4908,7 @@ mod time_range_proof_verification {
             version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(mtd),
+                proven_join_values: Vec::new(),
             })),
         };
         let (verified, _mtd, _proof) =
@@ -5052,6 +5072,7 @@ mod time_range_proof_verification {
             version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(mtd.clone()),
+                proven_join_values: Vec::new(),
             })),
         }
     }

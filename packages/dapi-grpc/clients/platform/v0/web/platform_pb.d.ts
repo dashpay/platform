@@ -2658,6 +2658,11 @@ export namespace GetDocumentsRequest {
     getOffset(): number;
     setOffset(value: number): void;
 
+    hasChained(): boolean;
+    clearChained(): void;
+    getChained(): GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin | undefined;
+    setChained(value?: GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin): void;
+
     getStartCase(): GetDocumentsRequestV1.StartCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetDocumentsRequestV1.AsObject;
@@ -2683,6 +2688,7 @@ export namespace GetDocumentsRequest {
       groupByList: Array<string>,
       havingList: Array<GetDocumentsRequest.HavingClause.AsObject>,
       offset: number,
+      chained?: GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin.AsObject,
     }
 
     export class Select extends jspb.Message {
@@ -2718,6 +2724,30 @@ export namespace GetDocumentsRequest {
       }
 
       export const Function: FunctionMap;
+    }
+
+    export class ChainedJoin extends jspb.Message {
+      getJoinProperty(): string;
+      setJoinProperty(value: string): void;
+
+      getOuterDocumentType(): string;
+      setOuterDocumentType(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ChainedJoin.AsObject;
+      static toObject(includeInstance: boolean, msg: ChainedJoin): ChainedJoin.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ChainedJoin, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ChainedJoin;
+      static deserializeBinaryFromReader(message: ChainedJoin, reader: jspb.BinaryReader): ChainedJoin;
+    }
+
+    export namespace ChainedJoin {
+      export type AsObject = {
+        joinProperty: string,
+        outerDocumentType: string,
+      }
     }
 
     export enum StartCase {
@@ -2860,6 +2890,13 @@ export namespace GetDocumentsResponse {
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
+    clearProvenJoinValuesList(): void;
+    getProvenJoinValuesList(): Array<Uint8Array | string>;
+    getProvenJoinValuesList_asU8(): Array<Uint8Array>;
+    getProvenJoinValuesList_asB64(): Array<string>;
+    setProvenJoinValuesList(value: Array<Uint8Array | string>): void;
+    addProvenJoinValues(value: Uint8Array | string, index?: number): Uint8Array | string;
+
     getResultCase(): GetDocumentsResponseV1.ResultCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetDocumentsResponseV1.AsObject;
@@ -2876,6 +2913,7 @@ export namespace GetDocumentsResponse {
       data?: GetDocumentsResponse.GetDocumentsResponseV1.ResultData.AsObject,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
+      provenJoinValuesList: Array<Uint8Array | string>,
     }
 
     export class Documents extends jspb.Message {
@@ -3313,6 +3351,11 @@ export namespace GetDocumentsResponse {
       getRanked(): GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries | undefined;
       setRanked(value?: GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries): void;
 
+      hasChained(): boolean;
+      clearChained(): void;
+      getChained(): GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments | undefined;
+      setChained(value?: GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments): void;
+
       getVariantCase(): ResultData.VariantCase;
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): ResultData.AsObject;
@@ -3331,6 +3374,7 @@ export namespace GetDocumentsResponse {
         sums?: GetDocumentsResponse.GetDocumentsResponseV1.SumResults.AsObject,
         averages?: GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.AsObject,
         ranked?: GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.AsObject,
+        chained?: GetDocumentsResponse.GetDocumentsResponseV1.ChainedDocuments.AsObject,
       }
 
       export enum VariantCase {
@@ -3340,167 +3384,8 @@ export namespace GetDocumentsResponse {
         SUMS = 3,
         AVERAGES = 4,
         RANKED = 5,
+        CHAINED = 6,
       }
-    }
-
-    export enum ResultCase {
-      RESULT_NOT_SET = 0,
-      DATA = 1,
-      PROOF = 2,
-    }
-  }
-
-  export enum VersionCase {
-    VERSION_NOT_SET = 0,
-    V0 = 1,
-    V1 = 2,
-  }
-}
-
-export class GetChainedDocumentsRequest extends jspb.Message {
-  hasV0(): boolean;
-  clearV0(): void;
-  getV0(): GetChainedDocumentsRequest.GetChainedDocumentsRequestV0 | undefined;
-  setV0(value?: GetChainedDocumentsRequest.GetChainedDocumentsRequestV0): void;
-
-  getVersionCase(): GetChainedDocumentsRequest.VersionCase;
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetChainedDocumentsRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetChainedDocumentsRequest): GetChainedDocumentsRequest.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetChainedDocumentsRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetChainedDocumentsRequest;
-  static deserializeBinaryFromReader(message: GetChainedDocumentsRequest, reader: jspb.BinaryReader): GetChainedDocumentsRequest;
-}
-
-export namespace GetChainedDocumentsRequest {
-  export type AsObject = {
-    v0?: GetChainedDocumentsRequest.GetChainedDocumentsRequestV0.AsObject,
-  }
-
-  export class GetChainedDocumentsRequestV0 extends jspb.Message {
-    getDataContractId(): Uint8Array | string;
-    getDataContractId_asU8(): Uint8Array;
-    getDataContractId_asB64(): string;
-    setDataContractId(value: Uint8Array | string): void;
-
-    getInnerDocumentType(): string;
-    setInnerDocumentType(value: string): void;
-
-    getInnerWhere(): Uint8Array | string;
-    getInnerWhere_asU8(): Uint8Array;
-    getInnerWhere_asB64(): string;
-    setInnerWhere(value: Uint8Array | string): void;
-
-    getInnerOrderBy(): Uint8Array | string;
-    getInnerOrderBy_asU8(): Uint8Array;
-    getInnerOrderBy_asB64(): string;
-    setInnerOrderBy(value: Uint8Array | string): void;
-
-    getInnerLimit(): number;
-    setInnerLimit(value: number): void;
-
-    getJoinProperty(): string;
-    setJoinProperty(value: string): void;
-
-    getOuterDocumentType(): string;
-    setOuterDocumentType(value: string): void;
-
-    getProve(): boolean;
-    setProve(value: boolean): void;
-
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetChainedDocumentsRequestV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetChainedDocumentsRequestV0): GetChainedDocumentsRequestV0.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetChainedDocumentsRequestV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetChainedDocumentsRequestV0;
-    static deserializeBinaryFromReader(message: GetChainedDocumentsRequestV0, reader: jspb.BinaryReader): GetChainedDocumentsRequestV0;
-  }
-
-  export namespace GetChainedDocumentsRequestV0 {
-    export type AsObject = {
-      dataContractId: Uint8Array | string,
-      innerDocumentType: string,
-      innerWhere: Uint8Array | string,
-      innerOrderBy: Uint8Array | string,
-      innerLimit: number,
-      joinProperty: string,
-      outerDocumentType: string,
-      prove: boolean,
-    }
-  }
-
-  export enum VersionCase {
-    VERSION_NOT_SET = 0,
-    V0 = 1,
-  }
-}
-
-export class GetChainedDocumentsResponse extends jspb.Message {
-  hasV0(): boolean;
-  clearV0(): void;
-  getV0(): GetChainedDocumentsResponse.GetChainedDocumentsResponseV0 | undefined;
-  setV0(value?: GetChainedDocumentsResponse.GetChainedDocumentsResponseV0): void;
-
-  getVersionCase(): GetChainedDocumentsResponse.VersionCase;
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetChainedDocumentsResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetChainedDocumentsResponse): GetChainedDocumentsResponse.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetChainedDocumentsResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetChainedDocumentsResponse;
-  static deserializeBinaryFromReader(message: GetChainedDocumentsResponse, reader: jspb.BinaryReader): GetChainedDocumentsResponse;
-}
-
-export namespace GetChainedDocumentsResponse {
-  export type AsObject = {
-    v0?: GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.AsObject,
-  }
-
-  export class GetChainedDocumentsResponseV0 extends jspb.Message {
-    hasDocuments(): boolean;
-    clearDocuments(): void;
-    getDocuments(): GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments | undefined;
-    setDocuments(value?: GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments): void;
-
-    hasProof(): boolean;
-    clearProof(): void;
-    getProof(): Proof | undefined;
-    setProof(value?: Proof): void;
-
-    hasMetadata(): boolean;
-    clearMetadata(): void;
-    getMetadata(): ResponseMetadata | undefined;
-    setMetadata(value?: ResponseMetadata): void;
-
-    clearProvenJoinValuesList(): void;
-    getProvenJoinValuesList(): Array<Uint8Array | string>;
-    getProvenJoinValuesList_asU8(): Array<Uint8Array>;
-    getProvenJoinValuesList_asB64(): Array<string>;
-    setProvenJoinValuesList(value: Array<Uint8Array | string>): void;
-    addProvenJoinValues(value: Uint8Array | string, index?: number): Uint8Array | string;
-
-    getResultCase(): GetChainedDocumentsResponseV0.ResultCase;
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetChainedDocumentsResponseV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetChainedDocumentsResponseV0): GetChainedDocumentsResponseV0.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetChainedDocumentsResponseV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetChainedDocumentsResponseV0;
-    static deserializeBinaryFromReader(message: GetChainedDocumentsResponseV0, reader: jspb.BinaryReader): GetChainedDocumentsResponseV0;
-  }
-
-  export namespace GetChainedDocumentsResponseV0 {
-    export type AsObject = {
-      documents?: GetChainedDocumentsResponse.GetChainedDocumentsResponseV0.ChainedDocuments.AsObject,
-      proof?: Proof.AsObject,
-      metadata?: ResponseMetadata.AsObject,
-      provenJoinValuesList: Array<Uint8Array | string>,
     }
 
     export class ChainedDocuments extends jspb.Message {
@@ -3537,7 +3422,7 @@ export namespace GetChainedDocumentsResponse {
 
     export enum ResultCase {
       RESULT_NOT_SET = 0,
-      DOCUMENTS = 1,
+      DATA = 1,
       PROOF = 2,
     }
   }
@@ -3545,6 +3430,7 @@ export namespace GetChainedDocumentsResponse {
   export enum VersionCase {
     VERSION_NOT_SET = 0,
     V0 = 1,
+    V1 = 2,
   }
 }
 

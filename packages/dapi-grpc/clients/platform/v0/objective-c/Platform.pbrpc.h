@@ -24,8 +24,6 @@
 @class GetAddressesInfosResponse;
 @class GetAddressesTrunkStateRequest;
 @class GetAddressesTrunkStateResponse;
-@class GetChainedDocumentsRequest;
-@class GetChainedDocumentsResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
 @class GetContestedResourceIdentityVotesRequest;
@@ -231,13 +229,6 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse)
 
 - (GRPCUnaryProtoCall *)getDocumentsWithMessage:(GetDocumentsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
-#pragma mark getChainedDocuments(GetChainedDocumentsRequest) returns (GetChainedDocumentsResponse)
-
-/**
- * @sdk-ignore: rs-sdk support lands in the follow-up SDK PR
- */
-- (GRPCUnaryProtoCall *)getChainedDocumentsWithMessage:(GetChainedDocumentsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
@@ -561,23 +552,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getChainedDocuments(GetChainedDocumentsRequest) returns (GetChainedDocumentsResponse)
-
-/**
- * @sdk-ignore: rs-sdk support lands in the follow-up SDK PR
- *
- * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
- */
-- (void)getChainedDocumentsWithRequest:(GetChainedDocumentsRequest *)request handler:(void(^)(GetChainedDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
-
-/**
- * @sdk-ignore: rs-sdk support lands in the follow-up SDK PR
- *
- * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
- */
-- (GRPCProtoCall *)RPCTogetChainedDocumentsWithRequest:(GetChainedDocumentsRequest *)request handler:(void(^)(GetChainedDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)

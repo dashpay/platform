@@ -253,6 +253,7 @@ mod tests {
                     height: 42,
                     ..Default::default()
                 }),
+                proven_join_values: Vec::new(),
             })),
         }
     }

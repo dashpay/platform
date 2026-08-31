@@ -139,6 +139,7 @@ impl<C> Platform<C> {
                     })),
                 })),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+                proven_join_values: Vec::new(),
             },
             DocumentHavingResponse::Proof(proof_bytes) => {
                 let (grovedb_used, proof) =
@@ -146,6 +147,7 @@ impl<C> Platform<C> {
                 GetDocumentsResponseV1 {
                     result: Some(get_documents_response_v1::Result::Proof(proof)),
                     metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
+                    proven_join_values: Vec::new(),
                 }
             }
         };

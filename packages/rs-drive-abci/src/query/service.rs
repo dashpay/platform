@@ -16,8 +16,7 @@ use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetAddressInfoRequest,
     GetAddressInfoResponse, GetAddressesBranchStateRequest, GetAddressesBranchStateResponse,
     GetAddressesInfosRequest, GetAddressesInfosResponse, GetAddressesTrunkStateRequest,
-    GetAddressesTrunkStateResponse, GetChainedDocumentsRequest, GetChainedDocumentsResponse,
-    GetConsensusParamsRequest, GetConsensusParamsResponse,
+    GetAddressesTrunkStateResponse, GetConsensusParamsRequest, GetConsensusParamsResponse,
     GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
     GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
@@ -412,18 +411,6 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_documents,
             "get_documents",
-        )
-        .await
-    }
-
-    async fn get_chained_documents(
-        &self,
-        request: Request<GetChainedDocumentsRequest>,
-    ) -> Result<Response<GetChainedDocumentsResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_chained_documents,
-            "get_chained_documents",
         )
         .await
     }

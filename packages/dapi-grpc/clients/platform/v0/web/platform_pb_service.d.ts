@@ -148,15 +148,6 @@ type PlatformgetDocuments = {
   readonly responseType: typeof platform_pb.GetDocumentsResponse;
 };
 
-type PlatformgetChainedDocuments = {
-  readonly methodName: string;
-  readonly service: typeof Platform;
-  readonly requestStream: false;
-  readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetChainedDocumentsRequest;
-  readonly responseType: typeof platform_pb.GetChainedDocumentsResponse;
-};
-
 type PlatformgetIdentityByPublicKeyHash = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -571,7 +562,6 @@ export class Platform {
   static readonly getDataContracts: PlatformgetDataContracts;
   static readonly getDocumentHistory: PlatformgetDocumentHistory;
   static readonly getDocuments: PlatformgetDocuments;
-  static readonly getChainedDocuments: PlatformgetChainedDocuments;
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly getIdentityByNonUniquePublicKeyHash: PlatformgetIdentityByNonUniquePublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
@@ -793,15 +783,6 @@ export class PlatformClient {
   getDocuments(
     requestMessage: platform_pb.GetDocumentsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsResponse|null) => void
-  ): UnaryResponse;
-  getChainedDocuments(
-    requestMessage: platform_pb.GetChainedDocumentsRequest,
-    metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetChainedDocumentsResponse|null) => void
-  ): UnaryResponse;
-  getChainedDocuments(
-    requestMessage: platform_pb.GetChainedDocumentsRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetChainedDocumentsResponse|null) => void
   ): UnaryResponse;
   getIdentityByPublicKeyHash(
     requestMessage: platform_pb.GetIdentityByPublicKeyHashRequest,

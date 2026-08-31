@@ -269,14 +269,6 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
-    platform_proto::GetChainedDocumentsRequest,
-    platform_proto::GetChainedDocumentsResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_chained_documents
-);
-
-impl_transport_request_grpc!(
     platform_proto::GetDataContractRequest,
     platform_proto::GetDataContractResponse,
     PlatformGrpcClient,

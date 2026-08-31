@@ -122,6 +122,7 @@ impl<C> Platform<C> {
                     })),
                 })),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+                proven_join_values: Vec::new(),
             },
             DocumentSumResponse::Entries(entries) => {
                 if sum_mode == SumMode::Aggregate {
@@ -165,6 +166,7 @@ impl<C> Platform<C> {
                         metadata: Some(
                             self.response_metadata_v0(platform_state, CheckpointUsed::Current),
                         ),
+                        proven_join_values: Vec::new(),
                     }
                 } else {
                     GetDocumentsResponseV1 {
@@ -178,6 +180,7 @@ impl<C> Platform<C> {
                         metadata: Some(
                             self.response_metadata_v0(platform_state, CheckpointUsed::Current),
                         ),
+                        proven_join_values: Vec::new(),
                     }
                 }
             }
@@ -187,6 +190,7 @@ impl<C> Platform<C> {
                 GetDocumentsResponseV1 {
                     result: Some(get_documents_response_v1::Result::Proof(proof)),
                     metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
+                    proven_join_values: Vec::new(),
                 }
             }
         };

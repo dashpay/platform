@@ -226,6 +226,7 @@ pub(crate) fn result_variant_name(
             Some(result_data::Variant::Sums(_)) => "a ResultData.sums payload",
             Some(result_data::Variant::Averages(_)) => "a ResultData.averages payload",
             Some(result_data::Variant::Ranked(_)) => "a ResultData.ranked payload",
+            Some(result_data::Variant::Chained(_)) => "a ResultData.chained payload",
         },
     }
 }
@@ -442,6 +443,7 @@ mod tests {
                     height: 42,
                     ..Default::default()
                 }),
+                proven_join_values: Vec::new(),
             })),
         }
     }

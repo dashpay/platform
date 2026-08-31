@@ -1,180 +1,156 @@
+//! Chained-mode dispatch — the provable semi-join:
+//! `SELECT * FROM <outer> WHERE $id IN (SELECT <join_property> FROM
+//! <document_type> WHERE …)`, selected by the request's `chained`
+//! message. The request's own type/clauses/limit describe the INNER
+//! indexOnly query; the outer half is DERIVED from its results, and on
+//! the proof path both halves ride ONE merged grovedb proof (drive
+//! brackets its materialize/prove sequence with root-hash reads, since
+//! grovedb proves committed state only) with the join-value bootstrap
+//! hint riding beside the envelope.
+
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::document_query::v1::conversions;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_chained_documents_request::GetChainedDocumentsRequestV0;
-use dapi_grpc::platform::v0::get_chained_documents_response::{
-    get_chained_documents_response_v0, GetChainedDocumentsResponseV0,
+use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
+    select, ChainedJoin, Select as ProtoSelect, Start as RequestV1Start,
+};
+use dapi_grpc::platform::v0::get_documents_request::{
+    HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
+    WhereClause as ProtoWhereClause,
+};
+use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
+    result_data, ChainedDocuments, ResultData,
+};
+use dapi_grpc::platform::v0::get_documents_response::{
+    get_documents_response_v1, GetDocumentsResponseV1,
 };
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::identifier::Identifier;
-use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::drive_chained_document_query::DriveChainedDocumentQuery;
-use drive::query::{DriveDocumentQuery, OrderClause, WhereClause};
+use drive::query::DriveDocumentQuery;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
-    /// v0 of the chained documents query.
-    ///
-    /// The proof path returns ONE merged grovedb proof covering both
-    /// halves (drive brackets its materialize/prove sequence with
-    /// root-hash reads, since grovedb proves committed state only),
-    /// plus the join-value bootstrap hint the verifier re-derives the
-    /// outer component from.
-    pub(super) fn query_chained_documents_v0(
+    /// Serve a chained-mode v1 request. Runs before select routing:
+    /// the chained surface owns its own (deliberately narrow) shape.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::query::document_query::v1) fn dispatch_chained_v1(
         &self,
-        GetChainedDocumentsRequestV0 {
-            data_contract_id,
-            inner_document_type,
-            inner_where,
-            inner_order_by,
-            inner_limit,
-            join_property,
-            outer_document_type,
-            prove,
-        }: GetChainedDocumentsRequestV0,
+        data_contract_id: Vec<u8>,
+        document_type: String,
+        chained: ChainedJoin,
+        proto_where_clauses: Vec<ProtoWhereClause>,
+        proto_order_by: Vec<ProtoOrderClause>,
+        limit: Option<u32>,
+        start: Option<RequestV1Start>,
+        prove: bool,
+        proto_selects: Vec<ProtoSelect>,
+        group_by: Vec<String>,
+        having: Vec<ProtoHavingClause>,
+        offset: Option<u32>,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetChainedDocumentsResponseV0>, Error> {
-        // CBOR-decode the wire clauses — identical treatment to
-        // `GetDocumentsRequestV0.where` / `.order_by`.
-        let where_value = if inner_where.is_empty() {
-            Value::Null
-        } else {
-            check_validation_result_with_data!(ciborium::de::from_reader(inner_where.as_slice())
-                .map_err(|_| {
-                    QueryError::Query(QuerySyntaxError::DeserializationError(
-                        "unable to decode 'inner_where' query from cbor".to_string(),
-                    ))
-                }))
-        };
-        let order_by_value: Option<Value> = if !inner_order_by.is_empty() {
-            check_validation_result_with_data!(ciborium::de::from_reader(inner_order_by.as_slice())
-                .map_err(|_| {
-                    QueryError::Query(QuerySyntaxError::DeserializationError(
-                        "unable to decode 'inner_order_by' query from cbor".to_string(),
-                    ))
-                }))
-        } else {
-            None
+    ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
+        let unsupported = |message: &str| {
+            QueryValidationResult::new_with_error(QueryError::Query(QuerySyntaxError::Unsupported(
+                message.to_string(),
+            )))
         };
 
-        let where_clauses: Vec<WhereClause> = match where_value {
-            Value::Null => Vec::new(),
-            Value::Array(clauses) => {
-                let parsed: Result<Vec<WhereClause>, _> = clauses
-                    .iter()
-                    .map(|wc| match wc {
-                        Value::Array(components) => WhereClause::from_components(components),
-                        _ => Err(drive::error::Error::Query(
-                            QuerySyntaxError::InvalidFormatWhereClause(
-                                "where clause must be an array".to_string(),
-                            ),
-                        )),
-                    })
-                    .collect();
-                check_validation_result_with_data!(parsed.map_err(|e| QueryError::Query(
-                    QuerySyntaxError::InvalidFormatWhereClause(format!(
-                        "invalid where clause components: {e}"
-                    ))
-                )))
+        // The chained surface is documents-shaped by construction:
+        // an empty `selects` (the v0-style default) or a single
+        // DOCUMENTS projection; every SQL-shaped knob and every
+        // cursor is rejected — pagination is a range clause on the
+        // join property.
+        let selects_are_documents = match proto_selects.as_slice() {
+            [] => true,
+            [single] => {
+                single.function == select::Function::Documents as i32 && single.field.is_empty()
             }
-            _ => {
-                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                    QuerySyntaxError::InvalidFormatWhereClause(
-                        "where clause must be an array".to_string(),
-                    ),
-                )));
-            }
+            _ => false,
         };
-        let order_by_clauses: Vec<OrderClause> = match order_by_value {
-            None | Some(Value::Null) => Vec::new(),
-            Some(Value::Array(clauses)) => {
-                let parsed: Result<Vec<OrderClause>, _> = clauses
-                    .iter()
-                    .map(|oc| match oc {
-                        Value::Array(components) => OrderClause::from_components(components)
-                            .map_err(|_| {
-                                QueryError::Query(QuerySyntaxError::InvalidOrderByProperties(
-                                    "invalid order_by clause components",
-                                ))
-                            }),
-                        _ => Err(QueryError::Query(
-                            QuerySyntaxError::InvalidOrderByProperties(
-                                "order_by clause must be an array",
-                            ),
-                        )),
-                    })
-                    .collect();
-                check_validation_result_with_data!(parsed)
-            }
-            _ => {
-                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                    QuerySyntaxError::InvalidOrderByProperties("order_by must be an array"),
-                )));
-            }
-        };
-
-        let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
-            .try_into()
-            .map_err(|_| QueryError::InvalidArgument(
-                "id must be a valid identifier (32 bytes long)".to_string()
-            )));
-
-        let (_, contract) = self.drive.get_contract_with_fetch_info_and_fee(
-            contract_id.to_buffer(),
-            None,
-            true,
-            None,
-            platform_version,
-        )?;
-        let contract = check_validation_result_with_data!(contract.ok_or(QueryError::Query(
-            QuerySyntaxError::DataContractNotFound(
-                "contract not found when querying chained documents",
-            )
-        )));
-        let contract_ref = &contract.contract;
-
-        let inner_type = check_validation_result_with_data!(contract_ref
-            .document_type_for_name(inner_document_type.as_str())
-            .map_err(|_| QueryError::InvalidArgument(format!(
-                "document type {} not found for contract {}",
-                inner_document_type, contract_id
-            ))));
-        let outer_type = check_validation_result_with_data!(contract_ref
-            .document_type_for_name(outer_document_type.as_str())
-            .map_err(|_| QueryError::InvalidArgument(format!(
-                "document type {} not found for contract {}",
-                outer_document_type, contract_id
-            ))));
+        if !selects_are_documents {
+            return Ok(unsupported(
+                "a chained request supports the DOCUMENTS projection only",
+            ));
+        }
+        if !group_by.is_empty() || !having.is_empty() {
+            return Ok(unsupported(
+                "a chained request supports no group_by or having clauses",
+            ));
+        }
+        if start.is_some() {
+            return Ok(unsupported(
+                "a chained request supports no cursor; paginate with a range clause on \
+                 the join property",
+            ));
+        }
+        if offset.is_some() {
+            return Ok(unsupported("a chained request supports no offset"));
+        }
+        if proto_where_clauses
+            .iter()
+            .any(conversions::is_time_range_clause)
+        {
+            return Ok(unsupported(
+                "a chained request supports no time-range (IN_TIME_RANGE) clauses",
+            ));
+        }
 
         // The inner limit is REQUIRED — it bounds the derived outer
-        // query. No `0 = server default` sentinel here: an explicit
-        // bound is part of the chained contract. Enforce the server's
-        // max up front so the message states the bound this check
-        // applies (the drive layer caps again at the outer `$id IN`
-        // clause's value limit).
-        if inner_limit == 0 || inner_limit > self.config.drive.max_query_limit as u32 {
-            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                QuerySyntaxError::InvalidLimit(format!(
-                    "chained queries require an inner limit in [1, {}], got {}",
-                    self.config.drive.max_query_limit, inner_limit
-                )),
-            )));
-        }
+        // query. No server-default fallback on this surface.
+        let inner_limit = match limit {
+            Some(n) if n >= 1 && n <= self.config.drive.max_query_limit as u32 => n as u16,
+            other => {
+                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                    QuerySyntaxError::InvalidLimit(format!(
+                        "chained requests require an explicit limit in [1, {}], got {:?}",
+                        self.config.drive.max_query_limit, other
+                    )),
+                )));
+            }
+        };
+
+        let where_clauses = match conversions::where_clauses_from_proto(proto_where_clauses) {
+            Ok(c) => c,
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+        };
+        let order_by_clauses = match conversions::order_clauses_from_proto(proto_order_by) {
+            Ok(c) => c,
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+        };
+
+        let (_, contract_fetch_info) = check_validation_result_with_data!(
+            self.fetch_contract_for_document_query_v1(data_contract_id, platform_version)?
+        );
+        let contract_ref = &contract_fetch_info.contract;
+
+        let inner_type = check_validation_result_with_data!(contract_ref
+            .document_type_for_name(document_type.as_str())
+            .map_err(|_| QueryError::InvalidArgument(format!(
+                "document type {} not found for the queried contract",
+                document_type
+            ))));
+        let outer_type = check_validation_result_with_data!(contract_ref
+            .document_type_for_name(chained.outer_document_type.as_str())
+            .map_err(|_| QueryError::InvalidArgument(format!(
+                "document type {} not found for the queried contract",
+                chained.outer_document_type
+            ))));
 
         let inner_query =
             check_validation_result_with_data!(DriveDocumentQuery::from_typed_clauses(
                 where_clauses,
                 order_by_clauses,
-                Some(inner_limit as u16),
+                Some(inner_limit),
                 None,
                 true,
                 None,
@@ -186,7 +162,7 @@ impl<C> Platform<C> {
 
         let chained_query = DriveChainedDocumentQuery {
             inner: inner_query,
-            join_property,
+            join_property: chained.join_property,
             outer_document_type: outer_type,
         };
         // Fail the shape checks as query errors (client-attributable),
@@ -202,10 +178,6 @@ impl<C> Platform<C> {
         }
 
         let response = if prove {
-            // ONE merged proof for both halves; the drive call brackets
-            // its materialize/prove sequence with root-hash reads
-            // (grovedb proves committed state only) and retries if a
-            // block commit interleaves.
             let (merged_proof, inner_documents) = match self
                 .drive
                 .query_chained_documents_with_proof(&chained_query, platform_version)
@@ -230,8 +202,8 @@ impl<C> Platform<C> {
             let (grovedb_used, proof) =
                 self.response_proof_v0(platform_state, merged_proof, GroveDBToUse::Current)?;
 
-            GetChainedDocumentsResponseV0 {
-                result: Some(get_chained_documents_response_v0::Result::Proof(proof)),
+            GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
                 proven_join_values,
             }
@@ -273,13 +245,13 @@ impl<C> Platform<C> {
                 chained_query.outer_document_type,
             )?;
 
-            GetChainedDocumentsResponseV0 {
-                result: Some(get_chained_documents_response_v0::Result::Documents(
-                    get_chained_documents_response_v0::ChainedDocuments {
+            GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Data(ResultData {
+                    variant: Some(result_data::Variant::Chained(ChainedDocuments {
                         inner_documents,
                         outer_documents,
-                    },
-                )),
+                    })),
+                })),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
                 proven_join_values: Vec::new(),
             }
@@ -293,11 +265,17 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::{setup_platform, store_data_contract, store_document};
-    use ciborium::value::Value as CborValue;
-    use dapi_grpc::platform::v0::get_chained_documents_response::get_chained_documents_response_v0::Result as ResponseResult;
+    use dapi_grpc::platform::v0::get_documents_request::document_field_value;
+    use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::select::Function as SelectFunction;
+    use dapi_grpc::platform::v0::get_documents_request::DocumentFieldValue as ProtoDocumentFieldValue;
+    use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV1;
+    use dapi_grpc::platform::v0::get_documents_request::WhereOperator as ProtoWhereOperator;
+    use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::Result as ResponseResult;
     use dpp::dashcore::Network;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract;
 
     const YAPPR_CONTRACT_PATH: &str =
@@ -351,51 +329,65 @@ mod tests {
         (platform, state, version, contract)
     }
 
-    fn owner_where_cbor(owner: [u8; 32]) -> Vec<u8> {
-        let clauses = CborValue::Array(vec![CborValue::Array(vec![
-            CborValue::Text("$ownerId".to_string()),
-            CborValue::Text("==".to_string()),
-            CborValue::Bytes(owner.to_vec()),
-        ])]);
-        let mut bytes = Vec::new();
-        ciborium::ser::into_writer(&clauses, &mut bytes).expect("cbor encode");
-        bytes
-    }
-
-    fn request(prove: bool, contract_id: Vec<u8>) -> GetChainedDocumentsRequestV0 {
-        GetChainedDocumentsRequestV0 {
+    fn chained_request(prove: bool, contract_id: Vec<u8>) -> GetDocumentsRequestV1 {
+        GetDocumentsRequestV1 {
             data_contract_id: contract_id,
-            inner_document_type: "like".to_string(),
-            inner_where: owner_where_cbor(OWNER_1),
-            inner_order_by: vec![],
-            inner_limit: 10,
-            join_property: "postId".to_string(),
-            outer_document_type: "post".to_string(),
+            document_type: "like".to_string(),
+            where_clauses: vec![
+                dapi_grpc::platform::v0::get_documents_request::WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: ProtoWhereOperator::Equal as i32,
+                    value: Some(ProtoDocumentFieldValue {
+                        // Identifiers cross the v1 wire as bytes; the
+                        // value layer coerces them against identifier-typed
+                        // fields.
+                        variant: Some(document_field_value::Variant::BytesValue(OWNER_1.to_vec())),
+                    }),
+                },
+            ],
+            order_by: Vec::new(),
+            limit: Some(10),
+            start: None,
             prove,
+            selects: Vec::new(),
+            group_by: Vec::new(),
+            having: Vec::new(),
+            offset: None,
+            chained: Some(ChainedJoin {
+                join_property: "postId".to_string(),
+                outer_document_type: "post".to_string(),
+            }),
         }
     }
 
     #[test]
-    fn test_chained_documents_no_proof_returns_both_halves() {
+    fn should_return_both_halves_without_proof() {
         let (platform, state, version, contract) = setup_yappr_state();
 
         let result = platform
             .platform
-            .query_chained_documents_v0(request(false, contract.id().to_vec()), &state, version)
+            .query_documents_v1(
+                chained_request(false, contract.id().to_vec()),
+                &state,
+                version,
+            )
             .expect("query executes");
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
         let response = result.data.expect("response data");
         assert!(response.proven_join_values.is_empty());
-        let Some(ResponseResult::Documents(documents)) = response.result else {
-            panic!("expected a documents result");
+        let Some(ResponseResult::Data(data)) = response.result else {
+            panic!("expected a data result");
         };
-        assert_eq!(documents.inner_documents.len(), 2);
-        assert_eq!(documents.outer_documents.len(), 2);
+        let Some(result_data::Variant::Chained(chained)) = data.variant else {
+            panic!("expected the chained variant");
+        };
+        assert_eq!(chained.inner_documents.len(), 2);
+        assert_eq!(chained.outer_documents.len(), 2);
 
         let post_type = contract
             .document_type_for_name("post")
             .expect("post doctype");
-        let posts: Vec<Document> = documents
+        let posts: Vec<Document> = chained
             .outer_documents
             .iter()
             .map(|bytes| {
@@ -410,12 +402,16 @@ mod tests {
     }
 
     #[test]
-    fn test_chained_documents_proof_verifies_end_to_end() {
+    fn should_prove_end_to_end_through_the_v1_wire() {
         let (platform, state, version, contract) = setup_yappr_state();
 
         let result = platform
             .platform
-            .query_chained_documents_v0(request(true, contract.id().to_vec()), &state, version)
+            .query_documents_v1(
+                chained_request(true, contract.id().to_vec()),
+                &state,
+                version,
+            )
             .expect("query executes");
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
         let response = result.data.expect("response data");
@@ -429,7 +425,7 @@ mod tests {
         );
 
         // Client-side composition: rebuild the same chained query and
-        // verify both proofs as one statement.
+        // verify the single merged proof.
         let like_type = contract
             .document_type_for_name("like")
             .expect("like doctype");
@@ -437,7 +433,7 @@ mod tests {
             contract: &contract,
             document_type: like_type,
             internal_clauses: drive::query::InternalClauses::extract_from_clauses(
-                vec![WhereClause {
+                vec![drive::query::WhereClause {
                     field: "$ownerId".to_string(),
                     operator: drive::query::WhereOperator::Equal,
                     value: Value::Identifier(OWNER_1),
@@ -482,14 +478,14 @@ mod tests {
     }
 
     #[test]
-    fn test_chained_documents_requires_inner_limit() {
+    fn should_require_an_explicit_inner_limit() {
         let (platform, state, version, contract) = setup_yappr_state();
 
-        let mut zero_limit = request(false, contract.id().to_vec());
-        zero_limit.inner_limit = 0;
+        let mut no_limit = chained_request(false, contract.id().to_vec());
+        no_limit.limit = None;
         let result = platform
             .platform
-            .query_chained_documents_v0(zero_limit, &state, version)
+            .query_documents_v1(no_limit, &state, version)
             .expect("query executes");
         assert!(
             matches!(
@@ -502,14 +498,17 @@ mod tests {
     }
 
     #[test]
-    fn test_chained_documents_rejects_bad_join_property() {
+    fn should_reject_non_refers_to_join_properties() {
         let (platform, state, version, contract) = setup_yappr_state();
 
-        let mut bad_join = request(false, contract.id().to_vec());
-        bad_join.join_property = "hashtag".to_string();
+        let mut bad_join = chained_request(false, contract.id().to_vec());
+        bad_join.chained = Some(ChainedJoin {
+            join_property: "hashtag".to_string(),
+            outer_document_type: "post".to_string(),
+        });
         let result = platform
             .platform
-            .query_chained_documents_v0(bad_join, &state, version)
+            .query_documents_v1(bad_join, &state, version)
             .expect("query executes");
         assert!(
             matches!(
@@ -517,6 +516,44 @@ mod tests {
                 [QueryError::Query(QuerySyntaxError::Unsupported(_))]
             ),
             "expected Unsupported, got {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn should_reject_sql_shaped_knobs_in_chained_mode() {
+        let (platform, state, version, contract) = setup_yappr_state();
+
+        let mut grouped = chained_request(false, contract.id().to_vec());
+        grouped.group_by = vec!["hashtag".to_string()];
+        let result = platform
+            .platform
+            .query_documents_v1(grouped, &state, version)
+            .expect("query executes");
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [QueryError::Query(QuerySyntaxError::Unsupported(_))]
+            ),
+            "expected Unsupported for group_by, got {:?}",
+            result.errors
+        );
+
+        let mut counted = chained_request(false, contract.id().to_vec());
+        counted.selects = vec![ProtoSelect {
+            function: SelectFunction::Count as i32,
+            field: String::new(),
+        }];
+        let result = platform
+            .platform
+            .query_documents_v1(counted, &state, version)
+            .expect("query executes");
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [QueryError::Query(QuerySyntaxError::Unsupported(_))]
+            ),
+            "expected Unsupported for a COUNT projection, got {:?}",
             result.errors
         );
     }
