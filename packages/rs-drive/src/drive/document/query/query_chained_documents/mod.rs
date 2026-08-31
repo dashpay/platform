@@ -41,15 +41,15 @@ impl Drive {
 
     /// Executes a chained document query AND generates its two proofs.
     ///
-    /// Same-root contract: pass a transaction so both proofs are
-    /// generated against one snapshot — see
+    /// Same-root contract: grovedb proves against committed state only,
+    /// so the pair is bracketed by root-hash reads and retried when a
+    /// block commit interleaves — see
     /// [`DriveChainedDocumentQuery::execute_with_proofs_internal`].
     /// Shares the `query_chained_documents` version slot with the
     /// no-proof path (one surface, one version).
     pub fn query_chained_documents_with_proofs(
         &self,
         query: &DriveChainedDocumentQuery,
-        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(ChainedProofBundle, ChainedDocumentsResult), Error> {
         match platform_version
@@ -59,7 +59,7 @@ impl Drive {
             .query
             .query_chained_documents
         {
-            0 => self.query_chained_documents_with_proofs_v0(query, transaction, platform_version),
+            0 => self.query_chained_documents_with_proofs_v0(query, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "query_chained_documents_with_proofs".to_string(),
                 known_versions: vec![0],

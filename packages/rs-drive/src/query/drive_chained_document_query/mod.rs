@@ -5,10 +5,15 @@
 //! type and projects a `refersTo: permanentDocument` property (the JOIN
 //! property); its proven values are reinjected as the OUTER query's
 //! primary keys. Both halves are proven against the SAME state root —
-//! the server generates both proofs inside one grove transaction, and
-//! the verifier accepts only two proofs whose root hashes are equal
-//! (the surrounding tenderdash composition then binds that root to the
-//! quorum-signed app hash; see `rs-drive-proof-verifier`).
+//! grovedb proves against committed state only, so the server brackets
+//! the pair with root-hash reads and retries if a block commit
+//! interleaved (see [`execute_with_proofs_internal`]); the verifier
+//! accepts only two proofs whose root hashes are equal (the surrounding
+//! tenderdash composition then binds that root to the quorum-signed app
+//! hash; see `rs-drive-proof-verifier`).
+//!
+//! [`execute_with_proofs_internal`]:
+//!     DriveChainedDocumentQuery::execute_with_proofs_internal
 //!
 //! Soundness never rests on the server's join: the verifier re-derives
 //! the outer query from the INNER proof's results ([`Self::join_values`]
@@ -80,7 +85,8 @@ pub struct ChainedDocumentsResult {
 
 /// The two grovedb proofs of a chained query. Soundness requires both
 /// to verify to the SAME root hash; the server guarantees it by
-/// generating both inside one grove transaction.
+/// bracketing the pair with root-hash reads (grovedb proves against
+/// committed state only, so a transaction cannot pin the pair).
 #[derive(Debug)]
 pub struct ChainedProofBundle {
     /// Proof of the inner query (the standard proof the inner
@@ -377,53 +383,79 @@ impl DriveChainedDocumentQuery<'_> {
 
     /// Executes the chained query AND generates both proofs.
     ///
-    /// Same-root contract: with `transaction: Some(..)` both proofs are
-    /// generated against that transaction's snapshot, so they verify to
-    /// one root hash. With `None`, a block committing between the two
-    /// proof generations produces proofs of DIFFERENT roots, which every
-    /// verifier rejects — callers serving clients MUST pass a
-    /// transaction (the query handlers open one).
+    /// Same-root contract: grovedb generates proofs against COMMITTED
+    /// state only (`prove_query` rejects transactions), so the pair
+    /// cannot be pinned to a snapshot. Instead the whole sequence —
+    /// materialize, inner proof, outer proof — is BRACKETED by root-hash
+    /// reads: if the root moved, a block commit interleaved and the
+    /// halves may describe different states, so the attempt is discarded
+    /// and retried. On a quiet root the bracket proves both proofs
+    /// commit to that root — exactly what the verifier's root-equality
+    /// check demands.
     pub(crate) fn execute_with_proofs_internal(
         &self,
         drive: &crate::drive::Drive,
-        transaction: grovedb::TransactionArg,
         drive_operations: &mut Vec<crate::fees::op::LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(ChainedProofBundle, ChainedDocumentsResult), Error> {
-        // Materializes both halves (validating on the way in) — the
-        // join values drive the outer proof's query, and the documents
-        // ride back for callers that want proof + results in one pass.
-        let result =
-            self.execute_no_proof_internal(drive, transaction, drive_operations, platform_version)?;
+        // Block commits are seconds apart while an attempt is
+        // milliseconds, so a bracket collision is rare and two in a row
+        // vanishingly so; three attempts is generosity, not need.
+        const MAX_ATTEMPTS: usize = 3;
+        for _ in 0..MAX_ATTEMPTS {
+            let root_before = drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()?;
 
-        let inner_proof = self.inner.clone().execute_with_proof_internal(
-            drive,
-            transaction,
-            drive_operations,
-            platform_version,
-        )?;
+            // Materializes both halves (validating on the way in) — the
+            // join values drive the outer proof's query, and the
+            // documents ride back for callers that want proof + results
+            // in one pass.
+            let result =
+                self.execute_no_proof_internal(drive, None, drive_operations, platform_version)?;
 
-        let join_values = self.join_values(&result.inner_documents)?;
-        let outer_proof = if join_values.is_empty() {
-            None
-        } else {
-            Some(
-                self.derive_outer_query(&join_values)
-                    .execute_with_proof_internal(
-                        drive,
-                        transaction,
-                        drive_operations,
-                        platform_version,
-                    )?,
-            )
-        };
+            let inner_proof = self.inner.clone().execute_with_proof_internal(
+                drive,
+                None,
+                drive_operations,
+                platform_version,
+            )?;
 
-        Ok((
-            ChainedProofBundle {
-                inner_proof,
-                outer_proof,
-            },
-            result,
-        ))
+            let join_values = self.join_values(&result.inner_documents)?;
+            let outer_proof = if join_values.is_empty() {
+                None
+            } else {
+                Some(
+                    self.derive_outer_query(&join_values)
+                        .execute_with_proof_internal(
+                            drive,
+                            None,
+                            drive_operations,
+                            platform_version,
+                        )?,
+                )
+            };
+
+            let root_after = drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()?;
+            if root_before != root_after {
+                continue;
+            }
+
+            return Ok((
+                ChainedProofBundle {
+                    inner_proof,
+                    outer_proof,
+                },
+                result,
+            ));
+        }
+        Err(Error::Drive(DriveError::NotSupported(
+            "chained proof generation raced a block commit on every attempt; \
+             transient — retry the request",
+        )))
     }
 }

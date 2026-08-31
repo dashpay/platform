@@ -54,15 +54,9 @@ impl Drive {
     pub(super) fn query_chained_documents_with_proofs_v0(
         &self,
         query: &DriveChainedDocumentQuery,
-        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(ChainedProofBundle, ChainedDocumentsResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        query.execute_with_proofs_internal(
-            self,
-            transaction,
-            &mut drive_operations,
-            platform_version,
-        )
+        query.execute_with_proofs_internal(self, &mut drive_operations, platform_version)
     }
 }

@@ -192,7 +192,7 @@ fn chained_query_returns_liked_posts_with_proof_parity() {
 
     // Proof round trip.
     let (bundle, proved_result) = drive
-        .query_chained_documents_with_proofs(&chained, None, pv)
+        .query_chained_documents_with_proofs(&chained, pv)
         .expect("chained proofs generate");
     let outer_proof = bundle
         .outer_proof
@@ -239,7 +239,7 @@ fn chained_query_empty_inner_has_no_outer_proof() {
 
     let chained = chained_posts_i_liked(&contract, OWNER_3, None, Some(10));
     let (bundle, result) = drive
-        .query_chained_documents_with_proofs(&chained, None, pv)
+        .query_chained_documents_with_proofs(&chained, pv)
         .expect("chained proofs generate");
     assert!(result.inner_documents.is_empty());
     assert!(bundle.outer_proof.is_none(), "empty inner ⇒ no outer proof");
@@ -294,7 +294,7 @@ fn chained_query_paginates_through_inner_cursor() {
 
     let page_2 = chained_posts_i_liked(&contract, OWNER_1, Some(cursor), Some(1));
     let (bundle, _) = drive
-        .query_chained_documents_with_proofs(&page_2, None, pv)
+        .query_chained_documents_with_proofs(&page_2, pv)
         .expect("page 2 proofs generate");
     let (_root, verified) = page_2
         .verify_chained_documents_proof(
@@ -384,7 +384,7 @@ fn chained_query_rejects_proofs_of_different_roots() {
 
     let chained = chained_posts_i_liked(&contract, OWNER_1, None, Some(10));
     let (bundle, result) = drive
-        .query_chained_documents_with_proofs(&chained, None, pv)
+        .query_chained_documents_with_proofs(&chained, pv)
         .expect("chained proofs generate");
 
     // Mutate state, then regenerate ONLY the outer proof — it now
