@@ -24,6 +24,8 @@
  * published `4.1.0.bfc80249b9-1` because the sha extends the upstream version.
  */
 
+import { fileURLToPath } from 'node:url';
+
 // Version identifiers follow semver: no leading zeros, because `4.1.0-rc.01` and
 // `4.1.0-rc.1` are two distinct tags that dpkg considers the same version.
 const NUMERIC_IDENTIFIER = '(?:0|[1-9]\\d*)';
@@ -94,16 +96,15 @@ function debFileNameVersion(debVersion) {
   return debVersion.replace(/^\d+:/, '').replace(/~/g, '.');
 }
 
-module.exports.debVersionFromSemver = debVersionFromSemver;
-module.exports.debFileNameVersion = debFileNameVersion;
+export { debVersionFromSemver, debFileNameVersion };
 
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const forFileName = args[0] === '--file-name';
   const version = forFileName ? args[1] : args[0];
 
   if (!version) {
-    console.error('Usage: deb_version.js [--file-name] SEMVER_VERSION\n\n'
+    console.error('Usage: deb-version.js [--file-name] SEMVER_VERSION\n\n'
       + '  Prints the Debian package version for a semver version, or the version as it\n'
       + '  appears in the package file name.\n\n'
       + '  DASHMATE_DEB_REVISION  Debian revision, default 1. Bump it to rebuild a version\n'

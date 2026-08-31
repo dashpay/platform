@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { selectDebBaseline, releaseLine } from '../../../../../scripts/deb_release_baseline.js';
+import { selectDebBaseline, releaseLine } from '../../../scripts/deb-release-baseline.js';
 
-const SCRIPT_PATH = fileURLToPath(new URL('../../../../../scripts/deb_release_baseline.js', import.meta.url));
+const SCRIPT_PATH = fileURLToPath(new URL('../../../scripts/deb-release-baseline.js', import.meta.url));
 
 /**
  * A releases API entry, trimmed to the fields the baseline choice reads.
@@ -26,7 +26,7 @@ function deb(version, arch = 'amd64') {
   return `dashmate_${version}_${arch}.deb`;
 }
 
-describe('deb_release_baseline.js', () => {
+describe('deb-release-baseline.js', () => {
   describe('#releaseLine', () => {
     it('should group a prerelease with the release it leads up to', () => {
       expect(releaseLine('v4.1.0-rc.3')).to.equal('4.1.0'.split('.').slice(0, 2).join('.'));

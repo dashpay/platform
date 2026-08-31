@@ -2,7 +2,7 @@
 
 set -e
 
-cmd_usage="Usage: check_deb_version.sh NEW_VERSION PREVIOUS_VERSION
+cmd_usage="Usage: check-deb-version.sh NEW_VERSION PREVIOUS_VERSION
 
 Exits successfully only when NEW_VERSION sorts strictly above PREVIOUS_VERSION under
 dpkg's version comparison, which is what decides whether apt offers a release as an
@@ -11,9 +11,9 @@ upgrade at all.
 Both arguments are Debian package versions ([EPOCH:]UPSTREAM[-REVISION]), not semver
 tags. Translate a semver version first:
 
-  scripts/check_deb_version.sh \\
-    \"\$(node scripts/deb_version.js 4.1.0-rc.4)\" \\
-    \"\$(node scripts/deb_version.js 4.1.0-rc.3)\"
+  packages/dashmate/scripts/check-deb-version.sh \\
+    \"\$(node packages/dashmate/scripts/deb-version.js 4.1.0-rc.4)\" \\
+    \"\$(node packages/dashmate/scripts/deb-version.js 4.1.0-rc.3)\"
 
   EXIT CODES:
     0  new version sorts above the previous one
@@ -36,7 +36,7 @@ fi
 # would defeat the point of the check. Refuse to answer instead of answering wrongly.
 if ! command -v dpkg > /dev/null 2>&1
 then
-  echo "check_deb_version.sh: dpkg not found, cannot compare Debian versions." >&2
+  echo "check-deb-version.sh: dpkg not found, cannot compare Debian versions." >&2
   echo "Run this on a Debian based host or inside a container that has dpkg." >&2
   exit 3
 fi

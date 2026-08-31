@@ -24,9 +24,10 @@ concurrency:
 permissions:
   contents: read
 
-# Debian version knobs, read by scripts/deb_version.js in both the version gate
-# and the packaging job. They have to stay in lockstep: a value seen by only one
-# of them makes the gate validate a version that is not the one that ships.
+# Debian version knobs, read by packages/dashmate/scripts/deb-version.js in both
+# the version gate and the packaging job. They have to stay in lockstep: a value
+# seen by only one of them makes the gate validate a version that is not the one
+# that ships.
 # Bump the revision to rebuild an already published version; set the epoch only
 # to outrank a version whose upstream part carried a git sha.
 env:
@@ -384,58 +385,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CURRENT_TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
-          set -euo pipefail
-          compare="${GITHUB_WORKSPACE}/scripts/check_deb_version.sh"
-          translate="${GITHUB_WORKSPACE}/scripts/deb_version.js"
-          select_baseline="${GITHUB_WORKSPACE}/scripts/deb_release_baseline.js"
-          if [ ! -x "${compare}" ] || [ ! -f "${translate}" ] || [ ! -f "${select_baseline}" ]; then
-            echo "::error::${compare}, ${translate} or ${select_baseline} is missing"
-            exit 1
-          fi
-          # The comparison runs on Debian versions, never on the semver tags:
-          # "4.1.0-1" is valid as both and means something different in each.
-          new_version="$(node "${translate}" "${CURRENT_TAG}")"
-          # Published so the packaging job can prove the deb it actually builds
-          # carries the version validated here, rather than both jobs
-          # independently predicting it from the tag.
-          echo "validated_version=${new_version}" >> "${GITHUB_OUTPUT}"
-
-          # Every release is fetched, not just the first page: the repository has
-          # several hundred of them, and a single page silently hides older
-          # lines. Which one becomes the baseline is decided by the script rather
-          # than by the API's default ordering, so the choice of predecessor is
-          # not an undocumented implementation detail.
-          baseline="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            | node "${select_baseline}" "${CURRENT_TAG}")"
-
-          if [ -z "${baseline}" ]; then
-            echo "::notice::No published deb to compare ${CURRENT_TAG} against"
-            exit 0
-          fi
-
-          baseline_tag="${baseline%%$'\t'*}"
-          baseline_asset="${baseline#*$'\t'}"
-
-          # Read the baseline from the deb's own control field: the only version
-          # apt looks at, the only one a server-side rename of the asset cannot
-          # alter, and what operators actually installed rather than what the tag
-          # would produce today.
-          mkdir -p baseline-deb
-          gh release download "${baseline_tag}" --repo "${GITHUB_REPOSITORY}" \
-            --pattern "${baseline_asset}" --dir baseline-deb --clobber
-          baseline_version="$(dpkg-deb -f "baseline-deb/${baseline_asset}" Version)"
-          if [ -z "${baseline_version}" ]; then
-            echo "::error::Could not read the Version field from ${baseline_asset} in ${baseline_tag}"
-            exit 1
-          fi
-
-          echo "Comparing ${CURRENT_TAG} (${new_version}) against ${baseline_asset} from ${baseline_tag} (${baseline_version})"
-          status=0
-          "${compare}" "${new_version}" "${baseline_version}" || status=$?
-          if [ "${status}" -eq 1 ]; then
-            echo "::error::${new_version} does not sort above ${baseline_version}, so apt would refuse this release as a downgrade or report it as already the newest version. Rebuilding an already published version needs DASHMATE_DEB_REVISION; re-releasing a version whose predecessor carried a git sha in its upstream part needs DASHMATE_DEB_EPOCH=1. Both are read by scripts/deb_version.js and must be set for the packaging job as well."
-          fi
-          exit "${status}"
+          "${GITHUB_WORKSPACE}/packages/dashmate/scripts/check-release-deb-version.sh" "${CURRENT_TAG}"
 
   # Holds the Apple signing certificate and the notarization credentials, and
   # runs dependency lifecycle scripts while doing so, so it is gated on its own
@@ -523,33 +473,13 @@ jobs:
           OSX_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
         run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
 
-      # The gate validates a version derived from the tag; nothing so far proves
-      # the deb that actually gets built carries it. Without this the gate's
-      # verdict applies to a prediction rather than to the bytes that ship.
       - name: Check the built deb carries the validated version
         if: matrix.package_type == 'deb'
         env:
           VALIDATED_VERSION: ${{ needs.check-dashmate-deb-version.outputs.validated_version }}
         run: |
-          set -euo pipefail
-          if [ -z "${VALIDATED_VERSION}" ]; then
-            echo "::error::The version gate did not publish a validated version"
-            exit 1
-          fi
-          debs="${RUNNER_TEMP}/built-debs"
-          find packages/dashmate/dist -type f -name '*.deb' > "${debs}"
-          if [ ! -s "${debs}" ]; then
-            echo "::error::No deb was produced to check"
-            exit 1
-          fi
-          while IFS= read -r deb; do
-            built_version="$(dpkg-deb -f "${deb}" Version)"
-            if [ "${built_version}" != "${VALIDATED_VERSION}" ]; then
-              echo "::error::${deb} carries version ${built_version}, but the gate validated ${VALIDATED_VERSION}; the packaging scheme and the gate disagree"
-              exit 1
-            fi
-            echo "${deb} carries the validated version ${built_version}"
-          done < "${debs}"
+          packages/dashmate/scripts/check-built-deb-version.sh \
+            "${VALIDATED_VERSION}" packages/dashmate/dist "${RUNNER_TEMP}"
 
       - name: Upload artifacts to action summary
         uses: actions/upload-artifact@v4
@@ -563,42 +493,13 @@ jobs:
         run: |
           find packages/dashmate/dist/ -name '*.pkg' -exec sh -c 'xcrun notarytool submit "{}" --apple-id "${{ secrets.MACOS_APPLE_ID }}" --team-id "${{ secrets.MACOS_TEAM_ID }}" --password "${{ secrets.MACOS_NOTARIZING_PASSWORD }}" --wait;' \;
 
-      # Recorded here, after notarization and immediately before upload, so the
-      # hashes cover the exact bytes that leave this job. The checksums job
-      # compares them against what the release actually serves, which is what
-      # makes SHA256SUMS evidence rather than a restatement of whatever is
-      # attached to the release by the time it runs.
+      # Recorded after notarization and immediately before upload, so the hashes
+      # cover the exact bytes that leave this job.
       - name: Record built package checksums
         if: github.event_name == 'release'
         run: |
-          set -euo pipefail
-          if command -v sha256sum > /dev/null; then
-            hash_cmd=(sha256sum)
-          else
-            hash_cmd=(shasum -a 256)
-          fi
-          cd packages/dashmate/dist
-          # Hidden files are skipped to match the glob that uploads this
-          # directory, which does not match them either. Recording a file that
-          # never gets uploaded would fail the release for a package that was
-          # never meant to ship.
-          find . -type f -not -path '*/.*' | sed 's|^\./||' | LC_ALL=C sort > "${RUNNER_TEMP}/built-files"
-          if [ ! -s "${RUNNER_TEMP}/built-files" ]; then
-            echo "::error::No built packages found to record"
-            exit 1
-          fi
-          # Recorded under the name the file will carry on the release rather
-          # than its path in the build tree: a release has no directories, so
-          # the upload flattens every file to its basename. A record keyed by
-          # path could only ever be matched against a published asset by hash,
-          # which is what lets bytes built for one target be served under
-          # another target's name.
-          : > "${RUNNER_TEMP}/built.sha256"
-          while IFS= read -r file; do
-            hash="$("${hash_cmd[@]}" "${file}" | cut -d' ' -f1)"
-            printf '%s  %s\n' "${hash}" "${file##*/}" >> "${RUNNER_TEMP}/built.sha256"
-          done < "${RUNNER_TEMP}/built-files"
-          cat "${RUNNER_TEMP}/built.sha256"
+          packages/dashmate/scripts/record-built-checksums.sh \
+            "${RUNNER_TEMP}" packages/dashmate/dist
 
       - name: Upload built package checksums
         uses: actions/upload-artifact@v4

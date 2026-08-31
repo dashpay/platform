@@ -13,6 +13,9 @@
  * only version apt looks at and the only one a rename of the asset cannot alter.
  */
 
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 // Releases are ordered by when they were published rather than when they were created.
 // A release drafted early and published late reaches operators after releases created
 // after it, and it is the order the packages were offered in that decides what apt has
@@ -65,14 +68,13 @@ function selectDebBaseline(releases, currentTag) {
     || null;
 }
 
-module.exports.selectDebBaseline = selectDebBaseline;
-module.exports.releaseLine = releaseLine;
+export { selectDebBaseline, releaseLine };
 
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const currentTag = process.argv[2];
 
   if (!currentTag) {
-    console.error('Usage: deb_release_baseline.js CURRENT_TAG < releases.json\n\n'
+    console.error('Usage: deb-release-baseline.js CURRENT_TAG < releases.json\n\n'
       + '  Reads the GitHub releases API response on stdin and prints the tag and the\n'
       + '  package file name of the release the current tag has to sort above, separated\n'
       + '  by a tab. Prints nothing when no published release has shipped a package.\n');
@@ -80,7 +82,7 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const input = require('node:fs').readFileSync(0, 'utf8');
+  const input = fs.readFileSync(0, 'utf8');
   const parsed = JSON.parse(input);
 
   if (!Array.isArray(parsed)) {
