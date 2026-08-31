@@ -203,7 +203,7 @@ impl<C> Platform<C> {
             // its materialize/prove sequence with root-hash reads
             // (grovedb proves committed state only) and retries if a
             // block commit interleaves.
-            let (merged_proof, result) = match self
+            let (merged_proof, inner_documents) = match self
                 .drive
                 .query_chained_documents_with_proof(&chained_query, platform_version)
             {
@@ -219,7 +219,7 @@ impl<C> Platform<C> {
             // The bootstrap hint the verifier re-derives the outer
             // component from — untrusted by design.
             let proven_join_values = chained_query
-                .join_values(&result.inner_documents)?
+                .join_values(&inner_documents)?
                 .into_iter()
                 .map(|id| id.to_vec())
                 .collect();
