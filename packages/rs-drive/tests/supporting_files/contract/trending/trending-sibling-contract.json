@@ -47,7 +47,7 @@
         "postAuthor": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 63,
+          "maxLength": 61,
           "position": 0
         },
         "day": {
@@ -110,7 +110,7 @@
         "postAuthor": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 63,
+          "maxLength": 61,
           "position": 0
         },
         "day": {
@@ -176,7 +176,7 @@
         "tag": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 63,
+          "maxLength": 61,
           "position": 0
         },
         "region": {
@@ -246,7 +246,7 @@
         "postAuthor": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 63,
+          "maxLength": 61,
           "position": 0
         },
         "postId": {
@@ -287,7 +287,7 @@
         "hashtag": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 63,
+          "maxLength": 61,
           "position": 0
         },
         "message": {
@@ -355,7 +355,7 @@
         "hashtag": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 63,
+          "maxLength": 61,
           "position": 0
         },
         "day": {
