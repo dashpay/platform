@@ -381,8 +381,9 @@ jobs:
           set -euo pipefail
           compare="${GITHUB_WORKSPACE}/scripts/check_deb_version.sh"
           translate="${GITHUB_WORKSPACE}/scripts/deb_version.js"
-          if [ ! -x "${compare}" ] || [ ! -f "${translate}" ]; then
-            echo "::error::${compare} or ${translate} is missing"
+          select_baseline="${GITHUB_WORKSPACE}/scripts/deb_release_baseline.js"
+          if [ ! -x "${compare}" ] || [ ! -f "${translate}" ] || [ ! -f "${select_baseline}" ]; then
+            echo "::error::${compare}, ${translate} or ${select_baseline} is missing"
             exit 1
           fi
           # The comparison runs on Debian versions, never on the semver tags:
@@ -393,68 +394,21 @@ jobs:
           # independently predicting it from the tag.
           echo "validated_version=${new_version}" >> "${GITHUB_OUTPUT}"
 
-          # Which release line a tag belongs to. Used only to group releases, so
-          # an older-line hotfix is measured against its own predecessor instead
-          # of a higher line it was never meant to supersede. Every version that
-          # actually gets compared still comes from a deb's control field.
-          line_of_tag() {
-            local tag="${1#v}"
-            printf '%s' "${tag%%-*}" | cut -d. -f1,2
-          }
-          current_line="$(line_of_tag "${CURRENT_TAG}")"
+          # Every release is fetched, not just the first page: the repository has
+          # several hundred of them, and a single page silently hides older
+          # lines. Which one becomes the baseline is decided by the script rather
+          # than by the API's default ordering, so the choice of predecessor is
+          # not an undocumented implementation detail.
+          baseline="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            | node "${select_baseline}" "${CURRENT_TAG}")"
 
-          # Candidates are non-draft releases that shipped a deb, newest first;
-          # prereleases count, because they go to the same channel and apt
-          # compares against whatever the operator installed last. The current
-          # tag is included: a deb already attached to it is what an earlier run
-          # of this same release shipped, and it is exactly what apt measures a
-          # rebuild against when the revision was not bumped.
-          # Paginated and sorted explicitly: the repository has several hundred
-          # releases, so a single page silently hides older lines, and relying on
-          # the API's default ordering would make the choice of predecessor an
-          # undocumented implementation detail.
-          candidates="${RUNNER_TEMP}/deb-release-candidates"
-          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            | jq -r '
-                add
-                | sort_by(.created_at)
-                | reverse
-                | .[]
-                | select(.draft == false)
-                | { tag: .tag_name, asset: ([.assets[].name | select(endswith("_amd64.deb"))] | first) }
-                | select(.asset != null)
-                | "\(.tag)\t\(.asset)"' > "${candidates}"
-
-          # The newest release on this line, falling back to the newest of any
-          # line when this line has not shipped a deb yet. Deliberately NOT "the
-          # newest release sorting below this one": that would choose the
-          # baseline using the very condition the comparison goes on to assert,
-          # leaving a gate that cannot fail.
-          baseline_tag=""
-          baseline_asset=""
-          newest_tag=""
-          newest_asset=""
-          while IFS=$'\t' read -r tag asset; do
-            if [ -z "${newest_tag}" ]; then
-              newest_tag="${tag}"
-              newest_asset="${asset}"
-            fi
-            if [ "$(line_of_tag "${tag}")" = "${current_line}" ]; then
-              baseline_tag="${tag}"
-              baseline_asset="${asset}"
-              break
-            fi
-          done < "${candidates}"
-
-          if [ -z "${baseline_tag}" ]; then
-            baseline_tag="${newest_tag}"
-            baseline_asset="${newest_asset}"
-          fi
-
-          if [ -z "${baseline_tag}" ]; then
+          if [ -z "${baseline}" ]; then
             echo "::notice::No published deb to compare ${CURRENT_TAG} against"
             exit 0
           fi
+
+          baseline_tag="${baseline%%$'\t'*}"
+          baseline_asset="${baseline#*$'\t'}"
 
           # Read the baseline from the deb's own control field: the only version
           # apt looks at, the only one a server-side rename of the asset cannot
@@ -617,14 +571,25 @@ jobs:
             hash_cmd=(shasum -a 256)
           fi
           cd packages/dashmate/dist
-          find . -type f | sed 's|^\./||' | LC_ALL=C sort > "${RUNNER_TEMP}/built-files"
+          # Hidden files are skipped to match the glob that uploads this
+          # directory, which does not match them either. Recording a file that
+          # never gets uploaded would fail the release for a package that was
+          # never meant to ship.
+          find . -type f -not -path '*/.*' | sed 's|^\./||' | LC_ALL=C sort > "${RUNNER_TEMP}/built-files"
           if [ ! -s "${RUNNER_TEMP}/built-files" ]; then
             echo "::error::No built packages found to record"
             exit 1
           fi
+          # Recorded under the name the file will carry on the release rather
+          # than its path in the build tree: a release has no directories, so
+          # the upload flattens every file to its basename. A record keyed by
+          # path could only ever be matched against a published asset by hash,
+          # which is what lets bytes built for one target be served under
+          # another target's name.
           : > "${RUNNER_TEMP}/built.sha256"
           while IFS= read -r file; do
-            "${hash_cmd[@]}" "${file}" >> "${RUNNER_TEMP}/built.sha256"
+            hash="$("${hash_cmd[@]}" "${file}" | cut -d' ' -f1)"
+            printf '%s  %s\n' "${hash}" "${file##*/}" >> "${RUNNER_TEMP}/built.sha256"
           done < "${RUNNER_TEMP}/built-files"
           cat "${RUNNER_TEMP}/built.sha256"
 
@@ -680,67 +645,93 @@ jobs:
             exit 1
           fi
 
-      - name: Download published release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          mkdir -p assets
-          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --dir assets --clobber
-          # Drop the output of an earlier run of this job so a re-run hashes
-          # only the packages.
-          rm -f assets/SHA256SUMS
-
       - name: Download built package checksums
         uses: actions/download-artifact@v4
         with:
           pattern: dashmate-built-checksums-*
           path: built-checksums
 
+      # The names and hashes the packaging jobs recorded are the whole
+      # expectation this job holds: SHA256SUMS covers the packages this workflow
+      # built, not whatever the release happens to serve. Other jobs attach
+      # assets of their own, and this job has no build record for those - listing
+      # them would attest artifacts it knows nothing about, and would depend on
+      # whether those jobs had finished yet.
+      - name: Collect the packages built in this run
+        run: |
+          set -euo pipefail
+          cat built-checksums/*/built.sha256 | LC_ALL=C sort -u > "${RUNNER_TEMP}/built.sha256"
+          if [ ! -s "${RUNNER_TEMP}/built.sha256" ]; then
+            echo "::error::No built package checksums were recorded"
+            exit 1
+          fi
+          cut -d' ' -f3- "${RUNNER_TEMP}/built.sha256" | LC_ALL=C sort > "${RUNNER_TEMP}/built-names"
+
+          # A release holds one asset per name, so two built files sharing a name
+          # means one of them silently replaced the other on the way up and there
+          # is no longer any way to say which bytes are published under it.
+          duplicates="$(LC_ALL=C uniq -d "${RUNNER_TEMP}/built-names")"
+          if [ -n "${duplicates}" ]; then
+            echo "::error::More than one built file would be published under the same name: $(echo "${duplicates}" | tr '\n' ' ')"
+            exit 1
+          fi
+          cat "${RUNNER_TEMP}/built.sha256"
+
+      # Fetched by name, one asset at a time, so that a package built here but
+      # missing from the release is reported as missing rather than quietly
+      # dropped from the listing.
+      - name: Download the published packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          missing=0
+          while IFS= read -r name; do
+            gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --pattern "${name}" --dir assets --clobber > /dev/null 2>&1 || true
+            if [ ! -f "assets/${name}" ]; then
+              echo "::error::${name} was built in this run but is not published on ${TAG}"
+              missing=1
+            fi
+          done < "${RUNNER_TEMP}/built-names"
+          if [ "${missing}" -ne 0 ]; then
+            echo "::error::The release is missing packages this run built; refusing to publish checksums"
+            exit 1
+          fi
+
       # A maintainer signs SHA256SUMS out of band and attaches the detached
       # signature as SHA256SUMS.asc; apt publication then refuses to publish any
       # package whose hash is not in the signed file, so a compromised CI run
-      # alone cannot ship a package. The listing is sorted byte-wise so
-      # regenerating it reproduces exactly what was signed.
+      # alone cannot ship a package. The listing is generated in byte-wise name
+      # order so regenerating it reproduces exactly what was signed.
       - name: Generate SHA256SUMS
         run: |
           set -euo pipefail
           cd assets
-          find . -maxdepth 1 -type f -printf '%P\n' | LC_ALL=C sort > "${RUNNER_TEMP}/release-assets"
-          if [ ! -s "${RUNNER_TEMP}/release-assets" ]; then
-            echo "::error::No release assets found to checksum"
-            exit 1
-          fi
-          xargs -a "${RUNNER_TEMP}/release-assets" -d '\n' sha256sum > SHA256SUMS
+          xargs -a "${RUNNER_TEMP}/built-names" -d '\n' sha256sum > SHA256SUMS
           cat SHA256SUMS
 
       # Hashing whatever the release currently serves would attest availability,
       # not origin: anyone able to swap an asset between the packaging job and
-      # this one would simply get the replacement blessed. Every published hash
-      # therefore has to have been produced by a packaging job.
+      # this one would simply get the replacement blessed. The comparison is on
+      # whole (hash, name) pairs and runs in both directions, because each half
+      # alone leaves a way through: matching hashes only would let bytes built
+      # for one target be published under another target's name, and matching
+      # published assets only would let a package be dropped from the release
+      # entirely without anything noticing.
       - name: Verify published assets against the built packages
         run: |
           set -euo pipefail
-          cat built-checksums/*/built.sha256 > "${RUNNER_TEMP}/built-all.sha256"
-          if [ ! -s "${RUNNER_TEMP}/built-all.sha256" ]; then
-            echo "::error::No built package checksums were recorded"
-            exit 1
+          LC_ALL=C sort assets/SHA256SUMS > "${RUNNER_TEMP}/published.sha256"
+          if diff -u "${RUNNER_TEMP}/built.sha256" "${RUNNER_TEMP}/published.sha256" \
+            --label built --label published; then
+            echo "All published packages match the packages built in this run"
+            exit 0
           fi
-          cut -d' ' -f1 "${RUNNER_TEMP}/built-all.sha256" | LC_ALL=C sort -u > "${RUNNER_TEMP}/built-hashes"
-
-          unmatched=0
-          while read -r hash name; do
-            if ! grep -qxF "${hash}" "${RUNNER_TEMP}/built-hashes"; then
-              echo "::error::${name} (${hash}) was not produced by any packaging job"
-              unmatched=1
-            fi
-          done < assets/SHA256SUMS
-          if [ "${unmatched}" -ne 0 ]; then
-            echo "::error::Published assets do not match the built packages; refusing to publish checksums"
-            exit 1
-          fi
-          echo "All published assets match packages built in this run"
+          echo "::error::Published packages do not match the packages built in this run; refusing to publish checksums"
+          exit 1
 
       # Uploaded with the preinstalled CLI rather than a third-party action:
       # code running in this job runs beside the signing material, and an action
