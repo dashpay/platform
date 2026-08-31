@@ -22,6 +22,65 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// policy remain the consumer's responsibility (see `SECRETS.md`).
 pub const MIN_PASSPHRASE_LEN: usize = 8;
 
+/// An `mlock`ed region that releases best-effort, never fatally.
+///
+/// Used in place of [`region::LockGuard`], whose `Drop` runs
+/// `debug_assert!(result.is_ok())` on the unlock and so aborts a debug
+/// build when the OS reports the region was already unlocked. That is a
+/// routine outcome, not a caller bug: locking is page-granular, so two
+/// secrets allocated close together share a page, and `VirtualUnlock` is
+/// not reference-counted — the first secret to drop releases the shared
+/// page and the second sees `ERROR_NOT_LOCKED`. A destructor must not
+/// fail on an expected, benign condition, so this one logs instead.
+///
+/// The address is held as a `usize` and only ever handed back to
+/// [`region::unlock`], never dereferenced. That keeps the lock — and so
+/// [`SecretString`]/[`SecretBytes`] — `Send + Sync` without the
+/// `unsafe impl`s `region::LockGuard` relies on, which this crate's
+/// `deny(unsafe_code)` forbids.
+struct PageLock {
+    address: usize,
+    size: usize,
+}
+
+impl PageLock {
+    /// Lock `[address, address + size)` into RAM.
+    ///
+    /// Callers log their own failures: the two `SecretString` call sites
+    /// deliberately report at different levels with distinct wording, so
+    /// this returns the error rather than emitting one message for all.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`region::lock`] — a zero `size`, or an OS refusal
+    /// (a low `RLIMIT_MEMLOCK` being the usual cause).
+    fn acquire<T>(address: *const T, size: usize) -> Result<Self, region::Error> {
+        let guard = region::lock(address, size)?;
+        // Leak the guard object, not the lock: its `Drop` is the aborting
+        // one, and it exposes no accessors, so releasing the region has to
+        // go through the address and size recorded here. `region::unlock`
+        // rounds to page boundaries exactly as `region::lock` did, so this
+        // releases precisely the region that was locked.
+        std::mem::forget(guard);
+        Ok(Self {
+            address: address.addr(),
+            size,
+        })
+    }
+}
+
+impl Drop for PageLock {
+    fn drop(&mut self) {
+        let address = std::ptr::without_provenance::<u8>(self.address);
+        if let Err(e) = region::unlock(address, self.size) {
+            tracing::debug!(
+                "munlock failed while releasing a secret buffer; a secret \
+                 sharing the page may already have released it: {e}"
+            );
+        }
+    }
+}
+
 /// Zeroize-on-drop wrapper for secret UTF-8 strings (BIP-39 mnemonic,
 /// `EncryptedFileStore` passphrase).
 ///
@@ -43,7 +102,7 @@ pub struct SecretString {
     // Field order is load-bearing: `inner` drops (Zeroizing wipes it)
     // before `_lock` releases the page, so the wipe runs while mlock'ed.
     inner: Zeroizing<String>,
-    _lock: Option<region::LockGuard>,
+    _lock: Option<PageLock>,
 }
 
 impl SecretString {
@@ -59,7 +118,7 @@ impl SecretString {
         // forbids; the test `secret_string_new_zeroizes_string_source` instead
         // pins the `String::zeroize` primitive and this call site.
         source.zeroize();
-        let lock = region::lock(buf.as_ptr(), buf.capacity())
+        let lock = PageLock::acquire(buf.as_ptr(), buf.capacity())
             .map_err(|e| {
                 tracing::warn!(
                     "mlock failed for SecretString; secret may be swappable to disk: {e}"
@@ -120,7 +179,7 @@ impl SecretString {
 impl Default for SecretString {
     fn default() -> Self {
         let s = String::with_capacity(DEFAULT_CAPACITY);
-        let lock = region::lock(s.as_ptr(), s.capacity())
+        let lock = PageLock::acquire(s.as_ptr(), s.capacity())
             .map_err(|e| {
                 // Empty buffer — no secret at risk, so this is diagnostic
                 // noise, not a confidentiality event. `debug!` (not the
@@ -275,7 +334,7 @@ pub struct SecretBytes {
     // Field order is load-bearing: `inner` drops (Zeroizing wipes it)
     // before `_lock` releases the page, so the wipe runs while mlock'ed.
     inner: Zeroizing<Vec<u8>>,
-    _lock: Option<region::LockGuard>,
+    _lock: Option<PageLock>,
 }
 
 impl SecretBytes {
@@ -285,7 +344,7 @@ impl SecretBytes {
         // Skip an empty allocation: an empty `Vec`'s `as_ptr()` is
         // dangling and `region::lock` rejects a 0-length region.
         let lock = if bytes.capacity() > 0 {
-            region::lock(bytes.as_ptr(), bytes.capacity())
+            PageLock::acquire(bytes.as_ptr(), bytes.capacity())
                 .map_err(|e| {
                     tracing::warn!(
                         "mlock failed for SecretBytes; secret may be swappable to disk: {e}"
@@ -568,6 +627,99 @@ mod tests {
         assert!(std::mem::needs_drop::<SecretString>());
         assert!(std::mem::needs_drop::<SecretBytes>());
     };
+
+    /// Regression: releasing a lock the OS reports as not held must not
+    /// panic or abort. `region::LockGuard`, which [`PageLock`] exists to
+    /// avoid, runs `debug_assert!(result.is_ok())` there and so aborts a
+    /// debug build on exactly the `Err` this test provokes.
+    ///
+    /// Drives the failure deterministically by releasing a never-mapped
+    /// page instead of a shared one: on Linux `munlock` *succeeds* on a
+    /// mapped-but-unlocked region, so page sharing alone cannot produce
+    /// the error here — it is `VirtualUnlock`/`ERROR_NOT_LOCKED` on Windows
+    /// that does. Unmapped is the one input that fails everywhere, and it
+    /// yields the very `Err` the old `debug_assert` fired on. The first
+    /// assertion pins that trigger, so this cannot rot into a test that
+    /// passes because the unlock quietly started succeeding.
+    #[test]
+    fn page_lock_release_failure_does_not_panic() {
+        let page = region::page::size();
+        // The second page: page-aligned and below the default
+        // `mmap_min_addr` (64 KiB), so no allocation can ever land here.
+        let unmapped = page;
+        assert!(
+            region::unlock(std::ptr::without_provenance::<u8>(unmapped), page).is_err(),
+            "test needs a region whose unlock fails; {unmapped:#x} was accepted"
+        );
+
+        // Dropping a lock over that region must swallow the error.
+        drop(PageLock {
+            address: unmapped,
+            size: page,
+        });
+    }
+
+    /// Secrets small enough to share one locked page must all drop
+    /// cleanly, whichever order they go in.
+    ///
+    /// A smoke test on Linux by construction (see
+    /// `page_lock_release_failure_does_not_panic` for why the error
+    /// cannot be provoked here); it is the Windows arm of CI that would
+    /// catch a regression, where the second release of a shared page
+    /// reports `ERROR_NOT_LOCKED`.
+    #[test]
+    fn secrets_sharing_a_page_drop_cleanly() {
+        let a = SecretBytes::from_slice(&[0x11u8; 32]);
+        let b = SecretBytes::from_slice(&[0x22u8; 32]);
+        let c = SecretBytes::zeroed(16);
+        // Reverse and interleaved drop order: no ordering may abort.
+        drop(b);
+        let d = SecretString::new("shares a page with the survivors");
+        drop(a);
+        drop(d);
+        drop(c);
+
+        // Many small secrets alive at once, then released in FIFO order.
+        let many: Vec<SecretBytes> = (0..64u8)
+            .map(|i| SecretBytes::from_slice(&[i; 8]))
+            .collect();
+        drop(many);
+    }
+
+    /// The locked region can never go stale, because no API reallocates
+    /// the buffer: the address recorded at construction still addresses
+    /// the live buffer after every in-place mutation.
+    ///
+    /// This is what stands in for a relock path — unlike egui-facing
+    /// secret wrappers, neither type here exposes a growth API, so there
+    /// is no window in which the lock could describe a freed allocation.
+    /// A future `push`/`extend` method breaks this test, which is the
+    /// point: it must arrive with a relock.
+    #[test]
+    fn locked_region_is_stable_across_mutation() {
+        let mut b = SecretBytes::zeroed(64);
+        let before = b.expose_secret().as_ptr();
+        b.expose_secret_mut().copy_from_slice(&[0x5Au8; 64]);
+        assert_eq!(before, b.expose_secret().as_ptr(), "in-place fill moved it");
+        b.zeroize();
+        assert_eq!(before, b.expose_secret().as_ptr(), "zeroize moved it");
+
+        let mut s = SecretString::new("locked buffer must not move");
+        let before = s.expose_secret().as_ptr();
+        s.zeroize();
+        assert_eq!(before, s.expose_secret().as_ptr(), "zeroize moved it");
+    }
+
+    /// Both wrappers are `Send + Sync`. `region::LockGuard` earns those
+    /// with its own `unsafe impl`s; [`PageLock`] must match while holding
+    /// only a `usize`, since this crate denies `unsafe_code`. Losing
+    /// either would silently break cross-thread holders.
+    #[test]
+    fn secret_wrappers_stay_send_and_sync() {
+        static_assertions::assert_impl_all!(SecretString: Send, Sync);
+        static_assertions::assert_impl_all!(SecretBytes: Send, Sync);
+        static_assertions::assert_impl_all!(PageLock: Send, Sync);
+    }
 
     /// Proves zeroize wipes the buffer. Every read is on a STILL-LIVE
     /// value (no post-free deref / UB); the in-place slice wipe also
