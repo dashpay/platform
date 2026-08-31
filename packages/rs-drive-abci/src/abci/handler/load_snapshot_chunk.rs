@@ -1,10 +1,10 @@
-use crate::abci::app::{PlatformApplication, SnapshotManagerApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::platform_types::platform::Platform;
 use crate::platform_types::snapshot::{
-    max_serving_pins, MAX_STATE_SYNC_CHUNK_ID_SIZE, SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
+    max_serving_pins, SnapshotManager, MAX_STATE_SYNC_CHUNK_ID_SIZE,
+    SUPPORTED_STATE_SYNC_PROTOCOL_VERSIONS,
 };
-use crate::rpc::core::CoreRPCLike;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci as proto;
 
@@ -12,14 +12,14 @@ use tenderdash_abci::proto::abci as proto;
 ///
 /// The served checkpoint is pinned in the snapshot manager so checkpoint pruning cannot
 /// delete it from disk while a peer is still downloading it.
-pub fn load_snapshot_chunk<A, C>(
-    app: &A,
+///
+/// Takes the platform and snapshot manager directly rather than an application trait so
+/// the gRPC serving application can run it on the blocking pool from owned `Arc`s.
+pub fn load_snapshot_chunk<C>(
+    platform: &Platform<C>,
+    snapshot_manager: &SnapshotManager,
     request: proto::RequestLoadSnapshotChunk,
-) -> Result<proto::ResponseLoadSnapshotChunk, Error>
-where
-    A: PlatformApplication<C> + SnapshotManagerApplication,
-    C: CoreRPCLike,
-{
+) -> Result<proto::ResponseLoadSnapshotChunk, Error> {
     tracing::trace!(
         height = request.height,
         version = request.version,
@@ -27,7 +27,7 @@ where
         "[state_sync] api load_snapshot_chunk",
     );
 
-    if !app.platform().config.abci.state_sync.snapshots_enabled {
+    if !platform.config.abci.state_sync.snapshots_enabled {
         return Err(AbciError::StateSyncBadRequest(
             "load_snapshot_chunk snapshot serving is disabled".to_string(),
         )
@@ -57,14 +57,13 @@ where
 
     // Resolve the checkpoint: from the registry, or — if pruning already dropped it —
     // from the pins of transfers already in flight.
-    let checkpoint = app
-        .platform()
+    let checkpoint = platform
         .drive
         .checkpoints
         .load()
         .get(&request.height)
         .map(|checkpoint_info| Arc::clone(&checkpoint_info.checkpoint))
-        .or_else(|| app.snapshot_manager().pinned_checkpoint(request.height))
+        .or_else(|| snapshot_manager.pinned_checkpoint(request.height))
         .ok_or_else(|| {
             AbciError::StateSyncBadRequest(format!(
                 "load_snapshot_chunk no snapshot at height {}",
@@ -105,10 +104,10 @@ where
     // Pin (or refresh the pin of) the checkpoint only once a chunk was actually served.
     // Pinning before the fetch would let a peer keep a checkpoint — and its directory —
     // alive with a stream of requests that never succeed.
-    app.snapshot_manager().pin_for_serving(
+    snapshot_manager.pin_for_serving(
         request.height,
         checkpoint,
-        max_serving_pins(app.platform().config.abci.state_sync.max_num_snapshots),
+        max_serving_pins(platform.config.abci.state_sync.max_num_snapshots),
     );
 
     Ok(proto::ResponseLoadSnapshotChunk { chunk })
@@ -117,7 +116,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abci::app::FullAbciApplication;
     use crate::config::PlatformConfig;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -132,7 +130,7 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
         let platform_version = PlatformVersion::latest();
-        let app = FullAbciApplication::new(&platform);
+        let snapshot_manager = SnapshotManager::new();
 
         let reduced_platform_state = platform.state.load().to_reduced_platform_state(None, 42);
         platform
@@ -159,7 +157,8 @@ mod tests {
 
         // The root chunk (chunk id == app hash) must be served
         let response = load_snapshot_chunk(
-            &app,
+            &platform,
+            &snapshot_manager,
             proto::RequestLoadSnapshotChunk {
                 height: 10,
                 version: 1,
@@ -170,11 +169,12 @@ mod tests {
         assert!(!response.chunk.is_empty());
 
         // The served checkpoint must now be pinned against pruning
-        assert!(app.snapshot_manager.pinned_checkpoint(10).is_some());
+        assert!(snapshot_manager.pinned_checkpoint(10).is_some());
 
         // Unknown height is rejected
         assert!(load_snapshot_chunk(
-            &app,
+            &platform,
+            &snapshot_manager,
             proto::RequestLoadSnapshotChunk {
                 height: 999,
                 version: 1,
@@ -185,7 +185,8 @@ mod tests {
 
         // Unsupported wire version is rejected
         assert!(load_snapshot_chunk(
-            &app,
+            &platform,
+            &snapshot_manager,
             proto::RequestLoadSnapshotChunk {
                 height: 10,
                 version: 2,
@@ -196,7 +197,8 @@ mod tests {
 
         // Oversized chunk id is rejected before any decoding
         assert!(load_snapshot_chunk(
-            &app,
+            &platform,
+            &snapshot_manager,
             proto::RequestLoadSnapshotChunk {
                 height: 10,
                 version: 1,
