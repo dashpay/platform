@@ -15,6 +15,21 @@ pub struct OutPointFFI {
     pub vout: u32,
 }
 
+impl From<&dashcore::OutPoint> for OutPointFFI {
+    /// The one authority for `OutPoint` → FFI conversion. This value is
+    /// the join key sweep releases use to find additive-path rows on the
+    /// host side, so a byte-order drift between hand-rolled copies would
+    /// silently unlink them — every conversion site routes through here.
+    fn from(outpoint: &dashcore::OutPoint) -> Self {
+        let mut txid = [0u8; 32];
+        txid.copy_from_slice(outpoint.txid.as_ref());
+        Self {
+            txid,
+            vout: outpoint.vout,
+        }
+    }
+}
+
 /// Outpoint of a TXO that was spent, paired with the spending
 /// transaction's txid. Replaces the bare `OutPointFFI` on
 /// `AccountChangeSetFFI.utxos_spent` so the Swift persister can
@@ -237,6 +252,74 @@ pub struct WalletChangeSetFFI {
     /// `proof.rs` can't fire until SPV re-applies a fresh CL).
     pub last_applied_chain_lock_bytes: *mut u8,
     pub last_applied_chain_lock_bytes_len: usize,
+    // This struct's layout is FROZEN here. It crosses the C ABI by bare
+    // pointer — `on_persist_wallet_changeset_fn` carries no size or version
+    // field — so appending anything makes the pairing of a new callback
+    // with an older native producer read past the end of the producer's
+    // allocation: the callback signature and the manager-create entry
+    // points are unchanged, so nothing stops that pairing, and a capability
+    // bit gates semantics, not memory layout — it cannot make an
+    // out-of-bounds read safe. The round's sweep batches, briefly appended
+    // here, now travel through the size-tagged
+    // `PersistenceCallbacksExtension` sweep callback instead (see
+    // `persistence.rs`), whose declared `struct_size` is exactly the proof
+    // of presence this struct cannot give. New per-round payloads must take
+    // that same route.
+}
+
+/// One sweep: the transactions it removed, the transaction that beat them,
+/// and the coins its removal actually freed.
+///
+/// Delivered through `PersistenceCallbacksExtension`'s
+/// `on_persist_wallet_changeset_sweeps_fn` — deliberately NOT a field on
+/// [`WalletChangeSetFFI`], whose bare-pointer ABI cannot prove to a newer
+/// consumer that an older producer allocated the field (see the layout note
+/// there). The batches arrive in the order the wallet emitted them, and the
+/// only subtractive part of a persistence round rides here: each entry
+/// describes the wallet as that sweep saw it, and a later entry can keep a
+/// coin spent that an earlier one freed. **A persister must apply them in
+/// sequence** — folding them together lets the first answer outlive the
+/// last one that is actually true. Ignoring them leaves dead rows that are
+/// handed back at the next load and re-create a balance the wallet has
+/// already corrected.
+#[repr(C)]
+pub struct SweepBatchFFI {
+    /// Removed transactions, raw 32-byte txids. Delete these rows and every
+    /// UTXO they created.
+    pub txids: *const [u8; 32],
+    pub txids_count: usize,
+    /// The transaction whose arrival settled the inputs. Final, and not
+    /// necessarily wallet-relevant — it can pay entirely to outside
+    /// addresses and never reach this store at all, which is why what it
+    /// took cannot be worked out by looking it up.
+    pub superseded_by: [u8; 32],
+    /// Of the inputs the removed transactions claimed, the ones that came
+    /// free. Everything else they claimed was taken by `superseded_by` and
+    /// stays spent — a persister holds every input of what it deletes, so
+    /// this is the only thing telling it which to hand back.
+    pub released_outpoints: *const OutPointFFI,
+    pub released_outpoints_count: usize,
+    /// Whether `winner_mined_height` is meaningful. `false` means the sweep
+    /// was triggered by an InstantSend-locked winner still waiting to be
+    /// mined (upstream's only other trigger — an unlocked mempool arrival
+    /// never sweeps), and the winner has NO finality horizon: a persister
+    /// must still create a durable placeholder for a held-but-unfunded
+    /// input — under DIP-10 the lock alone settles it, and the placeholder
+    /// is the only claim that survives a restart — but must leave it
+    /// UNSTAMPED and never collect an unstamped placeholder (the winner has
+    /// no mining deadline, so no watermark proves its funding output
+    /// delivered-or-never; only funding materialisation, a later
+    /// block-context re-stamp, or a release resolves it). Re-pointing an
+    /// existing placeholder on such a sweep must keep (not clear) any
+    /// stamp it already carries.
+    pub has_winner_mined_height: bool,
+    /// Mined height of `superseded_by` when `has_winner_mined_height` —
+    /// the winner's own block, carried from the sweep event because the
+    /// winner may never appear anywhere else in this wallet's stream. A
+    /// persister stamps it onto the placeholder it writes for a
+    /// held-but-unfunded input, and collects that placeholder exactly when
+    /// `min(chainlock_height, synced_height)` reaches the stamp.
+    pub winner_mined_height: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -518,6 +601,82 @@ impl WalletChangeSetFFI {
             last_applied_chain_lock_bytes_len,
         }
     }
+}
+
+/// Backing storage for one [`SweepBatchFFI`]'s nested buffers. The C struct
+/// borrows into it, so the caller keeps this alive for the callback window —
+/// the same `(entries, storage)` discipline
+/// `build_address_pools_for_callback` uses, rather than `Box::into_raw` +
+/// a paired free: nothing outlives the call, so nothing needs a free path.
+pub(crate) struct SweepBatchStorage {
+    txids: Vec<[u8; 32]>,
+    released: Vec<OutPointFFI>,
+}
+
+/// Build the C mirrors of a changeset's sweep batches for the extension
+/// sweep callback (`on_persist_wallet_changeset_sweeps_fn`), preserving the
+/// wallet's emission order — the one property a persister cannot recover on
+/// its own, since a later batch can keep a coin spent that an earlier one
+/// freed. Sweeps travel wallet-scoped, not per account: the upstream events
+/// are wallet-scoped, and the persister deletes by txid — the row it
+/// deletes carries its own account link.
+pub(crate) fn build_sweep_batches_for_callback(
+    cs: &platform_wallet::changeset::CoreChangeSet,
+) -> (Vec<SweepBatchFFI>, Vec<SweepBatchStorage>) {
+    let storage: Vec<SweepBatchStorage> = cs
+        .sweeps
+        .iter()
+        .map(|batch| SweepBatchStorage {
+            txids: batch
+                .txids
+                .iter()
+                .map(|txid| {
+                    let mut raw = [0u8; 32];
+                    raw.copy_from_slice(txid.as_ref());
+                    raw
+                })
+                .collect(),
+            released: batch
+                .released_outpoints
+                .iter()
+                .map(OutPointFFI::from)
+                .collect(),
+        })
+        .collect();
+
+    let batches: Vec<SweepBatchFFI> = cs
+        .sweeps
+        .iter()
+        .zip(storage.iter())
+        .map(|(batch, backing)| {
+            let mut superseded_by = [0u8; 32];
+            superseded_by.copy_from_slice(batch.superseded_by.as_ref());
+            SweepBatchFFI {
+                // `*const`, built straight from `as_ptr()`: the storage is
+                // borrowed immutably here, and `Vec::as_ptr` does not permit
+                // writes through the pointer or anything derived from it.
+                // Casting to `*mut` would advertise a C ABI that a callback
+                // could take literally, breaking Rust's aliasing rules.
+                txids: if backing.txids.is_empty() {
+                    std::ptr::null()
+                } else {
+                    backing.txids.as_ptr()
+                },
+                txids_count: backing.txids.len(),
+                superseded_by,
+                released_outpoints: if backing.released.is_empty() {
+                    std::ptr::null()
+                } else {
+                    backing.released.as_ptr()
+                },
+                released_outpoints_count: backing.released.len(),
+                has_winner_mined_height: batch.winner_mined_height.is_some(),
+                winner_mined_height: batch.winner_mined_height.unwrap_or(0),
+            }
+        })
+        .collect();
+
+    (batches, storage)
 }
 
 /// Returns the account "index" the FFI surfaces in `account_index`.
@@ -926,13 +1085,8 @@ fn record_spent_outpoints_ffi(
         .iter()
         .filter_map(|d| {
             let input = rec.transaction.input.get(d.index as usize)?;
-            let mut txid = [0u8; 32];
-            txid.copy_from_slice(input.previous_output.txid.as_ref());
             Some(SpentOutPointFFI {
-                outpoint: OutPointFFI {
-                    txid,
-                    vout: input.previous_output.vout,
-                },
+                outpoint: OutPointFFI::from(&input.previous_output),
                 spending_txid,
             })
         })
@@ -1309,14 +1463,7 @@ fn tx_record_to_ffi(
         tr.transaction
             .input
             .iter()
-            .map(|input| {
-                let mut prev_txid = [0u8; 32];
-                prev_txid.copy_from_slice(input.previous_output.txid.as_ref());
-                OutPointFFI {
-                    txid: prev_txid,
-                    vout: input.previous_output.vout,
-                }
-            })
+            .map(|input| OutPointFFI::from(&input.previous_output))
             .collect()
     };
     let input_outpoints_count = input_outpoints_vec.len();

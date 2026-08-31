@@ -51,13 +51,46 @@ impl PersistenceCapabilities {
     /// Tracked asset-lock rows, including status and proof updates, can be
     /// persisted. Restart hydration is the separate `WALLET_RESTORE` contract.
     pub const TRACKED_ASSET_LOCKS: Self = Self(1 << 9);
-
     /// Tracked (wallet-independent) masternodes are persisted AND restored
     /// across restarts
     /// ([`persist_tracked_masternodes`](super::PlatformWalletPersistence::persist_tracked_masternodes)
     /// / [`load_tracked_masternodes`](super::PlatformWalletPersistence::load_tracked_masternodes)).
     /// Without this bit, tracking is session-scoped.
     pub const TRACKED_MASTERNODES: Self = Self(1 << 10);
+    /// A stored `CoreChangeSet` whose `sweeps` are non-empty is durably
+    /// applied batch by batch and in order: each swept transaction and its
+    /// outputs are excluded from every restore and enumeration path (whether
+    /// by physical deletion or a durable marker), each released outpoint is
+    /// freed unless a later surviving claim supersedes that release, and each
+    /// non-released input retains a durable spend claim even when its funding
+    /// TXO has not materialized yet. Physical row deletion is an
+    /// implementation detail, not the contract — the in-tree stores keep an
+    /// inert globally-swept row until every wallet's scoped cleanup lands,
+    /// and a detached tombstone MUST outlive its loser or the consumed coin
+    /// later reads unspent. On the FFI surface sweeps travel through the
+    /// persistence extension's size-negotiated sweep callback — a slot Rust
+    /// never reads unless the host's declared `struct_size` proved it exists
+    /// — so an older host processes the rest of the round, returns success,
+    /// and never sees the sweeps at all; this bit tells the wallet that the
+    /// complete sweep contract was implemented rather than silently
+    /// truncated.
+    pub const CORE_SWEEP_REMOVAL: Self = Self(1 << 11);
+    /// A stored changeset's `dashpay_payments_overlay` rows are durably
+    /// applied. This is what lets the wallet-event adapter couple a sweep's
+    /// payment consequence (`Pending → Failed` for the losers' sent
+    /// entries) to the sweep's own atomic store round: the flip is staged
+    /// onto the round ONLY for a backend attesting this bit, because a
+    /// sweep never re-emits once its round is durable — an
+    /// accepted-and-ignored overlay would leave the adapter believing a
+    /// flip persisted that a host without a payments store silently
+    /// dropped. A non-attesting backend keeps the in-memory flip (the
+    /// truthful session state; the transaction IS dead) with nothing
+    /// round-coupled — funds-safe, since payment entries are display
+    /// metadata; the funds-critical half of the sweep still gates on
+    /// `CORE_SWEEP_REMOVAL`. On the FFI surface Rust honours the
+    /// declaration only when `on_persist_dashpay_payments_fn` is actually
+    /// wired.
+    pub const DASHPAY_PAYMENTS: Self = Self(1 << 12);
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -142,6 +175,14 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::TRACKED_MASTERNODES,
                 "tracked_masternodes",
             ),
+            (
+                PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+                "core_sweep_removal",
+            ),
+            (
+                PersistenceCapabilities::DASHPAY_PAYMENTS,
+                "dashpay_payments",
+            ),
         ];
 
         KNOWN
@@ -172,6 +213,8 @@ mod tests {
         assert_eq!(PersistenceCapabilities::DPNS_NAME_STATES.bits(), 0x100);
         assert_eq!(PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits(), 0x200);
         assert_eq!(PersistenceCapabilities::TRACKED_MASTERNODES.bits(), 0x400);
+        assert_eq!(PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits(), 0x800);
+        assert_eq!(PersistenceCapabilities::DASHPAY_PAYMENTS.bits(), 0x1000);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281
@@ -187,5 +230,22 @@ mod tests {
             missing.names(),
             vec!["asset_lock_funding_indices", "wallet_restore"]
         );
+    }
+
+    /// Every declarable bit must be nameable. A bit missing from `KNOWN`
+    /// still gates behaviour but vanishes from every diagnostic that
+    /// reports capabilities by name, so a host debugging why its rows
+    /// never landed sees nothing about the capability that withheld them
+    /// — which is exactly what `DASHPAY_PAYMENTS` did until this test.
+    #[test]
+    fn every_declared_bit_has_a_stable_name() {
+        for shift in 0..13u32 {
+            let bit = PersistenceCapabilities::from_bits_retain(1 << shift);
+            assert_eq!(
+                bit.names().len(),
+                1,
+                "bit 1 << {shift} is declarable but has no name in KNOWN"
+            );
+        }
     }
 }
