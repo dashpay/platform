@@ -4114,6 +4114,7 @@ mod having_trust_boundary {
                 .expect("grade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             PlatformVersion::latest(),
         )
         .expect("the fixture declares the avg axis")
@@ -5696,95 +5697,289 @@ mod time_range_proof_verification {
             );
         }
     }
-    // ----- routes that must refuse time-range selections ------------------
+    // ----- ranked windowed top-K (ranked × timeRange) ----------------------
 
+    use dash_platform_queries::documents::document_query::RankingDirection;
+    use drive::query::RankedEntryValue;
     use drive_proof_verifier::{DocumentHavingEntries, DocumentRankedEntries};
 
-    /// The HAVING route accepts equality prefixes that pin plain ranked
-    /// indexes, and its picker excludes transformed ones — so a resolved
-    /// bucket-start equality reaching it would be served from raw
-    /// timestamps at the bucket boundary instead of the selected window.
-    /// The server must refuse the combination outright (drive owns the
-    /// rejection, through `DocumentHavingRequest::resolved_time_ranges`).
-    #[test]
-    fn the_having_route_refuses_a_time_range_selection() {
-        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
-        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
-
-        let request = GetDocumentsRequestV1 {
-            group_by: vec!["hashtag".to_string()],
-            having: vec![hc(
-                having_aggregate::Function::Count,
-                "",
-                having_clause::Operator::GreaterThan,
-                Value::U64(0),
-            )],
-            ..trending_request(contract.id().to_vec(), "ibiza", select_count_star())
-        };
-        let result = platform
-            .query_documents_v1(request, &state, version)
-            .expect("transport-level success");
-        assert!(
-            format!("{:?}", result.errors).contains("time-range"),
-            "the HAVING route must refuse a time-range selection, got {:?}",
-            result.errors
-        );
+    /// The trending contract with the per-window ranking: the bucketed
+    /// index also declares the ranked keywords, so each window's hashtag
+    /// leaderboard is a per-prefix secondary under that window's bucket
+    /// value tree. The raw `byCreatedHashtag` sibling covers the identical
+    /// property set WITHOUT the transform — the admissibility trap: a
+    /// picker matching by property names alone would route the resolved
+    /// bucket pin onto raw timestamps, and the window counts asserted
+    /// below (2 and 3) could never come back from it, since an
+    /// exact-timestamp prefix holds at most one post's hashtag.
+    fn register_ranked_trending_contract(
+        platform: &Platform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a factory");
+        let schemas = platform_value!({
+            DOCUMENT_TYPE: {
+                "type": "object",
+                "properties": {
+                    // 61, not 63: a ranked group key caps at 61 UTF-8-max
+                    // characters (grovedb's 247-byte secondary key bound)
+                    "hashtag": { "type": "string", "maxLength": 61, "position": 0 },
+                },
+                "indices": [
+                    {
+                        "name": BUCKETED_INDEX,
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "rangeCountable": true,
+                        "rankedCountable": true,
+                        "timeRange": { "on": "$createdAt", "range": 21_600u64, "step": 7_200u64 },
+                    },
+                    {
+                        "name": "byCreatedHashtag",
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "rangeCountable": true,
+                        "rankedCountable": true,
+                    },
+                ],
+                "required": ["$createdAt", "hashtag"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = factory
+            .create_with_value_config(Identifier::new([11u8; 32]), 0, schemas, None, None)
+            .expect("a bucketed index may rank levels below the bucket")
+            .data_contract_owned();
+        store_data_contract(platform, &contract, platform_version);
+        contract
     }
 
-    /// The ranked and HAVING *verifiers* must refuse a time-range request
-    /// before authenticating anything: both surfaces pin plain ranked
-    /// indexes with equality prefixes, so a malicious node could otherwise
-    /// prove raw-timestamp matches at the bucket boundary against a request
-    /// shape every honest server rejects. The rejection fires ahead of
-    /// proof verification, so any signed response works as the fixture.
+    fn setup_ranked_trending(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        base_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, PlatformState) {
+        let contract = register_ranked_trending_contract(platform, platform_version);
+        insert_posts(platform, &contract, platform_version);
+        let state = state_with_committed_block_time(base_state, &platform.drive, platform_version);
+        (contract, state)
+    }
+
+    /// `SELECT COUNT(*) WHERE IN_TIME_RANGE($createdAt, <selection>)
+    /// GROUP BY hashtag ORDER BY $count DESC LIMIT 10` on the wire.
+    fn windowed_top_k_request(
+        contract_id: Vec<u8>,
+        selection: ProtoTimeRangeSelection,
+    ) -> GetDocumentsRequestV1 {
+        GetDocumentsRequestV1 {
+            data_contract_id: contract_id,
+            document_type: DOCUMENT_TYPE.to_string(),
+            where_clauses: vec![ProtoWhereClause {
+                field: CREATED_AT.to_string(),
+                operator: ProtoWhereOperator::InTimeRange as i32,
+                value: None,
+                time_range: Some(selection),
+            }],
+            order_by: vec![oc("$count", false)],
+            limit: Some(10),
+            start: None,
+            prove: true,
+            selects: select_count_star(),
+            group_by: vec!["hashtag".to_string()],
+            having: Vec::new(),
+            offset: None,
+            chained: None,
+        }
+    }
+
+    fn newest_selection() -> ProtoTimeRangeSelection {
+        ProtoTimeRangeSelection {
+            selector: ProtoTimeRangeSelector::Newest as i32,
+            start_ms: None,
+            grid: None,
+        }
+    }
+
+    fn by_start_selection(start_ms: u64) -> ProtoTimeRangeSelection {
+        ProtoTimeRangeSelection {
+            selector: ProtoTimeRangeSelector::ByStart as i32,
+            start_ms: Some(start_ms),
+            grid: None,
+        }
+    }
+
+    /// The ranked client query mirroring [`windowed_top_k_request`], with
+    /// the selection still pending for the entry point to resolve from the
+    /// signed metadata time (or, for `ByStart`, from the query itself).
+    fn windowed_top_k_query(
+        contract: &DataContract,
+        selector: TimeRangeSelector,
+    ) -> SdkDocumentQuery {
+        SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
+            .expect("the fixture has this document type")
+            .with_select(SelectProjection::count_star())
+            .with_group_by("hashtag")
+            .order_by_selected_aggregate(RankingDirection::Descending)
+            .with_limit(10)
+            .with_time_range(CREATED_AT, selector)
+    }
+
+    fn assert_hashtag_counts(entries: &[drive::query::RankedEntry], expected: &[(&str, u64)]) {
+        assert_eq!(
+            entries.len(),
+            expected.len(),
+            "the page must hold exactly the window's groups"
+        );
+        for (entry, (hashtag, count)) in entries.iter().zip(expected) {
+            assert_eq!(
+                entry.key,
+                hashtag.as_bytes().to_vec(),
+                "group keys come back as raw index-key bytes in ranking order"
+            );
+            assert_eq!(entry.value, RankedEntryValue::Count(*count));
+        }
+    }
+
+    /// The headline capability: server-ordered top hashtags of the current
+    /// window, one query, one proof, verified through the SDK entry point.
+    /// The newest window holds two `#ibiza` posts and one `#berlin`, while
+    /// `#ibiza`'s third post sits only in older windows — so the counts
+    /// (2, 1) pin that the secondary served the pinned window's own
+    /// leaderboard: the raw sibling index could produce at most 1 per
+    /// group, and an all-time ranking would score ibiza 3.
     #[test]
-    fn ranked_and_having_verifiers_refuse_time_range_requests() {
+    fn windowed_top_k_serves_and_verifies_through_the_entry_point() {
         let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
-        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
-        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (contract, state) = setup_ranked_trending(&platform, &base_state, version);
+
+        let request = windowed_top_k_request(contract.id().to_vec(), newest_selection());
         let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
 
-        let time_range_query = || {
-            SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
-                .expect("the fixture has this document type")
-                .with_select(SelectProjection::count_star())
-                .with_time_range(CREATED_AT, TimeRangeSelector::Newest)
-        };
-
-        let error =
+        let (page, _mtd, _proof) =
             <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                time_range_query(),
-                signed_response(proof.clone(), &mtd),
-                Network::Testnet,
-                version,
-                &provider,
-            )
-            .expect_err("the ranked verifier must refuse a time-range request");
-        assert!(
-            error.to_string().contains("time-range"),
-            "expected the ranked time-range refusal, got {error}"
-        );
-
-        let error =
-            <DocumentHavingEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                time_range_query().with_having(vec![drive::query::HavingClause {
-                    aggregate: drive::query::HavingAggregate {
-                        function: drive::query::HavingAggregateFunction::Count,
-                        field: String::new(),
-                    },
-                    operator: drive::query::HavingOperator::GreaterThan,
-                    right: drive::query::HavingRightOperand::Value(Value::U64(0)),
-                }]),
+                windowed_top_k_query(&contract, TimeRangeSelector::Newest),
                 signed_response(proof, &mtd),
                 Network::Testnet,
                 version,
                 &provider,
             )
-            .expect_err("the HAVING verifier must refuse a time-range request");
-        assert!(
-            error.to_string().contains("time-range"),
-            "expected the HAVING time-range refusal, got {error}"
+            .expect("a correctly signed windowed ranking must verify");
+        let page = page.expect("the newest window is not empty");
+        assert_eq!(page.starting_rank, 0);
+        assert_hashtag_counts(&page.entries, &[("ibiza", 2), ("berlin", 1)]);
+    }
+
+    /// A historic window's leaderboard, addressed absolutely with
+    /// `BY_START` — unreachable through the relative selectors. The window
+    /// starting one step back covers `[start − 2h, start + 4h)`, so it
+    /// holds all three `#ibiza` posts: a different ordering input than the
+    /// newest window's, provably from a window no "current" resolution
+    /// could produce.
+    #[test]
+    fn a_historic_windows_ranking_verifies_by_start() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_ranked_trending(&platform, &base_state, version);
+        let historic_start_ms = NEWEST_BUCKET_START_MS - 2 * HOUR_MS;
+
+        let request = windowed_top_k_request(
+            contract.id().to_vec(),
+            by_start_selection(historic_start_ms),
         );
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let (page, _mtd, _proof) =
+            <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                windowed_top_k_query(
+                    &contract,
+                    TimeRangeSelector::ByStart {
+                        start_ms: historic_start_ms,
+                    },
+                ),
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed historic ranking must verify");
+        let page = page.expect("the historic window is not empty");
+        assert_hashtag_counts(&page.entries, &[("ibiza", 3), ("berlin", 1)]);
+    }
+
+    /// The window-binding property of the relative selectors, on the
+    /// ranked surface: re-signing the response over a one-step-later
+    /// metadata time makes the verifier re-derive a *different* bucket
+    /// start, so the proof — built over the original window's secondary —
+    /// must fail path reconstruction rather than authenticate the stale
+    /// window as the new one.
+    #[test]
+    fn a_tampered_time_cannot_verify_another_windows_ranking() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_ranked_trending(&platform, &base_state, version);
+
+        let request = windowed_top_k_request(contract.id().to_vec(), newest_selection());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+        let tampered = one_step_later(&contract, BUCKETED_INDEX, &mtd);
+        let resigned = resign_over(&platform, &proof, &tampered, version);
+
+        let error =
+            <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                windowed_top_k_query(&contract, TimeRangeSelector::Newest),
+                signed_response(resigned, &tampered),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect_err("a validly re-signed later time must not verify the stale window");
+        assert_proof_path_rejection(error);
+    }
+
+    /// The having-range face of the same secondary: "hashtags with at
+    /// least 2 posts in the current window", proved and verified. Only
+    /// `#ibiza` qualifies in the newest window — `#berlin` has 1, and
+    /// ibiza's third post lives outside the window.
+    #[test]
+    fn the_having_route_serves_a_windowed_bound() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, state) = setup_ranked_trending(&platform, &base_state, version);
+
+        let request = GetDocumentsRequestV1 {
+            order_by: Vec::new(),
+            having: vec![hc(
+                having_aggregate::Function::Count,
+                "",
+                having_clause::Operator::GreaterThanOrEquals,
+                Value::U64(2),
+            )],
+            ..windowed_top_k_request(contract.id().to_vec(), newest_selection())
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let query = SdkDocumentQuery::new(Arc::new(contract.clone()), DOCUMENT_TYPE)
+            .expect("the fixture has this document type")
+            .with_select(SelectProjection::count_star())
+            .with_group_by("hashtag")
+            .with_having(vec![drive::query::HavingClause {
+                aggregate: drive::query::HavingAggregate {
+                    function: drive::query::HavingAggregateFunction::Count,
+                    field: String::new(),
+                },
+                operator: drive::query::HavingOperator::GreaterThanOrEquals,
+                right: drive::query::HavingRightOperand::Value(Value::U64(2)),
+            }])
+            .with_limit(10)
+            .with_time_range(CREATED_AT, TimeRangeSelector::Newest);
+        let (entries, _mtd, _proof) =
+            <DocumentHavingEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed windowed bound must verify");
+        let entries = entries.expect("one group meets the bound");
+        assert_hashtag_counts(&entries.entries, &[("ibiza", 2)]);
     }
 
     /// A drive query carrying resolution provenance has no faithful
