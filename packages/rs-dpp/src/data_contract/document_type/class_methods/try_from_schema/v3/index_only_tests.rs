@@ -518,12 +518,11 @@ fn trending_posts_contract_with_windowed_like_counts_validates() {
 }
 
 #[test]
-fn trending_posts_ranked_windowed_index_is_still_rejected() {
-    // The deliberate tripwire for the ranked-x-timeRange gap: server-ordered
-    // "top posts this window" needs `rankedCountable` on the bucketed
-    // index, and contract validation still rejects that combination until
-    // bucket-aware ranked semantics land. When that feature ships, this
-    // test should flip into an acceptance test rather than be deleted.
+fn trending_posts_ranked_windowed_index_validates() {
+    // The former tripwire for the ranked-x-timeRange gap, flipped into the
+    // acceptance test it was written to become: server-ordered "top posts
+    // this window" declares `rankedCountable` on the bucketed index, and
+    // validation now admits ranked levels below the bucketed one.
     let mut schema = trending_posts_likes_schema();
     schema
         .get_mut("indices")
@@ -535,16 +534,43 @@ fn trending_posts_ranked_windowed_index_is_still_rejected() {
         .expect("byWindowPost exists")
         .set_value("rankedCountable", platform_value!(true))
         .expect("index key applies");
-    // Raised by the index parser rather than the doc-type-level checks, so
-    // it reaches here in a different `ProtocolError` wrapping than the
-    // errors `expect_structure_error` matches — assert on the message.
-    let error = parse_with(schema, PlatformVersion::latest(), false)
-        .expect_err("ranked flags on a bucketed index must be refused");
+    let document_type = parse_with(schema, PlatformVersion::latest(), false)
+        .expect("ranked below the bucketed level must validate");
+    let bucketed = document_type
+        .indices
+        .values()
+        .find(|index| index.time_range.is_some())
+        .expect("the windowed index parsed");
     assert!(
-        error
-            .to_string()
-            .contains("a timeRange index cannot be ranked"),
-        "expected the ranked-x-timeRange rejection, got: {error}"
+        bucketed.ranked_countable,
+        "the windowed index carries the per-window ranking"
+    );
+}
+
+#[test]
+fn trending_posts_ranked_at_bucketed_source_still_rejected() {
+    // The one spelling that stays deferred: ranking the bucketed level
+    // itself (ordering the windows by their aggregates). `at` naming the
+    // transform source is that spelling.
+    let mut schema = trending_posts_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(0)
+        .expect("byWindowPost exists")
+        .set_value(
+            "rankedCountable",
+            platform_value!({ "at": ["$createdAt", "postId"] }),
+        )
+        .expect("index key applies");
+    let error = parse_with(schema, PlatformVersion::latest(), false)
+        .expect_err("ranking the bucketed level itself must stay refused");
+    assert!(
+        error.to_string().contains("bucketed source"),
+        "expected the bucketed-source rejection, got: {error}"
     );
 }
 

@@ -10,6 +10,7 @@
 use super::{DocumentRankedMode, DriveDocumentRankedQuery, PrefixPin, RankedAxis};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::{index_admissible_for_resolved_time_range, ResolvedTimeRange};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::version::PlatformVersion;
@@ -44,7 +45,14 @@ use std::collections::BTreeMap;
 ///   index accumulates would silently answer about the wrong property.
 ///   A prefix-level Count ranking excludes both (the grammar rejects the
 ///   combination), so those arms never see an `at` index;
-/// - it carries no time-range transform.
+/// - it is admissible for the request's resolved time-range selections
+///   ([`index_admissible_for_resolved_time_range`]): a request whose
+///   leading pin was produced by `IN_TIME_RANGE` resolution may only be
+///   served by the index bucketing that field with exactly that grid,
+///   and a raw request never by a bucketed index — either mismatch
+///   would be a validly-proven wrong answer. The resolved bucket-start
+///   pin then descends the grid-qualified first level like any other
+///   leading-property pin, into that window's own per-prefix secondary.
 ///
 /// With no pins this degenerates to the original single-property rule —
 /// or, for an index ranked at its FIRST property, to the global group
@@ -79,14 +87,15 @@ pub fn find_ranked_index_for_axis<'b>(
     equality_pin_fields: &[String],
     axis: RankedAxis,
     aggregate_field: &str,
+    resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
     indexes.values().find(|index| {
-        // Ranking over bucket keys is an undesigned surface: a document is
-        // stored once per bucket that contains it, so it would contribute to
-        // `overlap_factor` groups at once, and a ranked query carries no
-        // where clauses that could pin a single bucket. Exclude bucketed
-        // indexes until the semantics are deliberately designed.
-        if index.time_range.is_some() {
+        // Bucketed and raw indexes are never interchangeable, and one
+        // grid's index never serves another grid's resolution — the same
+        // provenance rule every other aggregate picker applies. This is
+        // what keeps a raw request off bucketed indexes AND routes a
+        // resolved request to exactly the grid it was resolved against.
+        if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
             return false;
         }
         // The positions whose levels host this axis's secondaries — for
@@ -143,6 +152,7 @@ pub fn find_ranked_index_for_axis<'b>(
 pub fn find_ranked_index_for_mode<'b>(
     indexes: &'b BTreeMap<String, Index>,
     mode: &DocumentRankedMode,
+    resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
     let pin_fields: Vec<String> = mode
         .prefix_pins
@@ -155,6 +165,7 @@ pub fn find_ranked_index_for_mode<'b>(
         &pin_fields,
         mode.axis,
         &mode.aggregate_field,
+        resolved_time_ranges,
     )
 }
 
@@ -186,19 +197,21 @@ pub fn resolve_ranked_query_for_mode<'a>(
     document_type_name: String,
     indexes: &'a BTreeMap<String, Index>,
     mode: &DocumentRankedMode,
+    resolved_time_ranges: &[ResolvedTimeRange],
     platform_version: &PlatformVersion,
 ) -> Result<DriveDocumentRankedQuery<'a>, Error> {
-    let index = find_ranked_index_for_mode(indexes, mode).ok_or_else(|| {
-        Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-            no_covering_index_message(
-                "ranked",
-                mode.axis,
-                &mode.group_by_property,
-                &mode.prefix_pins,
-                &mode.aggregate_field,
-            ),
-        ))
-    })?;
+    let index =
+        find_ranked_index_for_mode(indexes, mode, resolved_time_ranges).ok_or_else(|| {
+            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                no_covering_index_message(
+                    "ranked",
+                    mode.axis,
+                    &mode.group_by_property,
+                    &mode.prefix_pins,
+                    &mode.aggregate_field,
+                ),
+            ))
+        })?;
     let prefix_branches =
         encode_prefix_branches(document_type, index, &mode.prefix_pins, platform_version)?;
     Ok(DriveDocumentRankedQuery {

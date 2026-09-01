@@ -68,15 +68,19 @@ pub struct DocumentRankedRequest<'a> {
     /// at most one may instead be a bounded `IN` (one branch per
     /// element, merged; entries then carry `in_key`).
     pub where_clauses: &'a [WhereClause],
-    /// The fields among `where_clauses` whose equality clause was produced by
+    /// The provenance of any `where_clauses` equality produced by
     /// `IN_TIME_RANGE` resolution (see
-    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]).
-    /// Must be empty: `where_clauses` must be empty, so there is nothing to
-    /// have resolved, and ranking over bucket keys is undesigned — a document
-    /// belongs to `overlap_factor` buckets at once, so it would contribute to
-    /// that many groups. Carried (and rejected) here for the same reason
-    /// `where_clauses` is: drive owns the rejection regardless of which
-    /// upstream path built the request.
+    /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]). At most
+    /// one, and its resolved bucket-start equality must appear among
+    /// `where_clauses` as the pin on the covering index's bucketed first
+    /// property. Index selection consumes it through
+    /// [`crate::query::index_admissible_for_resolved_time_range`]: a
+    /// resolved request is served only by the index bucketing that field
+    /// with exactly that grid, and a raw request never by a bucketed
+    /// index. Ranked levels sit strictly BELOW the bucketed one (contract
+    /// validation guarantees it), so the walk reads the pinned window's
+    /// own per-prefix secondary — one window, each document once,
+    /// regardless of grid overlap.
     pub resolved_time_ranges: &'a [ResolvedTimeRange],
     /// Request `limit` — the ranking's `k`. **Required**; there is no
     /// server default a verifying client could reproduce.
@@ -142,17 +146,16 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentRankedResponse, Error> {
-        // Unreachable behind the empty-`where_clauses` rule `detect_ranked_mode`
-        // enforces below — a resolved equality is a where clause — but stated
-        // here so the ranked surface's exclusion of bucketed indexes is a
-        // rejection rather than a silent fallback to another index.
-        if !request.resolved_time_ranges.is_empty() {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(
-                "a ranked query cannot carry a time-range (IN_TIME_RANGE) selection: ranking \
-                 groups by an index's only property, and a document belongs to every bucket \
-                 that contains its timestamp, so it would be ranked into several groups at once"
-                    .to_string(),
-            )));
+        // A transform's source must be its index's first property, so no
+        // single index can serve two resolved buckets; rejected before
+        // routing, mirroring `DriveDocumentQuery::select_best_index`.
+        if request.resolved_time_ranges.len() > 1 {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "at most one time-range selection (IN_TIME_RANGE) is supported per ranked \
+                 query; this one resolves {:?}, and no single index can bucket more than \
+                 one field",
+                request.resolved_time_ranges
+            ))));
         }
 
         let mode = detect_ranked_mode(
@@ -179,6 +182,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,
@@ -190,6 +194,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     &mode,
+                    request.resolved_time_ranges,
                     transaction,
                     platform_version,
                 )?,

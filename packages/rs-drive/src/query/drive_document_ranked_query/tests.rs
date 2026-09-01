@@ -727,12 +727,13 @@ fn picker_requires_the_index_to_declare_the_requested_axis() {
     let indexes = index_map(vec![index]);
 
     assert!(
-        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], RankedAxis::Count, "").is_some(),
+        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], RankedAxis::Count, "", &[])
+            .is_some(),
         "the declared axis resolves"
     );
     for (axis, field) in [(RankedAxis::Sum, "grade"), (RankedAxis::Avg, "grade")] {
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, field).is_none(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, field, &[]).is_none(),
             "{axis:?} is not declared even though the index is summable and the stored \
              element could host that secondary"
         );
@@ -751,11 +752,12 @@ fn picker_requires_the_select_field_to_be_the_indexed_summable() {
 
     for axis in [RankedAxis::Sum, RankedAxis::Avg] {
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "grade").is_some(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "grade", &[]).is_some(),
             "{axis:?} on the indexed summable resolves"
         );
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "tipAmount").is_none(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "tipAmount", &[])
+                .is_none(),
             "{axis:?} on a different field must not resolve"
         );
     }
@@ -770,7 +772,8 @@ fn picker_rejects_an_unknown_group_property() {
     let indexes = index_map(vec![index]);
 
     assert!(
-        find_ranked_index_for_axis(&indexes, "chefId", &[], RankedAxis::Avg, "grade").is_none(),
+        find_ranked_index_for_axis(&indexes, "chefId", &[], RankedAxis::Avg, "grade", &[])
+            .is_none(),
         "no index groups by `chefId`"
     );
 }
@@ -790,10 +793,15 @@ fn picker_rejects_compound_indexes() {
     index.ranked_averageable = true;
     let indexes = index_map(vec![index]);
 
-    assert!(
-        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "price")
-            .is_none()
-    );
+    assert!(find_ranked_index_for_axis(
+        &indexes,
+        GROUP_PROPERTY,
+        &[],
+        RankedAxis::Avg,
+        "price",
+        &[]
+    )
+    .is_none());
 }
 
 // ===================================================================
@@ -1047,6 +1055,7 @@ fn client_side_query<'a>(
         case.document_type_name.to_string(),
         indexes,
         &mode,
+        &[],
         platform_version(),
     )
     .expect("the fixture declares the axis")
@@ -2050,13 +2059,13 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     );
     assert_eq!(client_side_query(&contract, &by_chef).index.name, "byChef");
     assert_eq!(
-        find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade")
+        find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade", &[])
             .expect("the Avg ranking resolves")
             .name,
         "byRestaurant",
     );
     assert_eq!(
-        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Count, "")
+        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Count, "", &[])
             .expect("the Count ranking resolves")
             .name,
         "byChef",
@@ -2107,7 +2116,8 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     // ranking over chefs has no index — and `byChefRestaurant` must not
     // be press-ganged into serving it.
     assert!(
-        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Avg, "grade").is_none(),
+        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Avg, "grade", &[])
+            .is_none(),
         "`byChefRestaurant` leads with chefId but is compound and unranked"
     );
     let avg_by_chef = RankedCase {
@@ -2311,6 +2321,7 @@ mod pinned_prefix {
             DOCUMENT_TYPE.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture's compound index covers the pinned request")
@@ -2548,6 +2559,7 @@ mod pinned_prefix {
                 .expect("taggedGrade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             pv,
         )
         .expect("the compound index covers the null-pinned request");
@@ -2919,6 +2931,7 @@ mod pinned_prefix {
                 .expect("grade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             platform_version(),
         )
         .expect_err("duplicate encoded elements must be rejected");
@@ -3153,6 +3166,7 @@ mod pinned_prefix {
                 .expect("dualGrade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             pv,
         )
         .expect("covered");
@@ -3805,6 +3819,7 @@ mod prefix_level {
             document_type_name.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture declares the prefix-level ranking")

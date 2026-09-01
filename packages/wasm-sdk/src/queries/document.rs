@@ -523,7 +523,7 @@ pub(super) fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause,
 /// buckets the field with more than one `timeRange` grid (the bare selector
 /// is ambiguous there and the server rejects it). Like the contract grammar
 /// and the wire, a zero phase is spelled by omission.
-fn parse_time_range_clause(
+pub(super) fn parse_time_range_clause(
     json_clause: &JsonValue,
 ) -> Result<(String, TimeRangeSelector, Option<TimeRangeGridSpec>), WasmSdkError> {
     let object = json_clause.as_object().ok_or_else(|| {
