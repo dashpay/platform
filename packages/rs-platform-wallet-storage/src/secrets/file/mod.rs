@@ -57,6 +57,7 @@ use crypto::{KdfParams, SALT_LEN};
 use format::{EntryBody, Vault};
 
 use super::error::SecretStoreError;
+use super::guarded::verify_host_page_size;
 
 use super::secret::{SecretBytes, SecretString, MAX_PASSPHRASE_LEN};
 use super::validate::{validated_label, WalletId};
@@ -140,6 +141,12 @@ pub const MAX_SECRET_LEN: usize = 2 * 4096 - 16;
 /// path past a constrained `RLIMIT_MEMLOCK` fails the build instead of
 /// silently degrading every secret to swappable (the failure is
 /// fail-open, so nothing else would notice).
+///
+/// This half covers the CEILINGS. The other half of the same guarantee is
+/// the host: `locked_cost` is denominated in 4 KiB pages while `memsec`
+/// rounds to the kernel's runtime page size, so
+/// [`verify_host_page_size`] rejects a larger-paged host at store
+/// construction rather than let this table quietly describe nobody.
 const _: () = {
     use super::guarded::locked_cost;
 
@@ -319,11 +326,21 @@ impl EncryptedFileStore {
     /// [`open_mock`](Self::open_mock). Does not apply the passphrase-length
     /// guard — the public doors decide that. `kdf` is the params a FRESH
     /// vault is created under; an existing one keeps its own header.
+    ///
+    /// # Errors
+    ///
+    /// [`SecretStoreError::HostPageSizeExceedsBudget`] before any other
+    /// check, if the host cannot honour the locked-memory budget below.
     fn open_inner(
         path: &Path,
         passphrase: SecretString,
         kdf: KdfParams,
     ) -> Result<Self, SecretStoreError> {
+        // Ahead of the filesystem work: a store that cannot keep the
+        // budget documented at `MAX_SECRET_LEN` must not come into
+        // existence, and must not leave a fresh vault file behind either.
+        verify_host_page_size()?;
+
         let path = path.to_path_buf();
 
         // Materialize the parent so the lock-sidecar open and vault

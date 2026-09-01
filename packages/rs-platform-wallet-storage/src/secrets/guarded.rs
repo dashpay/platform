@@ -35,6 +35,8 @@ use std::ptr::NonNull;
 
 use zeroize::Zeroize;
 
+use super::error::SecretStoreError;
+
 /// A page-aligned, guard-paged, `mlock`ed byte buffer.
 ///
 /// Owns its allocation exclusively for its whole lifetime and wipes it
@@ -173,14 +175,54 @@ impl Drop for GuardedBuf {
     }
 }
 
+/// The memory page size every locked-memory figure in this crate is
+/// computed against.
+///
+/// An assumption about the host, not a fact: `memsec` rounds each
+/// allocation up to the size the kernel reports at run time
+/// (`sysconf(_SC_PAGESIZE)` / `GetSystemInfo`), which the compile-time
+/// budget cannot see. [`verify_host_page_size`] is what turns the
+/// assumption into a checked precondition.
+pub(super) const ASSUMED_PAGE_SIZE: usize = 4096;
+
 /// Bytes `memsec` locks for a `payload`-byte secret: its 16-byte canary
-/// prepended, then rounded up to whole pages.
+/// prepended, then rounded up to whole [`ASSUMED_PAGE_SIZE`] pages.
 ///
 /// The unit the crate's locked-memory budget is denominated in — see the
 /// table at [`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN).
 pub(super) const fn locked_cost(payload: usize) -> usize {
-    const PAGE: usize = 4096;
-    (16 + payload).div_ceil(PAGE) * PAGE
+    (16 + payload).div_ceil(ASSUMED_PAGE_SIZE) * ASSUMED_PAGE_SIZE
+}
+
+/// Confirm this host's pages are no larger than [`ASSUMED_PAGE_SIZE`],
+/// so [`locked_cost`] still bounds what `memsec` actually locks.
+///
+/// Called at store construction: a store that cannot honour its own
+/// locked-memory guarantee must refuse to exist rather than degrade
+/// silently. Larger pages would overrun the `RLIMIT_MEMLOCK` budget by
+/// the ratio between the two sizes, and `mlock` fails **open** — the
+/// process keeps running with swappable seed and xpriv material and only
+/// a warning to show for it.
+///
+/// # Errors
+///
+/// [`SecretStoreError::HostPageSizeExceedsBudget`] when the host's pages
+/// exceed the assumption. Smaller pages pass: they only make
+/// [`locked_cost`] an over-estimate.
+pub(super) fn verify_host_page_size() -> Result<(), SecretStoreError> {
+    check_page_size(region::page::size())
+}
+
+/// [`verify_host_page_size`] against a caller-supplied size, so the
+/// refusing branch is reachable from a test on any host.
+fn check_page_size(found: usize) -> Result<(), SecretStoreError> {
+    if found > ASSUMED_PAGE_SIZE {
+        return Err(SecretStoreError::HostPageSizeExceedsBudget {
+            found,
+            assumed: ASSUMED_PAGE_SIZE,
+        });
+    }
+    Ok(())
 }
 
 /// Per-thread high-water mark of locked bytes, so a test can assert what
@@ -251,6 +293,45 @@ fn alloc_failed(cap: usize) -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A host whose pages exceed the assumption is refused, and the error
+    /// names both sizes so the operator can see the mismatch.
+    #[test]
+    fn a_larger_host_page_is_refused_naming_both_sizes() {
+        for found in [8 * 1024, 16 * 1024, 64 * 1024] {
+            let err = check_page_size(found).expect_err("a page above the budget must be refused");
+            assert!(
+                matches!(
+                    err,
+                    SecretStoreError::HostPageSizeExceedsBudget { found: f, assumed }
+                        if f == found && assumed == ASSUMED_PAGE_SIZE
+                ),
+                "got {err:?}"
+            );
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(&found.to_string())
+                    && rendered.contains(&ASSUMED_PAGE_SIZE.to_string()),
+                "the message must name the host's page size and the assumed one: {rendered}"
+            );
+        }
+    }
+
+    /// Pages at or under the assumption pass: they leave `locked_cost` an
+    /// over-estimate, so the budget stays conservative.
+    #[test]
+    fn a_page_at_or_under_the_assumption_is_accepted() {
+        for found in [1024, 2048, ASSUMED_PAGE_SIZE] {
+            check_page_size(found).expect("a page within the budget must be accepted");
+        }
+    }
+
+    /// This host honours the assumption — otherwise every store
+    /// constructor in the suite would be exercising the refusing branch.
+    #[test]
+    fn this_host_honours_the_page_size_assumption() {
+        verify_host_page_size().expect("the secrets suite needs a host within the page budget");
+    }
 
     #[test]
     fn new_is_zeroed_and_sized() {

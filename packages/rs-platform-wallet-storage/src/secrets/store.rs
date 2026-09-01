@@ -92,7 +92,14 @@ impl SecretStore {
 
     /// Open the platform's default OS keyring, failing closed when none
     /// is reachable (headless / no Secret Service).
+    ///
+    /// # Errors
+    ///
+    /// [`SecretStoreError::HostPageSizeExceedsBudget`] if the host cannot
+    /// honour the locked-memory budget — this arm hands out guarded
+    /// [`SecretBytes`] exactly like the file arm does.
     pub fn os() -> Result<Self, SecretStoreError> {
+        super::guarded::verify_host_page_size()?;
         Ok(Self::Os(default_credential_store().map_err(map_spi)?))
     }
 

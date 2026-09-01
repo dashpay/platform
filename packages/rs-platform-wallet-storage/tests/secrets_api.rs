@@ -290,8 +290,16 @@ fn passphrase_cap_is_public_typed_and_leak_free() {
 /// they are derived from: a secret's stored envelope must fit two
 /// guarded pages and a passphrase one, or the budget documented at
 /// `MAX_SECRET_LEN` no longer describes the crate.
+///
+/// The 4096 is an assumption about the host, not a constant of the
+/// universe, so the store construction below asserts the assumption holds
+/// here: a host with larger pages cannot open a store at all, which is
+/// what stops these ceilings from silently describing nobody.
 #[test]
 fn public_size_ceilings_stay_page_aligned() {
     assert_eq!(MAX_SECRET_LEN, 2 * 4096 - 16);
     assert_eq!(MAX_PASSPHRASE_LEN, 4096 - 16);
+
+    let dir = tempfile::tempdir().unwrap();
+    let _store = open(dir.path());
 }

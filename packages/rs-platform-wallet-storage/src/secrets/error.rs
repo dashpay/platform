@@ -150,6 +150,32 @@ pub enum SecretStoreError {
     #[error("no entry under (service, label)")]
     NoEntry,
 
+    /// The host's memory pages are larger than the crate's locked-memory
+    /// budget assumes, so no store can honour that budget here (CWE-316).
+    ///
+    /// `memsec` rounds every guarded allocation up to the page size it
+    /// reads from the kernel at run time, while the budget documented at
+    /// [`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN) is denominated
+    /// in 4 KiB pages. On a 16 KiB- or 64 KiB-page host the real peak is
+    /// four or sixteen times the budgeted one; `mlock` then fails open
+    /// with a warning and seed / xpriv material silently becomes
+    /// swappable. Construction refuses instead of degrading.
+    ///
+    /// Smaller-than-assumed pages are accepted: they turn every
+    /// `locked_cost` figure into an over-estimate, which leaves the budget
+    /// conservative rather than overrun.
+    #[error(
+        "host memory pages are {found} bytes but locked secret memory is budgeted for {assumed}; \
+         secret pages would exceed RLIMIT_MEMLOCK and silently become swappable — \
+         run this process on a host with {assumed}-byte memory pages"
+    )]
+    HostPageSizeExceedsBudget {
+        /// The page size this host reported (not secret).
+        found: usize,
+        /// The page size the compiled-in budget assumes (not secret).
+        assumed: usize,
+    },
+
     /// A pre-existing vault file had permissions looser than `0600`.
     /// Refuse rather than tighten-and-trust.
     #[error("vault file has insecure permissions")]
@@ -278,6 +304,7 @@ impl SecretStoreError {
             | Self::MalformedVault
             | Self::InvalidLabel
             | Self::NoEntry
+            | Self::HostPageSizeExceedsBudget { .. }
             | Self::InsecurePermissions { .. }
             | Self::InsecureParentDir { .. }
             | Self::SecretTooLarge { .. }
@@ -309,6 +336,7 @@ impl SecretStoreError {
             Self::MalformedVault => "malformed_vault",
             Self::InvalidLabel => "invalid_label",
             Self::NoEntry => "no_entry",
+            Self::HostPageSizeExceedsBudget { .. } => "host_page_size_exceeds_budget",
             Self::InsecurePermissions { .. } => "insecure_permissions",
             Self::InsecureParentDir { .. } => "insecure_parent_dir",
             Self::SecretTooLarge { .. } => "secret_too_large",
@@ -413,7 +441,8 @@ impl From<std::io::Error> for SecretStoreError {
 ///   [`KeyringError::BadStoreFormat`] (a static secret-free string — that
 ///   variant has no box slot).
 /// - [`InvalidLabel`] → `KeyringError::Invalid("user", _)`;
-///   [`Io`] → [`KeyringError::PlatformFailure`].
+///   [`Io`] and [`HostPageSizeExceedsBudget`] (a host the crate cannot run
+///   on, not a store-format problem) → [`KeyringError::PlatformFailure`].
 ///
 /// [`WrongPassphrase`]: SecretStoreError::WrongPassphrase
 /// [`AlreadyLocked`]: SecretStoreError::AlreadyLocked
@@ -425,6 +454,7 @@ impl From<std::io::Error> for SecretStoreError {
 /// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
 /// [`InvalidLabel`]: SecretStoreError::InvalidLabel
 /// [`Io`]: SecretStoreError::Io
+/// [`HostPageSizeExceedsBudget`]: SecretStoreError::HostPageSizeExceedsBudget
 impl From<SecretStoreError> for KeyringError {
     fn from(e: SecretStoreError) -> Self {
         use SecretStoreError as E;
@@ -453,6 +483,7 @@ impl From<SecretStoreError> for KeyringError {
                 KeyringError::Invalid("user".to_string(), "label allowlist violation".to_string())
             }
             E::NoEntry => KeyringError::NoEntry,
+            E::HostPageSizeExceedsBudget { .. } => KeyringError::PlatformFailure(Box::new(e)),
             E::Io(io) => KeyringError::PlatformFailure(Box::new(io.source)),
         }
     }
