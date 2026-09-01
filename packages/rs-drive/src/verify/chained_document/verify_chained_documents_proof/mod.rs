@@ -12,20 +12,21 @@ impl DriveChainedDocumentQuery<'_> {
     /// Verifies a chained query's single merged proof and returns
     /// `(root_hash, result)`.
     ///
-    /// The verifier trusts nothing about the join. `join_values_hint`
-    /// is the server's CLAIMED join-value list — untrusted bootstrap
-    /// data used only to reconstruct the merged query (the outer by-ids
-    /// component is derived from it, exactly as the prover derived it
-    /// from its materialization). The proof is then verified against
-    /// that reconstruction in ONE pass — grovedb enforces the inner
-    /// page's lifted per-instance limit and range completeness — and
-    /// the PROVEN inner join values are extracted and required to match
-    /// the proven outer documents exactly. A hint that lies in any
-    /// direction (extra, missing, or substituted ids) produces a merged
-    /// query the proof cannot satisfy consistently, and verification
-    /// fails: a missing referenced document is an invalid proof
-    /// (`refersTo: permanentDocument` targets cannot dangle), and so is
-    /// an extra one.
+    /// The verifier trusts nothing about the join, and needs nothing
+    /// beyond the proof itself: a BOOTSTRAP subset pass runs the inner
+    /// query alone against the merged proof and extracts candidate
+    /// join values from its proven positions; the outer by-ids
+    /// component is derived from those (exactly as the prover derived
+    /// it from its materialization), the merged query is rebuilt, and
+    /// the AUTHORITATIVE full pass verifies the whole composition —
+    /// grovedb enforces the inner page's lifted per-instance limit and
+    /// range completeness — with the proven outer documents required
+    /// to match the proven inner join values exactly. A missing
+    /// referenced document is an invalid proof (`refersTo:
+    /// permanentDocument` targets cannot dangle), and so is an extra
+    /// one; a proof covering only the inner half (an old node serving
+    /// the plain query) fails the full pass whenever the inner page is
+    /// non-empty.
     ///
     /// One proof means one root by construction; the caller combines
     /// the returned root hash with the surrounding tenderdash
@@ -34,7 +35,6 @@ impl DriveChainedDocumentQuery<'_> {
     pub fn verify_chained_documents_proof(
         &self,
         proof: &[u8],
-        join_values_hint: &[dpp::identifier::Identifier],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, ChainedDocumentsResult), Error> {
         match platform_version
@@ -44,7 +44,7 @@ impl DriveChainedDocumentQuery<'_> {
             .chained_document
             .verify_chained_documents_proof
         {
-            0 => self.verify_chained_documents_proof_v0(proof, join_values_hint, platform_version),
+            0 => self.verify_chained_documents_proof_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveChainedDocumentQuery::verify_chained_documents_proof".to_string(),
                 known_versions: vec![0],
@@ -97,7 +97,7 @@ mod tests {
             outer_document_type: document_type,
         };
 
-        let result = query.verify_chained_documents_proof(&[], &[], &platform_version);
+        let result = query.verify_chained_documents_proof(&[], &platform_version);
         assert!(matches!(
             result,
             Err(Error::Drive(DriveError::UnknownVersionMismatch { method, .. }))

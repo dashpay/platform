@@ -1158,6 +1158,47 @@ message GetDocumentsRequest {
     // no ranked executor. Cursor pagination via `start_after` /
     // `start_at` remains the supported way to page through documents.
     optional uint32 offset = 12;
+
+    // Chained mode — a provable semi-join:
+    // `SELECT * FROM <outer_document_type> WHERE $id IN
+    //   (SELECT <join_property> FROM <document_type> WHERE ...)`.
+    //
+    // Presence of this message selects chained mode: this request's
+    // own `document_type` / `where_clauses` / `order_by` / `limit`
+    // describe the INNER indexOnly query, and the outer half is
+    // DERIVED from its results — the request carries no outer
+    // clauses by design, and the verifier re-derives the outer
+    // query from the proven inner values, so the join cannot be
+    // steered by the responding node.
+    //
+    // Mode gates (rejected otherwise): the inner type must be
+    // indexOnly and resolve to an index carrying `join_property`;
+    // `join_property` must declare a same-contract
+    // `refersTo: permanentDocument` targeting
+    // `outer_document_type`; `limit` is REQUIRED (it bounds the
+    // derived outer query — no server-default fallback) and capped
+    // by the outer `$id IN` clause's 100-value limit; `selects`
+    // must be empty or a single DOCUMENTS projection; `group_by`,
+    // `having`, time-range clauses, cursors, and `offset` are all
+    // rejected. Pagination is a range clause on `join_property`.
+    //
+    // The verifier needs nothing beyond the proof itself: it
+    // subset-verifies the inner query against the merged proof to
+    // extract the join values, re-derives the outer component, and
+    // verifies the whole composition. A node that predates this
+    // field ignores it (proto3 unknown field) and serves the plain
+    // inner query — which FAILS CLOSED client-side: an inner-only
+    // proof cannot satisfy the re-derived merged query for a
+    // non-empty page, and an unproven response carries the wrong
+    // ResultData variant.
+    message ChainedJoin {
+      // The inner property whose proven values become the outer
+      // documents' `$id`s.
+      string join_property = 1;
+      // The joined document type — the `refersTo` target.
+      string outer_document_type = 2;
+    }
+    ChainedJoin chained = 13;
   }
 
   oneof version {
@@ -1503,7 +1544,21 @@ message GetDocumentsResponse {
         // `skipped` carries the page's starting rank — see
         // `RankedEntries`.
         RankedEntries ranked = 5;
+        // Chained-mode result: both halves of the provable
+        // semi-join, in inner order (the last inner projection's
+        // join-property value is the pagination cursor; outer
+        // documents are ordered by first appearance of their id
+        // among the inner projections, deduplicated). Routed when
+        // the request's `chained` message is present.
+        ChainedDocuments chained = 6;
       }
+    }
+
+    // Both halves of a chained (semi-join) query, each serialized
+    // with its own document type.
+    message ChainedDocuments {
+      repeated bytes inner_documents = 1;
+      repeated bytes outer_documents = 2;
     }
 
     oneof result {
