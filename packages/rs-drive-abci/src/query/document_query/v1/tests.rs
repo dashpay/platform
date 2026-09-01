@@ -5433,7 +5433,8 @@ mod time_range_proof_verification {
         let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
 
         let mutated = |f: &dyn Fn(&mut ProtoWhereClause)| {
-            let mut request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+            let mut request =
+                trending_request(contract.id().to_vec(), "ibiza", select_count_star());
             f(&mut request.where_clauses[1]);
             request
         };
@@ -5455,7 +5456,11 @@ mod time_range_proof_verification {
             (
                 "an unknown selector discriminant",
                 mutated(&|clause| {
-                    clause.time_range.as_mut().expect("set by the helper").selector = 99;
+                    clause
+                        .time_range
+                        .as_mut()
+                        .expect("set by the helper")
+                        .selector = 99;
                 }),
                 "discriminant",
             ),
@@ -5471,8 +5476,11 @@ mod time_range_proof_verification {
             (
                 "a start on a relative selector",
                 mutated(&|clause| {
-                    clause.time_range.as_mut().expect("set by the helper").start_ms =
-                        Some(NEWEST_BUCKET_START_MS);
+                    clause
+                        .time_range
+                        .as_mut()
+                        .expect("set by the helper")
+                        .start_ms = Some(NEWEST_BUCKET_START_MS);
                 }),
                 "only meaningful with",
             ),
