@@ -975,16 +975,23 @@ mod tests {
         assert_eq!(s.len(), 3);
     }
 
+    /// One differential case: a label, the edit applied to `String`, and the
+    /// same edit applied to `SecretString`.
+    type DifferentialRangeCase = (
+        &'static str,
+        Box<dyn Fn(&mut String)>,
+        Box<dyn Fn(&mut SecretString)>,
+    );
+
+    /// One rejected-range case: a label and the edit expected to panic.
+    type InvalidRangeCase = (&'static str, Box<dyn Fn(&mut SecretString)>);
+
     /// Every `RangeBounds` shape resolves the way `String::replace_range`
     /// resolves it — differential, so the contract is pinned to std's
     /// rather than to this implementation's own behaviour.
     #[test]
     fn replace_range_bounds_match_std() {
-        let cases: Vec<(
-            &str,
-            Box<dyn Fn(&mut String)>,
-            Box<dyn Fn(&mut SecretString)>,
-        )> = vec![
+        let cases: Vec<DifferentialRangeCase> = vec![
             (
                 "..",
                 Box::new(|s: &mut String| s.replace_range(.., "Z")),
@@ -1116,9 +1123,13 @@ mod tests {
     /// Each rejected range shape panics, matching `String::replace_range`.
     #[test]
     fn replace_range_panics_on_invalid_ranges() {
-        let cases: Vec<(&str, Box<dyn Fn(&mut SecretString)>)> = vec![
+        let cases: Vec<InvalidRangeCase> = vec![
             (
                 "inverted",
+                // The inversion is the case under test — `String::replace_range`
+                // panics on it, and so must this. Reversing the range would
+                // delete the scenario.
+                #[expect(clippy::reversed_empty_ranges, reason = "the case under test")]
                 Box::new(|s: &mut SecretString| s.replace_range(3..1, "")),
             ),
             (

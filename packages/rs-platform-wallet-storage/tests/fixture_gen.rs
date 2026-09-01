@@ -366,6 +366,20 @@ fn copy_core_utxos_to_v001(source: &rusqlite::Connection, destination: &rusqlite
     }
 }
 
+/// One `core_utxos` row in the V001 column order the copier writes:
+/// `(wallet_id, outpoint, value, script, height, account_index, spent,
+/// spent_in_txid)`.
+type V001CoreUtxoRow = (
+    Vec<u8>,
+    Vec<u8>,
+    i64,
+    Vec<u8>,
+    Option<i64>,
+    i64,
+    i64,
+    Option<Vec<u8>>,
+);
+
 #[test]
 fn copy_core_utxos_to_v001_preserves_legacy_row_shape() {
     use dashcore::hashes::Hash;
@@ -423,16 +437,7 @@ fn copy_core_utxos_to_v001_preserves_legacy_row_shape() {
         .unwrap();
     copy_core_utxos_to_v001(&source, &destination);
 
-    let copied: (
-        Vec<u8>,
-        Vec<u8>,
-        i64,
-        Vec<u8>,
-        Option<i64>,
-        i64,
-        i64,
-        Option<Vec<u8>>,
-    ) = destination
+    let copied: V001CoreUtxoRow = destination
         .query_row(
             "SELECT wallet_id, outpoint, value, script, height, account_index, spent, \
                         spent_in_txid \
