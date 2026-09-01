@@ -101,12 +101,16 @@ impl Drive {
             if uses_zero_subtree {
                 path_segments.push(vec![0]);
             }
-            // The first five segments — root tree byte, contract id, the
-            // documents marker, the document type name, and the (grid-
-            // qualified) index level key — exist for every registered
-            // contract: the flag is only ever set for a bucketed index,
-            // whose level tree is created at contract registration.
-            if !self.expired_entry_path_exists(&path_segments, 5, transaction, platform_version)? {
+            // The document-type path plus the (grid-qualified) index level
+            // key exist for every registered contract: the flag is only
+            // ever set for a bucketed index, whose level tree is created at
+            // contract registration — so the walk starts below them.
+            if !self.expired_entry_path_exists(
+                &path_segments,
+                usize::from(CONTRACT_DOCUMENTS_PATH_HEIGHT) + 1,
+                transaction,
+                platform_version,
+            )? {
                 return Ok(());
             }
         }

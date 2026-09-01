@@ -2191,7 +2191,9 @@ impl Index {
             if let Some(ttl_seconds) = transform.ttl_seconds {
                 if ttl_seconds < transform.range_seconds {
                     return Err(DataContractError::InvalidContractStructure(format!(
-                        "timeRange.ttl ({} seconds) must be at least the window length                          ({} seconds): a window still able to receive consensus-timestamped                          writes can never be expired",
+                        "timeRange.ttl ({} seconds) must be at least the window length \
+                         ({} seconds): a window still able to receive consensus-timestamped \
+                         writes can never be expired",
                         ttl_seconds, transform.range_seconds
                     )));
                 }
