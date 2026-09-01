@@ -126,9 +126,9 @@ erDiagram
     }
 
     IDENTITY_KEYS {
-        BLOB wallet_id PK "32-byte WalletId"
         BLOB identity_id PK
         INTEGER key_id PK "KeyID"
+        BLOB wallet_id FK "nullable; denormalised copy of identities.wallet_id, not part of the key"
         BLOB public_key_blob "bincode-encoded IdentityKeyWire (public material only)"
         BLOB public_key_hash "20-byte HASH160 of the key"
         BLOB derivation_blob "reserved typed projection; always NULL today"
@@ -435,9 +435,23 @@ to work around a serde-tag incompatibility. `derivation_blob` is a
 reserved column for a future typed projection and is always NULL today
 (derivation indices live inside `public_key_blob`).
 
-- PK: `(wallet_id, identity_id, key_id)`.
-- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
-- FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
+`identities` keys on `identity_id` alone, so an identity has exactly one
+owning wallet; `identity_keys.wallet_id` is a nullable, denormalised copy
+of that owner, not a discriminator. The PK was narrowed from the wider
+`(wallet_id, identity_id, key_id)` — that shape let the same key exist
+twice under two different scopes, a state the domain layer
+(`IdentityKeysChangeSet`, keyed `(identity_id, key_id)`) cannot express,
+and was the enabling condition for duplicate-row corruption. NULL is the
+canonical "owned by no wallet" scope, matching `identities.wallet_id`;
+because SQLite's default `MATCH SIMPLE` skips FK enforcement entirely when
+any child-key column is NULL, a NULL-scoped row's FKs are both dormant —
+the `identity_keys_null_scope_requires_unowned_identity{,_on_update}`
+triggers (`migrations/V001__initial.rs`) are the only guard against a
+NULL-scoped key naming a wallet-owned identity.
+
+- PK: `(identity_id, key_id)`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE` (nullable; belt-and-braces — already implied by the compound FK below).
+- FK: `(wallet_id, identity_id) → identities(wallet_id, identity_id) ON DELETE CASCADE` (compound; a key may only be filed under the wallet that owns its identity).
 - Index: `idx_identity_keys_wallet_identity(wallet_id, identity_id)`.
 
 ### `contacts`
@@ -663,9 +677,13 @@ having to grep this repo.
   `dashpay_payments_overlay`) have no `wallet_id` column. Cascade reaches
   them via `identities(identity_id)`.
 - `identity_keys` is the exception among identity-owned tables: it carries
-  a `wallet_id BLOB NOT NULL` column and two `ON DELETE CASCADE` FKs
-  (`wallet_id → wallets`, `identity_id → identities`), so a delete on
-  either parent cascades to it.
+  a nullable `wallet_id BLOB` column (a denormalised copy of
+  `identities.wallet_id`, not part of its `(identity_id, key_id)` PK) and
+  two `ON DELETE CASCADE` FKs — a simple `wallet_id → wallets(wallet_id)`
+  and a compound `(wallet_id, identity_id) → identities(wallet_id,
+  identity_id)` — so a delete on either parent cascades to it. Both FKs go
+  dormant together on a NULL-scoped (unowned-identity) row; see
+  `identity_keys` under Tables.
 - The five typed `meta_*` tables carry **no FK** (writes may precede the parent);
   cleanup is an `AFTER DELETE` soft cascade. A wallet delete fires a wallet-rooted
   trigger that brooms the wallet-scoped `meta_*` tables by `wallet_id`, and the
