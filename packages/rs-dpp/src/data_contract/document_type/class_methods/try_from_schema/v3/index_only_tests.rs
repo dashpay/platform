@@ -438,6 +438,116 @@ fn rejects_only_bucketed_indexes() {
     );
 }
 
+/// The "trending posts" contract shape: a like is an indexOnly entry, and
+/// trending means posts with many likes inside a time window — so the
+/// window timestamp is the LIKE's `$createdAt`, not the post's. Windowed
+/// like-counts per post come from a bucketed countable index over
+/// `(timeRange($createdAt), postId)` with daily tumbling windows; the
+/// ranked `byPost` provides all-time top posts and doubles as the
+/// required `$createdAt`-free proof index.
+fn trending_posts_likes_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "refersTo": { "type": "identity" },
+                "position": 0
+            }
+        },
+        "required": ["postId", "$createdAt"],
+        "indices": [
+            {
+                "name": "byWindowPost",
+                "properties": [{ "$createdAt": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId",
+                "timeRange": { "on": "$createdAt", "range": 86_400u64, "step": 86_400u64 },
+                "countable": true,
+                "rangeCountable": true
+            },
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "countable": true,
+                "rangeCountable": true,
+                "rankedCountable": true
+            }
+        ],
+        "additionalProperties": false
+    })
+}
+
+#[test]
+fn trending_posts_contract_with_windowed_like_counts_validates() {
+    // What the trending-posts shape can register today: provable per-post
+    // like counts in any daily window (current via NEWEST/OLDEST, historic
+    // via BY_START), plus all-time top posts from the ranked `byPost`.
+    // Server-ORDERED top posts within a window would need the ranked flags
+    // on the bucketed index, which is still rejected — see the companion
+    // test below.
+    let document_type = parse_with(
+        trending_posts_likes_schema(),
+        PlatformVersion::latest(),
+        false,
+    )
+    .expect("the trending-posts likes shape validates");
+    let bucketed = document_type
+        .indices
+        .values()
+        .find(|index| index.time_range.is_some())
+        .expect("the windowed index parsed");
+    assert!(
+        bucketed.countable.is_countable(),
+        "windowed counts need the count trees"
+    );
+    assert!(
+        !bucketed.ranked_countable,
+        "the bucketed index carries counts only — ranking it is not yet grammar"
+    );
+    assert_eq!(
+        bucketed.time_range.as_ref().unwrap().overlap_factor(),
+        1,
+        "daily tumbling windows: every like lands in exactly one bucket"
+    );
+}
+
+#[test]
+fn trending_posts_ranked_windowed_index_is_still_rejected() {
+    // The deliberate tripwire for the ranked-x-timeRange gap: server-ordered
+    // "top posts this window" needs `rankedCountable` on the bucketed
+    // index, and contract validation still rejects that combination until
+    // bucket-aware ranked semantics land. When that feature ships, this
+    // test should flip into an acceptance test rather than be deleted.
+    let mut schema = trending_posts_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(0)
+        .expect("byWindowPost exists")
+        .set_value("rankedCountable", platform_value!(true))
+        .expect("index key applies");
+    // Raised by the index parser rather than the doc-type-level checks, so
+    // it reaches here in a different `ProtocolError` wrapping than the
+    // errors `expect_structure_error` matches — assert on the message.
+    let error = parse_with(schema, PlatformVersion::latest(), false)
+        .expect_err("ranked flags on a bucketed index must be refused");
+    assert!(
+        error
+            .to_string()
+            .contains("a timeRange index cannot be ranked"),
+        "expected the ranked-x-timeRange rejection, got: {error}"
+    );
+}
+
 #[test]
 fn rejects_terminal_repeating_an_index_property() {
     // byLiker's prefix is [$ownerId]; making $ownerId its terminal too
