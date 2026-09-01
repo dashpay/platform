@@ -635,6 +635,39 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_fee_rate(
 /// each stay under the standard-transaction input limit needs this, or every
 /// batch sees the whole account and fails with a too-many-inputs error.
 ///
+/// The balance a build funded by `account_type` could actually select from — the
+/// same accounts `core_wallet_tx_builder_finalize` would fund from, counting
+/// only UTXOs coin selection accepts.
+///
+/// Gate amount entry on this rather than on `core_wallet_get_balance`, which
+/// sums every funding account the wallet has — CoinJoin included — and so
+/// reports money a build then refuses.
+///
+/// Reservations are not subtracted; see `CoreWallet::pooled_spendable_balance`.
+///
+/// # Safety
+/// `out_balance` must be a valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_pooled_spendable_balance(
+    wallet: Handle,
+    account_type: CoreAccountTypeFFI,
+    account_index: u32,
+    out_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_balance);
+    *out_balance = 0;
+
+    let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
+    let balance = unwrap_result_or_return!(runtime().block_on(
+        wallet
+            .core()
+            .pooled_spendable_balance(account_type.funding_sources(), account_index)
+    ));
+
+    *out_balance = balance;
+    PlatformWalletFFIResult::ok()
+}
+
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer.
 #[no_mangle]

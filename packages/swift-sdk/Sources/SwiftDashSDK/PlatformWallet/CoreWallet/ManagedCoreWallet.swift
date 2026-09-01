@@ -89,6 +89,27 @@ public class ManagedCoreWallet {
         )
     }
 
+    /// The balance a build funded by `accountType` could actually select from —
+    /// the same accounts `finalizeAtomic` funds from, counting only UTXOs coin
+    /// selection accepts.
+    ///
+    /// Gate amount entry on this, not on ``balance()``: that sums every funding
+    /// account the wallet has, CoinJoin included, so a wallet holding mixed
+    /// coins is offered money the build then refuses.
+    ///
+    /// Reservations are not subtracted — an in-flight build's inputs still
+    /// count here. That is transient; the account-set difference is not.
+    public func pooledSpendableBalance(
+        accountType: CoreTransactionBuilder.AccountType = .allSpendable,
+        accountIndex: UInt32 = 0
+    ) throws -> UInt64 {
+        var balance: UInt64 = 0
+        try core_wallet_pooled_spendable_balance(
+            handle, accountType.ffi, accountIndex, &balance
+        ).check()
+        return balance
+    }
+
     /// Get the network this wallet operates on.
     public func network() throws -> Network {
         var ffiNetwork = FFINetwork(0)

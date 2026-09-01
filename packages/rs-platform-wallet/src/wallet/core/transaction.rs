@@ -299,6 +299,61 @@ pub(crate) fn resolve_source_accounts(
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Consume a configured builder, atomically fund and reserve its selected
     /// inputs, then sign without holding the wallet-manager lock.
+    /// The balance a pooled build could actually select from — the same
+    /// accounts [`Self::finalize_transaction`] funds from, counting only UTXOs
+    /// coin selection would accept.
+    ///
+    /// Hosts gate their amount entry on this. The wallet-level balance is a
+    /// strict superset: it sums every funding account, CoinJoin included, and
+    /// never consults a reservation set, so gating on it offers money the build
+    /// then refuses — the shortfall surfacing as
+    /// [`CorePooledInsufficientFunds`](PlatformWalletError::CorePooledInsufficientFunds)
+    /// after the user has already committed to an amount.
+    ///
+    /// Missing sources are skipped, as in a pooled build: a wallet without a
+    /// BIP32 account or without DashPay contacts still has a spendable balance.
+    ///
+    /// Reservations are NOT subtracted: key-wallet keeps each account's
+    /// `ReservationSet` private, so reading it needs an accessor there and a pin
+    /// bump. The figure is therefore optimistic by whatever another in-flight
+    /// build currently holds — transient by construction, since a reservation is
+    /// released when its spend is processed, on a definitive broadcast
+    /// rejection, at the TTL, or on restart. The account-set mismatch this fixes
+    /// is permanent, and was the whole of the shortfall in the report that
+    /// prompted it (support ticket 32081: 0.0054 DASH offered as spendable
+    /// against a 94 DASH balance, all of it CoinJoin).
+    pub async fn pooled_spendable_balance(
+        &self,
+        sources: &[AccountTypePreference],
+        source_index: u32,
+    ) -> Result<u64, PlatformWalletError> {
+        let mut manager = self.wallet_manager.write().await;
+        let (_wallet, info) = manager
+            .get_wallet_and_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
+        let height = info.core_wallet.last_processed_height();
+
+        let mut seen: HashSet<AccountType> = HashSet::new();
+        let mut total: u64 = 0;
+        for &preference in sources {
+            for at in resolve_source_accounts(&info.core_wallet.accounts, preference, source_index)
+            {
+                if !seen.insert(at) {
+                    continue;
+                }
+                let Some(managed) = info.core_wallet.accounts.funds_account_mut(&at) else {
+                    continue;
+                };
+                total += managed
+                    .spendable_utxos(height)
+                    .iter()
+                    .map(|utxo| utxo.value())
+                    .sum::<u64>();
+            }
+        }
+        Ok(total)
+    }
+
     pub async fn finalize_transaction<S: TransactionSigner + ?Sized + Sync>(
         &self,
         builder: TransactionBuilder,
