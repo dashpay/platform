@@ -244,7 +244,7 @@ impl TimeRangeTransform {
         if step_ms == 0 || start_ms < phase_ms {
             return false;
         }
-        (start_ms - phase_ms) % step_ms == 0
+        (start_ms - phase_ms).is_multiple_of(step_ms)
     }
 
     /// The start of the newest range that is active at the millisecond
