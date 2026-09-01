@@ -96,6 +96,36 @@ where
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
 
+    // Reclaim the storage of any TTL'd time-range buckets the block's
+    // transaction flat-dropped (grovedb#848 / PR #849): the drops' redo
+    // records became visible at the commit above, and the flush turns them
+    // into DB-level range tombstones. Outside consensus by design — it
+    // never touches the root hash, the report is telemetry, and a failure
+    // leaves the records in place for the next flush (or the startup
+    // flush) to retry, so the finalized block is unaffected.
+    match app
+        .platform()
+        .drive
+        .grove
+        .flush_pending_prefix_drops(&platform_version.drive.grove_version)
+    {
+        Ok(report) => {
+            if report.reclaimed_records > 0 || report.skipped_live > 0 {
+                tracing::debug!(
+                    reclaimed_records = report.reclaimed_records,
+                    skipped_live = report.skipped_live,
+                    "flushed pending prefix drops"
+                );
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                ?error,
+                "failed to flush pending prefix drops; records persist and will be retried"
+            );
+        }
+    }
+
     // Create GroveDB checkpoint after the transaction is committed (so it captures committed state)
     if block_finalization_outcome.checkpoint_needed {
         app.platform().create_grovedb_checkpoint(platform_version)?;

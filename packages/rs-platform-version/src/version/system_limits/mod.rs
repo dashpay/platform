@@ -112,15 +112,18 @@ pub struct SystemLimits {
     /// `None` preserves the behavior of protocol versions that predate the
     /// `ttl` key (nothing to bound: the key does not parse there).
     pub max_time_range_ttl_seconds: Option<u64>,
-    /// Maximum number of expired buckets one bucket-creating write may drop
-    /// from a TTL'd `timeRange` index.
+    /// Maximum number of O(1) drop operations one write into a TTL'd
+    /// `timeRange` index may spend draining expired buckets.
     ///
-    /// Steady state needs exactly one (one new bucket per `step` means one
-    /// bucket crossing the TTL horizon per `step`); the headroom above one
-    /// amortizes catch-up after a quiet spell instead of dumping the whole
-    /// backlog (up to `ttl / step` buckets) on the first write after a
-    /// lull. `None` for the protocol versions that predate the `ttl` key.
-    pub max_time_range_expired_bucket_drops_per_write: Option<u16>,
+    /// A bucket drains deepest-first through flat-subtree drops (one per
+    /// `[0]` reference tree, per emptied value tree, per property-name
+    /// tree, plus the bucket itself), so the operation count scales with
+    /// the window's distinct groups while each operation is O(1). Every
+    /// write continues wherever the previous budget ran out; write volume
+    /// scales with group volume, so drainage keeps pace roughly one window
+    /// behind. `None` for the protocol versions that predate the `ttl`
+    /// key.
+    pub max_time_range_ttl_drop_operations_per_write: Option<u16>,
 }
 
 #[cfg(test)]

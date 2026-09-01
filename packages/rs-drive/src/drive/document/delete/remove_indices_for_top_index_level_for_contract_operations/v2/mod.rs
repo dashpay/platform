@@ -11,6 +11,7 @@ use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, time_range_index_keys,
 };
+use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::document::unique_event_id;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
@@ -223,13 +224,16 @@ impl Drive {
 
             let bucket_count = index_keys.len();
             for (bucket, index_key) in index_keys.into_iter().enumerate() {
-                // TTL: an expired bucket may already have been dropped, in
-                // which case this document's entries went with it and
-                // per-entry removal must skip rather than fail; while it
-                // still stands, entries are removed normally so the bucket
-                // never carries dangling references. Stateful reads have no
-                // place in the estimation dry run, which processes every
-                // bucket — the upper bound.
+                // TTL: an expired bucket may already have been dropped
+                // entirely (this document's entries went with it — skip),
+                // or stand PARTIALLY drained (drainage removes whole `[0]`
+                // and group value trees before the bucket): removal then
+                // proceeds, but at full-path granularity — the deeper
+                // walkers skip any entry whose path the drain already
+                // took. Live buckets behave exactly as before. Stateful
+                // reads have no place in the estimation dry run, which
+                // processes every bucket — the upper bound.
+                let mut skip_missing_expired_entry = false;
                 if estimated_costs_only_with_layer_info.is_none() {
                     if let Some(transform) = sub_level.time_range() {
                         let entry_key_bytes = match &index_key {
@@ -238,16 +242,22 @@ impl Drive {
                             DriveKeyInfo::KeySize(_) => None,
                         };
                         if let Some(entry_key_bytes) = entry_key_bytes {
-                            if !self.time_range_entry_is_removable(
-                                transform,
-                                entry_key_bytes,
-                                block_time_ms,
-                                &index_path,
-                                transaction,
-                                batch_operations,
-                                platform_version,
-                            )? {
-                                continue;
+                            let expired = entry_key_bucket_start(entry_key_bytes)
+                                .zip(transform.expiry_horizon_ms(block_time_ms))
+                                .is_some_and(|(start, horizon)| start < horizon);
+                            if expired {
+                                if !self.time_range_entry_is_removable(
+                                    transform,
+                                    entry_key_bytes,
+                                    block_time_ms,
+                                    &index_path,
+                                    transaction,
+                                    batch_operations,
+                                    platform_version,
+                                )? {
+                                    continue;
+                                }
+                                skip_missing_expired_entry = true;
                             }
                         }
                     }
@@ -285,6 +295,7 @@ impl Drive {
                     &storage_flags,
                     previous_batch_operations,
                     estimated_costs_only_with_layer_info,
+                    skip_missing_expired_entry,
                     event_id,
                     transaction,
                     batch_operations,

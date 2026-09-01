@@ -51,5 +51,5 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_shielded_transition_actions: 16,
     max_time_range_overlap_factor: None,
     max_time_range_ttl_seconds: None,
-    max_time_range_expired_bucket_drops_per_write: None,
+    max_time_range_ttl_drop_operations_per_write: None,
 };

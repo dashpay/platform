@@ -53,6 +53,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        skip_missing_expired_entry: bool,
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
@@ -62,6 +63,40 @@ impl Drive {
             return Ok(());
         }
         let mut key_info_path = index_path_info.convert_to_key_info_path();
+
+        // TTL: for an entry in an expired-but-standing bucket, drainage may
+        // already have removed the deeper trees (the group's `[0]` and value
+        // tree go before the bucket does). The entry path is checked at
+        // full granularity and the whole reference removal skipped when it
+        // is gone — the drain took it, and there is nothing left to
+        // remove. Only set on the stateful path, so every KeyInfo below is
+        // a KnownKey.
+        if skip_missing_expired_entry {
+            let path_segments: Vec<Vec<u8>> = key_info_path
+                .0
+                .iter()
+                .map(|key_info| match key_info {
+                    KnownKey(key) => Ok(key.clone()),
+                    _ => Err(Error::Drive(
+                        crate::error::drive::DriveError::CorruptedCodeExecution(
+                            "expired-entry skip is stateful-only; its path must be known",
+                        ),
+                    )),
+                })
+                .collect::<Result<_, _>>()?;
+            // The first four segments — root tree byte, contract id, the
+            // documents marker, the document type name — exist for every
+            // registered contract.
+            if !self.expired_entry_path_exists(
+                &path_segments,
+                4,
+                transaction,
+                batch_operations,
+                platform_version,
+            )? {
+                return Ok(());
+            }
+        }
 
         let document_type = document_and_contract_info.document_type;
 

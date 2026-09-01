@@ -251,11 +251,39 @@ impl Drive {
                     .unwrap_or(1),
             );
 
+            // TTL drainage rides every write into a TTL'd index: a bounded
+            // number of deepest-first drop operations against the oldest
+            // expired bucket, resuming wherever the previous write's budget
+            // ran out. When nothing is expired this is one bounded range
+            // read. Stateful only — the estimation dry run neither reads
+            // state nor prices drops (each is O(1); the count is capped).
+            if estimated_costs_only_with_layer_info.is_none() {
+                if let Some(transform) = sub_level.time_range() {
+                    if transform.ttl_seconds.is_some() {
+                        if let Some(max_operations) = platform_version
+                            .system_limits
+                            .max_time_range_ttl_drop_operations_per_write
+                        {
+                            self.drain_expired_time_range_buckets(
+                                transform,
+                                sub_level,
+                                &index_path,
+                                block_time_ms,
+                                max_operations,
+                                transaction,
+                                batch_operations,
+                                platform_version,
+                            )?;
+                        }
+                    }
+                }
+            }
+
             let bucket_count = index_keys.len();
             for (bucket, index_key) in index_keys.into_iter().enumerate() {
                 // The zero will not matter here, because the PathKeyInfo is variable
                 let path_key_info = index_key.clone().add_path::<0>(index_path.clone());
-                let newly_created_bucket = self.batch_insert_empty_tree_if_not_exists(
+                self.batch_insert_empty_tree_if_not_exists(
                     path_key_info,
                     value_tree_type,
                     storage_flags,
@@ -265,36 +293,6 @@ impl Drive {
                     batch_operations,
                     drive_version,
                 )?;
-
-                // TTL cleanup rides the bucket-creating write: a new bucket
-                // means time rolled forward, so buckets behind the horizon
-                // are dropped — capped per write, oldest first. Steady state
-                // is one-for-one (one new bucket per step, one expiring);
-                // the cap amortizes catch-up after a quiet spell. Stateful
-                // only: the estimation dry run neither reads state nor
-                // prices drops (their cost class is the triggering write's
-                // processing, bounded by the cap — and O(1) per drop once
-                // grovedb#848 replaces the placeholder).
-                if newly_created_bucket && estimated_costs_only_with_layer_info.is_none() {
-                    if let Some(transform) = sub_level.time_range() {
-                        if transform.ttl_seconds.is_some() {
-                            if let Some(max_drops) = platform_version
-                                .system_limits
-                                .max_time_range_expired_bucket_drops_per_write
-                            {
-                                self.drop_expired_time_range_buckets(
-                                    transform,
-                                    &index_path,
-                                    block_time_ms,
-                                    max_drops,
-                                    transaction,
-                                    batch_operations,
-                                    platform_version,
-                                )?;
-                            }
-                        }
-                    }
-                }
 
                 // The final bucket takes ownership of `index_path`; earlier
                 // buckets (only a time-range fan-out has more than one)

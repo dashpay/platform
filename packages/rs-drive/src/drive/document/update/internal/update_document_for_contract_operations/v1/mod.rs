@@ -2,7 +2,7 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
-use crate::drive::document::time_range_ttl::live_time_range_entry_keys;
+use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
 };
@@ -1267,22 +1267,46 @@ impl Drive {
             if new_set.contains(entry_key) && !suffix_changed {
                 continue; // unchanged entry — already refreshed by the insert loop above
             }
-            // TTL: an expired bucket the lazy drop already took has no entry
-            // left to delete; one that still stands must be cleaned normally
-            // so it never carries a stale reference until its drop. This
-            // path is stateful-only (estimation redirects to the insert
-            // walker at the top of the v1 update), so the existence read is
-            // always legal here.
-            if !self.time_range_entry_is_removable(
-                transform,
-                entry_key,
-                block_time_ms,
-                base_index_path,
-                transaction,
-                batch_operations,
-                platform_version,
-            )? {
-                continue;
+            // TTL: an expired bucket the drain already took entirely has no
+            // entry left to delete; one that still stands may be PARTIALLY
+            // drained (whole `[0]` and group value trees go before the
+            // bucket), so the entry is checked at full-path granularity
+            // below and skipped when its deeper trees are gone. A live
+            // bucket behaves exactly as before. This path is stateful-only
+            // (estimation redirects to the insert walker at the top of the
+            // v1 update), so the existence reads are always legal here.
+            let expired_entry = entry_key_bucket_start(entry_key)
+                .zip(transform.expiry_horizon_ms(block_time_ms))
+                .is_some_and(|(start, horizon)| start < horizon);
+            if expired_entry {
+                if !self.time_range_entry_is_removable(
+                    transform,
+                    entry_key,
+                    block_time_ms,
+                    base_index_path,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )? {
+                    continue;
+                }
+                let mut entry_path_segments: Vec<Vec<u8>> = base_index_path.to_vec();
+                entry_path_segments.push(entry_key.clone());
+                for segment in &old_suffix {
+                    entry_path_segments.push(segment.clone());
+                }
+                if !old_terminator_is_unique {
+                    entry_path_segments.push(vec![0]);
+                }
+                if !self.expired_entry_path_exists(
+                    &entry_path_segments,
+                    4,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )? {
+                    continue;
+                }
             }
             let mut key_info_path: Vec<KeyInfo> = base_index_path
                 .iter()

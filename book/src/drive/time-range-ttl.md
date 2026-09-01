@@ -1,10 +1,10 @@
 # Time-Range Index TTL
 
-Design document. Status: **accepted, in implementation** — platform side
-first, against the grovedb primitive specified in
-[dashpay/grovedb#848](https://github.com/dashpay/grovedb/issues/848)
-(placeholder-implemented until it lands; see
-[the dependency section](#grovedb-dependency-detach-and-sweep)).
+Design document. Status: **implemented**. The grovedb primitive landed as
+the flat-subtree drop
+([dashpay/grovedb#848](https://github.com/dashpay/grovedb/issues/848),
+grovedb PR #849); see [the dependency section](#grovedb-dependency-flat-subtree-drop)
+for how the shipped shape differs from the original two-phase sketch.
 
 ## Problem
 
@@ -85,19 +85,16 @@ That single property pays off three times:
 
 ## Cleanup
 
-**Trigger** — deterministic and write-amortized: when the insert walker
-creates a bucket value tree that did not exist before (it already knows —
-the tree-insert reports whether it inserted), and the transform declares
-a TTL, the same batch drops expired buckets: children of the grid level
-whose bucket start is `< block_time − ttl`, oldest first, **capped at
-`SystemLimits::max_time_range_expired_bucket_drops_per_write` per
-triggering write**.
-
-Steady state is one-for-one: one new bucket per `step` means one bucket
-crossing the horizon per `step`, so the triggering writer pays for a
-single drop. After a quiet spell the backlog is bounded by
-`ttl / step` buckets and the cap amortizes catch-up across subsequent
-bucket-creating writes rather than dumping a week of demolition on the
+**Trigger** — deterministic and write-amortized: **every write** into a
+TTL'd index continues drainage of the oldest expired bucket (start
+`< block_time − ttl`), deepest-first, spending at most
+`SystemLimits::max_time_range_ttl_drop_operations_per_write` O(1) drop
+operations and resuming exactly where the previous write's budget ran
+out. When nothing is expired, the check is a single bounded range read.
+The operation count of a full bucket scales with its distinct groups,
+and write volume scales with group volume, so drainage keeps pace
+roughly one window behind; after a quiet spell the backlog amortizes
+across subsequent writes instead of dumping a week of demolition on the
 first like after a lull.
 
 **Residue** — an index that never receives another write keeps its final
@@ -107,12 +104,15 @@ riding the existing scheduled-cleanup pattern
 (`check_for_ended_vote_polls` / `clean_up_after_vote_polls_end`);
 deliberately **out of scope for v1**.
 
-**User deletes and updates of expired documents** — a document older
-than the TTL horizon has no entries left under the TTL'd index, so the
-delete and update walkers **skip that index** for any bucket key whose
-start is behind the horizon. The skip is deterministic on every node:
-it derives from the carried `$createdAt` and block time, the same two
-inputs the write that created the entries used.
+**User deletes and updates of expired documents** — handled at
+**full-path granularity**, because a bucket drains piecewise: an entry
+whose bucket (or whose group's trees inside a standing bucket) the drain
+already took is skipped as cleanly removed; one whose trees still stand
+is removed normally, so a not-yet-drained expired bucket never carries
+dangling references. Every check is deterministic — it reads consensus
+state plus the carried `$createdAt` and block time. Writes never target
+expired windows, so an update of a fully expired document simply leaves
+it without entries under the TTL'd index.
 
 **Per-index semantics** — TTL removes entries from *this index only*.
 An indexOnly like whose windowed entries expire keeps counting in the
@@ -121,30 +121,50 @@ contract declares it. Ranked per-window secondaries die with their
 bucket — which also caps live leaderboard state at ~`ttl / step` windows
 per index.
 
-## grovedb dependency: detach-and-sweep
+## grovedb dependency: flat-subtree drop
 
-Dropping a bucket must cost **O(1) in consensus, independent of the
-bucket's contents** — a viral window may hold millions of entries, and a
-drop whose cost scales with contents can neither be paid by the
-triggering writer nor fit in a block. The existing `clear_subtree` is
-explicitly not this (costs marked not-yet-correct, indexed primaries
-rejected, nested subtrees enumerated element-by-element).
+Dropping a bucket must never put user-scaled work on the consensus path.
+The primitive that landed (grovedb PR #849) is the **flat-subtree drop**:
+O(1) consensus removal of a subtree *declared to contain no child
+subtrees* — an ordinary parent-Merk element delete whose cost is
+independent of the subtree's contents — staging a durable redo record
+(atomically, outside the root hash) that names every storage prefix the
+drop orphaned: the subtree's own and, for indexed primaries, its three
+per-axis secondary prefixes. Reclamation is DB-level range tombstones,
+drained by `GroveDb::flush_pending_prefix_drops` — idempotent,
+crash-safe, snapshot-correct, and never part of consensus cost.
 
-The primitive, specified in the grovedb issue:
+A time-range bucket is *not* flat, so the platform drains it
+**deepest-first, one flat unit at a time** (`drain_expired_time_range_buckets`):
 
-1. **Detach (consensus, O(1))** — remove the bucket element from the
-   grid-level Merk. The root hash is immediately correct and the window
-   is provably absent.
-2. **Sweep (budgeted, off the critical path)** — every subtree lives
-   under its own storage prefix and every per-axis secondary under a
-   derived prefix; reclamation is prefix range-deletes driven from a
-   small deletion queue with a per-block budget. Because TTL'd bytes are
-   never refundable, the sweep needs no per-entry consensus accounting.
+1. each group's `[0]` reference tree — flat by construction, and where
+   the mass lives — is flat-dropped;
+2. the emptied group value tree leaves through the flat drop — or, under
+   a ranked (indexed-primary) property-name tree, through grovedb's
+   dedicated indexed-tree delete, which mirrors the group out of the
+   ranking secondary;
+3. the drained property-name tree is flat-dropped (dooming its secondary
+   prefixes when ranked);
+4. the emptied bucket is flat-dropped.
 
-Until it lands, the platform implementation performs the drop through
-grovedb's recursive element delete (which does sweep an indexed tree's
-axes) behind a single `Drive` helper — correct, wrong cost class — so
-the primitive is a drop-in swap.
+Every step is O(1); the *number* of steps scales with the window's
+distinct groups, and that count is what
+`SystemLimits::max_time_range_ttl_drop_operations_per_write` bounds.
+**Every write** into a TTL'd index continues drainage where the previous
+budget stopped (when nothing is expired, the check is one bounded range
+read); write volume scales with group volume, so drainage keeps pace
+roughly one window behind. Between writes a bucket may stand partially
+drained — within TTL semantics (entries live *at most* `ttl`) — and the
+removal walkers handle those states at full-path granularity: a
+document whose group the drain already took deletes as a clean skip,
+one whose group still stands is removed normally.
+
+The flat-drop path-reuse contract (never re-create a dropped path before
+its record drains) holds by construction: bucket paths embed their
+window start, and writes never target expired windows. The host side:
+drive-abci calls `flush_pending_prefix_drops` after committing each
+block's transaction and once at startup, completing reclamation a crash
+may have interrupted.
 
 ## Fee mechanics
 
