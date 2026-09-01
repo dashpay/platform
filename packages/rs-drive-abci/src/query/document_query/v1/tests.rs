@@ -5639,3 +5639,308 @@ mod time_range_proof_verification {
         );
     }
 }
+
+mod chained_trust_boundary {
+    //! The client trust boundary for chained (semi-join) queries,
+    //! exercised from the server side — same split as
+    //! [`super::having_trust_boundary`]: rs-drive's e2e suite covers
+    //! the merk-level composition, and THIS suite runs the actual SDK
+    //! entry points — the dash-platform-queries wire encoding and the
+    //! `FromProof<ChainedDocumentQuery>` composition, including the
+    //! tenderdash binding of the merged proof's root — against a
+    //! server-generated proof. It lives here because generating proofs
+    //! needs drive's server feature, which the client crates must not
+    //! enable even as dev-dependencies.
+
+    use super::having_trust_boundary::{quorum_secret_key, signed_proof, TestQuorumProvider};
+    use crate::query::tests::{setup_platform, store_data_contract, store_document};
+    use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
+    use dapi_grpc::platform::v0::get_documents_response::{
+        get_documents_response_v1, GetDocumentsResponseV1, Version as ResponseVersion,
+    };
+    use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse, ResponseMetadata};
+    use dash_platform_queries::documents::chained_document_query::ChainedDocumentQuery;
+    use dash_platform_queries::documents::document_query::DocumentQuery;
+    use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::Value;
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
+    use drive::query::drive_chained_document_query::DriveChainedDocumentQuery;
+    use drive::query::{InternalClauses, WhereClause, WhereOperator};
+    use drive_proof_verifier::{ChainedDocuments, FromProof};
+    use std::sync::Arc;
+
+    const YAPPR_CONTRACT_PATH: &str =
+        "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json";
+    const POST_A: [u8; 32] = [0xA1; 32];
+    const POST_B: [u8; 32] = [0xB2; 32];
+    const OWNER_1: [u8; 32] = [0x11; 32];
+
+    const CHAIN_ID: &str = "test-chained-chain";
+    const HEIGHT: u64 = 777;
+    const CORE_LOCKED_HEIGHT: u32 = 1200;
+    const TIME_MS: u64 = 1_756_000_000_000;
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    fn metadata() -> ResponseMetadata {
+        ResponseMetadata {
+            height: HEIGHT,
+            core_chain_locked_height: CORE_LOCKED_HEIGHT,
+            epoch: 0,
+            time_ms: TIME_MS,
+            protocol_version: platform_version().protocol_version,
+            chain_id: CHAIN_ID.to_string(),
+        }
+    }
+
+    /// Register the yappr contract and give OWNER_1 two liked posts.
+    fn setup_liked_posts() -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        DataContract,
+    ) {
+        let (platform, _state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = json_document_to_contract(YAPPR_CONTRACT_PATH, false, version)
+            .expect("expected to parse the yappr-likes contract");
+        store_data_contract(&platform.platform, &contract, version);
+
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("post doctype");
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype");
+        for (id, message, seed) in [(POST_A, "post a", 10u64), (POST_B, "post b", 11)] {
+            let mut post = post_type
+                .random_document(Some(seed), version)
+                .expect("post");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("hashtag".to_string(), Value::Text("dash".to_string()));
+            props.insert("message".to_string(), Value::Text(message.to_string()));
+            post.set_properties(props);
+            post.set_id(Identifier::from(id));
+            post.set_owner_id(Identifier::from(OWNER_1));
+            store_document(&platform.platform, &contract, post_type, &post, version);
+        }
+        for (post, seed) in [(POST_A, 1u64), (POST_B, 2)] {
+            let mut like = like_type
+                .random_document(Some(seed), version)
+                .expect("like");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("hashtag".to_string(), Value::Text("dash".to_string()));
+            props.insert("postId".to_string(), Value::Identifier(post));
+            like.set_properties(props);
+            like.set_owner_id(Identifier::from(OWNER_1));
+            store_document(&platform.platform, &contract, like_type, &like, version);
+        }
+        (platform, contract)
+    }
+
+    /// The rich client-side query — the exact object an SDK caller
+    /// hands to `ChainedDocuments::fetch`.
+    fn client_query(contract: Arc<DataContract>) -> ChainedDocumentQuery {
+        let inner = DocumentQuery::new(contract, "like")
+            .expect("like doctype exists")
+            .with_where(WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(OWNER_1),
+            })
+            .with_limit(10);
+        ChainedDocumentQuery::new(inner, "postId", "post")
+    }
+
+    /// Server-side proof of the same shape.
+    fn prove(
+        platform: &crate::platform_types::platform::Platform<crate::rpc::core::MockCoreRPCLike>,
+        contract: &DataContract,
+    ) -> (Vec<u8>, [u8; 32]) {
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype");
+        let chained = DriveChainedDocumentQuery {
+            inner: drive::query::DriveDocumentQuery {
+                contract,
+                document_type: like_type,
+                internal_clauses: InternalClauses::extract_from_clauses(
+                    vec![WhereClause {
+                        field: "$ownerId".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Identifier(OWNER_1),
+                    }],
+                    platform_version(),
+                )
+                .expect("clauses extract"),
+                offset: None,
+                limit: Some(10),
+                order_by: Default::default(),
+                start_at: None,
+                start_at_included: true,
+                block_time_ms: None,
+                resolved_time_ranges: vec![],
+            },
+            join_property: "postId".to_string(),
+            outer_document_type: contract
+                .document_type_for_name("post")
+                .expect("post doctype"),
+        };
+        let (proof, _inner_documents) = platform
+            .drive
+            .query_chained_documents_with_proof(&chained, platform_version())
+            .expect("chained proof generates");
+        let root_hash = platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version().drive.grove_version)
+            .unwrap()
+            .expect("root hash");
+        (proof, root_hash)
+    }
+
+    fn response_with(
+        proof: dapi_grpc::platform::v0::Proof,
+        mtd: ResponseMetadata,
+    ) -> GetDocumentsResponse {
+        GetDocumentsResponse {
+            version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
+                metadata: Some(mtd),
+            })),
+        }
+    }
+
+    /// The rich query encodes onto the typed V1 wire with the join
+    /// spec riding along — the encode path an SDK request takes.
+    #[test]
+    fn should_encode_the_rich_query_onto_the_v1_wire() {
+        let (_platform, contract) = setup_liked_posts();
+        let request = GetDocumentsRequest::try_from_platform_versioned(
+            client_query(Arc::new(contract)),
+            platform_version(),
+        )
+        .expect("encodes");
+        let Some(RequestVersion::V1(v1)) = request.version else {
+            panic!("expected a V1 request");
+        };
+        assert!(v1.prove);
+        assert_eq!(v1.limit, Some(10));
+        let chained = v1.chained.expect("the join spec rides the request");
+        assert_eq!(chained.join_property, "postId");
+        assert_eq!(chained.outer_document_type, "post");
+    }
+
+    /// The full SDK composition end to end: FromProof bootstraps the
+    /// join values from the merged proof, verifies the re-derived
+    /// composition, and binds the root to the quorum-signed app hash.
+    #[test]
+    fn should_verify_the_chained_composition_through_from_proof() {
+        let (platform, contract) = setup_liked_posts();
+        let (grovedb_proof, root_hash) = prove(&platform.platform, &contract);
+        let secret_key = quorum_secret_key();
+        let quorum_hash = [5u8; 32];
+        let mtd = metadata();
+        let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+
+        let (verified, _mtd, _proof) =
+            <ChainedDocuments as FromProof<ChainedDocumentQuery>>::maybe_from_proof_with_metadata(
+                client_query(Arc::new(contract)),
+                response_with(proof, mtd),
+                Network::Testnet,
+                platform_version(),
+                &provider,
+            )
+            .expect("a correctly signed chained composition must verify");
+
+        let verified = verified.expect("a proven page is Some, even when empty");
+        assert_eq!(verified.inner_documents.len(), 2);
+        assert_eq!(
+            verified
+                .outer_documents
+                .iter()
+                .map(|d| d.id().to_buffer())
+                .collect::<Vec<_>>(),
+            vec![POST_A, POST_B],
+            "the liked posts come back verified, in inner order"
+        );
+    }
+
+    /// A wrong quorum key fails the tenderdash binding — omitting or
+    /// miswiring `verify_tenderdash_proof` turns this red.
+    #[test]
+    fn should_reject_a_wrong_quorum_key() {
+        let (platform, contract) = setup_liked_posts();
+        let (grovedb_proof, root_hash) = prove(&platform.platform, &contract);
+        let mtd = metadata();
+        let proof = signed_proof(
+            grovedb_proof,
+            &root_hash,
+            &mtd,
+            &quorum_secret_key(),
+            [5u8; 32],
+        );
+        let other_key = {
+            let mut bytes = [0u8; 32];
+            bytes[31] = 43;
+            dpp::bls_signatures::SecretKey::<dpp::bls_signatures::Bls12381G2Impl>::from_be_bytes(
+                &bytes,
+            )
+            .into_option()
+            .expect("valid scalar")
+        };
+        let provider = TestQuorumProvider {
+            pubkey: other_key.public_key().0.to_compressed(),
+        };
+
+        let refused =
+            <ChainedDocuments as FromProof<ChainedDocumentQuery>>::maybe_from_proof_with_metadata(
+                client_query(Arc::new(contract)),
+                response_with(proof, mtd),
+                Network::Testnet,
+                platform_version(),
+                &provider,
+            );
+        assert!(
+            refused.is_err(),
+            "a commit signed by a different quorum key must be refused"
+        );
+    }
+
+    /// Tampered response metadata breaks the canonical state id the
+    /// commit signed over.
+    #[test]
+    fn should_reject_tampered_metadata() {
+        let (platform, contract) = setup_liked_posts();
+        let (grovedb_proof, root_hash) = prove(&platform.platform, &contract);
+        let secret_key = quorum_secret_key();
+        let mtd = metadata();
+        let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [5u8; 32]);
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+        let mut tampered = mtd;
+        tampered.height += 1;
+
+        let refused =
+            <ChainedDocuments as FromProof<ChainedDocumentQuery>>::maybe_from_proof_with_metadata(
+                client_query(Arc::new(contract)),
+                response_with(proof, tampered),
+                Network::Testnet,
+                platform_version(),
+                &provider,
+            );
+        assert!(
+            refused.is_err(),
+            "metadata the commit did not sign over must be refused"
+        );
+    }
+}
