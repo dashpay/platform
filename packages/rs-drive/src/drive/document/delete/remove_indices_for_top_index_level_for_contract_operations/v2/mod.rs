@@ -252,7 +252,6 @@ impl Drive {
                                     block_time_ms,
                                     &index_path,
                                     transaction,
-                                    batch_operations,
                                     platform_version,
                                 )? {
                                     continue;

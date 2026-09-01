@@ -271,7 +271,6 @@ impl Drive {
                                 block_time_ms,
                                 max_operations,
                                 transaction,
-                                batch_operations,
                                 platform_version,
                             )?;
                         }

@@ -1,12 +1,20 @@
 # Time-Range Index TTL
 
-Design document. Status: **implemented**. The grovedb primitive landed as
-the flat-subtree drop
+Architecture reference for the `ttl` key of `timeRange` indexes: what it
+means, how expired windows are drained, and the invariants every walker
+shares. The storage primitive underneath is grovedb's flat-subtree drop
 ([dashpay/grovedb#848](https://github.com/dashpay/grovedb/issues/848),
-grovedb PR #849); see [the dependency section](#grovedb-dependency-flat-subtree-drop)
-for how the shipped shape differs from the original two-phase sketch.
+landed in grovedb PR #849); see
+[the storage section](#grovedb-dependency-flat-subtree-drop).
 
-## Problem
+> **Fee model status**: the ephemeral-bytes fee reclassification described
+> below — billing TTL'd bytes as processing instead of storage, with no
+> storage flags and no refunds — is **planned, not yet implemented**.
+> Today TTL'd entries bill exactly like any other index entry; drainage
+> itself is unbilled system maintenance. The sections below describe the
+> target model where they say so explicitly.
+
+## Motivation
 
 A `timeRange` index stores every document once per containing window, and
 a ranked one additionally rewrites a per-window secondary on every write.
@@ -22,7 +30,7 @@ Nobody cleans this up, either. Deletion costs the deleter processing,
 refunds accrue to owners who have no reason to come back for entries this
 small, and the state lingers forever.
 
-## Proposal
+## Semantics
 
 A `timeRange` index may declare a **time to live**:
 
@@ -30,17 +38,21 @@ A `timeRange` index may declare a **time to live**:
 "timeRange": { "on": "$createdAt", "range": 3600, "step": 3600, "ttl": 604800 }
 ```
 
-Semantics, in one paragraph: entries under this index exist for at most
-`ttl` seconds past their bucket's start. Everything written under the
-index's grid-qualified level is billed as **processing, not storage** —
-including the transitional bytes — at an ephemeral-bytes rate. Expired
-buckets are dropped **lazily, on write**: the state transition whose
-document creates a *new* bucket also drops up to a capped number of
-buckets whose start has fallen behind `block_time − ttl`. Nothing about
-the query surface changes: an expired window is provably absent, exactly
-like a window that never held documents.
+In one paragraph: entries under this index exist for at most `ttl`
+seconds past their bucket's start, plus a bounded drainage lag. Expired
+buckets are drained **lazily, on write**: every state transition that
+writes into the index continues draining the oldest expired bucket,
+deepest-first, under a per-write operation budget. A fully drained
+window is provably absent, exactly like a window that never held
+documents; during the drainage lag an expired-but-not-yet-drained window
+can still serve its remaining contents to an absolute (`byStart`) query
+— correct answers about current state, within the "at most `ttl` plus
+lag" lifetime. In the target fee model (see the status note above),
+everything written under the index's grid-qualified level bills as
+**processing, not storage** — including the transitional bytes — at an
+ephemeral-bytes rate.
 
-### Why the fee reclassification is honest, not a subsidy
+### Why the planned fee reclassification is honest, not a subsidy
 
 Storage fees prepay retention distributed across future epochs — decades
 of it. A byte that provably lives at most one week consumes on the order
@@ -50,9 +62,9 @@ week of disk occupancy, which a flat per-byte processing surcharge covers
 safely *because `ttl` is capped*. Version 1 caps it at **one week**
 (`SystemLimits::max_time_range_ttl_seconds = 604 800`).
 
-The load-bearing simplification: **TTL'd subtrees never create
-refundable storage.** No `StorageFlags`, no owner/epoch refund entries.
-That single property pays off three times:
+The load-bearing simplification of the target model: **TTL'd subtrees
+will never create refundable storage.** No `StorageFlags`, no
+owner/epoch refund entries. That single property pays off three times:
 
 1. the fee reroute needs no refund-ledger reconciliation;
 2. cleanup owes nobody anything;
@@ -168,25 +180,44 @@ may have interrupted.
 
 ## Fee mechanics
 
-Write operations targeting a TTL'd index's subtrees are classified
-**ephemeral**: their added bytes bill to processing at an
+**Today (shipped):** TTL'd index entries bill exactly like any other
+index entries. Drainage and the walkers' TTL bookkeeping reads are
+**unbilled**: their costs go to scratch accounting, never to the
+triggering user. That is load-bearing for the `estimated >= actual` fee
+invariant — the estimation dry run cannot read state and therefore
+cannot price state-dependent drainage, so billing it only on execution
+would let a transition pass validation and then overdraw on apply. The
+unbilled work is bounded: a capped count of O(1) drop operations plus a
+handful of bounded reads per write.
+
+**Planned:** write operations targeting a TTL'd index's subtrees are
+classified ephemeral — their added bytes bill to processing at an
 ephemeral-bytes rate (a fee-version constant) instead of to storage, and
-the elements carry no storage flags. Deletion (both the TTL drop and a
+the elements carry no storage flags. Deletion (both the TTL drain and a
 user delete of a not-yet-expired document) generates no refunds — there
-is nothing to refund. Cost estimation mirrors the same classification so
-estimated and actual fees stay in the same class.
+is nothing to refund — which is also where TTL writers collectively
+pre-pay the drainage that is unbilled per-write today. Cost estimation
+mirrors the same classification so estimated and actual fees stay in the
+same class.
 
 ## Queries
 
-Unchanged. An expired window is a provable empty answer through every
-surface (document, count/sum/avg, ranked, having-range). One documented
-consequence: on a TTL'd index, `byStart` addresses historic windows
-*within the TTL horizon* — beyond it, absence is the (correct, provable)
-answer.
+Unchanged in shape. A **drained** window is a provable empty answer
+through every surface (document, count/sum/avg, ranked, having-range).
+Two documented consequences: on a TTL'd index, `byStart` addresses
+historic windows *within the TTL horizon* — beyond it, absence is the
+(correct, provable) eventual answer; and during the bounded drainage lag
+an expired-but-standing window may still serve its remaining, possibly
+partially drained contents. Those are correct, provable answers about
+what is currently stored — TTL promises entries live *at most* `ttl`
+plus the lag, not that they vanish at the horizon instant. The relative
+selectors (`newest` / `oldest`) can never address an expired window at
+all.
 
 ## Versioning
 
 Everything rides the still-unreleased PV14 grammar: the `ttl` key joins
-the meta-schema v3 `timeRange` map, the two limits join a new
-`SystemLimits` version, and the fee constant joins the PV14 fee table.
-No migration story exists or is needed.
+the meta-schema v3 `timeRange` map and the two limits join a new
+`SystemLimits` version. (The planned ephemeral-bytes fee constant will
+join the PV14 fee table with the fee reclassification.) No migration
+story exists or is needed.

@@ -223,7 +223,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V5, // changed: daily withdrawal 15% of total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (4)
+    system_limits: SYSTEM_LIMITS_V5, // changed: daily withdrawal 15% of total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (8)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

@@ -72,7 +72,7 @@ impl Drive {
         // remove. Only set on the stateful path, so every KeyInfo below is
         // a KnownKey.
         if skip_missing_expired_entry {
-            let path_segments: Vec<Vec<u8>> = key_info_path
+            let mut path_segments: Vec<Vec<u8>> = key_info_path
                 .0
                 .iter()
                 .map(|key_info| match key_info {
@@ -84,16 +84,29 @@ impl Drive {
                     )),
                 })
                 .collect::<Result<_, _>>()?;
-            // The first four segments — root tree byte, contract id, the
-            // documents marker, the document type name — exist for every
-            // registered contract.
-            if !self.expired_entry_path_exists(
-                &path_segments,
-                4,
-                transaction,
-                batch_operations,
-                platform_version,
-            )? {
+            // The layouts that store the reference inside a `[0]` subtree
+            // must include that segment in the walk: the drain drops the
+            // flat `[0]` tree BEFORE its value tree, and a budget boundary
+            // between the two leaves the value tree standing with the
+            // `[0]` gone — every shallower segment then exists while the
+            // delete below would target the missing subtree. Mirrors the
+            // layout dispatch used for the actual delete: the indexOnly
+            // terminal and the non-unique / contested / null layouts use
+            // `[0]` trees; the unique layout stores the reference AT key
+            // `[0]` as a bare element of the value tree.
+            let uses_zero_subtree = index_type.terminal.is_some()
+                || index_type.index_type == NonUniqueIndex
+                || index_type.index_type == ContestedResourceIndex
+                || any_fields_null;
+            if uses_zero_subtree {
+                path_segments.push(vec![0]);
+            }
+            // The first five segments — root tree byte, contract id, the
+            // documents marker, the document type name, and the (grid-
+            // qualified) index level key — exist for every registered
+            // contract: the flag is only ever set for a bucketed index,
+            // whose level tree is created at contract registration.
+            if !self.expired_entry_path_exists(&path_segments, 5, transaction, platform_version)? {
                 return Ok(());
             }
         }

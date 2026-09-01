@@ -1285,7 +1285,6 @@ impl Drive {
                     block_time_ms,
                     base_index_path,
                     transaction,
-                    batch_operations,
                     platform_version,
                 )? {
                     continue;
@@ -1298,11 +1297,13 @@ impl Drive {
                 if !old_terminator_is_unique {
                     entry_path_segments.push(vec![0]);
                 }
+                // `base_index_path` — the document-type path plus the
+                // grid-qualified level key — exists for every registered
+                // contract, so the walk starts below it.
                 if !self.expired_entry_path_exists(
                     &entry_path_segments,
-                    4,
+                    base_index_path.len(),
                     transaction,
-                    batch_operations,
                     platform_version,
                 )? {
                     continue;

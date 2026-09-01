@@ -670,7 +670,7 @@
               "ttl": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Time to live, in seconds: entries under this index exist for at most this long past their bucket's start, after which the whole bucket is dropped lazily by the write that creates a new bucket. Must be at least `range` (a window still able to receive consensus-timestamped writes can never expire) and at most a protocol-versioned cap (604800 — one week — at protocol version 14). Indexes bucketing one field with the same grid share its storage level and must declare the same ttl. Entries under a TTL'd index bill their bytes as processing (the ephemeral-bytes rate) instead of storage and create no storage refunds. Omitted means entries live forever. Available from protocol version 14."
+                "description": "Time to live, in seconds: entries under this index exist for at most this long past their bucket's start, plus a bounded drainage lag — every write into the index continues draining the oldest expired bucket under a per-write operation budget. Must be at least `range` (a window still able to receive consensus-timestamped writes can never expire) and at most a protocol-versioned cap (604800 — one week — at protocol version 14). Indexes bucketing one field with the same grid share its storage level and must declare the same ttl. Omitted means entries live forever. Available from protocol version 14."
               }
             },
             "required": ["on", "range", "step"],

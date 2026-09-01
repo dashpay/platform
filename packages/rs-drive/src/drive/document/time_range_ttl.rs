@@ -22,6 +22,20 @@
 //! - **Expiry has one definition**:
 //!   [`TimeRangeTransform::expiry_horizon_ms`], shared by these helpers
 //!   and the bucket-drop cleanup.
+//!
+//! # Billing
+//!
+//! Nothing in this module bills the triggering user: drainage operations
+//! and the walkers' TTL bookkeeping reads accumulate their costs into
+//! local scratch vectors that are dropped, never into the caller's fee
+//! operations. This is load-bearing for the `estimated >= actual` fee
+//! invariant — the estimation dry run cannot read state, so it cannot
+//! price state-dependent drainage, and billing it on execution only would
+//! let a transition pass validation and then overdraw on apply. The work
+//! itself is bounded (a capped count of O(1) operations plus a handful of
+//! bounded reads per write) and is system maintenance of state nobody
+//! holds refunds against; the planned ephemeral-bytes fee rate is where
+//! TTL writers pre-pay it in aggregate.
 
 use crate::drive::document::index_level_tree_types::index_level_tree_types_with_continuation_demotion;
 use crate::drive::Drive;
@@ -75,7 +89,6 @@ impl Drive {
     /// Callers in estimation mode must not call this (state reads have no
     /// place in a dry run); they process every key, which keeps the dry
     /// run an upper bound.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn time_range_entry_is_removable(
         &self,
         transform: &TimeRangeTransform,
@@ -83,9 +96,10 @@ impl Drive {
         block_time_ms: u64,
         level_path: &[Vec<u8>],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
+        // Unbilled bookkeeping read — see the module's Billing section.
+        let mut scratch_operations: Vec<LowLevelDriveOperation> = vec![];
         let Some(horizon) = transform.expiry_horizon_ms(block_time_ms) else {
             return Ok(true);
         };
@@ -104,7 +118,7 @@ impl Drive {
             entry_key,
             DirectQueryType::StatefulDirectQuery,
             transaction,
-            drive_operations,
+            &mut scratch_operations,
             &platform_version.drive,
         )
     }
@@ -123,9 +137,10 @@ impl Drive {
         path_segments: &[Vec<u8>],
         known_prefix_len: usize,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
+        // Unbilled bookkeeping reads — see the module's Billing section.
+        let mut scratch_operations: Vec<LowLevelDriveOperation> = vec![];
         let mut depth = known_prefix_len;
         while depth < path_segments.len() {
             let parent_refs: Vec<&[u8]> = path_segments[..depth]
@@ -137,7 +152,7 @@ impl Drive {
                 path_segments[depth].as_slice(),
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
-                drive_operations,
+                &mut scratch_operations,
                 &platform_version.drive,
             )? {
                 return Ok(false);
@@ -194,12 +209,13 @@ impl Drive {
         block_time_ms: u64,
         max_operations: u16,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let Some(horizon) = transform.expiry_horizon_ms(block_time_ms) else {
             return Ok(());
         };
+        // Unbilled system maintenance — see the module's Billing section.
+        let drive_operations: &mut Vec<LowLevelDriveOperation> = &mut vec![];
         let mut budget = max_operations;
         while budget > 0 {
             // Oldest expired bucket first. The null entry (empty key)
@@ -207,10 +223,18 @@ impl Drive {
             // entries are not windowed and live until their document goes.
             let horizon_key = DocumentPropertyType::encode_date_timestamp(horizon);
             let mut below_horizon = Query::new();
-            below_horizon.insert_range_to(..horizon_key);
+            // Only 8-byte keys carry bucket semantics. With today's grammar
+            // no other key can sort below the horizon anyway — the source
+            // is a required system timestamp, so the level holds 8-byte
+            // bucket starts plus at most the single null entry (empty key)
+            // — but the range start and the wider limit keep the finder
+            // live even if a future grammar admits raw (non-timestamp)
+            // keys: without them, low-sorting raw keys could fill every
+            // result slot and stall drainage forever.
+            below_horizon.insert_range(vec![0u8; 8]..horizon_key);
             let path_query = PathQuery::new(
                 level_path.to_vec(),
-                SizedQuery::new(below_horizon, Some(2), None),
+                SizedQuery::new(below_horizon, Some(8), None),
             );
             let (results, _) = self.grove_get_raw_path_query(
                 &path_query,
