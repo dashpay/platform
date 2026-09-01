@@ -7,15 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version (i.e. v0.22.3-pre.2)"
+        description: "Version (i.e. v0.22.3-pre.2); prefix with npm-test: to run only the NPM release dry-run"
         required: true
       only_drive:
         type: boolean
         description: Only build Drive image
-        default: false
-      only_npm:
-        type: boolean
-        description: Build NPM packages and exercise the hosted publish handoff without publishing
         default: false
 
 concurrency:
@@ -35,7 +31,7 @@ jobs:
     # does not support self-hosted runners.
     runs-on: [self-hosted, kotlin-ci]
     timeout-minutes: 120
-    if: github.event_name == 'release' || inputs.only_npm
+    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
     # In particular, do not mint an OIDC token for the persistent build host.
     permissions:
       contents: read
@@ -174,7 +170,7 @@ jobs:
     # npm trusted publishing currently accepts GitHub-hosted runners only.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    if: github.event_name == 'release' || inputs.only_npm
+    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
     permissions:
       id-token: write
       contents: read
@@ -189,15 +185,18 @@ jobs:
           TAG_PREFIX: v
 
       - name: Check package version matches requested test tag
+        id: test-tag
         if: github.event_name == 'workflow_dispatch'
         env:
-          TAG: ${{ inputs.tag }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
+          TAG="${INPUT_TAG#npm-test:}"
           PACKAGE_VERSION=$(jq -r '.version' package.json)
           if [ "$TAG" != "v${PACKAGE_VERSION}" ]; then
             echo "::error::Requested tag $TAG does not match package version v${PACKAGE_VERSION}"
             exit 1
           fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       # Composite action defaults to Node 24+ which ships npm 11.5.1+;
       # required for trusted-publishers OIDC at the publish step below.
@@ -217,7 +216,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const fullTag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
             if (fullTag.includes('-')) {
               const [, fullSuffix] = fullTag.split('-');
               const [suffix] = fullSuffix.split('.');
@@ -232,7 +231,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const tag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
 
@@ -251,7 +250,7 @@ jobs:
 
   release-drive-image:
     name: Release Drive image
-    if: ${{ !inputs.only_npm }}
+    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -263,7 +262,7 @@ jobs:
 
   release-drive-image-debug:
     name: Release Drive debug image
-    if: ${{ !inputs.only_npm }}
+    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -277,7 +276,7 @@ jobs:
 
   release-rs-dapi-image:
     name: Release RS-DAPI image
-    if: ${{ !inputs.only_drive && !inputs.only_npm }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -289,7 +288,7 @@ jobs:
 
   release-test-suite-image:
     name: Release Test Suite image
-    if: ${{ !inputs.only_drive && !inputs.only_npm }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -302,7 +301,7 @@ jobs:
   release-dashmate-helper-image:
     name: Release Dashmate Helper image
     secrets: inherit
-    if: ${{ !inputs.only_drive && !inputs.only_npm }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Dashmate Helper
@@ -337,7 +336,7 @@ jobs:
   release-dashmate-packages:
     name: Release Dashmate packages
     runs-on: ${{ matrix.os }}
-    if: ${{ !inputs.only_drive && !inputs.only_npm }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     needs: release-npm
     permissions:
       id-token: write # s3 cache
