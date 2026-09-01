@@ -71,12 +71,14 @@ pub struct DocumentRankedRequest<'a> {
     /// The fields among `where_clauses` whose equality clause was produced by
     /// `IN_TIME_RANGE` resolution (see
     /// [`crate::query::DriveDocumentQuery::resolved_time_ranges`]).
-    /// Must be empty: `where_clauses` must be empty, so there is nothing to
-    /// have resolved, and ranking over bucket keys is undesigned — a document
-    /// belongs to `overlap_factor` buckets at once, so it would contribute to
-    /// that many groups. Carried (and rejected) here for the same reason
-    /// `where_clauses` is: drive owns the rejection regardless of which
-    /// upstream path built the request.
+    /// Must be empty: bucketed (timeRange) indexes are excluded from the
+    /// ranked surface (see the rejection in
+    /// [`Drive::execute_document_ranked_request`]), because ranking over
+    /// bucket keys is undesigned — a document belongs to `overlap_factor`
+    /// buckets at once, so it would contribute to that many groups. Carried
+    /// (and rejected) here for the same reason `having` and `start_at` are:
+    /// drive owns the rejection regardless of which upstream path built the
+    /// request.
     pub resolved_time_ranges: &'a [ResolvedTimeRange],
     /// Request `limit` — the ranking's `k`. **Required**; there is no
     /// server default a verifying client could reproduce.
@@ -127,7 +129,7 @@ impl Drive {
     /// Errors:
     /// - Request-shape failures (wrong `group_by` arity, an `order_by`
     ///   that does not name the `select`'s aggregate, a missing or
-    ///   out-of-range `limit`, a `where` clause, a `having`) come back
+    ///   out-of-range `limit`, a malformed `where` pin, a `having`) come back
     ///   as `Error::Query(QuerySyntaxError::*)` —
     ///   see [`super::mode_detection::detect_ranked_mode_v0`] for the
     ///   full grammar.
@@ -142,15 +144,24 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentRankedResponse, Error> {
-        // Unreachable behind the empty-`where_clauses` rule `detect_ranked_mode`
-        // enforces below — a resolved equality is a where clause — but stated
-        // here so the ranked surface's exclusion of bucketed indexes is a
-        // rejection rather than a silent fallback to another index.
+        // Load-bearing, not a shape formality: `detect_ranked_mode` accepts
+        // equality pins, and a resolved bucket-start equality is an ordinary
+        // `==` clause on the bucketed source field, so nothing in the grammar
+        // stops it. Without this guard the request would fall through to
+        // index selection, where the picker excludes bucketed indexes —
+        // surfacing as a misleading "no covering index" error, or, if a plain
+        // ranked index happens to cover the same properties, matching it and
+        // answering a raw-timestamp question the caller never asked.
+        // Rejecting the provenance up front keeps the ranked surface's
+        // exclusion of bucketed indexes a precise refusal rather than a
+        // silent fallback to another index.
         if !request.resolved_time_ranges.is_empty() {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "a ranked query cannot carry a time-range (IN_TIME_RANGE) selection: ranking \
-                 groups by an index's only property, and a document belongs to every bucket \
-                 that contains its timestamp, so it would be ranked into several groups at once"
+                 reads a pre-built secondary keyed by document properties, and a document \
+                 belongs to every bucket that contains its timestamp — it would be ranked \
+                 into several groups at once — so bucketed (timeRange) indexes are excluded \
+                 from the ranked surface"
                     .to_string(),
             )));
         }
