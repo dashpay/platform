@@ -384,14 +384,13 @@ unwrapped copy is allocated.
   `SecretStoreError::InsecureParentDir` (the A1 guarantee depends on it).
   A read-only group-accessible parent (`0o750`) is accepted — it only
   leaks filenames, never the 0600-protected vault contents.
-  Each secret is capped at `MAX_SECRET_LEN` (8176 B = `2 * 4096 - 16`)
-  at the write boundary — still ~30× any mnemonic/seed/xpriv — so a
-  single oversized entry cannot inflate the shared document past the
-  read-side 128 MiB ceiling and brick every wallet on the next open.
-  The value is set by locked memory, not by the document: secrets live
-  in `mlock`ed pages, and 8176 is the largest secret whose stored
-  envelope still fits two guarded pages instead of a third. The full
-  budget — which path peaks, at what, against a 64 KiB
+  Each secret is capped at `MAX_SECRET_LEN` (8176 B) at the write
+  boundary — still ~30× any mnemonic/seed/xpriv — so a single oversized
+  entry cannot inflate the shared document past the read-side 128 MiB
+  ceiling and brick every wallet on the next open. The value is set by
+  locked memory, not by the document: secrets live in `mlock`ed pages,
+  and 8176 fits inside a single guarded page on every supported host.
+  The full budget — which path peaks, at what, against a 256 KiB
   `RLIMIT_MEMLOCK` — is documented at the constant and measured by
   `store::tests::file_reprotect_peak_matches_the_documented_budget`. (Through
   `SecretStore::set_secret`/`set` the user-facing plaintext cap is the
@@ -597,9 +596,11 @@ per-platform store crate versions are unconditionally in the lockfile
 and therefore unconditionally in audit scope. `memsec` (exact pin
 `=0.7.0`) deserves the closest reading of the set: it performs every
 page lock, every guard-page `mprotect`, and backs the crate's only
-`unsafe`, all inside `src/secrets/guarded.rs`. `region` is a
-**dev-dependency only** — the page-size query for the page-isolation
-tests — and is not in the production dependency graph.
+`unsafe`, all inside `src/secrets/guarded.rs`. `region` (exact pin
+`=3.0.2`) is a normal dependency enabled by the `secrets` feature and
+**is in the production dependency graph**: `verify_host_page_size` calls
+`region::page::size()` on every store construction, not only from the
+page-isolation tests. Its audit surface is that one query.
 
 ## Integration constraints
 
@@ -607,14 +608,34 @@ Guarded allocation is not free, and it constrains what a consuming
 binary may do. Three consequences, none of them visible from the public
 API:
 
-- **Every non-empty secret costs at least one locked page** (4 KiB),
-  plus guard pages of address space, however small it is — a 32-byte
-  AEAD key included. That is the price of the no-shared-page guarantee.
+- **Every non-empty secret costs at least one locked page** — 4 KiB on
+  x86-64/aarch64 Linux, 16 KiB on Apple Silicon and iOS — plus guard
+  pages of address space, however small it is: a 32-byte AEAD key
+  included. That is the price of the no-shared-page guarantee.
   Empty secrets are the one case optimised away: `SecretString::empty()`
   and an empty `SecretBytes` hold no allocation at all. Budget one page
   per live secret and check `RLIMIT_MEMLOCK` against it; if the limit is
   too low the locks fail open (see "Memory hygiene at the seam") and a
   `warn` is logged per affected allocation.
+- **The budget assumes 16 KiB pages and refuses a host with larger
+  ones.** `memsec` rounds each allocation to the page size the kernel
+  reports at run time, which a compile-time budget cannot see, so
+  `ASSUMED_PAGE_SIZE` (16 KiB) bounds the largest supported host rather
+  than describing the commonest. Every mainstream target passes: 4 KiB
+  x86-64 and aarch64 Linux, 16 KiB Apple Silicon and iOS. A larger-paged
+  host — a 64 KiB-page aarch64 RHEL/SLES build — is refused at store
+  construction with `SecretStoreError::HostPageSizeExceedsBudget` rather
+  than allowed to overrun its budget and fail open. On a 4 KiB host the
+  accounting is a deliberate over-estimate: the crate charges four times
+  what the kernel really locks.
+- **Nothing calls `getrlimit`.** `MEMLOCK_BUDGET` (256 KiB) is an
+  arithmetic ceiling the constants are asserted against at compile time,
+  not a limit checked against the host at run time. It is set far below
+  what hosts actually grant — systemd has defaulted
+  `DefaultLimitMEMLOCK` to 8 MiB for years, and a default Docker
+  container inherits it — but a consumer running under a deliberately
+  restrictive limit gets the fail-open path and a `warn`, not a refusal.
+  Check the limit at your own startup if that matters to you.
 - **No custom global allocator.** `memsec` takes its pages from the Rust
   global allocator and `mprotect`s them in place. A binary installing
   `mimalloc`/`jemalloc`/`snmalloc` may hand it pages whose allocator
