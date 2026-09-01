@@ -75,7 +75,7 @@ const PERSIST_RETRY_MAX_BACKOFF: std::time::Duration = std::time::Duration::from
 /// immediately — a fatal failure never retries. The sleep is async so it
 /// yields the Tokio worker instead of spinning the CPU, which is exactly
 /// what the storage layer's `FlushRetryable` contract asks callers to do.
-pub(super) async fn retry_transient<T, F>(mut op: F) -> Result<T, PersistenceError>
+pub(crate) async fn retry_transient<T, F>(mut op: F) -> Result<T, PersistenceError>
 where
     F: FnMut() -> Result<T, PersistenceError>,
 {
@@ -1395,15 +1395,28 @@ mod persist_retry_tests {
     /// the real contract: a transient `store` failure preserves the
     /// changeset in the buffer, so the retry re-drives the write through
     /// `flush`.
+    ///
+    /// `store` counts registration and identity-scan-verdict writes
+    /// separately. Registration ends with a best-effort `identity().sync()`,
+    /// so a successful registration issues a SECOND `store` carrying the scan
+    /// verdict; a single counter would make every assertion about the
+    /// registration write depend on unrelated discovery behaviour. The
+    /// changeset itself is the discriminator.
     #[derive(Default)]
     struct FaultyPersister {
-        store_calls: AtomicUsize,
+        /// Stores of the registration changeset.
+        registration_store_calls: AtomicUsize,
+        /// Stores of the identity-scan verdict published by `identity().sync()`.
+        scan_verdict_store_calls: AtomicUsize,
         flush_calls: AtomicUsize,
         load_calls: AtomicUsize,
-        /// The first `store` fails transiently (buffer preserved for retry).
+        /// The first registration `store` fails transiently (buffer preserved
+        /// for retry).
         store_transient_first: bool,
-        /// Every `store` fails fatally (must NOT retry).
+        /// Every registration `store` fails fatally (must NOT retry).
         store_fatal: bool,
+        /// Number of leading scan-verdict `store` calls that fail transiently.
+        scan_verdict_store_transient_failures: usize,
         /// Number of leading `flush` calls that fail transiently before Ok.
         flush_transient_failures: usize,
         /// Number of leading `load` calls that fail transiently before Ok.
@@ -1416,14 +1429,39 @@ mod persist_retry_tests {
         fn store(
             &self,
             _wallet_id: WalletId,
-            _changeset: PlatformWalletChangeSet,
+            changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
-            let n = self.store_calls.fetch_add(1, Ordering::SeqCst);
-            if self.store_fatal {
-                return Err(fatal());
+            // One changeset can carry both: `merge` folds a buffered
+            // registration write and a scan verdict into a single round. Each
+            // counter answers only its own question — "was this changeset
+            // handed over?" — so both increment. Letting the first match win
+            // would make an assertion about the registration write depend on
+            // whether discovery happened to be batched with it, which is the
+            // coupling these separate counters exist to remove.
+            let registration = changeset
+                .wallet_metadata
+                .is_some()
+                .then(|| self.registration_store_calls.fetch_add(1, Ordering::SeqCst));
+            let verdict = changeset
+                .identity_scan_state
+                .is_some()
+                .then(|| self.scan_verdict_store_calls.fetch_add(1, Ordering::SeqCst));
+
+            // The registration half decides a combined round's outcome: its
+            // failure aborts the whole registration, while a verdict's is
+            // swallowed.
+            if let Some(n) = registration {
+                if self.store_fatal {
+                    return Err(fatal());
+                }
+                if self.store_transient_first && n == 0 {
+                    return Err(transient());
+                }
             }
-            if self.store_transient_first && n == 0 {
-                return Err(transient());
+            if let Some(n) = verdict {
+                if n < self.scan_verdict_store_transient_failures {
+                    return Err(transient());
+                }
             }
             Ok(())
         }
@@ -1483,7 +1521,7 @@ mod persist_retry_tests {
             .map(|_| ())
     }
 
-    /// QA-001: a transient `store` failure is ridden out — the persister
+    /// A transient `store` failure is ridden out — the persister
     /// buffers the changeset, the retry re-drives it via `flush`, and
     /// registration succeeds instead of aborting.
     #[tokio::test]
@@ -1500,11 +1538,18 @@ mod persist_retry_tests {
             .expect("registration must succeed after retrying the transient store");
 
         // store attempted once; flush retried twice (fail, then succeed).
-        assert_eq!(persister.store_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(persister.registration_store_calls.load(Ordering::SeqCst), 1);
         assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 2);
+        // Registration ends in `identity().sync()`, whose scan publishes its
+        // verdict — the write that makes a partial scan survive a restart.
+        assert_eq!(
+            persister.scan_verdict_store_calls.load(Ordering::SeqCst),
+            1,
+            "a completed registration must publish the identity-scan verdict"
+        );
     }
 
-    /// QA-001 / QA-002: a fatal `store` failure fails fast — no retry — and
+    /// A fatal `store` failure fails fast — no retry — and
     /// surfaces as the typed `PersisterStore` whose inner classification is
     /// non-transient.
     #[tokio::test]
@@ -1526,15 +1571,20 @@ mod persist_retry_tests {
             ),
             other => panic!("expected PersisterStore, got {other:?}"),
         }
-        assert_eq!(persister.store_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(persister.registration_store_calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             persister.flush_calls.load(Ordering::SeqCst),
             0,
             "a fatal store must not be retried via flush"
         );
+        assert_eq!(
+            persister.scan_verdict_store_calls.load(Ordering::SeqCst),
+            0,
+            "an aborted registration never reaches the discovery scan"
+        );
     }
 
-    /// QA-001 bounds + QA-002: a store that stays transient exhausts the
+    /// A store that stays transient exhausts the
     /// bounded retry budget and returns the typed `PersisterStore` still
     /// carrying transient classification (distinguishable from the fatal
     /// case above).
@@ -1559,11 +1609,16 @@ mod persist_retry_tests {
             other => panic!("expected PersisterStore, got {other:?}"),
         }
         // 1 store + 3 flush retries == 4 total attempts (the budget).
-        assert_eq!(persister.store_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(persister.registration_store_calls.load(Ordering::SeqCst), 1);
         assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            persister.scan_verdict_store_calls.load(Ordering::SeqCst),
+            0,
+            "an aborted registration never reaches the discovery scan"
+        );
     }
 
-    /// QA-001: a transient `load` blip during rehydration is retried (an
+    /// A transient `load` blip during rehydration is retried (an
     /// idempotent read), so registration succeeds.
     #[tokio::test]
     async fn transient_load_failure_is_retried_and_succeeds() {
@@ -1577,12 +1632,17 @@ mod persist_retry_tests {
             .await
             .expect("registration must succeed after retrying the transient load");
 
-        assert_eq!(persister.store_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(persister.registration_store_calls.load(Ordering::SeqCst), 1);
         assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 0);
         assert_eq!(persister.load_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            persister.scan_verdict_store_calls.load(Ordering::SeqCst),
+            1,
+            "a completed registration must publish the identity-scan verdict"
+        );
     }
 
-    /// QA-002: a fatal `load` fails fast and surfaces as the typed
+    /// A fatal `load` fails fast and surfaces as the typed
     /// `PersisterLoad` — never the flattened `WalletCreation(String)`.
     #[tokio::test]
     async fn fatal_load_failure_surfaces_as_persister_load() {
@@ -1607,7 +1667,56 @@ mod persist_retry_tests {
         );
     }
 
-    /// QA-002 / QA-005: the typed persister-phase variants preserve retry
+    /// A transient failure persisting the identity-scan verdict is ridden out
+    /// on the same bounded policy the registration write uses, so a merely
+    /// busy backend does not cost the verdict its survival across a restart
+    /// (dashpay/platform#4365).
+    #[tokio::test]
+    async fn should_retry_a_transient_scan_verdict_store() {
+        let persister = Arc::new(FaultyPersister {
+            scan_verdict_store_transient_failures: 1,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        register(&manager)
+            .await
+            .expect("a retried scan-verdict store must not disturb registration");
+
+        assert_eq!(
+            persister.scan_verdict_store_calls.load(Ordering::SeqCst),
+            1,
+            "the verdict is handed over once; the retry re-drives it via flush"
+        );
+        assert_eq!(
+            persister.flush_calls.load(Ordering::SeqCst),
+            1,
+            "the transient verdict store must be retried through flush"
+        );
+    }
+
+    /// Retrying the verdict never escalates into failing the scan that just
+    /// succeeded: once the budget is spent the outcome is logged and dropped,
+    /// and registration still returns Ok.
+    #[tokio::test]
+    async fn should_not_fail_registration_when_the_scan_verdict_never_persists() {
+        let persister = Arc::new(FaultyPersister {
+            scan_verdict_store_transient_failures: usize::MAX,
+            flush_transient_failures: usize::MAX,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        register(&manager)
+            .await
+            .expect("an unpersistable verdict must never fail wallet registration");
+
+        // 1 store + 3 flush retries == the shared 4-attempt budget.
+        assert_eq!(persister.scan_verdict_store_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 3);
+    }
+
+    /// The typed persister-phase variants preserve retry
     /// classification, enable structural matching, and keep the `#[source]`
     /// chain instead of flattening to a string.
     #[test]

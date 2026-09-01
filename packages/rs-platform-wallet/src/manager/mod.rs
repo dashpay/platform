@@ -11,6 +11,11 @@ pub mod shielded_sync;
 pub mod startup;
 mod wallet_lifecycle;
 
+/// Re-exported so the identity-scan verdict publishers under `wallet::`
+/// retry on the same policy the registration path uses. The module itself
+/// stays private — this is the only item it owes the rest of the crate.
+pub(crate) use wallet_lifecycle::retry_transient;
+
 use std::sync::Arc;
 use std::time::Duration;
 
