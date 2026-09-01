@@ -302,6 +302,26 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     pub async fn finalize_transaction<S: TransactionSigner + ?Sized + Sync>(
         &self,
         builder: TransactionBuilder,
+        sources: &[AccountTypePreference],
+        source_index: u32,
+        signer: &S,
+    ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+        self.finalize_transaction_with_options(builder, sources, source_index, signer, false)
+            .await
+    }
+
+    /// `reservation_only` funds through
+    /// [`TransactionBuilder::add_funding_reservation_only`]: the sources take on
+    /// their reservation bookkeeping but offer no candidates, so the build spends
+    /// only the inputs already seeded on the builder.
+    ///
+    /// A caller draining an account in batches under the standard-transaction
+    /// input limit needs it — ordinary funding offers the whole account on top of
+    /// the batch, so every batch trips the cap and an account above it can never
+    /// be drained.
+    pub async fn finalize_transaction_with_options<S: TransactionSigner + ?Sized + Sync>(
+        &self,
+        builder: TransactionBuilder,
         // The funding sources to POOL, in order — the first supplies the
         // change address. A plain send passes [`SEND_FUNDING_SOURCES`]
         // (BIP44 + BIP32 + every DashPay receiving account); a single-element
@@ -311,6 +331,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         sources: &[AccountTypePreference],
         source_index: u32,
         signer: &S,
+        reservation_only: bool,
     ) -> Result<SignedCoreTransaction, PlatformWalletError> {
         let primary = *sources.first().ok_or_else(|| {
             PlatformWalletError::TransactionBuild("no funding sources named".into())
@@ -375,7 +396,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                             paths.insert(utxo.address.clone(), path);
                         }
                     }
-                    builder = builder.add_funding(managed, account);
+                    builder = if reservation_only {
+                        builder.add_funding_reservation_only(managed, account)
+                    } else {
+                        builder.add_funding(managed, account)
+                    };
                     offered_accounts.push(at);
                 }
                 // A strict single-source SET selector (a DashPay preference
