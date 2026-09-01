@@ -117,7 +117,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `serialQueue`: every public entry point wraps its body in
     /// `onQueue { … }`, and internal helpers (`upsertTransaction`,
     /// `markUtxoSpent`, …) assume they are already on the queue.
-    private let backgroundContext: ModelContext
+    /// Internal only so the read-only diagnostics extension can take its
+    /// snapshot on the same serialized context as the persistence callbacks.
+    /// Production persistence code must continue to enter through `onQueue`.
+    let backgroundContext: ModelContext
 
     /// Taken instead of `backgroundContext.fetch` by the reads whose
     /// failure must reject the round (see `ModelFetching`).
@@ -135,7 +138,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// entry points — both the FFI callback shims and the
     /// app-facing accessors — funnel through `onQueue` so the
     /// context is only ever touched on this queue.
-    private let serialQueue = DispatchQueue(
+    /// Internal only so diagnostics can enqueue an asynchronous, read-only
+    /// snapshot without blocking the main actor. All mutations remain in this
+    /// file's persistence callbacks.
+    let serialQueue = DispatchQueue(
         label: "org.dash.platform-wallet.persistence",
         qos: .userInitiated
     )
@@ -227,9 +233,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ///
     /// The pool goes inside the `sync` so it wraps exactly one unit of work
     /// and is drained before the Rust caller is resumed.
-    private func onQueue<T>(_ body: () throws -> T) rethrows -> T {
+    /// Internal only for the read-only diagnostics extension. Keeping the
+    /// diagnostic reads on this queue gives each exported snapshot a coherent
+    /// view and prevents it racing an in-flight Rust changeset save.
+    func onQueue<T>(_ body: () throws -> T) rethrows -> T {
         try serialQueue.sync {
             try autoreleasepool { try body() }
+        }
+    }
+
+    /// Clears pre-restore diagnostic values that were not consumed by a
+    /// successful post-restore comparison. Safe to call from manager failure
+    /// and skipped-wallet paths; do not call recursively while `serialQueue`
+    /// is already held.
+    func clearStartupCoreDiagnosticSnapshots() {
+        onQueue {
+            startupCoreDiagnosticSnapshots.removeAll(keepingCapacity: true)
         }
     }
 
@@ -5175,6 +5194,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             ]
         )
         return onQueue {
+        // Start every bulk attempt from an empty cache. Retain the snapshots
+        // only when the complete FFI buffer is handed back successfully;
+        // every validation/fetch/allocation failure exits through this defer.
+        startupCoreDiagnosticSnapshots.removeAll(keepingCapacity: true)
+        var preserveStartupDiagnosticSnapshots = false
+        defer {
+            if !preserveStartupDiagnosticSnapshots {
+                startupCoreDiagnosticSnapshots.removeAll(keepingCapacity: true)
+            }
+        }
         healIdentityIsLocalFlags()
         // Scope the fetch to the handler's bound network so a
         // per-network manager only sees its own wallets. If
@@ -5220,6 +5249,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 fields: ["wallet_count": .integer(0)]
             )
             return (nil, 0, false)
+        }
+
+        // Capture the durable source-of-truth before any bytes cross the FFI
+        // boundary. We are already on `serialQueue`, so call the on-queue
+        // implementation directly (the public wrapper would deadlock by
+        // recursively entering `serialQueue.sync`).
+        for wallet in restorable {
+            emitCoreWalletDatabaseDiagnosticsOnQueue(
+                walletId: wallet.walletId,
+                checkpoint: .startupPreRestore
+            )
         }
 
         // Single bucketed fetch of every unspent `PersistentTxo` so
@@ -5345,6 +5385,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 guard row.account != nil else { continue }
                 let key: Data
                 if !row.walletId.isEmpty {
+                    // Keep a denorm-scoped row even when its account
+                    // relationship is missing. `buildUtxoRestoreBuffer`
+                    // still skips it exactly as before, while the adjacent
+                    // diagnostic summary can now report the rejection instead
+                    // of silently losing the evidence.
                     key = row.walletId
                 } else if let account = row.account {
                     // `account.wallet` is non-optional on the
@@ -5581,6 +5626,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 rows: unspentBuckets[w.walletId] ?? [],
                 allocation: allocation
             )
+            logCoreRestoreBufferSnapshotOnQueue(
+                walletId: w.walletId,
+                rows: unspentBuckets[w.walletId] ?? [],
+                emittedCount: utxoCount,
+                errored: utxoErrored
+            )
             // `buildUtxoRestoreBuffer` already deallocated its own
             // buffer on the errored path; release everything else
             // we've accumulated and abort the load callback so Rust
@@ -5672,6 +5723,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             category: .persistence,
             fields: ["wallet_count": .integer(Int64(restorable.count))]
         )
+        preserveStartupDiagnosticSnapshots = true
         return (typed, restorable.count, false)
         }  // onQueue
     }

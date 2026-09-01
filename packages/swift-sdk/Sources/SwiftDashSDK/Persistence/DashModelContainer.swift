@@ -3,6 +3,37 @@ import SwiftData
 
 /// Factory for creating SwiftData model containers for Dash Platform persistence
 public enum DashModelContainer {
+    private struct StoreFileSizes {
+        let main: UInt64
+        let wal: UInt64
+        let shm: UInt64
+
+        var total: UInt64 {
+            [main, wal, shm].reduce(0) { partial, value in
+                let (sum, overflow) = partial.addingReportingOverflow(value)
+                return overflow ? UInt64.max : sum
+            }
+        }
+    }
+
+    /// SQLite's durable state can be mostly in the WAL immediately after an
+    /// app kill, so the main file alone is not a useful corruption signal.
+    /// Read only sizes and never include any component of the device path.
+    private static func storeFileSizes(at storeURL: URL) -> StoreFileSizes {
+        func fileSize(at url: URL) -> UInt64 {
+            guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+                  size >= 0
+            else { return 0 }
+            return UInt64(size)
+        }
+
+        return StoreFileSizes(
+            main: fileSize(at: storeURL),
+            wal: fileSize(at: URL(fileURLWithPath: storeURL.path + "-wal")),
+            shm: fileSize(at: URL(fileURLWithPath: storeURL.path + "-shm"))
+        )
+    }
+
     /// Every registered schema version's model list, parameterised on the
     /// one model whose shape differs between versions.
     ///
@@ -97,12 +128,79 @@ public enum DashModelContainer {
         )
 
         // Always wire the migration plan so stores created by an older SDK
-        // advance through the registered versioned schemas.
-        return try ModelContainer(
-            for: schema,
-            migrationPlan: DashMigrationPlan.self,
-            configurations: [modelConfiguration]
-        )
+        // advance through the registered versioned schemas. Record only
+        // metadata about the store — never its device path.
+        let storeURL = modelConfiguration.url
+        let existedBefore = FileManager.default.fileExists(atPath: storeURL.path)
+        let sizeBefore = storeFileSizes(at: storeURL)
+        let started = CFAbsoluteTimeGetCurrent()
+        do {
+            let container = try ModelContainer(
+                for: schema,
+                migrationPlan: DashMigrationPlan.self,
+                configurations: [modelConfiguration]
+            )
+            let sizeAfter = storeFileSizes(at: storeURL)
+            SDKLogger.event(
+                "core_store_open_result",
+                category: .persistence,
+                fields: [
+                    "container_result": .publicText("opened"),
+                    "container_reused": .boolean(false),
+                    "duration_ms": .unsignedInteger(UInt64(max(
+                        0,
+                        Int((CFAbsoluteTimeGetCurrent() - started) * 1_000)
+                    ))),
+                    "migration_result": .publicText(
+                        existedBefore ? "store_open_succeeded" : "not_required_new_store"
+                    ),
+                    "result": .publicText("success"),
+                    "store_existed_before_open": .boolean(existedBefore),
+                    "store_main_size_bytes_after": .unsignedInteger(sizeAfter.main),
+                    "store_main_size_bytes_before": .unsignedInteger(sizeBefore.main),
+                    "store_shm_size_bytes_after": .unsignedInteger(sizeAfter.shm),
+                    "store_shm_size_bytes_before": .unsignedInteger(sizeBefore.shm),
+                    "store_size_bytes_after": .unsignedInteger(sizeAfter.total),
+                    "store_size_bytes_before": .unsignedInteger(sizeBefore.total),
+                    "store_wal_size_bytes_after": .unsignedInteger(sizeAfter.wal),
+                    "store_wal_size_bytes_before": .unsignedInteger(sizeBefore.wal),
+                ]
+            )
+            return container
+        } catch {
+            let sizeAfter = storeFileSizes(at: storeURL)
+            SDKLogger.event(
+                "core_store_open_result",
+                category: .persistence,
+                severity: .error,
+                fields: [
+                    "container_result": .publicText("open_failed"),
+                    "container_reused": .boolean(false),
+                    "duration_ms": .unsignedInteger(UInt64(max(
+                        0,
+                        Int((CFAbsoluteTimeGetCurrent() - started) * 1_000)
+                    ))),
+                    "migration_result": .publicText(
+                        existedBefore
+                            ? "store_open_or_migration_failed"
+                            : "not_attempted_new_store_create_failed"
+                    ),
+                    "result": .publicText("failure"),
+                    "store_existed_before_open": .boolean(existedBefore),
+                    "store_main_size_bytes_after": .unsignedInteger(sizeAfter.main),
+                    "store_main_size_bytes_before": .unsignedInteger(sizeBefore.main),
+                    "store_shm_size_bytes_after": .unsignedInteger(sizeAfter.shm),
+                    "store_shm_size_bytes_before": .unsignedInteger(sizeBefore.shm),
+                    "store_size_bytes_after": .unsignedInteger(sizeAfter.total),
+                    "store_size_bytes_before": .unsignedInteger(sizeBefore.total),
+                    "store_wal_size_bytes_after": .unsignedInteger(sizeAfter.wal),
+                    "store_wal_size_bytes_before": .unsignedInteger(sizeBefore.wal),
+                ],
+                error: error,
+                redacting: [storeURL.path]
+            )
+            throw error
+        }
     }
 
     /// Create an in-memory model container for testing

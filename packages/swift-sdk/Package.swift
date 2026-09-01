@@ -32,7 +32,8 @@ let package = Package(
         .testTarget(
             name: "SwiftDashSDKTests",
             dependencies: ["SwiftDashSDK"],
-            path: "SwiftTests/SwiftDashSDKTests"
+            path: "SwiftTests/SwiftDashSDKTests",
+            resources: [.copy("Fixtures")]
         ),
 
         // Integration tests against a local dashmate devnet.

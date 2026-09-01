@@ -491,6 +491,17 @@ public class PlatformWalletManager: ObservableObject {
         }
     }
 
+    /// Diagnostics use the same admission/drain contract as other background
+    /// native work: once admitted, shutdown cannot consume the manager handle
+    /// until the read-only snapshot has finished on `destroyQueue`.
+    func admitCoreDiagnosticsNativeOp() throws {
+        try admitNativeOp("coreWalletDiagnostics")
+    }
+
+    func finishCoreDiagnosticsNativeOp() {
+        finishNativeOp()
+    }
+
     /// Test seam for the individual native calls. Production keeps `.live`;
     /// tests replace the function table while still running the production
     /// teardown orchestration end-to-end.
@@ -1287,6 +1298,8 @@ public class PlatformWalletManager: ObservableObject {
     /// `createWallet` flow.
     @discardableResult
     public func loadFromPersistor() throws -> [ManagedPlatformWallet] {
+        let diagnosticPersistenceHandler = persistenceHandler
+        defer { diagnosticPersistenceHandler?.clearStartupCoreDiagnosticSnapshots() }
         // Same synchronous-admission gate as the sync creates: rejected
         // during the shutdown drain AND while an async native op is in
         // flight — a second Rust loader running concurrently with the one
@@ -1367,6 +1380,13 @@ public class PlatformWalletManager: ObservableObject {
                     error: error
                 )
             }
+        }
+
+        for managedWallet in restored {
+            emitCoreWalletDiagnosticsSynchronously(
+                for: managedWallet.walletId,
+                checkpoint: .startupPostRestore
+            )
         }
 
         // Kick off a background catch-up pass for every persisted
@@ -1510,12 +1530,13 @@ public class PlatformWalletManager: ObservableObject {
     /// and once admitted the teardown waits for the full transaction.
     @discardableResult
     public func loadFromPersistor() async throws -> [ManagedPlatformWallet] {
+        let handler = persistenceHandler
+        defer { handler?.clearStartupCoreDiagnosticSnapshots() }
         try ensureConfigured()
         try admitNativeOp("loadFromPersistor")
         defer { finishNativeOp() }
 
         let h = handle
-        let handler = persistenceHandler
         let calls = nativeLoadCalls
 
         // Direct continuation for the same FIFO reason as the async
@@ -1587,6 +1608,13 @@ public class PlatformWalletManager: ObservableObject {
                 "wallet_count": .integer(Int64(restored.count)),
             ]
         )
+
+        for managedWallet in restored {
+            await emitCoreWalletDiagnostics(
+                for: managedWallet.walletId,
+                checkpoint: .startupPostRestore
+            )
+        }
 
         catchUpStuckAssetLocks(wallets: restored)
         return restored
