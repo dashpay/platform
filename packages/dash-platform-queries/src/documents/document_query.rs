@@ -876,6 +876,7 @@ fn encode_v1(
             // deciding here which paths may carry an offset would put
             // a second copy of that rule in the SDK.
             offset,
+            chained: None,
         })),
     })
 }

@@ -185,10 +185,45 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// amount plus input 0's retained fee reserve. Refresh the shield
     /// preflight and ask the user to confirm the new capacity.
     case errorShieldedInsufficientBalance = 41
-    // Persister failure classes (48-49) — claimed from the error-code
+    /// RESERVED — the Rust side has no code path that produces this today, so
+    /// it does not currently cross the boundary. It is the TERMINAL form of
+    /// the double-spend verdict: the tracked asset-lock transaction spends an
+    /// outpoint a different, already-confirmed transaction of the same wallet
+    /// spent first, AND that spender's block is proven to be on the finalized
+    /// chain. The proof is what is missing — chainlock contexts and the
+    /// wallet's applied chainlock height are height-based promotion artifacts,
+    /// not evidence of finalized ancestry — so every detection reports
+    /// `errorAssetLockInputContested` (48) instead, chainlocked-looking
+    /// spenders included. Kept pinned so the slot stays stable for hosts and
+    /// for the future emitter, which would carry the same meaning: the one
+    /// code that lets a host discard the asset lock and rebuild from
+    /// currently-unspent inputs. Read nothing into its absence.
+    case errorAssetLockInputConflict = 47
+    /// A confirmed transaction of this wallet already spent one of the tracked
+    /// lock's inputs — typically a restored wallet whose rescan resurrected a
+    /// UTXO one of its own earlier asset locks had already consumed. Peers drop
+    /// such a double spend without replying, so the lock cannot confirm while
+    /// that spender stands and an unbounded proof wait would hang. The resume
+    /// still runs — the sighting bounds that wait rather than replacing it, so
+    /// the lock was (re-)broadcast and waited on (a `Broadcast`-status lock
+    /// was also sent on an earlier call) — and this is what the bounded wait
+    /// expired with. This is the ONLY double-spend code the SDK emits, and it
+    /// is PROVISIONAL: no discard licence, keep the lock tracked and retry
+    /// later. A later chainlock does not upgrade it to 47 today; what a retry
+    /// can resolve is a reorg dropping the sibling. Repetition licenses
+    /// nothing either — a conflict that persists across sessions still does
+    /// not prove finalized ancestry. Its absence is not proof of liveness —
+    /// the Rust-side scan cannot see conflicts whose spender was already
+    /// pruned.
+    case errorAssetLockInputContested = 48
+    // Persister failure classes (49-50) — claimed from the error-code
     // registry's allocation frontier; these raw values are hand-mirrored ABI.
+    // errorPersisterTransient was originally 48; merged #4356 took 48 for
+    // errorAssetLockInputContested on 2026-08-31, so it moved to 50 — see
+    // the registry's row 50. errorPersisterFatal was never contested and
+    // keeps 49.
     /// A persister operation failed transiently; callers may retry.
-    case errorPersisterTransient = 48
+    case errorPersisterTransient = 50
     /// A persister operation failed permanently; callers must not retry.
     case errorPersisterFatal = 49
     /// The named thing does not exist. Besides the handle/lookup failures this
@@ -298,6 +333,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorContestedNameNotTradable
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INSUFFICIENT_BALANCE:
             self = .errorShieldedInsufficientBalance
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONFLICT:
+            self = .errorAssetLockInputConflict
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED:
+            self = .errorAssetLockInputContested
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -500,6 +539,39 @@ public enum PlatformWalletError: LocalizedError {
     /// `endsAtMs == 0` means the vote's end time was unavailable — show it
     /// as unknown rather than as "ends at the epoch".
     case contestedNameNotTradable(label: String, endsAtMs: UInt64)
+    /// RESERVED, and never produced today: the TERMINAL double-spend verdict,
+    /// which would additionally attest that the confirmed spender's block is
+    /// on the finalized chain. The wallet cannot prove that (chainlock
+    /// contexts and the applied chainlock height are height-based promotion
+    /// artifacts, not ancestry proofs), so every detection arrives as
+    /// `assetLockInputContested`. The case is kept so the FFI code stays
+    /// mapped and hosts that already branch on it keep compiling; if it ever
+    /// ships it means what it always meant — unlike
+    /// `transactionBroadcastUnconfirmed`, where the transaction may well be
+    /// alive and discarding it would strand real funds, this is the one
+    /// asset-lock error that lets a host discard the lock and rebuild it from
+    /// currently-unspent inputs. The message names the lock's outpoint, the
+    /// conflicting input, the confirmed spender, and that spender's finality.
+    case assetLockInputConflict(String)
+    /// The tracked asset lock spends an outpoint a different,
+    /// already-confirmed transaction of this wallet spent first, so no peer
+    /// will relay it while that spender stands. The resume still ran — it
+    /// re-broadcast and waited for a proof under a bounded timeout, and this
+    /// is what the wait expired with. A `Broadcast`-status lock was also
+    /// already sent on an earlier call, so this is not a claim that nothing
+    /// ever reached the network.
+    ///
+    /// The only double-spend verdict the SDK emits, and PROVISIONAL: the
+    /// tracked lock must NOT be discarded on this error. A conflict that
+    /// persists across sessions still does not prove finalized ancestry —
+    /// the sighting can even be a block record restored from a previous
+    /// session whose block was reorganized out while the wallet was offline.
+    /// Keep the tracked lock and continue treating this result as retryable;
+    /// only `assetLockInputConflict`, or an independent finalized-ancestry
+    /// proof, may authorize discarding it. No funds move either way: the
+    /// confirmed spender is this wallet's own transaction, so the value
+    /// behind the contested input lives on in it.
+    case assetLockInputContested(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -537,6 +609,8 @@ public enum PlatformWalletError: LocalizedError {
              .staleReservationToken(let m), .reservationTokenConsumed(let m),
              .reservationWalletMismatch(let m),
              .notForSale(let m),
+             .assetLockInputConflict(let m),
+             .assetLockInputContested(let m),
              .notFound(let m), .unknown(let m):
             return m
         // The three value-carrying marketplace rejections compose their
@@ -653,6 +727,18 @@ public enum PlatformWalletError: LocalizedError {
             } else {
                 self = .unknown(detail)
             }
+        // Both double-spend codes carry the typed `Display` rendering, not a
+        // JSON detail object: it already names the asset-lock outpoint, the
+        // conflicting input, the confirmed spender's txid and that spender's
+        // finality, and reads as a sentence, so they pass through like the
+        // other prose-message codes. Which verdict was reached is the CODE's
+        // meaning, not the string's — hosts must branch on the case, not on
+        // text matching. In practice only 48 arrives; 47 is reserved and has
+        // no emitter, and is mapped here so it stays typed if that changes.
+        case .errorAssetLockInputConflict:
+            self = .assetLockInputConflict(detail)
+        case .errorAssetLockInputContested:
+            self = .assetLockInputContested(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

@@ -34,7 +34,7 @@ final class ErrorHandlingTests: XCTestCase {
     }
 
     func testPersisterFFIResultMappingsRemainDistinguishable() {
-        XCTAssertEqual(PlatformWalletResultCode.errorPersisterTransient.rawValue, 48)
+        XCTAssertEqual(PlatformWalletResultCode.errorPersisterTransient.rawValue, 50)
         XCTAssertEqual(PlatformWalletResultCode.errorPersisterFatal.rawValue, 49)
         XCTAssertEqual(
             PlatformWalletResultCode(

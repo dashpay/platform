@@ -165,6 +165,10 @@ public struct DataContractParser {
                 docType.documentsMutable = mutable
             }
 
+            if let indexOnly = typeDict["indexOnly"] as? Bool {
+                docType.indexOnly = indexOnly
+            }
+
             // The actual field name is just "canBeDeleted" not "documentsCanBeDeleted"
             if let canDelete = typeDict["canBeDeleted"] as? Bool {
                 docType.documentsCanBeDeleted = canDelete
@@ -276,6 +280,53 @@ public struct DataContractParser {
 
             if let nullSearchable = indexData["nullSearchable"] as? Bool {
                 index.nullSearchable = nullSearchable
+            }
+
+            // Protocol v14 index keywords, persisted VERBATIM as authored.
+            // Interpreting the spellings (countable's bool-or-string forms,
+            // the averageable desugar, the indexOnly $ownerId terminal
+            // default) is DPP protocol logic that stays out of the SDK -
+            // display layers apply it for presentation.
+            if let countableBool = indexData["countable"] as? Bool {
+                index.countable = countableBool ? "true" : "false"
+            } else if let countableString = indexData["countable"] as? String {
+                index.countable = countableString
+            }
+            if let rangeCountable = indexData["rangeCountable"] as? Bool {
+                index.rangeCountable = rangeCountable
+            }
+            if let summable = indexData["summable"] as? String {
+                index.summable = summable
+            }
+            if let rangeSummable = indexData["rangeSummable"] as? Bool {
+                index.rangeSummable = rangeSummable
+            }
+            if let averageable = indexData["averageable"] as? String {
+                index.averageable = averageable
+            }
+            if let rangeAverageable = indexData["rangeAverageable"] as? Bool {
+                index.rangeAverageable = rangeAverageable
+            }
+            if let rankedCountable = indexData["rankedCountable"] as? Bool {
+                index.rankedCountable = rankedCountable
+            }
+            if let rankedSummable = indexData["rankedSummable"] as? Bool {
+                index.rankedSummable = rankedSummable
+            }
+            if let rankedAverageable = indexData["rankedAverageable"] as? Bool {
+                index.rankedAverageable = rankedAverageable
+            }
+            if let terminal = indexData["terminal"] as? String {
+                index.terminal = terminal
+            }
+            if let preallocated = indexData["preallocated"] as? Bool {
+                index.preallocated = preallocated
+            }
+
+            // Time-range bucketing transform
+            if let timeRange = indexData["timeRange"] as? [String: Any],
+               let timeRangeData = try? JSONSerialization.data(withJSONObject: timeRange, options: []) {
+                index.timeRangeJSON = timeRangeData
             }
 
             // Handle contested - can be bool or object

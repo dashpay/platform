@@ -20,6 +20,9 @@ pub struct DriveDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub query_documents: FeatureVersion,
+    /// Chained document queries (provable semi-join): the version slot
+    /// shared by the no-proof and the two-proof execution paths.
+    pub query_chained_documents: FeatureVersion,
     pub query_contested_documents: FeatureVersion,
     pub query_contested_documents_vote_state: FeatureVersion,
     pub query_documents_with_flags: FeatureVersion,
@@ -136,6 +139,13 @@ pub struct DriveDocumentDeleteMethodVersions {
     pub delete_document_for_contract_id_with_named_type_operations: FeatureVersion,
     pub delete_document_for_contract_with_named_type_operations: FeatureVersion,
     pub delete_document_for_contract_operations: FeatureVersion,
+    /// indexOnly delete-by-values (dormant slot: present in every table at 0;
+    /// only reachable for indexOnly document types, which cannot exist below
+    /// PV14).
+    pub delete_index_only_document_for_contract_operations: FeatureVersion,
+    /// The fee-applying indexOnly deletion wrapper (dormant slot, 0 in
+    /// every table; only reachable for indexOnly document types).
+    pub delete_index_only_document_for_contract: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

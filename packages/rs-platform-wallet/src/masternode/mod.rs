@@ -12,6 +12,7 @@ pub mod list;
 pub mod locator;
 pub mod record;
 pub mod tracked;
+pub mod update_service;
 
 pub use list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
 pub use locator::{
@@ -28,6 +29,10 @@ pub use record::{
 pub use tracked::{
     capabilities_for_roles, snapshot_from_json, snapshot_to_json, MasternodeCapabilities,
     PlatformKeySnapshot, RegistrationDetails, TrackedMasternode, TrackedMasternodeSnapshot,
+};
+pub use update_service::{
+    execute_masternode_update_service, prepare_masternode_update_service,
+    MasternodeUpdateServiceParams,
 };
 
 use crate::changeset::PlatformWalletPersistence;

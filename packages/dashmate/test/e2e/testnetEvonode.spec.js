@@ -186,7 +186,6 @@ describe('Testnet Evonode', function main() {
 
       const json = await response.json();
 
-      // eslint-disable-next-line no-unused-expressions
       expect(json.result).to.be.defined;
 
       const scope = JSON.parse(json.result);

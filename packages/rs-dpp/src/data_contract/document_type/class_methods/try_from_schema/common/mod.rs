@@ -209,6 +209,14 @@ pub(super) struct ParserGeneration {
     /// earlier generations ignore it exactly as they ignore every other
     /// doctype-level keyword they predate.
     pub admit_index_terminal: bool,
+    /// Whether the index grammar admits the `preallocated` keyword
+    /// (refersTo-determined indexOnly indexes). Forwarded to
+    /// [`Index::try_from_value_map`] exactly like the admissions above.
+    pub admit_index_preallocated: bool,
+    /// Whether the index grammar admits the `skipIfAbsent` keyword
+    /// (conditional-participation indexOnly indexes). Forwarded to
+    /// [`Index::try_from_value_map`] exactly like the admissions above.
+    pub admit_index_skip_if_absent: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -385,6 +393,14 @@ struct CoreParseContext<'a> {
     /// behind `#[cfg(feature = "validation")]`: a build that compiled none of
     /// those checks in has nothing to skip.
     full_validation: bool,
+    /// Whether the document type being parsed declared `indexOnly: true`.
+    /// Read by [`parse_indices`] to default an omitted index `terminal` to
+    /// `$ownerId` BEFORE the index structure is built — the level info
+    /// stamps the terminal off the `Index`, and the write path reads it off
+    /// the level, so the structure must be born already normalized. Only a
+    /// generation admitting the keyword can ever pass `true` (the caller
+    /// reads it off the schema); generations 1 and 2 always pass `false`.
+    index_only: bool,
     generation: &'a ParserGeneration,
     platform_version: &'a PlatformVersion,
 }
@@ -444,6 +460,7 @@ pub(super) fn parse_document_type_core(
     token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
     data_contact_config: &DataContractConfig,
     full_validation: bool, // we don't need to validate if loaded from state
+    index_only: bool,
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     generation: &ParserGeneration,
     platform_version: &PlatformVersion,
@@ -456,6 +473,7 @@ pub(super) fn parse_document_type_core(
         token_configurations,
         data_contact_config,
         full_validation,
+        index_only,
         generation,
         platform_version,
     };
@@ -838,6 +856,8 @@ fn parse_indices(
                             ranked: ctx.generation.admit_ranked,
                             time_range: ctx.generation.admit_time_range,
                             terminal: ctx.generation.admit_index_terminal,
+                            preallocated: ctx.generation.admit_index_preallocated,
+                            skip_if_absent: ctx.generation.admit_index_skip_if_absent,
                         },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -1082,6 +1102,24 @@ fn parse_indices(
         })
         .transpose()?
         .unwrap_or_default();
+
+    // INDEX ONLY: an omitted `terminal` on an indexOnly document type means
+    // `$ownerId`. Normalize before the index structure is built below — the
+    // level info stamps the terminal off the `Index` and the write path
+    // reads it off the level, so the structure must be born normalized.
+    // Doing it here also keeps every downstream consumer (the walkers, the
+    // query planner, the update-immutability comparison) reading one
+    // canonical spelling: both spellings of the same index parse to equal
+    // `Index` values. `apply_index_only` then validates the normalized set.
+    let mut indices = indices;
+    if ctx.index_only {
+        use crate::document::property_names::OWNER_ID;
+        for index in indices.values_mut() {
+            if index.terminal.is_none() {
+                index.terminal = Some(OWNER_ID.to_string());
+            }
+        }
+    }
 
     // Cross-index structural check owned by the generation, exactly like
     // the per-property key-length check above: generations whose index
@@ -1898,6 +1936,37 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // Same for `preallocated`: only an indexOnly index's trees are cheap
+        // permanent structure whose member entries carry the data — on a
+        // normal document type the trees hold references to stored rows and
+        // the preallocation/no-prune contract has no meaning.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.preallocated)
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" declares `preallocated`, which is only \
+                 allowed on indexOnly document types (set `indexOnly: true` on the document \
+                 type, or remove the flag)",
+                index_name, name,
+            )));
+        }
+        // Same for `skipIfAbsent`: conditional participation only means
+        // anything when the index entries ARE the storage — a stored type's
+        // optional properties already have the null index layout.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.skip_if_absent)
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, which is only \
+                 allowed on indexOnly document types (set `indexOnly: true` on the document \
+                 type, or remove the flag)",
+                index_name, name,
+            )));
+        }
         return Ok(());
     }
 
@@ -1972,17 +2041,11 @@ pub(super) fn apply_index_only(
         )));
     }
 
-    // ---- terminal normalization ----------------------------------------
-    // An omitted terminal defaults to `$ownerId`. Normalizing here (rather
-    // than leaving `None` to mean the default) keeps every downstream
-    // consumer — the walkers, the query planner, the update-immutability
-    // comparison — reading one canonical spelling, and both spellings of the
-    // same index parse to equal `Index` values.
-    for index in document_type.indices.values_mut() {
-        if index.terminal.is_none() {
-            index.terminal = Some(OWNER_ID.to_string());
-        }
-    }
+    // Terminals are already normalized: `parse_indices` defaulted every
+    // omitted `terminal` to `$ownerId` before the index structure was built
+    // (the same `index_only` value was passed into the core parse), so the
+    // structure's level info and the `Index` values below agree, and every
+    // check here reads `Some`.
 
     // ---- per-index rules ------------------------------------------------
     for (index_name, index) in document_type.indices.iter() {
@@ -2013,28 +2076,82 @@ pub(super) fn apply_index_only(
         if !index.null_searchable {
             return Err(structure_error(format!(
                 "index \"{}\" on indexOnly document type \"{}\" cannot set nullSearchable: \
-                 false: every property of an indexOnly type is required, so no null entries \
-                 exist to suppress",
+                 false: an indexOnly property is either required or an absent-skipping \
+                 index's trigger, so no null entries exist to suppress (a skipIfAbsent \
+                 index writes nothing for an absent trigger; nullSearchable suppresses \
+                 stored-type null-layout entries, which indexOnly types never write)",
                 index_name, name,
             )));
         }
-        if index.time_range.is_some() {
-            return Err(structure_error(format!(
-                "index \"{}\" on indexOnly document type \"{}\" cannot declare a timeRange: \
-                 bucketed indexOnly indexes are not yet supported",
-                index_name, name,
-            )));
+        // `skipIfAbsent`: the index participates only for documents that
+        // carry its FIRST property — the skip trigger. The trigger sits at
+        // position 0 so the whole branch is pruned at the top of the index
+        // walk before any tree is inserted: a deeper skip would leave the
+        // prefix trees above it inserted-but-unterminated (the merged index
+        // structure shares levels across indexes, and upward pruning only
+        // runs from a terminal), silently charging for structure no entry
+        // uses. The trigger must be a top-level schema property so its
+        // presence is a single map lookup shared verbatim by the write
+        // walkers (which derive the skip from `required` membership), the
+        // probes (which read the flag), and the row commitment — rules
+        // below force those three views to agree.
+        if index.skip_if_absent {
+            let trigger = &index
+                .properties
+                .first()
+                .expect("non-empty checked above")
+                .name;
+            if trigger.starts_with('$') {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" declares `skipIfAbsent` \
+                     with system property \"{}\" first: the skip trigger must be an \
+                     optional schema property — system properties are always present \
+                     (or, for $createdAt, forced into `required` when indexed), so the \
+                     index could never skip",
+                    index_name, name, trigger,
+                )));
+            }
+            if trigger.contains('.') {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" declares `skipIfAbsent` \
+                     with nested property \"{}\" first: the skip trigger must be a \
+                     top-level property, so that presence is a single lookup with no \
+                     partially-present ancestor states",
+                    index_name, name, trigger,
+                )));
+            }
+            if document_type.required_fields.contains(trigger.as_str()) {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" declares `skipIfAbsent`, \
+                     but its first property \"{}\" is listed in `required`: a required \
+                     trigger can never be absent, so the index could never skip — remove \
+                     \"{}\" from `required` (making this the property's skip trigger) or \
+                     drop the flag",
+                    index_name, name, trigger, trigger,
+                )));
+            }
         }
-        if index.summable.is_some() || index.ranked_summable || index.ranked_averageable {
-            return Err(structure_error(format!(
-                "index \"{}\" on indexOnly document type \"{}\" cannot use the sum axes \
-                 (summable / rangeSummable / rankedSummable / rankedAverageable / the \
-                 averageable sugar): indexOnly terminals are plain Items carrying no sum \
-                 contribution; only the count axes (countable / rangeCountable / \
-                 rankedCountable) are supported",
-                index_name, name,
-            )));
-        }
+        // `timeRange` is admitted: a bucketed indexOnly index writes one
+        // entry per containing bucket, exactly as stored types do (the
+        // walkers' bucket fan-out is shared). No indexOnly-specific
+        // source rule is needed — the transform's source must be a
+        // system timestamp (the shared timeRange rules), it must be the
+        // index's first property, and the prefix rule below admits only
+        // `$ownerId` and `$createdAt` as system properties, which pins
+        // the source to `$createdAt` (the only timestamp an immutable,
+        // create-once document carries). Delete-by-values stays
+        // deterministic: `$createdAt` is forced into `required` (rule
+        // below), so the carried value reproduces the exact bucket set
+        // the create wrote. A bucketed index involves `$createdAt` and
+        // therefore never counts as the required `$createdAt`-free
+        // proof index.
+        // The sum axes (summable / rangeSummable / rankedSummable /
+        // rankedAverageable / the averageable sugar) are admitted: a
+        // summable index's terminal entry is an
+        // `ItemWithSumItem(commitment, amount)` carrying the summed
+        // property's value, and the doctype-level summable cross-checks
+        // (canonical property, i64-safe integer type, `required`
+        // membership) run for every doctype, indexOnly included.
 
         let terminal = index.terminal.as_deref().expect("normalized to Some above");
 
@@ -2159,40 +2276,181 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+
+        // `preallocated` promises that the whole index path is a pure
+        // function of one same-contract refersTo-referenced document, so the
+        // referenced document's insert can create the trees. A bucketed
+        // index breaks that promise structurally: its leading level is
+        // keyed by grid-qualified bucket starts fanned out from a
+        // timestamp, not by a stored property value the binding could
+        // resolve — and its `$createdAt` source can never be
+        // reference-bound anyway.
+        if index.preallocated && index.time_range.is_some() {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" declares `preallocated` \
+                 together with `timeRange`: a bucketed level is keyed by bucket starts \
+                 computed from a timestamp at write time, so its path cannot be \
+                 preallocated from a referenced document",
+                index_name, name,
+            )));
+        }
+
+        // The binding derivation is shared with the rs-drive insert path
+        // (see `index::preallocation`); rejecting a flag with no binding
+        // here is what lets that path trust every `preallocated: true` it
+        // sees.
+        if index.preallocated
+            && index
+                .preallocation_bindings(
+                    &document_type.flattened_properties,
+                    document_type.data_contract_id,
+                )
+                .is_empty()
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" declares `preallocated`, \
+                 but its path is not determined by a reference: every index property must \
+                 be either a property with a same-contract permanentDocument `refersTo` \
+                 declaration (the referring property — its value is the referenced \
+                 document's $id) or a key of that declaration's `propertyAgreement` \
+                 (consensus-equal to a referenced-document property). System properties \
+                 like $ownerId cannot be determined by the referenced document, so a \
+                 preallocated index may carry $ownerId only as its terminal",
+                index_name, name,
+            )));
+        }
+    }
+
+    // At least one index must involve no `$createdAt` at all AND not be
+    // `skipIfAbsent` — the PROOF index. Executed-transition proofs
+    // (waitForStateTransitionResult) locate the entry a create or delete
+    // produced from the transition's values alone; a client verifier
+    // cannot know the block timestamp an entry was keyed with, and a
+    // skipIfAbsent index has no entry at all for trigger-absent documents.
+    // If every index were time-keyed or skippable, creates and deletes of
+    // the type would work while transition-proof requests failed. (Every
+    // index already embeds `$ownerId`, so any `$createdAt`-free non-skip
+    // index qualifies as the proof index.)
+    let has_proof_index = document_type.indices.values().any(|index| {
+        !index.skip_if_absent
+            && index.terminal.as_deref() != Some(CREATED_AT)
+            && !index
+                .properties
+                .iter()
+                .any(|property| property.name == CREATED_AT)
+    });
+    if !has_proof_index {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must declare at least one index that neither \
+             involves $createdAt nor sets skipIfAbsent: executed-transition proofs locate \
+             entries from the transition's values alone — they cannot reproduce the block \
+             timestamp a time-keyed entry was written with, and a skipIfAbsent index has \
+             no entry for documents that omit its trigger",
+            name,
+        )));
     }
 
     // ---- coverage and requiredness --------------------------------------
     // The index content IS the document: a property in no index would not
-    // exist, and an optional property would need the null-layout machinery
-    // this mode deliberately sidesteps.
+    // exist, and an absent value has no representation in an index path.
+    // The one sanctioned hole is a skipIfAbsent index's trigger: it may be
+    // optional because absence removes the whole index entry — there is
+    // genuinely nothing to store. Everything else must be required, and
+    // must be covered by at least one NON-skip index: a skip index carries
+    // no value at all for trigger-absent documents, so a property covered
+    // only by skip indexes would be validated, committed into the row
+    // commitment, and then written nowhere — unrecoverable by any query,
+    // and the document undeletable once the client forgets the value.
+    let skip_triggers: BTreeSet<&str> = document_type
+        .indices
+        .values()
+        .filter(|index| index.skip_if_absent)
+        .filter_map(|index| index.properties.first())
+        .map(|property| property.name.as_str())
+        .collect();
     for (property_name, property) in document_type.flattened_properties.iter() {
         if matches!(property.property_type, DocumentPropertyType::Object(_)) {
             // Containers are covered through their flattened leaves.
             continue;
         }
+        let is_trigger = skip_triggers.contains(property_name.as_str());
         let covered = document_type.indices.values().any(|index| {
-            index.terminal.as_deref() == Some(property_name.as_str())
-                || index
-                    .properties
-                    .iter()
-                    .any(|index_property| index_property.name == *property_name)
+            // A skip index only counts as coverage for its own trigger.
+            (is_trigger || !index.skip_if_absent)
+                && (index.terminal.as_deref() == Some(property_name.as_str())
+                    || index
+                        .properties
+                        .iter()
+                        .any(|index_property| index_property.name == *property_name))
         });
         if !covered {
             return Err(structure_error(format!(
                 "property \"{}\" on indexOnly document type \"{}\" does not appear in any \
-                 index (as a property or terminal): on an indexOnly type only indexed \
-                 values exist and are recoverable, so an unindexed property would be \
-                 silently dropped",
+                 non-skipIfAbsent index (as a property or terminal): on an indexOnly type \
+                 only indexed values exist and are recoverable, and a skipIfAbsent index \
+                 holds no value at all for documents that omit its trigger, so the \
+                 property would be silently dropped",
                 property_name, name,
             )));
         }
         if !document_type.required_fields.contains(property_name) {
-            return Err(structure_error(format!(
-                "property \"{}\" on indexOnly document type \"{}\" must be listed in \
-                 `required`: the index path is the storage, and an absent value would need \
-                 the null index layout this mode deliberately has no equivalent of",
-                property_name, name,
-            )));
+            if !is_trigger {
+                return Err(structure_error(format!(
+                    "property \"{}\" on indexOnly document type \"{}\" must be listed in \
+                     `required`: the index path is the storage, and an absent value would \
+                     need the null index layout this mode deliberately has no equivalent \
+                     of (only the first property of a skipIfAbsent index may be optional)",
+                    property_name, name,
+                )));
+            }
+            // An optional property is exactly a skip trigger, and every
+            // index involving it must be a skipIfAbsent index with the
+            // property FIRST (and never as a terminal). This is the
+            // invariant the write walkers rely on: they skip a top-level
+            // branch keyed by an unrequired property, which is only sound
+            // when no non-skip index (and no deeper level of any index)
+            // reaches through that branch.
+            for (index_name, index) in document_type.indices.iter() {
+                if index.terminal.as_deref() == Some(property_name.as_str()) {
+                    return Err(structure_error(format!(
+                        "optional property \"{}\" on indexOnly document type \"{}\" is the \
+                         terminal of index \"{}\": a terminal is every entry's member key \
+                         and can never be absent — list the property in `required` or \
+                         change the terminal",
+                        property_name, name, index_name,
+                    )));
+                }
+                let position = index
+                    .properties
+                    .iter()
+                    .position(|index_property| index_property.name == *property_name);
+                match position {
+                    None => {}
+                    Some(0) if index.skip_if_absent => {}
+                    Some(0) => {
+                        return Err(structure_error(format!(
+                            "optional property \"{}\" on indexOnly document type \"{}\" is \
+                             the first property of index \"{}\", which does not set \
+                             `skipIfAbsent`: an index participates for every document \
+                             unless it skips, and an absent value has no index \
+                             representation — set `skipIfAbsent: true` on the index or \
+                             list the property in `required`",
+                            property_name, name, index_name,
+                        )));
+                    }
+                    Some(_) => {
+                        return Err(structure_error(format!(
+                            "optional property \"{}\" on indexOnly document type \"{}\" \
+                             appears in index \"{}\" below its first position: an optional \
+                             property may only be the FIRST property of a skipIfAbsent \
+                             index, where absence prunes the whole branch before any tree \
+                             is written — deeper, absence would strand the prefix levels \
+                             above it",
+                            property_name, name, index_name,
+                        )));
+                    }
+                }
+            }
         }
 
         // A required nested leaf inside an OPTIONAL ancestor object is only

@@ -162,7 +162,7 @@ impl<C> Platform<C> {
     /// error to hand back to the wire caller
     /// (`check_validation_result_with_data!` unwraps the nesting).
     #[allow(clippy::type_complexity)]
-    fn fetch_contract_for_document_query_v1(
+    pub(in crate::query::document_query::v1) fn fetch_contract_for_document_query_v1(
         &self,
         data_contract_id: Vec<u8>,
         platform_version: &PlatformVersion,
@@ -229,7 +229,30 @@ impl<C> Platform<C> {
             group_by,
             having,
             offset,
+            chained,
         } = request_v1;
+
+        // Chained mode owns its own (deliberately narrow) shape and
+        // routes before the SELECT machinery: the request's clauses
+        // describe the INNER indexOnly query of a provable semi-join.
+        if let Some(chained_join) = chained {
+            return self.dispatch_chained_v1(
+                data_contract_id,
+                document_type,
+                chained_join,
+                proto_where_clauses,
+                proto_order_by,
+                limit,
+                start,
+                prove,
+                proto_selects,
+                group_by,
+                having,
+                offset,
+                platform_state,
+                platform_version,
+            );
+        }
 
         // NOTE: the OFFSET gate is no longer here. Whether an offset is
         // acceptable depends on where the request routes — the ranked

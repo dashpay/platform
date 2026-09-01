@@ -72,6 +72,17 @@ use dpp::prelude::Identifier;
 use platform_wallet::{DpnsNameInfo, IdentityManagerStartState, IdentityStatus, ManagedIdentity};
 use std::ffi::CStr;
 
+/// The persisted `TransactionContext` discriminant values shared with the
+/// host mirrors (`PersistentTransaction.context` on Swift): `0` mempool,
+/// `1` InstantSend, `2` in a block, `3` in a chain-locked block. Every u32
+/// `context_raw` decoder in this crate matches the confirmed contexts
+/// against these constants — a new context value must be added here first,
+/// so a grep for the constant names finds every decoder that has to learn
+/// it. The sites deliberately differ in their defensive defaults (miss vs
+/// `Mempool` vs no-evidence); see each match's comment.
+pub(crate) const TX_CONTEXT_RAW_IN_BLOCK: u32 = 2;
+pub(crate) const TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
+
 /// Versioned C projection of [`PersistenceCapabilities`].
 ///
 /// `version` identifies the stable bit assignment. `reserved` must be ignored
@@ -3205,16 +3216,20 @@ impl PlatformWalletPersistence for FFIPersister {
                 // proof from the live event stream.
                 return Ok(None);
             }
-            2 => TransactionContext::InBlock(BlockInfo::new(
-                block_height,
-                dashcore::BlockHash::from_byte_array(block_hash),
-                block_timestamp,
-            )),
-            3 => TransactionContext::InChainLockedBlock(BlockInfo::new(
-                block_height,
-                dashcore::BlockHash::from_byte_array(block_hash),
-                block_timestamp,
-            )),
+            k if u32::from(k) == TX_CONTEXT_RAW_IN_BLOCK => {
+                TransactionContext::InBlock(BlockInfo::new(
+                    block_height,
+                    dashcore::BlockHash::from_byte_array(block_hash),
+                    block_timestamp,
+                ))
+            }
+            k if u32::from(k) == TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK => {
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    block_height,
+                    dashcore::BlockHash::from_byte_array(block_hash),
+                    block_timestamp,
+                ))
+            }
             unknown => {
                 tracing::debug!(
                     txid = %txid,
@@ -5011,6 +5026,11 @@ fn build_wallet_start_state(
     let identity_manager = IdentityManagerStartState {
         out_of_wallet_identities: BTreeMap::new(),
         wallet_identities,
+        // No vtable slot carries the identity-scan verdict yet, so nothing is
+        // restored here. Empty reads as "unknown", which preserves the
+        // warm-launch shortcut rather than forcing a scan every launch — see
+        // `IdentityManagerStartState::scan_states`.
+        scan_states: BTreeMap::new(),
     };
 
     // Rehydrate tracked asset-locks (built / broadcast / IS-locked
@@ -5021,7 +5041,6 @@ fn build_wallet_start_state(
     // was interrupted by an app kill can resume from the latest
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
-
     let wallet_state = ClientWalletStartState {
         wallet,
         wallet_info,
@@ -5047,27 +5066,6 @@ fn build_wallet_start_state(
     Ok((wallet_state, platform_address_state))
 }
 
-/// Translate the `IdentityRestoreEntryFFI` slice carried on a wallet
-/// entry into the wallet-bucket portion of an
-/// [`IdentityManagerStartState`].
-///
-/// Every entry on a `WalletRestoreEntryFFI` is wallet-owned by
-/// definition, so the returned map is shaped for direct insertion
-/// into `wallet_identities[entry.wallet_id]`. Out-of-wallet identities
-/// (no associated wallet) come from a separate path that today simply
-/// doesn't exist in SwiftData — see the report observation.
-///
-/// The DPP `Identity` is reconstructed from the persisted scalars via
-/// the `IdentityV0` shape — same approach
-/// [`apply_identity_entry`](platform_wallet::IdentityManager::apply_identity_entry)
-/// uses on the changeset replay path. Public keys are now pulled in
-/// from the `keys` array on each `IdentityRestoreEntryFFI` (assembled
-/// from the per-identity `PersistentPublicKey` rows on the Swift
-/// side), so the restored `Identity.public_keys` map is populated at
-/// load time. An identity with no persisted keys (e.g. an in-flight
-/// registration whose key-persist round hasn't completed) loads with
-/// an empty map and gets refreshed on the next sync round —
-/// degraded-but-usable for that narrow case.
 /// Rebuild the `unused_asset_locks` map carried on
 /// [`ClientWalletStartState`] from the `tracked_asset_locks` slice the
 /// Swift load callback hands back. Mirrors the encoding used by
@@ -5223,6 +5221,27 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
     })
 }
 
+/// Translate the `IdentityRestoreEntryFFI` slice carried on a wallet
+/// entry into the wallet-bucket portion of an
+/// [`IdentityManagerStartState`].
+///
+/// Every entry on a `WalletRestoreEntryFFI` is wallet-owned by
+/// definition, so the returned map is shaped for direct insertion
+/// into `wallet_identities[entry.wallet_id]`. Out-of-wallet identities
+/// (no associated wallet) come from a separate path that today simply
+/// doesn't exist in SwiftData — see the report observation.
+///
+/// The DPP `Identity` is reconstructed from the persisted scalars via
+/// the `IdentityV0` shape — same approach
+/// [`apply_identity_entry`](platform_wallet::IdentityManager::apply_identity_entry)
+/// uses on the changeset replay path. Public keys are now pulled in
+/// from the `keys` array on each `IdentityRestoreEntryFFI` (assembled
+/// from the per-identity `PersistentPublicKey` rows on the Swift
+/// side), so the restored `Identity.public_keys` map is populated at
+/// load time. An identity with no persisted keys (e.g. an in-flight
+/// registration whose key-persist round hasn't completed) loads with
+/// an empty map and gets refreshed on the next sync round —
+/// degraded-but-usable for that narrow case.
 fn build_wallet_identity_bucket(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<BTreeMap<u32, ManagedIdentity>, PersistenceError> {
@@ -5956,7 +5975,7 @@ fn restore_unresolved_asset_lock_tx_records(
         // lock at `Built` / `Broadcast` has by definition not yet
         // observed IS-lock or block confirmation).
         let context = match rec.context_raw {
-            2 => {
+            TX_CONTEXT_RAW_IN_BLOCK => {
                 let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
                     PersistenceError::backend(format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
@@ -5969,7 +5988,7 @@ fn restore_unresolved_asset_lock_tx_records(
                     rec.block_timestamp as u32,
                 ))
             }
-            3 => {
+            TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK => {
                 let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
                     PersistenceError::backend(format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
@@ -6027,16 +6046,28 @@ fn restore_unresolved_asset_lock_tx_records(
         };
 
         let account_type = account.managed_account_type().to_account_type();
+        // Classify from the transaction itself, the way the upstream
+        // router does: an `AssetLockPayloadType` special-tx payload IS
+        // the definition of an asset lock. This array carries both the
+        // locks' own funding transactions and the confirmed spenders of
+        // their inputs (the conflict screen's evidence), and tagging an
+        // ordinary spender as an asset lock would feed phantom entries
+        // to anything keying off `transaction_type`.
+        let transaction_type = if matches!(
+            tx.special_transaction_payload,
+            Some(
+                dashcore::transaction::special_transaction::TransactionPayload::AssetLockPayloadType(_)
+            )
+        ) {
+            TransactionType::AssetLock
+        } else {
+            TransactionType::Standard
+        };
         let record = TransactionRecord::new(
             tx,
             account_type,
             context,
-            // Funding transactions ARE asset locks by definition —
-            // the upstream router classifies them via the
-            // `AssetLockPayloadType` special-tx payload. Use the
-            // same tag here so any downstream code keying off
-            // `transaction_type` sees the canonical value.
-            TransactionType::AssetLock,
+            transaction_type,
             // The funding flow always starts from our own UTXOs
             // and writes one credit output to ourselves; per
             // `TransactionDirection::Internal`'s docstring, a
@@ -6114,7 +6145,7 @@ fn restore_provider_special_txs(
         };
 
         let context = match rec.context_raw {
-            ctx @ (2 | 3) => {
+            ctx @ (TX_CONTEXT_RAW_IN_BLOCK | TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK) => {
                 let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
                     PersistenceError::backend(format!(
                         "load: malformed block_hash on provider special tx record: {}",
@@ -6129,7 +6160,7 @@ fn restore_provider_special_txs(
                 if rec.has_block_position {
                     info = info.with_position(rec.block_position);
                 }
-                if ctx == 2 {
+                if ctx == TX_CONTEXT_RAW_IN_BLOCK {
                     TransactionContext::InBlock(info)
                 } else {
                     TransactionContext::InChainLockedBlock(info)

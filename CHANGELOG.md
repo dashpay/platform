@@ -1,3 +1,111 @@
+## [4.2.0-dev.7](https://github.com/dashpay/platform/compare/v4.2.0-dev.6...v4.2.0-dev.7) (2026-08-31)
+
+
+### Features
+
+* **drive:** admit plain sibling indexes beside a prefix-ranked chain via NonCounted branches ([#4543](https://github.com/dashpay/platform/issues/4543))
+* **platform-wallet-ffi:** expose external-recipient asset-lock funding entry points
+* **platform-wallet:** add fund_from_asset_lock_external for third-party recipients
+* **swift-sdk:** fundFromAssetLockExternal, recipient discriminator, and tests
+
+
+### Bug Fixes
+
+* **platform-wallet:** fail a double-spending asset lock with a typed terminal error ([#4356](https://github.com/dashpay/platform/issues/4356))
+* **platform-wallet:** keep the fund_from_asset_lock fee-strategy argument
+* **swift-sdk:** drain the persister's autorelease pool per row
+* **swift-sdk:** freeze the v2 asset-lock model and add schema v3
+
+
+### Code Refactoring
+
+* **platform-wallet:** derive the asset-lock fee strategy below the FFI boundary
+
+## [4.2.0-dev.6](https://github.com/dashpay/platform/compare/v4.2.0-dev.5...v4.2.0-dev.6) (2026-08-30)
+
+
+### Features
+
+* **dpp:** rankedCountable at-form for prefix-level count ranking ([#4531](https://github.com/dashpay/platform/issues/4531))
+* **dpp:** skipIfAbsent index keyword for indexOnly document types ([#4522](https://github.com/dashpay/platform/issues/4522))
+* **drive:** serve prefix-pinned count queries off the terminal aggregate ([#4537](https://github.com/dashpay/platform/issues/4537))
+* **drive:** serve ranked and having-range queries at a prefix ranking level ([#4535](https://github.com/dashpay/platform/issues/4535))
+* **drive:** skip absent-property indexes on indexOnly writes ([#4523](https://github.com/dashpay/platform/issues/4523))
+* **drive:** storage layout and maintenance for prefix-level ranked count indexes ([#4533](https://github.com/dashpay/platform/issues/4533))
+* **platform:** propertyAgreement over absent properties ([#4524](https://github.com/dashpay/platform/issues/4524))
+
+
+### Bug Fixes
+
+* **drive:** keep cursor document in descending continuation-page proofs ([#4541](https://github.com/dashpay/platform/issues/4541))
+* **drive:** reject index-gapped document queries at protocol version 14 ([#4526](https://github.com/dashpay/platform/issues/4526))
+* **platform-wallet:** age-guard the finalized-transaction handle broadcast ([#4309](https://github.com/dashpay/platform/issues/4309))
+* **platform-wallet:** fold per-account records into one wallet-level row, owned roles winning collisions ([#4438](https://github.com/dashpay/platform/issues/4438))
+* **platform-wallet:** stop the startup sequence reporting integrity it did not establish ([#4426](https://github.com/dashpay/platform/issues/4426))
+
+
+### Tests
+
+* **swift-sdk:** cover imported-wallet history either side of registration ([#4064](https://github.com/dashpay/platform/issues/4064))
+
+
+### Build System
+
+* bump grovedb to develop 0a3b3f9b (re-key churn as replaced bytes) ([#4528](https://github.com/dashpay/platform/issues/4528))
+
+## [4.2.0-dev.5](https://github.com/dashpay/platform/compare/4.2.0-dev.4...v4.2.0-dev.5) (2026-08-28)
+
+
+### Bug Fixes
+
+* **dpp:** unbreak v4.2-dev — fmt gate and propertyAgreement compile breaks ([#4515](https://github.com/dashpay/platform/issues/4515))
+
+## [4.2.0-dev.3](https://github.com/dashpay/platform/compare/v4.2.0-dev.2...v4.2.0-dev.3) (2026-08-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** preallocated indexOnly index trees created at referenced-document insert (#4509)
+* **drive:** timeRange buckets on indexOnly indexes (#4508)
+* **drive:** sum axes on indexOnly indexes via ItemWithSumItem terminals (#4506)
+* **dpp:** refersTo propertyAgreement binds referring and referenced document properties (#4505)
+* **drive:** indexOnly read surface — synthesize documents from index positions (#4494)
+* **dpp:** indexOnly delete-by-values as its own transition kind (#4497)
+* **drive:** indexOnly storage layout — index entries as the rows (#4492)
+* **dpp:** add indexOnly document types with terminal index keys (#4491)
+
+### Features
+
+* **dashmate:** record why certificate renewal failed so doctor can name the cause ([#4476](https://github.com/dashpay/platform/issues/4476))
+* **dpp:** add indexOnly document types with terminal index keys ([#4491](https://github.com/dashpay/platform/issues/4491))
+* **dpp:** indexOnly delete-by-values as its own transition kind ([#4497](https://github.com/dashpay/platform/issues/4497))
+* **dpp:** refersTo propertyAgreement binds referring and referenced document properties ([#4505](https://github.com/dashpay/platform/issues/4505))
+* **drive:** indexOnly read surface — synthesize documents from index positions ([#4494](https://github.com/dashpay/platform/issues/4494))
+* **drive:** indexOnly storage layout — index entries as the rows ([#4492](https://github.com/dashpay/platform/issues/4492))
+* **drive:** indexOnly terminal-property where clauses and keyset pagination ([#4499](https://github.com/dashpay/platform/issues/4499))
+* **drive:** preallocated indexOnly index trees created at referenced-document insert ([#4509](https://github.com/dashpay/platform/issues/4509))
+* **drive:** sum axes on indexOnly indexes via ItemWithSumItem terminals ([#4506](https://github.com/dashpay/platform/issues/4506))
+* **drive:** timeRange buckets on indexOnly indexes ([#4508](https://github.com/dashpay/platform/issues/4508))
+* **platform-wallet:** prepare a ProUpServTx without broadcasting it ([#4512](https://github.com/dashpay/platform/issues/4512))
+* **platform-wallet:** unban a PoSe-banned masternode — ProUpServTx orchestration, FFI, Swift ([#4507](https://github.com/dashpay/platform/issues/4507))
+* **sdk:** indexOnly delete-by-values through the SDKs; book chapter ([#4495](https://github.com/dashpay/platform/issues/4495))
+
+
+### Bug Fixes
+
+* **platform-wallet:** harden asset-lock recovery — invisible chain-locked rows, two unbounded waits ([#4422](https://github.com/dashpay/platform/issues/4422))
+* **sdk:** separate the deletion-resolution doc from the Returns list ([#4498](https://github.com/dashpay/platform/issues/4498))
+
+
+### Documentation
+
+* **platform-wallet:** error-code registry for the FFI result space ([#4318](https://github.com/dashpay/platform/issues/4318))
+
+
+### Tests
+
+* **test-suite:** indexOnly document lifecycle functional spec ([#4510](https://github.com/dashpay/platform/issues/4510))
+
 ## [4.2.0-dev.2](https://github.com/dashpay/platform/compare/v4.1.1...v4.2.0-dev.2) (2026-08-26)
 
 

@@ -43,10 +43,13 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         summable: summable.map(String::from),
         range_summable: false,
         ranked_countable: false,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
         terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     }
 }
 
@@ -64,10 +67,13 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         summable: Some(summable.to_string()),
         range_summable: true,
         ranked_countable: false,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
         terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     }
 }
 

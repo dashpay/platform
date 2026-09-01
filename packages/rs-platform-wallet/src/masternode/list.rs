@@ -43,6 +43,14 @@ pub struct MasternodeListSummary {
     pub is_valid: bool,
     /// High-performance (evonode) entry.
     pub is_evonode: bool,
+    /// The entry advertises v3 extended network info (an `ExtNetInfo`
+    /// endpoint map) rather than a single legacy address —
+    /// `service_address` is then only its primary endpoint. The
+    /// update-service (unban) path refuses such entries, since a version-2
+    /// ProUpServTx would replace the whole endpoint map with one address.
+    /// Snapshots persisted before this field existed default to `false`;
+    /// that guard reads only live list summaries.
+    pub has_extended_net_info: bool,
 }
 
 impl MasternodeListSummary {
@@ -77,6 +85,10 @@ impl MasternodeListSummary {
             platform_node_id,
             is_valid: entry.is_valid,
             is_evonode,
+            has_extended_net_info: matches!(
+                entry.service_address,
+                dashcore::sml::masternode_list_entry::MasternodeNetInfo::Extended(_)
+            ),
         }
     }
 
@@ -165,6 +177,7 @@ pub(crate) mod test_support {
             platform_node_id: None,
             is_valid: true,
             is_evonode: false,
+            has_extended_net_info: false,
         }
     }
 

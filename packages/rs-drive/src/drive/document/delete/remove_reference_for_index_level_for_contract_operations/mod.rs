@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -63,6 +64,22 @@ impl Drive {
             .remove_reference_for_index_level_for_contract_operations
         {
             0 => self.remove_reference_for_index_level_for_contract_operations_v0(
+                document_and_contract_info,
+                index_path_info,
+                index_type,
+                any_fields_null,
+                all_fields_null,
+                storage_flags,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                event_id,
+                transaction,
+                batch_operations,
+                platform_version,
+            ),
+            // v1 (protocol version 14): the pruning climb stops at the
+            // member level on `preallocated` indexOnly indexes.
+            1 => self.remove_reference_for_index_level_for_contract_operations_v1(
                 document_and_contract_info,
                 index_path_info,
                 index_type,

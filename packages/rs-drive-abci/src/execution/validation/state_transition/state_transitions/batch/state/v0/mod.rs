@@ -17,6 +17,7 @@ use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
@@ -143,6 +144,16 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                             transaction,
                             platform_version,
                         )?,
+                    DocumentTransitionAction::IndexOnlyDeleteAction(index_only_delete_action) => {
+                        index_only_delete_action.validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?
+                    }
                 },
                 BatchedTransitionAction::TokenAction(token_action) => match token_action {
                     TokenTransitionAction::BurnAction(burn_action) => burn_action.validate_state(

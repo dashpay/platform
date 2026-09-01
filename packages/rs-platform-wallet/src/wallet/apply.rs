@@ -106,6 +106,7 @@ impl PlatformWalletInfo {
             // replay hook.
             invitations: _,
             dpns_name_states,
+            identity_scan_state,
             // Registration-round metadata / per-account specs /
             // per-pool snapshots are persistence-only — the
             // canonical in-memory wallet state is built up at
@@ -159,6 +160,18 @@ impl PlatformWalletInfo {
             for removed_id in &removed {
                 self.identity_manager.remove_for_apply(removed_id);
             }
+        }
+
+        // 2a'. Identity-scan verdict. Replayed rather than dropped: unlike the
+        //      registration metadata below it, this one has live in-memory
+        //      state on the identity manager, and it is read on the next
+        //      bring-up to decide whether the identity set may be treated as
+        //      settled. A verdict that survived to persistence and then got
+        //      dropped on the way back in would leave a partial scan looking
+        //      complete — the exact failure the verdict exists to prevent.
+        if let Some(scan) = identity_scan_state {
+            self.identity_manager
+                .record_identity_scan(wallet.wallet_id, scan);
         }
 
         // 2a. DPNS name states (username marketplace): upserts land
@@ -425,6 +438,7 @@ mod tests {
             generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
             dpns_name_states: BTreeMap::new(),
         }
     }

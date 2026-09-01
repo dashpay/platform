@@ -698,10 +698,13 @@ fn test_index(name: &str, properties: &[&str], summable: Option<&str>) -> Index 
         summable: summable.map(String::from),
         range_summable: summable.is_some(),
         ranked_countable: false,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
         terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     }
 }
 
@@ -3574,5 +3577,686 @@ mod pinned_prefix {
             3,
             "the committed union reflects the commit"
         );
+    }
+}
+
+mod prefix_level {
+    //! `SELECT COUNT(*) … GROUP BY hashtag ORDER BY $count DESC LIMIT k`
+    //! over a prefix-level ranking (`rankedCountable: { "at": "hashtag" }`):
+    //! the Count secondary lives at the **hashtag** level and orders
+    //! hashtags by whole-subtree document count. With `at` on the first
+    //! property nothing is pinned — the global "top hashtags" surface; a
+    //! middle-level `at` pins every property before it and serves one
+    //! ranking per prefix, `IN` fan-out included. The storage side of
+    //! these shapes is pinned by
+    //! `insert_contract::v0::tests::prefix_ranked_index_e2e_tests`; this
+    //! module pins the query resolution, the rank walk and its proof.
+
+    use super::super::drive_dispatcher::{DocumentRankedRequest, DocumentRankedResponse};
+    use super::super::index_picker::resolve_ranked_query_for_mode;
+    use super::super::mode_detection::detect_ranked_mode;
+    use super::super::{
+        DriveDocumentRankedQuery, RankedEntry, RankedEntryValue, RankedPaginationInputs,
+        RANKED_COUNT_ORDER_KEY,
+    };
+    use crate::drive::Drive;
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::projection::SelectProjection;
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::platform_value::Value;
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    pub(super) fn setup_trending() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/trending/trending-contract.json",
+            false,
+            pv,
+        )
+        .expect("expected to parse the trending contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the trending contract");
+        (drive, contract)
+    }
+
+    pub(super) fn insert_rows(
+        drive: &Drive,
+        contract: &DataContract,
+        document_type_name: &str,
+        rows: &[&[(&str, &str)]],
+    ) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(document_type_name)
+            .expect("doctype exists");
+        for (i, properties) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(7000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            for (name, value) in *properties {
+                props.insert(name.to_string(), Value::Text(value.to_string()));
+            }
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a trending document");
+        }
+    }
+
+    pub(super) fn region_pin(region: &str) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: "region".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(region.to_string()),
+        }]
+    }
+
+    pub(super) fn run(
+        drive: &Drive,
+        contract: &DataContract,
+        document_type_name: &str,
+        group_by_property: &str,
+        where_clauses: &[WhereClause],
+        limit: u32,
+        prove: bool,
+    ) -> Result<DocumentRankedResponse, Error> {
+        let group_by = vec![group_by_property.to_string()];
+        let order_by = vec![OrderClause {
+            field: RANKED_COUNT_ORDER_KEY.to_string(),
+            ascending: false,
+        }];
+        drive.execute_document_ranked_request(
+            DocumentRankedRequest {
+                contract,
+                document_type: contract
+                    .document_type_for_name(document_type_name)
+                    .expect("doctype exists"),
+                group_by: &group_by,
+                select: SelectProjection::count_star(),
+                having: &[],
+                order_by: &order_by,
+                where_clauses,
+                resolved_time_ranges: &[],
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+                prove,
+            },
+            None,
+            platform_version(),
+        )
+    }
+
+    pub(super) fn entries_of(response: DocumentRankedResponse) -> Vec<RankedEntry> {
+        match response {
+            DocumentRankedResponse::Entries(page) => page.entries,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        }
+    }
+
+    fn proof_of(response: DocumentRankedResponse) -> Vec<u8> {
+        match response {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        }
+    }
+
+    /// `(count, group)` view of a page for readable assertions.
+    pub(super) fn counts_of(entries: &[RankedEntry]) -> Vec<(u64, String)> {
+        entries
+            .iter()
+            .map(|entry| {
+                let RankedEntryValue::Count(count) = entry.value else {
+                    panic!("the Count axis must return Count values, got {entry:?}");
+                };
+                (
+                    count,
+                    String::from_utf8(entry.key.clone()).expect("fixture group keys are utf-8"),
+                )
+            })
+            .collect()
+    }
+
+    pub(super) fn named(pairs: &[(u64, &str)]) -> Vec<(u64, String)> {
+        pairs
+            .iter()
+            .map(|(count, name)| (*count, name.to_string()))
+            .collect()
+    }
+
+    fn client_side_query<'a>(
+        contract: &'a DataContract,
+        document_type_name: &'static str,
+        group_by_property: &str,
+        where_clauses: &[WhereClause],
+        limit: u32,
+    ) -> DriveDocumentRankedQuery<'a> {
+        let group_by = vec![group_by_property.to_string()];
+        let order_by = vec![OrderClause {
+            field: RANKED_COUNT_ORDER_KEY.to_string(),
+            ascending: false,
+        }];
+        let mode = detect_ranked_mode(
+            &SelectProjection::count_star(),
+            &group_by,
+            &[],
+            &order_by,
+            where_clauses,
+            RankedPaginationInputs {
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+            },
+            platform_version(),
+        )
+        .expect("the case is well-formed");
+        let indexes = contract
+            .document_types()
+            .get(document_type_name)
+            .expect("doctype exists")
+            .indexes();
+        resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name(document_type_name)
+                .expect("doctype exists"),
+            document_type_name.to_string(),
+            indexes,
+            &mode,
+            platform_version(),
+        )
+        .expect("the fixture declares the prefix-level ranking")
+    }
+
+    fn grovedb_root_hash(drive: &Drive) -> [u8; 32] {
+        drive
+            .grove
+            .root_hash(None, &platform_version().drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable")
+    }
+
+    pub(super) fn assert_proof_round_trips(
+        drive: &Drive,
+        contract: &DataContract,
+        document_type_name: &'static str,
+        group_by_property: &str,
+        where_clauses: &[WhereClause],
+        limit: u32,
+        expected: &[RankedEntry],
+    ) {
+        let proof = proof_of(
+            run(
+                drive,
+                contract,
+                document_type_name,
+                group_by_property,
+                where_clauses,
+                limit,
+                true,
+            )
+            .expect("prove must succeed"),
+        );
+        let query = client_side_query(
+            contract,
+            document_type_name,
+            group_by_property,
+            where_clauses,
+            limit,
+        );
+        let (root_hash, verified) = query
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the proof must verify");
+        assert_eq!(
+            verified.entries, expected,
+            "verified entries must equal what the unproven read returned"
+        );
+        assert_eq!(
+            root_hash,
+            grovedb_root_hash(drive),
+            "the proof must reconstruct the live grovedb root hash"
+        );
+    }
+
+    /// `at` on the first property: nothing pinned, the global "top
+    /// hashtags by total likes" surface — read, prove, verify.
+    #[test]
+    fn global_hashtag_ranking_reads_and_proves_consistently() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "like",
+            &[
+                &[("hashtag", "alpha"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("postId", "p2")],
+                &[("hashtag", "beta"), ("postId", "p1")],
+                &[("hashtag", "beta"), ("postId", "p3")],
+                &[("hashtag", "gamma"), ("postId", "p2")],
+            ],
+        );
+
+        let entries = entries_of(
+            run(&drive, &contract, "like", "hashtag", &[], 10, false).expect("read must succeed"),
+        );
+        assert_eq!(
+            counts_of(&entries),
+            named(&[(3, "alpha"), (2, "beta"), (1, "gamma")]),
+            "the ranking must count across each hashtag's whole subtree"
+        );
+        assert!(entries.iter().all(|entry| entry.in_key.is_none()));
+
+        assert_proof_round_trips(&drive, &contract, "like", "hashtag", &[], 10, &entries);
+    }
+
+    /// A count-propagating level between `at` and the terminal: the
+    /// ranking still reads whole-subtree totals (across regions AND
+    /// posts), and the proof still verifies.
+    #[test]
+    fn propagating_level_totals_serve_the_ranking() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "deep",
+            &[
+                &[("hashtag", "alpha"), ("region", "east"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("region", "east"), ("postId", "p2")],
+                &[("hashtag", "alpha"), ("region", "west"), ("postId", "p1")],
+                &[("hashtag", "beta"), ("region", "east"), ("postId", "p1")],
+            ],
+        );
+
+        let entries = entries_of(
+            run(&drive, &contract, "deep", "hashtag", &[], 10, false).expect("read must succeed"),
+        );
+        assert_eq!(counts_of(&entries), named(&[(3, "alpha"), (1, "beta")]));
+
+        assert_proof_round_trips(&drive, &contract, "deep", "hashtag", &[], 10, &entries);
+    }
+
+    /// A middle-level `at` pins every property before it: each prefix
+    /// serves its own ranking, an unpinned request is rejected naming
+    /// the required shape, and the pinned proof verifies.
+    #[test]
+    fn middle_at_serves_per_prefix_and_requires_the_pin() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "mid",
+            &[
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p1")],
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p2")],
+                &[("region", "r1"), ("hashtag", "beta"), ("postId", "p1")],
+                &[("region", "r2"), ("hashtag", "gamma"), ("postId", "p1")],
+            ],
+        );
+
+        let r1 = entries_of(
+            run(
+                &drive,
+                &contract,
+                "mid",
+                "hashtag",
+                &region_pin("r1"),
+                10,
+                false,
+            )
+            .expect("pinned read must succeed"),
+        );
+        assert_eq!(counts_of(&r1), named(&[(2, "alpha"), (1, "beta")]));
+        let r2 = entries_of(
+            run(
+                &drive,
+                &contract,
+                "mid",
+                "hashtag",
+                &region_pin("r2"),
+                10,
+                false,
+            )
+            .expect("pinned read must succeed"),
+        );
+        assert_eq!(
+            counts_of(&r2),
+            named(&[(1, "gamma")]),
+            "each region prefix ranks independently"
+        );
+
+        let error = run(&drive, &contract, "mid", "hashtag", &[], 10, false)
+            .expect_err("an unpinned middle-level ranking must be rejected");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message))
+                    if message.contains("rankedCountable") && message.contains("hashtag")
+            ),
+            "the rejection must name the missing coverage, got: {error}"
+        );
+
+        assert_proof_round_trips(
+            &drive,
+            &contract,
+            "mid",
+            "hashtag",
+            &region_pin("r1"),
+            10,
+            &r1,
+        );
+    }
+
+    /// An `IN` pin on the property before a middle-level `at` fans out
+    /// into the branched union, `in_key` carrying each entry's branch.
+    #[test]
+    fn an_in_pin_reads_the_branched_union_with_proof() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "mid",
+            &[
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p1")],
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p2")],
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p3")],
+                &[("region", "r1"), ("hashtag", "beta"), ("postId", "p1")],
+                &[("region", "r2"), ("hashtag", "gamma"), ("postId", "p1")],
+                &[("region", "r2"), ("hashtag", "gamma"), ("postId", "p2")],
+            ],
+        );
+
+        let in_pin = vec![WhereClause {
+            field: "region".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("r1".to_string()),
+                Value::Text("r2".to_string()),
+            ]),
+        }];
+        let entries = entries_of(
+            run(&drive, &contract, "mid", "hashtag", &in_pin, 10, false)
+                .expect("branched read must succeed"),
+        );
+        assert_eq!(
+            counts_of(&entries),
+            named(&[(3, "alpha"), (2, "gamma"), (1, "beta")]),
+            "the union must merge both regions' rankings"
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.in_key.clone().expect("branched entries carry in_key"))
+                .collect::<Vec<_>>(),
+            vec![b"r1".to_vec(), b"r2".to_vec(), b"r1".to_vec()],
+            "each entry must name the branch it came from"
+        );
+
+        assert_proof_round_trips(&drive, &contract, "mid", "hashtag", &in_pin, 10, &entries);
+    }
+
+    /// An `at` index hosts NO terminal secondary: grouping by the last
+    /// property with the leading ones pinned must be rejected, not
+    /// silently served from a secondary that does not exist.
+    #[test]
+    fn terminal_group_by_on_an_at_index_is_rejected() {
+        let (drive, contract) = setup_trending();
+        let pin = vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("alpha".to_string()),
+        }];
+        let error = run(&drive, &contract, "like", "postId", &pin, 10, false)
+            .expect_err("terminal grouping over an at-index must be rejected");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message))
+                    if message.contains("postId")
+            ),
+            "the rejection must name the unserved group property, got: {error}"
+        );
+    }
+}
+
+mod both_levels {
+    //! One index, two rankings (`rankedCountable: { at: ["hashtag",
+    //! "postId"] }` on the trending fixture's `both` doctype): with
+    //! nothing pinned, `GROUP BY hashtag` reads the grouping secondary
+    //! (subtree totals); with `hashtag` pinned, `GROUP BY postId` reads
+    //! the terminal secondary inside that hashtag's chain. The (group
+    //! property, pin count) pair singles the level out — the resolution
+    //! generalization under test — and both proofs verify against the
+    //! live root hash.
+
+    use super::prefix_level::{
+        assert_proof_round_trips, counts_of, entries_of, insert_rows, named, region_pin, run,
+        setup_trending,
+    };
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::{WhereClause, WhereOperator};
+    use dpp::platform_value::Value;
+
+    fn hashtag_pin(hashtag: &str) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(hashtag.to_string()),
+        }]
+    }
+
+    #[test]
+    fn both_rankings_serve_and_prove_on_one_index() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "both",
+            &[
+                &[("hashtag", "alpha"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("postId", "p2")],
+                &[("hashtag", "beta"), ("postId", "p3")],
+            ],
+        );
+
+        // Grouping level: top hashtags by subtree total, nothing pinned.
+        let hashtags = entries_of(
+            run(&drive, &contract, "both", "hashtag", &[], 10, false)
+                .expect("the grouping read must succeed"),
+        );
+        assert_eq!(counts_of(&hashtags), named(&[(3, "alpha"), (1, "beta")]));
+        assert_proof_round_trips(&drive, &contract, "both", "hashtag", &[], 10, &hashtags);
+
+        // Terminal level: top posts within the pinned hashtag.
+        let alpha_posts = entries_of(
+            run(
+                &drive,
+                &contract,
+                "both",
+                "postId",
+                &hashtag_pin("alpha"),
+                10,
+                false,
+            )
+            .expect("the terminal read must succeed"),
+        );
+        assert_eq!(counts_of(&alpha_posts), named(&[(2, "p1"), (1, "p2")]));
+        assert_proof_round_trips(
+            &drive,
+            &contract,
+            "both",
+            "postId",
+            &hashtag_pin("alpha"),
+            10,
+            &alpha_posts,
+        );
+
+        // The pin count disambiguates: an unpinned terminal grouping has
+        // no covering level and must be rejected, not served off the
+        // grouping secondary.
+        let error = run(&drive, &contract, "both", "postId", &[], 10, false)
+            .expect_err("an unpinned terminal grouping must be rejected");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message))
+                    if message.contains("postId")
+            ),
+            "the rejection must name the unserved shape, got: {error}"
+        );
+    }
+
+    /// The `mid` doctype pins prove the split stays correct when the
+    /// grouping level is not first: the region pin count (1) lands on
+    /// `hashtag`, and two pins would address the (unranked) terminal —
+    /// rejected.
+    #[test]
+    fn pin_count_lands_on_the_declared_level_only() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "mid",
+            &[&[("region", "r1"), ("hashtag", "alpha"), ("postId", "p1")]],
+        );
+
+        let entries = entries_of(
+            run(
+                &drive,
+                &contract,
+                "mid",
+                "hashtag",
+                &region_pin("r1"),
+                10,
+                false,
+            )
+            .expect("the pinned grouping read must succeed"),
+        );
+        assert_eq!(counts_of(&entries), named(&[(1, "alpha")]));
+
+        // Two pins address mid's terminal, which hosts no secondary.
+        let two_pins = vec![
+            WhereClause {
+                field: "region".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("r1".to_string()),
+            },
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("alpha".to_string()),
+            },
+        ];
+        assert!(
+            run(&drive, &contract, "mid", "postId", &two_pins, 10, false).is_err(),
+            "mid's unranked terminal must stay unservable"
+        );
+    }
+}
+
+mod every_level {
+    //! The fully ranked chain (`at: ["tag", "region", "postId"]` on the
+    //! trending fixture's `chain` doctype): each of the three levels
+    //! serves its own ranking, addressed purely by the (group property,
+    //! pin count) pair, with every proof verifying against the live
+    //! root hash.
+
+    use super::prefix_level::{
+        assert_proof_round_trips, counts_of, entries_of, insert_rows, named, run, setup_trending,
+    };
+    use crate::query::{WhereClause, WhereOperator};
+    use dpp::platform_value::Value;
+
+    fn pin(field: &str, value: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(value.to_string()),
+        }
+    }
+
+    #[test]
+    fn all_three_levels_serve_and_prove() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "chain",
+            &[
+                &[("tag", "alpha"), ("region", "east"), ("postId", "p1")],
+                &[("tag", "alpha"), ("region", "east"), ("postId", "p1")],
+                &[("tag", "alpha"), ("region", "east"), ("postId", "p2")],
+                &[("tag", "alpha"), ("region", "west"), ("postId", "p1")],
+                &[("tag", "beta"), ("region", "east"), ("postId", "p1")],
+            ],
+        );
+
+        // Level 0: top tags, nothing pinned.
+        let tags =
+            entries_of(run(&drive, &contract, "chain", "tag", &[], 10, false).expect("tag read"));
+        assert_eq!(counts_of(&tags), named(&[(4, "alpha"), (1, "beta")]));
+        assert_proof_round_trips(&drive, &contract, "chain", "tag", &[], 10, &tags);
+
+        // Level 1: top regions within a tag.
+        let alpha_pin = vec![pin("tag", "alpha")];
+        let regions = entries_of(
+            run(&drive, &contract, "chain", "region", &alpha_pin, 10, false).expect("region read"),
+        );
+        assert_eq!(counts_of(&regions), named(&[(3, "east"), (1, "west")]));
+        assert_proof_round_trips(
+            &drive, &contract, "chain", "region", &alpha_pin, 10, &regions,
+        );
+
+        // Level 2: top posts within (tag, region).
+        let east_pins = vec![pin("tag", "alpha"), pin("region", "east")];
+        let posts = entries_of(
+            run(&drive, &contract, "chain", "postId", &east_pins, 10, false).expect("post read"),
+        );
+        assert_eq!(counts_of(&posts), named(&[(2, "p1"), (1, "p2")]));
+        assert_proof_round_trips(&drive, &contract, "chain", "postId", &east_pins, 10, &posts);
     }
 }

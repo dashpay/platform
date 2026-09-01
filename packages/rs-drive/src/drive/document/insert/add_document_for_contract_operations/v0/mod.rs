@@ -8,7 +8,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 use dpp::version::PlatformVersion;
@@ -33,6 +33,35 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        // indexOnly document types have no primary-storage row and no
+        // primary-key tree at all — the index entries are the rows, and
+        // updates are impossible by construction (immutable, no revision).
+        // `index_only()` can only be true on a PV14+ contract (the grammar
+        // rejects the keyword below meta-schema v3), so this branch is
+        // unreachable for every historical document.
+        if document_and_contract_info.document_type.index_only() {
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
+                    document_and_contract_info.contract,
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
+            }
+
+            self.add_indices_for_top_index_level_for_contract_operations(
+                &document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+
+            return Ok(batch_operations);
+        }
+
         let primary_key_path = contract_documents_primary_key_path(
             document_and_contract_info.contract.id_ref().as_bytes(),
             document_and_contract_info.document_type.name().as_str(),

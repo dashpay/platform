@@ -403,6 +403,29 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()
             .map_err(Error::from)?;
 
+        // Defensive re-check of the protocol-version-14 matcher's
+        // contiguity guarantee (`Index::matches_contiguous`): the
+        // positional split below pairs `intermediate_values` with the
+        // index's leading properties in order, so a gap in the equality
+        // cover — or a range/`in` clause not sitting right after it —
+        // would misalign every level below the hole.
+        if !query_covers_index_prefix_contiguously(
+            &index.properties,
+            &|field| self.internal_clauses.equal_clauses.contains_key(field),
+            last_clause,
+            subquery_clause,
+            intermediate_values.len(),
+        ) {
+            return Err(Error::Query(
+                QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                    "query fields do not contiguously cover the index's properties from the \
+                     first: equality clauses must cover the index prefix and any range or in \
+                     clause must immediately follow it; index: {:?}",
+                    index
+                )),
+            ));
+        }
+
         let final_query = match last_clause {
             None => {
                 // There is no last_clause which means we are using an index most likely because of an order_by, however we have no
@@ -705,5 +728,146 @@ impl<'a> DriveDocumentQuery<'a> {
             path,
             SizedQuery::new(final_query, self.limit, self.offset),
         ))
+    }
+}
+
+/// True when the query's clauses line up with the positional path
+/// construction: the first `equality_prefix_len` index properties all
+/// carry equality clauses (they are the levels `intermediate_values`
+/// keys), the terminal clause (equality, range, or `in`) sits on the
+/// property right after that prefix, and a subquery clause (the later
+/// of an `in`/range pair) on the property after it. Unreachable-false
+/// once index selection ran through the protocol-version-14 contiguous
+/// matcher; kept as defense in depth for this file's `split_at`.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn query_covers_index_prefix_contiguously(
+    index_properties: &[IndexProperty],
+    is_equality_field: &dyn Fn(&str) -> bool,
+    last_clause: Option<&WhereClause>,
+    subquery_clause: Option<&WhereClause>,
+    equality_prefix_len: usize,
+) -> bool {
+    if index_properties.len() < equality_prefix_len {
+        return false;
+    }
+    let prefix_covered = index_properties[..equality_prefix_len]
+        .iter()
+        .all(|property| is_equality_field(property.name.as_str()));
+    let clause_sits_at = |clause: Option<&WhereClause>, position: usize| match clause {
+        Some(clause) => index_properties
+            .get(position)
+            .is_some_and(|property| property.name == clause.field),
+        None => true,
+    };
+    prefix_covered
+        && clause_sits_at(last_clause, equality_prefix_len)
+        && clause_sits_at(subquery_clause, equality_prefix_len + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::conditions::WhereOperator;
+    use dpp::platform_value::Value;
+
+    fn properties(names: &[&str]) -> Vec<IndexProperty> {
+        names
+            .iter()
+            .map(|name| IndexProperty {
+                name: name.to_string(),
+                ascending: true,
+            })
+            .collect()
+    }
+
+    fn clause(field: &str, operator: WhereOperator) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator,
+            value: Value::U64(0),
+        }
+    }
+
+    #[test]
+    fn aligned_shapes_pass() {
+        let index_properties = properties(&["a", "b", "c"]);
+        let is_equality = |field: &str| field == "a" || field == "b";
+
+        // Pure equalities: the deepest one is the terminal clause and is
+        // not among the intermediate values.
+        let terminal = clause("b", WhereOperator::Equal);
+        assert!(query_covers_index_prefix_contiguously(
+            &index_properties,
+            &is_equality,
+            Some(&terminal),
+            None,
+            1,
+        ));
+
+        // Equality prefix + adjacent range.
+        let range = clause("c", WhereOperator::GreaterThan);
+        assert!(query_covers_index_prefix_contiguously(
+            &index_properties,
+            &is_equality,
+            Some(&range),
+            None,
+            2,
+        ));
+
+        // Equality + in + range on consecutive properties.
+        let in_clause = clause("b", WhereOperator::In);
+        assert!(query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|field| field == "a",
+            Some(&in_clause),
+            Some(&range),
+            1,
+        ));
+
+        // No clauses at all (order-by-only use of the index).
+        assert!(query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|_| false,
+            None,
+            None,
+            0,
+        ));
+    }
+
+    #[test]
+    fn misaligned_shapes_fail() {
+        let index_properties = properties(&["a", "b", "c"]);
+
+        // Equality gap: values collected for a and c would be keyed at
+        // a's and b's levels.
+        let terminal = clause("c", WhereOperator::Equal);
+        assert!(!query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|field| field == "a" || field == "c",
+            Some(&terminal),
+            None,
+            1,
+        ));
+
+        // Range skipping the unbound middle property: its items would be
+        // applied at b's level.
+        let range = clause("c", WhereOperator::GreaterThan);
+        assert!(!query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|field| field == "a",
+            Some(&range),
+            None,
+            1,
+        ));
+
+        // Equality on a property the index does not lead with.
+        let terminal = clause("b", WhereOperator::Equal);
+        assert!(!query_covers_index_prefix_contiguously(
+            &index_properties,
+            &|field| field == "b",
+            Some(&terminal),
+            None,
+            0,
+        ));
     }
 }

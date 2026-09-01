@@ -1,6 +1,8 @@
 pub mod address;
+pub mod chained_document;
 pub mod data_contract;
 pub mod document;
+pub mod document_ranked;
 pub mod epoch;
 pub mod group;
 pub mod identity;
