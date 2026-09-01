@@ -99,11 +99,14 @@ export interface DocumentsQuery {
   startAt?: IdentifierLike
 
   /**
-   * Count-query knob: SQL-shaped `GROUP BY` field list. Mirrors
-   * the v1 wire's `group_by: repeated string` directly. Ignored
-   * by the regular document-fetch path.
+   * Aggregate-query option: SQL-shaped `GROUP BY` field list. Mirrors
+   * the v1 wire's `group_by: repeated string` directly. Ignored by
+   * the regular document-fetch path.
    *
-   * - `[]` or omitted → aggregate count (a single row).
+   * - `[]` or omitted → one ungrouped result entry, keyed by the
+   *   empty string. Its value is the total count for
+   *   `getDocumentsCount`, total sum for `getDocumentsSum`, or
+   *   `{count, sum}` for `getDocumentsAverage`.
    * - `["<in_field>"]` where `<in_field>` matches an `In`
    *   constraint → per-`In`-value entries (PerInValue).
    * - `["<range_field>"]` where `<range_field>` matches a range
@@ -208,11 +211,11 @@ pub(super) struct DocumentsQueryInput {
     pub(super) start_after: Option<IdentifierWasm>,
     #[serde(rename = "startAt", default)]
     pub(super) start_at: Option<IdentifierWasm>,
-    /// Count-query knob: SQL-shaped `GROUP BY` field list,
+    /// Aggregate-query option: SQL-shaped `GROUP BY` field list,
     /// mirroring the v1 wire `group_by: repeated string` field
     /// one-to-one. Ignored by the regular document-fetch path.
     /// See the TypeScript declaration for the supported shapes.
-    /// Default empty (aggregate count).
+    /// Default empty (one ungrouped aggregate result entry).
     #[serde(rename = "groupBy", default)]
     pub(super) group_by: Option<Vec<String>>,
     // Order direction for count results flows through the existing
@@ -259,8 +262,8 @@ pub(super) async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
-    // `group_by` on the shared input struct is a count-query-only
-    // knob; the regular document-fetch path destructured here just
+    // `group_by` on the shared input struct is an aggregate-query-only
+    // option; the regular document-fetch path destructured here just
     // drops it.
     let DocumentsQueryInput {
         data_contract_id,
