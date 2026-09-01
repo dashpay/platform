@@ -24,11 +24,156 @@ permissions:
   contents: read
 
 jobs:
+  build-npm:
+    name: Build NPM packages
+    # Reuse the persistent Linux runner's Cargo target and registry state. The
+    # publish job stays on a GitHub-hosted runner because npm trusted publishing
+    # does not support self-hosted runners.
+    runs-on: [self-hosted, kotlin-ci]
+    timeout-minutes: 120
+    if: github.event_name != 'workflow_dispatch'
+    # In particular, do not mint an OIDC token for the persistent build host.
+    permissions:
+      contents: read
+    steps:
+      - uses: softwareforgood/check-artifact-v4-existence@v0
+        id: check-artifact
+        with:
+          name: js-build-${{ github.sha }}
+
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          # Preserve the expensive Cargo target cache between release builds.
+          clean: false
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Ensure runner dependencies
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        run: |
+          set -euo pipefail
+
+          MISSING=()
+          for pkg in build-essential cmake curl jq libgmp-dev libssl-dev pkg-config python3 unzip zip; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "Installing: ${MISSING[*]}"
+            sudo apt-get update -qq
+            sudo apt-get install -qq --yes "${MISSING[@]}"
+          fi
+
+          if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+          docker info >/dev/null
+          if ! docker image inspect rvolosatovs/protoc:4.0.0 >/dev/null 2>&1; then
+            docker pull rvolosatovs/protoc:4.0.0
+          fi
+
+      - name: Clean stale build outputs
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        run: |
+          git reset --hard
+          git clean -ffdx -e target/
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+        with:
+          target: wasm32-unknown-unknown
+          # The runner persists the Cargo registry and target directory.
+          cache: 'false'
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Install Cargo binstall
+        uses: cargo-bins/cargo-binstall@v1.3.1
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Install wasm-bindgen-cli
+        run: |
+          if ! wasm-bindgen --version 2>/dev/null | grep -Fxq 'wasm-bindgen 0.2.108'; then
+            cargo binstall wasm-bindgen-cli@0.2.108 --no-confirm --force
+          fi
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Install wasm-pack
+        run: |
+          if ! wasm-pack --version 2>/dev/null | grep -Fxq 'wasm-pack 0.15.0'; then
+            cargo binstall wasm-pack@0.15.0 --no-confirm --force
+          fi
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Install Binaryen
+        run: |
+          BINARYEN_DIR="$HOME/.local/binaryen-version_121"
+          if [ ! -x "$BINARYEN_DIR/bin/wasm-opt" ]; then
+            ARCHIVE="$RUNNER_TEMP/binaryen-version_121-x86_64-linux.tar.gz"
+            curl -fsSL -o "$ARCHIVE" \
+              https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz
+            mkdir -p "$HOME/.local"
+            tar -xzf "$ARCHIVE" -C "$HOME/.local"
+          fi
+          echo "$BINARYEN_DIR/bin" >> "$GITHUB_PATH"
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Build packages
+        run: yarn build
+        env:
+          CARGO_BUILD_PROFILE: release
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Ignore only already cached artifacts
+        run: |
+          find . -name '.gitignore' -exec rm -f {} +
+          {
+            echo ".yarn"
+            echo "target"
+            echo "node_modules"
+            echo ".nyc_output"
+            echo ".idea"
+            echo ".ultra.cache.json"
+            echo "db/*"
+          } >> .gitignore
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Get modified files
+        id: diff
+        run: |
+          {
+            echo "files<<EOF"
+            git ls-files --others --exclude-standard
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Upload the archive of built files
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-build-${{ github.sha }}
+          path: ${{ steps.diff.outputs.files }}
+          # Keep the handoff alive long enough to re-run only a failed publish.
+          retention-days: 7
+          if-no-files-found: error
+          include-hidden-files: true
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
   release-npm:
-    name: Release NPM packages
+    name: Publish NPM packages
+    needs: build-npm
+    # npm trusted publishing currently accepts GitHub-hosted runners only.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     if: github.event_name != 'workflow_dispatch'
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -38,68 +183,20 @@ jobs:
         env:
           TAG_PREFIX: v
 
-      - uses: softwareforgood/check-artifact-v4-existence@v0
-        id: check-artifact
-        with:
-          name: js-build-${{ github.sha }}
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Setup Rust
-        uses: ./.github/actions/rust
-        with:
-          target: wasm32-unknown-unknown
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.AWS_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
       # Composite action defaults to Node 24+ which ships npm 11.5.1+;
       # required for trusted-publishers OIDC at the publish step below.
       # See https://docs.npmjs.com/trusted-publishers.
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
-      - name: Install Cargo binstall
-        uses: cargo-bins/cargo-binstall@v1.3.1
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Install wasm-bindgen-cli
-        run: cargo binstall wasm-bindgen-cli@0.2.108
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Install wasm-pack
-        run: cargo binstall wasm-pack
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Install Binaryen
-        run: |
-          wget https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz -P /tmp
-          tar -xzf /tmp/binaryen-version_121-x86_64-linux.tar.gz -C /tmp
-          sudo cp -r /tmp/binaryen-version_121/* /usr/local/
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Build packages
-        run: yarn build
-        env:
-          CARGO_BUILD_PROFILE: release
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+      - name: Download JS build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: js-build-${{ github.sha }}
+          path: packages
 
       - name: Set suffix
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         id: suffix
         with:
           result-encoding: string
@@ -114,7 +211,7 @@ jobs:
             }
 
       - name: Set NPM release tag
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         id: tag
         with:
           result-encoding: string
@@ -130,36 +227,6 @@ jobs:
 
       - name: Publish NPM packages
         run: yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
-
-      - name: Ignore only already cached artifacts
-        run: |
-          find . -name '.gitignore' -exec rm -f {} +
-          echo ".yarn" >> .gitignore
-          echo "target" >> .gitignore
-          echo "node_modules" >> .gitignore
-          echo ".nyc_output" >> .gitignore
-          echo ".idea" >> .gitignore
-          echo ".ultra.cache.json" >> .gitignore
-          echo "db/*" >> .gitignore
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Get modified files
-        id: diff
-        run: |
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          git ls-files --others --exclude-standard >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Upload the archive of built files
-        uses: actions/upload-artifact@v4
-        with:
-          name: js-build-${{ github.sha }}
-          path: ${{ steps.diff.outputs.files }}
-          retention-days: 1
-          if-no-files-found: error
-          include-hidden-files: true
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
   release-drive-image:
     name: Release Drive image
