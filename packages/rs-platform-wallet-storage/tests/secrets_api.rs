@@ -286,19 +286,23 @@ fn passphrase_cap_is_public_typed_and_leak_free() {
     );
 }
 
-/// The two size ceilings stay consistent with the locked-memory budget
-/// they are derived from: a secret's stored envelope must fit two
-/// guarded pages and a passphrase one, or the budget documented at
-/// `MAX_SECRET_LEN` no longer describes the crate.
+/// The two public size ceilings stay put, pinned by value.
 ///
-/// The 4096 is an assumption about the host, not a constant of the
-/// universe, so the store construction below asserts the assumption holds
-/// here: a host with larger pages cannot open a store at all, which is
-/// what stops these ceilings from silently describing nobody.
+/// Both are load-bearing rows of the locked-memory budget documented at
+/// `MAX_SECRET_LEN`, and both are public API — so a change to either is a
+/// change to what callers may store, not an implementation detail. Spelt
+/// as literals rather than as page arithmetic: they are product ceilings
+/// chosen to cover real secrets cheaply, and deriving them from a page
+/// size is what previously tied them to one host's idea of a page.
+///
+/// The page size remains an assumption about the host, so the store
+/// construction below asserts it holds here: a host with larger pages
+/// cannot open a store at all, which is what stops the budget these
+/// ceilings belong to from silently describing nobody.
 #[test]
-fn public_size_ceilings_stay_page_aligned() {
-    assert_eq!(MAX_SECRET_LEN, 2 * 4096 - 16);
-    assert_eq!(MAX_PASSPHRASE_LEN, 4096 - 16);
+fn public_size_ceilings_stay_pinned() {
+    assert_eq!(MAX_SECRET_LEN, 8176);
+    assert_eq!(MAX_PASSPHRASE_LEN, 4080);
 
     let dir = tempfile::tempdir().unwrap();
     let _store = open(dir.path());

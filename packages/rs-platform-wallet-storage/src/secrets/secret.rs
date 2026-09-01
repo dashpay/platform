@@ -22,9 +22,17 @@ use super::guarded::GuardedBuf;
 ///
 /// `memsec` prefixes every allocation with a 16-byte canary and rounds
 /// the total up to whole pages, so 4080 bytes is the largest payload that
-/// still fits a single 4 KiB data page — ample for any passphrase or
-/// 24-word mnemonic, and one page is the minimum a guarded allocation can
-/// cost regardless.
+/// still fits a single data page on a **4 KiB-page** host — ample for any
+/// passphrase or 24-word mnemonic, and one page is the minimum a guarded
+/// allocation can cost regardless.
+///
+/// Sized against 4 KiB rather than
+/// [`ASSUMED_PAGE_SIZE`](super::guarded::ASSUMED_PAGE_SIZE) on purpose:
+/// this value is what *every* [`SecretString`] pre-allocates, so raising
+/// it to fill a 16 KiB page would quadruple the real locked cost of every
+/// passphrase on the 4 KiB hosts that dominate deployment, to buy
+/// capacity nothing asks for. The locked-memory budget already charges
+/// this row a full page either way.
 ///
 /// A guarded page is also the minimum a *non-empty* secret can cost, so a
 /// 32-byte key occupies one whole locked page. That overhead is inherent
@@ -42,7 +50,7 @@ pub const MIN_PASSPHRASE_LEN: usize = 8;
 
 /// Maximum byte length for a vault passphrase or Tier-2 object password.
 ///
-/// Equal to the largest payload that still fits one guarded page.
+/// Sized to fit one guarded page on any supported host.
 /// Passphrases are held resident for a store's whole lifetime and up to
 /// three are live at once during a re-protect, so this ceiling is what
 /// keeps them a fixed one-page row in the locked-memory budget documented

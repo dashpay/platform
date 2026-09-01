@@ -156,10 +156,13 @@ pub enum SecretStoreError {
     /// `memsec` rounds every guarded allocation up to the page size it
     /// reads from the kernel at run time, while the budget documented at
     /// [`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN) is denominated
-    /// in 4 KiB pages. On a 16 KiB- or 64 KiB-page host the real peak is
-    /// four or sixteen times the budgeted one; `mlock` then fails open
-    /// with a warning and seed / xpriv material silently becomes
-    /// swappable. Construction refuses instead of degrading.
+    /// in 16 KiB pages. On a larger-paged host the real peak exceeds the
+    /// budgeted one by the ratio between the two sizes; `mlock` then
+    /// fails open with a warning and seed / xpriv material silently
+    /// becomes swappable. Construction refuses instead of degrading.
+    ///
+    /// Reserved for exotic hosts — 64 KiB-page aarch64 RHEL/SLES builds.
+    /// 4 KiB Linux and 16 KiB Apple Silicon / iOS both pass.
     ///
     /// Smaller-than-assumed pages are accepted: they turn every
     /// `locked_cost` figure into an over-estimate, which leaves the budget

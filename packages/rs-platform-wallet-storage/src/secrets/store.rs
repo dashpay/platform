@@ -488,9 +488,14 @@ mod tests {
     /// passwords. Every row of the table is driven to its ceiling here.
     /// The budget only holds because `reprotect` scopes the old envelope
     /// away before the rewrap allocates and `wrap_with_params` scopes its
-    /// derived key away before encoding. Remove both and this measures
-    /// 44 KiB, leaving too little of a 64 KiB `RLIMIT_MEMLOCK` for the
-    /// concurrent read the budget promises to cover.
+    /// derived key away before encoding; each scope held open would add a
+    /// whole page, eating the headroom the concurrent read needs.
+    ///
+    /// Measures *accounted* bytes, not resident ones: the gauge is fed
+    /// `locked_cost`, which is denominated in `ASSUMED_PAGE_SIZE` pages.
+    /// So this reads 112 KiB on a 4 KiB-page host whose kernel is really
+    /// locking 36 KiB. That gap is the budget's deliberate conservatism,
+    /// not a leak — the figure tracks the largest supported host.
     #[test]
     fn file_reprotect_peak_matches_the_documented_budget() {
         use crate::secrets::guarded::gauge;
@@ -516,8 +521,8 @@ mod tests {
 
         assert_eq!(
             peak,
-            36 * 1024,
-            "reprotect peaked at {} KiB; the table at MAX_SECRET_LEN says 36",
+            112 * 1024,
+            "reprotect peaked at {} KiB; the table at MAX_SECRET_LEN says 112",
             peak / 1024
         );
     }

@@ -82,19 +82,20 @@ pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 /// [`SecretStoreError::SecretTooLarge`] at the write boundary before the
 /// secret is sealed or inserted.
 ///
-/// # Why `2 * 4096 - 16`
+/// # Why 8176
 ///
 /// Secrets live in guarded, `mlock`ed pages (one allocation per secret,
 /// never shared), so this ceiling also sets the process's worst-case
-/// locked-memory demand. It is sized to fit a **64 KiB `RLIMIT_MEMLOCK`**
-/// — the Docker/Kubernetes default — with room to spare.
+/// locked-memory demand.
 ///
-/// `memsec` locks `page_round(16 + payload)`, the 16 bytes being its
-/// canary, so 8176 is the largest secret whose stored envelope still fits
-/// **two** guarded pages instead of spilling into a third — the same
-/// one-below-a-page-multiple shape as `DEFAULT_CAPACITY`. The last 16
-/// bytes of an 8 KiB allowance would cost a whole extra page on both the
-/// envelope and the plaintext row below.
+/// The value is a product ceiling, not page arithmetic: 8176 bytes is
+/// ~30× the largest legitimate secret — a 24-word BIP-39 mnemonic is
+/// under 256 bytes, a BIP-32 seed is 64, an xpriv ~112 — while still
+/// costing a single guarded page. A security ceiling wants to be the
+/// smallest that comfortably covers real use, so the slack between 8176
+/// and the 16368 that would also fit one page is deliberately left
+/// unspent: on a 4 KiB-page host, where `memsec` rounds to the real page
+/// size, 16368 would cost four locked pages per secret instead of one.
 ///
 /// The deepest path is a **`File`-arm [`reprotect`]**, not a read: it runs
 /// a full read and then a rewrap while the caller holds *two* object
@@ -103,37 +104,40 @@ pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 ///
 /// | live buffer | payload | locked |
 /// |---|---|---|
-/// | stored envelope (`MAX_SECRET_LEN`) | 8176 B | 8 KiB |
-/// | derived unwrap key | 32 B | 4 KiB |
-/// | decrypted plaintext ([`MAX_PLAINTEXT_LEN`]) | 8064 B | 8 KiB |
-/// | resident vault AEAD key | 32 B | 4 KiB |
-/// | vault passphrase ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 4 KiB |
-/// | `current` object password ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 4 KiB |
-/// | `new` object password ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 4 KiB |
+/// | stored envelope (`MAX_SECRET_LEN`) | 8176 B | 16 KiB |
+/// | derived unwrap key | 32 B | 16 KiB |
+/// | decrypted plaintext ([`MAX_PLAINTEXT_LEN`]) | 8064 B | 16 KiB |
+/// | resident vault AEAD key | 32 B | 16 KiB |
+/// | vault passphrase ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 16 KiB |
+/// | `current` object password ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 16 KiB |
+/// | `new` object password ([`MAX_PASSPHRASE_LEN`]) | ≤ 4080 B | 16 KiB |
 ///
-/// That totals 36 KiB, leaving 28 KiB — enough for a second concurrent
-/// max-size read (its own envelope, key and plaintext: 20 KiB) and still
-/// 8 KiB clear. The rewrap half of the same call peaks lower (32 KiB),
-/// because [`reprotect`] scopes the old envelope away before allocating
-/// the new one and [`wrap_with_params`] scopes its derived key away before
-/// encoding. Both scopes are load-bearing: without them this path peaks at
-/// 44 KiB, and at 52 KiB if the ceiling also loses its page alignment.
+/// `memsec` locks `page_round(16 + payload)`, the 16 bytes being its
+/// canary, and every ceiling above plus that canary fits inside one
+/// `ASSUMED_PAGE_SIZE` page. So the budget is a count of live secrets,
+/// not a sum of their sizes: seven pages, **112 KiB**. A concurrent
+/// max-size read adds three more (its own envelope, key and plaintext:
+/// 48 KiB), for 160 KiB against a 256 KiB budget — 96 KiB clear.
+///
+/// The rewrap half of the same call peaks lower, because [`reprotect`]
+/// scopes the old envelope away before allocating the new one and
+/// `wrap_with_params` scopes its derived key away before encoding. Both
+/// scopes remain load-bearing: each one held open would add a whole page
+/// to the peak, since at this page size every live secret costs one
+/// regardless of how few bytes it holds.
 /// `store::tests::file_reprotect_peak_matches_the_documented_budget`
 /// measures the peak rather than trusting this table.
 ///
 /// Every row is enforced, not assumed: the first three by this constant
 /// and [`MAX_PLAINTEXT_LEN`], the passphrase rows by
 /// [`MAX_PASSPHRASE_LEN`] on both the enrol and the read side. Raising
-/// this constant eats the headroom roughly twice over per KiB, since the
-/// envelope and its plaintext are both live.
-///
-/// 8176 bytes remains ~30× the largest legitimate secret: a 24-word BIP-39
-/// mnemonic is under 256 bytes, a BIP-32 seed is 64, an xpriv ~112.
+/// this constant past 16368 eats the budget two pages at a time, since
+/// the envelope and its plaintext are both live.
 ///
 /// [`MAX_PLAINTEXT_LEN`]: crate::secrets::MAX_PLAINTEXT_LEN
 /// [`MAX_PASSPHRASE_LEN`]: crate::secrets::MAX_PASSPHRASE_LEN
 /// [`reprotect`]: crate::secrets::SecretStore::reprotect
-pub const MAX_SECRET_LEN: usize = 2 * 4096 - 16;
+pub const MAX_SECRET_LEN: usize = 8176;
 
 /// The budget table documented at [`MAX_SECRET_LEN`], made executable.
 ///
@@ -143,15 +147,22 @@ pub const MAX_SECRET_LEN: usize = 2 * 4096 - 16;
 /// fail-open, so nothing else would notice).
 ///
 /// This half covers the CEILINGS. The other half of the same guarantee is
-/// the host: `locked_cost` is denominated in 4 KiB pages while `memsec`
+/// the host: `locked_cost` is denominated in 16 KiB pages while `memsec`
 /// rounds to the kernel's runtime page size, so
 /// [`verify_host_page_size`] rejects a larger-paged host at store
 /// construction rather than let this table quietly describe nobody.
 const _: () = {
-    use super::guarded::locked_cost;
+    use super::guarded::{locked_cost, ASSUMED_PAGE_SIZE};
 
     /// The `RLIMIT_MEMLOCK` this crate budgets against.
-    const MEMLOCK_BUDGET: usize = 64 * 1024;
+    ///
+    /// The smallest power of two that holds the derivation below with
+    /// real headroom. Deliberately far under what hosts actually grant —
+    /// systemd has defaulted `DefaultLimitMEMLOCK` to 8 MiB for years,
+    /// and a default Docker container inherits it — so the 64 KiB this
+    /// crate once budgeted against described no supported host. Nothing
+    /// reads the real limit at run time; see `SECRETS.md`.
+    const MEMLOCK_BUDGET: usize = 256 * 1024;
     /// `File`-arm `reprotect`, at the instant the AEAD open allocates.
     const REPROTECT_PEAK: usize = locked_cost(MAX_SECRET_LEN)
         + locked_cost(32)
@@ -164,12 +175,16 @@ const _: () = {
         + locked_cost(crate::secrets::MAX_PLAINTEXT_LEN);
 
     assert!(
-        locked_cost(MAX_SECRET_LEN) == 2 * 4096,
-        "a max-size envelope must still fit two guarded pages"
+        locked_cost(MAX_SECRET_LEN) == ASSUMED_PAGE_SIZE,
+        "a max-size envelope must still fit a single guarded page"
     );
     assert!(
-        REPROTECT_PEAK == 36 * 1024,
-        "the documented 36 KiB peak no longer matches the constants"
+        locked_cost(crate::secrets::MAX_PASSPHRASE_LEN) == ASSUMED_PAGE_SIZE,
+        "a max-size passphrase must still fit a single guarded page"
+    );
+    assert!(
+        REPROTECT_PEAK == 7 * ASSUMED_PAGE_SIZE,
+        "the documented seven-page peak no longer matches the constants"
     );
     assert!(
         REPROTECT_PEAK + CONCURRENT_READ <= MEMLOCK_BUDGET,

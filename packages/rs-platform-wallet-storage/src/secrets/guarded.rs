@@ -183,10 +183,22 @@ impl Drop for GuardedBuf {
 /// (`sysconf(_SC_PAGESIZE)` / `GetSystemInfo`), which the compile-time
 /// budget cannot see. [`verify_host_page_size`] is what turns the
 /// assumption into a checked precondition.
-pub(super) const ASSUMED_PAGE_SIZE: usize = 4096;
+///
+/// 16 KiB rather than the 4 KiB of x86-64 Linux, because the budget must
+/// bound the *largest* supported host, not the commonest one: Apple
+/// Silicon macOS and iOS use 16 KiB pages, and a 4 KiB assumption made
+/// them unconstructible. Assuming 16 KiB costs a 4 KiB-page host nothing
+/// at run time — `memsec` still rounds to that host's real 4 KiB — it
+/// only makes [`locked_cost`] the over-estimate there that the budget is
+/// already designed to tolerate.
+pub(super) const ASSUMED_PAGE_SIZE: usize = 16384;
 
 /// Bytes `memsec` locks for a `payload`-byte secret: its 16-byte canary
 /// prepended, then rounded up to whole [`ASSUMED_PAGE_SIZE`] pages.
+///
+/// Mirrors `memsec`'s own `mlock(ptr, page_round(CANARY_SIZE + size))`,
+/// so it is exact whenever the host's pages match the assumption and an
+/// over-estimate when they are smaller.
 ///
 /// The unit the crate's locked-memory budget is denominated in — see the
 /// table at [`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN).
@@ -203,6 +215,11 @@ pub(super) const fn locked_cost(payload: usize) -> usize {
 /// the ratio between the two sizes, and `mlock` fails **open** — the
 /// process keeps running with swappable seed and xpriv material and only
 /// a warning to show for it.
+///
+/// At a 16 KiB assumption the refusing branch is reserved for genuinely
+/// exotic hosts — 64 KiB-page aarch64 RHEL/SLES builds. Every mainstream
+/// target (4 KiB x86-64 and aarch64 Linux, 16 KiB Apple Silicon and iOS)
+/// passes.
 ///
 /// # Errors
 ///
@@ -296,9 +313,13 @@ mod tests {
 
     /// A host whose pages exceed the assumption is refused, and the error
     /// names both sizes so the operator can see the mismatch.
+    ///
+    /// 32 and 64 KiB stand in for aarch64 RHEL/SLES kernels built with a
+    /// larger base page; every mainstream target now sits on the
+    /// accepting side.
     #[test]
     fn a_larger_host_page_is_refused_naming_both_sizes() {
-        for found in [8 * 1024, 16 * 1024, 64 * 1024] {
+        for found in [32 * 1024, 64 * 1024] {
             let err = check_page_size(found).expect_err("a page above the budget must be refused");
             assert!(
                 matches!(
@@ -319,11 +340,25 @@ mod tests {
 
     /// Pages at or under the assumption pass: they leave `locked_cost` an
     /// over-estimate, so the budget stays conservative.
+    ///
+    /// 4096 is listed by value, not left implicit: x86-64 and aarch64
+    /// Linux are the crate's commonest hosts and must stay covered by
+    /// name however [`ASSUMED_PAGE_SIZE`] moves.
     #[test]
     fn a_page_at_or_under_the_assumption_is_accepted() {
-        for found in [1024, 2048, ASSUMED_PAGE_SIZE] {
+        for found in [1024, 2048, 4096, 8192, ASSUMED_PAGE_SIZE] {
             check_page_size(found).expect("a page within the budget must be accepted");
         }
+    }
+
+    /// A 16 KiB-page host constructs a store. Apple Silicon macOS and iOS
+    /// are 16 KiB-page targets with a Swift SDK and an FFI layer in this
+    /// repo, and the wallet CI runs on a `macOS, ARM64` runner, so a
+    /// refusal here is not a conservative default — it is the whole
+    /// `secrets` tree unavailable on a first-class platform.
+    #[test]
+    fn a_sixteen_kibibyte_page_host_is_accepted() {
+        check_page_size(16 * 1024).expect("Apple Silicon and iOS pages must be within the budget");
     }
 
     /// This host honours the assumption — otherwise every store
@@ -331,6 +366,26 @@ mod tests {
     #[test]
     fn this_host_honours_the_page_size_assumption() {
         verify_host_page_size().expect("the secrets suite needs a host within the page budget");
+    }
+
+    /// Every row of the budget table costs exactly one guarded page.
+    ///
+    /// What collapses the budget from a sum of sizes into a count of live
+    /// secrets: each ceiling plus memsec's 16-byte canary fits inside one
+    /// [`ASSUMED_PAGE_SIZE`] page. A future edit raising any ceiling past
+    /// that spills a second page into every row that uses it, which this
+    /// catches and the peak assertion would then report only in total.
+    #[test]
+    fn every_budgeted_row_costs_one_page() {
+        use crate::secrets::{MAX_PASSPHRASE_LEN, MAX_PLAINTEXT_LEN, MAX_SECRET_LEN};
+
+        for payload in [32, MAX_PASSPHRASE_LEN, MAX_PLAINTEXT_LEN, MAX_SECRET_LEN] {
+            assert_eq!(
+                locked_cost(payload),
+                ASSUMED_PAGE_SIZE,
+                "a {payload}-byte budgeted row must fit one guarded page"
+            );
+        }
     }
 
     #[test]
