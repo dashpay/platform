@@ -5,6 +5,23 @@ import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 
 export default class ResetCommand extends ConfigBaseCommand {
+  // Reconfigures the node: changes configuration repeatedly while doing long,
+  // partly irreversible work, so it holds the config lock for its whole run.
+  static mutatesConfig = true;
+
+  // A total reset can repair a config whose old options no longer validate.
+  static shouldSkipConfigValidation({
+    force, hard, platform, config,
+  }) {
+    if (!force || !hard || platform) {
+      return false;
+    }
+
+    return ({ name, configFileData }) => (
+      name === (config ?? configFileData.defaultConfigName)
+    );
+  }
+
   static description = 'Reset node data';
 
   static flags = {

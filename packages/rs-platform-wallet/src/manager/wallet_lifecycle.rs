@@ -210,7 +210,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // place below, BEFORE the address-pool snapshot is taken.
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
 
-        let generation = Arc::new(WalletGeneration::new());
+        // The id this wallet is about to occupy. Computed HERE — before
+        // `downgrade_to_external_signable` below flips the wallet type, and
+        // before `wallet` is moved into `insert_wallet` — because the
+        // generation must be born already holding this wallet's fence map.
+        //
+        // A registration under an id a previous generation held is exactly the
+        // remove-and-recreate case: that generation's pending-spend fences
+        // protect signed transactions that are still valid and still relayable,
+        // so the replacement inherits them rather than starting clean
+        // (`dashpay/platform#4309`, review round 8). A first registration finds
+        // no entry and gets an empty map, as before.
+        let registration_wallet_id = wallet.compute_wallet_id();
+        let generation = Arc::new(WalletGeneration::with_fences(
+            self.in_broadcast_fences_for(&registration_wallet_id),
+        ));
 
         // Snapshot per-account xpubs and address-pool entries BEFORE
         // the wallet / managed-info are moved into insert_wallet. The
@@ -359,6 +373,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .unwrap_or(wallet.wallet_id);
 
         let platform_info = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
             core_wallet: wallet_info,
             generation: Arc::clone(&generation),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
@@ -387,6 +402,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             })?
         };
+
+        // `insert_wallet` recomputes the id from the (now external-signable)
+        // wallet. The two agree by construction — the downgrade flips only the
+        // wallet TYPE, and the type's own branch returns the same stamped
+        // network-scoped digest — but the fence map is safety state, so a
+        // divergence must not silently key it under an id nothing will look up.
+        // Alias the same `Arc` under the authoritative id instead: one map,
+        // reachable either way.
+        debug_assert_eq!(
+            wallet_id, registration_wallet_id,
+            "the registered wallet id must match the id the fence map was keyed by"
+        );
+        if wallet_id != registration_wallet_id {
+            tracing::error!(
+                registered = %hex::encode(wallet_id),
+                fenced_as = %hex::encode(registration_wallet_id),
+                "wallet id changed across registration; aliasing the in-broadcast \
+                 fence map under both"
+            );
+            let fences = self.in_broadcast_fences_for(&registration_wallet_id);
+            self.in_broadcast_fences
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(wallet_id, fences);
+        }
 
         // Emit metadata + per-account xpubs + per-pool address
         // snapshots to the persister so the watch-only restore path
@@ -1073,6 +1113,164 @@ mod register_wallet_duplicate_tests {
         assert!(
             matches!(err, PlatformWalletError::WalletAlreadyExists(_)),
             "duplicate create must map to WalletAlreadyExists, got: {err:?}"
+        );
+    }
+
+    /// `dashpay/platform#4309`, REVIEW ROUND 8 — PENDING-SPEND PROTECTION MUST
+    /// SURVIVE WALLET RECREATION.
+    ///
+    /// The in-broadcast fence used to live in the `WalletGeneration` itself, so
+    /// it was not merely process-local but *generation*-local. Removing a wallet
+    /// and re-creating it under the same id mints a fresh generation, and the
+    /// fence map went with the old one — while the signed transaction it was
+    /// protecting stays perfectly valid and can still be relayed by a DAPI
+    /// endpoint or a peer that retained it. The re-created wallet restored the
+    /// persisted UTXO with neither the fence nor key-wallet's memory-only
+    /// reservation holding it, and could sign a conflicting spend of the very
+    /// same outpoint.
+    ///
+    /// Fences are therefore keyed by WALLET, not by generation: a generation
+    /// that replaces another under the same id inherits its predecessor's
+    /// pending-spend fences, and they are retired by the same evidence as ever —
+    /// an observed spend — not by the replacement.
+    ///
+    /// Red before the fix: the re-created wallet reported no conflict at all.
+    #[tokio::test]
+    async fn a_recreated_wallet_inherits_the_pending_fences_of_the_generation_it_replaces() {
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness};
+
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid test mnemonic")
+            .to_seed("");
+
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("first create should succeed");
+        let wallet_id = wallet.wallet_id();
+
+        // One dispatch that reached the network and has NOT been observed
+        // spent — the state that must outlive the generation holding it.
+        let funded = OutPoint {
+            txid: Txid::from_slice(&[0x7E; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: funded,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffff_ffff,
+                witness: Witness::new(),
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        wallet
+            .generation()
+            .pin_in_broadcast(&tx)
+            .settle_pending_spend();
+        assert_eq!(
+            wallet.generation().in_broadcast_conflict(&tx),
+            Some(funded),
+            "the dispatching wallet must fence its own pending spend"
+        );
+
+        // Remove and re-create under the same id — the host-visible
+        // "delete and restore this wallet" round trip.
+        manager.remove_wallet(&wallet_id).await.expect("remove");
+        let recreated = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("re-create should succeed");
+        assert_eq!(
+            recreated.wallet_id(),
+            wallet_id,
+            "the re-created wallet must occupy the same id"
+        );
+
+        assert_eq!(
+            recreated.generation().in_broadcast_conflict(&tx),
+            Some(funded),
+            "a wallet re-created under the same id must inherit the pending-spend \
+             fence of the generation it replaced — the signed transaction that \
+             fence protects is still valid and still relayable"
+        );
+    }
+
+    /// The inheritance above is per WALLET, not global: one wallet's dispatch
+    /// must never fence another wallet's inputs.
+    #[tokio::test]
+    async fn fences_do_not_leak_between_different_wallets() {
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness};
+
+        let manager = make_manager();
+        let seed_bytes = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid test mnemonic")
+            .to_seed("");
+
+        // Same seed, DIFFERENT networks — key-wallet stamps a network-scoped
+        // id, so these are two distinct wallets in one manager.
+        let first = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("testnet create");
+        let second = manager
+            .create_wallet_from_seed_bytes(
+                Network::Devnet,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("devnet create");
+        assert_ne!(first.wallet_id(), second.wallet_id());
+
+        let funded = OutPoint {
+            txid: Txid::from_slice(&[0x7F; 32]).expect("valid txid"),
+            vout: 0,
+        };
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: funded,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffff_ffff,
+                witness: Witness::new(),
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        first
+            .generation()
+            .pin_in_broadcast(&tx)
+            .settle_pending_spend();
+
+        assert_eq!(
+            second.generation().in_broadcast_conflict(&tx),
+            None,
+            "a different wallet's fence must not block this one's builds"
         );
     }
 }

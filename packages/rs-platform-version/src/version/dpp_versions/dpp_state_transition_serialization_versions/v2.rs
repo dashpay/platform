@@ -96,6 +96,8 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V2: DPPStateTransitionSerializ
                 default_current_version: 0,
             },
         },
+        // The indexOnly delete kind joins the wire at PV14.
+        document_index_only_delete_state_transition: None,
         document_transfer_state_transition: DocumentFeatureVersionBounds {
             bounds: FeatureVersionBounds {
                 min_version: 0,

@@ -47,8 +47,7 @@ import org.dashfoundation.example.util.toHex
  * - In-memory [isReclaiming] single-flights submit AND dismissal — the
  *   persisted `reclaimInFlight` marker is crash forensics, never the
  *   concurrency guard (a Room-Flow re-emit recomposes this sheet; an
- *   unguarded second consume would let the loser's classifier overwrite
- *   Reclaimed with Claimed).
+ *   unguarded second consume could overwrite the first attempt's state).
  * - The marker is persisted (and the write MUST succeed) only immediately
  *   before the on-chain consume; the register arm's key pre-persist runs
  *   BEFORE the marker so a purely local failure never strands one.
@@ -118,8 +117,8 @@ fun ReclaimInvitationSheet(
                     // The write must SUCCEED before the consume may run (an
                     // unpersisted marker + consume + crash would strand the
                     // row). The persisted prior value is captured first: it is
-                    // what downgrades a later "already consumed" from
-                    // "provably a foreign claim" to "explicitly ambiguous".
+                    // retained as crash evidence when a later submission
+                    // reports consumption but cannot prove the operation.
                     suspend fun markInFlight() {
                         hadPriorReclaimInFlight =
                             dao.getByOutPointHex(hex)?.reclaimInFlight ?: false
@@ -191,26 +190,13 @@ fun ReclaimInvitationSheet(
                 onClose()
             } catch (t: Throwable) {
                 when (InvitationReclaimLogic.classifyReclaimFailure(t, hadPriorReclaimInFlight)) {
-                    ReclaimOutcome.RECLAIMED -> {
-                        dao.setStatusAndMarker(hex, 2, false, System.currentTimeMillis())
-                        infoMessage = "This invitation was already reclaimed by this " +
-                            "wallet. The credits were delivered to the target selected " +
-                            "for that reclaim."
-                    }
-                    ReclaimOutcome.CLAIMED -> {
-                        // Neutral copy — the claimant is intentionally not named.
-                        dao.setStatusAndMarker(hex, 1, false, System.currentTimeMillis())
-                        infoMessage = "This invitation was already claimed."
-                    }
-                    ReclaimOutcome.CONSUMED_AMBIGUOUS -> {
-                        // Provably consumed, but attribution is unknowable with
-                        // our own attempt in flight — conservative terminal
-                        // Claimed, never an inferred Reclaimed.
-                        dao.setStatusAndMarker(hex, 1, false, System.currentTimeMillis())
-                        infoMessage = "This invitation was already consumed — by the " +
-                            "invitee's claim, or possibly by your own earlier " +
-                            "interrupted reclaim. If that reclaim went through, the " +
-                            "credits were delivered to the target you selected then."
+                    ReclaimOutcome.CONSUMPTION_UNKNOWN -> {
+                        // Code 24 can mean either a retained local tombstone or
+                        // an unauthenticated Platform report. Retain status and
+                        // the in-flight marker because completion is unknown.
+                        errorMessage = "This asset lock was reported as already used, but " +
+                            "the wallet could not verify whether this reclaim completed. " +
+                            "Sync and check the selected target before retrying."
                     }
                     ReclaimOutcome.UNTRACKED_AFTER_OWN_ATTEMPT -> {
                         // No on-chain proof of consumption at all — status and

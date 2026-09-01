@@ -1,0 +1,45 @@
+{
+  "$formatVersion": "0",
+  "id": "9gradesS5w7Y9R4nDqJk2vHpL3uM6tF1xE8cA2bN7zXq",
+  "ownerId": "7m6mTfWqkrCnvLLPK3eqxQM2x2RDpYV6dsAyhVKsAEAQ",
+  "version": 1,
+  "documentSchemas": {
+    "grade": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byIdentity",
+          "properties": [
+            { "identityId": "asc" }
+          ],
+          "averageable": "grade",
+          "rangeAverageable": true,
+          "rankedAverageable": true
+        }
+      ],
+      "properties": {
+        "identityId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0,
+          "contentMediaType": "application/x.dash.dpp.identifier"
+        },
+        "grade": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "position": 1
+        }
+      },
+      "required": [
+        "identityId",
+        "grade"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

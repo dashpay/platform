@@ -38,23 +38,37 @@
 //! secondary Merk, keyed by `(sort_key ‖ group_key)`. Three consequences
 //! shape the API:
 //!
-//! 1. **No `where` clauses.** Ranked indexes are single-property only
-//!    (compound ones are rejected at contract-parse time in rs-dpp —
-//!    their terminal level is created lazily by the same batch that
-//!    populates it, which grovedb rejects for indexed trees). With one
-//!    property there is no equality prefix to narrow, and a `where` on
-//!    the ranked property itself would ask for a *filtered* ranking,
-//!    which the secondary cannot express — it is sorted by aggregate,
-//!    not by group key. Non-empty `where` is therefore rejected rather
-//!    than silently ignored.
-//! 2. **`limit` is mandatory, `offset` is free, `start_at` is refused.**
+//! 1. **`where` clauses are equality pins on a compound prefix — or
+//!    absent.** A single-property ranked index has no prefix to narrow,
+//!    so its requests carry no `where`. A compound ranked index
+//!    `[p1, …, pn]` maintains one secondary **per prefix value**
+//!    (per-prefix semantics: each terminal `pn` property-name tree,
+//!    inside the `[p1, …, pn-1]` value trees, is its own indexed tree
+//!    — grovedb creates and populates it in the same document batch),
+//!    so a request must pin every leading property with an equality
+//!    clause to name which prefix's secondary the walk reads. A `where`
+//!    on the grouped (terminal) property itself would ask for a
+//!    *filtered* ranking, which no secondary can express — it is sorted
+//!    by aggregate, not by group key — and is rejected rather than
+//!    silently ignored, as is any non-equality prefix clause except one
+//!    `IN`: exactly one leading pin may carry 2..=[`MAX_PREFIX_IN_BRANCHES`]
+//!    distinct elements (a single-element `IN` normalizes to the
+//!    equality pin), read as one walk per element and merged by
+//!    `(aggregate, encoded pin, group key)`, proved in a single branched
+//!    `PathQuery` envelope with per-element authenticated absence. A
+//!    `null` pin cannot combine with an `IN` (null addresses its prefix
+//!    through an empty path segment the branched proof cannot express),
+//!    and `OFFSET` is rejected together with `IN`.
+//! 2. **`limit` is mandatory, `offset` is depth-bounded, `start_at` is
+//!    refused.**
 //!    `limit` is the `k` of the walk and the ranked surface has no
 //!    server default for it, so it must be supplied. `offset` is the
-//!    rank the page starts at and is unbounded above: grovedb's
-//!    paginated prover is `O(log n + k)` *regardless of offset* (the
-//!    skipped region is attested by counted subtree commitments, never
-//!    walked entry by entry), so a large offset is not a cost lever and
-//!    needs no ceiling. `start_at` / `start_after` name a document id,
+//!    rank the page starts at and is unbounded above: grovedb counts
+//!    the skipped region from the subtree aggregates rather than
+//!    walking it entry by entry, so both executors are `O(log n + k)`
+//!    *regardless of offset* and a large offset is not a cost lever on
+//!    either. Only the proved result additionally attests the count.
+//!    So the offset needs no ceiling. `start_at` / `start_after` name a document id,
 //!    which does not appear anywhere in an aggregate-ordered keyspace.
 //! 3. **Entry order IS the ranking order.** The executor returns entries
 //!    in the order grovedb walked the secondary; callers must not
@@ -63,6 +77,8 @@
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::platform_value::Value;
 
 /// The fixed-point scale grovedb's Avg axis sorts by:
 /// `avg_fixed_point = floor(sum * RANKED_AVG_SCALE / count)` with
@@ -75,6 +91,8 @@ use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use grovedb::element::indexed::AVG_FIXED_POINT_SCALE as RANKED_AVG_SCALE;
 
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod branches;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_picker;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -108,15 +126,28 @@ mod tests;
 /// is rejected with
 /// [`crate::error::query::QuerySyntaxError::InvalidLimit`] rather than
 /// silently truncated. Truncation would be especially treacherous here
-/// because `k` is echoed inside the proof envelope and re-checked by
-/// [`grovedb::GroveDb::verify_indexed_axis_top_k_paginated`] — a
-/// server-side clamp would produce a proof the client's own
-/// reconstruction rejects.
+/// because `k` is part of the traversal the client reconstructs for
+/// [`grovedb::GroveDb::verify_path_query`] — a server-side clamp would
+/// produce a page the client's reconstruction did not ask for.
 ///
 /// There is deliberately **no companion ceiling on `OFFSET`**; see the
 /// module docs and [`DriveDocumentRankedQuery::offset`].
 #[cfg(any(feature = "server", feature = "verify"))]
 pub const MAX_RANKED_LIMIT: u16 = 100;
+
+/// Hard ceiling on the element count of the (at most one) `IN` prefix
+/// pin — the number of prefix **branches** one ranked / having-range
+/// request may fan out into.
+///
+/// Each element is one full secondary walk and one proof branch, each
+/// carrying up to `limit` committed entries plus boundary commitments,
+/// so worst-case proof size is `MAX_PREFIX_IN_BRANCHES ×
+/// MAX_RANKED_LIMIT` entries (≈100–150 KB at the ceiling). A hard
+/// rejection rather than a clamp, for the same reason as the limit: the
+/// branch set is bound into the branched proof envelope and re-checked
+/// by the verifier.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub const MAX_PREFIX_IN_BRANCHES: usize = 10;
 
 /// The `ORDER BY` field name that means "the group's `COUNT(*)`".
 ///
@@ -136,7 +167,8 @@ pub const RANKED_COUNT_ORDER_KEY: &str = "$count";
 /// Which per-group aggregate the groups are ranked by.
 ///
 /// Maps 1:1 onto [`grovedb::element::IndexAxis`], the axis tag stored in
-/// an indexed tree's TLV and echoed in the proof envelope. Kept as a
+/// an indexed tree's TLV and rebuilt into the `PathQuery` a verifier
+/// re-executes proofs against. Kept as a
 /// separate drive-side type (rather than re-exporting grovedb's) so the
 /// query surface's error messages and validation can talk about
 /// `rankedCountable` / `rankedSummable` / `rankedAverageable` — contract
@@ -247,6 +279,13 @@ pub struct RankedEntry {
     pub key: Vec<u8>,
     /// The group's aggregate on the requested axis.
     pub value: RankedEntryValue,
+    /// The branch this entry came from, on an `IN`-pinned request: the
+    /// encoded index-key segment of the `IN` position's pinned value
+    /// (empty bytes for the `null` branch). `None` on single-branch
+    /// responses — the same group key can appear under two prefixes, so
+    /// only a merged page needs the discriminator. See
+    /// [`branches::branch_in_key`].
+    pub in_key: Option<Vec<u8>>,
 }
 
 /// A resolved ranked query. Shared by the prover and the verifier — both
@@ -268,10 +307,25 @@ pub struct DriveDocumentRankedQuery<'a> {
     pub contract_id: [u8; 32],
     /// The document type name — a path segment.
     pub document_type_name: String,
-    /// The covering ranked index. Single-property by construction; its
-    /// one property is both the `GROUP BY` property and the last path
-    /// segment.
+    /// The covering ranked index. Its **last** property is the `GROUP
+    /// BY` property and the final path segment; any leading properties
+    /// are pinned by [`Self::prefix_branches`].
     pub index: &'a Index,
+    /// The prefix **branches** — one inner `Vec<Vec<u8>>` of encoded
+    /// index-key path segments per branch, each in index-property
+    /// order. Always at least one branch; a single-property index or an
+    /// all-`==` pinned request has exactly one (possibly empty) branch,
+    /// and the (at most one) `IN` pin contributes one branch per
+    /// element, in canonical encoded-ascending order. Together with
+    /// `index` these determine the grove path(s), so the branch set is
+    /// as much a part of the prover/verifier agreement as the path
+    /// builder itself. Produced by
+    /// [`index_picker::encode_prefix_branches`] from the request's
+    /// `where` pins — crate-private so the resolver is the only public
+    /// constructor and the encoder's invariants (nonempty, canonical
+    /// order, distinct keys, one varying position, the fan-out ceiling)
+    /// hold on every externally obtainable value.
+    pub(crate) prefix_branches: Vec<Vec<Vec<u8>>>,
     /// Which aggregate the groups are ranked by. Must be covered by
     /// `index`'s matching `ranked_*` flag.
     pub axis: RankedAxis,
@@ -296,19 +350,60 @@ pub struct DriveDocumentRankedQuery<'a> {
     /// How many ranks to skip before the returned page — the request's
     /// `OFFSET`. `0` for an unpaginated ranking.
     ///
-    /// Unbounded above (any `u32`), on purpose. grovedb attests the
-    /// skipped region through the counted subtree commitments
-    /// (`HashWithCount` / `HashWithCountAndSum`) rather than by walking
-    /// it, so both the prover's work and the proof's size stay
-    /// `O(log n + k)` **at any offset** — an offset of 4 and an offset
-    /// of four billion cost the same. There is therefore no
-    /// denial-of-service lever to cap, and capping would only stop
-    /// honest deep pagination.
+    /// Unbounded above (any `u32`), on purpose. grovedb skips by
+    /// counting rather than walking — descending the secondary on each
+    /// subtree's aggregate count (`HashWithCount` /
+    /// `HashWithCountAndSum`) and collapsing any subtree that fits
+    /// inside the remaining offset — so work and proof size stay
+    /// `O(log n + k)` **at any offset**, and an offset of 4 and an
+    /// offset of four billion cost the same order of work, the deeper
+    /// one in fact slightly less. Both executors go through that
+    /// descent, the unproved one without building a proof, so there is
+    /// no denial-of-service lever to cap on either path and capping
+    /// would only stop honest deep pagination.
     ///
     /// An offset past the end of the secondary is a provable answer, not
     /// an error: the page comes back empty and
     /// [`RankedPage::skipped`] is the secondary's entire population.
     pub offset: u32,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl DriveDocumentRankedQuery<'_> {
+    /// The resolved prefix branches, in canonical order — one per `IN`
+    /// element (a single branch without an `IN`). Read-only: the field is
+    /// crate-private so the resolver's encoder invariants cannot be
+    /// bypassed by construction or mutation.
+    pub fn prefix_branches(&self) -> &[Vec<Vec<u8>>] {
+        &self.prefix_branches
+    }
+
+    /// Reject the one cross-field combination the request grammar
+    /// forbids but public construction can still express: a
+    /// multi-branch (`IN`) query carrying a non-zero `offset`.
+    /// Rank-skip is attested from ONE secondary's counted commitments;
+    /// applied independently per branch it would page each branch
+    /// separately, merge the independently skipped pages, and report
+    /// `skipped: 0` — and the verifier, reconstructing the same
+    /// malformed per-branch traversal, would not reject it. Enforced at
+    /// every execution, proving and verification boundary, because
+    /// `offset` is a public field and the mode-detection grammar check
+    /// can be bypassed by building a mode or mutating a resolved query
+    /// directly.
+    pub(crate) fn reject_offset_with_branches(&self) -> Result<(), crate::error::Error> {
+        if self.prefix_branches.len() > 1 && self.offset != 0 {
+            return Err(crate::error::Error::Query(
+                crate::error::query::QuerySyntaxError::InvalidLimit(
+                    "`OFFSET` cannot combine with an `IN` prefix pin: rank-skip is attested \
+                     from one secondary's counted commitments, and an `IN` merges several \
+                     secondaries with no counted structure over the union. Page one prefix \
+                     at a time (`==` pin + `OFFSET`), or drop the offset."
+                        .to_string(),
+                ),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// A page of a ranked result: the entries, plus how many ranks were
@@ -323,19 +418,28 @@ pub struct DriveDocumentRankedQuery<'a> {
 pub struct RankedPage {
     /// Number of secondary entries skipped before this page.
     ///
-    /// On the **proved** path this is grovedb's cryptographically
-    /// attested count, independently re-derived by the verifier from the
-    /// counted subtree commitments in the proof bytes: it equals the
-    /// requested offset unless the walk ran out of entries first, in
-    /// which case `entries` is empty and `skipped` is a proof that the
-    /// secondary holds exactly `skipped` groups in total.
+    /// Both paths report the same quantity, and it is never an echo of
+    /// the request: grovedb's counted descent tracks how far the skip
+    /// actually got, so this equals the requested offset when the skip
+    /// succeeded and the secondary's whole population when the walk ran
+    /// out of groups first (in which case `entries` is empty).
     ///
-    /// On the **unproven** read there is nothing to attest and grovedb's
-    /// read API does not report the short walk, so this is simply the
-    /// requested offset. The two paths therefore disagree in exactly one
-    /// case — an offset past the end — where the unproven read reports
-    /// the requested offset and the proved one reports the true
-    /// population. Callers that need the population must prove.
+    /// What differs between the paths is the warrant. On the **proved**
+    /// path the value is cryptographically attested — independently
+    /// re-derived by the verifier from the counted subtree commitments
+    /// in the proof bytes — so a verifying client uses its own
+    /// reconstruction rather than trusting the server's. On the
+    /// **unproven** read it is the node's unverified claim, exactly like
+    /// the entries beside it: equal to the attested value on an honest
+    /// node, with nothing forcing a node to be honest.
+    ///
+    /// One nuance worth knowing on the unproven path: the population is
+    /// read from the secondary's root aggregate, while grovedb's
+    /// per-node payload check only fires on nodes the descent visits. In
+    /// a *corrupt* secondary whose count violation lies outside the
+    /// visited region, this value can therefore disagree with the true
+    /// row count where the proved path's would not. On any valid
+    /// secondary the two are identical by construction.
     pub skipped: u64,
     /// The groups on this page, **in ranking order**. Never longer than
     /// the query's `k`.
@@ -371,8 +475,11 @@ pub struct RankedPaginationInputs {
 /// the versioned classification of a request — but carries data rather
 /// than being a bare discriminant, because the ranked surface has exactly
 /// one executor pair (no-proof / proof) and all of its variation is in
-/// these five values.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// these values.
+///
+/// Not `Eq`: the prefix pins carry [`Value`]s, whose float variant
+/// keeps the type at `PartialEq`.
+#[derive(Debug, Clone, PartialEq)]
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct DocumentRankedMode {
     /// The ranking axis, from the `SELECT` function.
@@ -383,11 +490,36 @@ pub struct DocumentRankedMode {
     pub k: u16,
     /// Ranks to skip — the `OFFSET`, `0` when unset.
     pub offset: u32,
-    /// The single `GROUP BY` property; must be the ranked index's only
-    /// property.
+    /// The single `GROUP BY` property; must be the covering ranked
+    /// index's **last** property.
     pub group_by_property: String,
     /// The field the aggregate applies to. Empty for
     /// [`RankedAxis::Count`] (`COUNT(*)`); the index's `summable`
     /// property for [`RankedAxis::Sum`] / [`RankedAxis::Avg`].
     pub aggregate_field: String,
+    /// The `where` prefix pins — one [`PrefixPin`] per clause, exactly
+    /// one per leading property of the covering compound index, in
+    /// whatever order the request supplied them (the resolver re-orders
+    /// them into index-property order when it encodes the path). A pin
+    /// normally carries one value (an `==` clause); at most one carries
+    /// several (the single permitted branching `IN`). Empty for the
+    /// single-property form. Shape-validated only: the index-aware
+    /// checks (does a compound index exist whose leading properties
+    /// these pin?) live in [`index_picker`].
+    pub prefix_pins: Vec<PrefixPin>,
+}
+
+/// One pinned leading property of the covering compound index.
+///
+/// An `==` clause pins exactly one value; the (at most one) `IN` clause
+/// pins several, each element selecting its own prefix **branch** — the
+/// executors walk one secondary per branch and merge deterministically.
+/// A single-element `IN` is normalized to an equality pin at grammar
+/// time, so `values.len() > 1` is exactly "this is the branching pin".
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrefixPin {
+    /// The pinned property's name.
+    pub field: String,
+    /// The pinned value(s); never empty.
+    pub values: Vec<Value>,
 }

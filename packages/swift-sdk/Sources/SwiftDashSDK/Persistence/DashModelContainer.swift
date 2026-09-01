@@ -3,8 +3,16 @@ import SwiftData
 
 /// Factory for creating SwiftData model containers for Dash Platform persistence
 public enum DashModelContainer {
-    /// All persistent model types for the Dash SDK
-    public static var modelTypes: [any PersistentModel.Type] {
+    /// Every registered schema version's model list, parameterised on the
+    /// one model whose shape differs between versions.
+    ///
+    /// Ordering is load-bearing only in the sense that it must not need to
+    /// change: keeping `assetLock` in the slot the live `PersistentAssetLock`
+    /// occupied means a frozen version's list is positionally identical to
+    /// what that version shipped.
+    private static func allModelTypes(
+        assetLock: any PersistentModel.Type
+    ) -> [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
             PersistentDPNSName.self,
@@ -37,15 +45,38 @@ public enum DashModelContainer {
             PersistentShieldedSyncState.self,
             PersistentShieldedActivity.self,
             PersistentShieldedViewingKey.self,
-            PersistentAssetLock.self,
+            assetLock,
             PersistentInvitation.self,
             PersistentMasternode.self
         ]
     }
 
+    /// The exact model set registered as schema V1. Keep frozen: staged
+    /// migration identifies an existing store by this schema's checksum, so
+    /// this list may only reference models whose shape is frozen (see
+    /// `DashSchemaFrozenModels.swift`).
+    fileprivate static var v1ModelTypes: [any PersistentModel.Type] {
+        allModelTypes(assetLock: DashSchemaV1.PersistentAssetLock.self)
+    }
+
+    /// The exact model set registered as schema V2 — V1 plus
+    /// `PersistentTrackedMasternode`. Frozen for the same reason as
+    /// `v1ModelTypes`.
+    fileprivate static var v2ModelTypes: [any PersistentModel.Type] {
+        v1ModelTypes + [PersistentTrackedMasternode.self]
+    }
+
+    /// All persistent model types in the current Dash SDK schema (V3).
+    /// Unlike `v1ModelTypes` / `v2ModelTypes` this list tracks the LIVE
+    /// models, so it moves whenever a model gains a property — which is
+    /// exactly why the released versions above must not.
+    public static var modelTypes: [any PersistentModel.Type] {
+        allModelTypes(assetLock: PersistentAssetLock.self) + [PersistentTrackedMasternode.self]
+    }
+
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(modelTypes)
+        Schema(versionedSchema: DashSchemaV3.self)
     }
 
     /// Create a persistent model container for storing data
@@ -65,10 +96,8 @@ public enum DashModelContainer {
             cloudKitDatabase: cloudKit ? .automatic : .none
         )
 
-        // Wire the migration plan even though V1 is the only shipped
-        // schema — future schema bumps just have to add a stage to
-        // `DashMigrationPlan.stages` without also having to remember
-        // to thread the plan into the container construction call.
+        // Always wire the migration plan so stores created by an older SDK
+        // advance through the registered versioned schemas.
         return try ModelContainer(
             for: schema,
             migrationPlan: DashMigrationPlan.self,
@@ -95,11 +124,14 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self]
+        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self]
     }
 
     public static var stages: [MigrationStage] {
-        []
+        [
+            .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
+            .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self)
+        ]
     }
 }
 
@@ -228,6 +260,40 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 public enum DashSchemaV1: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(1, 0, 0)
+    }
+
+    public static var models: [any PersistentModel.Type] {
+        DashModelContainer.v1ModelTypes
+    }
+}
+
+/// Version 2 adds wallet-independent tracked masternodes. The new model has
+/// no relationship or required-data dependency on V1 rows, so a lightweight
+/// migration preserves every existing row and creates its table.
+public enum DashSchemaV2: VersionedSchema {
+    public static var versionIdentifier: Schema.Version {
+        Schema.Version(2, 0, 0)
+    }
+
+    public static var models: [any PersistentModel.Type] {
+        DashModelContainer.v2ModelTypes
+    }
+}
+
+/// Version 3 adds `recipientIsExternal` to `PersistentAssetLock` — an
+/// optional column on an existing entity, so a lightweight migration
+/// preserves every existing row and backfills `NULL`.
+///
+/// This is the first version to be registered alongside a genuinely frozen
+/// copy of the model it changes (`DashSchemaV1.PersistentAssetLock`). Without
+/// that copy, adding the property would have mutated V1's and V2's checksums
+/// in place and a store written by the V2 binary would have matched no
+/// registered schema, failing to open with Cocoa error 134504 rather than
+/// migrating. Follow the same pattern for the next property added to any
+/// model: freeze the old shape, add a version, add a stage.
+public enum DashSchemaV3: VersionedSchema {
+    public static var versionIdentifier: Schema.Version {
+        Schema.Version(3, 0, 0)
     }
 
     public static var models: [any PersistentModel.Type] {

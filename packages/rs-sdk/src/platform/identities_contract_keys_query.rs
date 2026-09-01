@@ -88,6 +88,8 @@ impl Query<GetIdentitiesContractKeysRequest> for IdentitiesContractKeysQuery {
     }
 }
 
+impl crate::platform::query::WireQuery for IdentitiesContractKeysQuery {}
+
 impl TransportRequest for IdentitiesContractKeysQuery {
     type Client = <GetIdentitiesContractKeysRequest as TransportRequest>::Client;
     type Response = <GetIdentitiesContractKeysRequest as TransportRequest>::Response;

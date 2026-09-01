@@ -205,8 +205,10 @@ pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
 ///
 /// The record source (rust-dashcore #876 provider-payload retention) is
 /// populated in every feature configuration; see
-/// `PlatformWalletManager::provider_masternode_txs_blocking`. `out_*` are
-/// set to null / 0 when the wallet has no masternodes or isn't found.
+/// `PlatformWalletManager::wallet_masternodes_blocking`, which also resolves
+/// status and operator / platform key ownership — this function only
+/// marshals. `out_*` are set to null / 0 when the wallet has no masternodes
+/// or isn't found.
 ///
 /// Reads the wallet manager lock via `blocking_read` — must not be called
 /// from within a tokio async context.
@@ -229,43 +231,16 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
     let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        manager.provider_masternode_txs_blocking(&wid)
+        manager.wallet_masternodes_blocking(&wid)
     });
     // Outer Option: handle resolved. Inner Option: wallet found.
     let inner = unwrap_option_or_return!(option);
-    let (network, txs, dml, operator_index, platform_index) = unwrap_option_or_return!(inner);
+    let masternodes = unwrap_option_or_return!(inner);
 
-    // Derive DML membership from the owned snapshot (`None` ⇒ list not
-    // available ⇒ Unknown status ⇒ persist layer keeps the prior value).
-    use crate::core_wallet_types::ListMembership;
-    let membership = |pro_tx_hash: &[u8; 32]| -> ListMembership {
-        match &dml {
-            None => ListMembership::ListUnavailable,
-            Some(map) => match map.get(pro_tx_hash) {
-                Some(true) => ListMembership::ValidEntry,
-                Some(false) => ListMembership::InvalidEntry,
-                None => ListMembership::Absent,
-            },
-        }
-    };
-
-    let aggregates = crate::core_wallet_types::aggregate_masternodes(
-        txs.iter().map(|(h, p, tx)| (*h, *p, tx)),
-        membership,
-    );
-
-    let entries: Vec<crate::core_wallet_types::MasternodeEntryFFI> = aggregates
+    let entries: Vec<crate::core_wallet_types::MasternodeEntryFFI> = masternodes
+        .records
         .iter()
-        .enumerate()
-        .map(|(idx, mn)| {
-            crate::core_wallet_types::masternode_entry_ffi(
-                mn,
-                idx as u32,
-                network,
-                &operator_index,
-                &platform_index,
-            )
-        })
+        .map(|mn| crate::core_wallet_types::masternode_entry_ffi(mn, masternodes.network))
         .collect();
     let count = entries.len();
 
@@ -281,6 +256,60 @@ pub unsafe extern "C" fn platform_wallet_manager_list_masternodes(
     PlatformWalletFFIResult::ok()
 }
 
+/// Version 2 of [`platform_wallet_manager_list_masternodes`]. It returns
+/// [`MasternodeEntryV2FFI`](crate::core_wallet_types::MasternodeEntryV2FFI),
+/// which adds record provenance and an optional tracked-node label without
+/// changing the frozen V1 array element size.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_list_masternodes_v2(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+    out_entries: *mut *const crate::core_wallet_types::MasternodeEntryV2FFI,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id);
+    check_ptr!(out_entries);
+    check_ptr!(out_count);
+    *out_entries = std::ptr::null();
+    *out_count = 0;
+
+    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
+        manager.wallet_masternodes_blocking(&wid)
+    });
+    let inner = unwrap_option_or_return!(option);
+    let masternodes = unwrap_option_or_return!(inner);
+
+    let entries: Vec<crate::core_wallet_types::MasternodeEntryV2FFI> = masternodes
+        .records
+        .iter()
+        .map(|mn| crate::core_wallet_types::masternode_entry_v2_ffi(mn, masternodes.network))
+        .collect();
+    let count = entries.len();
+    if count == 0 {
+        return PlatformWalletFFIResult::ok();
+    }
+
+    *out_entries = Box::into_raw(entries.into_boxed_slice()) as *const _;
+    *out_count = count;
+    PlatformWalletFFIResult::ok()
+}
+
+unsafe fn free_masternode_entry_strings(entry: &crate::core_wallet_types::MasternodeEntryFFI) {
+    for ptr in [
+        entry.service_address,
+        entry.owner_address,
+        entry.voting_address,
+        entry.payout_address,
+        entry.operator_pseudo_address,
+        entry.platform_node_address,
+    ] {
+        if !ptr.is_null() {
+            let _ = std::ffi::CString::from_raw(ptr);
+        }
+    }
+}
+
 /// Free an array returned by [`platform_wallet_manager_list_masternodes`],
 /// including each entry's heap C strings.
 #[no_mangle]
@@ -293,98 +322,30 @@ pub unsafe extern "C" fn platform_wallet_manager_free_masternodes(
     }
     let slice = std::slice::from_raw_parts_mut(entries, count);
     for entry in slice.iter() {
-        for ptr in [
-            entry.service_address,
-            entry.owner_address,
-            entry.voting_address,
-            entry.payout_address,
-            entry.operator_pseudo_address,
-            entry.platform_node_address,
-        ] {
-            if !ptr.is_null() {
-                let _ = std::ffi::CString::from_raw(ptr);
-            }
-        }
+        free_masternode_entry_strings(entry);
     }
     let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
-/// Claim (withdraw) credits from a masternode's Platform identity to L1
-/// via an Identity Credit Withdrawal, signed with the wallet-held OWNER
-/// key. Writes the remaining balance to `out_new_balance`.
-///
-/// - `pro_tx_hash`: 32 bytes in WIRE order (as stored). The masternode
-///   identity id is the **display-order** (reversed) form, so this fn
-///   reverses before fetching — same orientation as the balance fetch.
-/// - `owner_key_index`: the ProviderOwnerKeys derivation index the app
-///   resolved from the persisted address join (in-memory pools may be
-///   empty for imported wallets, so the index is passed in rather than
-///   re-derived here).
-/// - `dest_address` MUST be null for the owner-key path: Platform routes
-///   an owner-key withdrawal to the registered payout address; a
-///   destination can't be chosen. (`use_owner_key == false` / a TRANSFER
-///   destination is a documented follow-up.)
-///
-/// Orchestration (all in Rust, per `swift-sdk/CLAUDE.md`):
-///   1. Resolve the wallet + masternode by `pro_tx_hash`; read its
-///      `owner_key_hash`.
-///   2. `Identity::fetch_by_identifier(reversed(pro_tx_hash))`.
-///   3. GUARD: `select_owner_withdrawal_key(identity.public_keys(),
-///      owner_key_hash)` — if `None`, return `InvalidIdentityData` WITHOUT
-///      broadcasting (signing with an unrecognised key wastes the attempt).
-///   4. Derive the ECDSA owner private key at `owner_key_index` on the
-///      ProviderOwnerKeys account; build a `Signer<IdentityPublicKey>`
-///      over it; `withdraw_credits_with_signer(identity, None, amount,
-///      Some(matched_owner_key), signer, None)`.
-///
-/// NOTE: steps 1-3 are wired below; step 4 (the internal owner-key
-/// `Signer<IdentityPublicKey>` + ECDSA owner-key derivation + DPP
-/// signature encoding for `ECDSA_HASH160`) is a NEW money-signing
-/// component with no existing production analogue (identity ops sign via
-/// an external Swift signer). It is gated behind a distinct error until it
-/// can be built and verified against a real testnet claim, so the
-/// end-to-end plumbing (UI → wrapper → FFI → fetch → guard → error) is
-/// exercisable without risking a malformed money transition.
+/// Free an array returned by
+/// [`platform_wallet_manager_list_masternodes_v2`] or any tracked-masternode
+/// API returning `MasternodeEntryV2FFI`.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_masternode_withdraw(
-    manager_handle: Handle,
-    wallet_id: *const u8,
-    pro_tx_hash: *const u8,
-    amount: u64,
-    owner_key_index: u32,
-    dest_address: *const std::os::raw::c_char,
-    use_owner_key: bool,
-    out_new_balance: *mut u64,
-) -> PlatformWalletFFIResult {
-    check_ptr!(wallet_id);
-    check_ptr!(pro_tx_hash);
-    check_ptr!(out_new_balance);
-
-    use crate::error::PlatformWalletFFIResultCode;
-
-    // Owner-key path only, for now.
-    if !use_owner_key {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "TRANSFER-key masternode withdrawal is not yet supported; use the owner key",
-        );
+pub unsafe extern "C" fn platform_wallet_manager_free_masternodes_v2(
+    entries: *mut crate::core_wallet_types::MasternodeEntryV2FFI,
+    count: usize,
+) {
+    if entries.is_null() || count == 0 {
+        return;
     }
-    if !dest_address.is_null() {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "owner-key withdrawal pays the registered payout address; dest_address must be null",
-        );
+    let slice = std::slice::from_raw_parts_mut(entries, count);
+    for entry in slice.iter() {
+        free_masternode_entry_strings(&entry.v1);
+        if !entry.label.is_null() {
+            let _ = std::ffi::CString::from_raw(entry.label);
+        }
     }
-
-    // See the doc comment: steps 1-3 (resolve → fetch → guard) plus the
-    // owner-key `Signer<IdentityPublicKey>` derivation + sign are the
-    // remaining verified-implementation work. Surface a distinct, non-fatal
-    // error rather than broadcasting an unverified money transition.
-    let _ = (manager_handle, amount, owner_key_index);
-    PlatformWalletFFIResult::err(
-        PlatformWalletFFIResultCode::ErrorWalletOperation,
-        "masternode owner-key withdrawal is not yet enabled (pending verified signer)",
-    )
+    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
 /// Destroy a PlatformWallet handle.

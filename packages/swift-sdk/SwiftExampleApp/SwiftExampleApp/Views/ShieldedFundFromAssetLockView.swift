@@ -658,6 +658,18 @@ struct ShieldedFundFromAssetLockView: View {
         let walletId = wallet.walletId
         let manager = walletManager
 
+        // The operation id carries the resumed lock's outpoint: resumable
+        // locks default to the same wallet-owned shielded recipient, so
+        // the coordinator's slot key alone cannot tell two locks apart
+        // and would silently reuse the first lock's controller.
+        // A fresh shield mints a NEW id per submission: the coordinator
+        // retains a completed controller for ~30s, and a fixed marker
+        // would match it and rebind — reopening the old result instead
+        // of running this submission's body. Minted here, at submission
+        // time, so dismissing a completed sheet and shielding again is
+        // always a new operation ("resume:<outpoint>" stays stable so a
+        // re-tap of the SAME lock still rebinds).
+        let operationId: String
         let body: () async throws -> Void
         if let lock = resumeFromLock {
             guard let parsed = parseOutPoint(lock.outPointHex) else {
@@ -666,6 +678,7 @@ struct ShieldedFundFromAssetLockView: View {
                 )
                 return
             }
+            operationId = "resume:\(lock.outPointHex)"
             body = {
                 try await manager.shieldedResumeFundFromAssetLock(
                     walletId: walletId,
@@ -681,6 +694,7 @@ struct ShieldedFundFromAssetLockView: View {
                 let fundingAccountIndex = fundingCoreAccountIndex,
                 let duffs = parsedDuffs
             else { return }
+            operationId = "shield:\(UUID().uuidString)"
             body = {
                 try await manager.shieldedFundFromAssetLock(
                     walletId: walletId,
@@ -694,17 +708,20 @@ struct ShieldedFundFromAssetLockView: View {
         }
 
         // Single-flight gate via the coordinator. Two levels:
-        //   - Same recipient + in-flight: returns the existing
-        //     controller (the user sees the same progress view).
-        //   - Different recipient but another shielded funding in
-        //     flight on this wallet: surfaces a typed "wait"
-        //     error pointing at the in-flight recipient. Mirrors
-        //     the Rust-side `shield_guard` mutex that serializes
-        //     all shield-class ops per wallet.
+        //   - Same operation (same recipient + operation id) +
+        //     in-flight: returns the existing controller (the user
+        //     sees the same progress view).
+        //   - Any OTHER shielded funding in flight on this wallet —
+        //     different recipient, or a different lock/fresh shield
+        //     on the same recipient: surfaces a typed "wait" error
+        //     pointing at the in-flight blocker. Mirrors the
+        //     Rust-side `shield_guard` mutex that serializes all
+        //     shield-class ops per wallet.
         let coordinator = walletManager.shieldedFundFromAssetLockCoordinator
         switch coordinator.startFunding(
             walletId: walletId,
             recipientRaw43: recipient,
+            operationId: operationId,
             body: body
         ) {
         case .started(let controller):

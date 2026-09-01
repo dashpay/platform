@@ -33,6 +33,11 @@ mod add_indices_for_index_level_for_contract_operations;
 // This module contains functionality for adding indices for the top index level for contract operations
 mod add_indices_for_top_index_level_for_contract_operations;
 
+// Module: add_preallocated_index_tree_operations
+// This module contains functionality for preallocating refersTo-determined
+// indexOnly index trees when the referenced document is inserted
+mod add_preallocated_index_tree_operations;
+
 // Module: add_reference_for_index_level_for_contract_operations
 // This module contains functionality for adding a reference for an index level for contract operations
 mod add_reference_for_index_level_for_contract_operations;
@@ -455,7 +460,9 @@ mod tests {
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
                 ),
-            processing_fee: 73253660,
+            // estimated_size v1 adds the contract-version stamp varint to
+            // the worst-case document size
+            processing_fee: 73323060,
             ..Default::default()
         };
 
@@ -1014,9 +1021,13 @@ mod tests {
 
         // Fetch the document back and verify content matches
         let sql_string = "select * from profile";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
@@ -1133,9 +1144,13 @@ mod tests {
 
         // Fetch both documents back and verify they exist with correct content
         let sql_string = "select * from person order by firstName asc limit 100";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -1320,9 +1335,13 @@ mod tests {
 
         // Verify both documents were inserted by fetching them
         let sql_string = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)

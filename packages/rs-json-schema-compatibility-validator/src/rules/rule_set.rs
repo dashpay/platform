@@ -1161,6 +1161,45 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
             },
         ),
         (
+            "refersTo",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "refersTo": { "type": "identity" } }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/refersTo".to_string(),
+                            value: json!({ "type": "identity" }),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "refersTo": { "type": "identity" } }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/refersTo".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "refersTo": { "type": "identity" } }),
+                        json!({ "refersTo": { "type": "contract" } }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/refersTo/type".to_string(),
+                            value: json!("contract"),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
+        (
             "byteArray",
             CompatibilityRules {
                 allow_addition: false,
@@ -1324,6 +1363,54 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                         Some(JsonSchemaChange::Replace(ReplaceOperation {
                             path: "/position".to_string(),
                             value: json!(1),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
+        // `requiredSince` (the contract version a property is required from)
+        // is frozen on existing properties: a document's byte layout is
+        // resolved from the latest schema by comparing each property's
+        // `requiredSince` against the document's contract-version stamp, so
+        // changing the annotation retroactively would misparse stored
+        // documents. A brand-new property carrying the keyword arrives as a
+        // single Add of the whole property subschema and never resolves this
+        // rule; introducing it there is judged by the document type's
+        // required-fields update validation, not by this differ.
+        (
+            "requiredSince",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "requiredSince": 2 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/requiredSince".to_string(),
+                            value: json!(2),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "requiredSince": 2 }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/requiredSince".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "requiredSince": 2 }),
+                        json!({ "requiredSince": 3 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/requiredSince".to_string(),
+                            value: json!(3),
                         })),
                     )
                         .into(),

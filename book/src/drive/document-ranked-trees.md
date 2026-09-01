@@ -56,11 +56,22 @@ Ranking is an **index-level** opt-in. Three independent keywords, one per axis:
 
 | Keyword | Ranks groups by | Requires (in effect) | Rust field |
 |---|---|---|---|
-| `rankedCountable` | each group's document count | `rangeCountable: true` | `Index::ranked_countable` |
+| `rankedCountable` | each group's document count | `rangeCountable: true` | `Index::ranked_countable` / `Index::ranked_countable_at` |
 | `rankedSummable` | each group's sum of the `summable` property | `rangeSummable: true` | `Index::ranked_summable` |
 | `rankedAverageable` | each group's average of the `averageable` property | `rangeAverageable` semantics — **both** `rangeCountable` and `rangeSummable` | `Index::ranked_averageable` |
 
 The three axes are **independent opt-ins**. `rankedAverageable` is *not* sugar for the other two, unlike `averageable` / `rangeAverageable`, which genuinely are sugar for their count+sum longhand. Each ranking axis costs its own ordered secondary Merk and its own maintenance on every write, so each is declared explicitly. Declaring `rankedAverageable` alone is a legal — and usually the right — choice.
+
+`rankedCountable` alone has a second, **level-addressed** spelling. The boolean form ranks the terminal level's groups by direct member count; the object form names the level (or levels) the Count axis aggregates at:
+
+```json
+"rankedCountable": true                                   // terminal groups by member count
+"rankedCountable": { "at": "hashtag" }                    // hashtags by WHOLE-SUBTREE count
+"rankedCountable": { "at": ["hashtag", "postId"] }        // both rankings on one index
+"rankedCountable": { "at": ["tag", "region", "postId"] }  // every level of a 3-property index
+```
+
+`at` takes one property name or an array of them (each must be an index property; duplicates are rejected; the array is capped at 10 — the index property cap). Naming the **last** property is the boolean form spelled longhand and folds into it; every other name places a ranking at that **prefix** level, ordering its values by their whole-subtree document count — on `[hashtag, postId]`, `{ "at": "hashtag" }` ranks hashtags by total count across all their posts, where the boolean form ranks a pinned hashtag's posts. Any subset of levels may be named, and the parser stores the non-terminal ones in `Index::ranked_countable_at` in index-property order regardless of how the contract spelled them. The object form cannot be combined with `rankedSummable` / `rankedAverageable`: the chain of count-bearing levels a prefix ranking is built from (see [Prefix-Level and Multi-Level Rankings](#prefix-level-and-multi-level-rankings)) cannot carry a sum axis.
 
 The range prerequisite is a hard requirement, not a convenience: a ranking secondary orders the *per-group aggregates the range layout already maintains*. Without the range axis the terminal property-name tree carries no per-group aggregate to sort by. The parser rejects the combination with a message naming the missing flag:
 
@@ -76,12 +87,16 @@ The document meta-schema enforces the same prerequisites, but it cannot use the 
 ```json
 {
   "if": {
-    "properties": { "rankedCountable": { "const": true } },
+    "properties": {
+      "rankedCountable": { "anyOf": [{ "const": true }, { "type": "object" }] }
+    },
     "required": ["rankedCountable"]
   },
   "then": { "required": ["rangeCountable"] }
 }
 ```
+
+(The `rankedCountable` conditional matches the object form as well as the literal `true` — both spellings need `rangeCountable`; only a written-out `false` escapes the requirement.)
 
 The `range*` rows keep their presence semantics because that is what they shipped with in v2, and changing them would move historical validation results.
 
@@ -91,8 +106,22 @@ One asymmetry is worth knowing when authoring: **the meta-schema demands the lit
 
 Two structural rules, both enforced at contract-parse time in rs-dpp:
 
-- **Single-property indexes only.** `ranked aggregates are only supported on single-property indexes in this protocol version`. Two reasons, both relaxable at a future protocol version. First, a compound index whose *prefix* level also terminates an aggregating index would need its ranked terminal tree wrapped in a `NonCounted` / `NotSummed` shell so it contributes zero to the parent's aggregate — and the storage layer structurally rejects any wrapper around an indexed tree, because the wrapper would neutralise the very aggregates the secondaries order by. (Drive's fail-closed guard for this is `INDEXED_INNER_UNWRAPPABLE`.) Second, the ranked query surface has no equality-prefix routing: with more than one property there would be a prefix to fix before ranking, and nothing to express it with.
+- **No aggregating index on a compound ranked index's full prefix.** Ranked flags are allowed on compound indexes, with **per-prefix** semantics: a ranked `[identityId, class]` puts the indexed tree at each prefix value's terminal `class` property-name level — one ordered secondary per `identityId`, each ranking only that identity's `class` groups. There is deliberately no global cross-prefix ordering; the query surfaces require every leading property to be pinned by a `where` clause — equalities, plus at most one `IN` that fans out across prefix branches and merges deterministically. The one shape that stays impossible — and is rejected per document type, where all indexes are visible (`validate_no_ranked_prefix_overlap`) — is a countable/summable index terminating at exactly the compound's leading prefix: its aggregating value trees would demand the `NonCounted` / `NotSummed` shell around the ranked terminal tree, and the storage layer structurally rejects any wrapper around an indexed tree, because the wrapper would neutralise the very aggregates the secondaries order by. (Drive's fail-closed guard behind the parse-time check is `INDEXED_INNER_UNWRAPPABLE`.) Only the exact `n-1` prefix conflicts: an aggregating index at a shorter prefix wraps a plain intermediate tree, and one extending past the ranked terminal lives inside its value trees — both supported.
 - **Non-unique indexes only.** `ranked aggregates are not supported on unique indexes: each group of a unique index contains at most one document, so there is nothing meaningful to rank`. Contested indexes are covered transitively — a contested index is unique by construction, so it hits the same check rather than needing its own.
+- **Prefix-level rankings add two rules of their own**, both anchored on the index's *shallowest* ranked prefix level (every deeper ranked level sits inside its exclusive range). From that level down, the index's levels form one count-propagation chain, and the rule set over other indexes reaching the `at` level is a shape matrix:
+
+  | Other index `S` (vs. ranking at `pk` on `[p1 … pn]`)                              | Verdict |
+  |-----------------------------------------------------------------------------------|---------|
+  | Diverges before `pk` (level key differs at some position `< k`)                    | ✔ never conflicted |
+  | Terminates above the `at` level, no countable/summable flags                       | ✔ |
+  | Aggregating, terminates at a prefix *shorter* than `[p1 … p(k-1)]`                 | ✔ wraps a plain intermediate tree |
+  | **Plain (no countable/summable/ranked flags, nothing contested), continues below the `at` level, and branches off the chain — by diverging below `at` or extending past the ranked terminal** | **✔ laid out count-exempt — its branch trees are `Element::NonCounted` inside the chain's value trees** |
+  | Continues below the `at` level but is itself countable/summable/ranked             | ✘ its aggregates would need the counts the wrapper suppresses |
+  | Terminates *exactly at* the `at` level (any flags)                                 | ✘ its member bucket and aggregates would sit on the grouping tree itself |
+  | Plain, continues below `at` but never leaves the chain (a level-key prefix of `[p1 … pn]`) | ✘ it has no branch to wrap — its member bucket would land *on* a grouping/propagating level, the terminal-plus-chain stamp the tree-type resolver fails closed on |
+  | Aggregating, terminates at exactly `[p1 … p(k-1)]` (the prefix directly above `at`) | ✘ the grouping tree would need a `NonCounted` shell inside aggregating value trees — the wrapped-indexed impossibility, mirroring the first rule above |
+
+  The count-exempt row is the same demotion range-countable value trees already apply to their sibling continuations, one configuration over: the sibling's branch reads and proves normally, contributes zero to every subtree total the ranking keys on, and its writes skip the ranked re-key entirely. The derivation stamps the branch level (`IndexLevel::count_exempt_branch`) so every write path agrees on the wrapper. Level identity for all of these comparisons is `Index::level_key`, not the declared name: a time-range index's grid-qualified first key forks it into a sibling subtree, so a bucketed index whose declared properties match a ranked index's does not conflict.
 
 ### Version Gate
 
@@ -205,6 +234,37 @@ Secondaries are maintained through the **normal batch write path** — there is 
 
 grovedb's own consistency verifier enforces the invariant directly: every primary entry at `key` must have exactly one secondary entry at `make_axis_secondary_key(axis, count, sum, key)`, and the secondary must contain nothing else.
 
+## Prefix-Level and Multi-Level Rankings
+
+The boolean axes always place their secondaries on the **terminal** property-name tree. `rankedCountable`'s `at` form places Count secondaries at any subset of the index's levels, and the storage answer to "what does a prefix level rank by?" is a **count-propagation chain**:
+
+```text
+"hashtag"  property-name tree   ProvableCountIndexedTree   ← ranked level
+  <value>  value tree           CountTree (count = subtree total)
+    "postId" property-name tree ProvableCountTree — contributes its count
+      <value> value tree        CountTree
+        [0]  member bucket      counted references / Items
+```
+
+From the shallowest ranked level down to the terminal, every level is count-bearing, and — unlike the shared-prefix continuation case, where a sibling continuation is zero-wrapped — each level's **chain** continuation is inserted **contributing**, so its count IS the value tree's count. Every write's delta then propagates up the chain, and grovedb re-keys each ranked level's secondary entry on the way — one secondary rewrite per ranked level on the leaf-to-root path, nothing more.
+
+A **plain sibling index** sharing the `at` level (see the shape matrix above) hangs its branch inside the same value trees, but zero-wrapped:
+
+```text
+"postAuthor"  property-name tree  ProvableCountIndexedTree   ← ranked level
+  <alice>     value tree          CountTree, count = 3       (alice's real likes, exact)
+    "postId"      property-name tree  ProvableCountTree      ← chain: contributes, re-keys ranking
+      <post7> …      (3 entries)
+    "$createdAt"  property-name tree  NonCounted(Tree)       ← sibling: readable, count-invisible,
+      <ts> …         (3 entries)                                writes skip the ranked re-key
+```
+
+The wrapped branch is a normal readable subtree — equality-prefix and range reads through it serve and prove exactly as under any merged index — while contributing zero to the value tree's count, so the ranking totals stay exact with the sibling fully populated. Sibling-only writes (an entry landing under the branch with the chain tuple unchanged) touch neither the counts nor the secondaries. A level named in `at` becomes the Count-axis indexed tree; an unnamed level between the shallowest ranked one and the terminal becomes a plain `CountTree` pair (count-propagating); the terminal keeps the layout its own flags give it, which is why the `at` form requires `rangeCountable` — that is what makes the terminal property-name tree count-bearing enough to feed the chain. When the terminal is *also* ranked (the boolean alongside `at`), the chain simply nests indexed trees: the terminal `ProvableCountIndexedTree` is itself the contributing child, and both secondaries maintain simultaneously — this composes at any depth, so a fully ranked index re-keys one secondary per level per write.
+
+The per-level stamps live on `IndexLevel` (`ranked_count_grouping` / `count_propagating`), set by the index-level derivation and read by the same tree-type resolver every write path shares. An index ranked at its **first** property gets its indexed tree at contract registration (it is a top-level tree); deeper ranked levels materialize lazily per prefix, like every dynamic index tree, and drained chains prune out of their secondaries (or stay rankable at zero under `preallocated`).
+
+On the query side each level serves its own ranking, addressed by the **(group property, pin count)** pair: `GROUP BY` names the ranked level's property, and every property *before* it must be pinned — properties after it never appear in the request at all, since they are interior to the subtrees being counted. `{ "at": ["tag", "region", "postId"] }` therefore serves `GROUP BY tag` with nothing pinned (the global ranking), `GROUP BY region` with `tag` pinned, and `GROUP BY postId` with both pinned, each from its own secondary with its own proof.
+
 ## Hash Composition
 
 An indexed tree commits **two Merks in one element**. The composition grovedb uses — internally called **H1-A** — is a single three-input Blake3 call:
@@ -231,9 +291,9 @@ Every ranked read — and, on the prove path, every ranked proof — is issued a
   / <last_index_property_name: utf-8>       // e.g. b"restaurantId"
 ```
 
-The children of that tree are the *groups*: one value tree per distinct value of the last index property, keyed by the raw index-key bytes of that value (for a `string` property, its UTF-8 bytes — e.g. `b"alpha"`). The secondary entries a top-k read returns are keyed by those same group keys. A compound index `[a, b]` inserts `<a> / <value_of_a>` between the doctype and the terminal `<b>` level — which is exactly the shape ranked indexes don't support yet.
+The children of that tree are the *groups*: one value tree per distinct value of the last index property, keyed by the raw index-key bytes of that value (for a `string` property, its UTF-8 bytes — e.g. `b"alpha"`). The secondary entries a top-k read returns are keyed by those same group keys. A compound index `[a, b]` inserts `<a> / <encoded pinned value of a>` between the doctype and the terminal `<b>` level — the value segment comes from the request's `where` pin on `a` — an equality pin, or one element of the single permitted `IN` (one branch per element) — encoded with the same `serialize_value_for_key` the write path used to key that prefix's value tree, so the walk lands on **that prefix's own** indexed tree and secondary.
 
-Prover and verifier build this path through the same function, `DriveDocumentRankedQuery::indexed_property_name_tree_path`, which is why they agree on the root hash by construction.
+Prover and verifier build this path through the same function, `DriveDocumentRankedQuery::indexed_property_name_tree_path` (with the pinned prefix values encoded by the shared resolver, `resolve_ranked_query_for_mode`), which is why they agree on the root hash by construction.
 
 ## Write-Path Cost: The Grove v4 Cleanup Gates
 
@@ -265,7 +325,7 @@ A demoted `CountSumTree` value tree contributes its `(count, sum)` to a ranked i
 - each group's value tree demotes from `ProvableCountProvableSumTree` to `CountSumTree`;
 - the `chefId` continuation inside it goes in `Element::NonCounted`, contributing zero to the group's count and sum.
 
-The one place the two changes genuinely collide is the case the single-property rule already forbids: a ranked *terminal* level sitting inside an aggregating value tree would need a wrapper, and an indexed tree can never be wrapped. That is the `INDEXED_INNER_UNWRAPPABLE` guard, and it fails closed.
+The one place the two changes genuinely collide is the case the prefix-overlap rule already forbids at contract-parse time: a ranked *terminal* level sitting inside an aggregating value tree would need a wrapper, and an indexed tree can never be wrapped. That is the `INDEXED_INNER_UNWRAPPABLE` guard, and it fails closed.
 
 ## Storage-Layout Invariants
 
@@ -337,11 +397,13 @@ Note that the fixture puts each shape on its **own document type**. That's not a
 
 | You want | Set |
 |---|---|
-| Top / bottom K groups by document count | `rankedCountable: true` on a single-property, non-unique index that already has `countable` + `rangeCountable: true` |
+| Top / bottom K groups by document count | `rankedCountable: true` on a non-unique index that already has `countable` + `rangeCountable: true` |
+| Top / bottom K **prefix values by whole-subtree count** ("top hashtags by total likes" on `[hashtag, postId]`) | `rankedCountable: { "at": "hashtag" }` on the same prerequisites. The named level's values rank by their entire subtree's document count; the levels below become the count-propagation chain. |
+| Both of the above on one index — and/or more levels | `rankedCountable: { "at": [...] }` naming every level you want rankable (the last property = the boolean form). Each named level costs one secondary rewrite per write beneath it. |
 | Top / bottom K groups by sum of a property | `rankedSummable: true` on an index with `summable: "<prop>"` + `rangeSummable: true` |
 | Top / bottom K groups by average of a property | `rankedAverageable: true` on an index with `averageable: "<prop>"` + `rangeAverageable: true` (or the count+sum longhand) |
 | Two rankings on one index (e.g. by count *and* by average) | Both keywords. The tree is a PCPSIT carrying both axes in its TLV; you pay one secondary Merk per axis on every write. |
-| A ranking filtered by another property (`top 5 restaurants in London`) | Not available. Ranked indexes are single-property and ranked queries take no `where` clause — the secondary is sorted by aggregate, not by group key, so it cannot express a filtered subset. Model the filter as part of the grouping property, or rank client-side over a range query. |
+| A ranking filtered by another property (`top 5 restaurants in London`) | A **compound ranked index** with the filter property leading: `[city, restaurantId]` with the ranked flags. Each city gets its own secondary; the query pins the prefix with an equality `where` (`WHERE city == "London" GROUP BY restaurantId ORDER BY <agg> DESC LIMIT 5`). Equality pins select one prefix; at most one pin may be an `IN` (2..=10 distinct elements; a never-written element — or one whose deeper pinned path was never written — contributes an empty branch), which walks one secondary per element and merges by `(aggregate, encoded prefix, group key)`, proved in one branched `PathQuery` envelope (shared ancestors proved once, per-element authenticated absence) — entries then carry `in_key`. A single-element `IN` normalizes to the equality pin; a `null` pin stays legal on its own but cannot combine with an `IN` (null addresses its prefix through an empty path segment the branched proof cannot express); a non-zero `OFFSET` is rejected together with `IN`; and branched proofs are generated from committed state only. A range operator on the prefix stays rejected, and there is still no global cross-prefix ordering beyond that merge. |
 | A ranking on a unique or contested index | Not available, and not meaningful: every group holds at most one document. |
 | Range aggregates without ranking (the 4.0 surface) | Just the `range*` flags. Ranking is strictly additive — adding it never changes what a range query returns. |
 | Nothing ranking-aware (default) | Don't set any `ranked*` flag. The terminal property-name tree keeps the type its range flags give it. |

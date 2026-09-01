@@ -1,5 +1,8 @@
 #![allow(clippy::result_large_err)] // Errors intentionally carry rich context in verify paths
                                     // TODO: Revisit after shrinking top-level Error by boxing heavy variants
+/// Chained document query (provable semi-join) verification methods on
+/// proofs — two grovedb proofs verified as one composed statement.
+pub mod chained_document;
 ///DataContract verification methods on proofs
 pub mod contract;
 /// Document verification methods on proofs
@@ -7,6 +10,10 @@ pub mod document;
 /// Document-count verification methods on proofs (the
 /// `GetDocumentsCount` endpoint's prove-path verifiers).
 pub mod document_count;
+/// Having-range verification methods on proofs (the
+/// `GROUP BY … HAVING <aggregate> <op> <value> LIMIT n` surface's
+/// prove-path verifier).
+pub mod document_having;
 /// Document-ranked verification methods on proofs (the
 /// `GROUP BY … ORDER BY <aggregate> LIMIT n` surface's prove-path
 /// verifier).

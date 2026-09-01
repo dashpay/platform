@@ -301,6 +301,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Clone the `Arc<SpvRuntime>` so callers (e.g. FFI) can invoke
     /// [`SpvRuntime::spawn_run_loop`] which takes `&Arc<Self>`.
+    /// Shared handle to the Platform SDK, for work that outlives a borrow
+    /// of the manager (e.g. a locate run on a worker thread).
+    pub fn sdk_arc(&self) -> Arc<dash_sdk::Sdk> {
+        Arc::clone(&self.sdk)
+    }
+
     pub fn spv_arc(&self) -> Arc<SpvRuntime> {
         Arc::clone(&self.spv_manager)
     }
@@ -370,6 +376,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
         let wallets = self.wallets.read().await;
         wallets.get(wallet_id).cloned()
+    }
+
+    /// Blocking twin of [`Self::get_wallet`] for synchronous FFI entry
+    /// points that need to clone the `Arc<PlatformWallet>` out before doing
+    /// network work outside the handle-storage guard.
+    pub fn get_wallet_blocking(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
+        self.wallets.blocking_read().get(wallet_id).cloned()
     }
 
     /// List all wallet IDs.
@@ -443,6 +456,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub fn list_wallet_ids_blocking(&self) -> Vec<WalletId> {
         let wallets = self.wallets.blocking_read();
         wallets.keys().copied().collect()
+    }
+
+    /// Network a registered wallet belongs to, or `None` when the id is
+    /// unknown.
+    ///
+    /// Exists for FFI callers that hold a manager handle and a wallet id but
+    /// no wallet handle, and need the network before they can build the
+    /// per-call key material a wallet operation requires (resolving a master
+    /// xpriv, constructing a contact-crypto provider). Blocking and cheap: one
+    /// `RwLock` read, no I/O.
+    pub fn wallet_network_blocking(&self, wallet_id: &WalletId) -> Option<key_wallet::Network> {
+        let wm = self.wallet_manager.blocking_read();
+        Some(wm.get_wallet_info(wallet_id)?.core_wallet.network())
     }
 
     /// Snapshot of [`PlatformAddressSyncManager`] tunables and last-

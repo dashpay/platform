@@ -1,5 +1,6 @@
 //! C-compatible types for core wallet changeset FFI.
 
+use platform_wallet::masternode::{provider_payload_fields, MasternodeRecord};
 use std::os::raw::c_char;
 
 // ---------------------------------------------------------------------------
@@ -316,24 +317,79 @@ impl WalletChangeSetFFI {
         // order (matters for the `inserted` -> `updated` transition
         // ordering inside a single BlockProcessed event).
         //
+        // Two record sources fill each account's bucket:
+        //  - transaction rows come from `records` — wallet-level,
+        //    same-txid slices folded (dashpay/platform#4387). Each
+        //    folded row is emitted into the bucket of EVERY account
+        //    that owns a slice of its txid, not just the funding
+        //    account's: the Swift/Kotlin per-account transaction
+        //    callback is the sole writer of the tx↔account involvement
+        //    join (`involvedAccounts` / `transaction_account_
+        //    involvements`), which payload-only matches — a ProReg/
+        //    ProUp payload hitting a provider owner or voting key, no
+        //    TXO in the account — depend on for restart restoration.
+        //    Funding-bucket-only emission dropped that involvement and
+        //    provider transactions vanished from restoration until a
+        //    rescan. The row's VALUES are identical in every bucket
+        //    (the persisted row is txid-keyed and account-agnostic),
+        //    so duplicate upserts converge; only the enclosing bucket
+        //    differs, which is exactly what the involvement join
+        //    records.
+        //  - TXO deltas come from `account_records` — the raw
+        //    per-account slices — so every UTXO lands in its OWNING
+        //    account's bucket. Deriving TXOs from the folded record
+        //    filed a sibling account's change under the funding
+        //    account (`OutputDetail` carries no owning account), and
+        //    the Swift/Kotlin stores then restored it into the wrong
+        //    account's map. Changesets whose producer doesn't
+        //    populate `account_records` fall back to `records`.
+        //
         // `AccountType` doesn't implement `Ord` upstream (the
         // 256-bit `[u8; 32]` fields on the Dashpay variants would make
-        // a derived ordering arbitrary), so a `Vec<(key, bucket)>`
+        // a derived ordering arbitrary), so a `Vec<(key, rows, slices)>`
         // with a linear "find or insert" walk is the path of least
         // resistance. Wallets typically have well under a hundred
         // accounts, so the linear search is cheap.
+        let utxo_source: &Vec<key_wallet::managed_account::transaction_record::TransactionRecord> =
+            if cs.account_records.is_empty() {
+                &cs.records
+            } else {
+                &cs.account_records
+            };
+        #[allow(clippy::type_complexity)]
         let mut by_account: Vec<(
             AccountType,
             Vec<&key_wallet::managed_account::transaction_record::TransactionRecord>,
+            Vec<&key_wallet::managed_account::transaction_record::TransactionRecord>,
         )> = Vec::new();
         for rec in &cs.records {
+            // Every account with a slice of this txid is involved; the
+            // record's own account (the funder) is a target even in
+            // the no-slices fallback. Dedup keeps a bucket from
+            // receiving the same row twice if a producer ever carries
+            // a duplicate slice.
+            let mut targets: Vec<AccountType> = vec![rec.account_type];
+            for slice in utxo_source.iter().filter(|s| s.txid == rec.txid) {
+                if !targets.contains(&slice.account_type) {
+                    targets.push(slice.account_type);
+                }
+            }
+            for target in targets {
+                if let Some(bucket) = by_account.iter_mut().find(|(at, _, _)| at == &target) {
+                    bucket.1.push(rec);
+                } else {
+                    by_account.push((target, vec![rec], Vec::new()));
+                }
+            }
+        }
+        for rec in utxo_source {
             if let Some(bucket) = by_account
                 .iter_mut()
-                .find(|(at, _)| at == &rec.account_type)
+                .find(|(at, _, _)| at == &rec.account_type)
             {
-                bucket.1.push(rec);
+                bucket.2.push(rec);
             } else {
-                by_account.push((rec.account_type, vec![rec]));
+                by_account.push((rec.account_type, Vec::new(), vec![rec]));
             }
         }
 
@@ -346,31 +402,32 @@ impl WalletChangeSetFFI {
         // category. Without an empty bucket the watermark would be
         // silently dropped below.
         for account_type in cs.account_highest_used.keys() {
-            if !by_account.iter().any(|(at, _)| at == account_type) {
-                by_account.push((*account_type, Vec::new()));
+            if !by_account.iter().any(|(at, _, _)| at == account_type) {
+                by_account.push((*account_type, Vec::new(), Vec::new()));
             }
         }
 
         let mut ffi_accounts = Vec::with_capacity(by_account.len());
-        for (account_type, recs) in by_account {
+        for (account_type, tx_rows, utxo_slices) in by_account {
             let type_name = CString::new(format!("{:?}", account_type))
                 .unwrap_or_else(|_| CString::new("Unknown").unwrap());
             let account_index = account_index_of(&account_type);
 
-            // Derive UTXO add/spend lists from this account's records.
-            // Each record carries its own input_details and
+            // Derive UTXO add/spend lists from this account's SLICES.
+            // Each slice carries its own account's input_details and
             // output_details; we walk them once per record to project
             // the UTXOs the persister should add or remove.
             let mut utxos_added: Vec<UtxoEntryFFI> = Vec::new();
             let mut utxos_spent: Vec<SpentOutPointFFI> = Vec::new();
-            for rec in &recs {
+            for rec in &utxo_slices {
                 utxos_added.extend(record_new_utxos_ffi(rec));
                 utxos_spent.extend(record_spent_outpoints_ffi(rec));
             }
 
-            // Transactions for this account.
+            // Transaction rows for this account (wallet-level,
+            // folded — see the bucketing comment above).
             let transactions: Vec<TransactionRecordFFI> =
-                recs.into_iter().map(tx_record_to_ffi).collect();
+                tx_rows.into_iter().map(tx_record_to_ffi).collect();
 
             let utxos_added_count = utxos_added.len();
             let utxos_spent_count = utxos_spent.len();
@@ -911,391 +968,18 @@ fn transaction_type_to_u8(
     }
 }
 
-/// Fixed-size hash copies. `Txid` / `PubkeyHash` are exactly 32 / 20
-/// bytes, so `copy_from_slice` on `as_ref()` is length-exact and cannot
-/// panic — the same pattern `tx_record_to_ffi`'s txid copy relies on.
-fn provider_hash_to_32(bytes: &[u8]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out.copy_from_slice(bytes);
-    out
-}
-
-fn provider_hash_to_20(bytes: &[u8]) -> [u8; 20] {
-    let mut out = [0u8; 20];
-    out.copy_from_slice(bytes);
-    out
-}
-
-/// Rebuild an `"ip:port"` string from a ProUpServTx-style little-endian
-/// IPv6-mapped `u128` address + `port`, collapsing IPv4-mapped addresses
-/// to V4 so a normal masternode renders as `"1.2.3.4:port"`.
-fn provider_ip_port(ip_address: u128, port: u16) -> String {
-    let v6 = std::net::Ipv6Addr::from(ip_address.to_le_bytes());
-    let ip = v6
-        .to_ipv4_mapped()
-        .map(std::net::IpAddr::V4)
-        .unwrap_or(std::net::IpAddr::V6(v6));
-    format!("{}:{}", ip, port)
-}
-
-/// Provider (masternode) special-transaction payload fields lifted for
-/// the Swift UI. All optional / gated — only a ProRegTx or ProUpServTx
-/// populates them. The single seam where the DIP-3 payload is decoded;
-/// Swift only marshals the flat results.
-#[derive(Default)]
-struct ProviderPayloadFields {
-    /// Service endpoint as `"ip:port"`.
-    service_address: Option<String>,
-    /// ProUpServTx registration linkage. `None` for ProRegTx (its own
-    /// txid is the proTxHash).
-    pro_tx_hash: Option<[u8; 32]>,
-    /// ProRegTx collateral outpoint (`txid` wire bytes, `vout`).
-    collateral: Option<([u8; 32], u32)>,
-    /// ProRegTx owner / voting key hashes (hash160, 20 bytes).
-    owner_key_hash: Option<[u8; 20]>,
-    voting_key_hash: Option<[u8; 20]>,
-}
-
-/// Extract provider-registration (ProRegTx) / provider-update-service
-/// (ProUpServTx) payload fields from a transaction for display. Returns
-/// all-`None` for any other transaction. Pure; the only allocation is
-/// the returned service-address `String`.
-fn provider_payload_fields(tx: &dashcore::Transaction) -> ProviderPayloadFields {
-    use dashcore::transaction::TransactionPayload;
-
-    match &tx.special_transaction_payload {
-        Some(TransactionPayload::ProviderRegistrationPayloadType(p)) => ProviderPayloadFields {
-            service_address: Some(p.service_address.to_string()),
-            pro_tx_hash: None,
-            collateral: Some((
-                provider_hash_to_32(p.collateral_outpoint.txid.as_ref()),
-                p.collateral_outpoint.vout,
-            )),
-            owner_key_hash: Some(provider_hash_to_20(p.owner_key_hash.as_ref())),
-            voting_key_hash: Some(provider_hash_to_20(p.voting_key_hash.as_ref())),
-        },
-        Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => ProviderPayloadFields {
-            service_address: Some(provider_ip_port(p.ip_address, p.port)),
-            pro_tx_hash: Some(provider_hash_to_32(p.pro_tx_hash.as_ref())),
-            ..Default::default()
-        },
-        _ => ProviderPayloadFields::default(),
-    }
-}
-
-/// Membership of a proTxHash in the current deterministic masternode
-/// list (DML), the authoritative status source. Injected into
-/// [`aggregate_masternodes`] as a closure so the aggregation stays
-/// source-agnostic and unit-testable without a live SPV engine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ListMembership {
-    /// In the DML and valid / enabled.
-    ValidEntry,
-    /// In the DML but flagged invalid (PoSe-banned / `is_valid == false`).
-    InvalidEntry,
-    /// Not in the DML (collateral spent / revoked / expired).
-    Absent,
-    /// The DML isn't available yet (SPV not running / masternode sync
-    /// incomplete) — status is indeterminate.
-    ListUnavailable,
-}
-
-/// Displayed masternode status, derived from [`ListMembership`]. The
-/// `u8` discriminant is the FFI wire value; `Unknown` (DML unavailable)
-/// tells the persist layer to KEEP the previously stored status rather
-/// than overwrite it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum MasternodeStatus {
-    Active,
-    Inactive,
-    Retired,
-    #[default]
-    Unknown,
-}
-
-impl MasternodeStatus {
-    fn from_membership(membership: ListMembership) -> Self {
-        match membership {
-            ListMembership::ValidEntry => Self::Active,
-            ListMembership::InvalidEntry => Self::Inactive,
-            ListMembership::Absent => Self::Retired,
-            ListMembership::ListUnavailable => Self::Unknown,
-        }
-    }
-
-    pub(crate) fn as_u8(self) -> u8 {
-        match self {
-            Self::Active => 0,
-            Self::Inactive => 1,
-            Self::Retired => 2,
-            Self::Unknown => 3,
-        }
-    }
-}
-
-/// One aggregated masternode, grouped by proTxHash across a wallet's
-/// provider special transactions. Pure/testable output of
-/// [`aggregate_masternodes`]; the FFI query layer flattens it into
-/// `MasternodeEntryFFI` and owns the record source.
-#[derive(Default, Debug, Clone)]
-pub(crate) struct MasternodeAggregate {
-    /// proTxHash (32 wire bytes). For a ProRegTx this is its own txid;
-    /// updates / revocations link to it via their `pro_tx_hash`.
-    pub pro_tx_hash: [u8; 32],
-    /// Whether a ProRegTx for this proTxHash was in the input set.
-    pub has_registration: bool,
-    /// Core height of the ProRegTx (0 when unseen) — the stable
-    /// registration-order sort key.
-    pub registration_height: u32,
-    /// Latest known service endpoint `"ip:port"` (latest-height update
-    /// wins; seeded by the ProRegTx address).
-    pub service_address: Option<String>,
-    /// Height that set `service_address` (drives latest-wins).
-    service_height: u32,
-    /// evonode / HPMN flag from the ProRegTx `masternode_type`.
-    pub is_evonode: bool,
-    /// Owner key hash (hash160) from the ProRegTx.
-    pub owner_key_hash: Option<[u8; 20]>,
-    /// Voting key hash (hash160) — follows the latest ProRegTx / ProUpReg.
-    pub voting_key_hash: Option<[u8; 20]>,
-    /// Height that set `voting_key_hash` (drives latest-wins).
-    voting_height: u32,
-    /// Operator BLS public key (48 bytes) — follows the latest ProRegTx /
-    /// ProUpReg.
-    pub operator_public_key: Option<[u8; 48]>,
-    operator_height: u32,
-    /// Platform node id (SHA256[..20] Tenderdash, #884, 20 bytes) for evonodes — follows the
-    /// latest ProRegTx / ProUpServ.
-    pub platform_node_id: Option<[u8; 20]>,
-    platform_node_height: u32,
-    /// Payout script (raw bytes) — follows the latest ProRegTx / ProUpReg
-    /// (owner payout). Encoded to a base58 address by `masternode_entry_ffi`
-    /// where the network is available.
-    pub payout_script: Option<Vec<u8>>,
-    payout_height: u32,
-    /// Collateral outpoint (`txid` wire bytes, `vout`) from the ProRegTx.
-    pub collateral: Option<([u8; 32], u32)>,
-    /// A ProUpRevTx was seen ⇒ the masternode was revoked ("previously
-    /// had"). `revocation_reason` keeps the latest reason for reference.
-    pub revoked: bool,
-    pub revocation_reason: u16,
-    /// Count of provider txs seen for this proTxHash.
-    pub tx_count: u32,
-    /// 1-based index WITHIN this masternode's type, in registration order —
-    /// evonodes and regular masternodes each get their own sequence
-    /// ("Evonode 1, 2, …" / "Masternode 1, 2, …"). `orderIndex` remains the
-    /// cross-type stable sort key.
-    pub type_index: u32,
-    /// Status against the current DML (authoritative). `Unknown` when the
-    /// DML isn't available. Note: this is NOT `revoked`-derived — a
-    /// ProUpRevTx merely tends to make the node `Absent` (⇒ `Retired`);
-    /// the DML is the source of truth. `revoked` / `revocation_reason`
-    /// are retained as separate data.
-    pub status: MasternodeStatus,
-}
-
-/// Aggregate a wallet's provider special transactions into masternode
-/// entities, grouped by proTxHash. Each input is `(core_height, tx)`;
-/// height drives latest-wins for the mutable fields (service address,
-/// voting key), so callers may feed records in any order. Non-provider
-/// txs are ignored.
-///
-/// Output is sorted by registration height then proTxHash for stable
-/// "Masternode N" numbering; entities seen only via an update
-/// (registration not in the input set — e.g. the ProRegTx was evicted or
-/// isn't ours) sort last.
-///
-/// Status is resolved against the DML via the injected `list_lookup`
-/// closure (`proTxHash -> ListMembership`), keeping this function free of
-/// any live SPV dependency so tests can stub the lookup.
-///
-/// Pure — no I/O; allocation is limited to the aggregate strings. The
-/// record source (which txs to feed) is the caller's concern (see the
-/// query fn), which is why this is decoupled and unit-testable.
-pub(crate) fn aggregate_masternodes<'a, F>(
-    txs: impl Iterator<Item = (u32, u32, &'a dashcore::Transaction)>,
-    list_lookup: F,
-) -> Vec<MasternodeAggregate>
-where
-    F: Fn(&[u8; 32]) -> ListMembership,
-{
-    use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
-    use dashcore::transaction::TransactionPayload;
-
-    // Each input item is `(height, in_block_position, tx)`. Core's
-    // `RebuildListFromBlock` applies same-block provider updates in
-    // `block.vtx` order, so the per-field latest-wins below must resolve
-    // ties by `(height, position)`, not by the arbitrary txid order the
-    // caller's `BTreeMap<Txid, _>` dedup produces. Process ascending
-    // `(height, position)` so the block-latest write for each field lands
-    // last and wins under the `>= *_height` guards. Stable so equal keys
-    // keep their incoming order.
-    //
-    // The position is stamped onto `BlockInfo` during block processing
-    // (rust-dashcore#891) and round-tripped through persistence; legacy
-    // rows confirmed before the field existed come back as 0 and fall
-    // back to feed order among themselves.
-    let mut ordered: Vec<(u32, u32, &'a dashcore::Transaction)> = txs.collect();
-    ordered.sort_by_key(|(height, position, _)| (*height, *position));
-
-    let mut order: Vec<[u8; 32]> = Vec::new();
-    let mut by_hash: std::collections::HashMap<[u8; 32], MasternodeAggregate> =
-        std::collections::HashMap::new();
-
-    for (height, _position, tx) in ordered {
-        // proTxHash key: a ProRegTx's own txid, else the update's link.
-        let key = match &tx.special_transaction_payload {
-            Some(TransactionPayload::ProviderRegistrationPayloadType(_)) => {
-                provider_hash_to_32(tx.txid().as_ref())
-            }
-            Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => {
-                provider_hash_to_32(p.pro_tx_hash.as_ref())
-            }
-            Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(p)) => {
-                provider_hash_to_32(p.pro_tx_hash.as_ref())
-            }
-            Some(TransactionPayload::ProviderUpdateRevocationPayloadType(p)) => {
-                provider_hash_to_32(p.pro_tx_hash.as_ref())
-            }
-            _ => continue,
-        };
-
-        let agg = by_hash.entry(key).or_insert_with(|| {
-            order.push(key);
-            MasternodeAggregate {
-                pro_tx_hash: key,
-                ..Default::default()
-            }
-        });
-        agg.tx_count = agg.tx_count.saturating_add(1);
-
-        match &tx.special_transaction_payload {
-            Some(TransactionPayload::ProviderRegistrationPayloadType(p)) => {
-                agg.has_registration = true;
-                agg.registration_height = height;
-                agg.is_evonode = p.masternode_type == ProviderMasternodeType::HighPerformance;
-                agg.owner_key_hash = Some(provider_hash_to_20(p.owner_key_hash.as_ref()));
-                agg.collateral = Some((
-                    provider_hash_to_32(p.collateral_outpoint.txid.as_ref()),
-                    p.collateral_outpoint.vout,
-                ));
-                // Registration seeds the service address and voting key;
-                // treat both as updates observed at this height.
-                if agg.service_address.is_none() || height >= agg.service_height {
-                    agg.service_address = Some(p.service_address.to_string());
-                    agg.service_height = height;
-                }
-                if agg.voting_key_hash.is_none() || height >= agg.voting_height {
-                    agg.voting_key_hash = Some(provider_hash_to_20(p.voting_key_hash.as_ref()));
-                    agg.voting_height = height;
-                }
-                if agg.operator_public_key.is_none() || height >= agg.operator_height {
-                    let bls: &[u8; 48] = p.operator_public_key.as_ref();
-                    agg.operator_public_key = Some(*bls);
-                    agg.operator_height = height;
-                }
-                if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
-                    // Evonode-only; `None` on a regular masternode.
-                    // `platform_node_id` is a `PlatformNodeId` newtype
-                    // (rust-dashcore #885) whose `consensus_decode` normalizes
-                    // the wire's reversed uint160-internal bytes to the
-                    // canonical Tenderdash `SHA256(pubkey)[..20]` order
-                    // (rust-dashcore #887/#889), so `to_byte_array()` here is
-                    // already canonical and matches the derived ownership
-                    // index (`accessors.rs`) and dashmate display directly —
-                    // do NOT reverse platform-side.
-                    if let Some(node_id) = p.platform_node_id {
-                        agg.platform_node_id = Some(node_id.to_byte_array());
-                        agg.platform_node_height = height;
-                    }
-                }
-                if agg.payout_script.is_none() || height >= agg.payout_height {
-                    agg.payout_script = Some(p.script_payout.as_bytes().to_vec());
-                    agg.payout_height = height;
-                }
-            }
-            Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => {
-                if agg.service_address.is_none() || height >= agg.service_height {
-                    agg.service_address = Some(provider_ip_port(p.ip_address, p.port));
-                    agg.service_height = height;
-                }
-                // ProUpServ's `platform_node_id` is now `Option<PlatformNodeId>`
-                // (rust-dashcore #885, was `Option<[u8; 20]>`); decoded bytes
-                // are canonical forward order (see the ProRegTx arm above).
-                if let Some(node_id) = p.platform_node_id {
-                    if agg.platform_node_id.is_none() || height >= agg.platform_node_height {
-                        agg.platform_node_id = Some(node_id.to_byte_array());
-                        agg.platform_node_height = height;
-                    }
-                }
-            }
-            Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(p)) => {
-                if agg.voting_key_hash.is_none() || height >= agg.voting_height {
-                    agg.voting_key_hash = Some(provider_hash_to_20(p.voting_key_hash.as_ref()));
-                    agg.voting_height = height;
-                }
-                if agg.operator_public_key.is_none() || height >= agg.operator_height {
-                    let bls: &[u8; 48] = p.operator_public_key.as_ref();
-                    agg.operator_public_key = Some(*bls);
-                    agg.operator_height = height;
-                }
-                if agg.payout_script.is_none() || height >= agg.payout_height {
-                    agg.payout_script = Some(p.script_payout.as_bytes().to_vec());
-                    agg.payout_height = height;
-                }
-            }
-            Some(TransactionPayload::ProviderUpdateRevocationPayloadType(p)) => {
-                agg.revoked = true;
-                agg.revocation_reason = p.reason;
-            }
-            _ => {}
-        }
-    }
-
-    let mut result: Vec<MasternodeAggregate> = order
-        .into_iter()
-        .filter_map(|k| by_hash.remove(&k))
-        .collect();
-    // Stable registration-order numbering: registered masternodes by
-    // ascending registration height then proTxHash; update-only entities
-    // (no ProRegTx seen) sort last via a MAX height sentinel.
-    result.sort_by(|a, b| {
-        let ha = if a.has_registration {
-            a.registration_height
-        } else {
-            u32::MAX
-        };
-        let hb = if b.has_registration {
-            b.registration_height
-        } else {
-            u32::MAX
-        };
-        ha.cmp(&hb).then_with(|| a.pro_tx_hash.cmp(&b.pro_tx_hash))
-    });
-
-    // Resolve authoritative status against the DML and assign per-type
-    // numbering (separate Evonode / Masternode sequences), both in the
-    // stable registration order established above.
-    let mut evonode_n: u32 = 0;
-    let mut masternode_n: u32 = 0;
-    for agg in result.iter_mut() {
-        agg.status = MasternodeStatus::from_membership(list_lookup(&agg.pro_tx_hash));
-        if agg.is_evonode {
-            evonode_n += 1;
-            agg.type_index = evonode_n;
-        } else {
-            masternode_n += 1;
-            agg.type_index = masternode_n;
-        }
-    }
-    result
-}
-
 /// Flat, C-ABI masternode entity — the wire shape of one
-/// [`MasternodeAggregate`], built by [`masternode_entry_ffi`] and
+/// [`MasternodeRecord`], built by [`masternode_entry_ffi`] and
 /// returned by `platform_wallet_manager_list_masternodes`. Inline
 /// fixed-size hashes with `has_*` gates (mirroring `TransactionRecordFFI`)
-/// keep heap ownership to the three C strings.
+/// keep heap ownership to the C strings.
+///
+/// # ABI stability
+///
+/// This is the original, frozen layout returned by the unversioned
+/// `platform_wallet_manager_list_masternodes` entry point. Do not add, remove,
+/// or reorder fields. New projections belong in a versioned wrapper such as
+/// [`MasternodeEntryV2FFI`].
 #[repr(C)]
 pub struct MasternodeEntryFFI {
     /// proTxHash (32 wire bytes) — group key; also the registration txid.
@@ -1331,6 +1015,11 @@ pub struct MasternodeEntryFFI {
     pub has_voting_key_hash: bool,
     /// Service endpoint `"ip:port"`, or null.
     pub service_address: *mut c_char,
+    /// Platform HTTP (DAPI gRPC) port from the latest ProRegTx / ProUpServTx,
+    /// gated by `has_platform_http_port` (evonodes only). Together with the
+    /// `service_address` host this addresses the node's DAPI.
+    pub platform_http_port: u16,
+    pub has_platform_http_port: bool,
     /// Base58 owner / voting P2PKH addresses for the wallet's network
     /// (null when the hash is absent) — the app-layer join key against a
     /// provider-key account's persisted base58 address, so Swift never
@@ -1379,6 +1068,20 @@ pub struct MasternodeEntryFFI {
     pub platform_ownership_checked: bool,
 }
 
+/// Version 2 masternode projection. The frozen V1 entry remains the first
+/// field, preserving one canonical definition for all established fields;
+/// V2 adds record provenance and the optional tracked-node label.
+#[repr(C)]
+pub struct MasternodeEntryV2FFI {
+    pub v1: MasternodeEntryFFI,
+    /// Where this record came from: 0 = one of the wallet's own masternodes
+    /// (aggregated from its provider transactions), 1 = tracked by the user
+    /// independently of every wallet.
+    pub source: u8,
+    /// User label of a tracked masternode, or null.
+    pub label: *mut c_char,
+}
+
 /// Encode a hash160 as a network-specific base58 P2PKH address string
 /// (heap C string), or null on the (impossible-for-a-valid-hash) CString
 /// interior-nul error.
@@ -1407,22 +1110,15 @@ fn masternode_payout_cstring(script_bytes: &[u8], network: dashcore::Network) ->
     }
 }
 
-/// Flatten one aggregate into its C-ABI entry, encoding the owner /
-/// voting / payout / operator / platform-node base58 addresses for
-/// `network`. `order_index` is the caller's stable position in the sorted
-/// aggregate list.
-///
-/// Owner / voting key ownership is resolved app-side (persisted-address
-/// join). Operator / platform key ownership is resolved HERE via the
-/// derive-and-compare maps (`operator_index`: BLS pubkey ⇒ index,
-/// `platform_index`: node id ⇒ index) — those keys have no on-chain
-/// address to join against.
+/// Flatten one record into its C-ABI entry, encoding the owner / voting /
+/// payout / operator / platform-node base58 addresses for `network`. Pure
+/// marshalling: ordering, status and operator / platform key ownership are
+/// already resolved on the record by
+/// `PlatformWalletManager::wallet_masternodes_blocking`; owner / voting key
+/// ownership is resolved app-side (persisted-address join).
 pub(crate) fn masternode_entry_ffi(
-    mn: &MasternodeAggregate,
-    order_index: u32,
+    mn: &MasternodeRecord,
     network: dashcore::Network,
-    operator_index: &std::collections::HashMap<[u8; 48], u32>,
-    platform_index: &std::collections::HashMap<[u8; 20], u32>,
 ) -> MasternodeEntryFFI {
     use dashcore::hashes::{hash160, Hash};
     use std::ffi::CString;
@@ -1441,17 +1137,16 @@ pub(crate) fn masternode_entry_ffi(
         .map(|h| masternode_p2pkh_cstring(h, network))
         .unwrap_or(std::ptr::null_mut());
 
-    // Derive-and-compare ownership: match the masternode's payload key
-    // against the wallet's derived provider keys.
+    // Ownership flags from the record's resolved indexes. `*_account_type`
+    // is the AccountTypeTagFFI value (10 ProviderOperatorKeys,
+    // 11 ProviderPlatformKeys); meaningful only when `*_in_wallet`.
     let (operator_in_wallet, operator_account_type, operator_key_index) = mn
-        .operator_public_key
-        .and_then(|k| operator_index.get(&k))
-        .map(|index| (true, 10u8, *index))
+        .operator_key_index
+        .map(|index| (true, 10u8, index))
         .unwrap_or((false, 0, 0));
     let (platform_in_wallet, platform_account_type, platform_key_index) = mn
-        .platform_node_id
-        .and_then(|id| platform_index.get(&id))
-        .map(|index| (true, 11u8, *index))
+        .platform_key_index
+        .map(|index| (true, 11u8, index))
         .unwrap_or((false, 0, 0));
 
     let service_address = match &mn.service_address {
@@ -1482,7 +1177,7 @@ pub(crate) fn masternode_entry_ffi(
         pro_tx_hash: mn.pro_tx_hash,
         has_registration: mn.has_registration,
         registration_height: mn.registration_height,
-        order_index,
+        order_index: mn.order_index,
         type_index: mn.type_index,
         is_evonode: mn.is_evonode,
         revoked: mn.revoked,
@@ -1497,6 +1192,8 @@ pub(crate) fn masternode_entry_ffi(
         voting_key_hash: mn.voting_key_hash.unwrap_or([0u8; 20]),
         has_voting_key_hash: mn.voting_key_hash.is_some(),
         service_address,
+        platform_http_port: mn.platform_http_port.unwrap_or(0),
+        has_platform_http_port: mn.platform_http_port.is_some(),
         owner_address,
         voting_address,
         operator_public_key: mn.operator_public_key.unwrap_or([0u8; 48]),
@@ -1512,11 +1209,26 @@ pub(crate) fn masternode_entry_ffi(
         platform_in_wallet,
         platform_account_type,
         platform_key_index,
-        // The check was possible iff the wallet's derived platform-node index
-        // had entries to compare against. Empty index ⇒ no platform pool / not
-        // yet rehydrated ⇒ ownership is "unchecked", and the persister must
-        // retain any prior value rather than clobber it to false.
-        platform_ownership_checked: !platform_index.is_empty(),
+        platform_ownership_checked: mn.platform_ownership_checked,
+    }
+}
+
+/// Flatten one record into the additive V2 C-ABI entry.
+pub(crate) fn masternode_entry_v2_ffi(
+    mn: &MasternodeRecord,
+    network: dashcore::Network,
+) -> MasternodeEntryV2FFI {
+    use std::ffi::CString;
+
+    MasternodeEntryV2FFI {
+        v1: masternode_entry_ffi(mn, network),
+        source: mn.source.as_u8(),
+        label: mn
+            .label
+            .clone()
+            .and_then(|label| CString::new(label).ok())
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut()),
     }
 }
 
@@ -1843,364 +1555,370 @@ mod tests {
         unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 
-    /// ProRegTx provider payload is lifted from the DIP-3 special-tx
-    /// body for the UI. Fixture is the testnet
-    /// collateral-provider-registration transaction from rust-dashcore's
-    /// own `provider_registration` tests
-    /// (`test_collateral_provider_registration_transaction`), whose
-    /// service address is `1.2.5.6:19999` and whose owner/voting key
-    /// hashes are asserted below. ProRegTx carries no explicit
-    /// `pro_tx_hash` (its own txid is the proTxHash), so that field
-    /// stays `None`.
+    /// A folded wallet-level record files the transaction row under the
+    /// FUNDING account while carrying the sibling account's owned
+    /// outputs (dashpay/platform#4387), and `OutputDetail` has no
+    /// owning-account field — so deriving TXOs from the folded record
+    /// persisted the sibling's change under the funding account, and
+    /// the Swift/Kotlin stores restored it into the wrong account's
+    /// map. TXO deltas must instead come from `account_records` (the
+    /// raw per-account slices), with only the transaction rows read
+    /// from the folded `records`.
     #[test]
-    fn provider_registration_payload_fields_extracted() {
-        let raw = "0300010001ca9a43051750da7c5f858008f2ff7732d15691e48eb7f845c791e5dca78bab58010000006b483045022100fe8fec0b3880bcac29614348887769b0b589908e3f5ec55a6cf478a6652e736502202f30430806a6690524e4dd599ba498e5ff100dea6a872ebb89c2fd651caa71ed012103d85b25d6886f0b3b8ce1eef63b720b518fad0b8e103eba4e85b6980bfdda2dfdffffffff018e37807e090000001976a9144ee1d4e5d61ac40a13b357ac6e368997079678c888ac00000000fd1201010000000000ca9a43051750da7c5f858008f2ff7732d15691e48eb7f845c791e5dca78bab580000000000000000000000000000ffff010205064e1f3dd03f9ec192b5f275a433bfc90f468ee1a3eb4c157b10706659e25eb362b5d902d809f9160b1688e201ee6e94b40f9b5062d7074683ef05a2d5efb7793c47059c878dfad38a30fafe61575db40f05ab0a08d55119b0aad300001976a9144fbc8fb6e11e253d77e5a9c987418e89cf4a63d288ac3477990b757387cb0406168c2720acf55f83603736a314a37d01b135b873a27b411fb37e49c1ff2b8057713939a5513e6e711a71cff2e517e6224df724ed750aef1b7f9ad9ec612b4a7250232e1e400da718a9501e1d9a5565526e4b1ff68c028763";
-        let bytes = hex::decode(raw).expect("valid fixture hex");
-        let tx: dashcore::Transaction =
-            dashcore::consensus::encode::deserialize(&bytes).expect("decode ProRegTx");
+    fn txos_route_to_their_owning_accounts_bucket() {
+        use dashcore::{Address, Network, OutPoint, ScriptBuf, TxIn, TxOut, Witness};
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::TransactionContext;
 
-        let fields = provider_payload_fields(&tx);
-
-        assert_eq!(
-            fields.service_address.as_deref(),
-            Some("1.2.5.6:19999"),
-            "service address must be lifted from the ProRegTx payload"
-        );
-        assert!(
-            fields.collateral.is_some(),
-            "ProRegTx carries a collateral outpoint"
-        );
-        assert_eq!(
-            hex::encode(fields.owner_key_hash.expect("owner key hash")),
-            "3dd03f9ec192b5f275a433bfc90f468ee1a3eb4c"
-        );
-        assert_eq!(
-            hex::encode(fields.voting_key_hash.expect("voting key hash")),
-            "d38a30fafe61575db40f05ab0a08d55119b0aad3"
-        );
-        assert!(
-            fields.pro_tx_hash.is_none(),
-            "ProRegTx has no explicit pro_tx_hash"
-        );
-    }
-
-    /// ProUpServTx (provider-update-service) also carries a service
-    /// address — reconstructed here from its little-endian IPv6-mapped
-    /// `ip_address` + `port` — plus an explicit `pro_tx_hash` linking it
-    /// to the registration. Fixture is rust-dashcore's own
-    /// `test_provider_update_service_transaction` vector, whose endpoint
-    /// is `52.36.64.148:19999`. The `pro_tx_hash` is asserted in raw
-    /// wire order (what `to_32(txid.as_ref())` stores) — the reverse of
-    /// the block-explorer display form.
-    #[test]
-    fn provider_update_service_payload_fields_extracted() {
-        let raw = "03000200018f3fe6683e36326669b6e34876fb2a2264e8327e822f6fec304b66f47d61b3e1010000006b48304502210082af6727408f0f2ec16c7da1c42ccf0a026abea6a3a422776272b03c8f4e262a022033b406e556f6de980b2d728e6812b3ae18ee1c863ae573ece1cbdf777ca3e56101210351036c1192eaf763cd8345b44137482ad24b12003f23e9022ce46752edf47e6effffffff0180220e43000000001976a914123cbc06289e768ca7d743c8174b1e6eeb610f1488ac00000000b501003a72099db84b1c1158568eec863bea1b64f90eccee3304209cebe1df5e7539fd00000000000000000000ffff342440944e1f00e6725f799ea20480f06fb105ebe27e7c4845ab84155e4c2adf2d6e5b73a998b1174f9621bbeda5009c5a6487bdf75edcf602b67fe0da15c275cc91777cb25f5fd4bb94e84fd42cb2bb547c83792e57c80d196acd47020e4054895a0640b7861b3729c41dd681d4996090d5750f65c4b649a5cd5b2bdf55c880459821e53d91c9";
-        let bytes = hex::decode(raw).expect("valid fixture hex");
-        let tx: dashcore::Transaction =
-            dashcore::consensus::encode::deserialize(&bytes).expect("decode ProUpServTx");
-
-        let fields = provider_payload_fields(&tx);
-
-        assert_eq!(
-            fields.service_address.as_deref(),
-            Some("52.36.64.148:19999"),
-            "ProUpServTx endpoint must be rebuilt from ip_address + port"
-        );
-        assert_eq!(
-            fields.pro_tx_hash.map(hex::encode).as_deref(),
-            Some("3a72099db84b1c1158568eec863bea1b64f90eccee3304209cebe1df5e7539fd"),
-            "ProUpServTx carries an explicit pro_tx_hash (wire order)"
-        );
-        assert!(
-            fields.collateral.is_none(),
-            "ProUpServTx has no collateral outpoint"
-        );
-        assert!(fields.owner_key_hash.is_none());
-        assert!(fields.voting_key_hash.is_none());
-    }
-
-    /// A plain (non-provider) transaction yields no provider fields, so
-    /// the FFI record emits null/zeroed/`false` for all of them.
-    #[test]
-    fn non_provider_tx_has_no_provider_fields() {
+        let coinjoin = AccountType::CoinJoin { index: 0 };
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let dest = Address::dummy(Network::Testnet, 1);
+        let change_addr = Address::dummy(Network::Testnet, 2);
+        let funded_addr = Address::dummy(Network::Testnet, 3);
         let tx = dashcore::Transaction {
             version: 2,
             lock_time: 0,
-            input: vec![],
-            output: vec![],
+            input: vec![TxIn {
+                previous_output: OutPoint::default(),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![
+                TxOut {
+                    value: 900_000,
+                    script_pubkey: dest.script_pubkey(),
+                },
+                TxOut {
+                    value: 99_000,
+                    script_pubkey: change_addr.script_pubkey(),
+                },
+            ],
             special_transaction_payload: None,
         };
-        let fields = provider_payload_fields(&tx);
-        assert!(fields.service_address.is_none());
-        assert!(fields.pro_tx_hash.is_none());
-        assert!(fields.collateral.is_none());
-        assert!(fields.owner_key_hash.is_none());
-        assert!(fields.voting_key_hash.is_none());
-    }
-
-    // rust-dashcore's own test vectors (see the payload extraction tests
-    // above). Both are unrelated masternodes, so they aggregate into
-    // distinct proTxHash buckets.
-    const PROREG_HEX: &str = "0300010001ca9a43051750da7c5f858008f2ff7732d15691e48eb7f845c791e5dca78bab58010000006b483045022100fe8fec0b3880bcac29614348887769b0b589908e3f5ec55a6cf478a6652e736502202f30430806a6690524e4dd599ba498e5ff100dea6a872ebb89c2fd651caa71ed012103d85b25d6886f0b3b8ce1eef63b720b518fad0b8e103eba4e85b6980bfdda2dfdffffffff018e37807e090000001976a9144ee1d4e5d61ac40a13b357ac6e368997079678c888ac00000000fd1201010000000000ca9a43051750da7c5f858008f2ff7732d15691e48eb7f845c791e5dca78bab580000000000000000000000000000ffff010205064e1f3dd03f9ec192b5f275a433bfc90f468ee1a3eb4c157b10706659e25eb362b5d902d809f9160b1688e201ee6e94b40f9b5062d7074683ef05a2d5efb7793c47059c878dfad38a30fafe61575db40f05ab0a08d55119b0aad300001976a9144fbc8fb6e11e253d77e5a9c987418e89cf4a63d288ac3477990b757387cb0406168c2720acf55f83603736a314a37d01b135b873a27b411fb37e49c1ff2b8057713939a5513e6e711a71cff2e517e6224df724ed750aef1b7f9ad9ec612b4a7250232e1e400da718a9501e1d9a5565526e4b1ff68c028763";
-    const PROUPSERV_HEX: &str = "03000200018f3fe6683e36326669b6e34876fb2a2264e8327e822f6fec304b66f47d61b3e1010000006b48304502210082af6727408f0f2ec16c7da1c42ccf0a026abea6a3a422776272b03c8f4e262a022033b406e556f6de980b2d728e6812b3ae18ee1c863ae573ece1cbdf777ca3e56101210351036c1192eaf763cd8345b44137482ad24b12003f23e9022ce46752edf47e6effffffff0180220e43000000001976a914123cbc06289e768ca7d743c8174b1e6eeb610f1488ac00000000b501003a72099db84b1c1158568eec863bea1b64f90eccee3304209cebe1df5e7539fd00000000000000000000ffff342440944e1f00e6725f799ea20480f06fb105ebe27e7c4845ab84155e4c2adf2d6e5b73a998b1174f9621bbeda5009c5a6487bdf75edcf602b67fe0da15c275cc91777cb25f5fd4bb94e84fd42cb2bb547c83792e57c80d196acd47020e4054895a0640b7861b3729c41dd681d4996090d5750f65c4b649a5cd5b2bdf55c880459821e53d91c9";
-
-    fn decode_tx(hex: &str) -> dashcore::Transaction {
-        let bytes = hex::decode(hex).expect("valid fixture hex");
-        dashcore::consensus::encode::deserialize(&bytes).expect("decode tx")
-    }
-
-    /// Stub DML lookup: the list is never available (⇒ every entity is
-    /// `Unknown`). Mirrors "SPV not running / masternode sync incomplete".
-    fn unavailable_dml(_pro_tx_hash: &[u8; 32]) -> ListMembership {
-        ListMembership::ListUnavailable
-    }
-
-    /// A lone ProRegTx aggregates into one active masternode carrying its
-    /// service address, key hashes, and collateral, keyed by its own txid.
-    #[test]
-    fn aggregate_single_registration() {
-        let reg = decode_tx(PROREG_HEX);
-        let expected_pro_tx = provider_hash_to_32(reg.txid().as_ref());
-
-        let mns = aggregate_masternodes([(100u32, 0u32, &reg)].into_iter(), unavailable_dml);
-        assert_eq!(mns.len(), 1);
-        let mn = &mns[0];
-        assert_eq!(mn.pro_tx_hash, expected_pro_tx);
-        assert_eq!(mn.status, MasternodeStatus::Unknown, "no DML ⇒ Unknown");
-        assert!(mn.has_registration);
-        assert!(!mn.revoked);
-        assert!(!mn.is_evonode, "legacy ProRegTx fixture is a regular MN");
-        assert_eq!(mn.service_address.as_deref(), Some("1.2.5.6:19999"));
-        assert!(mn.owner_key_hash.is_some());
-        assert!(mn.voting_key_hash.is_some());
-        assert!(mn.collateral.is_some());
-        // #4116 key-ownership extraction: operator BLS key + payout script
-        // are lifted; the legacy (v1) fixture is a regular MN so it has no
-        // platform node id.
-        assert!(
-            mn.operator_public_key.is_some(),
-            "ProRegTx carries a 48-byte operator BLS key"
-        );
-        assert!(
-            mn.payout_script.as_ref().is_some_and(|s| !s.is_empty()),
-            "ProRegTx carries a payout script"
-        );
-        assert!(
-            mn.platform_node_id.is_none(),
-            "legacy regular-MN fixture has no platform node id"
-        );
-        assert_eq!(mn.tx_count, 1);
-    }
-
-    /// A ProUpServTx whose registration isn't in the input set still
-    /// yields a masternode (keyed by its `pro_tx_hash`) with the updated
-    /// service address but no registration-only fields.
-    #[test]
-    fn aggregate_update_only_masternode() {
-        let ups = decode_tx(PROUPSERV_HEX);
-        let mns = aggregate_masternodes([(50u32, 0u32, &ups)].into_iter(), unavailable_dml);
-        assert_eq!(mns.len(), 1);
-        let mn = &mns[0];
-        assert!(!mn.has_registration);
-        assert_eq!(mn.service_address.as_deref(), Some("52.36.64.148:19999"));
-        assert!(mn.owner_key_hash.is_none());
-        assert!(mn.collateral.is_none());
-        assert_eq!(mn.tx_count, 1);
-    }
-
-    /// Two unrelated provider txs bucket into two masternodes.
-    #[test]
-    fn aggregate_groups_by_pro_tx_hash() {
-        let reg = decode_tx(PROREG_HEX);
-        let ups = decode_tx(PROUPSERV_HEX);
-        let mns = aggregate_masternodes(
-            [(100u32, 0u32, &reg), (200u32, 0u32, &ups)].into_iter(),
-            unavailable_dml,
-        );
-        assert_eq!(mns.len(), 2, "distinct proTxHashes ⇒ two masternodes");
-    }
-
-    /// A ProUpRevTx linked to a registration flips the masternode to
-    /// revoked ("previously had") while its service address and count
-    /// reflect the full provider-tx set. Built programmatically because
-    /// rust-dashcore ships no ProUpRevTx raw-hex vector.
-    #[test]
-    fn aggregate_revocation_marks_revoked() {
-        use dashcore::blockdata::transaction::special_transaction::provider_update_revocation::ProviderUpdateRevocationPayload;
-        use dashcore::transaction::TransactionPayload;
-
-        let reg = decode_tx(PROREG_HEX);
-        let pro_tx_hash = reg.txid();
-
-        let rev_payload = ProviderUpdateRevocationPayload {
-            version: 1,
-            pro_tx_hash,
-            reason: 2,
-            inputs_hash: [3u8; 32].into(),
-            payload_sig: [0u8; 96].into(),
+        let our_input = InputDetail {
+            index: 0,
+            value: 1_000_000,
+            address: funded_addr.clone(),
         };
-        let rev = dashcore::Transaction {
-            version: 3,
-            lock_time: 0,
-            input: vec![],
-            output: vec![],
-            special_transaction_payload: Some(
-                TransactionPayload::ProviderUpdateRevocationPayloadType(rev_payload),
-            ),
+        let sent = OutputDetail {
+            index: 0,
+            role: OutputRole::Sent,
+            address: Some(dest.clone()),
+            value: 900_000,
         };
-
-        // A ProUpRevTx'd node is Absent from the DML here ⇒ Retired.
-        let revoked_pro_tx = provider_hash_to_32(pro_tx_hash.as_ref());
-        let lookup = |pt: &[u8; 32]| {
-            if *pt == revoked_pro_tx {
-                ListMembership::Absent
-            } else {
-                ListMembership::ListUnavailable
-            }
+        let change = OutputDetail {
+            index: 1,
+            role: OutputRole::Change,
+            address: Some(change_addr.clone()),
+            value: 99_000,
         };
-
-        // Revocation feed order shouldn't matter (height drives merges).
-        let mns = aggregate_masternodes(
-            [(300u32, 0u32, &rev), (100u32, 0u32, &reg)].into_iter(),
-            lookup,
+        let rec = |account, direction, inputs: Vec<InputDetail>, outputs, net| {
+            TransactionRecord::new(
+                tx.clone(),
+                account,
+                TransactionContext::Mempool,
+                TransactionType::Standard,
+                direction,
+                inputs,
+                outputs,
+                net,
+            )
+        };
+        // The CoinJoin slice funds the spend; its account-local view of
+        // the sibling's change is `Sent`. The BIP44 slice owns the
+        // change. The folded row carries the union with the owned role.
+        let coinjoin_slice = rec(
+            coinjoin,
+            TransactionDirection::Outgoing,
+            vec![our_input.clone()],
+            vec![
+                sent.clone(),
+                OutputDetail {
+                    role: OutputRole::Sent,
+                    ..change.clone()
+                },
+            ],
+            -1_000_000,
         );
-        assert_eq!(mns.len(), 1);
-        let mn = &mns[0];
-        assert_eq!(mn.pro_tx_hash, revoked_pro_tx);
-        assert!(mn.has_registration);
-        assert!(mn.revoked, "a ProUpRevTx marks the revoked-data flag");
-        assert_eq!(mn.revocation_reason, 2);
+        let bip44_slice = rec(
+            bip44,
+            TransactionDirection::Incoming,
+            vec![],
+            vec![change.clone()],
+            99_000,
+        );
+        let folded = rec(
+            coinjoin,
+            TransactionDirection::Outgoing,
+            vec![our_input],
+            vec![sent, change],
+            -901_000,
+        );
+
+        let cs = CoreChangeSet {
+            records: vec![folded],
+            account_records: vec![coinjoin_slice, bip44_slice],
+            ..CoreChangeSet::default()
+        };
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 2, "one bucket per involved account");
+        let buckets = unsafe { std::slice::from_raw_parts(ffi.accounts, ffi.accounts_count) };
+        let coinjoin_bucket = buckets
+            .iter()
+            .find(|b| b.type_tag == account_type_to_tags(&coinjoin).type_tag)
+            .expect("coinjoin bucket");
+        let bip44_bucket = buckets
+            .iter()
+            .find(|b| b.type_tag == account_type_to_tags(&bip44).type_tag)
+            .expect("bip44 bucket");
+
         assert_eq!(
-            mn.status,
-            MasternodeStatus::Retired,
-            "absent from the DML ⇒ Retired (status is DML-derived, not revoked-derived)"
+            coinjoin_bucket.transactions_count, 1,
+            "the folded wallet-level row files under the funding account"
         );
-        assert_eq!(mn.service_address.as_deref(), Some("1.2.5.6:19999"));
-        assert_eq!(mn.tx_count, 2);
-    }
-
-    /// Status is derived from the injected DML lookup, not from tx history:
-    /// a valid entry ⇒ Active, a present-but-invalid entry ⇒ Inactive, an
-    /// absent entry ⇒ Retired — all for the same (unrevoked) ProRegTx.
-    #[test]
-    fn aggregate_status_follows_dml_membership() {
-        let reg = decode_tx(PROREG_HEX);
-        let pro_tx = provider_hash_to_32(reg.txid().as_ref());
-
-        for (membership, expected) in [
-            (ListMembership::ValidEntry, MasternodeStatus::Active),
-            (ListMembership::InvalidEntry, MasternodeStatus::Inactive),
-            (ListMembership::Absent, MasternodeStatus::Retired),
-            (ListMembership::ListUnavailable, MasternodeStatus::Unknown),
-        ] {
-            let lookup = |pt: &[u8; 32]| {
-                assert_eq!(*pt, pro_tx);
-                membership
-            };
-            let mns = aggregate_masternodes([(100u32, 0u32, &reg)].into_iter(), lookup);
-            assert_eq!(mns.len(), 1);
-            assert_eq!(mns[0].status, expected);
-            assert!(!mns[0].revoked, "no ProUpRevTx ⇒ revoked flag stays false");
-        }
-    }
-
-    /// Evonodes and regular masternodes get INDEPENDENT 1-based per-type
-    /// sequences: an evonode + a regular in one aggregation each get
-    /// `type_index == 1`. Built by cloning the regular ProRegTx fixture and
-    /// flipping its `masternode_type` (plus `lock_time`, so the txid — and
-    /// thus the proTxHash group key — differs).
-    #[test]
-    fn aggregate_per_type_numbering() {
-        use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
-        use dashcore::transaction::TransactionPayload;
-
-        let regular = decode_tx(PROREG_HEX);
-
-        let mut evonode = decode_tx(PROREG_HEX);
-        evonode.lock_time = 4242; // change the txid ⇒ distinct proTxHash
-        if let Some(TransactionPayload::ProviderRegistrationPayloadType(p)) =
-            &mut evonode.special_transaction_payload
-        {
-            p.masternode_type = ProviderMasternodeType::HighPerformance;
-        }
-
-        let mns = aggregate_masternodes(
-            [(100u32, 0u32, &regular), (200u32, 0u32, &evonode)].into_iter(),
-            unavailable_dml,
+        assert_eq!(
+            coinjoin_bucket.utxos_added_count, 0,
+            "the funding slice owns no outputs — the sibling's change \
+             must NOT be derived from the folded record into this bucket"
         );
-        assert_eq!(mns.len(), 2, "distinct proTxHashes ⇒ two masternodes");
-
-        let evo = mns.iter().find(|m| m.is_evonode).expect("evonode present");
-        let reg = mns.iter().find(|m| !m.is_evonode).expect("regular present");
-        assert_eq!(evo.type_index, 1, "first (only) evonode ⇒ Evonode 1");
-        assert_eq!(reg.type_index, 1, "first (only) regular ⇒ Masternode 1");
+        assert_eq!(
+            coinjoin_bucket.utxos_spent_count, 1,
+            "the spend stays with the account that owned the coin"
+        );
+        assert_eq!(
+            bip44_bucket.transactions_count, 1,
+            "every involved account's bucket carries the folded row — the \
+             per-account transaction callback is the sole writer of the \
+             tx↔account involvement join"
+        );
+        let coinjoin_row = unsafe { &*coinjoin_bucket.transactions };
+        let bip44_row = unsafe { &*bip44_bucket.transactions };
+        assert_eq!(
+            coinjoin_row.net_amount, bip44_row.net_amount,
+            "the row's wallet-level values are identical in every bucket"
+        );
+        assert_eq!(coinjoin_row.net_amount, -901_000);
+        assert_eq!(
+            bip44_bucket.utxos_added_count, 1,
+            "the change TXO lands in its OWNING account's bucket"
+        );
+        unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 
-    /// Two provider updates for one masternode in the SAME block must resolve
-    /// the per-field latest-wins by in-block `position`, matching Core's
-    /// `block.vtx` order — NOT by the arbitrary txid order the caller's
-    /// `BTreeMap<Txid>` dedup would otherwise impose. Feed the same pair in
-    /// both orders; the higher-positioned (block-latest) update wins each time,
-    /// proving position — not feed/txid order — decides the outcome.
+    /// The exact shape behind the provider-restoration P1: a ProReg-like
+    /// transaction funded by a Standard account whose payload ALSO
+    /// matches a provider owner-keys account. The provider slice is
+    /// payload-only — no TXO in the account — so the tx↔account
+    /// involvement join written by the per-bucket transaction callback
+    /// is the ONLY thing linking the tx to the provider account, and
+    /// restart restoration selects provider transactions through it.
+    /// The provider bucket must therefore receive the folded row even
+    /// though it contributes no TXO deltas.
     #[test]
-    fn same_block_updates_resolve_by_position_not_txid() {
-        use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
-        use dashcore::transaction::TransactionPayload;
-
-        // Shared registration linkage ⇒ both updates land in one bucket.
-        let pro_tx_hash = decode_tx(PROREG_HEX).txid();
-        let group_key = provider_hash_to_32(pro_tx_hash.as_ref());
-
-        // Build a ProUpServTx directly (no raw-hex vector needed); `port`
-        // distinguishes the resulting service address, `inputs` perturbs the
-        // txid so the two txs are genuinely distinct.
-        let make_upserv = |port: u16, inputs: u8| -> dashcore::Transaction {
-            let payload = ProviderUpdateServicePayload {
-                version: 1,
-                mn_type: None,
-                pro_tx_hash,
-                ip_address: 42,
-                port,
-                script_payout: dashcore::ScriptBuf::new(),
-                inputs_hash: [inputs; 32].into(),
-                platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
-                payload_sig: [0u8; 96].into(),
-            };
-            dashcore::Transaction {
-                version: 3,
-                lock_time: 0,
-                input: vec![],
-                output: vec![],
-                special_transaction_payload: Some(
-                    TransactionPayload::ProviderUpdateServicePayloadType(payload),
-                ),
-            }
+    fn payload_only_provider_account_still_receives_the_transaction_row() {
+        use dashcore::{Address, Network, OutPoint, ScriptBuf, TxIn, TxOut, Witness};
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
         };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::TransactionContext;
 
-        let low = make_upserv(19000, 3); // in-block position 0
-        let high = make_upserv(19999, 4); // in-block position 1 (block-latest)
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let provider = AccountType::ProviderOwnerKeys;
+        let funded_addr = Address::dummy(Network::Testnet, 4);
+        let dest = Address::dummy(Network::Testnet, 5);
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::default(),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 100_000_000,
+                script_pubkey: dest.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let rec =
+            |account, direction, inputs: Vec<InputDetail>, outputs: Vec<OutputDetail>, net| {
+                TransactionRecord::new(
+                    tx.clone(),
+                    account,
+                    TransactionContext::Mempool,
+                    TransactionType::Standard,
+                    direction,
+                    inputs,
+                    outputs,
+                    net,
+                )
+            };
+        let funding_slice = rec(
+            bip44,
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 100_001_000,
+                address: funded_addr,
+            }],
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Sent,
+                address: Some(dest),
+                value: 100_000_000,
+            }],
+            -100_001_000,
+        );
+        // Payload-only provider match: no input details, no output
+        // details — the owner key appears in the special-tx payload.
+        let provider_slice = rec(provider, TransactionDirection::Outgoing, vec![], vec![], 0);
+        let folded = funding_slice.clone();
 
-        for feed in [
-            [(500u32, 0u32, &low), (500u32, 1u32, &high)],
-            // Reversed feed order (block-latest fed first): position, not feed
-            // order, must still pick the winner.
-            [(500u32, 1u32, &high), (500u32, 0u32, &low)],
-        ] {
-            let mns = aggregate_masternodes(feed.into_iter(), unavailable_dml);
-            assert_eq!(mns.len(), 1, "same proTxHash ⇒ one bucket");
-            assert_eq!(mns[0].pro_tx_hash, group_key);
-            assert!(
-                mns[0]
-                    .service_address
-                    .as_deref()
-                    .unwrap_or_default()
-                    .ends_with(":19999"),
-                "higher in-block position (block-latest) must win; got {:?}",
-                mns[0].service_address
-            );
-            assert_eq!(mns[0].tx_count, 2, "both updates counted");
-        }
+        let cs = CoreChangeSet {
+            records: vec![folded],
+            account_records: vec![funding_slice, provider_slice],
+            ..CoreChangeSet::default()
+        };
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 2);
+        let buckets = unsafe { std::slice::from_raw_parts(ffi.accounts, ffi.accounts_count) };
+        let provider_bucket = buckets
+            .iter()
+            .find(|b| b.type_tag == account_type_to_tags(&provider).type_tag)
+            .expect("provider bucket");
+        assert_eq!(
+            provider_bucket.transactions_count, 1,
+            "the payload-only provider account must receive the folded row, \
+             or its involvement join is never written and the transaction \
+             disappears from provider restoration after restart"
+        );
+        assert_eq!(provider_bucket.utxos_added_count, 0);
+        assert_eq!(provider_bucket.utxos_spent_count, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
+    }
+
+    /// The FFI entry carries the platform HTTP port gated by
+    /// `has_platform_http_port`, and releases its heap C strings through the
+    /// public free routine.
+    #[test]
+    fn masternode_entry_gates_platform_http_port() {
+        let mut mn = MasternodeRecord::default();
+        mn.platform_http_port = Some(1443);
+        mn.service_address = Some("1.2.3.4:19999".to_string());
+        let entry = masternode_entry_ffi(&mn, dashcore::Network::Testnet);
+        assert!(entry.has_platform_http_port);
+        assert_eq!(entry.platform_http_port, 1443);
+        assert!(
+            !entry.platform_ownership_checked,
+            "default record: unchecked"
+        );
+        // Release the entry's heap C strings through the public free routine.
+        let entries = Box::into_raw(vec![entry].into_boxed_slice()) as *mut MasternodeEntryFFI;
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes(entries, 1) };
+    }
+
+    /// Pin the original array element layout used by already-built C/Swift
+    /// consumers. A field addition or reorder here is an ABI break even when
+    /// all Rust callers are recompiled together.
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn masternode_entry_v1_layout_is_frozen() {
+        assert_eq!(std::mem::size_of::<MasternodeEntryFFI>(), 296);
+        assert_eq!(std::mem::align_of::<MasternodeEntryFFI>(), 8);
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, service_address),
+            144
+        );
+        assert_eq!(std::mem::offset_of!(MasternodeEntryFFI, owner_address), 160);
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, operator_public_key),
+            176
+        );
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, payout_address),
+            248
+        );
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, platform_key_index),
+            284
+        );
+        assert_eq!(
+            std::mem::offset_of!(MasternodeEntryFFI, platform_ownership_checked),
+            288
+        );
+        assert_eq!(std::mem::offset_of!(MasternodeEntryV2FFI, v1), 0);
+    }
+
+    #[test]
+    fn masternode_entry_v2_carries_additive_fields_and_frees_them() {
+        let mut mn = MasternodeRecord::default();
+        mn.source = platform_wallet::masternode::MasternodeSource::Tracked;
+        mn.label = Some("tracked label".to_string());
+        let entry = masternode_entry_v2_ffi(&mn, dashcore::Network::Testnet);
+        assert_eq!(entry.source, 1);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(entry.label) }
+                .to_str()
+                .unwrap(),
+            "tracked label"
+        );
+        let entries = Box::into_raw(vec![entry].into_boxed_slice()) as *mut MasternodeEntryV2FFI;
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes_v2(entries, 1) };
+    }
+
+    #[test]
+    fn masternode_v1_and_v2_arrays_preserve_second_element_stride() {
+        let mut first = MasternodeRecord::default();
+        first.pro_tx_hash = [1; 32];
+        first.service_address = Some("1.1.1.1:9999".to_string());
+        first.source = platform_wallet::masternode::MasternodeSource::Tracked;
+        first.label = Some("first".to_string());
+        let mut second = MasternodeRecord::default();
+        second.pro_tx_hash = [2; 32];
+        second.service_address = Some("2.2.2.2:9999".to_string());
+        second.source = platform_wallet::masternode::MasternodeSource::Tracked;
+        second.label = Some("second".to_string());
+
+        let v1 = vec![
+            masternode_entry_ffi(&first, dashcore::Network::Testnet),
+            masternode_entry_ffi(&second, dashcore::Network::Testnet),
+        ];
+        let v1 = Box::into_raw(v1.into_boxed_slice()) as *mut MasternodeEntryFFI;
+        let v1_slice = unsafe { std::slice::from_raw_parts(v1, 2) };
+        assert_eq!(v1_slice[1].pro_tx_hash, [2; 32]);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(v1_slice[1].service_address) }
+                .to_str()
+                .unwrap(),
+            "2.2.2.2:9999"
+        );
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes(v1, 2) };
+
+        let v2 = vec![
+            masternode_entry_v2_ffi(&first, dashcore::Network::Testnet),
+            masternode_entry_v2_ffi(&second, dashcore::Network::Testnet),
+        ];
+        let v2 = Box::into_raw(v2.into_boxed_slice()) as *mut MasternodeEntryV2FFI;
+        let v2_slice = unsafe { std::slice::from_raw_parts(v2, 2) };
+        assert_eq!(v2_slice[1].v1.pro_tx_hash, [2; 32]);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(v2_slice[1].label) }
+                .to_str()
+                .unwrap(),
+            "second"
+        );
+        unsafe { crate::wallet::platform_wallet_manager_free_masternodes_v2(v2, 2) };
     }
 }

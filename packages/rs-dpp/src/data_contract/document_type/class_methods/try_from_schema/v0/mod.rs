@@ -246,6 +246,7 @@ impl DocumentTypeV0 {
                 property_value,
                 &root_schema,
                 data_contact_config,
+                platform_version,
             )
             .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -253,10 +254,12 @@ impl DocumentTypeV0 {
                 &mut document_properties,
                 &required_fields,
                 &transient_fields,
+                true,
                 property_key,
                 property_value,
                 &root_schema,
                 data_contact_config,
+                platform_version,
             )
             .map_err(consensus_or_protocol_data_contract_error)?;
         }

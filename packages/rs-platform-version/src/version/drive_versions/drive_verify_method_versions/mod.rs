@@ -7,6 +7,7 @@ pub mod v2;
 pub struct DriveVerifyMethodVersions {
     pub contract: DriveVerifyContractMethodVersions,
     pub document: DriveVerifyDocumentMethodVersions,
+    pub chained_document: DriveVerifyChainedDocumentMethodVersions,
     pub document_count: DriveVerifyDocumentCountMethodVersions,
     pub document_sum: DriveVerifyDocumentSumMethodVersions,
     pub document_ranked: DriveVerifyDocumentRankedMethodVersions,
@@ -46,6 +47,14 @@ pub struct DriveVerifyDocumentMethodVersions {
     pub verify_start_at_document_in_proof: FeatureVersion,
 }
 
+/// Versions for the chained document query (provable semi-join)
+/// prove-path verifier (grovedb-level — the tenderdash composition
+/// layer lives in rs-drive-proof-verifier).
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyChainedDocumentMethodVersions {
+    pub verify_chained_documents_proof: FeatureVersion,
+}
+
 /// Versions for the `GetDocumentsCount` prove-path verifiers
 /// (grovedb-level — the tenderdash composition layer lives in
 /// rs-drive-proof-verifier). All three methods are implemented on
@@ -73,13 +82,15 @@ pub struct DriveVerifyDocumentSumMethodVersions {
     pub verify_point_lookup_count_and_sum_proof: FeatureVersion,
 }
 
-/// Versions for the ranked-aggregate (`HAVING ... TOP/BOTTOM/MIN/MAX`)
-/// prove-path verifier. The single method is implemented on
-/// `DriveDocumentRankedQuery` and returns `(RootHash, Vec<RankedEntry>)`,
-/// delegating to grovedb's `verify_indexed_axis_top_k`.
+/// Versions for the indexed-axis prove-path verifiers: the ranked
+/// (top-k) verifier and the boolean-`HAVING` range verifier. Both are
+/// implemented on the respective drive query types and delegate to
+/// grovedb's unified `verify_path_query` over the query's axis
+/// `PathQuery` (`new_axis_top_k` / `new_axis_bounded`).
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyDocumentRankedMethodVersions {
     pub verify_ranked_top_k_proof: FeatureVersion,
+    pub verify_having_range_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

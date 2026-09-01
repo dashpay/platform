@@ -45,28 +45,102 @@ pub(super) fn record_or_persister(
 }
 
 /// Family-aware in-memory funding-tx record lookup, shared by EVERY proof,
-/// ChainLock-wait, and recovery path. `TrackedAssetLock.account_index` is
-/// family-less (it doesn't record whether the lock was BIP44- or
-/// CoinJoin-funded), and key-wallet files a transaction that spends CoinJoin
-/// inputs under `coinjoin_accounts` — so a BIP44-only lookup leaves a
-/// whole-balance drain lock's IS/CL record invisible (fatal on hosts running
-/// `NoPlatformPersistence`, whose persister fallback always returns `None`).
-/// BIP44 is checked first (every historical lock), then CoinJoin.
+/// ChainLock-wait, and recovery path.
+///
+/// `TrackedAssetLock.account_index` is family-less — it records the source
+/// index, not which accounts ended up funding the lock — while key-wallet files
+/// a transaction under *every* account its inputs touch. So the record can sit
+/// in any of the families a lock may be funded from, and looking in only some
+/// of them leaves it invisible (fatal on hosts running `NoPlatformPersistence`,
+/// whose persister fallback always returns `None`, and a burnt proof-wait
+/// timeout everywhere else).
+///
+/// Two shapes make that a live concern: a whole-balance CoinJoin drain files
+/// only under `coinjoin_accounts`, and a POOLED asset lock
+/// (`ASSET_LOCK_FUNDING_SOURCES`) may take nothing from BIP44 and be funded
+/// entirely out of the BIP32 account or a DashPay contact-receiving one. All
+/// four families are therefore checked: the standard pair and CoinJoin at
+/// `account_index`, then the DashPay receiving accounts, which span their own
+/// indices and so are searched by txid alone. BIP44 stays first — it holds
+/// every historical lock.
 pub(in crate::wallet::asset_lock) fn funding_tx_record(
     accounts: &key_wallet::account::ManagedAccountCollection,
     account_index: u32,
     txid: &Txid,
 ) -> Option<TransactionRecord> {
-    accounts
-        .standard_bip44_accounts
-        .get(&account_index)
-        .and_then(|a| a.transactions().get(txid).cloned())
-        .or_else(|| {
-            accounts
-                .coinjoin_accounts
-                .get(&account_index)
-                .and_then(|a| a.transactions().get(txid).cloned())
-        })
+    funding_accounts(accounts, account_index)
+        .find_map(|account| account.transactions().get(txid).cloned())
+}
+
+/// The account families a lock funded from `account_index` can have filed
+/// its funding transaction under, in the order [`funding_tx_record`]
+/// documents.
+fn funding_accounts(
+    accounts: &key_wallet::account::ManagedAccountCollection,
+    account_index: u32,
+) -> impl Iterator<Item = &key_wallet::managed_account::ManagedCoreFundsAccount> {
+    let at_index = [
+        accounts.standard_bip44_accounts.get(&account_index),
+        accounts.standard_bip32_accounts.get(&account_index),
+        accounts.coinjoin_accounts.get(&account_index),
+    ];
+    at_index
+        .into_iter()
+        .flatten()
+        .chain(accounts.dashpay_receival_accounts.values())
+}
+
+/// Whether any account family that could hold the funding transaction
+/// reports `txid` as chainlock-finalized.
+///
+/// This is the same finality question [`record_holds_local_finality`] asks,
+/// for the record that is no longer there to ask it of. Under the default
+/// `keep-finalized-transactions` configuration a chainlock promotion drops
+/// the promoted record and keeps only its txid in the account's finalized
+/// set, so from that moment on a lookup by record cannot see a finality the
+/// wallet has already recorded — the txid set is the only place it survives.
+/// Searched over the same families, in the same order, as
+/// [`funding_tx_record`].
+pub(in crate::wallet::asset_lock) fn funding_tx_is_finalized(
+    accounts: &key_wallet::account::ManagedAccountCollection,
+    account_index: u32,
+    txid: &Txid,
+) -> bool {
+    funding_accounts(accounts, account_index).any(|account| account.transaction_is_finalized(txid))
+}
+
+/// Whether `record` on its own already establishes local finality for a
+/// funding transaction — the three record shapes [`AssetLockManager::wait_for_proof`]
+/// turns into a proof, reduced to a yes/no.
+///
+/// It exists so a caller holding a wallet read guard can ask the finality
+/// question inside its own snapshot instead of taking a second read. The
+/// answer must be read together with the rest of a decision that depends on
+/// it; splitting the two reads lets finality land in between and be missed.
+///
+/// `wallet_chain_lock_height` and `networks_match` come from the same
+/// snapshot as `record`. They serve only the third shape — a record whose
+/// own context is not yet promoted but whose block the wallet's applied
+/// chainlock already buries — and carry the same chain-id refusal as the
+/// proof builder: a `last_applied_chain_lock` persisted from a different
+/// network says nothing about this record's block.
+pub(in crate::wallet::asset_lock) fn record_holds_local_finality(
+    record: &TransactionRecord,
+    wallet_chain_lock_height: Option<dashcore::prelude::CoreBlockHeight>,
+    networks_match: bool,
+) -> bool {
+    use key_wallet::transaction_checking::TransactionContext;
+    match &record.context {
+        TransactionContext::InstantSend(_) => true,
+        TransactionContext::InChainLockedBlock(_) => record.height().is_some(),
+        _ => {
+            networks_match
+                && matches!(
+                    (wallet_chain_lock_height, record.height()),
+                    (Some(chain_lock), Some(height)) if chain_lock >= height
+                )
+        }
+    }
 }
 
 /// Variant of [`record_or_persister`] that swallows persister errors
@@ -643,6 +717,164 @@ mod tests {
         let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
             .expect("BIP44-family record must be found by the shared lookup");
         assert_eq!(found.txid, txid);
+    }
+
+    /// BIP32-family regression for [`funding_tx_record`]: a POOLED asset
+    /// lock (`ASSET_LOCK_FUNDING_SOURCES`) may take nothing from BIP44 and
+    /// be funded entirely out of the BIP32 account, filing the record only
+    /// under `standard_bip32_accounts` — the lookup must still see it.
+    #[test]
+    fn funding_tx_record_finds_bip32_only_record() {
+        use key_wallet::test_utils::TestWalletContext;
+
+        let mut ctx = TestWalletContext::new_random();
+        let record = bip32_record_with_txid(0x55);
+        let txid = record.txid;
+        ctx.managed_wallet
+            .first_bip32_managed_account_mut()
+            .expect("default wallet has BIP32 account 0")
+            .transactions_mut()
+            .insert(txid, record);
+
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("BIP32-family record must be found by the shared lookup");
+        assert_eq!(found.txid, txid);
+
+        // Unknown txid and unknown account index are clean misses.
+        assert!(
+            funding_tx_record(&ctx.managed_wallet.accounts, 0, &Txid::from([0x02; 32])).is_none()
+        );
+        assert!(funding_tx_record(&ctx.managed_wallet.accounts, 9, &txid).is_none());
+    }
+
+    /// DashPay-family regression for [`funding_tx_record`]: the receiving
+    /// accounts span their own indices, so the lookup searches them by txid
+    /// alone. A record filed only under a contact-receiving account whose
+    /// OWN index (7) differs from the tracked source `account_index` (0)
+    /// must still be found.
+    #[test]
+    fn funding_tx_record_finds_dashpay_receival_record_across_indices() {
+        use key_wallet::account::account_collection::DashpayAccountKey;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+        use key_wallet::test_utils::TestWalletContext;
+        use key_wallet::{DerivationPath, ManagedAccountType, Network};
+
+        let mut ctx = TestWalletContext::new_random();
+
+        let user_identity_id = [0xAB; 32];
+        let friend_identity_id = [0xCD; 32];
+        let addresses = AddressPool::new(
+            DerivationPath::master(),
+            AddressPoolType::Absent,
+            20,
+            Network::Testnet,
+            &KeySource::NoKeySource,
+        )
+        .expect("single DashPay address pool");
+        let mut account = ManagedCoreFundsAccount::new(
+            ManagedAccountType::DashpayReceivingFunds {
+                index: 7,
+                user_identity_id,
+                friend_identity_id,
+                addresses,
+            },
+            Network::Testnet,
+        );
+
+        let record = dashpay_record_with_txid(0x66, 7, user_identity_id, friend_identity_id);
+        let txid = record.txid;
+        account.transactions_mut().insert(txid, record);
+        ctx.managed_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .insert(
+                DashpayAccountKey {
+                    index: 7,
+                    user_identity_id,
+                    friend_identity_id,
+                },
+                account,
+            );
+
+        // The tracked source index (0) does not match the account's own
+        // index (7), yet the record is found — DashPay receiving accounts
+        // are searched by txid, not by the tracked source index.
+        let found = funding_tx_record(&ctx.managed_wallet.accounts, 0, &txid)
+            .expect("DashPay receival record must be found regardless of account_index");
+        assert_eq!(found.txid, txid);
+
+        // Even an account_index matching no account in any family still
+        // resolves the DashPay record — the search is index-independent.
+        let found_any_index = funding_tx_record(&ctx.managed_wallet.accounts, 9, &txid)
+            .expect("DashPay lookup is index-independent");
+        assert_eq!(found_any_index.txid, txid);
+
+        // Unknown txid is still a clean miss.
+        assert!(
+            funding_tx_record(&ctx.managed_wallet.accounts, 0, &Txid::from([0x03; 32])).is_none()
+        );
+    }
+
+    /// [`record_with_txid`] sibling filed as a BIP32-account record.
+    fn bip32_record_with_txid(seed: u8) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP32Account,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    /// [`record_with_txid`] sibling filed as a DashPay contact-receiving
+    /// account record.
+    fn dashpay_record_with_txid(
+        seed: u8,
+        index: u32,
+        user_identity_id: [u8; 32],
+        friend_identity_id: [u8; 32],
+    ) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::DashpayReceivingFunds {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
     }
 
     /// [`record_with_txid`] sibling filed as a CoinJoin-account record.

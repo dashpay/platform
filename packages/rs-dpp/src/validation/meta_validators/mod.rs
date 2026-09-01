@@ -300,3 +300,250 @@ lazy_static! {
         .expect("Invalid data contract schema");
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn document_schema_with_refers_to(refers_to: serde_json::Value) -> serde_json::Value {
+        json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": refers_to
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    #[test]
+    fn should_accept_refers_to_in_v3_document_schema() {
+        for target in ["identity", "contract", "token"] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": target
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+                "expected schema with {target} target to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_permanent_document_refers_to_in_v3_document_schema() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "permanentDocument",
+            "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+            "documentType": "note"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected permanentDocument refersTo to be valid"
+        );
+    }
+
+    #[test]
+    fn should_accept_permanent_document_refers_to_with_byte_array_contract_id() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "permanentDocument",
+            "contractId": vec![7u8; 32],
+            "documentType": "note"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected a byte-array contractId to be valid"
+        );
+    }
+
+    #[test]
+    fn should_accept_permanent_document_refers_to_without_contract_id() {
+        // An absent contractId targets the declaring contract itself
+        let schema = document_schema_with_refers_to(json!({
+            "type": "permanentDocument",
+            "documentType": "note"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected permanentDocument refersTo without contractId to be valid"
+        );
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_without_document_type() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "permanentDocument",
+            "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected permanentDocument refersTo without documentType to be invalid"
+        );
+    }
+
+    #[test]
+    fn should_reject_contract_id_on_non_document_refers_to_targets() {
+        for target in ["identity", "contract", "token"] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": target,
+                "contractId": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd"
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected contractId on a {target} target to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_permanent_document_refers_to_with_invalid_contract_id() {
+        for bad in [json!("not-base58-0OIl"), json!(vec![7u8; 31]), json!(42)] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "permanentDocument",
+                "contractId": bad,
+                "documentType": "note"
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected invalid contractId {bad} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_identity_public_key_refers_to_in_v3_document_schema() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "identityPublicKey",
+            "keyIdProperty": "toKeyIndex"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
+            "expected identityPublicKey refersTo to be valid"
+        );
+    }
+
+    #[test]
+    fn should_reject_identity_public_key_refers_to_without_key_id_property() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "identityPublicKey"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected identityPublicKey refersTo without keyIdProperty to be invalid"
+        );
+    }
+
+    #[test]
+    fn should_reject_key_id_property_on_non_key_refers_to_targets() {
+        for target in ["identity", "contract", "token", "permanentDocument"] {
+            let mut refers_to = serde_json::json!({
+                "type": target,
+                "keyIdProperty": "toKeyIndex"
+            });
+            if target == "permanentDocument" {
+                refers_to["documentType"] = serde_json::json!("note");
+            }
+
+            let schema = document_schema_with_refers_to(refers_to);
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected keyIdProperty on a {target} target to be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_identity_public_key_refers_to_with_invalid_key_id_property() {
+        for bad in [
+            serde_json::json!(""),
+            serde_json::json!("bad name!"),
+            serde_json::json!(3),
+        ] {
+            let schema = document_schema_with_refers_to(json!({
+                "type": "identityPublicKey",
+                "keyIdProperty": bad
+            }));
+
+            assert!(
+                DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+                "expected invalid keyIdProperty {bad} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_refers_to_with_unknown_properties() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "identity",
+            "mustExist": false
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected unknown refersTo properties to be rejected"
+        );
+    }
+
+    #[test]
+    fn should_reject_refers_to_with_unknown_type() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "unknown"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected schema to be invalid"
+        );
+    }
+
+    #[test]
+    fn should_reject_refers_to_on_non_identifier_property() {
+        let schema = json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0,
+                    "refersTo": { "type": "identity" }
+                }
+            },
+            "additionalProperties": false
+        });
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
+            "expected refersTo on a non-identifier property to be invalid"
+        );
+    }
+
+    #[test]
+    fn should_reject_refers_to_in_v2_document_schema() {
+        let schema = document_schema_with_refers_to(json!({
+            "type": "identity"
+        }));
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V2.validate(&schema).is_err(),
+            "expected refersTo to be rejected by the v2 meta schema"
+        );
+    }
+}

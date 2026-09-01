@@ -38,9 +38,10 @@ import SwiftData
 /// - **Platform address** (`fundingTypeRaw == 4` —
 ///   AssetLockAddressTopUp):
 ///   `recipientPlatformAddressHash` + `recipientPlatformAddressType`
-///   identify the destination. Set by Swift on the controller's
-///   `.completed` phase because the recipient is picked at
-///   ST-submit time on the host side; Rust never sees it.
+///   identify the destination, and `recipientIsExternal` says whether
+///   it belongs to this wallet or to a third party. Set by Swift on
+///   the controller's `.completed` phase because the recipient is
+///   picked at ST-submit time on the host side; Rust never sees it.
 ///
 /// - **Shielded address** (`fundingTypeRaw == 5` —
 ///   AssetLockShieldedAddressTopUp, not yet wired): will add a
@@ -119,10 +120,10 @@ public final class PersistentAssetLock {
     /// compares against 0/1/2/3 and the resumable-locks filter against
     /// 4 to hide already-spent rows).
     ///
-    /// `5` (RecoveredFromChain) rows are written by the SDK's
-    /// restore-scan reconstruction: the lock is confirmed on chain but
-    /// its Platform-side consumption is unknown, so UIs must treat it
-    /// as neither pending (1…3) nor done (4).
+    /// `5` (RecoveredFromChain) rows are written by restore reconstruction or
+    /// live reconciliation of an unauthenticated already-consumed report. The
+    /// lock is confirmed on Core but its Platform-side consumption is unknown,
+    /// so UIs must treat it as neither pending (1…3) nor done (4).
     public var statusRaw: Int
 
     /// Bincode-encoded `AssetLockProof` (`dpp::bincode::config::standard()`).
@@ -157,6 +158,53 @@ public final class PersistentAssetLock {
     /// without joining against `PersistentPlatformAddress`. `nil`
     /// whenever `recipientPlatformAddressHash` is `nil`.
     public var recipientPlatformAddressType: UInt8?
+
+    /// Whether `recipientPlatformAddressHash` is a THIRD PARTY's
+    /// address (`true`) or one of this wallet's own addresses
+    /// (`false`) — the own/external discriminator for the funding
+    /// type 4 field-family.
+    ///
+    /// Without it, a populated recipient hash is ambiguous. Consumers
+    /// read that hash as "this lock topped up an address of mine" —
+    /// `PlatformAddressActivityStore.matchesOwnAssetLockTopUp` in
+    /// dashwallet-ios does exactly that — so an outgoing payment to
+    /// someone else would be rendered as an incoming credit to the
+    /// user. `true` marks the row as an outgoing send whose recipient
+    /// hash names a stranger and therefore will NEVER have a matching
+    /// `PersistentPlatformAddress` row.
+    ///
+    /// Written by the caller that picked the recipient, alongside the
+    /// hash and type: `false` for `fundFromAssetLock`, `true` for
+    /// `fundFromAssetLockExternal`.
+    ///
+    /// `nil` for:
+    /// - Identity-funding asset locks (no platform-address recipient).
+    /// - Address-funding locks that haven't completed yet.
+    /// - Pre-this-commit address-funding locks that completed before
+    ///   the field existed. Treat `nil` alongside a populated
+    ///   `recipientPlatformAddressHash` as "own" — that was the only
+    ///   flow those rows could have come from.
+    ///
+    /// ## Migration
+    ///
+    /// Adding this property is a lightweight-migratable change (a new
+    /// optional column backfilled `NULL`), but it is NOT a free one: a
+    /// `VersionedSchema` identifies a store by the CHECKSUM of the
+    /// entities it declares, so adding a property to the live model
+    /// mutates the checksum of every registered schema version that
+    /// references it. The model LIST being unchanged is irrelevant.
+    ///
+    /// Left unaddressed, a store written by the V2 binary would match no
+    /// schema in `DashMigrationPlan.schemas` and
+    /// `ModelContainer(for:migrationPlan:configurations:)` would fail to
+    /// open it with Cocoa error 134504 ("Cannot use staged migration with
+    /// an unknown model version"). So V1 and V2 now reference a frozen
+    /// copy of this model (`DashSchemaV1.PersistentAssetLock`, in
+    /// `DashSchemaFrozenModels.swift`), this property is what schema
+    /// `DashSchemaV3` adds, and a lightweight V2 -> V3 stage carries
+    /// existing stores across. Do the same for the next property added
+    /// here.
+    public var recipientIsExternal: Bool?
 
     /// Record timestamps.
     public var createdAt: Date

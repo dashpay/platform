@@ -3,19 +3,520 @@ use super::*;
 mod replacement_tests {
     use super::*;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+    use dpp::data_contract::DataContract;
+    use dpp::document::Document;
+    use dpp::fee::fee_result::FeeResult;
     use dpp::identifier::Identifier;
     use dpp::prelude::IdentityNonce;
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
+    use drive::util::test_helpers::setup_contract;
     use std::collections::BTreeMap;
+
+    const REFERENCE_VALIDATION_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract.json";
+    const REFERENCE_VALIDATION_NESTED_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-nested.json";
+    const REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-optional.json";
+
+    /// Creates a document from `contract_path`'s message type, applies `create_setup`
+    /// to it, processes the creation (asserting success), then applies `replace_mutation`
+    /// and processes the replacement, returning its execution result.
+    /// propertyAgreement on replace: changing the REFERRING property while
+    /// leaving the reference untouched must re-validate the agreement —
+    /// the changed-fields gate binds the agreement's referring properties,
+    /// not only the reference property itself.
+    #[tokio::test]
+    async fn should_document_replace_fail_when_agreement_property_diverges() {
+        use crate::platform_types::platform_state::PlatformState;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::state_transition::StateTransition;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(4433);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-valid.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let process = |platform: &TempPlatform<MockCoreRPCLike>,
+                       platform_state: &PlatformState,
+                       transition: &StateTransition| {
+            let serialized = transition
+                .serialize_to_bytes()
+                .expect("expected the transition to serialize");
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+            result
+                .execution_results()
+                .first()
+                .expect("expected one execution result")
+                .clone()
+        };
+
+        // A note with topic "alpha" for the message to agree with.
+        let note_type = contract
+            .document_type_for_name("note")
+            .expect("expected the note document type");
+        let note_entropy = Bytes32::random_with_rng(&mut rng);
+        let mut note = note_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                note_entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random note");
+        note.set("topic", "alpha".into());
+        let note_create = BatchTransition::new_document_creation_transition_from_document(
+            note.clone(),
+            note_type,
+            note_entropy.0,
+            &key,
+            2,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the note create transition");
+        assert_matches!(
+            process(&platform, &platform_state, &note_create),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // An agreeing message referencing it.
+        let message_type = contract
+            .document_type_for_name("message")
+            .expect("expected the message document type");
+        let message_entropy = Bytes32::random_with_rng(&mut rng);
+        let mut message = message_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                message_entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message");
+        message.set(
+            "noteId",
+            dpp::platform_value::Value::Identifier(note.id().to_buffer()),
+        );
+        message.set("topic", "alpha".into());
+        let message_create = BatchTransition::new_document_creation_transition_from_document(
+            message.clone(),
+            message_type,
+            message_entropy.0,
+            &key,
+            3,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the message create transition");
+        assert_matches!(
+            process(&platform, &platform_state, &message_create),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // Replace ONLY the referring property: the reference is untouched,
+        // so this must be caught by the agreement-aware changed-fields gate.
+        message.set("topic", "beta".into());
+        message.increment_revision().expect("revision increments");
+        let message_replace = BatchTransition::new_document_replacement_transition_from_document(
+            message,
+            message_type,
+            &key,
+            4,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the message replace transition");
+        assert_matches!(
+            process(&platform, &platform_state, &message_replace),
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(_)
+                ),
+                ..
+            }
+        );
+    }
+
+    async fn run_reference_validation_create_then_replace<C, R>(
+        contract_path: &str,
+        create_setup: C,
+        replace_mutation: R,
+    ) -> StateTransitionExecutionResult
+    where
+        C: FnOnce(&mut Document, Identifier, Identifier),
+        R: FnOnce(&mut Document, Identifier, Identifier),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (other_identity, ..) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            contract_path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        create_setup(&mut document, identity.id(), other_identity.id());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        document.increment_revision().unwrap();
+        replace_mutation(&mut document, identity.id(), other_identity.id());
+
+        let documents_batch_replace_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                document,
+                message,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_replace_serialized_transition = documents_batch_replace_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_replace_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    async fn run_reference_validation_replace_with_contract<F>(
+        contract_path: &str,
+        to_user_id: F,
+        change_note: bool,
+    ) -> (StateTransitionExecutionResult, FeeResult)
+    where
+        F: FnOnce(Identifier, Identifier) -> Identifier,
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (other_identity, ..) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            contract_path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("toUserId", identity.id().into());
+        document.set("note", "before".into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        document.increment_revision().unwrap();
+        if change_note {
+            document.set("note", "after".into());
+        }
+        document.set(
+            "toUserId",
+            to_user_id(identity.id(), other_identity.id()).into(),
+        );
+
+        let documents_batch_replace_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                document,
+                message,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_replace_serialized_transition = documents_batch_replace_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_replace_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let result = processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone();
+
+        (result, processing_result.aggregated_fees().clone())
+    }
 
     #[tokio::test]
     async fn test_document_replace_on_document_type_that_is_mutable() {
         run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1411320,
+            // v14: replaced documents carry the contract-version stamp
+            1433220,
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_13: fee predating every v14 change on this path —
+    /// both the contract-version stamp and the dashpay payment-address
+    /// contract (#4380), whose v2 schema is gated behind
+    /// `SYSTEM_DATA_CONTRACT_VERSIONS_V3` (v14 only; v13 genesis stores
+    /// dashpay v1, so its smaller node shifts the byte-billed contracts-
+    /// subtree reads). That gate is why this value is below the pre-stamp
+    /// v14 baseline by more than the stamp bytes — and this pin is what
+    /// fails if the gate ever leaks into v13. Pinned so v13 chain history
+    /// stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_protocol_version_13() {
+        run_document_replace_on_document_type_that_is_mutable_at_protocol_version(13, 1411320)
+            .await;
     }
 
     /// PROTOCOL_VERSION_11: pre-B7 happy-path fee — transformer's local
@@ -73,6 +574,8 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
@@ -240,6 +743,8 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("displayName", original_name.into());
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
@@ -713,9 +1218,19 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable() {
         run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            460920,
+            460940, // v14: stamped documents (see happy-path baseline note)
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_13: pre-stamp fee — document serialization format 3
+    /// (the contract-version stamp) activates at v14, so v13 costs must be
+    /// exactly what they were before the `requiredSince` changes. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_protocol_version_13() {
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(13, 460920)
+            .await;
     }
 
     /// PROTOCOL_VERSION_11: pre-fix bump-only fee (no charge for the fetch
@@ -785,6 +1300,8 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
         // Random fillers can produce a non-URI avatarUrl that fails JSON-schema
         // validation on Create. Pin it to a valid URI like the sibling tests do.
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
@@ -967,6 +1484,20 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable() {
         run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
+            457680, // v14: stamped documents (see happy-path baseline note)
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: pre-stamp fee — document serialization format 3
+    /// (the contract-version stamp) activates at v14, so v13 costs must be
+    /// exactly what they were before the `requiredSince` changes. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_protocol_version_13(
+    ) {
+        run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
+            13,
             457660,
         )
         .await;
@@ -1076,6 +1607,7 @@ mod replacement_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1086,6 +1618,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1240,6 +1773,8 @@ mod replacement_tests {
             )
             .expect("expected a random document");
 
+        set_valid_profile_payment_addresses(&mut document, profile);
+
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
         let mut altered_document = document.clone();
@@ -1371,6 +1906,8 @@ mod replacement_tests {
             )
             .expect("expected a random document");
 
+        set_valid_profile_payment_addresses(&mut document, profile);
+
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
         let mut altered_document = document.clone();
@@ -1435,6 +1972,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &dashpay,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1448,7 +1986,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         let documents_batch_update_transition_1 =
             BatchTransition::new_document_replacement_transition_from_document(
@@ -1529,7 +2067,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         let issues = platform
             .drive
@@ -1592,6 +2130,8 @@ mod replacement_tests {
             )
             .expect("expected a random document");
 
+        set_valid_profile_payment_addresses(&mut document, profile);
+
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
         let mut altered_document = document.clone();
@@ -1656,6 +2196,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &dashpay,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1669,7 +2210,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
 
@@ -1751,7 +2292,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] displayName:string Samuel publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
 
@@ -1795,7 +2336,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         let issues = platform
             .drive
@@ -1858,6 +2399,8 @@ mod replacement_tests {
             )
             .expect("expected a random document");
 
+        set_valid_profile_payment_addresses(&mut document, profile);
+
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
         let mut altered_document = document.clone();
@@ -1918,6 +2461,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &dashpay,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1931,7 +2475,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
 
@@ -2013,7 +2557,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
 
@@ -2057,7 +2601,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         let issues = platform
             .drive
@@ -2119,6 +2663,8 @@ mod replacement_tests {
                 platform_version,
             )
             .expect("expected a random document");
+
+        set_valid_profile_payment_addresses(&mut document, profile);
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
@@ -2184,6 +2730,7 @@ mod replacement_tests {
             receiver_documents_sql_string.as_str(),
             &dashpay,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2197,7 +2744,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string QBwBNNXXYCngB0er platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
 
@@ -2279,7 +2826,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] displayName:string Samuel publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Samuel platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         fast_forward_to_block(&platform, 1_600_000_000, 905, 44, 2, true); //next epoch
 
@@ -2323,7 +2870,7 @@ mod replacement_tests {
             .first()
             .expect("expected a document");
 
-        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
+        assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] corePaymentAddress:bytes 000000000000000000000000000000000000000000 displayName:string Ody platformPaymentAddress:bytes 010000000000000000000000000000000000000000 publicMessage:string 8XG7KBGNvm2  ");
 
         let issues = platform
             .drive
@@ -2520,5 +3067,109 @@ mod replacement_tests {
 
         // He had 5, but spent 2
         assert_eq!(token_balance, Some(3));
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_fail_when_referenced_identity_missing() {
+        let (result, _) = run_reference_validation_replace_with_contract(
+            REFERENCE_VALIDATION_CONTRACT_PATH,
+            |_, _| Identifier::random(),
+            false,
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_validate_only_changed_fields() {
+        let (_, fee_without_reference) = run_reference_validation_replace_with_contract(
+            REFERENCE_VALIDATION_CONTRACT_PATH,
+            |identity_id, _| identity_id,
+            true,
+        )
+        .await;
+
+        let (_, fee_with_reference) = run_reference_validation_replace_with_contract(
+            REFERENCE_VALIDATION_CONTRACT_PATH,
+            |_, other_id| other_id,
+            true,
+        )
+        .await;
+
+        assert!(
+            fee_with_reference.processing_fee > fee_without_reference.processing_fee,
+            "expected identity reference validation to increase processing fee"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_fail_when_nested_reference_changed_to_missing_identity() {
+        // Regression: changed_data_fields holds top-level keys ("meta"), while
+        // reference properties are tracked by flattened path ("meta.nestedUserId");
+        // a nested reference under a changed object must still be validated.
+        let result = run_reference_validation_create_then_replace(
+            REFERENCE_VALIDATION_NESTED_CONTRACT_PATH,
+            |document, owner_id, other_id| {
+                document.set("toUserId", owner_id.into());
+                document.set("otherUserId", other_id.into());
+                document.set("meta.nestedUserId", owner_id.into());
+            },
+            |document, _, _| {
+                document.set("meta.nestedUserId", Identifier::random().into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_succeed_when_optional_reference_removed() {
+        let result = run_reference_validation_create_then_replace(
+            REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH,
+            |document, owner_id, _| {
+                document.set("optionalUserId", owner_id.into());
+            },
+            |document, _, _| {
+                document.remove("optionalUserId");
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_replace_fail_when_reference_field_changed_to_missing_identity() {
+        let (result, _) = run_reference_validation_replace_with_contract(
+            REFERENCE_VALIDATION_CONTRACT_PATH,
+            |_, _| Identifier::random(),
+            true,
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
     }
 }

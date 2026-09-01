@@ -53,6 +53,19 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// of double-spending; the reservation TTL or a sync reconciles the
     /// outcome. Do NOT auto-retry.
     case errorTransactionBroadcastUnconfirmed = 20
+    /// A masternode (evonode) identity credit withdrawal was broadcast and
+    /// accepted, but its execution result could not be confirmed — it may
+    /// already have executed, and the identity nonce was consumed for it, so
+    /// a blind retry could submit a SECOND withdrawal. Do NOT retry; re-read
+    /// the claimable balance and reconcile first. Definitive rejections keep
+    /// their ordinary codes and stay retryable.
+    case errorMasternodeWithdrawalUnconfirmed = 42
+    /// The deterministic masternode list isn't available yet (SPV not
+    /// running or masternode sync incomplete), so a list-backed query such
+    /// as `locateMasternode` has nothing to search. Transient: retry once
+    /// `spvProgress.masternodes` reports the list synced.
+    /// (46 — 43/44/45 are held by the shielded-invite error trio, #4313.)
+    case errorMasternodeListUnavailable = 46
     /// Definitively-failed address-nonce race: Platform rejected an
     /// address-funds transition (shield, or identity top-up-from-addresses)
     /// because the submitted address nonce raced Platform's expected value
@@ -76,6 +89,34 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// (Not returned by `destroy`: Rust owns the callback contexts, so a
     /// straggling worker is memory-safe and merely logged there.)
     case errorShutdownIncomplete = 27
+    /// Asset-lock coin selection came up short over the *permitted* funding
+    /// set (dashpay/platform#4073). Nothing was built or broadcast and no
+    /// funding output was consumed, so the caller may refresh its preflight
+    /// and retry.
+    ///
+    /// **Recovery depends on the funding form** — both reach this one code,
+    /// and only one of them can be retried at a smaller amount:
+    /// - *exact-amount* funding carries a caller-chosen amount, so the fix is
+    ///   to re-run preflight and confirm a smaller one;
+    /// - a whole-account *drain* accepts no amount argument at all, so there
+    ///   is nothing to lower. Its shortfall means the account's drainable
+    ///   balance is under the required minimum lock floor: add funds to that
+    ///   account, or lower the floor.
+    ///
+    /// Do not present "try a smaller amount" to the user on the drain path.
+    ///
+    /// The structured `available` / `required` duff amounts travel in the
+    /// message string — `PlatformWalletFFIResult` is ABI-frozen at code +
+    /// message, so there are no out-params for them.
+    ///
+    /// Distinct from `errorCoreInsufficientFunds` (22), which is the atomic
+    /// Core-send selector rather than the asset-lock builder. What the figures
+    /// cover depends on the funding form: an exact-amount build pools the
+    /// default source list (BIP44 + BIP32 + every DashPay contact-receiving
+    /// account) and its shortfall describes that whole permitted union, while
+    /// a whole-account *drain* build names exactly one account. CoinJoin funds
+    /// only through the drain form.
+    case errorAssetLockInsufficientFunds = 29
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — restored from the
     /// structured signer completion code (dashpay/platform#4060 finding 7).
@@ -86,13 +127,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// wallet does not own — or owns only watch-only, a DashPay *external*
     /// account holding a contact's addresses.
     case errorSigningKeyUnavailable = 31
-    // Codes 27-33 are claimed outside this PR and must not be reused here:
-    // 27 errorShutdownIncomplete (dashpay/platform#4268, merged), 29
-    // errorAssetLockInsufficientFunds (#4184), 31 errorSigningKeyUnavailable
-    // (#4183/#4259), 32 errorTransactionBuild (#4247/#4256), 33
-    // errorTransactionSigning (#4256); 28 and 30 are free. The deferred-token
-    // trio therefore occupies the contiguous block 34-36. These raw values
-    // MUST match `PlatformWalletFFIResultCode` in
+    // Codes 27-33 are claimed outside this PR — except 29, mirrored above —
+    // and must not be reused here: 27 errorShutdownIncomplete
+    // (dashpay/platform#4268, merged), 29 errorAssetLockInsufficientFunds
+    // (claimed by #4184, which was closed unmerged along with its successor
+    // #4316; this PR salvages the code at its reserved number, so the mirror
+    // above matches the Rust discriminant rather than trailing it), 31
+    // errorSigningKeyUnavailable (#4183/#4259), 32 errorTransactionBuild
+    // (#4247/#4256), 33 errorTransactionSigning (#4256); 28 and 30 are free.
+    // The deferred-token trio therefore occupies the contiguous block 34-36.
+    // These raw values MUST match `PlatformWalletFFIResultCode` in
     // packages/rs-platform-wallet-ffi/src/error.rs — there is no compile-time
     // check across the ABI. See ERROR_CODE_REGISTRY.md (#4261).
     /// A deferred (BIP70/BIP270) reservation token has outlived its funding
@@ -137,6 +181,41 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// reference it. Retry after the contest resolves. The message is a
     /// stable JSON detail object carrying the label and the vote end time.
     case errorContestedNameNotTradable = 40
+    /// A Platform-to-shielded operation can no longer cover the requested
+    /// amount plus input 0's retained fee reserve. Refresh the shield
+    /// preflight and ask the user to confirm the new capacity.
+    case errorShieldedInsufficientBalance = 41
+    /// RESERVED — the Rust side has no code path that produces this today, so
+    /// it does not currently cross the boundary. It is the TERMINAL form of
+    /// the double-spend verdict: the tracked asset-lock transaction spends an
+    /// outpoint a different, already-confirmed transaction of the same wallet
+    /// spent first, AND that spender's block is proven to be on the finalized
+    /// chain. The proof is what is missing — chainlock contexts and the
+    /// wallet's applied chainlock height are height-based promotion artifacts,
+    /// not evidence of finalized ancestry — so every detection reports
+    /// `errorAssetLockInputContested` (48) instead, chainlocked-looking
+    /// spenders included. Kept pinned so the slot stays stable for hosts and
+    /// for the future emitter, which would carry the same meaning: the one
+    /// code that lets a host discard the asset lock and rebuild from
+    /// currently-unspent inputs. Read nothing into its absence.
+    case errorAssetLockInputConflict = 47
+    /// A confirmed transaction of this wallet already spent one of the tracked
+    /// lock's inputs — typically a restored wallet whose rescan resurrected a
+    /// UTXO one of its own earlier asset locks had already consumed. Peers drop
+    /// such a double spend without replying, so the lock cannot confirm while
+    /// that spender stands and an unbounded proof wait would hang. The resume
+    /// still runs — the sighting bounds that wait rather than replacing it, so
+    /// the lock was (re-)broadcast and waited on (a `Broadcast`-status lock
+    /// was also sent on an earlier call) — and this is what the bounded wait
+    /// expired with. This is the ONLY double-spend code the SDK emits, and it
+    /// is PROVISIONAL: no discard licence, keep the lock tracked and retry
+    /// later. A later chainlock does not upgrade it to 47 today; what a retry
+    /// can resolve is a reorg dropping the sibling. Repetition licenses
+    /// nothing either — a conflict that persists across sessions still does
+    /// not prove finalized ancestry. Its absence is not proof of liveness —
+    /// the Rust-side scan cannot see conflicts whose spender was already
+    /// pruned.
+    case errorAssetLockInputContested = 48
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -202,6 +281,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedNoRecordedAnchor
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED:
             self = .errorTransactionBroadcastUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_MASTERNODE_WITHDRAWAL_UNCONFIRMED:
+            self = .errorMasternodeWithdrawalUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_MASTERNODE_LIST_UNAVAILABLE:
+            self = .errorMasternodeListUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ADDRESS_NONCE_MISMATCH:
             self = .errorAddressNonceMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CORE_INSUFFICIENT_FUNDS:
@@ -212,6 +295,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockAlreadyConsumed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_FUNDING_MISMATCH:
             self = .errorAssetLockFundingMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS:
+            self = .errorAssetLockInsufficientFunds
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED:
             self = .errorTransactionBroadcastRejected
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE:
@@ -232,6 +317,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorInsufficientIdentityCredits
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CONTESTED_NAME_NOT_TRADABLE:
             self = .errorContestedNameNotTradable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_INSUFFICIENT_BALANCE:
+            self = .errorShieldedInsufficientBalance
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONFLICT:
+            self = .errorAssetLockInputConflict
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED:
+            self = .errorAssetLockInputContested
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -311,8 +402,20 @@ public enum PlatformWalletError: LocalizedError {
     case noSelectableInputs(String)
     case coreInsufficientFunds(String)
     case assetLockNotTracked(String)
+    /// The one-shot output cannot be reused. This may come from a retained
+    /// local tombstone or an unauthenticated Platform report, so it does not
+    /// prove that the requested operation completed.
     case assetLockAlreadyConsumed(String)
     case assetLockFundingMismatch(String)
+    /// Asset-lock coin selection could not cover the requested funding over
+    /// the permitted source set. Nothing was built or broadcast and no
+    /// funding output was consumed — refresh the preflight, then recover by
+    /// the funding form: an exact-amount build can confirm a smaller amount,
+    /// while a whole-account drain takes no amount to lower and instead needs
+    /// funds added to the drained account (or a lower minimum lock floor).
+    /// The `available` / `required` duff figures are in the message. Kotlin
+    /// parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
+    case assetLockInsufficientFunds(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -338,12 +441,26 @@ public enum PlatformWalletError: LocalizedError {
     /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
+    /// The cached Platform Payment-account input set cannot cover a shield's
+    /// requested amount plus the fee reserve retained on input 0. Despite the
+    /// retained public Swift/FFI name, this is not a shielded-pool balance
+    /// failure.
+    case shieldedInsufficientBalance(String)
     /// A core transaction broadcast was submitted but its outcome is
     /// unknown — the transaction may already be on the network. The wallet
     /// keeps the spent inputs reserved so a retry cannot double-spend; the
     /// reservation TTL or a later sync reconciles the outcome. Do NOT
     /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
     case transactionBroadcastUnconfirmed(String)
+    /// A masternode (evonode) credit withdrawal was broadcast and accepted
+    /// but its result could not be confirmed. It may already have executed
+    /// and the identity nonce was consumed — do NOT retry; re-read the
+    /// claimable balance first (`.errorMasternodeWithdrawalUnconfirmed`).
+    case masternodeWithdrawalUnconfirmed(String)
+    /// The masternode list hasn't synced yet, so there is nothing to look a
+    /// masternode up in (`.errorMasternodeListUnavailable`). Retry after
+    /// masternode sync completes.
+    case masternodeListUnavailable(String)
     /// Core definitively rejected the transaction and its input reservation
     /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
     case transactionBroadcastRejected(String)
@@ -404,6 +521,39 @@ public enum PlatformWalletError: LocalizedError {
     /// `endsAtMs == 0` means the vote's end time was unavailable — show it
     /// as unknown rather than as "ends at the epoch".
     case contestedNameNotTradable(label: String, endsAtMs: UInt64)
+    /// RESERVED, and never produced today: the TERMINAL double-spend verdict,
+    /// which would additionally attest that the confirmed spender's block is
+    /// on the finalized chain. The wallet cannot prove that (chainlock
+    /// contexts and the applied chainlock height are height-based promotion
+    /// artifacts, not ancestry proofs), so every detection arrives as
+    /// `assetLockInputContested`. The case is kept so the FFI code stays
+    /// mapped and hosts that already branch on it keep compiling; if it ever
+    /// ships it means what it always meant — unlike
+    /// `transactionBroadcastUnconfirmed`, where the transaction may well be
+    /// alive and discarding it would strand real funds, this is the one
+    /// asset-lock error that lets a host discard the lock and rebuild it from
+    /// currently-unspent inputs. The message names the lock's outpoint, the
+    /// conflicting input, the confirmed spender, and that spender's finality.
+    case assetLockInputConflict(String)
+    /// The tracked asset lock spends an outpoint a different,
+    /// already-confirmed transaction of this wallet spent first, so no peer
+    /// will relay it while that spender stands. The resume still ran — it
+    /// re-broadcast and waited for a proof under a bounded timeout, and this
+    /// is what the wait expired with. A `Broadcast`-status lock was also
+    /// already sent on an earlier call, so this is not a claim that nothing
+    /// ever reached the network.
+    ///
+    /// The only double-spend verdict the SDK emits, and PROVISIONAL: the
+    /// tracked lock must NOT be discarded on this error. A conflict that
+    /// persists across sessions still does not prove finalized ancestry —
+    /// the sighting can even be a block record restored from a previous
+    /// session whose block was reorganized out while the wallet was offline.
+    /// Keep the tracked lock and continue treating this result as retryable;
+    /// only `assetLockInputConflict`, or an independent finalized-ancestry
+    /// proof, may authorize discarding it. No funds move either way: the
+    /// confirmed spender is this wallet's own transaction, so the value
+    /// behind the contested input lives on in it.
+    case assetLockInputContested(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -426,11 +576,13 @@ public enum PlatformWalletError: LocalizedError {
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
-             .assetLockFundingMismatch(let m),
+             .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
-             .shieldedNoRecordedAnchor(let m),
+             .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
              .transactionBroadcastUnconfirmed(let m),
+             .masternodeWithdrawalUnconfirmed(let m),
+             .masternodeListUnavailable(let m),
              .transactionBroadcastRejected(let m),
              .addressNonceMismatch(let m),
              .shutdownIncomplete(let m),
@@ -438,6 +590,8 @@ public enum PlatformWalletError: LocalizedError {
              .staleReservationToken(let m), .reservationTokenConsumed(let m),
              .reservationWalletMismatch(let m),
              .notForSale(let m),
+             .assetLockInputConflict(let m),
+             .assetLockInputContested(let m),
              .notFound(let m), .unknown(let m):
             return m
         // The three value-carrying marketplace rejections compose their
@@ -491,13 +645,19 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockNotTracked: self = .assetLockNotTracked(detail)
         case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
+        case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
+        case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail)
         case .errorTransactionBroadcastUnconfirmed:
             self = .transactionBroadcastUnconfirmed(detail)
+        case .errorMasternodeWithdrawalUnconfirmed:
+            self = .masternodeWithdrawalUnconfirmed(detail)
+        case .errorMasternodeListUnavailable:
+            self = .masternodeListUnavailable(detail)
         case .errorTransactionBroadcastRejected:
             self = .transactionBroadcastRejected(detail)
         case .errorAddressNonceMismatch:
@@ -546,6 +706,18 @@ public enum PlatformWalletError: LocalizedError {
             } else {
                 self = .unknown(detail)
             }
+        // Both double-spend codes carry the typed `Display` rendering, not a
+        // JSON detail object: it already names the asset-lock outpoint, the
+        // conflicting input, the confirmed spender's txid and that spender's
+        // finality, and reads as a sentence, so they pass through like the
+        // other prose-message codes. Which verdict was reached is the CODE's
+        // meaning, not the string's — hosts must branch on the case, not on
+        // text matching. In practice only 48 arrives; 47 is reserved and has
+        // no emitter, and is mapped here so it stays typed if that changes.
+        case .errorAssetLockInputConflict:
+            self = .assetLockInputConflict(detail)
+        case .errorAssetLockInputContested:
+            self = .assetLockInputContested(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

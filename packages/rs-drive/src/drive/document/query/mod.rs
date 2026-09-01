@@ -4,6 +4,7 @@
 //!
 
 mod fetch_document_history_query;
+mod query_chained_documents;
 /// query of the vote state
 pub mod query_contested_documents_vote_state;
 mod query_documents;
@@ -12,6 +13,7 @@ mod query_documents_with_flags;
 /// query of the contested documents in their storage
 pub mod query_contested_documents_storage;
 
+pub use query_chained_documents::*;
 pub use query_documents::*;
 pub use query_documents_with_flags::*;
 
@@ -256,8 +258,13 @@ impl Drive {
         protocol_version: Option<u32>,
     ) -> Result<Vec<u8>, Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-        let query =
-            DriveDocumentQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
+        let query = DriveDocumentQuery::from_cbor(
+            query_cbor,
+            contract,
+            document_type,
+            &self.config,
+            platform_version,
+        )?;
 
         query.execute_with_proof_internal(self, transaction, drive_operations, platform_version)
     }
@@ -313,8 +320,13 @@ impl Drive {
         protocol_version: Option<u32>,
     ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-        let query =
-            DriveDocumentQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
+        let query = DriveDocumentQuery::from_cbor(
+            query_cbor,
+            contract,
+            document_type,
+            &self.config,
+            platform_version,
+        )?;
 
         query.execute_with_proof_only_get_elements_internal(
             self,
@@ -395,6 +407,7 @@ impl Drive {
             &contract.contract,
             document_type,
             &self.config,
+            platform_version,
         )?;
 
         self.query_serialized_documents(query, epoch, transaction, platform_version)
@@ -412,8 +425,13 @@ impl Drive {
         protocol_version: Option<u32>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-        let query =
-            DriveDocumentQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
+        let query = DriveDocumentQuery::from_cbor(
+            query_cbor,
+            contract,
+            document_type,
+            &self.config,
+            platform_version,
+        )?;
 
         query.execute_raw_results_no_proof_internal(
             self,
@@ -526,11 +544,16 @@ mod tests {
     #[test]
     fn test_query_documents_dry_run() {
         let (drive, contract) = setup_dashpay("query-dry-run", true);
+        let platform_version = PlatformVersion::latest();
 
         let sql_string = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         // Dry run should return empty results without touching storage
         let outcome = drive
@@ -585,9 +608,13 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let sql_string = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         // Query with epoch to exercise the fee calculation path
         let epoch = Epoch::new(0).unwrap();
@@ -642,9 +669,13 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let sql_string = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         // Query without epoch, cost should be 0
         let outcome = drive
@@ -716,9 +747,13 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         // Query documents with flags to cover the query_documents_with_flags path
         let outcome = drive
@@ -735,11 +770,16 @@ mod tests {
     #[test]
     fn test_query_documents_with_flags_dry_run() {
         let (drive, contract) = setup_dashpay("query-flags-dry", true);
+        let platform_version = PlatformVersion::latest();
 
         let sql_string = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         // Dry run should return empty defaults
         let outcome = drive
@@ -812,9 +852,13 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let epoch = Epoch::new(0).unwrap();
         let outcome = drive

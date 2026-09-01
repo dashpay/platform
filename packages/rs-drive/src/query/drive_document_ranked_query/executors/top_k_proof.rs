@@ -7,6 +7,7 @@ use super::super::DocumentRankedMode;
 use super::ranked_query_for_mode;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -19,12 +20,14 @@ impl Drive {
     /// [`DriveDocumentRankedQuery::verify_ranked_top_k_proof`](crate::query::DriveDocumentRankedQuery::verify_ranked_top_k_proof),
     /// reconstructing the same query from the same contract — which is
     /// why index resolution is shared with the no-proof executor.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_document_ranked_top_k_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         mode: &DocumentRankedMode,
+        resolved_time_ranges: &[ResolvedTimeRange],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -35,6 +38,8 @@ impl Drive {
             document_type_name,
             indexes,
             mode,
+            resolved_time_ranges,
+            platform_version,
         )?;
         ranked_query.execute_top_k_with_proof(self, transaction, platform_version)
     }

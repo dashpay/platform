@@ -65,7 +65,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        assertEquals(0x1bfL, handler.persistenceCapabilitiesBits())
+        assertEquals(0x3bfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
@@ -77,6 +77,7 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ATOMIC_CHANGESETS))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.DPNS_NAME_STATES))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.TRACKED_ASSET_LOCKS))
     }
 
     // ── Standalone (non-bracketed) writes ─────────────────────────────
@@ -2878,5 +2879,363 @@ class PlatformWalletPersistenceHandlerTest {
 
         // Unchanged pre-invitation behavior: no account row conjured.
         assertTrue(db.accountDao().observeByWallet(walletId).first().isEmpty())
+    }
+
+    // ── Asset locks: Consumed is terminal ─────────────────────────────
+    //
+    // Swift parity with `persistAssetLocks`
+    // (PlatformWalletPersistenceHandler.swift:270 upsert, :310 removal).
+    // Consumed (4) is the terminal lifecycle state and the writers race:
+    // the wallet-event adapter's batched drain can deliver a stale
+    // reconstruction snapshot AFTER the live flow's consumption write.
+
+    /** Upsert [outpoint] at [status] in its own committed round. */
+    private fun persistAssetLock(
+        outpoint: ByteArray,
+        status: Byte,
+        amountDuffs: Long = 100_000,
+        proofBytes: ByteArray? = null,
+    ) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAssetLockUpsert(
+            walletId = walletId,
+            outPoint = outpoint,
+            transactionBytes = ByteArray(20) { 41 },
+            accountIndex = 0,
+            fundingType = 0,
+            identityIndex = 0,
+            amountDuffs = amountDuffs,
+            status = status,
+            proofBytes = proofBytes,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun shouldNotRegressAConsumedAssetLockOnAStaleNonConsumedUpsert() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 60 }, 0)
+        persistAssetLock(outpoint, status = 4, proofBytes = ByteArray(8) { 1 })
+
+        // Stale replay of an older Broadcast snapshot.
+        persistAssetLock(outpoint, status = 1, amountDuffs = 999, proofBytes = null)
+
+        val row = db.assetLockDao().getByOutPointHex(encodeOutPointHex(outpoint))!!
+        assertEquals(4, row.statusRaw)
+        // The whole row is skipped, not merely the status column.
+        assertEquals(100_000L, row.amountDuffs)
+        assertNotNull(row.proofBytes)
+    }
+
+    @Test
+    fun shouldStillAcceptAnotherConsumedWriteOnAConsumedAssetLock() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 61 }, 0)
+        persistAssetLock(outpoint, status = 4)
+        persistAssetLock(outpoint, status = 4, amountDuffs = 250_000, proofBytes = ByteArray(4) { 7 })
+
+        val row = db.assetLockDao().getByOutPointHex(encodeOutPointHex(outpoint))!!
+        assertEquals(4, row.statusRaw)
+        assertEquals(250_000L, row.amountDuffs)
+        assertNotNull(row.proofBytes)
+    }
+
+    @Test
+    fun shouldKeepNonConsumedAssetLockStatusesLastWriteWinsInBothDirections() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 62 }, 0)
+        val hex = encodeOutPointHex(outpoint)
+
+        persistAssetLock(outpoint, status = 1) // Broadcast
+        persistAssetLock(outpoint, status = 3) // ChainLocked
+        assertEquals(3, db.assetLockDao().getByOutPointHex(hex)!!.statusRaw)
+
+        // The guard is narrow: non-terminal statuses legitimately move both
+        // ways, so they stay last-write-wins.
+        persistAssetLock(outpoint, status = 1)
+        assertEquals(1, db.assetLockDao().getByOutPointHex(hex)!!.statusRaw)
+    }
+
+    @Test
+    fun shouldRetainAConsumedAssetLockThroughAStaleRemoval() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 63 }, 0)
+        persistAssetLock(outpoint, status = 4)
+
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, handler.onPersistAssetLockRemoval(walletId, outpoint))
+        assertEquals(0, handler.onChangesetEnd(walletId, success = true))
+
+        // Retained for historical lookup: the only removal emitter
+        // (`untrack_asset_lock`) targets rejected Built rows, so a removal
+        // reaching a consumed row is by construction a stale write.
+        val row = db.assetLockDao().getByOutPointHex(encodeOutPointHex(outpoint))
+        assertNotNull(row)
+        assertEquals(4, row!!.statusRaw)
+    }
+
+    @Test
+    fun shouldStillRemoveANonConsumedAssetLock() = runTest {
+        val outpoint = makeOutpoint(ByteArray(32) { 64 }, 0)
+        persistAssetLock(outpoint, status = 0) // Built
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistAssetLockRemoval(walletId, outpoint)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(db.assetLockDao().getByOutPointHex(encodeOutPointHex(outpoint)))
+    }
+
+    // ── Identity sweep vs marketplace column authority ────────────────
+    //
+    // Swift parity with `upsertDPNSNames`
+    // (PlatformWalletPersistenceHandler.swift:1912-1941). The identity
+    // snapshot owns `isOwned` / `acquiredAt` / `label`; the marketplace
+    // reconciliation lane owns `documentId` / price / sale status /
+    // counterparty. Neither may overwrite the other's columns.
+
+    /** Commit one canonical identity snapshot carrying exactly [names]. */
+    private fun persistIdentitySnapshot(identityId: ByteArray, vararg names: String) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityUpsert(
+            walletId, identityId, 1, 0, false, 0, 0, true, walletId,
+            names.toList().toTypedArray(), LongArray(names.size), false, null, null, null,
+            ByteArray(32), false, ByteArray(8), false, null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    /** Commit one marketplace row for [documentId]. */
+    private fun persistMarketplaceRow(
+        identityId: ByteArray,
+        documentId: ByteArray,
+        label: String,
+        normalizedLabel: String,
+        status: Byte,
+        counterpartyId: ByteArray? = null,
+        priceCredits: Long? = null,
+    ) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistDpnsNameState(
+            walletId = walletId,
+            documentId = documentId,
+            walletIdentityId = identityId,
+            hasCounterparty = counterpartyId != null,
+            counterpartyId = counterpartyId ?: ByteArray(32),
+            label = label,
+            normalizedLabel = normalizedLabel,
+            normalizedParentDomainName = "dash",
+            hasPrice = priceCredits != null,
+            priceCredits = priceCredits ?: 0,
+            status = status,
+            createdAtMs = 100,
+            updatedAtMs = 200,
+            transferredAtMs = 300,
+            lastSyncedAtMs = 400,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun shouldKeepAListedNameAsDepartedHistoryThroughTheIdentitySweepInsteadOfDestroyingIt() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 20 }
+        val documentId = ByteArray(32) { 21 }
+
+        persistIdentitySnapshot(identityId, "Alice")
+        // Listed for sale: still owned, and marketplace-tracked.
+        persistMarketplaceRow(
+            identityId, documentId, "Alice", "a11ce",
+            status = 0, priceCredits = 5_000,
+        )
+        assertTrue(db.dpnsNameDao().getByDocumentId(documentId)!!.isOwned)
+
+        // The label leaves the canonical set before the marketplace pass can
+        // classify the departure — the unclassifiable-departure round. The
+        // old sweep deleted the row here, permanently destroying the only
+        // record of where the name went (Android-only; Swift never did).
+        persistIdentitySnapshot(identityId)
+
+        val retained = db.dpnsNameDao().getByDocumentId(documentId)
+        assertNotNull("marketplace history must survive the identity sweep", retained)
+        assertFalse("a departed name must not read as owned", retained!!.isOwned)
+        assertEquals(5_000L, retained.priceCredits)
+        assertEquals(400L, retained.marketplaceUpdatedAt)
+        // ...but owned-name queries and UI selection must not surface it.
+        assertTrue(db.dpnsNameDao().observeByIdentity(identityId).first().isEmpty())
+    }
+
+    @Test
+    fun shouldKeepASoldNameWithItsCounterpartyThroughTheIdentitySweep() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 22 }
+        val documentId = ByteArray(32) { 23 }
+        val buyerId = ByteArray(32) { 24 }
+
+        persistIdentitySnapshot(identityId, "Bob")
+        persistMarketplaceRow(
+            identityId, documentId, "Bob", "b0b",
+            status = 1, counterpartyId = buyerId,
+        )
+
+        persistIdentitySnapshot(identityId)
+
+        val retained = db.dpnsNameDao().getByDocumentId(documentId)
+        assertNotNull(retained)
+        assertFalse(retained!!.isOwned)
+        assertEquals(1, retained.saleStatusRaw)
+        assertTrue(buyerId.contentEquals(retained.counterpartyIdentityId!!))
+    }
+
+    @Test
+    fun shouldStillDeleteLabelCacheRowsWithNoMarketplaceHistoryOnTheIdentitySweep() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 25 }
+
+        persistIdentitySnapshot(identityId, "Alice", "Bob")
+        assertEquals(2, db.dpnsNameDao().getAllByIdentity(identityId).size)
+
+        persistIdentitySnapshot(identityId, "Alice")
+
+        // No documentId attached → a pure stale label-cache row, removed
+        // entirely (unchanged behavior).
+        assertEquals(
+            listOf("Alice"),
+            db.dpnsNameDao().getAllByIdentity(identityId).map { it.label },
+        )
+    }
+
+    @Test
+    fun shouldNotClobberMarketplaceColumnsWhenAnIdentitySnapshotStillCarriesTheLabel() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 26 }
+        val documentId = ByteArray(32) { 27 }
+        val recipientId = ByteArray(32) { 28 }
+
+        persistIdentitySnapshot(identityId, "Carol")
+        persistMarketplaceRow(
+            identityId, documentId, "Carol", "car01",
+            status = 2, counterpartyId = recipientId, priceCredits = 9_000,
+        )
+
+        // A later identity flush still carries the label — the two lanes
+        // disagree for a round. The canonical branch refreshes only
+        // acquiredAt/label (+ isOwned); it used to blank saleStatusRaw and
+        // counterpartyIdentityId on every such flush.
+        persistIdentitySnapshot(identityId, "Carol")
+
+        val row = db.dpnsNameDao().getByDocumentId(documentId)
+        assertNotNull(row)
+        assertEquals(2, row!!.saleStatusRaw)
+        assertTrue(recipientId.contentEquals(row.counterpartyIdentityId!!))
+        assertEquals(9_000L, row.priceCredits)
+        assertEquals(300L, row.documentTransferredAtMs)
+        assertTrue("the identity lane still asserts ownership", row.isOwned)
+    }
+
+    // ── isLocal: wallet-link promotion + load-path heal ───────────────
+    //
+    // Swift parity with `persistIdentities`
+    // (PlatformWalletPersistenceHandler.swift:1827-1829) and
+    // `healIdentityIsLocalFlags` (:4688, called from loadWalletList :4719).
+
+    @Test
+    fun shouldMarkAPersisterCreatedWalletLinkedIdentityLocal() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 30 }
+
+        persistIdentitySnapshot(identityId)
+
+        val row = db.identityDao().getByIdentityId(identityId)!!
+        assertTrue(walletId.contentEquals(row.walletId!!))
+        assertTrue("a wallet's own identity is always local", row.isLocal)
+    }
+
+    @Test
+    fun shouldKeepAnObservedOutOfWalletIdentityNonLocal() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 31 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityUpsert(
+            walletId, identityId, 1, 0, false, 0, 0, false, ByteArray(32),
+            emptyArray(), longArrayOf(), false, null, null, null,
+            ByteArray(32), false, ByteArray(8), false, null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val row = db.identityDao().getByIdentityId(identityId)!!
+        assertNull(row.walletId)
+        assertFalse("an observed identity is not local", row.isLocal)
+    }
+
+    @Test
+    fun shouldPromoteAnAlreadyPersistedIdentityToLocalOnLaterWalletLinkage() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 32 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityUpsert(
+            walletId, identityId, 1, 0, false, 0, 0, false, ByteArray(32),
+            emptyArray(), longArrayOf(), false, null, null, null,
+            ByteArray(32), false, ByteArray(8), false, null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertFalse(db.identityDao().getByIdentityId(identityId)!!.isLocal)
+
+        // The wallet relationship attaches on a later flush — promote.
+        persistIdentitySnapshot(identityId)
+
+        assertTrue(db.identityDao().getByIdentityId(identityId)!!.isLocal)
+    }
+
+    @Test
+    fun shouldHealLegacyIsLocalFalseOnWalletLinkedRowsOnlyDuringLoad() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+
+        val legacyOwned = ByteArray(32) { 33 }
+        val manualAdd = ByteArray(32) { 34 }
+        val observed = ByteArray(32) { 35 }
+
+        // Rows exactly as the pre-fix persister wrote them: a constant
+        // `false` even on the wallet's own identities.
+        db.identityDao().upsert(
+            IdentityEntity(
+                identityId = legacyOwned,
+                networkRaw = testnet,
+                walletId = walletId,
+                isLocal = false,
+            ),
+        )
+        db.identityDao().upsert(
+            IdentityEntity(
+                identityId = manualAdd,
+                networkRaw = testnet,
+                walletId = null,
+                isLocal = true,
+            ),
+        )
+        db.identityDao().upsert(
+            IdentityEntity(
+                identityId = observed,
+                networkRaw = testnet,
+                walletId = null,
+                isLocal = false,
+            ),
+        )
+
+        handler.onLoadWalletList()
+
+        assertTrue(
+            "a wallet-linked legacy row is promoted",
+            db.identityDao().getByIdentityId(legacyOwned)!!.isLocal,
+        )
+        assertTrue(
+            "a manual add (no wallet link) keeps its flag",
+            db.identityDao().getByIdentityId(manualAdd)!!.isLocal,
+        )
+        assertFalse(
+            "an observed row is never promoted",
+            db.identityDao().getByIdentityId(observed)!!.isLocal,
+        )
+
+        // Promote-only and idempotent: a second pass matches nothing.
+        assertEquals(0, db.identityDao().healIsLocalFlags())
     }
 }

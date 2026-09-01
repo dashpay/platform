@@ -21,9 +21,17 @@
 //! - [`ranked_index_e2e_tests`] — per-index `rankedCountable` /
 //!   `rankedSummable` / `rankedAverageable` (meta schema v3 / PV14):
 //!   the indexed-tree variants and their ordered secondaries, end to
-//!   end through insert / update / delete.
+//!   end through insert / update / delete. Its child module
+//!   `batched_group_drain` lives in `batched_group_drain.rs` beside
+//!   this file and is declared with `#[path]` so it can reuse that
+//!   suite's fixture and assertion helpers.
 
+mod chained_query_e2e_tests;
 mod countable_e2e_tests;
+mod index_only_e2e_tests;
+mod noncounted_sibling_e2e_tests;
+mod preallocated_index_e2e_tests;
+mod prefix_ranked_index_e2e_tests;
 mod range_countable_index_e2e_tests;
 mod range_summable_index_e2e_tests;
 mod ranked_index_e2e_tests;

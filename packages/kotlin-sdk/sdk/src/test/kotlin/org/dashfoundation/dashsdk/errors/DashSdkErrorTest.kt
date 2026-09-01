@@ -100,6 +100,33 @@ class DashSdkErrorTest {
             DashSdkError.fromNative(DashSDKException(offset + 22, "inputs reserved"))
         assertTrue(coreInsufficientFunds is DashSdkError.PlatformWallet.CoreInsufficientFunds)
 
+        // The asset-lock coin-selection shortfall (29) must reach callers as its
+        // own type rather than Generic, and must stay DISTINCT from the atomic
+        // Core-send shortfall (22) — the two selectors report over different
+        // funding sets (the asset-lock figures span the pooled sources on an
+        // exact-amount build and exactly one account on a drain), so hosts
+        // message the two differently. Its available/required duffs ride the
+        // message, which must survive verbatim.
+        val assetLockShort = DashSdkError.fromNative(
+            DashSDKException(
+                offset + 29,
+                "asset lock coin selection is short: available 18000000 duffs, " +
+                    "required 100000000 duffs",
+            ),
+        )
+        assertTrue(
+            "code 29 must not fall through to Generic",
+            assetLockShort is DashSdkError.PlatformWallet.AssetLockInsufficientFunds,
+        )
+        assertFalse(
+            "the asset-lock shortfall must not be conflated with the Core-send one",
+            assetLockShort is DashSdkError.PlatformWallet.CoreInsufficientFunds,
+        )
+        assertTrue(
+            "shortfall amounts must survive in the message",
+            assetLockShort.message!!.contains("available 18000000 duffs"),
+        )
+
         val recoveryCodes = mapOf(
             23 to DashSdkError.PlatformWallet.AssetLockNotTracked::class,
             24 to DashSdkError.PlatformWallet.AssetLockAlreadyConsumed::class,
@@ -169,6 +196,84 @@ class DashSdkErrorTest {
         assertEquals(99, (mapped as DashSdkError.PlatformWallet.Generic).nativeCode)
         assertEquals("boom", mapped.message)
         assertFalse("Generic platform-wallet errors are not retryable", mapped.isRetryable)
+    }
+
+    @Test
+    fun platformShieldCapacityCode41MapsTyped() {
+        val message =
+            "Platform shield capacity exceeded: available 3623849220, required 3623849221"
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 41,
+                message,
+            ),
+        )
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.PlatformShieldCapacityExceeded)
+        assertEquals(message, mapped.message)
+        assertFalse(
+            "unchanged amount must not be retried without refreshing preflight",
+            mapped.isRetryable,
+        )
+    }
+
+    @Test
+    fun assetLockInputConflictCode47MapsTyped() {
+        // TERMINAL and RESERVED: no native path emits it today (that needs a
+        // finalized-ancestry proof the wallet cannot make), so this drives
+        // the mapping with a hand-built exception. The arm must stay wired —
+        // if a future emitter ships, the code must not fall through to
+        // Generic and leave the host unable to classify a dead lock.
+        val message =
+            "Asset lock a:0 can never confirm: it spends b:1, which was already spent by " +
+                "confirmed transaction c (block height Some(1234), chainlocked: true) — " +
+                "the lock is a double spend and no peer will relay it"
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 47,
+                message,
+            ),
+        )
+
+        assertTrue(
+            "code 47 must not fall through to Generic",
+            mapped is DashSdkError.PlatformWallet.AssetLockInputConflict,
+        )
+        assertEquals(message, mapped.message)
+        assertFalse(
+            "AssetLockInputConflict is terminal — rebuild from unspent inputs, do not retry",
+            mapped.isRetryable,
+        )
+    }
+
+    @Test
+    fun assetLockInputContestedCode48MapsTypedAndRetryable() {
+        // PROVISIONAL, and the ONLY double-spend verdict the native side
+        // emits: the wallet cannot prove the confirmed spender's block is on
+        // the finalized chain, so the host keeps the tracked lock and retries
+        // later. It must never be treated as the reserved 47's discard
+        // licence, and it must never fall through to Generic.
+        val message =
+            "Asset lock a:0 cannot currently confirm: it spends b:1, which confirmed " +
+                "transaction c (block height Some(1234)) has taken — the verdict is " +
+                "provisional (the wallet cannot prove the spender's finality); keep " +
+                "the lock and retry later"
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(
+                DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 48,
+                message,
+            ),
+        )
+
+        assertTrue(
+            "code 48 must not fall through to Generic",
+            mapped is DashSdkError.PlatformWallet.AssetLockInputContested,
+        )
+        assertEquals(message, mapped.message)
+        assertTrue(
+            "AssetLockInputContested is provisional — keep the lock and retry later",
+            mapped.isRetryable,
+        )
     }
 
     @Test

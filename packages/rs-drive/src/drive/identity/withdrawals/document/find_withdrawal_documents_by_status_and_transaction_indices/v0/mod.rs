@@ -74,7 +74,7 @@ impl Drive {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: where_clauses,
             },
@@ -84,6 +84,7 @@ impl Drive {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         // todo: deal with cost of this operation
@@ -165,16 +166,22 @@ mod tests {
             Some(&transaction),
         );
 
-        let found_document = drive
-            .find_withdrawal_documents_by_status_and_transaction_indices(
-                withdrawals_contract::WithdrawalStatus::POOLED,
-                &[transaction_index],
-                DEFAULT_QUERY_LIMIT,
-                Some(&transaction),
-                platform_version,
-            )
-            .expect("to find document by it's transaction id");
+        // Protocol version 13 routes to v0, 14 to v1 — both must find the
+        // same document (the two builders lower identically)
+        for protocol_version in [13u32, 14u32] {
+            let version =
+                PlatformVersion::get(protocol_version).expect("expected platform version to exist");
+            let found_document = drive
+                .find_withdrawal_documents_by_status_and_transaction_indices(
+                    withdrawals_contract::WithdrawalStatus::POOLED,
+                    &[transaction_index],
+                    DEFAULT_QUERY_LIMIT,
+                    Some(&transaction),
+                    version,
+                )
+                .expect("to find document by it's transaction id");
 
-        assert_eq!(found_document.len(), 1);
+            assert_eq!(found_document.len(), 1);
+        }
     }
 }

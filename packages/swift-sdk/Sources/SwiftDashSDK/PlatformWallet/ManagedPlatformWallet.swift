@@ -173,11 +173,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// secp256k1; 48 for BLS; etc.).
         public let pubkeyBytes: Data
         public let readOnly: Bool
-        /// Optional contract-bounds restriction. Required for
-        /// Encryption / Decryption keys (Drive scopes those keys
-        /// to a specific contract / document type so a key issued
-        /// for App A cannot decrypt App B's payloads). `nil` for
-        /// every other purpose.
+        /// Optional contract-bounds restriction. Bounds are valid
+        /// for any purpose only when present and only if consensus
+        /// allows that purpose / contract / document-type shape.
+        /// `nil` is valid for every purpose, including Encryption /
+        /// Decryption keys.
         public let contractBounds: ContractBounds?
 
         public init(
@@ -210,6 +210,25 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// specific document type. Maps to `kind == 2` on the
         /// FFI side.
         case singleContractDocumentType(id: Data, documentTypeName: String)
+    }
+
+    /// Inspectable fields of a parsed raw `IdentityUpdateTransition`.
+    /// The keys intentionally reuse `IdentityPubkey` so callers can
+    /// validate and hand them back to `updateIdentity(...)` unchanged.
+    public struct ParsedIdentityUpdateTransition: Sendable {
+        public let identityId: Identifier
+        public let addPublicKeys: [IdentityPubkey]
+        public let disablePublicKeyIds: [UInt32]
+
+        public init(
+            identityId: Identifier,
+            addPublicKeys: [IdentityPubkey],
+            disablePublicKeyIds: [UInt32]
+        ) {
+            self.identityId = identityId
+            self.addPublicKeys = addPublicKeys
+            self.disablePublicKeyIds = disablePublicKeyIds
+        }
     }
 
     /// Result of a successful identity registration.
@@ -2029,6 +2048,22 @@ extension ManagedPlatformWallet {
 
     // MARK: - DashPay invitations (DIP-13)
 
+    /// Upper bound, in duffs, on the amount an invitation voucher may lock —
+    /// the Rust-enforced cap `createInvitation` rejects above. Read it rather
+    /// than restating it: Rust owns the value, and a client-side copy diverges
+    /// the moment the constant moves.
+    public static var maxInvitationDuffs: UInt64 {
+        platform_wallet_invitation_max_duffs()
+    }
+
+    /// Lower bound, in duffs, on the amount an invitation voucher may lock —
+    /// the Rust-enforced floor `createInvitation` rejects below (a smaller
+    /// voucher can fund neither a claim nor a reclaim). Read it rather than
+    /// restating it, for the same reason as the cap.
+    public static var minInvitationDuffs: UInt64 {
+        platform_wallet_invitation_min_duffs()
+    }
+
     /// Read-only preview of a `dashpay://invite` link, decoded via
     /// `parseInvitation(uri:)` without claiming it. Drives the claim sheet's
     /// pre-claim summary + the contact-bootstrap decision.
@@ -3176,6 +3211,139 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Parse a raw `IdentityUpdateTransition` from DPP bytes without
+    /// signing or broadcasting it. Accepts both standard tagged bytes
+    /// and Yappr's tagless `dash-st:` framing.
+    public func parseIdentityUpdateTransition(_ bytes: Data) throws -> ParsedIdentityUpdateTransition {
+        guard !bytes.isEmpty else {
+            throw PlatformWalletError.deserialization(
+                "IdentityUpdateTransition bytes are empty"
+            )
+        }
+
+        var out = ParsedIdentityUpdateFFI(
+            identity_id: (
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            ),
+            add_public_keys: nil,
+            add_public_keys_count: 0,
+            disable_public_key_ids: nil,
+            disable_public_key_ids_count: 0
+        )
+
+        let result = bytes.withUnsafeBytes { rawBuffer -> PlatformWalletFFIResult in
+            let byteBuffer = rawBuffer.bindMemory(to: UInt8.self)
+            return platform_wallet_parse_identity_update_transition(
+                byteBuffer.baseAddress,
+                UInt(byteBuffer.count),
+                &out
+            )
+        }
+        try result.check()
+        defer { platform_wallet_parse_identity_update_transition_free(&out) }
+
+        var identityTuple = out.identity_id
+        let identityId = Swift.withUnsafeBytes(of: &identityTuple) { Data($0) }
+
+        let addPublicKeys: [IdentityPubkey]
+        if let pointer = out.add_public_keys, out.add_public_keys_count > 0 {
+            let buffer = UnsafeBufferPointer(start: pointer, count: Int(out.add_public_keys_count))
+            addPublicKeys = try buffer.enumerated().map { index, entry in
+                try Self.makeParsedIdentityPubkey(from: entry, index: index)
+            }
+        } else {
+            addPublicKeys = []
+        }
+
+        let disablePublicKeyIds: [UInt32]
+        if let pointer = out.disable_public_key_ids, out.disable_public_key_ids_count > 0 {
+            disablePublicKeyIds = Array(
+                UnsafeBufferPointer(
+                    start: pointer,
+                    count: Int(out.disable_public_key_ids_count)
+                )
+            )
+        } else {
+            disablePublicKeyIds = []
+        }
+
+        return ParsedIdentityUpdateTransition(
+            identityId: identityId,
+            addPublicKeys: addPublicKeys,
+            disablePublicKeyIds: disablePublicKeyIds
+        )
+    }
+
+    private static func makeParsedIdentityPubkey(
+        from entry: ParsedIdentityUpdatePublicKeyFFI,
+        index: Int
+    ) throws -> IdentityPubkey {
+        guard let keyType = KeyType(rawValue: entry.key_type),
+              let purpose = KeyPurpose(rawValue: entry.purpose),
+              let securityLevel = SecurityLevel(rawValue: entry.security_level) else {
+            throw PlatformWalletError.deserialization(
+                "Unknown IdentityUpdateTransition public-key enum discriminant at index \(index)"
+            )
+        }
+
+        let pubkeyBytes: Data
+        if let dataPtr = entry.data_ptr {
+            pubkeyBytes = Data(bytes: dataPtr, count: Int(entry.data_len))
+        } else if entry.data_len == 0 {
+            pubkeyBytes = Data()
+        } else {
+            throw PlatformWalletError.deserialization(
+                "IdentityUpdateTransition public key \(index) had a null data pointer for \(entry.data_len) bytes"
+            )
+        }
+
+        let contractBounds = try parsedContractBounds(from: entry, index: index)
+
+        return IdentityPubkey(
+            keyId: entry.key_id,
+            keyType: keyType,
+            purpose: purpose,
+            securityLevel: securityLevel,
+            pubkeyBytes: pubkeyBytes,
+            readOnly: entry.read_only,
+            contractBounds: contractBounds
+        )
+    }
+
+    private static func parsedContractBounds(
+        from entry: ParsedIdentityUpdatePublicKeyFFI,
+        index: Int
+    ) throws -> ContractBounds? {
+        switch entry.contract_bounds_kind {
+        case 0:
+            return nil
+        case 1:
+            var idTuple = entry.contract_bounds_id
+            return .singleContract(
+                id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) }
+            )
+        case 2:
+            guard let documentTypePtr = entry.contract_bounds_document_type,
+                  let documentTypeName = String(validatingCString: documentTypePtr) else {
+                throw PlatformWalletError.deserialization(
+                    "IdentityUpdateTransition contract bounds at key \(index) are missing a valid UTF-8 document type"
+                )
+            }
+            var idTuple = entry.contract_bounds_id
+            return .singleContractDocumentType(
+                id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) },
+                documentTypeName: documentTypeName
+            )
+        default:
+            throw PlatformWalletError.deserialization(
+                "Unknown IdentityUpdateTransition contract-bounds kind \(entry.contract_bounds_kind) at key \(index)"
+            )
+        }
+    }
+
     /// Create + broadcast a new data contract owned by
     /// `ownerIdentityId`. Returns the 32-byte contract id once
     /// Platform confirms the transition.
@@ -3863,13 +4031,13 @@ extension ManagedPlatformWallet {
     /// `KeychainSigner`. Asset-lock proof is built Rust-side from
     /// `amountDuffs` (wallet must have spendable Core UTXOs).
     ///
-    /// `accountIndex` selects which BIP44 *standard* account (by
-    /// BIP44 account index) supplies the funding UTXOs. Only BIP44
-    /// standard accounts are supported today; the caller is
-    /// responsible for filtering its account picker accordingly —
-    /// CoinJoin / BIP32 funding for new-identity registration is not
-    /// yet wired through `create_funded_asset_lock_proof` on the Rust
-    /// side.
+    /// `accountIndex` addresses the *standard* families: the asset
+    /// lock POOLS the BIP44 and BIP32 accounts at that index together
+    /// with every DashPay contact-receiving account (change returns
+    /// to BIP44). The index does NOT restrict which DashPay receiving
+    /// accounts contribute, so the caller must not present it as an
+    /// account-scoped funding or privacy choice. CoinJoin funding
+    /// remains drain-only and is not reachable here.
     ///
     /// Caller MUST pre-derive `identityPubkeys` (typically via
     /// `dash_sdk_derive_identity_keys_from_mnemonic`) AND pre-persist
@@ -4091,9 +4259,12 @@ extension ManagedPlatformWallet {
     /// Simpler than registration: an `IdentityTopUp` creates no identity
     /// keys, so there is no per-identity-key `KeychainSigner` and no pubkey
     /// array — the transition is signed entirely by the asset lock's
-    /// Core-side key via a `MnemonicResolver`. `accountIndex` selects which
-    /// BIP44 *standard* account supplies the funding UTXOs (same constraint
-    /// as registration).
+    /// Core-side key via a `MnemonicResolver`. `accountIndex` addresses the
+    /// *standard* families: the asset lock POOLS the BIP44 and BIP32
+    /// accounts at that index together with every DashPay contact-receiving
+    /// account (change returns to BIP44), and does NOT restrict which
+    /// DashPay receiving accounts contribute — the same contract as
+    /// registration.
     ///
     /// `amountDuffs` must meet the Rust-side minimum top-up asset-lock
     /// balance; a smaller amount is rejected before any lock is broadcast

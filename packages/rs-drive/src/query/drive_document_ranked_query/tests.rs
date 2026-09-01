@@ -31,7 +31,7 @@
 //! `adjustment` exists for the write-path suite's signed-average coverage
 //! (`delta` admits negatives, `grade` does not) and is unused here.
 
-use super::index_picker::find_ranked_index_for_axis;
+use super::index_picker::{find_ranked_index_for_axis, resolve_ranked_query_for_mode};
 use super::mode_detection::{detect_ranked_mode, detect_ranked_mode_v0};
 use super::*;
 use crate::drive::Drive;
@@ -160,7 +160,8 @@ fn offset_is_optional_defaults_to_zero_and_is_uncapped() {
     assert!(fifth_best.descending);
 
     // Far past any plausible population, and far past MAX_RANKED_LIMIT:
-    // still accepted, because offset costs nothing to prove.
+    // still accepted, because the skip is counted from subtree
+    // aggregates — work bounded by tree depth, not by the offset.
     let deep = detect_avg(false, Some(10), Some(u32::MAX)).expect("a huge OFFSET is well-formed");
     assert_eq!(deep.offset, u32::MAX);
     assert_eq!(deep.k, 10);
@@ -255,8 +256,9 @@ fn count_star_is_ordered_by_the_dollar_count_sentinel() {
 }
 
 /// `LIMIT 0` selects nothing and `LIMIT > MAX_RANKED_LIMIT` is refused
-/// rather than clamped — a clamp would produce a proof whose echoed `k`
-/// the client's own reconstruction rejects. The boundary itself is
+/// rather than clamped — a clamp would truncate the server's walk below
+/// the cap the client's rebuilt `PathQuery` demands coverage for, so the
+/// client's own reconstruction rejects the proof. The boundary itself is
 /// accepted.
 #[test]
 fn k_is_bounded_to_one_through_max_ranked_limit() {
@@ -279,9 +281,9 @@ fn k_is_bounded_to_one_through_max_ranked_limit() {
 }
 
 /// `LIMIT` is mandatory in ranked mode. There is no server-side default
-/// because `k` is echoed inside the proof envelope and re-checked by the
-/// verifier: a number the client never chose is a number it cannot
-/// reproduce when rebuilding the query to verify.
+/// because the verifier re-executes proofs against a `PathQuery` rebuilt
+/// from the request: a number the client never chose is a number it
+/// cannot reproduce when rebuilding the query to verify.
 #[test]
 fn limit_is_required() {
     let error = detect_avg(false, None, None).expect_err(
@@ -490,15 +492,42 @@ fn sum_and_avg_selects_require_a_field() {
     }
 }
 
-/// A `where` clause is refused, not ignored. The axis secondary is
-/// ordered by aggregate, not by group key, so it cannot rank a filtered
-/// subset — silently dropping the filter would answer the unfiltered
-/// question under the guise of the filtered one.
+/// `where` clauses are equality pins on a compound index's leading
+/// properties. Detection is shape-only: an equality clause becomes a
+/// pin (whether a compound index actually covers it is the resolver's
+/// call — see `pins_without_a_covering_compound_index_are_rejected`);
+/// anything that is not a distinct-property equality — or the one
+/// permitted `IN`, which resolves to a multi-value branching pin — is
+/// refused loudly.
 #[test]
-fn where_clauses_are_rejected() {
-    let where_clauses = vec![WhereClause {
-        field: GROUP_PROPERTY.to_string(),
+fn where_clauses_resolve_to_equality_pins_and_reject_everything_else() {
+    // Equality pin: accepted at detection, carried in the mode.
+    let pinned = vec![WhereClause {
+        field: "chefId".to_string(),
         operator: WhereOperator::Equal,
+        value: Value::Text("alpha".to_string()),
+    }];
+    let mode = detect_ranked_mode_v0(
+        &SelectProjection::avg("grade"),
+        &group_by(),
+        &[],
+        &order_by("grade", false),
+        &pinned,
+        page(Some(2), None),
+    )
+    .expect("an equality pin is a well-formed prefix pin");
+    assert_eq!(
+        mode.prefix_pins,
+        vec![PrefixPin {
+            field: "chefId".to_string(),
+            values: vec![Value::Text("alpha".to_string())],
+        }]
+    );
+
+    // A range operator can never pin a single prefix value tree.
+    let ranged = vec![WhereClause {
+        field: "chefId".to_string(),
+        operator: WhereOperator::GreaterThan,
         value: Value::Text("alpha".to_string()),
     }];
     let error = detect_ranked_mode_v0(
@@ -506,10 +535,70 @@ fn where_clauses_are_rejected() {
         &group_by(),
         &[],
         &order_by("grade", false),
-        &where_clauses,
+        &ranged,
         page(Some(2), None),
     )
-    .expect_err("ranked queries take no where clauses");
+    .expect_err("a range operator cannot pin a prefix");
+    assert!(matches!(
+        error,
+        Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(_))
+    ));
+
+    // `IN` resolves to a branching pin — one value per element — and a
+    // single-element `IN` is exactly an equality pin.
+    let in_clause = vec![WhereClause {
+        field: "chefId".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![
+            Value::Text("beta".to_string()),
+            Value::Text("alpha".to_string()),
+        ]),
+    }];
+    let mode = detect_ranked_mode_v0(
+        &SelectProjection::avg("grade"),
+        &group_by(),
+        &[],
+        &order_by("grade", false),
+        &in_clause,
+        page(Some(2), None),
+    )
+    .expect("an IN pin is a well-formed branching pin");
+    assert_eq!(
+        mode.prefix_pins,
+        vec![PrefixPin {
+            field: "chefId".to_string(),
+            values: vec![
+                Value::Text("beta".to_string()),
+                Value::Text("alpha".to_string()),
+            ],
+        }],
+        "the pin carries the elements verbatim; canonical branch order \
+         is the encoder's job, not the grammar's"
+    );
+
+    // The same property pinned twice is a caller error, not a silent
+    // last-write-wins.
+    let duplicated = vec![
+        WhereClause {
+            field: "chefId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("alpha".to_string()),
+        },
+        WhereClause {
+            field: "chefId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("beta".to_string()),
+        },
+    ];
+    let error = detect_ranked_mode_v0(
+        &SelectProjection::avg("grade"),
+        &group_by(),
+        &[],
+        &order_by("grade", false),
+        &duplicated,
+        page(Some(2), None),
+    )
+    .expect_err("duplicate pins on one property must fail");
     assert!(matches!(
         error,
         Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(_))
@@ -609,8 +698,13 @@ fn test_index(name: &str, properties: &[&str], summable: Option<&str>) -> Index 
         summable: summable.map(String::from),
         range_summable: summable.is_some(),
         ranked_countable: false,
+        ranked_countable_at: vec![],
         ranked_summable: false,
         ranked_averageable: false,
+        time_range: None,
+        terminal: None,
+        preallocated: false,
+        skip_if_absent: false,
     }
 }
 
@@ -633,12 +727,13 @@ fn picker_requires_the_index_to_declare_the_requested_axis() {
     let indexes = index_map(vec![index]);
 
     assert!(
-        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, RankedAxis::Count, "").is_some(),
+        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], RankedAxis::Count, "", &[])
+            .is_some(),
         "the declared axis resolves"
     );
     for (axis, field) in [(RankedAxis::Sum, "grade"), (RankedAxis::Avg, "grade")] {
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, axis, field).is_none(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, field, &[]).is_none(),
             "{axis:?} is not declared even though the index is summable and the stored \
              element could host that secondary"
         );
@@ -657,11 +752,12 @@ fn picker_requires_the_select_field_to_be_the_indexed_summable() {
 
     for axis in [RankedAxis::Sum, RankedAxis::Avg] {
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, axis, "grade").is_some(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "grade", &[]).is_some(),
             "{axis:?} on the indexed summable resolves"
         );
         assert!(
-            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, axis, "tipAmount").is_none(),
+            find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, &[], axis, "tipAmount", &[])
+                .is_none(),
             "{axis:?} on a different field must not resolve"
         );
     }
@@ -676,7 +772,8 @@ fn picker_rejects_an_unknown_group_property() {
     let indexes = index_map(vec![index]);
 
     assert!(
-        find_ranked_index_for_axis(&indexes, "chefId", RankedAxis::Avg, "grade").is_none(),
+        find_ranked_index_for_axis(&indexes, "chefId", &[], RankedAxis::Avg, "grade", &[])
+            .is_none(),
         "no index groups by `chefId`"
     );
 }
@@ -696,9 +793,15 @@ fn picker_rejects_compound_indexes() {
     index.ranked_averageable = true;
     let indexes = index_map(vec![index]);
 
-    assert!(
-        find_ranked_index_for_axis(&indexes, GROUP_PROPERTY, RankedAxis::Avg, "price").is_none()
-    );
+    assert!(find_ranked_index_for_axis(
+        &indexes,
+        GROUP_PROPERTY,
+        &[],
+        RankedAxis::Avg,
+        "price",
+        &[]
+    )
+    .is_none());
 }
 
 // ===================================================================
@@ -881,6 +984,7 @@ fn run(
             offset: case.offset,
             has_start_at: false,
             prove,
+            resolved_time_ranges: &[],
         },
         None,
         platform_version(),
@@ -943,25 +1047,18 @@ fn client_side_query<'a>(
         .get(case.document_type_name)
         .expect("doctype exists")
         .indexes();
-    let index = find_ranked_index_for_axis(
-        indexes,
-        &mode.group_by_property,
-        mode.axis,
-        &mode.aggregate_field,
-    )
-    .expect("the fixture declares the axis");
-    DriveDocumentRankedQuery {
-        document_type: contract
+    resolve_ranked_query_for_mode(
+        contract.id_ref().to_buffer(),
+        contract
             .document_type_for_name(case.document_type_name)
             .expect("doctype exists"),
-        contract_id: contract.id_ref().to_buffer(),
-        document_type_name: case.document_type_name.to_string(),
-        index,
-        axis: mode.axis,
-        descending: mode.descending,
-        k: mode.k,
-        offset: mode.offset,
-    }
+        case.document_type_name.to_string(),
+        indexes,
+        &mode,
+        &[],
+        platform_version(),
+    )
+    .expect("the fixture declares the axis")
 }
 
 fn grovedb_root_hash(drive: &Drive) -> [u8; 32] {
@@ -1127,8 +1224,9 @@ fn count_axis_ranks_reads_and_proves_consistently() {
     assert_proof_round_trips(&drive, &contract, &bottom_one, &entries);
 
     // A missing LIMIT is refused end to end, not just in the pure
-    // detector: `k` is echoed in the proof envelope, so there is no
-    // server-side default a verifying client could reproduce.
+    // detector: `k` binds verification through the client's rebuilt
+    // `PathQuery`, so there is no server-side default a verifying
+    // client could reproduce.
     let mut no_limit = RankedCase::count(true, None);
     no_limit.limit = None;
     let error = run(&drive, &contract, &no_limit, false)
@@ -1227,10 +1325,10 @@ fn top_k_larger_than_the_group_count_returns_every_group() {
 ///    page is.
 /// 3. **A window entirely past the end** — the page is empty *and*
 ///    `skipped` collapses to the secondary's true population, which is
-///    the proof's way of saying "there is nothing here, and here is how
-///    much there is in total". That is the one case where the proved
-///    and unproven paths differ: the unproven read cannot see the short
-///    walk and reports the requested offset.
+///    the counted walk's way of saying "there is nothing here, and here
+///    is how much there is in total". Both paths report it: the counted
+///    descent tracks how far the skip got, so an unproven read reports a
+///    population rather than the offset it was asked for.
 #[test]
 fn offset_pages_through_the_ranking_and_the_proof_attests_the_starting_rank() {
     let (drive, contract) = setup_restaurants();
@@ -1289,8 +1387,10 @@ fn offset_pages_through_the_ranking_and_the_proof_attests_the_starting_rank() {
         "there is no rank 9 in a five-group ranking"
     );
     assert_eq!(
-        page.skipped, 9,
-        "the unproven read cannot see the short walk, so it echoes the requested offset"
+        page.skipped, 5,
+        "the unproven read reports the population it actually reached, not the requested \
+         offset of 9: grovedb's counted descent knows how far the walk got and returns it \
+         on the page"
     );
     let verified = assert_proof_round_trips(&drive, &contract, &past_end, &page.entries);
     assert_eq!(
@@ -1311,8 +1411,8 @@ fn offset_pages_through_the_ranking_and_the_proof_attests_the_starting_rank() {
 }
 
 /// A proof of one page must not verify as another page of the same
-/// ranking. `offset` is echoed in the envelope and re-checked, which is
-/// what stops a server from answering "the 5th best" with a proof of
+/// ranking. `offset` shifts where the verifier's re-executed walk must
+/// start, which is what stops a server from answering "the 5th best" with a proof of
 /// "the best" — the entries would look perfectly valid, and only the
 /// offset binding distinguishes them.
 #[test]
@@ -1367,7 +1467,7 @@ fn a_proof_does_not_verify_under_a_different_offset() {
 /// has no entries", so a freshly registered contract queried with
 /// `prove = true` got an error until the first document landed.
 ///
-/// `prove_indexed_axis_top_k_paginated` closes that gap — it emits a
+/// The unified `PathQuery` prover closes that gap — it emits a
 /// guaranteed-empty range against the secondary rather than refusing —
 /// so the two paths now agree on empty state, and this test is the
 /// tripwire that says so. The attested `skipped` is `0`, which for an
@@ -1536,8 +1636,9 @@ fn a_tampered_proof_never_verifies_to_the_honest_root_hash() {
 
 /// The verifier must be checking the ranking it was asked about: a proof
 /// generated for one `(axis, k, descending)` triple must not verify under
-/// another. grovedb echoes all three in the envelope and re-checks them,
-/// and this pins that drive passes each of them through faithfully — a
+/// another. grovedb rebuilds the traversal from all three and re-executes
+/// the proof against it, and this pins that drive passes each of them
+/// through faithfully — a
 /// dropped argument here would let a client accept a proof of a
 /// different question.
 #[test]
@@ -1958,13 +2059,13 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     );
     assert_eq!(client_side_query(&contract, &by_chef).index.name, "byChef");
     assert_eq!(
-        find_ranked_index_for_axis(indexes, GROUP_PROPERTY, RankedAxis::Avg, "grade")
+        find_ranked_index_for_axis(indexes, GROUP_PROPERTY, &[], RankedAxis::Avg, "grade", &[])
             .expect("the Avg ranking resolves")
             .name,
         "byRestaurant",
     );
     assert_eq!(
-        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, RankedAxis::Count, "")
+        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Count, "", &[])
             .expect("the Count ranking resolves")
             .name,
         "byChef",
@@ -2015,7 +2116,8 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     // ranking over chefs has no index — and `byChefRestaurant` must not
     // be press-ganged into serving it.
     assert!(
-        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, RankedAxis::Avg, "grade").is_none(),
+        find_ranked_index_for_axis(indexes, CHEF_PROPERTY, &[], RankedAxis::Avg, "grade", &[])
+            .is_none(),
         "`byChefRestaurant` leads with chefId but is compound and unranked"
     );
     let avg_by_chef = RankedCase {
@@ -2032,4 +2134,2144 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
         ),
         "the error must name the missing keyword, got: {error}"
     );
+}
+
+mod pinned_prefix {
+    //! `SELECT AVG(grade) FROM grades WHERE identityId = X GROUP BY
+    //! class ORDER BY AVG(grade) DESC LIMIT k` — the ranked top-k
+    //! surface over a compound ranked index `[identityId, class]` with
+    //! its leading property pinned. Per-prefix semantics: the walk
+    //! reads (and proves) the pinned identity's own secondary, so two
+    //! identities' class rankings never mix. The having-path sibling
+    //! (`drive_document_having_query::tests::pinned_prefix`) shares the
+    //! fixture and pins the write path; this module pins the rank walk
+    //! and its paginated proof.
+
+    use super::super::drive_dispatcher::{DocumentRankedRequest, DocumentRankedResponse};
+    use super::super::index_picker::{encode_prefix_branches, resolve_ranked_query_for_mode};
+    use super::super::mode_detection::{detect_ranked_mode, detect_ranked_mode_v0};
+    use super::super::PrefixPin;
+    use super::super::{DriveDocumentRankedQuery, RankedEntry, RankedEntryValue};
+    use crate::drive::Drive;
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::drive_document_ranked_query::RankedPaginationInputs;
+    use crate::query::projection::SelectProjection;
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::platform_value::Value;
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use grovedb::element::indexed::compute_avg_fixed_point;
+    use grovedb::TransactionArg;
+    use std::collections::BTreeMap;
+
+    const PREFIX_PROPERTY: &str = "identityId";
+    const CLASS_PROPERTY: &str = "class";
+    const DOCUMENT_TYPE: &str = "grade";
+    const IDENTITY_X: [u8; 32] = [1u8; 32];
+    const IDENTITY_Y: [u8; 32] = [2u8; 32];
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    fn setup_grades_compound_ranked() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/grades/grades-compound-ranked-contract.json",
+            false,
+            pv,
+        )
+        .expect("expected to parse the compound ranked grades contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the compound ranked grades contract");
+        (drive, contract)
+    }
+
+    fn insert_grades(drive: &Drive, contract: &DataContract, rows: &[([u8; 32], &str, i64)]) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        for (i, (identity, class, grade)) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(4000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(*identity));
+            props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a grade document");
+        }
+    }
+
+    fn pin(identity: [u8; 32]) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(identity),
+        }]
+    }
+
+    fn run(
+        drive: &Drive,
+        contract: &DataContract,
+        where_clauses: &[WhereClause],
+        limit: u32,
+        prove: bool,
+    ) -> Result<DocumentRankedResponse, Error> {
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        drive.execute_document_ranked_request(
+            DocumentRankedRequest {
+                contract,
+                document_type: contract
+                    .document_type_for_name(DOCUMENT_TYPE)
+                    .expect("grade doctype exists"),
+                group_by: &group_by,
+                select: SelectProjection::avg("grade"),
+                having: &[],
+                order_by: &order_by,
+                where_clauses,
+                resolved_time_ranges: &[],
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+                prove,
+            },
+            None,
+            platform_version(),
+        )
+    }
+
+    fn client_side_query<'a>(
+        contract: &'a DataContract,
+        where_clauses: &[WhereClause],
+        limit: u32,
+    ) -> DriveDocumentRankedQuery<'a> {
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let mode = detect_ranked_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &[],
+            &order_by,
+            where_clauses,
+            RankedPaginationInputs {
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+            },
+            platform_version(),
+        )
+        .expect("the case is well-formed");
+        let indexes = contract
+            .document_types()
+            .get(DOCUMENT_TYPE)
+            .expect("grade doctype exists")
+            .indexes();
+        resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name(DOCUMENT_TYPE)
+                .expect("grade doctype exists"),
+            DOCUMENT_TYPE.to_string(),
+            indexes,
+            &mode,
+            &[],
+            platform_version(),
+        )
+        .expect("the fixture's compound index covers the pinned request")
+    }
+
+    /// Top-k per pinned prefix, with the paginated proof round-tripped
+    /// against the live root hash — and isolation between prefixes:
+    /// X's and Y's class rankings come off different secondaries.
+    #[test]
+    fn top_k_over_pinned_prefix_reads_and_proves() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(
+            &drive,
+            &contract,
+            &[
+                // X: art 90, english 80.5, math 80, history 70.
+                (IDENTITY_X, "math", 80),
+                (IDENTITY_X, "math", 80),
+                (IDENTITY_X, "english", 80),
+                (IDENTITY_X, "english", 81),
+                (IDENTITY_X, "art", 85),
+                (IDENTITY_X, "art", 95),
+                (IDENTITY_X, "history", 60),
+                (IDENTITY_X, "history", 80),
+                // Y: science 95, math 92.5.
+                (IDENTITY_Y, "math", 90),
+                (IDENTITY_Y, "math", 95),
+                (IDENTITY_Y, "science", 95),
+                (IDENTITY_Y, "science", 95),
+            ],
+        );
+
+        // X's top 2 by average, best first: art (90) then english (80.5).
+        // Y's science (95) and math (92.5) would both outrank them if the
+        // prefixes shared a secondary.
+        let x_pin = pin(IDENTITY_X);
+        let page = match run(&drive, &contract, &x_pin, 2, false).expect("read succeeds") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(page.skipped, 0);
+        assert_eq!(
+            page.entries,
+            vec![
+                RankedEntry {
+                    in_key: None,
+                    key: b"art".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(180, 2)),
+                },
+                RankedEntry {
+                    in_key: None,
+                    key: b"english".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(161, 2)),
+                },
+            ],
+            "X's own top 2: art 90 then english 80.5"
+        );
+
+        let proof = match run(&drive, &contract, &x_pin, 2, true).expect("prove succeeds") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(&contract, &x_pin, 2)
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the proof must verify");
+        assert_eq!(
+            verified.entries, page.entries,
+            "verified entries must equal the unproven read"
+        );
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+            "the proof must reconstruct the live grovedb root hash"
+        );
+
+        // Y's own ranking, proving the prefixes are separate secondaries.
+        let y_pin = pin(IDENTITY_Y);
+        let y_page = match run(&drive, &contract, &y_pin, 2, false).expect("read succeeds") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            y_page
+                .entries
+                .iter()
+                .map(|e| e.key.as_slice())
+                .collect::<Vec<_>>(),
+            vec![b"science".as_slice(), b"math".as_slice()],
+            "Y's own top 2: science 95 then math 92.5"
+        );
+    }
+
+    /// A **null** pin addresses the prefix subtree the write path
+    /// creates for an *absent* optional leading property: the walkers
+    /// encode a missing value as an empty path segment
+    /// (`get_raw_for_document_type(..).unwrap_or_default()`), so
+    /// `WHERE tag == null` must resolve to that empty segment — read,
+    /// proof, and client-side verification all reconstructing the same
+    /// stored path. Documents that *do* carry a tag live under their
+    /// own prefix and must not leak into the null prefix's ranking.
+    #[test]
+    fn a_null_pin_addresses_the_absent_value_prefix() {
+        const TAGGED_DOCTYPE: &str = "taggedGrade";
+        let (drive, contract) = setup_grades_compound_ranked();
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(TAGGED_DOCTYPE)
+            .expect("taggedGrade doctype exists");
+
+        // Tagless rows land under the empty-segment prefix; the
+        // "honors" row must stay in its own prefix.
+        for (i, (tag, class, grade)) in [
+            (None, "math", 80i64),
+            (None, "math", 90),
+            (None, "science", 60),
+            (Some("honors"), "math", 100),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut doc: Document = document_type
+                .random_document(Some(7000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            if let Some(tag) = tag {
+                props.insert("tag".to_string(), Value::Text(tag.to_string()));
+            }
+            props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a tagged grade document");
+        }
+
+        let null_pin = vec![WhereClause {
+            field: "tag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Null,
+        }];
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let request = |prove: bool| DocumentRankedRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &[],
+            order_by: &order_by,
+            where_clauses: &null_pin,
+            limit: Some(2),
+            offset: None,
+            has_start_at: false,
+            prove,
+            resolved_time_ranges: &[],
+        };
+
+        let page = match drive
+            .execute_document_ranked_request(request(false), None, pv)
+            .expect("the null-pinned read succeeds")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            page.entries,
+            vec![
+                RankedEntry {
+                    in_key: None,
+                    key: b"math".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(170, 2)),
+                },
+                RankedEntry {
+                    in_key: None,
+                    key: b"science".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(60, 1)),
+                },
+            ],
+            "the tagless ranking: math 85 then science 60 — the honors row \
+             (math 100) must not leak into the null prefix"
+        );
+
+        // Proof round trip through the shared resolver, so the verifier
+        // reconstructs the same empty-segment path the prover walked.
+        let proof = match drive
+            .execute_document_ranked_request(request(true), None, pv)
+            .expect("the null-pinned prove succeeds")
+        {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let mode = detect_ranked_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &[],
+            &order_by,
+            &null_pin,
+            RankedPaginationInputs {
+                limit: Some(2),
+                offset: None,
+                has_start_at: false,
+            },
+            pv,
+        )
+        .expect("the null-pinned case is well-formed");
+        let query = resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            document_type,
+            TAGGED_DOCTYPE.to_string(),
+            contract
+                .document_types()
+                .get(TAGGED_DOCTYPE)
+                .expect("taggedGrade doctype exists")
+                .indexes(),
+            &mode,
+            &[],
+            pv,
+        )
+        .expect("the compound index covers the null-pinned request");
+        assert_eq!(
+            query.prefix_branches,
+            vec![vec![Vec::<u8>::new()]],
+            "a null pin must encode as the write path's empty segment"
+        );
+        let (root_hash, verified) = query
+            .verify_ranked_top_k_proof(&proof, pv)
+            .expect("the null-pinned proof must verify");
+        assert_eq!(verified.entries, page.entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
+    fn in_pin(identities: &[[u8; 32]]) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(
+                identities
+                    .iter()
+                    .map(|identity| Value::Identifier(*identity))
+                    .collect(),
+            ),
+        }]
+    }
+
+    /// `identityId IN [X, Y]` walks each identity's own secondary and
+    /// merges: descending aggregate order, entries tagged with their
+    /// branch's `in_key`, and a **cross-prefix aggregate tie** breaking
+    /// by encoded prefix ascending (X's 32 `1`-bytes before Y's `2`s) —
+    /// the comparator's middle term, observable only here. The proof is
+    /// one branched `PathQuery` envelope, round-tripped through the
+    /// shared resolver against the live root hash.
+    #[test]
+    fn in_pinned_top_k_merges_branches_and_proves() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(
+            &drive,
+            &contract,
+            &[
+                // X: art 90, math 80. Y: science 95, history 90 — the
+                // two 90s are the cross-prefix tie.
+                (IDENTITY_X, "art", 90),
+                (IDENTITY_X, "math", 80),
+                (IDENTITY_Y, "science", 95),
+                (IDENTITY_Y, "history", 90),
+            ],
+        );
+
+        // Request order [Y, X] deliberately reversed: canonical branch
+        // order is by encoded prefix, not by element order.
+        let pins = in_pin(&[IDENTITY_Y, IDENTITY_X]);
+        let page = match run(&drive, &contract, &pins, 3, false).expect("read succeeds") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(page.skipped, 0);
+        assert_eq!(
+            page.entries,
+            vec![
+                RankedEntry {
+                    in_key: Some(IDENTITY_Y.to_vec()),
+                    key: b"science".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(95, 1)),
+                },
+                RankedEntry {
+                    in_key: Some(IDENTITY_X.to_vec()),
+                    key: b"art".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+                },
+                RankedEntry {
+                    in_key: Some(IDENTITY_Y.to_vec()),
+                    key: b"history".to_vec(),
+                    value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+                },
+            ],
+            "top 3 across the union: science 95, then the 90–90 tie broken \
+             by encoded prefix ascending (X's art before Y's history)"
+        );
+
+        let proof = match run(&drive, &contract, &pins, 3, true).expect("prove succeeds") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let query = client_side_query(&contract, &pins, 3);
+        assert_eq!(query.prefix_branches.len(), 2, "two branches resolved");
+        let (root_hash, verified) = query
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the branched envelope must verify");
+        assert_eq!(verified.entries, page.entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
+    /// Platform-level tamper cases on the branched envelope. The deep
+    /// matrix — reordered branch keys, duplicated or dropped branch
+    /// tails, echo mismatches — is pinned in grovedb's
+    /// `indexed_axis_branched_proof_tests`, since the envelope is one
+    /// grovedb proof now; here we pin what the platform layer itself
+    /// must not confuse: corrupted bytes, and the single-branch /
+    /// multi-branch envelope shapes never cross-verifying.
+    #[test]
+    fn tampered_or_mismatched_branched_proofs_do_not_verify() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(
+            &drive,
+            &contract,
+            &[(IDENTITY_X, "art", 90), (IDENTITY_Y, "science", 95)],
+        );
+        let pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        let proof = match run(&drive, &contract, &pins, 2, true).expect("prove succeeds") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let query = client_side_query(&contract, &pins, 2);
+
+        // Baseline sanity: untampered verifies.
+        query
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("untampered branched envelope verifies");
+
+        // Corrupted bytes.
+        let mut corrupted = proof.clone();
+        let mid = corrupted.len() / 2;
+        corrupted[mid] ^= 0xFF;
+        assert!(
+            query
+                .verify_ranked_top_k_proof(&corrupted, platform_version())
+                .is_err(),
+            "a flipped byte must not verify"
+        );
+
+        // Truncated bytes.
+        let truncated = &proof[..proof.len() - 8];
+        assert!(
+            query
+                .verify_ranked_top_k_proof(truncated, platform_version())
+                .is_err(),
+            "a truncated envelope must not verify"
+        );
+
+        // A single-pin proof must not verify under the branched query,
+        // nor a branched proof under a single-pin query — the two
+        // envelope shapes are distinct grovedb types.
+        let single = pin(IDENTITY_X);
+        let single_proof = match run(&drive, &contract, &single, 2, true).expect("prove") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
+        };
+        assert!(
+            query
+                .verify_ranked_top_k_proof(&single_proof, platform_version())
+                .is_err(),
+            "a single-branch envelope must not verify under an IN query"
+        );
+        let single_query = client_side_query(&contract, &single, 2);
+        assert!(
+            single_query
+                .verify_ranked_top_k_proof(&proof, platform_version())
+                .is_err(),
+            "a branched envelope must not verify under a single-pin query"
+        );
+    }
+
+    /// A single-element `IN` is normalized to an equality pin at
+    /// grammar time: same resolved branch set, same entries, and the
+    /// **same proof bytes** — the degenerate case is byte-identical to
+    /// `==`, so no client can observe which spelling was used.
+    #[test]
+    fn single_element_in_is_byte_identical_to_an_equality_pin() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "art", 90)]);
+
+        let equality = pin(IDENTITY_X);
+        let single_in = in_pin(&[IDENTITY_X]);
+
+        let eq_query = client_side_query(&contract, &equality, 2);
+        let in_query = client_side_query(&contract, &single_in, 2);
+        assert_eq!(eq_query.prefix_branches, in_query.prefix_branches);
+
+        let eq_proof = match run(&drive, &contract, &equality, 2, true).expect("prove") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
+        };
+        let in_proof = match run(&drive, &contract, &single_in, 2, true).expect("prove") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
+        };
+        assert_eq!(eq_proof, in_proof, "no container for a single branch");
+
+        let eq_page = match run(&drive, &contract, &equality, 2, false).expect("read") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        let in_page = match run(&drive, &contract, &single_in, 2, false).expect("read") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(
+            eq_page.entries, in_page.entries,
+            "a singleton IN reads exactly what the equality pin reads"
+        );
+        assert!(
+            eq_page.entries.iter().all(|e| e.in_key.is_none()),
+            "single-branch entries carry no in_key"
+        );
+    }
+
+    /// `OFFSET` is rejected together with an `IN` pin — rank-skip is
+    /// attested per-secondary and has no meaning across a branch union.
+    #[test]
+    fn offset_is_rejected_with_an_in_pin() {
+        let error = detect_ranked_mode_v0(
+            &SelectProjection::avg("grade"),
+            &[CLASS_PROPERTY.to_string()],
+            &[],
+            &[OrderClause {
+                field: "grade".to_string(),
+                ascending: false,
+            }],
+            &in_pin(&[IDENTITY_X, IDENTITY_Y]),
+            RankedPaginationInputs {
+                limit: Some(2),
+                offset: Some(1),
+                has_start_at: false,
+            },
+        )
+        .expect_err("offset cannot combine with IN");
+        match error {
+            Error::Query(QuerySyntaxError::InvalidLimit(message)) => {
+                assert!(
+                    message.contains("OFFSET") && message.contains("IN"),
+                    "the rejection must name the offset × IN exclusion, got: {message}"
+                );
+            }
+            other => panic!("expected InvalidLimit, got {other:?}"),
+        }
+    }
+
+    /// Grammar rejections around the `IN` pin: over-cap element lists,
+    /// empty lists, a second `IN`, a non-array operand, and elements
+    /// that encode to the same segment.
+    #[test]
+    fn in_pin_shape_rejections() {
+        let detect = |where_clauses: &[WhereClause]| {
+            detect_ranked_mode_v0(
+                &SelectProjection::avg("grade"),
+                &[CLASS_PROPERTY.to_string()],
+                &[],
+                &[OrderClause {
+                    field: "grade".to_string(),
+                    ascending: false,
+                }],
+                where_clauses,
+                RankedPaginationInputs {
+                    limit: Some(2),
+                    offset: None,
+                    has_start_at: false,
+                },
+            )
+        };
+
+        // Over the branch ceiling.
+        let identities: Vec<[u8; 32]> = (0..11).map(|i| [i as u8 + 1; 32]).collect();
+        let error = detect(&in_pin(&identities)).expect_err("11 branches is over the cap");
+        match error {
+            Error::Query(QuerySyntaxError::InvalidParameter(message)) => {
+                assert!(
+                    message.contains("ceiling of 10"),
+                    "the rejection must name the ceiling, got: {message}"
+                );
+            }
+            other => panic!("expected InvalidParameter, got {other:?}"),
+        }
+
+        // Empty element list.
+        let empty = vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![]),
+        }];
+        assert!(detect(&empty).is_err(), "an empty IN list must be rejected");
+
+        // Two *branching* INs are rejected in either clause order.
+        let multi = |field: &str| WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(1), Value::U64(2)]),
+        };
+        for two_ins in [
+            vec![multi(PREFIX_PROPERTY), multi("other")],
+            vec![multi("other"), multi(PREFIX_PROPERTY)],
+        ] {
+            let error = detect(&two_ins).expect_err("two branching INs must be rejected");
+            assert!(
+                matches!(error, Error::Query(QuerySyntaxError::Unsupported(_))),
+                "expected Unsupported for a second branching IN, got {error:?}"
+            );
+        }
+
+        // A singleton IN is an equality pin and never counts against
+        // the one-`IN` budget — in either clause order relative to the
+        // branching one.
+        let singleton = WhereClause {
+            field: "other".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(1)]),
+        };
+        for mixed in [
+            vec![multi(PREFIX_PROPERTY), singleton.clone()],
+            vec![singleton.clone(), multi(PREFIX_PROPERTY)],
+        ] {
+            let mode = detect(&mixed)
+                .expect("a singleton IN alongside a branching IN is well-formed either way");
+            assert_eq!(
+                mode.prefix_pins
+                    .iter()
+                    .map(|pin| pin.values.len())
+                    .collect::<Vec<_>>(),
+                if mixed[0].field == "other" {
+                    vec![1, 2]
+                } else {
+                    vec![2, 1]
+                },
+                "one branching pin and one singleton pin, in clause order"
+            );
+        }
+
+        // Non-array operand.
+        let scalar = vec![WhereClause {
+            field: PREFIX_PROPERTY.to_string(),
+            operator: WhereOperator::In,
+            value: Value::U64(7),
+        }];
+        assert!(
+            detect(&scalar).is_err(),
+            "a scalar IN operand must be rejected"
+        );
+
+        // Duplicate elements surface at the encoder (post-encoding
+        // distinctness), through the resolver.
+        let (_, contract) = setup_grades_compound_ranked();
+        let duplicated = in_pin(&[IDENTITY_X, IDENTITY_X]);
+        let mode = detect(&duplicated).expect("shape-valid; duplicates are the encoder's call");
+        let error = resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name(DOCUMENT_TYPE)
+                .expect("grade doctype exists"),
+            DOCUMENT_TYPE.to_string(),
+            contract
+                .document_types()
+                .get(DOCUMENT_TYPE)
+                .expect("grade doctype exists")
+                .indexes(),
+            &mode,
+            &[],
+            platform_version(),
+        )
+        .expect_err("duplicate encoded elements must be rejected");
+        assert!(
+            matches!(
+                error,
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(_))
+            ),
+            "expected the duplicate-encoding rejection, got {error:?}"
+        );
+    }
+
+    /// An `IN` element whose prefix was never written contributes the
+    /// **empty branch** — union semantics — while the single-`==`-pin
+    /// contract keeps erroring on an unknown value (pinned separately
+    /// by `unknown_prefix_value_errors_rather_than_fabricating_an_empty_page`).
+    /// The proved path authenticates the absence inside the branched
+    /// envelope, so read, proof, and verification agree.
+    #[test]
+    fn an_absent_in_element_contributes_an_empty_branch() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "art", 90)]);
+
+        let never_written = [9u8; 32];
+        let pins = in_pin(&[IDENTITY_X, never_written]);
+        let page = match run(&drive, &contract, &pins, 2, false).expect("read succeeds") {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            page.entries,
+            vec![RankedEntry {
+                in_key: Some(IDENTITY_X.to_vec()),
+                key: b"art".to_vec(),
+                value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+            }],
+            "only the existing branch contributes; the absent one is empty, not an error"
+        );
+
+        let proof = match run(&drive, &contract, &pins, 2, true).expect("prove succeeds") {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let (root_hash, verified) = client_side_query(&contract, &pins, 2)
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the envelope authenticates the absent branch");
+        assert_eq!(verified.entries, page.entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version().drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
+    /// An unpinned request over the compound-only contract has no
+    /// covering index — there is no global cross-prefix ordering to
+    /// serve, so the rejection names the missing coverage.
+    #[test]
+    fn unpinned_prefix_is_rejected() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
+
+        let error = run(&drive, &contract, &[], 2, false)
+            .expect_err("an unpinned compound prefix must not resolve");
+        assert!(
+            matches!(
+                error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(_))
+            ),
+            "expected a no-covering-index rejection, got {error:?}"
+        );
+    }
+
+    const DUAL_DOCTYPE: &str = "dualGrade";
+
+    fn insert_dual_grades(
+        drive: &Drive,
+        contract: &DataContract,
+        rows: &[([u8; 32], &str, &str, i64)],
+    ) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(DUAL_DOCTYPE)
+            .expect("dualGrade doctype exists");
+        for (i, (identity, tag, class, grade)) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(8000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(*identity));
+            props.insert("tag".to_string(), Value::Text(tag.to_string()));
+            props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
+            props.insert("grade".to_string(), Value::I64(*grade));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a dualGrade document");
+        }
+    }
+
+    fn run_dual(
+        drive: &Drive,
+        contract: &DataContract,
+        where_clauses: &[WhereClause],
+        limit: u32,
+        prove: bool,
+        transaction: TransactionArg,
+    ) -> Result<DocumentRankedResponse, Error> {
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        drive.execute_document_ranked_request(
+            DocumentRankedRequest {
+                contract,
+                document_type: contract
+                    .document_type_for_name(DUAL_DOCTYPE)
+                    .expect("dualGrade doctype exists"),
+                group_by: &group_by,
+                select: SelectProjection::avg("grade"),
+                having: &[],
+                order_by: &order_by,
+                where_clauses,
+                resolved_time_ranges: &[],
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+                prove,
+            },
+            transaction,
+            platform_version(),
+        )
+    }
+
+    /// An `IN` element whose branch-key tree EXISTS (another pin value was
+    /// written under it) but whose deeper pinned path was never written is
+    /// an ABSENT branch — empty page, union semantics — not an error that
+    /// discards the other branches' results. grovedb's branched reader and
+    /// prover authenticate absence at any depth of the branch chain, so the
+    /// unproved executor must walk the whole chain too.
+    #[test]
+    fn an_in_element_with_an_absent_deeper_pin_contributes_an_empty_branch() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        // Y's tree exists (via tag "t2"), but Y/t1 was never written.
+        insert_dual_grades(
+            &drive,
+            &contract,
+            &[
+                (IDENTITY_X, "t1", "math", 90),
+                (IDENTITY_Y, "t2", "math", 80),
+            ],
+        );
+
+        let mut pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        pins.push(WhereClause {
+            field: "tag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("t1".to_string()),
+        });
+
+        let page = match run_dual(&drive, &contract, &pins, 2, false, None)
+            .expect("a present branch key with an absent deeper pin must not error")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        };
+        assert_eq!(
+            page.entries,
+            vec![RankedEntry {
+                in_key: Some(IDENTITY_X.to_vec()),
+                key: b"math".to_vec(),
+                value: RankedEntryValue::AvgFixedPoint(compute_avg_fixed_point(90, 1)),
+            }],
+            "X/t1 contributes; Y (present key, absent t1 suffix) is an empty branch"
+        );
+
+        // The proved path must agree byte-for-byte with the unproved one.
+        let proof = match run_dual(&drive, &contract, &pins, 2, true, None)
+            .expect("the branched envelope authenticates the absent suffix")
+        {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        };
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let pv = platform_version();
+        let mode = detect_ranked_mode(
+            &SelectProjection::avg("grade"),
+            &group_by,
+            &[],
+            &order_by,
+            &pins,
+            RankedPaginationInputs {
+                limit: Some(2),
+                offset: None,
+                has_start_at: false,
+            },
+            pv,
+        )
+        .expect("well-formed");
+        let query = resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name(DUAL_DOCTYPE)
+                .expect("dualGrade doctype exists"),
+            DUAL_DOCTYPE.to_string(),
+            contract
+                .document_types()
+                .get(DUAL_DOCTYPE)
+                .expect("dualGrade doctype exists")
+                .indexes(),
+            &mode,
+            &[],
+            pv,
+        )
+        .expect("covered");
+        let (root_hash, verified) = query
+            .verify_ranked_top_k_proof(&proof, pv)
+            .expect("the proof verifies");
+        assert_eq!(verified.entries, page.entries);
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash must be readable"),
+        );
+    }
+
+    /// A `null` pin addresses its prefix through an EMPTY path segment,
+    /// which the branched proof grammar cannot express — so combining it
+    /// with an `IN` is rejected at the grammar instead of serving the
+    /// unproved read and failing the prove.
+    #[test]
+    fn a_null_pin_cannot_combine_with_an_in() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_dual_grades(&drive, &contract, &[(IDENTITY_X, "t1", "math", 90)]);
+
+        let mut pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        pins.push(WhereClause {
+            field: "tag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Null,
+        });
+
+        let error = run_dual(&drive, &contract, &pins, 2, false, None)
+            .expect_err("null x IN must be rejected");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(message))
+                    if message.contains("`null` pin")
+            ),
+            "the rejection must name the null x IN exclusion, got {error:?}"
+        );
+    }
+
+    /// A branched unproved read REJECTS a caller transaction, mirroring
+    /// the branched prover: an ordinary grovedb transaction reads the
+    /// latest committed state on every operation, so forwarding it could
+    /// tear the union across branches. Per-element reads keep the
+    /// transactional capability exactly — a single-pin read is one
+    /// grovedb operation and serves the transaction's own writes — and
+    /// the committed (`None`) branched read is unaffected.
+    #[test]
+    fn a_branched_unproved_read_rejects_an_ordinary_transaction() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        let pv = platform_version();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
+
+        let transaction = drive.grove.start_transaction();
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        let mut doc: Document = document_type
+            .random_document(Some(9000), pv)
+            .expect("random document");
+        let mut props = BTreeMap::new();
+        props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(IDENTITY_Y));
+        props.insert(
+            CLASS_PROPERTY.to_string(),
+            Value::Text("science".to_string()),
+        );
+        props.insert("grade".to_string(), Value::I64(95));
+        doc.set_properties(props);
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&doc, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&transaction),
+                pv,
+                None,
+            )
+            .expect("expected to insert Y's grade inside the transaction");
+
+        let pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let request = || DocumentRankedRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &[],
+            order_by: &order_by,
+            where_clauses: &pins,
+            resolved_time_ranges: &[],
+            limit: Some(4),
+            offset: None,
+            has_start_at: false,
+            prove: false,
+        };
+
+        let error = drive
+            .execute_document_ranked_request(request(), Some(&transaction), pv)
+            .expect_err("a transactional branched read must fail closed");
+        assert!(
+            matches!(
+                &error,
+                Error::Drive(crate::error::drive::DriveError::NotSupported(message))
+                    if message.contains("tear the union")
+            ),
+            "expected the caller-transaction rejection, got {error:?}"
+        );
+
+        // Per-element under the SAME transaction: the single-pin read is
+        // one grovedb operation and serves the branch written only
+        // inside it.
+        let y_pin = pin(IDENTITY_Y);
+        let y_request = DocumentRankedRequest {
+            contract: &contract,
+            document_type,
+            group_by: &group_by,
+            select: SelectProjection::avg("grade"),
+            having: &[],
+            order_by: &order_by,
+            where_clauses: &y_pin,
+            resolved_time_ranges: &[],
+            limit: Some(4),
+            offset: None,
+            has_start_at: false,
+            prove: false,
+        };
+        let with_tx = match drive
+            .execute_document_ranked_request(y_request, Some(&transaction), pv)
+            .expect("the transactional single-pin read serves")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(
+            with_tx
+                .entries
+                .iter()
+                .map(|e| (e.key.clone(), e.in_key.clone()))
+                .collect::<Vec<_>>(),
+            vec![(b"science".to_vec(), None)],
+            "the single-pin read serves the transaction's own branch"
+        );
+
+        let without_tx = match drive
+            .execute_document_ranked_request(request(), None, pv)
+            .expect("the committed branched read serves")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(
+            without_tx
+                .entries
+                .iter()
+                .map(|e| e.in_key.clone())
+                .collect::<Vec<_>>(),
+            vec![Some(IDENTITY_X.to_vec())],
+            "without the transaction Y's uncommitted branch is authenticated absent"
+        );
+    }
+
+    /// grovedb's unified `prove_query` proves committed state only, so an
+    /// `IN`-pinned prove under a caller transaction fails closed instead of
+    /// silently proving a different snapshot than the unproved read serves.
+    #[test]
+    fn a_branched_prove_rejects_a_transaction() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
+
+        let transaction = drive.grove.start_transaction();
+        let pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        let group_by = vec![CLASS_PROPERTY.to_string()];
+        let order_by = vec![OrderClause {
+            field: "grade".to_string(),
+            ascending: false,
+        }];
+        let error = drive
+            .execute_document_ranked_request(
+                DocumentRankedRequest {
+                    contract: &contract,
+                    document_type: contract
+                        .document_type_for_name(DOCUMENT_TYPE)
+                        .expect("grade doctype exists"),
+                    group_by: &group_by,
+                    select: SelectProjection::avg("grade"),
+                    having: &[],
+                    order_by: &order_by,
+                    where_clauses: &pins,
+                    resolved_time_ranges: &[],
+                    limit: Some(2),
+                    offset: None,
+                    has_start_at: false,
+                    prove: true,
+                },
+                Some(&transaction),
+                platform_version(),
+            )
+            .expect_err("a transactional branched prove must fail closed");
+        assert!(
+            matches!(
+                &error,
+                Error::Drive(crate::error::drive::DriveError::NotSupported(message))
+                    if message.contains("committed state")
+            ),
+            "expected the committed-state-only rejection, got {error:?}"
+        );
+
+        // The unproved read is unaffected by the failed prove; it serves
+        // committed state (a transactional branched read is likewise
+        // rejected — pinned by
+        // `a_branched_unproved_read_rejects_an_ordinary_transaction`).
+        let page = match run(&drive, &contract, &pins, 2, false)
+            .expect("the committed unproved read is unaffected")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(page.entries.len(), 1);
+    }
+
+    /// The offset x `IN` exclusion survives resolution: the grammar
+    /// rejects the combination, but `offset` is a public field and a
+    /// mode is publicly constructible, so every execution, proving and
+    /// verification boundary re-checks it — a resolved query mutated
+    /// into the forbidden shape is refused, not served as a page-broken
+    /// merge that reports `skipped: 0`.
+    #[test]
+    fn a_mutated_offset_cannot_combine_with_branches() {
+        let (drive, contract) = setup_grades_compound_ranked();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
+
+        let mut query = client_side_query(&contract, &in_pin(&[IDENTITY_X, IDENTITY_Y]), 2);
+        query.offset = 1;
+        let pv = platform_version();
+
+        let read = query
+            .execute_top_k_no_proof(&drive, None, pv)
+            .expect_err("a branched read with a mutated offset must be refused");
+        assert!(
+            matches!(&read, Error::Query(QuerySyntaxError::InvalidLimit(m)) if m.contains("cannot combine")),
+            "expected the offset x IN rejection on the read path, got {read:?}"
+        );
+        let prove = query
+            .execute_top_k_with_proof(&drive, None, pv)
+            .expect_err("a branched prove with a mutated offset must be refused");
+        assert!(
+            matches!(&prove, Error::Query(QuerySyntaxError::InvalidLimit(_))),
+            "expected the offset x IN rejection on the prove path, got {prove:?}"
+        );
+        let verify = query
+            .verify_ranked_top_k_proof(&[], pv)
+            .expect_err("verification with a mutated offset must be refused");
+        assert!(
+            matches!(&verify, Error::Query(QuerySyntaxError::InvalidLimit(_))),
+            "expected the offset x IN rejection on the verify path, got {verify:?}"
+        );
+    }
+
+    /// The public encoder enforces the documented branch ceiling itself:
+    /// its callers' grammar checks are not the only line of defense.
+    #[test]
+    fn the_prefix_encoder_enforces_the_branch_ceiling() {
+        let (_drive, contract) = setup_grades_compound_ranked();
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("grade doctype exists");
+        let index = contract
+            .document_types()
+            .get(DOCUMENT_TYPE)
+            .expect("grade doctype exists")
+            .indexes()
+            .values()
+            .next()
+            .expect("the compound ranked index exists");
+        let pins = vec![PrefixPin {
+            field: PREFIX_PROPERTY.to_string(),
+            values: (0u8..=10).map(|i| Value::Identifier([i; 32])).collect(),
+        }];
+        let error = encode_prefix_branches(document_type, index, &pins, platform_version())
+            .expect_err("11 branches must exceed the ceiling");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(message))
+                    if message.contains("more branches")
+            ),
+            "expected the fan-out ceiling rejection, got {error:?}"
+        );
+    }
+
+    /// The `IN` union is served from ONE committed state through the
+    /// production `None` path itself: the executor takes a snapshot
+    /// read transaction internally, and the test-only seam
+    /// (`branches::test_hooks::AFTER_BRANCHED_SNAPSHOT`) lands a commit
+    /// deterministically INSIDE the window — after that snapshot is
+    /// taken, before the branched call runs. The `None` read must
+    /// return the pre-commit union (the new branch still absent, the
+    /// changed page unchanged); a second `None` read after the window
+    /// returns the post-commit union. Removing the executor's internal
+    /// snapshot selection fails this test.
+    #[test]
+    fn a_branched_read_is_pinned_to_one_committed_state() {
+        use std::time::Duration;
+
+        let (drive, contract) = setup_grades_compound_ranked();
+        let pv = platform_version();
+        insert_grades(&drive, &contract, &[(IDENTITY_X, "math", 80)]);
+
+        // The mid-window "block commit": Y's branch springs into
+        // existence and X gains a class. Documents are built with
+        // distinct seeds so they cannot collide with `insert_grades`'.
+        let commit_post_snapshot_rows = || {
+            let document_type = contract
+                .document_type_for_name(DOCUMENT_TYPE)
+                .expect("grade doctype exists");
+            for (seed, identity, class, grade) in [
+                (9100u64, IDENTITY_Y, "science", 95i64),
+                (9101u64, IDENTITY_X, "art", 90i64),
+            ] {
+                let mut doc: Document = document_type
+                    .random_document(Some(seed), pv)
+                    .expect("random document");
+                let mut props = BTreeMap::new();
+                props.insert(PREFIX_PROPERTY.to_string(), Value::Identifier(identity));
+                props.insert(CLASS_PROPERTY.to_string(), Value::Text(class.to_string()));
+                props.insert("grade".to_string(), Value::I64(grade));
+                doc.set_properties(props);
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((&doc, None)),
+                                owner_id: None,
+                            },
+                            contract: &contract,
+                            document_type,
+                        },
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        pv,
+                        None,
+                    )
+                    .expect("expected to commit the mid-window grade");
+            }
+        };
+
+        // Rendezvous: when the executor's hook fires (snapshot taken,
+        // read not yet run), wake the writer, wait for its commit to
+        // land, then let the read proceed.
+        let (enter_window_tx, enter_window_rx) = std::sync::mpsc::channel::<()>();
+        let (commit_done_tx, commit_done_rx) = std::sync::mpsc::channel::<()>();
+        super::super::branches::test_hooks::AFTER_BRANCHED_SNAPSHOT.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                let _ = enter_window_tx.send(());
+                let _ = commit_done_rx.recv_timeout(Duration::from_secs(20));
+            }));
+        });
+
+        let pins = in_pin(&[IDENTITY_X, IDENTITY_Y]);
+        let pinned = std::thread::scope(|scope| {
+            scope.spawn(move || {
+                if enter_window_rx
+                    .recv_timeout(Duration::from_secs(20))
+                    .is_ok()
+                {
+                    commit_post_snapshot_rows();
+                    let _ = commit_done_tx.send(());
+                }
+            });
+            match run(&drive, &contract, &pins, 4, false)
+                .expect("the branched read serves across the mid-window commit")
+            {
+                DocumentRankedResponse::Entries(page) => page,
+                DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+            }
+        });
+        super::super::branches::test_hooks::AFTER_BRANCHED_SNAPSHOT.with(|hook| {
+            *hook.borrow_mut() = None;
+        });
+
+        // The `None` read observed the pre-commit state even though the
+        // commit landed inside its window: Y's branch still absent
+        // (empty, not an error), X still math-only.
+        assert_eq!(
+            pinned
+                .entries
+                .iter()
+                .map(|e| e.key.clone())
+                .collect::<Vec<_>>(),
+            vec![b"math".to_vec()],
+            "the automatic snapshot pins the union to the pre-commit state"
+        );
+
+        // A fresh committed read sees the post-commit union.
+        let fresh = match run(&drive, &contract, &pins, 4, false)
+            .expect("the committed branched read serves")
+        {
+            DocumentRankedResponse::Entries(page) => page,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries"),
+        };
+        assert_eq!(
+            fresh.entries.len(),
+            3,
+            "the committed union reflects the commit"
+        );
+    }
+}
+
+mod prefix_level {
+    //! `SELECT COUNT(*) … GROUP BY hashtag ORDER BY $count DESC LIMIT k`
+    //! over a prefix-level ranking (`rankedCountable: { "at": "hashtag" }`):
+    //! the Count secondary lives at the **hashtag** level and orders
+    //! hashtags by whole-subtree document count. With `at` on the first
+    //! property nothing is pinned — the global "top hashtags" surface; a
+    //! middle-level `at` pins every property before it and serves one
+    //! ranking per prefix, `IN` fan-out included. The storage side of
+    //! these shapes is pinned by
+    //! `insert_contract::v0::tests::prefix_ranked_index_e2e_tests`; this
+    //! module pins the query resolution, the rank walk and its proof.
+
+    use super::super::drive_dispatcher::{DocumentRankedRequest, DocumentRankedResponse};
+    use super::super::index_picker::resolve_ranked_query_for_mode;
+    use super::super::mode_detection::detect_ranked_mode;
+    use super::super::{
+        DriveDocumentRankedQuery, RankedEntry, RankedEntryValue, RankedPaginationInputs,
+        RANKED_COUNT_ORDER_KEY,
+    };
+    use crate::drive::Drive;
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::projection::SelectProjection;
+    use crate::query::{OrderClause, WhereClause, WhereOperator};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::platform_value::Value;
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    pub(super) fn setup_trending() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/trending/trending-contract.json",
+            false,
+            pv,
+        )
+        .expect("expected to parse the trending contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the trending contract");
+        (drive, contract)
+    }
+
+    pub(super) fn insert_rows(
+        drive: &Drive,
+        contract: &DataContract,
+        document_type_name: &str,
+        rows: &[&[(&str, &str)]],
+    ) {
+        let pv = platform_version();
+        let document_type = contract
+            .document_type_for_name(document_type_name)
+            .expect("doctype exists");
+        for (i, properties) in rows.iter().enumerate() {
+            let mut doc: Document = document_type
+                .random_document(Some(7000 + i as u64), pv)
+                .expect("random document");
+            let mut props = BTreeMap::new();
+            for (name, value) in *properties {
+                props.insert(name.to_string(), Value::Text(value.to_string()));
+            }
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert a trending document");
+        }
+    }
+
+    pub(super) fn region_pin(region: &str) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: "region".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(region.to_string()),
+        }]
+    }
+
+    pub(super) fn run(
+        drive: &Drive,
+        contract: &DataContract,
+        document_type_name: &str,
+        group_by_property: &str,
+        where_clauses: &[WhereClause],
+        limit: u32,
+        prove: bool,
+    ) -> Result<DocumentRankedResponse, Error> {
+        let group_by = vec![group_by_property.to_string()];
+        let order_by = vec![OrderClause {
+            field: RANKED_COUNT_ORDER_KEY.to_string(),
+            ascending: false,
+        }];
+        drive.execute_document_ranked_request(
+            DocumentRankedRequest {
+                contract,
+                document_type: contract
+                    .document_type_for_name(document_type_name)
+                    .expect("doctype exists"),
+                group_by: &group_by,
+                select: SelectProjection::count_star(),
+                having: &[],
+                order_by: &order_by,
+                where_clauses,
+                resolved_time_ranges: &[],
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+                prove,
+            },
+            None,
+            platform_version(),
+        )
+    }
+
+    pub(super) fn entries_of(response: DocumentRankedResponse) -> Vec<RankedEntry> {
+        match response {
+            DocumentRankedResponse::Entries(page) => page.entries,
+            DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
+        }
+    }
+
+    fn proof_of(response: DocumentRankedResponse) -> Vec<u8> {
+        match response {
+            DocumentRankedResponse::Proof(proof) => proof,
+            DocumentRankedResponse::Entries(_) => panic!("expected a proof, got entries"),
+        }
+    }
+
+    /// `(count, group)` view of a page for readable assertions.
+    pub(super) fn counts_of(entries: &[RankedEntry]) -> Vec<(u64, String)> {
+        entries
+            .iter()
+            .map(|entry| {
+                let RankedEntryValue::Count(count) = entry.value else {
+                    panic!("the Count axis must return Count values, got {entry:?}");
+                };
+                (
+                    count,
+                    String::from_utf8(entry.key.clone()).expect("fixture group keys are utf-8"),
+                )
+            })
+            .collect()
+    }
+
+    pub(super) fn named(pairs: &[(u64, &str)]) -> Vec<(u64, String)> {
+        pairs
+            .iter()
+            .map(|(count, name)| (*count, name.to_string()))
+            .collect()
+    }
+
+    fn client_side_query<'a>(
+        contract: &'a DataContract,
+        document_type_name: &'static str,
+        group_by_property: &str,
+        where_clauses: &[WhereClause],
+        limit: u32,
+    ) -> DriveDocumentRankedQuery<'a> {
+        let group_by = vec![group_by_property.to_string()];
+        let order_by = vec![OrderClause {
+            field: RANKED_COUNT_ORDER_KEY.to_string(),
+            ascending: false,
+        }];
+        let mode = detect_ranked_mode(
+            &SelectProjection::count_star(),
+            &group_by,
+            &[],
+            &order_by,
+            where_clauses,
+            RankedPaginationInputs {
+                limit: Some(limit),
+                offset: None,
+                has_start_at: false,
+            },
+            platform_version(),
+        )
+        .expect("the case is well-formed");
+        let indexes = contract
+            .document_types()
+            .get(document_type_name)
+            .expect("doctype exists")
+            .indexes();
+        resolve_ranked_query_for_mode(
+            contract.id_ref().to_buffer(),
+            contract
+                .document_type_for_name(document_type_name)
+                .expect("doctype exists"),
+            document_type_name.to_string(),
+            indexes,
+            &mode,
+            &[],
+            platform_version(),
+        )
+        .expect("the fixture declares the prefix-level ranking")
+    }
+
+    fn grovedb_root_hash(drive: &Drive) -> [u8; 32] {
+        drive
+            .grove
+            .root_hash(None, &platform_version().drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable")
+    }
+
+    pub(super) fn assert_proof_round_trips(
+        drive: &Drive,
+        contract: &DataContract,
+        document_type_name: &'static str,
+        group_by_property: &str,
+        where_clauses: &[WhereClause],
+        limit: u32,
+        expected: &[RankedEntry],
+    ) {
+        let proof = proof_of(
+            run(
+                drive,
+                contract,
+                document_type_name,
+                group_by_property,
+                where_clauses,
+                limit,
+                true,
+            )
+            .expect("prove must succeed"),
+        );
+        let query = client_side_query(
+            contract,
+            document_type_name,
+            group_by_property,
+            where_clauses,
+            limit,
+        );
+        let (root_hash, verified) = query
+            .verify_ranked_top_k_proof(&proof, platform_version())
+            .expect("the proof must verify");
+        assert_eq!(
+            verified.entries, expected,
+            "verified entries must equal what the unproven read returned"
+        );
+        assert_eq!(
+            root_hash,
+            grovedb_root_hash(drive),
+            "the proof must reconstruct the live grovedb root hash"
+        );
+    }
+
+    /// `at` on the first property: nothing pinned, the global "top
+    /// hashtags by total likes" surface — read, prove, verify.
+    #[test]
+    fn global_hashtag_ranking_reads_and_proves_consistently() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "like",
+            &[
+                &[("hashtag", "alpha"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("postId", "p2")],
+                &[("hashtag", "beta"), ("postId", "p1")],
+                &[("hashtag", "beta"), ("postId", "p3")],
+                &[("hashtag", "gamma"), ("postId", "p2")],
+            ],
+        );
+
+        let entries = entries_of(
+            run(&drive, &contract, "like", "hashtag", &[], 10, false).expect("read must succeed"),
+        );
+        assert_eq!(
+            counts_of(&entries),
+            named(&[(3, "alpha"), (2, "beta"), (1, "gamma")]),
+            "the ranking must count across each hashtag's whole subtree"
+        );
+        assert!(entries.iter().all(|entry| entry.in_key.is_none()));
+
+        assert_proof_round_trips(&drive, &contract, "like", "hashtag", &[], 10, &entries);
+    }
+
+    /// A count-propagating level between `at` and the terminal: the
+    /// ranking still reads whole-subtree totals (across regions AND
+    /// posts), and the proof still verifies.
+    #[test]
+    fn propagating_level_totals_serve_the_ranking() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "deep",
+            &[
+                &[("hashtag", "alpha"), ("region", "east"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("region", "east"), ("postId", "p2")],
+                &[("hashtag", "alpha"), ("region", "west"), ("postId", "p1")],
+                &[("hashtag", "beta"), ("region", "east"), ("postId", "p1")],
+            ],
+        );
+
+        let entries = entries_of(
+            run(&drive, &contract, "deep", "hashtag", &[], 10, false).expect("read must succeed"),
+        );
+        assert_eq!(counts_of(&entries), named(&[(3, "alpha"), (1, "beta")]));
+
+        assert_proof_round_trips(&drive, &contract, "deep", "hashtag", &[], 10, &entries);
+    }
+
+    /// A middle-level `at` pins every property before it: each prefix
+    /// serves its own ranking, an unpinned request is rejected naming
+    /// the required shape, and the pinned proof verifies.
+    #[test]
+    fn middle_at_serves_per_prefix_and_requires_the_pin() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "mid",
+            &[
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p1")],
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p2")],
+                &[("region", "r1"), ("hashtag", "beta"), ("postId", "p1")],
+                &[("region", "r2"), ("hashtag", "gamma"), ("postId", "p1")],
+            ],
+        );
+
+        let r1 = entries_of(
+            run(
+                &drive,
+                &contract,
+                "mid",
+                "hashtag",
+                &region_pin("r1"),
+                10,
+                false,
+            )
+            .expect("pinned read must succeed"),
+        );
+        assert_eq!(counts_of(&r1), named(&[(2, "alpha"), (1, "beta")]));
+        let r2 = entries_of(
+            run(
+                &drive,
+                &contract,
+                "mid",
+                "hashtag",
+                &region_pin("r2"),
+                10,
+                false,
+            )
+            .expect("pinned read must succeed"),
+        );
+        assert_eq!(
+            counts_of(&r2),
+            named(&[(1, "gamma")]),
+            "each region prefix ranks independently"
+        );
+
+        let error = run(&drive, &contract, "mid", "hashtag", &[], 10, false)
+            .expect_err("an unpinned middle-level ranking must be rejected");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message))
+                    if message.contains("rankedCountable") && message.contains("hashtag")
+            ),
+            "the rejection must name the missing coverage, got: {error}"
+        );
+
+        assert_proof_round_trips(
+            &drive,
+            &contract,
+            "mid",
+            "hashtag",
+            &region_pin("r1"),
+            10,
+            &r1,
+        );
+    }
+
+    /// An `IN` pin on the property before a middle-level `at` fans out
+    /// into the branched union, `in_key` carrying each entry's branch.
+    #[test]
+    fn an_in_pin_reads_the_branched_union_with_proof() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "mid",
+            &[
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p1")],
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p2")],
+                &[("region", "r1"), ("hashtag", "alpha"), ("postId", "p3")],
+                &[("region", "r1"), ("hashtag", "beta"), ("postId", "p1")],
+                &[("region", "r2"), ("hashtag", "gamma"), ("postId", "p1")],
+                &[("region", "r2"), ("hashtag", "gamma"), ("postId", "p2")],
+            ],
+        );
+
+        let in_pin = vec![WhereClause {
+            field: "region".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("r1".to_string()),
+                Value::Text("r2".to_string()),
+            ]),
+        }];
+        let entries = entries_of(
+            run(&drive, &contract, "mid", "hashtag", &in_pin, 10, false)
+                .expect("branched read must succeed"),
+        );
+        assert_eq!(
+            counts_of(&entries),
+            named(&[(3, "alpha"), (2, "gamma"), (1, "beta")]),
+            "the union must merge both regions' rankings"
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.in_key.clone().expect("branched entries carry in_key"))
+                .collect::<Vec<_>>(),
+            vec![b"r1".to_vec(), b"r2".to_vec(), b"r1".to_vec()],
+            "each entry must name the branch it came from"
+        );
+
+        assert_proof_round_trips(&drive, &contract, "mid", "hashtag", &in_pin, 10, &entries);
+    }
+
+    /// An `at` index hosts NO terminal secondary: grouping by the last
+    /// property with the leading ones pinned must be rejected, not
+    /// silently served from a secondary that does not exist.
+    #[test]
+    fn terminal_group_by_on_an_at_index_is_rejected() {
+        let (drive, contract) = setup_trending();
+        let pin = vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("alpha".to_string()),
+        }];
+        let error = run(&drive, &contract, "like", "postId", &pin, 10, false)
+            .expect_err("terminal grouping over an at-index must be rejected");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message))
+                    if message.contains("postId")
+            ),
+            "the rejection must name the unserved group property, got: {error}"
+        );
+    }
+}
+
+mod both_levels {
+    //! One index, two rankings (`rankedCountable: { at: ["hashtag",
+    //! "postId"] }` on the trending fixture's `both` doctype): with
+    //! nothing pinned, `GROUP BY hashtag` reads the grouping secondary
+    //! (subtree totals); with `hashtag` pinned, `GROUP BY postId` reads
+    //! the terminal secondary inside that hashtag's chain. The (group
+    //! property, pin count) pair singles the level out — the resolution
+    //! generalization under test — and both proofs verify against the
+    //! live root hash.
+
+    use super::prefix_level::{
+        assert_proof_round_trips, counts_of, entries_of, insert_rows, named, region_pin, run,
+        setup_trending,
+    };
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::{WhereClause, WhereOperator};
+    use dpp::platform_value::Value;
+
+    fn hashtag_pin(hashtag: &str) -> Vec<WhereClause> {
+        vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(hashtag.to_string()),
+        }]
+    }
+
+    #[test]
+    fn both_rankings_serve_and_prove_on_one_index() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "both",
+            &[
+                &[("hashtag", "alpha"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("postId", "p1")],
+                &[("hashtag", "alpha"), ("postId", "p2")],
+                &[("hashtag", "beta"), ("postId", "p3")],
+            ],
+        );
+
+        // Grouping level: top hashtags by subtree total, nothing pinned.
+        let hashtags = entries_of(
+            run(&drive, &contract, "both", "hashtag", &[], 10, false)
+                .expect("the grouping read must succeed"),
+        );
+        assert_eq!(counts_of(&hashtags), named(&[(3, "alpha"), (1, "beta")]));
+        assert_proof_round_trips(&drive, &contract, "both", "hashtag", &[], 10, &hashtags);
+
+        // Terminal level: top posts within the pinned hashtag.
+        let alpha_posts = entries_of(
+            run(
+                &drive,
+                &contract,
+                "both",
+                "postId",
+                &hashtag_pin("alpha"),
+                10,
+                false,
+            )
+            .expect("the terminal read must succeed"),
+        );
+        assert_eq!(counts_of(&alpha_posts), named(&[(2, "p1"), (1, "p2")]));
+        assert_proof_round_trips(
+            &drive,
+            &contract,
+            "both",
+            "postId",
+            &hashtag_pin("alpha"),
+            10,
+            &alpha_posts,
+        );
+
+        // The pin count disambiguates: an unpinned terminal grouping has
+        // no covering level and must be rejected, not served off the
+        // grouping secondary.
+        let error = run(&drive, &contract, "both", "postId", &[], 10, false)
+            .expect_err("an unpinned terminal grouping must be rejected");
+        assert!(
+            matches!(
+                &error,
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message))
+                    if message.contains("postId")
+            ),
+            "the rejection must name the unserved shape, got: {error}"
+        );
+    }
+
+    /// The `mid` doctype pins prove the split stays correct when the
+    /// grouping level is not first: the region pin count (1) lands on
+    /// `hashtag`, and two pins would address the (unranked) terminal —
+    /// rejected.
+    #[test]
+    fn pin_count_lands_on_the_declared_level_only() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "mid",
+            &[&[("region", "r1"), ("hashtag", "alpha"), ("postId", "p1")]],
+        );
+
+        let entries = entries_of(
+            run(
+                &drive,
+                &contract,
+                "mid",
+                "hashtag",
+                &region_pin("r1"),
+                10,
+                false,
+            )
+            .expect("the pinned grouping read must succeed"),
+        );
+        assert_eq!(counts_of(&entries), named(&[(1, "alpha")]));
+
+        // Two pins address mid's terminal, which hosts no secondary.
+        let two_pins = vec![
+            WhereClause {
+                field: "region".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("r1".to_string()),
+            },
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("alpha".to_string()),
+            },
+        ];
+        assert!(
+            run(&drive, &contract, "mid", "postId", &two_pins, 10, false).is_err(),
+            "mid's unranked terminal must stay unservable"
+        );
+    }
+}
+
+mod every_level {
+    //! The fully ranked chain (`at: ["tag", "region", "postId"]` on the
+    //! trending fixture's `chain` doctype): each of the three levels
+    //! serves its own ranking, addressed purely by the (group property,
+    //! pin count) pair, with every proof verifying against the live
+    //! root hash.
+
+    use super::prefix_level::{
+        assert_proof_round_trips, counts_of, entries_of, insert_rows, named, run, setup_trending,
+    };
+    use crate::query::{WhereClause, WhereOperator};
+    use dpp::platform_value::Value;
+
+    fn pin(field: &str, value: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(value.to_string()),
+        }
+    }
+
+    #[test]
+    fn all_three_levels_serve_and_prove() {
+        let (drive, contract) = setup_trending();
+        insert_rows(
+            &drive,
+            &contract,
+            "chain",
+            &[
+                &[("tag", "alpha"), ("region", "east"), ("postId", "p1")],
+                &[("tag", "alpha"), ("region", "east"), ("postId", "p1")],
+                &[("tag", "alpha"), ("region", "east"), ("postId", "p2")],
+                &[("tag", "alpha"), ("region", "west"), ("postId", "p1")],
+                &[("tag", "beta"), ("region", "east"), ("postId", "p1")],
+            ],
+        );
+
+        // Level 0: top tags, nothing pinned.
+        let tags =
+            entries_of(run(&drive, &contract, "chain", "tag", &[], 10, false).expect("tag read"));
+        assert_eq!(counts_of(&tags), named(&[(4, "alpha"), (1, "beta")]));
+        assert_proof_round_trips(&drive, &contract, "chain", "tag", &[], 10, &tags);
+
+        // Level 1: top regions within a tag.
+        let alpha_pin = vec![pin("tag", "alpha")];
+        let regions = entries_of(
+            run(&drive, &contract, "chain", "region", &alpha_pin, 10, false).expect("region read"),
+        );
+        assert_eq!(counts_of(&regions), named(&[(3, "east"), (1, "west")]));
+        assert_proof_round_trips(
+            &drive, &contract, "chain", "region", &alpha_pin, 10, &regions,
+        );
+
+        // Level 2: top posts within (tag, region).
+        let east_pins = vec![pin("tag", "alpha"), pin("region", "east")];
+        let posts = entries_of(
+            run(&drive, &contract, "chain", "postId", &east_pins, 10, false).expect("post read"),
+        );
+        assert_eq!(counts_of(&posts), named(&[(2, "p1"), (1, "p2")]));
+        assert_proof_round_trips(&drive, &contract, "chain", "postId", &east_pins, 10, &posts);
+    }
 }

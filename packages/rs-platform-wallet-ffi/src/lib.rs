@@ -57,6 +57,9 @@ pub mod logging;
 pub mod managed_identity;
 pub mod manager;
 pub mod manager_diagnostics;
+pub mod masternode_locator;
+pub mod masternode_update_service;
+pub mod masternode_withdrawal;
 pub mod memory_explorer;
 pub mod mnemonic_words;
 pub mod persistence;
@@ -66,6 +69,7 @@ pub mod platform_addresses;
 pub mod platform_wallet_info;
 pub mod provider_key_at_index;
 mod runtime;
+pub mod secp256k1_primitives;
 #[cfg(feature = "shielded")]
 pub mod shielded_persistence;
 #[cfg(feature = "shielded")]
@@ -77,11 +81,13 @@ pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;
 pub mod tokens;
+pub mod tracked_masternode;
 pub mod types;
 pub mod utils;
 pub mod wallet;
 pub mod wallet_registration_persistence;
 pub mod wallet_restore_types;
+pub mod wallet_startup;
 pub mod xpub_render;
 
 // Re-exports
@@ -140,6 +146,7 @@ pub use platform_address_types::*;
 pub use platform_addresses::*;
 pub use platform_wallet_info::*;
 pub use provider_key_at_index::*;
+pub use secp256k1_primitives::*;
 #[cfg(feature = "shielded")]
 pub use shielded_send::*;
 #[cfg(feature = "shielded")]

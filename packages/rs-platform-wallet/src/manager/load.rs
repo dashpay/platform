@@ -44,6 +44,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             ))
         })?;
 
+        // Tracked (wallet-independent) masternodes ride the same startup
+        // hydration; a failure logs and starts empty rather than failing
+        // wallet restore.
+        self.load_tracked_masternodes_from_persistence();
+
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
 
         // Track every wallet successfully inserted into
@@ -77,7 +82,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 tracked_asset_locks.extend(account_locks);
             }
 
-            let generation = Arc::new(WalletGeneration::new());
+            // Canonical id recomputed from the wallet's own key material.
+            // Computed up front — before `insert_wallet` consumes `wallet` —
+            // so we can both validate it against the persisted map key
+            // (below) and key this generation's in-broadcast fence map by it.
+            let wallet_id = wallet.compute_wallet_id();
+
+            // The fence map is per WALLET, not per generation
+            // (`dashpay/platform#4309`, review round 8). On a first load the
+            // registry is empty and this is a fresh map; a re-load — or a load
+            // that follows a removal — inherits whatever pending spends the
+            // previous generation under this id left standing, rather than
+            // handing the restored UTXOs back unprotected.
+            //
+            // A fresh PROCESS still starts empty: this registry is not durable.
+            // See `InBroadcastFences` for what closing that half requires.
+            let generation = Arc::new(WalletGeneration::with_fences(
+                self.in_broadcast_fences_for(&wallet_id),
+            ));
             // Mirror the inner `ManagedWalletInfo.balance` (already
             // recomputed from the freshly-loaded UTXO set on the FFI
             // side via `update_balance`) into the lock-free `Arc` the
@@ -95,18 +117,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.locked(),
             );
             let platform_info = PlatformWalletInfo {
+                observed_input_conflicts: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
             };
-
-            // Canonical id recomputed from the wallet's own key material.
-            // Computed up front — before `insert_wallet` consumes `wallet` —
-            // so we can both validate it against the persisted map key and
-            // detect a wallet that an earlier load already registered.
-            let wallet_id = wallet.compute_wallet_id();
+            // Seed the double-spend screen's session memory from the
+            // freshly restored state: it closes the race where SPV's
+            // chainlock dispatcher promotion-evicts a restored spender
+            // before the first catch-up resume ever reads it.
+            crate::wallet::asset_lock::sync::recovery::seed_observed_input_conflicts(
+                &platform_info,
+            );
 
             if wallet_id != expected_wallet_id {
                 load_error = Some(PlatformWalletError::WalletCreation(format!(

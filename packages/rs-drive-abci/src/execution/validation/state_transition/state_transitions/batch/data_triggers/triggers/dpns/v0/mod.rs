@@ -221,7 +221,7 @@ pub(super) fn create_domain_data_trigger_v0(
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (
@@ -248,6 +248,7 @@ pub(super) fn create_domain_data_trigger_v0(
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         // todo: deal with cost of this operation
@@ -322,7 +323,7 @@ pub(super) fn create_domain_data_trigger_v0(
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
             primary_key_equal_clause: None,
-            in_clause: None,
+            in_clauses: Vec::new(),
             range_clause: None,
             equal_clauses: BTreeMap::from([(
                 "saltedDomainHash".to_string(),
@@ -339,6 +340,7 @@ pub(super) fn create_domain_data_trigger_v0(
         start_at: None,
         start_at_included: false,
         block_time_ms: None,
+        resolved_time_ranges: vec![],
     };
 
     // todo: deal with cost of this operation

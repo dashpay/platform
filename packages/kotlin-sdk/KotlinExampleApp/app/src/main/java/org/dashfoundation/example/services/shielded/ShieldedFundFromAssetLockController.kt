@@ -62,6 +62,18 @@ class ShieldedFundFromAssetLockController(
     var lastSubmittedAt: Long? = null
         private set
 
+    /**
+     * Identity of the operation currently occupying this slot — the
+     * fresh-shield marker or the resumed lock's outpoint. Set by every
+     * accepted [submit]. The coordinator compares it to tell a re-tap of
+     * the SAME operation (reuse the controller) from a DIFFERENT
+     * operation on the same `(walletId, recipient)` slot, whose body
+     * [submit] would otherwise silently drop (two resumable locks
+     * normally share the wallet's default shielded recipient).
+     */
+    var operationId: String? = null
+        private set
+
     private var task: Job? = null
 
     /** Composite id for stable list diffing — wallet hex + recipient hex. */
@@ -71,15 +83,17 @@ class ShieldedFundFromAssetLockController(
     /**
      * Submit the funding. Defensively rejects [Phase.InFlight] and
      * [Phase.Completed]; [Phase.Idle] / [Phase.Failed] are allowed
-     * restarts. [body] performs the FFI shield call (returns nothing) or
-     * throws; it runs on its own dispatcher, the terminal flip hops back to
-     * [scope]. ← Swift `submit`.
+     * restarts. [operationId] names the operation the body performs (see
+     * [operationId]); [body] performs the FFI shield call (returns
+     * nothing) or throws; it runs on its own dispatcher, the terminal
+     * flip hops back to [scope]. ← Swift `submit`.
      */
-    fun submit(body: suspend () -> Unit) {
+    fun submit(operationId: String, body: suspend () -> Unit) {
         when (_phase.value) {
             is Phase.Idle, is Phase.Failed -> Unit
             is Phase.InFlight, is Phase.Completed -> return
         }
+        this.operationId = operationId
         _phase.value = Phase.InFlight
         lastSubmittedAt = now()
         task = scope.launch {

@@ -126,6 +126,37 @@ impl IndexLevel {
     /// Returns `None` if all three properties are the same everywhere.
     #[cfg(feature = "validation")]
     pub(super) fn find_first_ranked_change(&self, new: &IndexLevel) -> Option<String> {
+        // The prefix-level ranking markers live on the LEVEL, not on the
+        // terminating info — an index's `rankedCountable: { at }` stamps a
+        // non-terminal level, so moving or toggling it changes these two
+        // flags while every `IndexLevelTypeInfo` stays identical. Same
+        // rebuild-the-secondaries reasoning as the axis flags below.
+        if self.ranked_count_grouping != new.ranked_count_grouping {
+            return Some(format!(
+                "(ranked_count_grouping: {} -> {})",
+                self.ranked_count_grouping, new.ranked_count_grouping,
+            ));
+        }
+        if self.count_propagating != new.count_propagating {
+            return Some(format!(
+                "(count_propagating: {} -> {})",
+                self.count_propagating, new.count_propagating,
+            ));
+        }
+        // The exempt-branch marker decides whether the level's
+        // property-name tree is created `Element::NonCounted`-wrapped
+        // inside the chain's value trees or inserted contributing —
+        // frozen layout like the two chain stamps above. Every flip is
+        // already accompanied by a chain-stamp or countability change
+        // (the marker is derived from them), but the layout flag itself
+        // is what the walkers read, so it gets its own first-class check.
+        if self.count_exempt_branch() != new.count_exempt_branch() {
+            return Some(format!(
+                "(count_exempt_branch: {} -> {})",
+                self.count_exempt_branch(),
+                new.count_exempt_branch(),
+            ));
+        }
         if let (Some(old_info), Some(new_info)) =
             (&self.has_index_with_type, &new.has_index_with_type)
         {
@@ -152,6 +183,76 @@ impl IndexLevel {
         for (key, old_sub) in &self.sub_index_levels {
             if let Some(new_sub) = new.sub_index_levels.get(key) {
                 if let Some(inner_path) = old_sub.find_first_ranked_change(new_sub) {
+                    return Some(format!("{} -> {}", key, inner_path));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Time-range counterpart of [`Self::find_first_countability_change`].
+    /// Recursively finds the first index path where the `time_range`
+    /// transform differs between two `IndexLevel` trees. The transform
+    /// dictates how many index entries each document produces and under
+    /// which bucket keys, so changing it after creation would leave already
+    /// stored documents indexed under stale buckets — it is immutable.
+    ///
+    /// Returns `None` if the transform is the same everywhere.
+    #[cfg(feature = "validation")]
+    pub(super) fn find_first_time_range_change(&self, new: &IndexLevel) -> Option<String> {
+        if self.time_range() != new.time_range() {
+            let fmt = |t: Option<&super::TimeRangeTransform>| match t {
+                Some(t) => format!(
+                    "Some(on: {:?}, range: {}s, step: {}s, phase: {}s)",
+                    t.source, t.range_seconds, t.step_seconds, t.phase_seconds
+                ),
+                None => "None".to_string(),
+            };
+            return Some(format!(
+                "(timeRange: {} -> {})",
+                fmt(self.time_range()),
+                fmt(new.time_range()),
+            ));
+        }
+
+        for (key, old_sub) in &self.sub_index_levels {
+            if let Some(new_sub) = new.sub_index_levels.get(key) {
+                if let Some(inner_path) = old_sub.find_first_time_range_change(new_sub) {
+                    return Some(format!("{} -> {}", key, inner_path));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Preallocation counterpart of [`Self::find_first_countability_change`].
+    /// Recursively finds the first index path where the `preallocated` flag
+    /// differs between two `IndexLevel` trees. The flag decides who creates
+    /// (and who is allowed to prune) the index's dynamic trees: turning it on
+    /// would leave every existing referenced document without preallocated
+    /// trees while its delete walker already refuses to prune, and turning it
+    /// off would let last-entry deletes prune trees a referenced document's
+    /// creator paid for as permanent structure — so it is immutable.
+    ///
+    /// Returns `None` if the flag is the same everywhere.
+    #[cfg(feature = "validation")]
+    pub(super) fn find_first_preallocated_change(&self, new: &IndexLevel) -> Option<String> {
+        if let (Some(old_info), Some(new_info)) =
+            (&self.has_index_with_type, &new.has_index_with_type)
+        {
+            if old_info.preallocated != new_info.preallocated {
+                return Some(format!(
+                    "(preallocated: {} -> {})",
+                    old_info.preallocated, new_info.preallocated,
+                ));
+            }
+        }
+
+        for (key, old_sub) in &self.sub_index_levels {
+            if let Some(new_sub) = new.sub_index_levels.get(key) {
+                if let Some(inner_path) = old_sub.find_first_preallocated_change(new_sub) {
                     return Some(format!("{} -> {}", key, inner_path));
                 }
             }

@@ -3,7 +3,7 @@ use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::Index;
+use crate::data_contract::document_type::{Index, IndexGrammarAdmissions};
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
 use crate::prelude::DataContract;
@@ -112,24 +112,25 @@ impl DataContractInSerializationFormat {
                 ) {
                     for index_value in index_values {
                         if let Ok(index_value_map) = index_value.to_map() {
-                            // Same ranked-keyword gate the document type parser
-                            // applies (`document_type_schema >= 3`, i.e. meta
-                            // schema v3 / protocol version 14). Without it a
-                            // PV14 index carrying `rankedCountable` &co. would
-                            // fail to parse here and be billed nothing, while
-                            // the identical index parses fine during
+                            // Same keyword gates the document type parser
+                            // applies, read from the one shared generation →
+                            // admission mapping. Without them a PV14 index
+                            // carrying `rankedCountable` &co. or `timeRange`
+                            // would fail to parse here and be billed nothing,
+                            // while the identical index parses fine during
                             // validation — the fee must cover every index the
                             // contract actually registers.
-                            if let Ok(index) = Index::try_from_value_map(
-                                index_value_map.as_slice(),
+                            let admissions = IndexGrammarAdmissions::for_schema_generation(
                                 platform_version
                                     .dpp
                                     .contract_versions
                                     .document_type_versions
                                     .schema
-                                    .document_type_schema
-                                    >= 3,
-                            ) {
+                                    .document_type_schema,
+                            );
+                            if let Ok(index) =
+                                Index::try_from_value_map(index_value_map.as_slice(), admissions)
+                            {
                                 let base_index_fee = if index.contested_index.is_some() {
                                     fee_version.document_type_base_contested_index_registration_fee
                                 } else if index.unique {

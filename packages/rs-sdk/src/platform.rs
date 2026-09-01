@@ -30,14 +30,19 @@ pub use dapi_grpc::platform::v0 as proto;
 pub use dash_context_provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
+pub use documents::chained_document_query::ChainedDocumentQuery;
 pub use documents::document_history_query::DocumentHistoryQuery;
 pub use documents::document_query::DocumentQuery;
+/// Sdk-bound constructors for [`DocumentQuery`]. Must be in scope to call
+/// [`DocumentQuery::new_with_data_contract_id`], which fetches the contract.
+pub use documents::DocumentQuerySdk;
 pub use dpp::{
     self as dpp,
     document::Document,
     prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
 };
 pub use drive::query::DriveDocumentQuery;
+pub use drive_proof_verifier::ChainedDocuments;
 pub use rs_dapi_client as dapi;
 pub use {
     fetch::Fetch,
@@ -45,7 +50,7 @@ pub use {
     fetch_unproved::FetchUnproved,
     query::{
         IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo,
-        RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery,
+        RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery, WireQuery,
         DEFAULT_EPOCH_QUERY_LIMIT,
     },
     query_settings::QuerySettings,

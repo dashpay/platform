@@ -16,6 +16,7 @@ use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
+use drive::query::ResolvedTimeRange;
 use drive::query::{DriveDocumentQuery, OrderClause, WhereClause};
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -125,6 +126,9 @@ impl<C> Platform<C> {
             data_contract_id,
             document_type_name,
             where_clauses,
+            // The v0 wire has no time-range operator, so nothing on this path
+            // can carry a resolved bucket equality.
+            Vec::new(),
             order_by_clauses,
             // v0 wire's `uint32` limit: `0` is the sentinel for
             // "use server default"; `> u16::MAX` is rejected.
@@ -157,6 +161,7 @@ impl<C> Platform<C> {
         data_contract_id: Vec<u8>,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: Vec<ResolvedTimeRange>,
         order_by_clauses: Vec<OrderClause>,
         limit_u32: Option<u32>,
         prove: bool,
@@ -233,7 +238,7 @@ impl<C> Platform<C> {
             Some(n) => Some(n as u16),
         };
 
-        let drive_query =
+        let mut drive_query =
             check_validation_result_with_data!(DriveDocumentQuery::from_typed_clauses(
                 where_clauses,
                 order_by_clauses,
@@ -244,7 +249,13 @@ impl<C> Platform<C> {
                 contract_ref,
                 document_type,
                 &self.config.drive,
+                platform_version,
             ));
+        // Clause parsing cannot tell a resolved bucket equality from a
+        // hand-written one, so the provenance the v1 handler established is
+        // attached here; index selection reads it to pin the query to the
+        // index that buckets the field.
+        drive_query.resolved_time_ranges = resolved_time_ranges;
 
         let response = if prove {
             let proof =
@@ -643,6 +654,7 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -716,6 +728,7 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -801,6 +814,7 @@ mod tests {
             start_at: Some(after),
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -885,6 +899,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
@@ -931,7 +946,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (
@@ -972,6 +987,7 @@ mod tests {
             start_at: Some(after.to_buffer()),
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         let where_clauses = serialize_vec_to_cbor(
@@ -1051,6 +1067,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
@@ -1097,7 +1114,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (
@@ -1138,6 +1155,7 @@ mod tests {
             start_at: Some(after.to_buffer()),
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         let where_clauses = serialize_vec_to_cbor(
@@ -1217,6 +1235,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
@@ -1257,7 +1276,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: Some(WhereClause {
+                in_clauses: vec![WhereClause {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
@@ -1267,7 +1286,7 @@ mod tests {
                         Value::U8(3),
                         Value::U8(4),
                     ]),
-                }),
+                }],
                 range_clause: None,
                 equal_clauses: BTreeMap::default(),
             },
@@ -1292,6 +1311,7 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query
@@ -1305,8 +1325,9 @@ mod tests {
             0,
             drive_document_query
                 .internal_clauses
-                .in_clause
-                .clone()
+                .in_clauses
+                .first()
+                .cloned()
                 .unwrap(),
         );
 
@@ -1375,6 +1396,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
@@ -1421,7 +1443,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: Some(WhereClause {
+                in_clauses: vec![WhereClause {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
@@ -1431,7 +1453,7 @@ mod tests {
                         Value::I64(3),
                         Value::I64(4),
                     ]),
-                }),
+                }],
                 range_clause: None,
                 equal_clauses: BTreeMap::default(),
             },
@@ -1456,6 +1478,7 @@ mod tests {
             start_at: Some(after.to_buffer()),
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query
@@ -1469,8 +1492,9 @@ mod tests {
             0,
             drive_document_query
                 .internal_clauses
-                .in_clause
-                .clone()
+                .in_clauses
+                .first()
+                .cloned()
                 .unwrap(),
         );
 
@@ -1548,6 +1572,7 @@ mod tests {
             let created_at = base_time + i * 20000;
             // Create a Document with the desired properties
             let random_document: Document = DocumentV0 {
+                contract_version: None,
                 id: Identifier::random_with_rng(&mut std_rng),
                 owner_id: Identifier::random_with_rng(&mut std_rng),
                 properties: {
@@ -1594,7 +1619,7 @@ mod tests {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: Some(WhereClause {
+                in_clauses: vec![WhereClause {
                     field: "status".to_string(),
                     operator: WhereOperator::In,
                     value: Value::Array(vec![
@@ -1604,7 +1629,7 @@ mod tests {
                         Value::I64(3),
                         Value::I64(4),
                     ]),
-                }),
+                }],
                 range_clause: None,
                 equal_clauses: BTreeMap::from([
                     (
@@ -1637,6 +1662,7 @@ mod tests {
             start_at: Some(after.to_buffer()),
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query
@@ -1650,8 +1676,9 @@ mod tests {
             0,
             drive_document_query
                 .internal_clauses
-                .in_clause
-                .clone()
+                .in_clauses
+                .first()
+                .cloned()
                 .unwrap(),
         );
 

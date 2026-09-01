@@ -102,6 +102,8 @@ jobs:
               - packages/js-dash-sdk/**
               - packages/wallet-lib/**
               - packages/wasm-sdk/**
+              - packages/wasm-dpp2/**
+              - packages/js-evo-sdk/**
               - packages/dapi/.env.example
               - packages/rs-drive-abci/.env.local
               - .github/actions/aws_ecr_login/**
@@ -491,7 +493,9 @@ jobs:
       package: ${{ matrix.js-package }}
       # The platform test suite's default command drives a live network, so it
       # runs from the E2E jobs. Its unit tests need nothing and run here.
-      test-command: ${{ (matrix.js-package == 'dashmate' || contains(matrix.js-package, 'platform-test-suite')) && 'test:unit' || 'test' }}
+      # Dashmate also runs its integration tests here: they need Docker, which
+      # this runner has, but not a live network.
+      test-command: ${{ matrix.js-package == 'dashmate' && 'test:ci' || (contains(matrix.js-package, 'platform-test-suite') && 'test:unit' || 'test') }}
       direct-packages: ${{ needs.changes.outputs.js-packages-direct }}
 
   js-deps-versions:
