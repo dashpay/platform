@@ -195,26 +195,26 @@ extern "C" {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DocumentsQueryInput {
-    data_contract_id: IdentifierWasm,
-    document_type_name: String,
+pub(super) struct DocumentsQueryInput {
+    pub(super) data_contract_id: IdentifierWasm,
+    pub(super) document_type_name: String,
     #[serde(rename = "where", default)]
-    where_clauses: Option<Vec<JsonValue>>,
+    pub(super) where_clauses: Option<Vec<JsonValue>>,
     #[serde(rename = "orderBy", default)]
-    order_by: Option<Vec<JsonValue>>,
+    pub(super) order_by: Option<Vec<JsonValue>>,
     #[serde(default)]
-    limit: Option<u32>,
+    pub(super) limit: Option<u32>,
     #[serde(rename = "startAfter", default)]
-    start_after: Option<IdentifierWasm>,
+    pub(super) start_after: Option<IdentifierWasm>,
     #[serde(rename = "startAt", default)]
-    start_at: Option<IdentifierWasm>,
+    pub(super) start_at: Option<IdentifierWasm>,
     /// Count-query knob: SQL-shaped `GROUP BY` field list,
     /// mirroring the v1 wire `group_by: repeated string` field
     /// one-to-one. Ignored by the regular document-fetch path.
     /// See the TypeScript declaration for the supported shapes.
     /// Default empty (aggregate count).
     #[serde(rename = "groupBy", default)]
-    group_by: Option<Vec<String>>,
+    pub(super) group_by: Option<Vec<String>>,
     // Order direction for count results flows through the existing
     // `orderBy` field — the first clause's direction controls
     // split-mode entry ordering and `(In + prove)` walk order. No
@@ -222,7 +222,7 @@ struct DocumentsQueryInput {
     /// Time-range bucket selections (`IN_TIME_RANGE`), each `{ field,
     /// selector }`. v1-only; resolved server-side from block time.
     #[serde(rename = "timeRange", default)]
-    time_range: Option<Vec<JsonValue>>,
+    pub(super) time_range: Option<Vec<JsonValue>>,
 }
 
 #[derive(Deserialize)]
@@ -255,7 +255,7 @@ fn parse_document_history_query(
     })
 }
 
-async fn build_documents_query(
+pub(super) async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
