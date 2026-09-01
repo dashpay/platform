@@ -2303,23 +2303,24 @@ mod shield_input_selection_tests {
 
     #[test]
     fn regression_reports_max_from_usable_suffix_not_total_account_balance() {
-        // Real account snapshot: the leading address is below the reserve, so
+        // Account snapshot whose leading address cannot pay the fee, so
         // capacity must come from the usable suffix, not the account total.
-        assert!(
-            297_264_780 <= reserve(),
-            "regression shape requires the leading address to stay below the reserve; \
-             re-seed the balances if the versioned reserve drops under 297_264_780"
-        );
+        // The leading balance is derived from the reserve — one credit below
+        // the strict `> reserve` viability threshold, the largest balance that
+        // must still be rejected as input 0 — so the shape holds whatever the
+        // versioned fee schedule does next.
+        let dust = reserve() - 1;
+        let usable = 3_623_849_220;
         let candidates = vec![
-            (addr(1), 297_264_780),
+            (addr(1), dust),
             (addr(2), 2_000_000_000),
             (addr(3), 1_623_849_220),
         ];
         let plan = plan(candidates).unwrap();
-        let expected_max = 3_623_849_220 - reserve();
+        let expected_max = usable - reserve();
 
-        assert_eq!(plan.preflight.account_balance_credits, 3_921_114_000);
-        assert_eq!(plan.preflight.usable_balance_credits, 3_623_849_220);
+        assert_eq!(plan.preflight.account_balance_credits, dust + usable);
+        assert_eq!(plan.preflight.usable_balance_credits, usable);
         assert_eq!(plan.preflight.fee_reserve_credits, reserve());
         assert_eq!(plan.preflight.max_shieldable_credits, expected_max);
         assert!(plan.preflight.can_shield);
@@ -2329,11 +2330,13 @@ mod shield_input_selection_tests {
         assert!(!chosen.contains_key(&addr(1)));
         assert_eq!(chosen.values().sum::<u64>(), expected_max);
 
+        // `available` reports the usable suffix, never the account total —
+        // the whole point of the regression.
         let err = plan.select_inputs(expected_max + 1).unwrap_err();
         assert!(matches!(
             err,
             PlatformWalletError::PlatformShieldCapacityExceeded { available, required }
-                if available == 3_623_849_220 && required == 3_623_849_221
+                if available == usable && required == usable + 1
         ));
     }
 
