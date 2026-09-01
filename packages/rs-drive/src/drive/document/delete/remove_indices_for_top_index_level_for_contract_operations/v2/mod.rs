@@ -117,6 +117,20 @@ impl Drive {
             let property_name_tree_type = tree_types.property_name_tree_type;
             let value_tree_type = tree_types.value_tree_type;
 
+            // Mirror of the insert walker's ephemeral routing: removals
+            // under a TTL'd sub-level ride the ephemeral batch and are
+            // consumed at the ephemeral price — their elements carry no
+            // storage flags, so removal is basic and yields no refunds.
+            let sub_level_is_ephemeral = sub_level
+                .time_range()
+                .is_some_and(|transform| transform.ttl_seconds.is_some());
+            let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
+            let index_storage_flags = if sub_level_is_ephemeral {
+                None
+            } else {
+                storage_flags
+            };
+
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -193,7 +207,7 @@ impl Drive {
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
                             estimated_sum_trees_for_value_tree_type(value_tree_type),
-                            storage_flags.map(|s| s.serialized_size()),
+                            index_storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
                 );
@@ -284,6 +298,12 @@ impl Drive {
                 index_path_info.push(index_key)?;
                 // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> =
+                    if sub_level_is_ephemeral {
+                        &mut ephemeral_local_operations
+                    } else {
+                        &mut *batch_operations
+                    };
                 self.remove_indices_for_index_level_for_contract_operations(
                     document_and_contract_info,
                     index_path_info,
@@ -291,15 +311,23 @@ impl Drive {
                     any_fields_null,
                     all_fields_null,
                     value_tree_type,
-                    &storage_flags,
+                    &index_storage_flags,
                     previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     skip_missing_expired_entry,
                     event_id,
                     transaction,
-                    batch_operations,
+                    index_batch_operations,
                     platform_version,
                 )?;
+            }
+
+            if sub_level_is_ephemeral {
+                batch_operations.extend(
+                    ephemeral_local_operations
+                        .into_iter()
+                        .map(LowLevelDriveOperation::retag_ephemeral),
+                );
             }
         }
         Ok(())

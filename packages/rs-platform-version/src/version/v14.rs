@@ -22,7 +22,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DR
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::fee::v2::FEE_VERSION2;
+use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
 use crate::version::system_limits::v5::SYSTEM_LIMITS_V5;
@@ -222,7 +222,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
-    fee_version: FEE_VERSION2,
+    fee_version: FEE_VERSION3, // changed: TTL ephemeral-bytes storage rate (270 credits/byte to processing)
     system_limits: SYSTEM_LIMITS_V5, // changed: daily withdrawal 15% of total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (8)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,

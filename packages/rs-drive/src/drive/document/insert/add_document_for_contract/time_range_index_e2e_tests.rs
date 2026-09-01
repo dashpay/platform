@@ -27,9 +27,11 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 /// One hour in each of the two units these tests deal in: `*_SECONDS`
@@ -2473,6 +2475,17 @@ fn build_ttl_contract_with_index_keys(
     seed: u8,
     extra_index_keys: Vec<(Value, Value)>,
 ) -> DataContract {
+    build_time_range_contract_with_index_keys(seed, Some(4 * HOUR_SECONDS), extra_index_keys)
+}
+
+/// Same contract shape with the TTL declaration as the only degree of
+/// freedom, so a TTL'd index and its standing twin are byte-for-byte
+/// comparable in fee tests.
+fn build_time_range_contract_with_index_keys(
+    seed: u8,
+    ttl_seconds: Option<u64>,
+    extra_index_keys: Vec<(Value, Value)>,
+) -> DataContract {
     let factory =
         DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
     let mut index_map = vec![
@@ -2502,10 +2515,15 @@ fn build_ttl_contract_with_index_keys(
                     Value::Text("step".to_string()),
                     Value::U64(2 * HOUR_SECONDS),
                 ),
-                (Value::Text("ttl".to_string()), Value::U64(4 * HOUR_SECONDS)),
             ]),
         ),
     ];
+    if let Some(ttl) = ttl_seconds {
+        let Some((_, Value::Map(time_range_map))) = index_map.last_mut() else {
+            panic!("timeRange map is the last base index key");
+        };
+        time_range_map.push((Value::Text("ttl".to_string()), Value::U64(ttl)));
+    }
     index_map.extend(extra_index_keys);
     let document_schema = platform_value!({
         "type": "object",
@@ -3083,5 +3101,193 @@ fn ttl_update_only_write_drains_expired_buckets() {
     assert!(
         !bucket_stands,
         "an update-only write must drain the expired bucket"
+    );
+}
+
+/// The ephemeral-bytes fee reclassification, measured against a standing
+/// twin: two contracts identical byte-for-byte except that one declares a
+/// `ttl`. The TTL'd insert's index bytes must leave the storage fee (only
+/// the primary document row still bills there) and land in processing at
+/// the ephemeral-bytes rate; deleting the document must refund strictly
+/// less, because flagless ephemeral index bytes have nothing to refund.
+/// Estimation stays an upper bound in both classes through the split
+/// batch.
+#[test]
+fn ttl_index_bytes_bill_to_processing_without_refunds() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let index_keys = || {
+        vec![
+            (
+                Value::Text("countable".to_string()),
+                Value::Text("countable".to_string()),
+            ),
+            (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+            (
+                Value::Text("rankedCountable".to_string()),
+                Value::Bool(true),
+            ),
+        ]
+    };
+    let ttl_contract =
+        build_time_range_contract_with_index_keys(217, Some(4 * HOUR_SECONDS), index_keys());
+    let standing_contract = build_time_range_contract_with_index_keys(218, None, index_keys());
+    // Same document schema with no indexes at all: its insert pays for the
+    // primary document row alone, giving the exact storage fee a TTL'd
+    // contract must match if its index bytes truly bill zero storage.
+    let index_free_contract = {
+        let factory =
+            DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "hashtag": {"type": "string", "maxLength": 59, "position": 0},
+                "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 1},
+            },
+            "required": ["hashtag", "amount", "$createdAt"],
+            "additionalProperties": false,
+        });
+        factory
+            .create_with_value_config(
+                Identifier::from([219u8; 32]),
+                0,
+                platform_value!({ "post": document_schema }),
+                None,
+                None,
+            )
+            .expect("contract registers")
+            .data_contract_owned()
+    };
+    for contract in [&ttl_contract, &standing_contract, &index_free_contract] {
+        drive
+            .apply_contract(
+                contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+    }
+
+    let t0 = 5_000 * HOUR_MS;
+    let block_info = BlockInfo {
+        time_ms: t0,
+        ..Default::default()
+    };
+    let make_doc = || -> Document {
+        Document::V0(DocumentV0 {
+            id: Identifier::from(fixture_bytes(17, t0, "twin")),
+            owner_id: Identifier::from(fixture_bytes(18, t0, "twin")),
+            properties: BTreeMap::from([
+                ("hashtag".to_string(), Value::Text("twin".to_string())),
+                ("amount".to_string(), Value::U64(5)),
+            ]),
+            created_at: Some(t0),
+            revision: Some(1),
+            ..Default::default()
+        })
+    };
+    let add = |contract: &DataContract, apply: bool| -> FeeResult {
+        let document = make_doc();
+        let owner_bytes = document.owner_id().to_buffer();
+        // Owner-carrying flags, so standing index bytes produce visible
+        // refunds on delete — the contrast the TTL side must not show.
+        let storage_flags = Cow::Owned(StorageFlags::SingleEpochOwned(0, owner_bytes));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, Some(storage_flags))),
+                        owner_id: Some(owner_bytes),
+                    },
+                    contract,
+                    document_type: contract.document_type_for_name("post").expect("post"),
+                },
+                false,
+                block_info,
+                apply,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("add document")
+    };
+
+    let ttl_estimated = add(&ttl_contract, false);
+    let ttl_insert = add(&ttl_contract, true);
+    let standing_insert = add(&standing_contract, true);
+    let index_free_insert = add(&index_free_contract, true);
+
+    assert!(
+        ttl_insert.storage_fee < standing_insert.storage_fee,
+        "TTL'd index bytes must leave the storage fee: {} vs standing {}",
+        ttl_insert.storage_fee,
+        standing_insert.storage_fee
+    );
+    assert!(
+        ttl_insert.storage_fee > 0,
+        "the primary document row still bills to storage"
+    );
+    assert!(
+        ttl_insert.processing_fee > standing_insert.processing_fee,
+        "the ephemeral-bytes rate must land in processing: {} vs standing {}",
+        ttl_insert.processing_fee,
+        standing_insert.processing_fee
+    );
+    assert_eq!(
+        ttl_insert.storage_fee, index_free_insert.storage_fee,
+        "with a TTL, index writes must contribute exactly zero storage: the \
+         storage fee must equal an index-free contract's"
+    );
+    assert!(
+        ttl_estimated.storage_fee >= ttl_insert.storage_fee
+            && ttl_estimated.processing_fee >= ttl_insert.processing_fee,
+        "estimation must stay an upper bound in both fee classes through the \
+         split batch: estimated ({}, {}) vs actual ({}, {})",
+        ttl_estimated.storage_fee,
+        ttl_estimated.processing_fee,
+        ttl_insert.storage_fee,
+        ttl_insert.processing_fee
+    );
+
+    let doc_id = make_doc().id();
+    let delete = |contract: &DataContract| -> FeeResult {
+        drive
+            .delete_document_for_contract(
+                doc_id,
+                contract,
+                "post",
+                block_info,
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("delete document")
+    };
+    let ttl_delete = delete(&ttl_contract);
+    let standing_delete = delete(&standing_contract);
+    let index_free_delete = delete(&index_free_contract);
+    let refund_total = |fee_result: &FeeResult| -> u64 {
+        fee_result
+            .fee_refunds
+            .clone()
+            .sum_per_epoch()
+            .into_values()
+            .sum()
+    };
+    assert!(
+        refund_total(&ttl_delete) < refund_total(&standing_delete),
+        "flagless ephemeral index bytes must not refund: ttl {} vs standing {}",
+        refund_total(&ttl_delete),
+        refund_total(&standing_delete)
+    );
+    assert_eq!(
+        refund_total(&ttl_delete),
+        refund_total(&index_free_delete),
+        "a TTL'd delete refunds exactly the primary document row — the same \
+         as a contract with no indexes at all"
     );
 }

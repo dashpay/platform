@@ -8,4 +8,7 @@ pub const FEE_STORAGE_VERSION1: FeeStorageVersion = FeeStorageVersion {
     storage_load_credit_per_byte: 20,
     non_storage_load_credit_per_byte: 10,
     storage_seek_cost: 2000,
+    // Unreachable before protocol v14 (the `ttl` grammar does not parse),
+    // so the pre-v14 table carries no rate.
+    ttl_ephemeral_disk_usage_credit_per_byte: 0,
 };

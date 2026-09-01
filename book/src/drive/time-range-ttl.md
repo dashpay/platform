@@ -7,13 +7,6 @@ shares. The storage primitive underneath is grovedb's flat-subtree drop
 landed in grovedb PR #849); see
 [the storage section](#grovedb-dependency-flat-subtree-drop).
 
-> **Fee model status**: the ephemeral-bytes fee reclassification described
-> below — billing TTL'd bytes as processing instead of storage, with no
-> storage flags and no refunds — is **planned, not yet implemented**.
-> Today TTL'd entries bill exactly like any other index entry; drainage
-> itself is unbilled system maintenance. The sections below describe the
-> target model where they say so explicitly.
-
 ## Motivation
 
 A `timeRange` index stores every document once per containing window, and
@@ -47,12 +40,11 @@ window is provably absent, exactly like a window that never held
 documents; during the drainage lag an expired-but-not-yet-drained window
 can still serve its remaining contents to an absolute (`byStart`) query
 — correct answers about current state, within the "at most `ttl` plus
-lag" lifetime. In the target fee model (see the status note above),
-everything written under the index's grid-qualified level bills as
-**processing, not storage** — including the transitional bytes — at an
-ephemeral-bytes rate.
+lag" lifetime. Everything written under the index's grid-qualified level
+bills as **processing, not storage** — including the transitional bytes
+— at an ephemeral-bytes rate.
 
-### Why the planned fee reclassification is honest, not a subsidy
+### Why the fee reclassification is honest, not a subsidy
 
 Storage fees prepay retention distributed across future epochs — decades
 of it. A byte that provably lives at most one week consumes on the order
@@ -62,9 +54,9 @@ week of disk occupancy, which a flat per-byte processing surcharge covers
 safely *because `ttl` is capped*. Version 1 caps it at **one week**
 (`SystemLimits::max_time_range_ttl_seconds = 604 800`).
 
-The load-bearing simplification of the target model: **TTL'd subtrees
-will never create refundable storage.** No `StorageFlags`, no
-owner/epoch refund entries. That single property pays off three times:
+The load-bearing simplification: **TTL'd subtrees never create
+refundable storage.** No `StorageFlags`, no owner/epoch refund entries.
+That single property pays off three times:
 
 1. the fee reroute needs no refund-ledger reconciliation;
 2. cleanup owes nobody anything;
@@ -180,25 +172,28 @@ may have interrupted.
 
 ## Fee mechanics
 
-**Today (shipped):** TTL'd index entries bill exactly like any other
-index entries. Drainage and the walkers' TTL bookkeeping reads are
-**unbilled**: their costs go to scratch accounting, never to the
-triggering user. That is load-bearing for the `estimated >= actual` fee
-invariant — the estimation dry run cannot read state and therefore
-cannot price state-dependent drainage, so billing it only on execution
-would let a transition pass validation and then overdraw on apply. The
-unbilled work is bounded: a capped count of O(1) drop operations plus a
-handful of bounded reads per write.
+Write operations targeting a TTL'd index's subtrees are classified
+**ephemeral**: the walkers route them into a separate operation batch
+(`LowLevelDriveOperation::EphemeralGroveOperation`), applied after the
+standing batch, whose captured cost is consumed on its own terms — added
+bytes bill to **processing** at
+`FeeStorageVersion::ttl_ephemeral_disk_usage_credit_per_byte`
+(270 credits/byte, 1% of the storage rate, ~27× a pro-rata week of
+retention) and the storage fee contribution is **zero**. The elements
+carry no storage flags, so deletion — the TTL drain or a user delete of
+a not-yet-expired document — is basic removal with no refund entries:
+there is nothing to refund, which is also where TTL writers collectively
+pre-pay the drainage described below. Cost estimation routes through the
+same split, so estimated and actual fees stay in the same class.
 
-**Planned:** write operations targeting a TTL'd index's subtrees are
-classified ephemeral — their added bytes bill to processing at an
-ephemeral-bytes rate (a fee-version constant) instead of to storage, and
-the elements carry no storage flags. Deletion (both the TTL drain and a
-user delete of a not-yet-expired document) generates no refunds — there
-is nothing to refund — which is also where TTL writers collectively
-pre-pay the drainage that is unbilled per-write today. Cost estimation
-mirrors the same classification so estimated and actual fees stay in the
-same class.
+Drainage itself and the walkers' TTL bookkeeping reads are **unbilled**:
+their costs go to scratch accounting, never to the triggering user. That
+is load-bearing for the `estimated >= actual` fee invariant — the
+estimation dry run cannot read state and therefore cannot price
+state-dependent drainage, so billing it only on execution would let a
+transition pass validation and then overdraw on apply. The unbilled work
+is bounded: a capped count of O(1) drop operations plus a handful of
+bounded reads per write.
 
 ## Queries
 
@@ -217,7 +212,8 @@ all.
 ## Versioning
 
 Everything rides the still-unreleased PV14 grammar: the `ttl` key joins
-the meta-schema v3 `timeRange` map and the two limits join a new
-`SystemLimits` version. (The planned ephemeral-bytes fee constant will
-join the PV14 fee table with the fee reclassification.) No migration
-story exists or is needed.
+the meta-schema v3 `timeRange` map, the two limits join a new
+`SystemLimits` version, and the ephemeral-bytes rate joins the PV14 fee
+table (`FEE_VERSION3`, which keeps `fee_version_number: 1` — the number
+tags the refund algorithm, which is unchanged). No migration story
+exists or is needed.

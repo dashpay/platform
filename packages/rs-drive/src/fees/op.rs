@@ -13,13 +13,14 @@ use grovedb::element::IndexAxis;
 use grovedb::element::MaxReferenceHop;
 use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags, TreeType};
 use grovedb_costs::OperationCost;
-use itertools::Itertools;
 
 use crate::error::drive::DriveError;
+use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::get_overflow_error;
 use crate::fees::op::LowLevelDriveOperation::{
-    CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
+    CalculatedCostOperation, CalculatedEphemeralCostOperation, EphemeralGroveOperation,
+    FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::storage_flags::StorageFlags;
@@ -205,10 +206,24 @@ impl FunctionOp {
 pub enum LowLevelDriveOperation {
     /// Grove operation
     GroveOperation(QualifiedGroveDbOp),
+    /// A grove operation targeting a TTL'd `timeRange` index subtree.
+    /// Applied in its own batch and consumed at the EPHEMERAL price:
+    /// added bytes bill to processing at the fee table's
+    /// `ttl_ephemeral_disk_usage_credit_per_byte` instead of to storage
+    /// (the bytes provably live at most `ttl` plus a bounded drainage
+    /// lag), and removals produce no refunds — TTL elements carry no
+    /// storage flags. Produced only by the document index walkers for
+    /// sub-levels whose transform declares a `ttl`; unreachable before
+    /// protocol v14, where the grammar does not parse.
+    EphemeralGroveOperation(QualifiedGroveDbOp),
     /// A drive operation
     FunctionOperation(FunctionOp),
     /// Calculated cost operation
     CalculatedCostOperation(OperationCost),
+    /// The applied cost of an ephemeral (TTL'd-subtree) batch — same
+    /// pricing rule as [`Self::EphemeralGroveOperation`], carrying the
+    /// cost the batch application (or its estimation) actually returned.
+    CalculatedEphemeralCostOperation(OperationCost),
     /// Pre Calculated Fee Result
     PreCalculatedFeeResult(FeeResult),
 }
@@ -259,6 +274,46 @@ impl LowLevelDriveOperation {
                     processing_fee: op.cost(fee_version),
                     ..Default::default()
                 }),
+                CalculatedEphemeralCostOperation(cost) => {
+                    // TTL'd-subtree bytes: the added bytes bill to
+                    // PROCESSING at the ephemeral rate instead of to
+                    // storage — they provably live at most `ttl` plus a
+                    // bounded drainage lag, so the perpetual-retention
+                    // storage price does not apply. No refunds by
+                    // construction: TTL elements carry no storage flags,
+                    // so their removal can only ever be basic.
+                    let ephemeral_bytes_fee = (cost.storage_cost.added_bytes as u64)
+                        .checked_mul(
+                            fee_version
+                                .storage
+                                .ttl_ephemeral_disk_usage_credit_per_byte,
+                        )
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow pricing ephemeral bytes",
+                        )))?;
+                    let processing_fee = cost
+                        .ephemeral_cost(fee_version)?
+                        .checked_add(ephemeral_bytes_fee)
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow adding ephemeral bytes fee",
+                        )))?;
+                    let removed_bytes_from_system = match cost.storage_cost.removed_bytes {
+                        NoStorageRemoval => 0,
+                        BasicStorageRemoval(amount) => amount,
+                        SectionedStorageRemoval(_) => {
+                            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "TTL'd subtrees carry no storage flags, so an ephemeral \
+                                 batch cannot produce sectioned (refundable) removal",
+                            )))
+                        }
+                    };
+                    Ok(FeeResult {
+                        storage_fee: 0,
+                        processing_fee,
+                        fee_refunds: FeeRefunds::default(),
+                        removed_bytes_from_system,
+                    })
+                }
                 _ => {
                     let cost = operation.operation_cost()?;
                     // There is no need for a checked multiply here because added bytes are u64 and
@@ -315,10 +370,12 @@ impl LowLevelDriveOperation {
     /// Returns the cost of this operation
     pub fn operation_cost(self) -> Result<OperationCost, Error> {
         match self {
-            GroveOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "grove operations must be executed, not directly transformed to costs",
-            ))),
-            CalculatedCostOperation(c) => Ok(c),
+            GroveOperation(_) | EphemeralGroveOperation(_) => {
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "grove operations must be executed, not directly transformed to costs",
+                )))
+            }
+            CalculatedCostOperation(c) | CalculatedEphemeralCostOperation(c) => Ok(c),
             PreCalculatedFeeResult(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "pre calculated fees should not be requested by operation costs",
             ))),
@@ -371,16 +428,50 @@ impl LowLevelDriveOperation {
     pub fn grovedb_operations_batch_consume_with_leftovers(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> (GroveDbOpBatch, Vec<LowLevelDriveOperation>) {
-        let (grove_operations, other_operations): (Vec<_>, Vec<_>) =
-            insert_operations.into_iter().partition_map(|op| match op {
-                GroveOperation(grovedb_op) => itertools::Either::Left(grovedb_op),
-                _ => itertools::Either::Right(op),
-            });
+        let (batch, ephemeral_batch, other_operations) =
+            Self::grovedb_operations_batch_consume_split_ephemeral(insert_operations);
+        debug_assert!(
+            ephemeral_batch.is_empty(),
+            "ephemeral grove operations must go through the ephemeral-aware apply"
+        );
+        (batch, other_operations)
+    }
 
+    /// Splits operations three ways: the ordinary grove batch, the
+    /// ephemeral (TTL'd-subtree) grove batch — applied separately so its
+    /// cost can be consumed at the ephemeral price — and every
+    /// non-grove leftover.
+    pub fn grovedb_operations_batch_consume_split_ephemeral(
+        insert_operations: Vec<LowLevelDriveOperation>,
+    ) -> (GroveDbOpBatch, GroveDbOpBatch, Vec<LowLevelDriveOperation>) {
+        let mut grove_operations = vec![];
+        let mut ephemeral_operations = vec![];
+        let mut other_operations = vec![];
+        for op in insert_operations {
+            match op {
+                GroveOperation(grovedb_op) => grove_operations.push(grovedb_op),
+                EphemeralGroveOperation(grovedb_op) => ephemeral_operations.push(grovedb_op),
+                other => other_operations.push(other),
+            }
+        }
         (
             GroveDbOpBatch::from_operations(grove_operations),
+            GroveDbOpBatch::from_operations(ephemeral_operations),
             other_operations,
         )
+    }
+
+    /// Re-tag an operation as targeting a TTL'd (ephemeral) subtree, so
+    /// its bytes are consumed at the ephemeral price. Grove operations
+    /// move to their ephemeral batch; already-calculated costs keep their
+    /// numbers under the ephemeral consumption rule; fee results pass
+    /// through untouched (nothing byte-priced remains in them).
+    pub fn retag_ephemeral(self) -> LowLevelDriveOperation {
+        match self {
+            GroveOperation(grovedb_op) => EphemeralGroveOperation(grovedb_op),
+            CalculatedCostOperation(cost) => CalculatedEphemeralCostOperation(cost),
+            other => other,
+        }
     }
 
     /// Filters the groveDB ops from a list of operations and collects them in a `Vec<QualifiedGroveDbOp>`.

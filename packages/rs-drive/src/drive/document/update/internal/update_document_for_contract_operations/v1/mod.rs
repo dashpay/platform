@@ -384,6 +384,45 @@ impl Drive {
             // transform is exactly the grid every index sharing this level
             // declared.)
             if let Some(transform) = current_index_level.time_range() {
+                // TTL'd (ephemeral) sub-levels ride their own op batch and carry
+                // no storage flags — same routing as the insert and delete
+                // walkers; see the ttl module's Billing section.
+                let index_is_ephemeral = transform.ttl_seconds.is_some();
+                let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> = if index_is_ephemeral
+                {
+                    &mut ephemeral_local_operations
+                } else {
+                    &mut batch_operations
+                };
+                let index_storage_flags = if index_is_ephemeral {
+                    None
+                } else {
+                    storage_flags
+                };
+                // The prebuilt reference bakes the document's flags into the
+                // element; ephemeral references must be flagless or their
+                // later removal turns sectioned (refundable).
+                let index_document_reference = if index_is_ephemeral {
+                    if let Some(sum_property_name) = &index.summable {
+                        let sum_value =
+                            read_document_sum_contribution(document, sum_property_name)?;
+                        make_document_reference_with_sum_item(
+                            document,
+                            document_and_contract_info.document_type,
+                            sum_value,
+                            None,
+                        )
+                    } else {
+                        make_document_reference(
+                            document,
+                            document_and_contract_info.document_type,
+                            None,
+                        )
+                    }
+                } else {
+                    index_document_reference
+                };
                 self.update_time_range_index_for_contract_operations_v1(
                     index,
                     transform,
@@ -394,14 +433,21 @@ impl Drive {
                     &index_path,
                     current_index_level,
                     &index_document_reference,
-                    storage_flags,
+                    index_storage_flags,
                     &mut batch_insertion_cache,
                     previous_batch_operations,
-                    &mut batch_operations,
+                    index_batch_operations,
                     block_info.time_ms,
                     transaction,
                     platform_version,
                 )?;
+                if index_is_ephemeral {
+                    batch_operations.extend(
+                        ephemeral_local_operations
+                            .into_iter()
+                            .map(LowLevelDriveOperation::retag_ephemeral),
+                    );
+                }
                 continue;
             }
 
