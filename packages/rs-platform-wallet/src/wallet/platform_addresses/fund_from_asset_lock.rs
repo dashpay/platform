@@ -36,11 +36,16 @@ use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dash_sdk::query_types::AddressInfos;
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
+use dpp::state_transition::address_funding_from_asset_lock_transition::calculate_address_funding_from_asset_lock_min_required_fee;
+use dpp::version::PlatformVersion;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::PlatformP2PKHAddress;
 use std::collections::BTreeMap;
+
+const ADDRESS_FUNDING_FROM_ASSET_LOCK_INPUT_COUNT: usize = 0;
 
 impl PlatformAddressWallet {
     /// Fund platform addresses from a Core L1 asset lock, with the
@@ -290,6 +295,16 @@ impl PlatformAddressWallet {
         // `remainder_fee_strategy` for why a positional index cannot be
         // computed correctly outside this layer.
         let fee_strategy = remainder_fee_strategy(&addresses)?;
+
+        // Step 1c: a fresh L1 asset lock is single-use and
+        // non-refundable. Reject or floor it before build/broadcast if
+        // it cannot satisfy DPP's static admission fee for this
+        // address-funding transition shape.
+        let funding = enforce_asset_lock_amount_covers_address_funding_floor(
+            funding,
+            addresses.len(),
+            self.sdk.version(),
+        )?;
 
         // Step 2: resolve funding. `AssetLockAddressTopUp` selects the
         // BIP44 funding family for the Core asset-lock tx. The
@@ -620,6 +635,59 @@ fn remainder_fee_strategy(
     Ok(vec![AddressFundsFeeStrategyStep::ReduceOutput(index)])
 }
 
+fn enforce_asset_lock_amount_covers_address_funding_floor(
+    funding: AssetLockFunding,
+    output_count: usize,
+    platform_version: &PlatformVersion,
+) -> Result<AssetLockFunding, PlatformWalletError> {
+    let required = minimum_address_funding_asset_lock_duffs(output_count, platform_version);
+
+    match funding {
+        AssetLockFunding::FromWalletBalance {
+            amount_duffs,
+            account_index,
+        } => {
+            if amount_duffs < required {
+                return Err(PlatformWalletError::AssetLockInsufficientFunds {
+                    available: amount_duffs,
+                    required,
+                });
+            }
+            Ok(AssetLockFunding::FromWalletBalance {
+                amount_duffs,
+                account_index,
+            })
+        }
+        AssetLockFunding::DrainAccountBalance {
+            account,
+            minimum_lock_duffs,
+        } => Ok(AssetLockFunding::DrainAccountBalance {
+            account,
+            minimum_lock_duffs: Some(
+                minimum_lock_duffs.map_or(required, |floor| floor.max(required)),
+            ),
+        }),
+        funding @ AssetLockFunding::FromExistingAssetLock { .. } => Ok(funding),
+    }
+}
+
+/// Minimum L1 asset-lock value that can pass DPP's count-based
+/// `AddressFundingFromAssetLock` admission-floor fee check.
+fn minimum_address_funding_asset_lock_duffs(
+    output_count: usize,
+    platform_version: &PlatformVersion,
+) -> u64 {
+    ceil_credits_to_duffs(calculate_address_funding_from_asset_lock_min_required_fee(
+        ADDRESS_FUNDING_FROM_ASSET_LOCK_INPUT_COUNT,
+        output_count,
+        platform_version,
+    ))
+}
+
+fn ceil_credits_to_duffs(credits: Credits) -> u64 {
+    credits / CREDITS_PER_DUFF + u64::from(credits % CREDITS_PER_DUFF != 0)
+}
+
 /// Pre-flight check for the recipient address map:
 /// - Non-empty
 /// - Exactly one `None`-amount entry (the remainder recipient)
@@ -804,6 +872,75 @@ fn validate_address_infos_complete(
 mod tests {
     use super::*;
     use dash_sdk::query_types::AddressInfo;
+    use dpp::version::LATEST_PLATFORM_VERSION;
+
+    #[derive(Debug)]
+    struct NullAddressSigner;
+
+    #[async_trait::async_trait]
+    impl Signer<PlatformAddress> for NullAddressSigner {
+        async fn sign(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            unreachable!("underfunded fresh asset lock must fail before address signing")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("underfunded fresh asset lock must fail before address signing")
+        }
+
+        fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
+            false
+        }
+    }
+
+    struct NullAssetLockSigner;
+
+    #[async_trait::async_trait]
+    impl key_wallet::signer::Signer for NullAssetLockSigner {
+        type Error = String;
+
+        fn supported_methods(&self) -> &[key_wallet::signer::SignerMethod] {
+            &[]
+        }
+
+        async fn sign_ecdsa(
+            &self,
+            _path: &key_wallet::DerivationPath,
+            _sighash: [u8; 32],
+        ) -> Result<
+            (
+                dashcore::secp256k1::ecdsa::Signature,
+                dashcore::secp256k1::PublicKey,
+            ),
+            Self::Error,
+        > {
+            unreachable!("underfunded fresh asset lock must fail before asset-lock signing")
+        }
+
+        async fn public_key(
+            &self,
+            _path: &key_wallet::DerivationPath,
+        ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
+            unreachable!("underfunded fresh asset lock must fail before asset-lock signing")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl key_wallet::signer::ExtendedPubKeySigner for NullAssetLockSigner {
+        async fn extended_public_key(
+            &self,
+            _path: &key_wallet::DerivationPath,
+        ) -> Result<key_wallet::bip32::ExtendedPubKey, Self::Error> {
+            unreachable!("underfunded fresh asset lock must fail before xpub export")
+        }
+    }
 
     fn p2pkh(b: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([b; 20])
@@ -1112,6 +1249,197 @@ mod tests {
             format!("{err}").contains("exactly one remainder"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn address_funding_floor_rounds_credits_up_to_duffs() {
+        assert_eq!(ceil_credits_to_duffs(0), 0);
+        assert_eq!(ceil_credits_to_duffs(CREDITS_PER_DUFF), 1);
+        assert_eq!(ceil_credits_to_duffs(CREDITS_PER_DUFF + 1), 2);
+    }
+
+    #[test]
+    fn address_funding_floor_uses_current_dpp_min_fee_for_output_count() {
+        assert_eq!(
+            minimum_address_funding_asset_lock_duffs(1, LATEST_PLATFORM_VERSION),
+            56_000
+        );
+        assert_eq!(
+            minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION),
+            62_000
+        );
+    }
+
+    #[test]
+    fn fresh_asset_lock_floor_rejects_undersized_exact_amount() {
+        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let funding = AssetLockFunding::FromWalletBalance {
+            amount_duffs: required - 1,
+            account_index: 0,
+        };
+
+        let err = enforce_asset_lock_amount_covers_address_funding_floor(
+            funding,
+            2,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect_err("fresh asset lock below the admission floor must be rejected");
+
+        match err {
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required: actual_required,
+            } => {
+                assert_eq!(available, required - 1);
+                assert_eq!(actual_required, required);
+            }
+            other => panic!("expected AssetLockInsufficientFunds, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fresh_asset_lock_floor_accepts_exact_minimum() {
+        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let funding = AssetLockFunding::FromWalletBalance {
+            amount_duffs: required,
+            account_index: 0,
+        };
+
+        let funding = enforce_asset_lock_amount_covers_address_funding_floor(
+            funding,
+            2,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("DPP rejects only amounts below the admission floor");
+
+        assert!(matches!(
+            funding,
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs,
+                account_index: 0
+            } if amount_duffs == required
+        ));
+    }
+
+    #[test]
+    fn address_funding_floor_is_installed_for_fresh_drain_builds() {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
+
+        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let funding = AssetLockFunding::DrainAccountBalance {
+            account: AssetLockFundingAccount::Bip44 { account_index: 0 },
+            minimum_lock_duffs: None,
+        };
+
+        let funding = enforce_asset_lock_amount_covers_address_funding_floor(
+            funding,
+            2,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("drain builds should be floored before broadcast");
+
+        match funding {
+            AssetLockFunding::DrainAccountBalance {
+                minimum_lock_duffs, ..
+            } => assert_eq!(minimum_lock_duffs, Some(required)),
+            other => panic!("expected DrainAccountBalance, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn address_funding_floor_preserves_higher_fresh_drain_floor() {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
+
+        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let higher_floor = required + 1;
+        let funding = AssetLockFunding::DrainAccountBalance {
+            account: AssetLockFundingAccount::Bip44 { account_index: 0 },
+            minimum_lock_duffs: Some(higher_floor),
+        };
+
+        let funding = enforce_asset_lock_amount_covers_address_funding_floor(
+            funding,
+            2,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("caller-supplied drain floors should survive when stricter");
+
+        match funding {
+            AssetLockFunding::DrainAccountBalance {
+                minimum_lock_duffs, ..
+            } => assert_eq!(minimum_lock_duffs, Some(higher_floor)),
+            other => panic!("expected DrainAccountBalance, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn address_funding_floor_does_not_block_existing_asset_lock_resume() {
+        let funding = AssetLockFunding::FromExistingAssetLock {
+            out_point: dashcore::OutPoint::null(),
+            consume_invitation_voucher: false,
+        };
+
+        let funding = enforce_asset_lock_amount_covers_address_funding_floor(
+            funding,
+            2,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("existing locks are resumed rather than pre-sized");
+
+        assert!(matches!(
+            funding,
+            AssetLockFunding::FromExistingAssetLock {
+                out_point,
+                consume_invitation_voucher: false
+            } if out_point == dashcore::OutPoint::null()
+        ));
+    }
+
+    #[tokio::test]
+    async fn fund_from_asset_lock_rejects_underfloor_fresh_lock_before_broadcast() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let address = wallet
+            .platform()
+            .next_unused_receive_address(
+                key_wallet::account::account_collection::PlatformPaymentAccountKey {
+                    account: 0,
+                    key_class: 0,
+                },
+            )
+            .await
+            .expect("owned platform payment address");
+        let required = minimum_address_funding_asset_lock_duffs(1, LATEST_PLATFORM_VERSION);
+        let mut addresses = BTreeMap::new();
+        addresses.insert(address, None);
+
+        let err = wallet
+            .platform()
+            .fund_from_asset_lock(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: required - 1,
+                    account_index: 0,
+                },
+                0,
+                addresses,
+                vec![],
+                &NullAddressSigner,
+                &NullAssetLockSigner,
+                None,
+            )
+            .await
+            .expect_err("underfloor fresh asset lock must fail before broadcast");
+
+        match err {
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required: actual_required,
+            } => {
+                assert_eq!(available, required - 1);
+                assert_eq!(actual_required, required);
+            }
+            other => panic!("expected AssetLockInsufficientFunds, got {other:?}"),
+        }
     }
 
     #[test]
