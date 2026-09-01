@@ -12,7 +12,6 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
-#[cfg(feature = "rehydration-apply")]
 use platform_wallet::changeset::AccountRegistrationEntry;
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -21,7 +20,6 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::sqlite::schema::core_state;
 use platform_wallet_storage::LoadCtx;
 
-#[cfg(feature = "rehydration-apply")]
 fn manifest_for(wallet: &Wallet) -> Vec<AccountRegistrationEntry> {
     wallet
         .accounts
@@ -89,7 +87,6 @@ fn utxo_at(addr: &dashcore::Address, vout: u32, value: u64) -> key_wallet::Utxo 
 
 /// A UTXO without a pool row follows the real restart path into the first
 /// funds account with its exact balance.
-#[cfg(feature = "rehydration-apply")]
 #[test]
 fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
     let (persister, _tmp, path) = fresh_persister();

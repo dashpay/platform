@@ -14,7 +14,6 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Utxo;
-#[cfg(feature = "rehydration-apply")]
 use platform_wallet::changeset::AccountRegistrationEntry;
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -24,7 +23,6 @@ use platform_wallet_storage::LoadCtx;
 use platform_wallet_storage::WalletStorageError;
 
 /// Keyless account manifest the rehydration path resolves xpubs from.
-#[cfg(feature = "rehydration-apply")]
 fn manifest_for(wallet: &Wallet) -> Vec<AccountRegistrationEntry> {
     wallet
         .accounts
@@ -105,7 +103,6 @@ fn rt2_nonzero_balance_survives_reopen() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    #[cfg_attr(not(feature = "rehydration-apply"), allow(unused_variables))]
     let (core, utxo_accounts) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .expect("load_state");
@@ -120,34 +117,25 @@ fn rt2_nonzero_balance_survives_reopen() {
 
     // End-to-end: apply the loaded state onto a freshly minted skeleton and
     // assert the wallet balance is the persisted amount — NOT a silent zero.
-    // The apply leg drives `apply_persisted_core_state`, gated behind
-    // `rehydration-apply`; the storage `load_state` assertions above run
-    // standalone regardless.
-    #[cfg(feature = "rehydration-apply")]
-    {
-        let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-        platform_wallet_storage::sqlite::util::apply_persisted_core_state(
-            &mut info,
-            &manifest_for(&wallet),
-            &core,
-            &utxo_accounts,
-            &Default::default(),
-            &LoadCtx::strict(),
-        )
-        .expect("BIP44 reconstruction must not error");
-        let bal = WalletInfoInterface::balance(&info);
-        let total = bal.confirmed() + bal.unconfirmed() + bal.immature() + bal.locked();
-        assert_eq!(
-            total, 1_234_500,
-            "reconstructed wallet balance must be exact"
-        );
-        assert!(total > 0, "silent zero balance is a FAIL");
-        // Height-bearing UTXO lands in the confirmed bucket.
-        assert_eq!(bal.confirmed(), 1_234_500);
-    }
-    // `wallet` only feeds the gated manager-apply leg above.
-    #[cfg(not(feature = "rehydration-apply"))]
-    let _ = &wallet;
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+        &mut info,
+        &manifest_for(&wallet),
+        &core,
+        &utxo_accounts,
+        &Default::default(),
+        &LoadCtx::strict(),
+    )
+    .expect("BIP44 reconstruction must not error");
+    let bal = WalletInfoInterface::balance(&info);
+    let total = bal.confirmed() + bal.unconfirmed() + bal.immature() + bal.locked();
+    assert_eq!(
+        total, 1_234_500,
+        "reconstructed wallet balance must be exact"
+    );
+    assert!(total > 0, "silent zero balance is a FAIL");
+    // Height-bearing UTXO lands in the confirmed bucket.
+    assert_eq!(bal.confirmed(), 1_234_500);
 }
 
 /// Spent UTXOs are excluded from the reconstructed feed.
@@ -291,36 +279,30 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    #[cfg_attr(not(feature = "rehydration-apply"), allow(unused_variables))]
     let (core, utxo_accounts) =
         core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
             .unwrap();
     drop(conn);
     assert_eq!(core.new_utxos.len(), 1);
 
-    // Apply leg (`apply_persisted_core_state`) gated behind
-    // `rehydration-apply`; the storage `load_state` assertions above run
-    // standalone regardless.
-    #[cfg(feature = "rehydration-apply")]
-    {
-        let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-        platform_wallet_storage::sqlite::util::apply_persisted_core_state(
-            &mut info,
-            &manifest_for(&wallet),
-            &core,
-            &utxo_accounts,
-            &Default::default(),
-            &LoadCtx::strict(),
-        )
-        .expect("CoinJoin-only reconstruction must not error");
-        let bal = WalletInfoInterface::balance(&info);
-        let total = bal.confirmed() + bal.unconfirmed() + bal.immature() + bal.locked();
-        assert_eq!(
-            total, 9_000_000,
-            "CoinJoin-only wallet must reconstruct the exact non-zero total — \
-             a silent zero is a FAIL"
-        );
-    }
+    // Apply leg: reconstruct onto a fresh skeleton and check the total.
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+        &mut info,
+        &manifest_for(&wallet),
+        &core,
+        &utxo_accounts,
+        &Default::default(),
+        &LoadCtx::strict(),
+    )
+    .expect("CoinJoin-only reconstruction must not error");
+    let bal = WalletInfoInterface::balance(&info);
+    let total = bal.confirmed() + bal.unconfirmed() + bal.immature() + bal.locked();
+    assert_eq!(
+        total, 9_000_000,
+        "CoinJoin-only wallet must reconstruct the exact non-zero total — \
+         a silent zero is a FAIL"
+    );
 }
 
 /// Empty wallet → empty core state, no error.
@@ -467,7 +449,6 @@ fn chain_lock_does_not_regress_on_lower_height_update() {
 
 /// First external `AddressInfo` of the account matching `pred` in `wallet`,
 /// sorted by derivation index — a genuine script that round-trips.
-#[cfg(feature = "rehydration-apply")]
 fn first_external_info(
     wallet: &Wallet,
     pred: impl Fn(&key_wallet::account::AccountType) -> bool,
@@ -500,7 +481,6 @@ fn first_external_info(
 /// `owning_account_for_script` (column order, `ORDER BY` tie-break, `[u8;32]`
 /// identity decode), so a broken query would be caught. Each UTXO must land in
 /// its TRUE account with exact per-account balances, not just the wallet total.
-#[cfg(feature = "rehydration-apply")]
 #[test]
 fn rehydration_routes_via_real_sql_resolver() {
     use key_wallet::account::{AccountType, StandardAccountType};
@@ -651,7 +631,6 @@ fn rehydration_routes_via_real_sql_resolver() {
 /// `apply_persisted_core_state`. The used address must land `used` on the
 /// CoinJoin pool specifically — never collapsed onto BIP44 — or it stays
 /// "unused" on CoinJoin and could be re-issued as a fresh receive address.
-#[cfg(feature = "rehydration-apply")]
 #[test]
 fn rehydration_routes_used_addresses_to_owning_account() {
     use key_wallet::account::{AccountType, StandardAccountType};

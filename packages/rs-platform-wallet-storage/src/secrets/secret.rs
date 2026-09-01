@@ -345,20 +345,19 @@ impl From<&str> for SecretString {
 /// password arriving via config) straight into guarded memory, so no
 /// intermediate plaintext buffer **we own** lingers (CWE-316).
 ///
-/// Gated behind the dedicated, default-off `secret-serde` feature, NOT the
-/// crate's internal `serde` dep (which `secrets` already pulls): the gate
-/// is on the IMPL, so the impl is absent unless explicitly opted in, even
-/// though `serde` itself is compiled. There is deliberately **no**
-/// `Serialize` companion (a secret is read-from-config, never written
-/// back / round-tripped / logged), so this type cannot leak out through
-/// serde under any feature combination.
+/// Gated behind the default-off `serde` feature, which gates the IMPL and
+/// not the dep — `secrets` already compiles serde for the vault format, so
+/// a consumer that has not asked for this simply does not get it. There is
+/// deliberately **no** `Serialize` companion (a secret is read-from-config,
+/// never written back / round-tripped / logged), so this type cannot leak
+/// out through serde under any feature combination.
 ///
 /// **Residual (documented, not closeable here):** the deserializer's own
 /// input buffer holds the cleartext before this visitor runs and is
 /// outside `SecretString`'s ownership, so it cannot be wiped here — feed
 /// secrets from a zeroizing source. Mirrors the Argon2 `Block` residual
 /// noted at `crypto::derive_key`.
-#[cfg(feature = "secret-serde")]
+#[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for SecretString {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -425,9 +424,9 @@ impl<'de> serde::Deserialize<'de> for SecretString {
 /// a length policy) and no `example`/`default` (would embed a value)
 /// A short, value-free `description` marks sensitivity.
 ///
-/// Gated behind the default-off `secret-schemars` feature (which implies
-/// `secret-serde`). Pulls in no `Serialize`/`Display` path.
-#[cfg(feature = "secret-schemars")]
+/// Unconditional under `secrets`: the schema carries neither a policy nor
+/// a value, so there is nothing to opt out of. Pulls in no
+/// `Serialize`/`Display` path.
 impl schemars::JsonSchema for SecretString {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed("SecretString")
@@ -761,30 +760,30 @@ mod tests {
         static_assertions::assert_not_impl_any!(SecretString: serde::Serialize, std::fmt::Display);
     }
 
-    /// Regression: the `serde` DEP is on under
-    /// `secrets`, yet the `Deserialize` IMPL stays ABSENT because it is
-    /// gated on the dedicated `secret-serde` feature — proving the
-    /// default-off gate is satisfiable even while serde is compiled.
-    #[cfg(not(feature = "secret-serde"))]
+    /// Regression: the `serde` DEP is on under `secrets`, yet the
+    /// `Deserialize` IMPL stays ABSENT because the `serde` FEATURE gates
+    /// the impl rather than the dep — proving the default-off gate is
+    /// satisfiable even while serde is compiled.
+    #[cfg(not(feature = "serde"))]
     #[test]
-    fn deserialize_absent_without_secret_serde_even_though_serde_dep_on() {
+    fn deserialize_absent_without_the_serde_feature_even_though_the_dep_is_on() {
         static_assertions::assert_not_impl_any!(
             SecretString: serde::de::DeserializeOwned
         );
     }
 
-    /// With `secret-serde` on, the `Deserialize` impl is
-    /// present (and `Serialize` is still absent — see the always-on test).
-    #[cfg(feature = "secret-serde")]
+    /// With the `serde` feature on, the `Deserialize` impl is present (and
+    /// `Serialize` is still absent — see the always-on test).
+    #[cfg(feature = "serde")]
     #[test]
-    fn deserialize_present_with_secret_serde() {
+    fn deserialize_present_with_the_serde_feature() {
         static_assertions::assert_impl_all!(SecretString: serde::de::DeserializeOwned);
         static_assertions::assert_not_impl_any!(SecretString: serde::Serialize);
     }
 
     /// `Deserialize` routes the value into guarded memory; the result
     /// `ct_eq`s a directly-built secret and has the right length.
-    #[cfg(feature = "secret-serde")]
+    #[cfg(feature = "serde")]
     #[test]
     fn deserialize_routes_value_through_zeroizing_constructor() {
         let s: SecretString = serde_json::from_str("\"correct horse battery staple\"").unwrap();
@@ -797,7 +796,7 @@ mod tests {
     /// Config is untrusted input, so `Deserialize` refuses a value past
     /// [`MAX_PASSPHRASE_LEN`] before it reaches guarded memory — and the
     /// error message carries the length only, never the value.
-    #[cfg(feature = "secret-serde")]
+    #[cfg(feature = "serde")]
     #[test]
     fn deserialize_rejects_oversized_value() {
         let at_cap = format!("\"{}\"", "a".repeat(MAX_PASSPHRASE_LEN));
@@ -821,7 +820,6 @@ mod tests {
     /// `JsonSchema` renders a plain `string` and leaks no
     /// length/value policy — no `minLength`/`maxLength`/`pattern`/`format`,
     /// no `example`/`default`/`enum`.
-    #[cfg(feature = "secret-schemars")]
     #[test]
     fn json_schema_is_plain_string_no_policy_leak() {
         let schema = schemars::schema_for!(SecretString);

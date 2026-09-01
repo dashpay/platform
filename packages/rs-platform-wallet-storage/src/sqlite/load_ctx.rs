@@ -163,17 +163,14 @@ impl LoadCtx {
     }
 
     /// Context that aborts the load on any inconsistency. A production
-    /// load takes its policy from the config, so this exists for the
-    /// builds where the module is public.
-    #[cfg(any(test, feature = "__test-helpers", feature = "rehydration-apply"))]
+    /// load takes its policy from the config; this is the shorthand for a
+    /// caller driving a reader directly.
     pub fn strict() -> Self {
         Self::new(LoadPolicy::Strict)
     }
 
     /// Context that tolerates, logs, and counts recoverable
-    /// inconsistencies. Public on the same terms as
-    /// [`strict`](Self::strict).
-    #[cfg(any(test, feature = "__test-helpers", feature = "rehydration-apply"))]
+    /// inconsistencies. The counterpart to [`strict`](Self::strict).
     pub fn recovery() -> Self {
         Self::new(LoadPolicy::Recovery)
     }

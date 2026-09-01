@@ -120,10 +120,9 @@ database without writing custom code.
 ## Testing
 
 Run `cargo test -p platform-wallet-storage --all-features` for complete
-crate coverage. A plain package test does not enable `rehydration-apply` and
-therefore skips the end-to-end #3968 regressions
-`rehydration_routes_via_real_sql_resolver` and
-`rehydration_routes_used_addresses_to_owning_account`.
+crate coverage. A plain package test leaves the default-off `serde` feature
+disabled, so it exercises the *absence* of `SecretString: Deserialize`
+instead of the impl; every other test runs in both configurations.
 
 ---
 
@@ -343,6 +342,9 @@ untrusted replacement or modification.
 | `cli` | yes | Maintenance binary `platform-wallet-storage`. Implies `sqlite`. |
 | `secrets` | yes | `platform_wallet_storage::secrets` submodule — zeroizing secret wrappers (`SecretBytes`, `SecretString`), the `EncryptedFileStore` Argon2id + XChaCha20-Poly1305 vault backend, and the `default_credential_store()` OS-keyring constructor. Implements the upstream `keyring_core::api::{CredentialApi, CredentialStoreApi}` SPI. |
 | `kv` | yes | Per-object-type key/value metadata API (`KvStore`, `KvError`, `ObjectId`) plus its SQLite-backed impl on `SqlitePersister`. Implies `sqlite`. The `meta_*` tables are always created by V001 so DB files stay interoperable across feature combos; this gate only controls the Rust API surface. |
+| `serde` | no | `Deserialize` for `SecretString`, so a config struct can carry a vault passphrase or object password straight into guarded memory. Gates the IMPL only — `secrets` compiles the serde dep regardless — and there is deliberately no `Serialize` under any combination. |
+| `shielded` | no | Persists and restores Orchard viewing keys from `PlatformWalletChangeSet::shielded`. Enables `platform-wallet/shielded`; the rest of the shielded state stays in the host-provided `ShieldedStore`. |
+| `test-util` | no | `SecretStore::file_mock` / `EncryptedFileStore::open_mock` — vault constructors that use the Argon2id floor instead of the 64 MiB target, so a downstream suite does not pay a production KDF per call. `[dev-dependencies]` ONLY: the constructors panic outside debug builds. |
 | `__test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. The double-underscore prefix follows Cargo's "do not enable from downstream" convention; the methods are also `#[doc(hidden)]`. |
 
 `cargo build -p platform-wallet-storage --no-default-features` builds a

@@ -4,8 +4,6 @@ pub mod permissions;
 pub mod safe_cast;
 pub(super) mod wallet;
 
-/// Integration-test access to the crate-internal core-state reconstruction
-/// helper. Gated so the normal build keeps `apply_persisted_core_state`
-/// private to the crate.
-#[cfg(feature = "rehydration-apply")]
+/// Rebuild a `ManagedWalletInfo` from persisted core state — the apply half
+/// of a rehydration, paired with `sqlite::schema::core_state::load_state`.
 pub use wallet::apply_persisted_core_state;
