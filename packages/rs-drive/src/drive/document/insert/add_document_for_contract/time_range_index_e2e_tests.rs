@@ -2955,3 +2955,133 @@ fn ttl_draining_write_never_exceeds_its_estimate() {
         actual.processing_fee
     );
 }
+
+/// Drainage rides updates too, not only inserts: with no insert ever
+/// touching the index again, a lone update past the horizon must drop
+/// the expired bucket — including the one the updated document's own
+/// entries lived in, whose old-entry removal then skips coherently.
+#[test]
+fn ttl_update_only_write_drains_expired_buckets() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::grove_operations::DirectQueryType;
+    use dpp::data_contract::document_type::DocumentPropertyType;
+    use grovedb_path::SubtreePath;
+
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = build_ttl_contract_with_index_keys(
+        216,
+        vec![
+            (
+                Value::Text("countable".to_string()),
+                Value::Text("countable".to_string()),
+            ),
+            (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+            (
+                Value::Text("rankedCountable".to_string()),
+                Value::Bool(true),
+            ),
+        ],
+    );
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let transform = document_type
+        .indexes()
+        .get("trendingTtl")
+        .expect("index")
+        .time_range
+        .clone()
+        .expect("transform");
+
+    let h = HOUR_MS;
+    let t0 = 6_000 * h;
+    let owner_bytes = fixture_bytes(15, t0, "only");
+    let mut document = Document::V0(DocumentV0 {
+        id: Identifier::from(fixture_bytes(16, t0, "only")),
+        owner_id: Identifier::from(owner_bytes),
+        properties: BTreeMap::from([
+            ("hashtag".to_string(), Value::Text("only".to_string())),
+            ("amount".to_string(), Value::U64(5)),
+        ]),
+        created_at: Some(t0 + MINUTE_MS_TTL),
+        revision: Some(1),
+        ..Default::default()
+    });
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(owner_bytes),
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo {
+                time_ms: t0 + MINUTE_MS_TTL,
+                ..Default::default()
+            },
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("add document");
+
+    // The only write after expiry is an UPDATE.
+    document.set("hashtag", Value::Text("only2".to_string()));
+    document.set_revision(Some(2));
+    drive
+        .update_document_for_contract(
+            &document,
+            &contract,
+            document_type,
+            Some(owner_bytes),
+            BlockInfo {
+                time_ms: t0 + 6 * h,
+                ..Default::default()
+            },
+            true,
+            None,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("an update past the horizon succeeds and drains");
+
+    let mut level_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
+    level_path.push(transform.storage_key("$createdAt").into_bytes());
+    let path_refs: Vec<&[u8]> = level_path
+        .iter()
+        .map(|segment| segment.as_slice())
+        .collect();
+    let mut ops: Vec<LowLevelDriveOperation> = vec![];
+    let bucket_stands = drive
+        .grove_has_raw(
+            SubtreePath::from(path_refs.as_slice()),
+            DocumentPropertyType::encode_date_timestamp(t0).as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            None,
+            &mut ops,
+            &platform_version.drive,
+        )
+        .expect("existence check");
+    assert!(
+        !bucket_stands,
+        "an update-only write must drain the expired bucket"
+    );
+}

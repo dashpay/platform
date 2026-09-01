@@ -938,6 +938,33 @@ impl Drive {
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
 
+        // TTL drainage rides every write into a TTL'd index — updates
+        // included, mirroring the v2 insert walker: a bounded number of
+        // deepest-first drop operations against the oldest expired bucket,
+        // resuming wherever the previous write's budget ran out. Running it
+        // FIRST keeps the rest of this update coherent with the drained
+        // state: if the drain takes a bucket this document's old entries
+        // lived in, the old-entry loop's removable checks skip it. This
+        // path is stateful-only (estimation redirects to the insert walker
+        // at the top of the v1 update), and drainage is unbilled — see the
+        // ttl module's Billing section.
+        if transform.ttl_seconds.is_some() {
+            if let Some(max_operations) = platform_version
+                .system_limits
+                .max_time_range_ttl_drop_operations_per_write
+            {
+                self.drain_expired_time_range_buckets(
+                    transform,
+                    top_index_level,
+                    base_index_path,
+                    block_time_ms,
+                    max_operations,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+        }
+
         // New/old raw values for the bucketed source property → entry key
         // sets, mirroring the insert walker's fan-out (see the doc comment).
         let new_raw = document.get_raw_for_document_type(
