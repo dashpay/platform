@@ -1631,6 +1631,7 @@ impl Index {
                     let mut range_seconds: Option<u64> = None;
                     let mut step_seconds: Option<u64> = None;
                     let mut phase_seconds: u64 = 0;
+                    let mut ttl_seconds: Option<u64> = None;
 
                     for (tr_key_value, tr_value) in time_range_map {
                         let tr_key = tr_key_value
@@ -1668,6 +1669,13 @@ impl Index {
                                     )
                                 })?;
                             }
+                            "ttl" => {
+                                ttl_seconds = Some(tr_value.to_integer().map_err(|_| {
+                                    DataContractError::ValueWrongType(
+                                        "timeRange.ttl should be an integer".to_string(),
+                                    )
+                                })?);
+                            }
                             other => {
                                 return Err(DataContractError::InvalidContractStructure(format!(
                                     "unexpected timeRange field: {}",
@@ -1698,6 +1706,7 @@ impl Index {
                         range_seconds,
                         step_seconds,
                         phase_seconds,
+                        ttl_seconds,
                     });
                 }
                 // `terminal` is guarded the same way as the ranking keywords
@@ -2170,6 +2179,23 @@ impl Index {
                     transform.source
                 )));
             }
+            // A TTL below the window length would expire a bucket that can
+            // still receive writes: `$createdAt` is consensus-assigned from
+            // block time, so a document entering the grid lands in every
+            // window containing *now* — the oldest of which started up to
+            // `range` ago. `ttl >= range` is the invariant that lets the
+            // cleanup, the delete walker's expired-entry skip and the
+            // `oldest` selector all assume a live window can never be
+            // expired. The upper bound (SystemLimits) is checked at the
+            // document-type level, where the platform version is in scope.
+            if let Some(ttl_seconds) = transform.ttl_seconds {
+                if ttl_seconds < transform.range_seconds {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "timeRange.ttl ({} seconds) must be at least the window length                          ({} seconds): a window still able to receive consensus-timestamped                          writes can never be expired",
+                        ttl_seconds, transform.range_seconds
+                    )));
+                }
+            }
             // Same reasoning as the ranked `nullSearchable` rejection above,
             // plus a write-path invariant: the insert, delete and update
             // walkers all agree that a null timestamp keeps a single ordinary
@@ -2195,6 +2221,7 @@ impl Index {
                 ("range", transform.range_seconds),
                 ("step", transform.step_seconds),
                 ("phase", transform.phase_seconds),
+                ("ttl", transform.ttl_seconds.unwrap_or(0)),
             ] {
                 if seconds > u64::MAX / 1_000 {
                     return Err(DataContractError::InvalidContractStructure(format!(
@@ -3312,6 +3339,7 @@ mod tests {
             range_seconds: 86_400,
             step_seconds: 86_400,
             phase_seconds: 0,
+            ttl_seconds: None,
         });
         index
     }
@@ -5021,6 +5049,75 @@ mod tests {
         assert!(
             msg.contains("bucketed source"),
             "error must state that the bucketed level itself cannot rank; got {msg}"
+        );
+    }
+
+    /// `ttl` parses into the transform; a ttl below the window length is
+    /// structurally rejected (a window still able to receive
+    /// consensus-timestamped writes can never expire).
+    #[test]
+    fn test_index_try_from_time_range_ttl_parses_and_bounds_below() {
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((
+            Value::Text("timeRange".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (Value::Text("range".to_string()), Value::U64(21_600)),
+                (Value::Text("step".to_string()), Value::U64(21_600)),
+                (Value::Text("ttl".to_string()), Value::U64(86_400)),
+            ]),
+        ));
+        let index = Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+            .expect("a ttl of at least the range parses");
+        assert_eq!(
+            index.time_range.expect("transform present").ttl_seconds,
+            Some(86_400)
+        );
+
+        let mut index_map = prefix_ranked_index_map(Value::Bool(true));
+        index_map[0].1 = Value::Array(vec![
+            Value::Map(vec![(
+                Value::Text("$createdAt".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+            Value::Map(vec![(
+                Value::Text("postId".to_string()),
+                Value::Text("asc".to_string()),
+            )]),
+        ]);
+        index_map.push((
+            Value::Text("timeRange".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (Value::Text("range".to_string()), Value::U64(21_600)),
+                (Value::Text("step".to_string()), Value::U64(21_600)),
+                (Value::Text("ttl".to_string()), Value::U64(21_599)),
+            ]),
+        ));
+        let msg = format!(
+            "{:?}",
+            Index::try_from_value_map(index_map.as_slice(), v3_admissions())
+                .expect_err("a ttl below the window length must be rejected")
+        );
+        assert!(
+            msg.contains("must be at least the window length"),
+            "expected the lower-bound rejection, got {msg}"
         );
     }
 

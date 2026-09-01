@@ -2,6 +2,7 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
+use crate::drive::document::time_range_ttl::live_time_range_entry_keys;
 use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
 };
@@ -397,6 +398,7 @@ impl Drive {
                     &mut batch_insertion_cache,
                     previous_batch_operations,
                     &mut batch_operations,
+                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )?;
@@ -930,6 +932,7 @@ impl Drive {
         batch_insertion_cache: &mut HashSet<Vec<Vec<u8>>>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
+        block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -960,7 +963,17 @@ impl Drive {
         // shared with the insert and delete walkers via
         // `TimeRangeTransform::entry_keys_for_raw` — one definition, so the
         // three walkers can never disagree.
-        let new_entry_keys = transform.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default());
+        // TTL: writes never target expired buckets — an update of a document
+        // whose windows have all expired leaves it with no entries under
+        // this index, and never resurrects a dropped bucket. The old set is
+        // NOT filtered: its expired keys flow to the delete loop below,
+        // whose per-key removable check skips exactly the buckets the lazy
+        // drop already took.
+        let new_entry_keys = live_time_range_entry_keys(
+            transform,
+            transform.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default()),
+            block_time_ms,
+        );
         let old_entry_keys = transform.entry_keys_for_raw(old_raw.as_deref().unwrap_or_default());
 
         // Terminator-layout inputs, tracked separately for the new and the old
@@ -1253,6 +1266,23 @@ impl Drive {
         for entry_key in &old_entry_keys {
             if new_set.contains(entry_key) && !suffix_changed {
                 continue; // unchanged entry — already refreshed by the insert loop above
+            }
+            // TTL: an expired bucket the lazy drop already took has no entry
+            // left to delete; one that still stands must be cleaned normally
+            // so it never carries a stale reference until its drop. This
+            // path is stateful-only (estimation redirects to the insert
+            // walker at the top of the v1 update), so the existence read is
+            // always legal here.
+            if !self.time_range_entry_is_removable(
+                transform,
+                entry_key,
+                block_time_ms,
+                base_index_path,
+                transaction,
+                batch_operations,
+                platform_version,
+            )? {
+                continue;
             }
             let mut key_info_path: Vec<KeyInfo> = base_index_path
                 .iter()

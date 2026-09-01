@@ -1839,3 +1839,379 @@ fn ranked_chain_below_bucket_update_materializes_like_insert() {
         );
     }
 }
+
+/// The TTL lifecycle end to end — `book/src/drive/time-range-ttl.md`
+/// exercised through the real walkers:
+///
+/// * a bucket-creating write drops buckets behind the horizon (and only
+///   those: a bucket starting exactly AT the horizon survives);
+/// * the per-write cap amortizes catch-up instead of dumping a backlog
+///   on one writer;
+/// * deleting and updating a document whose buckets were dropped
+///   succeeds — the removal side skips exactly the dropped buckets, and
+///   an update never resurrects one;
+/// * ranked per-window leaderboards below the bucket ride along: live
+///   windows keep serving, dropped windows take their secondaries with
+///   them (the recursive-delete placeholder sweeps indexed axes).
+#[test]
+fn ttl_drops_expired_buckets_and_walkers_skip_them() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::grove_operations::DirectQueryType;
+    use dpp::data_contract::document_type::DocumentPropertyType;
+    use grovedb_path::SubtreePath;
+
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+    // Tumbling 2h windows, TTL 4h, ranked hashtags per window.
+    let factory =
+        DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+    let index_map = vec![
+        (
+            Value::Text("name".to_string()),
+            Value::Text("trendingTtl".to_string()),
+        ),
+        (
+            Value::Text("properties".to_string()),
+            Value::Array(vec![
+                platform_value!({"$createdAt": "asc"}),
+                platform_value!({"hashtag": "asc"}),
+            ]),
+        ),
+        (
+            Value::Text("timeRange".to_string()),
+            Value::Map(vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (
+                    Value::Text("range".to_string()),
+                    Value::U64(2 * HOUR_SECONDS),
+                ),
+                (
+                    Value::Text("step".to_string()),
+                    Value::U64(2 * HOUR_SECONDS),
+                ),
+                (Value::Text("ttl".to_string()), Value::U64(4 * HOUR_SECONDS)),
+            ]),
+        ),
+        (
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        ),
+        (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+        (
+            Value::Text("rankedCountable".to_string()),
+            Value::Bool(true),
+        ),
+    ];
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": {"type": "string", "maxLength": 61, "position": 0},
+        },
+        "required": ["hashtag", "$createdAt"],
+        "indices": Value::Array(vec![Value::Map(index_map)]),
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "post": document_schema });
+    let contract = factory
+        .create_with_value_config(Identifier::from([203u8; 32]), 0, schemas, None, None)
+        .expect("a TTL'd ranked windowed index registers")
+        .data_contract_owned();
+
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let transform = document_type
+        .indexes()
+        .get("trendingTtl")
+        .expect("trendingTtl index")
+        .time_range
+        .clone()
+        .expect("transform");
+    assert_eq!(transform.ttl_seconds, Some(4 * HOUR_SECONDS));
+
+    let mut level_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
+    level_path.push(transform.storage_key("$createdAt").into_bytes());
+
+    let bucket_exists = |start_ms: u64| -> bool {
+        let path_refs: Vec<&[u8]> = level_path
+            .iter()
+            .map(|segment| segment.as_slice())
+            .collect();
+        let key = DocumentPropertyType::encode_date_timestamp(start_ms);
+        let mut ops: Vec<LowLevelDriveOperation> = vec![];
+        drive
+            .grove_has_raw(
+                SubtreePath::from(path_refs.as_slice()),
+                key.as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut ops,
+                &platform_version.drive,
+            )
+            .expect("existence check")
+    };
+
+    let insert_at = |created_at: u64, tag: &str| -> Document {
+        let owner_bytes = fixture_bytes(5, created_at, tag);
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from(fixture_bytes(6, created_at, tag)),
+            owner_id: Identifier::from(owner_bytes),
+            properties: BTreeMap::from([("hashtag".to_string(), Value::Text(tag.to_string()))]),
+            created_at: Some(created_at),
+            revision: Some(1),
+            ..Default::default()
+        });
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(owner_bytes),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo {
+                    time_ms: created_at,
+                    ..Default::default()
+                },
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("add document");
+        document
+    };
+
+    let h = HOUR_MS;
+    // Anchor away from the epoch so horizons never underflow.
+    let t0 = 1_000 * h;
+
+    let doc_a = insert_at(t0 + 10 * MINUTE_MS_TTL, "alpha"); // bucket t0
+    insert_at(t0 + 2 * h + 10 * MINUTE_MS_TTL, "bravo"); // bucket t0+2h
+    assert!(bucket_exists(t0), "nothing is expired yet");
+
+    // Writing at exactly t0+6h (bucket t0+6h) puts the horizon at
+    // exactly t0+2h: bucket t0 (start < horizon) is dropped, bucket
+    // t0+2h (start == horizon) survives — expiry is strictly-below.
+    insert_at(t0 + 6 * h, "charlie");
+    assert!(
+        !bucket_exists(t0),
+        "the bucket behind the horizon must be dropped by the bucket-creating write"
+    );
+    assert!(
+        bucket_exists(t0 + 2 * h),
+        "a bucket starting exactly at the horizon is not expired"
+    );
+    assert!(bucket_exists(t0 + 6 * h));
+
+    // Deleting a document whose buckets were dropped must succeed: the
+    // removal side skips exactly the dropped buckets.
+    drive
+        .delete_document_for_contract(
+            doc_a.id(),
+            &contract,
+            "post",
+            BlockInfo {
+                time_ms: t0 + 6 * h + 20 * MINUTE_MS_TTL,
+                ..Default::default()
+            },
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("deleting a document whose windows were dropped succeeds");
+
+    // Updating a document whose windows have all expired succeeds and
+    // never resurrects a dropped bucket. `bravo`'s bucket (t0+2h) is
+    // still standing here; move time far enough that it has been dropped
+    // first, then update it.
+    insert_at(t0 + 10 * h + 10 * MINUTE_MS_TTL, "delta"); // horizon now t0+6h
+    assert!(
+        !bucket_exists(t0 + 2 * h),
+        "catch-up cleanup drops the next expired bucket"
+    );
+    let mut doc_b = insert_at(t0 + 10 * h + 20 * MINUTE_MS_TTL, "echo");
+    // Update a LIVE document normally (control), then delete it — the
+    // full mutable lifecycle stays intact under a TTL'd index.
+    doc_b.set("hashtag", Value::Text("echo2".to_string()));
+    doc_b.set_revision(Some(2));
+    drive
+        .update_document_for_contract(
+            &doc_b,
+            &contract,
+            document_type,
+            None,
+            BlockInfo {
+                time_ms: t0 + 10 * h + 30 * MINUTE_MS_TTL,
+                ..Default::default()
+            },
+            true,
+            None,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("updating a live document under a TTL'd index succeeds");
+
+    // The live window's per-window leaderboard serves after all of the
+    // above: ranked entries for bucket t0+10h are (delta 1, echo2 1) —
+    // and echo (the pre-update suffix) is gone.
+    {
+        use crate::query::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode;
+        use crate::query::drive_document_ranked_query::PrefixPin;
+        use crate::query::{DocumentRankedMode, RankedAxis};
+        let mode = DocumentRankedMode {
+            axis: RankedAxis::Count,
+            descending: true,
+            k: 10,
+            offset: 0,
+            group_by_property: "hashtag".to_string(),
+            aggregate_field: String::new(),
+            prefix_pins: vec![PrefixPin {
+                field: "$createdAt".to_string(),
+                values: vec![Value::U64(t0 + 10 * h)],
+            }],
+        };
+        let ranked_query = resolve_ranked_query_for_mode(
+            contract.id().to_buffer(),
+            document_type,
+            "post".to_string(),
+            document_type.indexes(),
+            &mode,
+            &created_at_resolution(document_type),
+            platform_version,
+        )
+        .expect("the TTL'd ranked index covers the pinned request");
+        let page = ranked_query
+            .execute_top_k_no_proof(&drive, None, platform_version)
+            .expect("the live window's leaderboard reads");
+        let keys: Vec<&[u8]> = page.entries.iter().map(|e| e.key.as_slice()).collect();
+        assert!(keys.contains(&b"delta".as_slice()));
+        assert!(keys.contains(&b"echo2".as_slice()));
+        assert!(!keys.contains(&b"echo".as_slice()));
+    }
+}
+
+/// One minute in milliseconds, for the TTL lifecycle test's offsets.
+const MINUTE_MS_TTL: u64 = 60_000;
+
+/// The TTL grammar rejections that need contract-level context: the
+/// SystemLimits cap, and two indexes sharing a grid with different TTLs
+/// (one storage level cannot have two lifecycles). The structural lower
+/// bound (`ttl >= range`) is covered at the `Index` parse level.
+#[test]
+fn ttl_contract_level_rejections() {
+    let factory =
+        DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+    let time_range_with_ttl = |ttl: u64| {
+        Value::Map(vec![
+            (
+                Value::Text("on".to_string()),
+                Value::Text("$createdAt".to_string()),
+            ),
+            (Value::Text("range".to_string()), Value::U64(HOUR_SECONDS)),
+            (Value::Text("step".to_string()), Value::U64(HOUR_SECONDS)),
+            (Value::Text("ttl".to_string()), Value::U64(ttl)),
+        ])
+    };
+    let schema_with_indices = |indices: Value| {
+        platform_value!({
+            "post": {
+                "type": "object",
+                "properties": {
+                    "hashtag": {"type": "string", "maxLength": 61, "position": 0},
+                },
+                "required": ["hashtag", "$createdAt"],
+                "indices": indices,
+                "additionalProperties": false,
+            }
+        })
+    };
+
+    // Over the one-week cap.
+    let over_cap = schema_with_indices(Value::Array(vec![Value::Map(vec![
+        (
+            Value::Text("name".to_string()),
+            Value::Text("overCap".to_string()),
+        ),
+        (
+            Value::Text("properties".to_string()),
+            Value::Array(vec![
+                platform_value!({"$createdAt": "asc"}),
+                platform_value!({"hashtag": "asc"}),
+            ]),
+        ),
+        (
+            Value::Text("timeRange".to_string()),
+            time_range_with_ttl(604_800 + 1),
+        ),
+        (
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        ),
+    ])]));
+    let error = factory
+        .create_with_value_config(Identifier::from([204u8; 32]), 0, over_cap, None, None)
+        .expect_err("a TTL over the cap must be refused");
+    assert!(
+        error.to_string().contains("exceeds the maximum"),
+        "expected the cap rejection, got: {error}"
+    );
+
+    // Same grid, different TTLs.
+    let index = |name: &str, ttl: u64| {
+        Value::Map(vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text(name.to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    platform_value!({"$createdAt": "asc"}),
+                    platform_value!({"hashtag": "asc"}),
+                ]),
+            ),
+            (
+                Value::Text("timeRange".to_string()),
+                time_range_with_ttl(ttl),
+            ),
+            (
+                Value::Text("countable".to_string()),
+                Value::Text("countable".to_string()),
+            ),
+        ])
+    };
+    let conflicting = schema_with_indices(Value::Array(vec![
+        index("gridA", 3 * HOUR_SECONDS),
+        index("gridB", 4 * HOUR_SECONDS),
+    ]));
+    let error = factory
+        .create_with_value_config(Identifier::from([205u8; 32]), 0, conflicting, None, None)
+        .expect_err("one grid cannot carry two lifecycles");
+    assert!(
+        error.to_string().contains("two lifecycles"),
+        "expected the shared-grid TTL conflict rejection, got: {error}"
+    );
+}

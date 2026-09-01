@@ -1,7 +1,7 @@
 pub mod v1;
 pub mod v2;
 pub mod v3;
-pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -100,6 +100,27 @@ pub struct SystemLimits {
     /// time-range indexes (nothing to bound: the `timeRange` keyword does not
     /// parse there).
     pub max_time_range_overlap_factor: Option<u64>,
+    /// Maximum time-to-live (in seconds) a `timeRange` index transform may
+    /// declare, enforced at contract registration.
+    ///
+    /// The cap is what makes the TTL fee model safe: entries under a TTL'd
+    /// index bill their bytes as processing (the ephemeral-bytes rate)
+    /// instead of storage, and a flat rate is only an honest price while
+    /// the lifetime it covers is bounded. One week in v5.
+    /// See `book/src/drive/time-range-ttl.md`.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the
+    /// `ttl` key (nothing to bound: the key does not parse there).
+    pub max_time_range_ttl_seconds: Option<u64>,
+    /// Maximum number of expired buckets one bucket-creating write may drop
+    /// from a TTL'd `timeRange` index.
+    ///
+    /// Steady state needs exactly one (one new bucket per `step` means one
+    /// bucket crossing the TTL horizon per `step`); the headroom above one
+    /// amortizes catch-up after a quiet spell instead of dumping the whole
+    /// backlog (up to `ttl / step` buckets) on the first write after a
+    /// lull. `None` for the protocol versions that predate the `ttl` key.
+    pub max_time_range_expired_bucket_drops_per_write: Option<u16>,
 }
 
 #[cfg(test)]

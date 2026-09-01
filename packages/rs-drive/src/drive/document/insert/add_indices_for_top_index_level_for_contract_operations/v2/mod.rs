@@ -45,6 +45,7 @@ impl Drive {
     /// v14 shared-prefix aggregate fix — see
     /// [`Drive::add_indices_for_index_level_for_contract_operations_v2`]
     /// for the full story.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_indices_for_top_index_level_for_contract_operations_v2(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -52,6 +53,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -253,7 +255,7 @@ impl Drive {
             for (bucket, index_key) in index_keys.into_iter().enumerate() {
                 // The zero will not matter here, because the PathKeyInfo is variable
                 let path_key_info = index_key.clone().add_path::<0>(index_path.clone());
-                self.batch_insert_empty_tree_if_not_exists(
+                let newly_created_bucket = self.batch_insert_empty_tree_if_not_exists(
                     path_key_info,
                     value_tree_type,
                     storage_flags,
@@ -263,6 +265,36 @@ impl Drive {
                     batch_operations,
                     drive_version,
                 )?;
+
+                // TTL cleanup rides the bucket-creating write: a new bucket
+                // means time rolled forward, so buckets behind the horizon
+                // are dropped — capped per write, oldest first. Steady state
+                // is one-for-one (one new bucket per step, one expiring);
+                // the cap amortizes catch-up after a quiet spell. Stateful
+                // only: the estimation dry run neither reads state nor
+                // prices drops (their cost class is the triggering write's
+                // processing, bounded by the cap — and O(1) per drop once
+                // grovedb#848 replaces the placeholder).
+                if newly_created_bucket && estimated_costs_only_with_layer_info.is_none() {
+                    if let Some(transform) = sub_level.time_range() {
+                        if transform.ttl_seconds.is_some() {
+                            if let Some(max_drops) = platform_version
+                                .system_limits
+                                .max_time_range_expired_bucket_drops_per_write
+                            {
+                                self.drop_expired_time_range_buckets(
+                                    transform,
+                                    &index_path,
+                                    block_time_ms,
+                                    max_drops,
+                                    transaction,
+                                    batch_operations,
+                                    platform_version,
+                                )?;
+                            }
+                        }
+                    }
+                }
 
                 // The final bucket takes ownership of `index_path`; earlier
                 // buckets (only a time-range fan-out has more than one)

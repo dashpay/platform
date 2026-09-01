@@ -42,6 +42,7 @@ impl Drive {
     /// [`Drive::add_indices_for_top_index_level_for_contract_operations_v2`];
     /// part of the platform v14 shared-prefix aggregate fix.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_indices_for_top_index_level_for_contract_operations_v2(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -49,6 +50,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -221,6 +223,35 @@ impl Drive {
 
             let bucket_count = index_keys.len();
             for (bucket, index_key) in index_keys.into_iter().enumerate() {
+                // TTL: an expired bucket may already have been dropped, in
+                // which case this document's entries went with it and
+                // per-entry removal must skip rather than fail; while it
+                // still stands, entries are removed normally so the bucket
+                // never carries dangling references. Stateful reads have no
+                // place in the estimation dry run, which processes every
+                // bucket — the upper bound.
+                if estimated_costs_only_with_layer_info.is_none() {
+                    if let Some(transform) = sub_level.time_range() {
+                        let entry_key_bytes = match &index_key {
+                            DriveKeyInfo::Key(key) => Some(key.as_slice()),
+                            DriveKeyInfo::KeyRef(key) => Some(*key),
+                            DriveKeyInfo::KeySize(_) => None,
+                        };
+                        if let Some(entry_key_bytes) = entry_key_bytes {
+                            if !self.time_range_entry_is_removable(
+                                transform,
+                                entry_key_bytes,
+                                block_time_ms,
+                                &index_path,
+                                transaction,
+                                batch_operations,
+                                platform_version,
+                            )? {
+                                continue;
+                            }
+                        }
+                    }
+                }
                 // The final bucket takes ownership of `index_path`; earlier
                 // buckets (only a time-range fan-out has more than one)
                 // clone it.
