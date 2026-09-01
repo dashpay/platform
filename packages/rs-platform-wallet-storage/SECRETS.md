@@ -465,12 +465,13 @@ automatic fallback between backends.
 
 ### Error surface
 
-`SecretStore` returns the typed `SecretStoreError`. For the file arm this
-is **lossless**: `WrongPassphrase`, `Corruption`, `AlreadyLocked`,
-`KdfFailure`, `VersionUnsupported`, `MalformedVault`, `InsecurePermissions`,
-`InsecureParentDir`, `SecretTooLarge`, `VaultTooLarge`, `Encrypt`, and
-`InvalidLabel` are distinct typed variants. The Tier-2 layer adds five more:
-`ExpectedProtectedButUnsealed` (the fail-closed strip refusal),
+`SecretStore` returns the typed `SecretStoreError` — 23 variants in total.
+For the file arm this is **lossless**: `WrongPassphrase`, `Corruption`,
+`AlreadyLocked`, `KdfFailure`, `EntropyUnavailable`, `VersionUnsupported`,
+`MalformedVault`, `InsecurePermissions`, `InsecureParentDir`,
+`SecretTooLarge`, `VaultTooLarge`, `PassphraseTooLong`, `Encrypt`, `NoEntry`,
+`Io`, and `InvalidLabel` are distinct typed variants. The Tier-2 layer adds
+five more: `ExpectedProtectedButUnsealed` (the fail-closed strip refusal),
 `NeedsPassword` (a protected object read with no password), `WrongPassword`
 (object-password tag fail — distinct from the Tier-1 `WrongPassphrase`),
 `BlankPassphrase` (a blank or sub-floor vault passphrase or object password), and
@@ -481,12 +482,26 @@ downcast-recoverable, like `WrongPassphrase`); `UnsupportedEnvelopeVersion`
 joins the secret-free `BadStoreFormat` group. `VaultTooLarge` surfaces when
 the on-disk vault exceeds the read-side ceiling; `SecretTooLarge` rejects an
 oversized secret at the write boundary before it can inflate the shared
-vault; `InsecureParentDir` refuses a vault whose ancestor chain has unsafe
+vault; `PassphraseTooLong` rejects a vault passphrase or object password
+past the 4080-byte `mlock`ed-page ceiling before it is ever derived (see
+"Short passphrases are rejected" above); `EntropyUnavailable` marks an
+exhausted or blocked OS CSPRNG draw for a salt, nonce, or key — kept
+distinct from `KdfFailure` so it is not misdiagnosed as an Argon2 parameter
+problem; `InsecureParentDir` refuses a vault whose ancestor chain has unsafe
 ownership or a group/other-writable component without the sticky bit (an
 attacker who can replace an ancestor can replace the `0600` file); `Encrypt`
 is the (effectively unreachable) AEAD
 encrypt-side failure, kept typed so a write failure is never mislabeled a
-key-derivation error. For the OS arm,
+key-derivation error; `NoEntry` surfaces from mutators that need an
+existing `(service, label)` entry to act on (e.g. `reprotect`, see above);
+`Io` wraps a filesystem failure (open/write/rename/fsync) with the OS error
+code and, when known, the non-secret caller-supplied path. `Decrypt` is an
+internal AEAD-tag discriminant with no vault context attached — every
+caller-facing path resolves it to `WrongPassphrase` (header verify-token),
+`Corruption` (entry, post-header), or `WrongPassword` (Tier-2 envelope)
+before it can escape, so it never reaches a `SecretStore` caller, but it is
+still a variant every exhaustive match below (including the `KeyringError`
+projection) must classify. For the OS arm,
 `keyring_core::Error` projects best-effort into
 `SecretStoreError::OsKeyring { kind: OsKeyringErrorKind }`, a payload-free
 discriminant — keyring variants carrying raw bytes (`BadEncoding`,
@@ -516,14 +531,17 @@ keyring_core::Error` keeps the `WrongPassphrase` / `AlreadyLocked` variants
 recoverable: they ride in `NoStorageAccess` with the typed
 `SecretStoreError` boxed as the source, so an SPI-only consumer can recover
 them via `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
-The `BadStoreFormat` group (`Corruption`, `KdfFailure`,
+The `BadStoreFormat` group (`Corruption`, `KdfFailure`, `EntropyUnavailable`,
 `VersionUnsupported`, `UnsupportedEnvelopeVersion`, `MalformedVault`,
 `InsecurePermissions`, `InsecureParentDir`, `SecretTooLarge`,
-`VaultTooLarge`, `Decrypt`, `Encrypt`, `OsKeyring`) has no box slot and
-carries only a secret-free
-string; those remain fully typed on the `SecretStore` path (so e.g.
+`PassphraseTooLong`, `VaultTooLarge`, `Decrypt`, `Encrypt`, `OsKeyring`) has
+no box slot and carries only a secret-free string; those remain fully typed
+on the `SecretStore` path (so e.g.
 `VaultTooLarge` / `SecretTooLarge` are not losslessly recoverable through
-the SPI downcast).
+the SPI downcast). The remaining two variants project outside both groups:
+`InvalidLabel` → `KeyringError::Invalid("user", _)`, and `NoEntry` and `Io`
+pass through as `KeyringError::NoEntry` and `KeyringError::PlatformFailure`
+respectively (`Io`'s inner OS error boxed as the source).
 
 `keyring_core::Error` is safe to `Display` (`{ }`-format), but
 `{:?}`-format embeds `BadEncoding(Vec<u8>)` / `BadDataFormat(Vec<u8>, _)`
