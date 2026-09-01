@@ -318,7 +318,7 @@ allocator, so a `Vec`'s own allocation can never *become* the protected
 buffer — wiping the original is the only thing that keeps an
 unprotected duplicate off the general-purpose heap. `SecretString::new`
 does the same for a moved-in `String`; `From<&str>` and the
-`secret-serde` `visit_str` bypass the intermediate allocation entirely.
+`serde`-gated `visit_str` bypass the intermediate allocation entirely.
 `Debug` is redacted on both.
 
 `SecretString` is additionally **editable in place**, through the single
@@ -412,7 +412,7 @@ unwrapped copy is allocated.
   policy one: a passphrase stays resident in `mlock`ed pages for its
   store's whole lifetime, and three are live at once during a
   `reprotect`, so an unbounded one would break the locked-memory budget
-  above. The `secret-serde` `Deserialize` impl applies the same ceiling,
+  above. The `serde`-gated `Deserialize` impl applies the same ceiling,
   since config is the one construction path whose size this crate does
   not control.
 - **OS keyring (`SecretStore::os` / `default_credential_store`)** —
