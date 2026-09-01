@@ -421,6 +421,15 @@ pub fn load_prekeyed(
     };
     let tombstoned = load_tombstoned_ids(conn, wallet_id)?;
     merge_contacts_and_keys(&mut state, contacts, identity_keys, &tombstoned, ctx)?;
+    // The scan verdict rides the same per-wallet start state the identities
+    // do, because it is the fact the startup sequence weighs against them:
+    // "we already have one" is not evidence we have them all unless the scan
+    // behind it answered every index (dashpay/platform#4365).
+    if let Some(scan_state) =
+        crate::sqlite::schema::identity_scan_states::load_for_wallet(conn, wallet_id, ctx)?
+    {
+        state.scan_states.insert(*wallet_id, scan_state);
+    }
     Ok(state)
 }
 

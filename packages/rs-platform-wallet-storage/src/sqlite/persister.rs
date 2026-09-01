@@ -1867,6 +1867,9 @@ fn apply_changeset_to_tx(
     if let Some(dpns_name_states) = cs.dpns_name_states.as_ref() {
         schema::dpns_name_states::apply(tx, wallet_id, dpns_name_states)?;
     }
+    if let Some(scan_state) = cs.identity_scan_state.as_ref() {
+        schema::identity_scan_states::apply(tx, wallet_id, scan_state)?;
+    }
     if let Some(balances) = cs.token_balances.as_ref() {
         schema::token_balances::apply(tx, wallet_id, balances)?;
     }

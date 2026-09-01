@@ -47,6 +47,10 @@ pub enum LoadSite {
     /// `identity_index`. Only one can occupy the derivation slot, so the
     /// loser is dropped from the wallet's identity map.
     IdentityIndexCollision,
+    /// An `identity_scan_states` row claims a complete scan while unanswered
+    /// indices sit beside it. Clamped toward incomplete, which costs one
+    /// extra scan instead of an identity that never reappears.
+    IdentityScanStateContradiction,
 }
 
 impl LoadSite {
@@ -64,6 +68,7 @@ impl LoadSite {
             Self::TombstonedIdentityOrphan => "tombstoned_identity_orphan",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
+            Self::IdentityScanStateContradiction => "identity_scan_state_contradiction",
         }
     }
 }
