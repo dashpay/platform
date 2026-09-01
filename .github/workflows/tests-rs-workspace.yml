@@ -324,6 +324,20 @@ jobs:
       # caught minutes after merge — the same safety-net pattern as the
       # shielded phase. Keeping this phase's filter identical across events
       # keeps the `rust` codecov flag comparable between PR and push runs.
+      #
+      # `test(~shield)` is a substring match on the FULL test path, so it does
+      # not mean "the shielded suites" — it means "anything with the word in
+      # its name". The shielded phase below compensates for dpp / drive /
+      # drive-abci / dash-sdk, which genuinely need it: they are Orchard
+      # proving tests, and that phase runs them under `cargo test` in a shared
+      # process so one verifying key is built instead of one per test.
+      #
+      # The three wallet packages have no such compensator and no such need —
+      # their whole `wallet::shielded::` suite is 145 tests in ~6 s under
+      # nextest's process-per-test model — so excluding them dropped 145
+      # shielded tests plus ~47 more that merely contain the word (input
+      # selection, FFI error codes, memo encoding, SQLite viewing-key rows)
+      # into a gap no job covered. They are carved out of the exclusion here.
       - name: Run non-shielded tests with nextest (parallel, compiles all packages)
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
@@ -352,7 +366,8 @@ jobs:
             --package keyword-search-contract \
             --all-features \
             --locked \
-            -E 'not test(~shield) and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations))'
+            --no-tests fail \
+            -E '(not test(~shield) or package(platform-wallet) or package(platform-wallet-storage) or package(platform-wallet-ffi)) and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations))'
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
@@ -370,6 +385,9 @@ jobs:
       # The chain simulations excluded from the phase above. PR runs skip
       # them (and upload no rust-strategy coverage — codecov carries the base
       # commit's forward); push, nightly, and dispatch runs execute them all.
+      # The `~shield` exclusion here IS compensated — drive-abci is in the
+      # shielded phase below — so it stays; `--no-tests fail` is the guard
+      # against the whole expression silently selecting nothing.
       - name: Run full chain-simulation suite (push and nightly only)
         id: strategy-tests
         if: >-
@@ -380,6 +398,7 @@ jobs:
             --package drive-abci \
             --all-features \
             --locked \
+            --no-tests fail \
             -E 'binary_id(=drive-abci::strategy_tests) and not test(~comprehensive_mixed_operations) and not test(~shield)'
         env:
           RUST_MIN_STACK: 4194304
