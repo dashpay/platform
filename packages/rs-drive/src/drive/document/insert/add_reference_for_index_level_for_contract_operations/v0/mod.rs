@@ -372,7 +372,7 @@ impl Drive {
     /// by the row commitment: a delete carrying a falsified amount fails
     /// the commitment probe before anything is removed.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_index_only_terminal_item_operations(
+    fn add_index_only_terminal_item_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         mut index_path_info: PathInfo<0>,

@@ -116,10 +116,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             add_document_to_primary_storage: 0,
             add_indices_for_index_level_for_contract_operations: 2,
             add_indices_for_top_index_level_for_contract_operations: 2,
-            // v1: terminal reference flags follow the walker's per-level
-            // decision (flagless on TTL'd sub-levels) instead of always
-            // copying the document's own flags.
-            add_reference_for_index_level_for_contract_operations: 1,
+            add_reference_for_index_level_for_contract_operations: 0,
         },
         insert_contested: DriveDocumentInsertContestedMethodVersions {
             add_contested_document: 0,

@@ -429,29 +429,6 @@ impl Drive {
                 } else {
                     storage_flags
                 };
-                // The prebuilt reference bakes the document's flags into the
-                // element; ephemeral references must be flagless or their
-                // later removal turns sectioned (refundable).
-                let index_document_reference = if index_is_ephemeral {
-                    if let Some(sum_property_name) = &index.summable {
-                        let sum_value =
-                            read_document_sum_contribution(document, sum_property_name)?;
-                        make_document_reference_with_sum_item(
-                            document,
-                            document_and_contract_info.document_type,
-                            sum_value,
-                            None,
-                        )
-                    } else {
-                        make_document_reference(
-                            document,
-                            document_and_contract_info.document_type,
-                            None,
-                        )
-                    }
-                } else {
-                    index_document_reference
-                };
                 self.update_time_range_index_for_contract_operations_v1(
                     index,
                     transform,

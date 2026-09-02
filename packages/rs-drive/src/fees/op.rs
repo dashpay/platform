@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::GroveOp;
 use grovedb::batch::KeyInfoPath;
 use grovedb::element::reference_path::ReferencePathType;
 use grovedb::element::IndexAxis;
@@ -468,7 +469,25 @@ impl LowLevelDriveOperation {
     /// through untouched (nothing byte-priced remains in them).
     pub fn retag_ephemeral(self) -> LowLevelDriveOperation {
         match self {
-            GroveOperation(grovedb_op) => EphemeralGroveOperation(grovedb_op),
+            GroveOperation(mut grovedb_op) => {
+                // TTL'd (ephemeral) subtrees must hold flagless elements:
+                // their bytes are never refundable, and flags on any element
+                // under them would turn its later removal sectioned
+                // (refundable) — the consume path treats that as corruption.
+                // Stripping here, at the single choke point every ephemeral
+                // op passes through, lets the walkers keep building elements
+                // exactly as they do for standing levels.
+                match &mut grovedb_op.op {
+                    GroveOp::InsertWithKnownToNotAlreadyExist { element }
+                    | GroveOp::InsertIfNotExists { element, .. }
+                    | GroveOp::InsertOrReplace { element }
+                    | GroveOp::Replace { element }
+                    | GroveOp::Patch { element, .. } => element.set_flags(None),
+                    GroveOp::RefreshReference { flags, .. } => *flags = None,
+                    _ => {}
+                }
+                EphemeralGroveOperation(grovedb_op)
+            }
             CalculatedCostOperation(cost) => CalculatedEphemeralCostOperation(cost),
             other => other,
         }
