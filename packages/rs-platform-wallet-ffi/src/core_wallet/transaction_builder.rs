@@ -146,7 +146,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 
     let signer =
         MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
-    let reservation_only = (*builder).reservation_only;
+    let reservation_only = ffi.reservation_only;
     let finalized = runtime().block_on(wallet.core().finalize_transaction_with_options(
         inner,
         account_type.funding_sources(),
