@@ -104,7 +104,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const version = forFileName ? args[1] : args[0];
 
   if (!version) {
-    console.error('Usage: deb-version.js [--file-name] SEMVER_VERSION\n\n'
+    console.error('Usage: deb-version.mjs [--file-name] SEMVER_VERSION\n\n'
       + '  Prints the Debian package version for a semver version, or the version as it\n'
       + '  appears in the package file name.\n\n'
       + '  DASHMATE_DEB_REVISION  Debian revision, default 1. Bump it to rebuild a version\n'

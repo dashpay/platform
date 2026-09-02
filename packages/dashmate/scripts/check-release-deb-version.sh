@@ -7,7 +7,7 @@ cmd_usage="Usage: check-release-deb-version.sh CURRENT_TAG
 Checks that the deb built for CURRENT_TAG sorts above the deb of the last release
 operators were offered, which is what decides whether apt takes it as an upgrade.
 
-The baseline release is chosen by deb-release-baseline.js, its version is read from
+The baseline release is chosen by deb-release-baseline.mjs, its version is read from
 the published package's own control field, and the two are compared by
 check-deb-version.sh.
 
@@ -56,8 +56,8 @@ done
 DIR_PATH=$(dirname "$(realpath "$0")")
 
 compare="${DIR_PATH}/check-deb-version.sh"
-translate="${DIR_PATH}/deb-version.js"
-select_baseline="${DIR_PATH}/deb-release-baseline.js"
+translate="${DIR_PATH}/deb-version.mjs"
+select_baseline="${DIR_PATH}/deb-release-baseline.mjs"
 if [ ! -x "${compare}" ] || [ ! -f "${translate}" ] || [ ! -f "${select_baseline}" ]; then
   echo "::error::${compare}, ${translate} or ${select_baseline} is missing"
   exit 1
@@ -105,6 +105,6 @@ echo "Comparing ${CURRENT_TAG} (${new_version}) against ${baseline_asset} from $
 status=0
 "${compare}" "${new_version}" "${baseline_version}" || status=$?
 if [ "${status}" -eq 1 ]; then
-  echo "::error::${new_version} does not sort above ${baseline_version}, so apt would refuse this release as a downgrade or report it as already the newest version. Rebuilding an already published version needs DASHMATE_DEB_REVISION; re-releasing a version whose predecessor carried a git sha in its upstream part needs DASHMATE_DEB_EPOCH=1. Both are read by packages/dashmate/scripts/deb-version.js and must be set for the packaging job as well."
+  echo "::error::${new_version} does not sort above ${baseline_version}, so apt would refuse this release as a downgrade or report it as already the newest version. Rebuilding an already published version needs DASHMATE_DEB_REVISION; re-releasing a version whose predecessor carried a git sha in its upstream part needs DASHMATE_DEB_EPOCH=1. Both are read by packages/dashmate/scripts/deb-version.mjs and must be set for the packaging job as well."
 fi
 exit "${status}"

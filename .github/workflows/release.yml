@@ -24,7 +24,7 @@ concurrency:
 permissions:
   contents: read
 
-# Debian version knobs, read by packages/dashmate/scripts/deb-version.js in both
+# Debian version knobs, read by packages/dashmate/scripts/deb-version.mjs in both
 # the version gate and the packaging job. They have to stay in lockstep: a value
 # seen by only one of them makes the gate validate a version that is not the one
 # that ships.

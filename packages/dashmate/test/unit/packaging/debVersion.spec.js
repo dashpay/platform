@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { debVersionFromSemver, debFileNameVersion } from '../../../scripts/deb-version.js';
+import { debVersionFromSemver, debFileNameVersion } from '../../../scripts/deb-version.mjs';
 
-const SCRIPT_PATH = fileURLToPath(new URL('../../../scripts/deb-version.js', import.meta.url));
+const SCRIPT_PATH = fileURLToPath(new URL('../../../scripts/deb-version.mjs', import.meta.url));
 
 /**
  * Independent port of dpkg's version comparison (`verrevcmp` in dpkg's version.c),
@@ -112,7 +112,7 @@ function compareDebVersions(left, right) {
   return upstream === 0 ? verrevcmp(a.revision, b.revision) : upstream;
 }
 
-describe('deb-version.js', () => {
+describe('deb-version.mjs', () => {
   describe('version comparison oracle', () => {
     it('should order versions the way dpkg does', () => {
       expect(compareDebVersions('4.1.0', '4.1.0')).to.equal(0);

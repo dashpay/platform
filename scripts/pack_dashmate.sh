@@ -66,8 +66,8 @@ rewrite_deb_versions() {
   fi
 
   SEMVER_VERSION=$(node -p "require('./package.json').version")
-  DEB_VERSION=$(node "$ROOT_PATH/packages/dashmate/scripts/deb-version.js" "$SEMVER_VERSION")
-  DEB_FILE_VERSION=$(node "$ROOT_PATH/packages/dashmate/scripts/deb-version.js" --file-name "$SEMVER_VERSION")
+  DEB_VERSION=$(node "$ROOT_PATH/packages/dashmate/scripts/deb-version.mjs" "$SEMVER_VERSION")
+  DEB_FILE_VERSION=$(node "$ROOT_PATH/packages/dashmate/scripts/deb-version.mjs" --file-name "$SEMVER_VERSION")
 
   rm -rf "$STAGING_PATH"
   mkdir -p "$STAGING_PATH"

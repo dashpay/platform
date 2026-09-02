@@ -74,7 +74,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const currentTag = process.argv[2];
 
   if (!currentTag) {
-    console.error('Usage: deb-release-baseline.js CURRENT_TAG < releases.json\n\n'
+    console.error('Usage: deb-release-baseline.mjs CURRENT_TAG < releases.json\n\n'
       + '  Reads the GitHub releases API response on stdin and prints the tag and the\n'
       + '  package file name of the release the current tag has to sort above, separated\n'
       + '  by a tab. Prints nothing when no published release has shipped a package.\n');

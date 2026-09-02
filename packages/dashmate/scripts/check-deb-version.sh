@@ -12,8 +12,8 @@ Both arguments are Debian package versions ([EPOCH:]UPSTREAM[-REVISION]), not se
 tags. Translate a semver version first:
 
   packages/dashmate/scripts/check-deb-version.sh \\
-    \"\$(node packages/dashmate/scripts/deb-version.js 4.1.0-rc.4)\" \\
-    \"\$(node packages/dashmate/scripts/deb-version.js 4.1.0-rc.3)\"
+    \"\$(node packages/dashmate/scripts/deb-version.mjs 4.1.0-rc.4)\" \\
+    \"\$(node packages/dashmate/scripts/deb-version.mjs 4.1.0-rc.3)\"
 
   EXIT CODES:
     0  new version sorts above the previous one
