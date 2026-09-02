@@ -3291,3 +3291,334 @@ fn ttl_index_bytes_bill_to_processing_without_refunds() {
          as a contract with no indexes at all"
     );
 }
+
+/// Several indexes may share one grid-qualified level (same grid, same
+/// ttl); the walkers must drain that level exactly ONCE per write, before
+/// any batch mutation is queued. The per-index regression: four countable
+/// indexes share `$createdAt#7200#7200`, so a full bucket costs 13 drop
+/// operations — more than one 8-op budget — and a per-index drain would
+/// keep dropping paths (directly) that an earlier index's queued removals
+/// target, failing batch apply with `InvalidPath`, while spending up to
+/// four budgets. One update past the horizon must succeed against the
+/// partially drained bucket, and a second write finishes the job.
+#[test]
+fn ttl_shared_grid_drains_once_per_write() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::grove_operations::DirectQueryType;
+    use dpp::data_contract::document_type::DocumentPropertyType;
+    use grovedb_path::SubtreePath;
+
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+    let factory =
+        DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+    let shared_grid_index = |name: &str, second_property: &str| -> Value {
+        Value::Map(vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text(name.to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    platform_value!({"$createdAt": "asc"}),
+                    platform_value!({second_property: "asc"}),
+                ]),
+            ),
+            (
+                Value::Text("timeRange".to_string()),
+                Value::Map(vec![
+                    (
+                        Value::Text("on".to_string()),
+                        Value::Text("$createdAt".to_string()),
+                    ),
+                    (
+                        Value::Text("range".to_string()),
+                        Value::U64(2 * HOUR_SECONDS),
+                    ),
+                    (
+                        Value::Text("step".to_string()),
+                        Value::U64(2 * HOUR_SECONDS),
+                    ),
+                    (Value::Text("ttl".to_string()), Value::U64(4 * HOUR_SECONDS)),
+                ]),
+            ),
+            (
+                Value::Text("countable".to_string()),
+                Value::Text("countable".to_string()),
+            ),
+        ])
+    };
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": {"type": "string", "maxLength": 59, "position": 0},
+            "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 1},
+            "alpha": {"type": "string", "maxLength": 59, "position": 2},
+            "beta": {"type": "string", "maxLength": 59, "position": 3},
+        },
+        "required": ["hashtag", "amount", "alpha", "beta", "$createdAt"],
+        // Index names order the walker's per-index loop (BTreeMap), while
+        // drainage walks property-name trees in KEY order — so `aHashtag`
+        // iterates FIRST while its `hashtag` tree drains LAST. Under a
+        // per-index drain that is the poison ordering: the first index
+        // queues removals against the still-standing hashtag entries, then
+        // a later index's drain drops them directly and batch apply fails
+        // with InvalidPath.
+        "indices": Value::Array(vec![
+            shared_grid_index("aHashtag", "hashtag"),
+            shared_grid_index("bAmount", "amount"),
+            shared_grid_index("cAlpha", "alpha"),
+            shared_grid_index("dBeta", "beta"),
+        ]),
+        "additionalProperties": false,
+    });
+    let contract = factory
+        .create_with_value_config(
+            Identifier::from([220u8; 32]),
+            0,
+            platform_value!({ "post": document_schema }),
+            None,
+            None,
+        )
+        .expect("four indexes sharing one grid and ttl validate")
+        .data_contract_owned();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let transform = document_type
+        .indexes()
+        .get("aHashtag")
+        .expect("index")
+        .time_range
+        .clone()
+        .expect("transform");
+
+    let h = HOUR_MS;
+    let t0 = 7_000 * h;
+    let owner_bytes = fixture_bytes(19, t0, "zeta");
+    let mut document = Document::V0(DocumentV0 {
+        id: Identifier::from(fixture_bytes(20, t0, "zeta")),
+        owner_id: Identifier::from(owner_bytes),
+        properties: BTreeMap::from([
+            ("hashtag".to_string(), Value::Text("zeta".to_string())),
+            ("amount".to_string(), Value::U64(4)),
+            ("alpha".to_string(), Value::Text("four".to_string())),
+            ("beta".to_string(), Value::Text("nine".to_string())),
+        ]),
+        created_at: Some(t0 + MINUTE_MS_TTL),
+        revision: Some(1),
+        ..Default::default()
+    });
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(owner_bytes),
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo {
+                time_ms: t0 + MINUTE_MS_TTL,
+                ..Default::default()
+            },
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("add document");
+
+    // First write past the horizon: the bucket needs 13 drop operations,
+    // the budget allows 8 — a partial drain is guaranteed, and every
+    // index's queued removals must stay consistent with it.
+    let mut update_at = |time_ms: u64, revision: u64, hashtag: &str| {
+        document.set("hashtag", Value::Text(hashtag.to_string()));
+        document.set_revision(Some(revision));
+        drive
+            .update_document_for_contract(
+                &document,
+                &contract,
+                document_type,
+                Some(owner_bytes),
+                BlockInfo {
+                    time_ms,
+                    ..Default::default()
+                },
+                true,
+                None,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("an update against a partially drained shared-grid bucket succeeds");
+    };
+    update_at(t0 + 6 * h, 2, "zeta2");
+    update_at(t0 + 6 * h + MINUTE_MS_TTL, 3, "zeta3");
+
+    let mut level_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
+    level_path.push(transform.storage_key("$createdAt").into_bytes());
+    let path_refs: Vec<&[u8]> = level_path
+        .iter()
+        .map(|segment| segment.as_slice())
+        .collect();
+    let mut ops: Vec<LowLevelDriveOperation> = vec![];
+    let bucket_stands = drive
+        .grove_has_raw(
+            SubtreePath::from(path_refs.as_slice()),
+            DocumentPropertyType::encode_date_timestamp(t0).as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            None,
+            &mut ops,
+            &platform_version.drive,
+        )
+        .expect("existence check");
+    assert!(
+        !bucket_stands,
+        "two writes' budgets (16 ops) must finish the 13-op shared bucket \
+         — and exactly two must suffice, proving one budget per write, not \
+         one per index"
+    );
+}
+
+/// The every-write cleanup rule includes DELETE-only writes: an index
+/// receiving nothing but deletions must still advance drainage. Two
+/// documents share one expired bucket (6 drop operations — within one
+/// 8-op budget); deleting one past the horizon must take the whole
+/// bucket, other document's expired entries included.
+#[test]
+fn ttl_delete_only_write_drains_expired_buckets() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::grove_operations::DirectQueryType;
+    use dpp::data_contract::document_type::DocumentPropertyType;
+    use grovedb_path::SubtreePath;
+
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = build_ttl_contract_with_index_keys(
+        221,
+        vec![(
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        )],
+    );
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let transform = document_type
+        .indexes()
+        .get("trendingTtl")
+        .expect("index")
+        .time_range
+        .clone()
+        .expect("transform");
+
+    let h = HOUR_MS;
+    let t0 = 8_000 * h;
+    let mut insert = |tag: &str, seed: u8| -> Identifier {
+        let owner_bytes = fixture_bytes(seed, t0, tag);
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from(fixture_bytes(seed.wrapping_add(1), t0, tag)),
+            owner_id: Identifier::from(owner_bytes),
+            properties: BTreeMap::from([
+                ("hashtag".to_string(), Value::Text(tag.to_string())),
+                ("amount".to_string(), Value::U64(5)),
+            ]),
+            created_at: Some(t0 + MINUTE_MS_TTL),
+            revision: Some(1),
+            ..Default::default()
+        });
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(owner_bytes),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo {
+                    time_ms: t0 + MINUTE_MS_TTL,
+                    ..Default::default()
+                },
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("add document");
+        document.id()
+    };
+    let doomed_id = insert("doomed", 21);
+    insert("survivor", 23);
+
+    // The only write after expiry is a DELETE.
+    drive
+        .delete_document_for_contract(
+            doomed_id,
+            &contract,
+            "post",
+            BlockInfo {
+                time_ms: t0 + 6 * h,
+                ..Default::default()
+            },
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("a delete past the horizon succeeds and drains");
+
+    let mut level_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
+    level_path.push(transform.storage_key("$createdAt").into_bytes());
+    let path_refs: Vec<&[u8]> = level_path
+        .iter()
+        .map(|segment| segment.as_slice())
+        .collect();
+    let mut ops: Vec<LowLevelDriveOperation> = vec![];
+    let bucket_stands = drive
+        .grove_has_raw(
+            SubtreePath::from(path_refs.as_slice()),
+            DocumentPropertyType::encode_date_timestamp(t0).as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            None,
+            &mut ops,
+            &platform_version.drive,
+        )
+        .expect("existence check");
+    assert!(
+        !bucket_stands,
+        "a delete-only write must drain the expired bucket, the surviving \
+         document's entries included"
+    );
+}

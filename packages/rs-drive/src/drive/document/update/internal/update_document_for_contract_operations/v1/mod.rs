@@ -300,6 +300,35 @@ impl Drive {
         // beneath a `ProvableCount*` / `ProvableSum*` parent —
         // diverging from the insert path (consensus break).
         let index_structure = document_type.index_structure();
+
+        // TTL drainage rides every write into a TTL'd index — updates
+        // included, mirroring the v2 insert walker: a bounded number of
+        // deepest-first drop operations against the oldest expired bucket,
+        // resuming wherever the previous write's budget ran out. One sweep
+        // over the deduplicated levels, BEFORE the per-index loop queues
+        // any batch mutation: drainage applies directly to grovedb, so a
+        // per-index drain could both multiply the per-write budget (several
+        // indexes may share one grid level) and remove paths an earlier
+        // index's queued operations target. Running it first also keeps the
+        // loop coherent with the drained state: if the drain takes a bucket
+        // this document's old entries lived in, the old-entry removable
+        // checks skip it. This path is stateful-only (estimation redirected
+        // to the insert walker above), and drainage is unbilled — see the
+        // ttl module's Billing section.
+        {
+            let base_path: Vec<Vec<u8>> = contract_document_type_path
+                .iter()
+                .map(|&segment| Vec::from(segment))
+                .collect();
+            self.drain_expired_time_range_levels(
+                index_structure,
+                &base_path,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            )?;
+        }
+
         // fourth we need to store a reference to the document for each index
         for index in document_type.indexes().values() {
             // at this point the contract path is to the contract documents
@@ -984,32 +1013,11 @@ impl Drive {
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
 
-        // TTL drainage rides every write into a TTL'd index — updates
-        // included, mirroring the v2 insert walker: a bounded number of
-        // deepest-first drop operations against the oldest expired bucket,
-        // resuming wherever the previous write's budget ran out. Running it
-        // FIRST keeps the rest of this update coherent with the drained
-        // state: if the drain takes a bucket this document's old entries
-        // lived in, the old-entry loop's removable checks skip it. This
-        // path is stateful-only (estimation redirects to the insert walker
-        // at the top of the v1 update), and drainage is unbilled — see the
-        // ttl module's Billing section.
-        if transform.ttl_seconds.is_some() {
-            if let Some(max_operations) = platform_version
-                .system_limits
-                .max_time_range_ttl_drop_operations_per_write
-            {
-                self.drain_expired_time_range_buckets(
-                    transform,
-                    top_index_level,
-                    base_index_path,
-                    block_time_ms,
-                    max_operations,
-                    transaction,
-                    platform_version,
-                )?;
-            }
-        }
+        // TTL drainage already ran: the caller sweeps every TTL'd level
+        // once (deduplicated) before the per-index loop, so the removable
+        // checks below see post-drain state and no direct drop can race a
+        // queued mutation. Do not drain here — several indexes may share
+        // this level.
 
         // New/old raw values for the bucketed source property → entry key
         // sets, mirroring the insert walker's fan-out (see the doc comment).
