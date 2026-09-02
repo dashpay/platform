@@ -446,8 +446,8 @@ fn seed_self_contradictory_unowned_identity(persister: &SqlitePersister, identit
     let payload = blob::encode(&entry).expect("encode unowned identity entry");
     let conn = persister.lock_conn_for_test();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-         VALUES (?1, NULL, 4, ?2, 0)",
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
+         VALUES (?1, NULL, 4, ?2)",
         params![id.as_slice(), payload],
     )
     .expect("seed unowned identity carrying a registration index");

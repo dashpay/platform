@@ -153,7 +153,7 @@ impl PlatformWalletInfo {
             for (_id, entry) in identities {
                 self.identity_manager.apply_identity_entry(entry);
             }
-            // Best-effort tombstones across both buckets. Routed
+            // Best-effort removals across both buckets. Routed
             // through `remove_for_apply` so the manager's side-index
             // stays in lockstep with the buckets without us having to
             // reach in and touch the index from out here.

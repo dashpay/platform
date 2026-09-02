@@ -286,12 +286,13 @@ pub enum WalletStorageError {
     },
 
     /// A rehydration merge (`load_prekeyed`) found an `identity_keys` /
-    /// `contacts` entry whose owner identity is neither loaded nor
-    /// tombstoned for this wallet — an orphaned row a logical delete does
-    /// not explain. Hard-error rather than silently drop live key / contact
-    /// state; only a known-tombstoned owner's orphaned rows are safe to skip.
+    /// `contacts` entry whose owner identity is not loaded for this wallet.
+    /// Removing an identity sweeps its rows, so an absent owner is
+    /// corruption: hard-error rather than silently drop live key / contact
+    /// state. [`LoadPolicy::Recovery`](crate::LoadPolicy) downgrades it to a
+    /// counted skip.
     #[error(
-        "rehydration merge found an orphaned entry: owner {} is neither loaded nor tombstoned",
+        "rehydration merge found an orphaned entry: owner {} is not loaded",
         hex::encode(owner)
     )]
     OrphanedIdentityEntry { owner: [u8; 32] },

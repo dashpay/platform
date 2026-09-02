@@ -37,10 +37,10 @@ pub enum LoadSite {
     UnresolvedUtxoAddress,
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
-    /// An `identity_keys` / `contacts` row's owner identity is tombstoned.
-    /// Counted per row, though `route_by_owner` decides once per collection
-    /// after its walk, so one log line can carry many counts.
-    TombstonedIdentityOrphan,
+    /// An `identity_keys` / `contacts` row names an identity that is not
+    /// there. Counted per row, though `route_by_owner` decides once per
+    /// collection after its walk, so one log line can carry many counts.
+    MissingIdentityOwner,
     /// An identity owned by no wallet carries a registration index.
     UnownedIdentityHasRegistrationIndex,
     /// Two live `identities` rows of one wallet claim the same
@@ -65,7 +65,7 @@ impl LoadSite {
             Self::OrphanedUtxoOwner => "orphaned_utxo_owner",
             Self::UnresolvedUtxoAddress => "unresolved_utxo_address",
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
-            Self::TombstonedIdentityOrphan => "tombstoned_identity_orphan",
+            Self::MissingIdentityOwner => "missing_identity_owner",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
             Self::IdentityScanStateContradiction => "identity_scan_state_contradiction",
@@ -297,7 +297,7 @@ mod tests {
     fn tolerate_many_counts_every_occurrence_from_one_record() {
         let ctx = LoadCtx::recovery();
         ctx.tolerate_many(
-            LoadSite::TombstonedIdentityOrphan,
+            LoadSite::MissingIdentityOwner,
             5,
             WalletStorageError::blob_decode("five leftover rows"),
         )
@@ -305,7 +305,7 @@ mod tests {
         let snapshot = ctx.degradation();
         assert_eq!(snapshot.total, 5);
         assert_eq!(
-            snapshot.by_site.get(&LoadSite::TombstonedIdentityOrphan),
+            snapshot.by_site.get(&LoadSite::MissingIdentityOwner),
             Some(&5)
         );
     }

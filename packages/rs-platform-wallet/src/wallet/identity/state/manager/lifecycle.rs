@@ -151,8 +151,12 @@ impl IdentityManager {
 
     /// Remove an identity from whichever bucket holds it.
     ///
-    /// Persists the tombstone changeset via `persister` and returns the
-    /// removed [`Identity`]. O(log n) via the side-index.
+    /// Persists the removal via `persister` and returns the removed
+    /// [`Identity`]. O(log n) via the side-index.
+    ///
+    /// Removal is terminal in storage as well as in memory: the persister
+    /// deletes the identity and every row it owns, so re-adding the same
+    /// id later starts from a blank identity.
     pub fn remove_identity(
         &mut self,
         identity_id: &Identifier,

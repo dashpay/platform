@@ -1,6 +1,6 @@
 //! `identities` table writer.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
@@ -22,7 +22,12 @@ use crate::sqlite::schema::blob::impl_persistable_blob;
 // PUBLIC material only: identity snapshot reaching the `entry_blob` column.
 impl_persistable_blob!(IdentityEntry);
 
-pub fn apply(
+/// Write the changeset's inserted / updated identities.
+///
+/// The insert half of a two-part apply: [`apply_removals`] must run for
+/// the same changeset, AFTER every identity-scoped child writer in the
+/// same transaction. See that function for why the order is load-bearing.
+pub fn apply_upserts(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &IdentityChangeSet,
@@ -41,16 +46,15 @@ pub fn apply(
         // A's row: it fires only when the on-disk row is unowned (orphan →
         // parented promotion) or already owned by the incoming scope. A
         // cross-wallet write becomes a no-op (SQLite skips a false-WHERE
-        // upsert without erroring), preserving the resident blob, index, and
-        // tombstone. `IS` is the NULL-safe match for the nullable column.
+        // upsert without erroring), preserving the resident blob and index.
+        // `IS` is the NULL-safe match for the nullable column.
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-             VALUES (?1, ?2, ?3, ?4, 0) \
+            "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
+             VALUES (?1, ?2, ?3, ?4) \
              ON CONFLICT(identity_id) DO UPDATE SET \
                 wallet_id = COALESCE(identities.wallet_id, excluded.wallet_id), \
                 identity_index = excluded.identity_index, \
-                entry_blob = excluded.entry_blob, \
-                tombstoned = 0 \
+                entry_blob = excluded.entry_blob \
              WHERE identities.wallet_id IS NULL OR identities.wallet_id IS excluded.wallet_id",
         )?;
         let wallet_id_param = wallet_id_to_param(wallet_id);
@@ -105,17 +109,45 @@ pub fn apply(
             }
         }
     }
-    if !cs.removed.is_empty() {
-        // Scope the tombstone to the flush wallet (NULL-safe `IS`) so wallet
-        // A's `removed` set can't tombstone wallet B's identity; the sentinel
-        // scope maps to NULL and tombstones only orphan rows.
-        let wallet_id_param = wallet_id_to_param(wallet_id);
-        let mut stmt = tx.prepare_cached(
-            "UPDATE identities SET tombstoned = 1 WHERE identity_id = ?1 AND wallet_id IS ?2",
-        )?;
-        for id in &cs.removed {
-            stmt.execute(params![id.as_slice(), wallet_id_param])?;
-        }
+    Ok(())
+}
+
+/// Delete the changeset's removed identities, and with them every row
+/// they own.
+///
+/// # Ordering
+///
+/// Must run AFTER every identity-scoped child writer in the same
+/// transaction (`identity_keys`, `contacts`, `token_balances`,
+/// `dashpay`). A merged buffer can carry `removed` for an identity
+/// alongside upserts for that same identity — sync writes its keys, the
+/// host then removes it, both land in one flush. Deleting first pulls
+/// the foreign-key parent out from under those inserts and fails the
+/// whole flush; deleting last lets them land and then sweeps them, which
+/// is the same end state and the documented "removal wins" rule.
+///
+/// Dependents go through three paths: the native `ON DELETE CASCADE` on
+/// `identity_id`, V001's `cascade_meta_on_identity_delete`, and V016's
+/// `cascade_children_on_identity_delete` for the rows no live foreign
+/// key reaches (an out-of-wallet identity's `identity_keys`, whose
+/// compound FK is dormant under MATCH SIMPLE, plus `contacts` and
+/// `ignored_senders`, which have no FK to `identities` at all).
+pub fn apply_removals(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &IdentityChangeSet,
+) -> Result<(), WalletStorageError> {
+    if cs.removed.is_empty() {
+        return Ok(());
+    }
+    // Scope the delete to the flush wallet (NULL-safe `IS`) so wallet A's
+    // `removed` set can't delete wallet B's identity; the sentinel scope
+    // maps to NULL and reaches only orphan rows.
+    let wallet_id_param = wallet_id_to_param(wallet_id);
+    let mut stmt =
+        tx.prepare_cached("DELETE FROM identities WHERE identity_id = ?1 AND wallet_id IS ?2")?;
+    for id in &cs.removed {
+        stmt.execute(params![id.as_slice(), wallet_id_param])?;
     }
     Ok(())
 }
@@ -131,21 +163,19 @@ pub fn apply(
 /// attributed to the caller that made it.
 ///
 /// Occupancy is keyed on the FLUSH SCOPE, not on the incoming row's
-/// stored `wallet_id`: [`apply`]'s upsert promotes a NULL `wallet_id`
+/// stored `wallet_id`: [`apply_upserts`] promotes a NULL `wallet_id`
 /// into the flush scope, so the scope is the slot the write actually
-/// lands in. Ids in `cs.removed` hold no slot — [`apply`] inserts before
-/// it tombstones, so "tombstone A@N + insert B@N" in one changeset has a
-/// legal final state. Tombstoned rows are likewise transparent: the
-/// tombstone `UPDATE` leaves `identity_index` populated, and counting
-/// those would refuse legitimate slot reuse.
+/// lands in. Ids in `cs.removed` hold no slot — [`apply_removals`]
+/// deletes them later in the same transaction, so "remove A@N + insert
+/// B@N" in one changeset has a legal final state.
 ///
 /// The judgement is on the state the changeset ENDS in, never the one it
 /// starts from: an on-disk occupant that `cs` itself rewrites to another
 /// index — or to none at all — has vacated the slot as surely as a
-/// tombstoned one, so "A moves to 2, B takes 1" and a two-way swap are
+/// removed one, so "A moves to 2, B takes 1" and a two-way swap are
 /// both legal. `identities` carries no `(wallet_id, identity_index)`
-/// UNIQUE index, so [`apply`]'s row-at-a-time upserts pass straight
-/// through the transient double-claim a swap goes through.
+/// UNIQUE index, so the row-at-a-time upserts pass straight through the
+/// transient double-claim a swap goes through.
 ///
 /// A pre-existing on-disk duplicate (written before this check existed)
 /// makes both of its slot-mates unwritable here. Refusing to extend the
@@ -177,12 +207,11 @@ pub(crate) fn check_index_conflicts(
     let wallet_id_param = wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare_cached(
         "SELECT identity_id FROM identities \
-         WHERE wallet_id IS ?1 AND identity_index = ?2 AND tombstoned = 0 \
-           AND identity_id != ?3",
+         WHERE wallet_id IS ?1 AND identity_index = ?2 AND identity_id != ?3",
     )?;
     let mut claimed: BTreeMap<u32, Identifier> = BTreeMap::new();
     for (id, entry) in &cs.identities {
-        // A removed id is tombstoned by the end of the same `apply`, so
+        // A removed id is deleted by the end of the same transaction, so
         // whatever it claims here it does not keep.
         if cs.removed.contains(id) {
             continue;
@@ -239,23 +268,18 @@ pub(crate) fn check_index_conflicts(
     Ok(())
 }
 
-/// Decode a single `identities` row into `(entry, tombstoned)`.
-///
-/// Returns `Ok(None)` if no row matches. The `tombstoned` flag is
-/// returned alongside the entry so the caller can decide whether to skip
-/// a logically deleted identity rather than having to consult
-/// [`load_state`] separately.
+/// Decode a single `identities` row, or `Ok(None)` if no row matches.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn fetch(
     conn: &Connection,
     wallet_id: &WalletId,
     identity_id: &[u8; 32],
-) -> Result<Option<(IdentityEntry, bool)>, WalletStorageError> {
+) -> Result<Option<IdentityEntry>, WalletStorageError> {
     // Scope to the caller's wallet (NULL-safe `IS`) so a peer wallet sharing
     // the identity-id row can't leak through; sentinel matches orphan rows.
     let wallet_id_param = wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
-        "SELECT length(entry_blob), entry_blob, tombstoned FROM identities \
+        "SELECT length(entry_blob), entry_blob FROM identities \
          WHERE identity_id = ?1 AND wallet_id IS ?2",
     )?;
     let mut rows = stmt.query(params![&identity_id[..], wallet_id_param])?;
@@ -264,15 +288,14 @@ pub fn fetch(
         Some(row) => {
             blob::check_size(row.get::<_, i64>(0)?)?;
             let payload: Vec<u8> = row.get(1)?;
-            let tombstoned: i64 = row.get(2)?;
-            Ok(Some((blob::decode(&payload)?, tombstoned != 0)))
+            Ok(Some(blob::decode(&payload)?))
         }
     }
 }
 
 /// Build an [`IdentityManagerStartState`](platform_wallet::changeset::IdentityManagerStartState)
-/// for one wallet. Tombstoned rows are skipped; a row that fails to decode is
-/// a hard error (corruption is never silently dropped). Rows with
+/// for one wallet. A row that fails to decode is a hard error (corruption is
+/// never silently dropped). Rows with
 /// `identity_index = Some(_)` bucket into `wallet_identities`, `None` into
 /// `out_of_wallet_identities`.
 /// Strict-policy [`load_state_with_ctx`], for the tests that read identity
@@ -311,7 +334,7 @@ pub fn load_state_with_ctx(
     // unowned bucket. A plain `=` could not express the second case at all.
     let wallet_id_param = wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
-        "SELECT identity_id, length(entry_blob), entry_blob, tombstoned, identity_index \
+        "SELECT identity_id, length(entry_blob), entry_blob, identity_index \
          FROM identities WHERE wallet_id IS ?1",
     )?;
     // The ignored-senders TABLE is the authoritative ignore record (every
@@ -325,11 +348,7 @@ pub fn load_state_with_ctx(
         let identity_id_bytes: Vec<u8> = row.get(0)?;
         blob::check_size(row.get::<_, i64>(1)?)?;
         let payload: Vec<u8> = row.get(2)?;
-        let tombstoned: i64 = row.get(3)?;
-        let typed_identity_index: Option<i64> = row.get(4)?;
-        if tombstoned != 0 {
-            continue;
-        }
+        let typed_identity_index: Option<i64> = row.get(3)?;
         let entry: IdentityEntry = blob::decode(&payload)?;
         // Cross-check the decoded blob against the typed columns it was
         // selected by (mirrors the accounts / identity_keys readers): the
@@ -399,9 +418,8 @@ pub fn load_state_with_ctx(
 /// its own `public_keys` and contact maps at load time — no separate
 /// changeset layered on afterwards. Fail-hard on a corrupt row (inherited
 /// from the three underlying readers) and on any merged key / contact entry
-/// whose owner is absent for a reason other than a known tombstone; a
-/// tombstoned owner's orphaned rows are skipped with a summary log (see
-/// [`merge_contacts_and_keys`]).
+/// whose owner is absent, which [`LoadPolicy::Recovery`](crate::LoadPolicy)
+/// downgrades to a counted skip (see [`merge_contacts_and_keys`]).
 pub fn load_prekeyed(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -419,8 +437,7 @@ pub fn load_prekeyed(
         established: records.established,
         ..Default::default()
     };
-    let tombstoned = load_tombstoned_ids(conn, wallet_id)?;
-    merge_contacts_and_keys(&mut state, contacts, identity_keys, &tombstoned, ctx)?;
+    merge_contacts_and_keys(&mut state, contacts, identity_keys, ctx)?;
     // The scan verdict rides the same per-wallet start state the identities
     // do, because it is the fact the startup sequence weighs against them:
     // "we already have one" is not evidence we have them all unless the scan
@@ -431,30 +448,6 @@ pub fn load_prekeyed(
         state.scan_states.insert(*wallet_id, scan_state);
     }
     Ok(state)
-}
-
-/// The set of identity ids tombstoned (logically deleted) for this wallet.
-/// A rehydration-merge entry whose owner is in this set is an expected
-/// logical-delete orphan — safe to skip; an owner absent for any other
-/// reason is a hard error.
-fn load_tombstoned_ids(
-    conn: &Connection,
-    wallet_id: &WalletId,
-) -> Result<HashSet<Identifier>, WalletStorageError> {
-    // NULL-safe `IS`, matching `load_state`: a tombstoned UNOWNED identity
-    // must be recognised as tombstoned too, else its leftover key rows are
-    // treated as inexplicable orphans and hard-error the read.
-    let wallet_id_param = wallet_id_to_param(wallet_id);
-    let mut stmt = conn
-        .prepare("SELECT identity_id FROM identities WHERE wallet_id IS ?1 AND tombstoned = 1")?;
-    let mut rows = stmt.query(params![wallet_id_param])?;
-    let mut out = HashSet::new();
-    while let Some(row) = rows.next()? {
-        let id_bytes: Vec<u8> = row.get(0)?;
-        let id32 = super::id32("identities.identity_id", &id_bytes)?;
-        out.insert(Identifier::from(id32));
-    }
-    Ok(out)
 }
 
 /// Reconstruct a [`ManagedIdentity`] from a persisted [`IdentityEntry`]
@@ -552,9 +545,8 @@ pub fn ensure_exists(
     let payload = blob::encode(&stub)?;
     let wallet_id_param = wallet_id_to_param(wallet_id);
     conn.execute(
-        "INSERT OR IGNORE INTO identities \
-            (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-         VALUES (?1, ?2, NULL, ?3, 0)",
+        "INSERT OR IGNORE INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
+         VALUES (?1, ?2, NULL, ?3)",
         params![&identity_id[..], wallet_id_param, payload],
     )?;
     Ok(())
@@ -574,16 +566,20 @@ pub fn ensure_exists(
 /// # Errors
 ///
 /// [`WalletStorageError::OrphanedIdentityEntry`] when an entry's owner is
-/// absent from the loaded set. A known-tombstoned owner is the one case
-/// [`LoadPolicy::Recovery`](crate::LoadPolicy) forgives: its rows are
-/// logical-delete leftovers, skipped and summarised once per collection.
-/// Under `Strict` even those abort, because "the owner is gone" is exactly
-/// the state that silently drops live key / contact material.
+/// absent from the loaded set. Removing an identity sweeps its rows, so an
+/// absent owner is corruption rather than routine bookkeeping. A `contacts`
+/// or `ignored_senders` row is the reachable shape: both key on `owner_id`
+/// with no foreign key to `identities`, so nothing rejects one naming an
+/// identity that is not there. `identity_keys` cannot reach this state —
+/// its wallet-scoped FK is live, and V014's trigger pair covers the
+/// NULL-scoped case the compound FK leaves dormant.
+/// [`LoadPolicy::Recovery`](crate::LoadPolicy) skips and counts those;
+/// `Strict` aborts, because "the owner is gone" is exactly the state that
+/// silently drops live key / contact material.
 pub fn merge_contacts_and_keys(
     state: &mut IdentityManagerStartState,
     contacts: ContactChangeSet,
     identity_keys: IdentityKeysChangeSet,
-    tombstoned: &HashSet<Identifier>,
     ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     // One transient id → &mut ManagedIdentity view over both buckets so
@@ -605,7 +601,6 @@ pub fn merge_contacts_and_keys(
             .into_values()
             .map(|entry| (entry.identity_id, entry.public_key)),
         &mut by_id,
-        tombstoned,
         ctx,
         "identity_keys",
         |managed, key| managed.identity.add_public_key(key),
@@ -616,7 +611,6 @@ pub fn merge_contacts_and_keys(
             .into_iter()
             .map(|(key, entry)| (key.owner_id, entry.request)),
         &mut by_id,
-        tombstoned,
         ctx,
         "sent_contact_requests",
         |managed, request| managed.apply_sent_contact_request(request),
@@ -627,7 +621,6 @@ pub fn merge_contacts_and_keys(
             .into_iter()
             .map(|(key, entry)| (key.owner_id, entry.request)),
         &mut by_id,
-        tombstoned,
         ctx,
         "incoming_contact_requests",
         |managed, request| managed.apply_incoming_contact_request(request),
@@ -638,7 +631,6 @@ pub fn merge_contacts_and_keys(
             .into_iter()
             .map(|(key, established)| (key.owner_id, established)),
         &mut by_id,
-        tombstoned,
         ctx,
         "established_contacts",
         |managed, established| managed.apply_established_contact(established),
@@ -650,15 +642,13 @@ pub fn merge_contacts_and_keys(
 /// Apply one collection's entries to their owning identity.
 ///
 /// An entry whose owner is loaded is applied. An entry whose owner is
-/// tombstoned is counted and, if the policy allows it, skipped — decided
-/// once after the walk rather than per entry, so a wallet with thousands of
-/// leftovers produces one log line, not thousands, while the per-site tally
-/// still counts every skipped row. Any other missing owner is fatal in both
-/// policies.
+/// missing is counted and, under [`LoadPolicy::Recovery`](crate::LoadPolicy),
+/// skipped — decided once after the walk rather than per entry, so a wallet
+/// with thousands of orphans produces one log line, not thousands, while the
+/// per-site tally still counts every skipped row.
 fn route_by_owner<T>(
     entries: impl IntoIterator<Item = (Identifier, T)>,
     by_id: &mut HashMap<Identifier, &mut ManagedIdentity>,
-    tombstoned: &HashSet<Identifier>,
     ctx: &LoadCtx,
     collection: &'static str,
     apply: impl Fn(&mut ManagedIdentity, T),
@@ -668,14 +658,9 @@ fn route_by_owner<T>(
     for (owner, payload) in entries {
         match by_id.get_mut(&owner) {
             Some(managed) => apply(managed, payload),
-            None if tombstoned.contains(&owner) => {
+            None => {
                 skipped += 1;
                 first_skipped_owner.get_or_insert(owner);
-            }
-            None => {
-                return Err(WalletStorageError::OrphanedIdentityEntry {
-                    owner: owner.to_buffer(),
-                })
             }
         }
     }
@@ -684,17 +669,17 @@ fn route_by_owner<T>(
         // only describing.
         let skipped = u32::try_from(skipped).unwrap_or(u32::MAX);
         ctx.tolerate_many(
-            LoadSite::TombstonedIdentityOrphan,
+            LoadSite::MissingIdentityOwner,
             skipped,
             WalletStorageError::OrphanedIdentityEntry {
                 owner: owner.to_buffer(),
             },
         )?;
         tracing::warn!(
-            site = LoadSite::TombstonedIdentityOrphan.as_str(),
+            site = LoadSite::MissingIdentityOwner.as_str(),
             collection,
             count = skipped,
-            "skipped rehydration entries whose owning identity is tombstoned"
+            "skipped rehydration entries whose owning identity is absent"
         );
     }
     Ok(())
@@ -745,16 +730,18 @@ mod tests {
         }
     }
 
+    /// Both halves of the writer in one transaction, in the order
+    /// `apply_changeset_to_tx` runs them.
     fn apply_in_tx(conn: &mut Connection, scope: &[u8; 32], cs: &IdentityChangeSet) {
         let tx = conn.transaction().unwrap();
-        apply(&tx, scope, cs).unwrap();
+        apply_upserts(&tx, scope, cs).unwrap();
+        apply_removals(&tx, scope, cs).unwrap();
         tx.commit().unwrap();
     }
 
     /// A wallet-B flush naming an identity already owned by wallet A must NOT
-    /// overwrite A's blob / index or clear A's tombstone — the DO UPDATE WHERE
-    /// scopes the overwrite to the owning wallet, so the cross-wallet write is
-    /// a no-op.
+    /// overwrite A's blob or index — the DO UPDATE WHERE scopes the overwrite
+    /// to the owning wallet, so the cross-wallet write is a no-op.
     #[test]
     fn cross_wallet_upsert_does_not_overwrite_resident_row() {
         let mut conn = migrated_conn();
@@ -764,14 +751,11 @@ mod tests {
         insert_wallet(&conn, &a);
         insert_wallet(&conn, &b);
 
-        // A registers X (balance 1000, index 5), then tombstones it.
+        // A registers X (balance 1000, index 5).
         let mut cs_a = IdentityChangeSet::default();
         cs_a.identities
             .insert(Identifier::from(x), entry(x, Some(a), 1000, Some(5)));
         apply_in_tx(&mut conn, &a, &cs_a);
-        let mut cs_a_remove = IdentityChangeSet::default();
-        cs_a_remove.removed.insert(Identifier::from(x));
-        apply_in_tx(&mut conn, &a, &cs_a_remove);
 
         // B flushes X (balance 2000, index 9, unowned blob). Must be a no-op.
         let mut cs_b = IdentityChangeSet::default();
@@ -779,13 +763,39 @@ mod tests {
             .insert(Identifier::from(x), entry(x, None, 2000, Some(9)));
         apply_in_tx(&mut conn, &b, &cs_b);
 
-        let (resident, tombstoned) = fetch(&conn, &a, &x).unwrap().expect("A still owns the row");
+        let resident = fetch(&conn, &a, &x).unwrap().expect("A still owns the row");
         assert_eq!(resident.balance, 1000, "A's blob must survive B's write");
         assert_eq!(resident.identity_index, Some(5), "A's index must survive");
-        assert!(tombstoned, "A's tombstone must not be reset by B");
         assert!(
             fetch(&conn, &b, &x).unwrap().is_none(),
             "B must not have taken ownership"
+        );
+    }
+
+    /// A cross-wallet `removed` set is a no-op for the same reason the
+    /// cross-wallet upsert is: the DELETE carries the flush scope, so
+    /// wallet B cannot delete wallet A's identity out from under it.
+    #[test]
+    fn cross_wallet_removal_leaves_the_resident_row() {
+        let mut conn = migrated_conn();
+        let a = [0xA1u8; 32];
+        let b = [0xB2u8; 32];
+        let x = [0x01u8; 32];
+        insert_wallet(&conn, &a);
+        insert_wallet(&conn, &b);
+
+        let mut cs_a = IdentityChangeSet::default();
+        cs_a.identities
+            .insert(Identifier::from(x), entry(x, Some(a), 1000, Some(5)));
+        apply_in_tx(&mut conn, &a, &cs_a);
+
+        let mut cs_b_remove = IdentityChangeSet::default();
+        cs_b_remove.removed.insert(Identifier::from(x));
+        apply_in_tx(&mut conn, &b, &cs_b_remove);
+
+        assert!(
+            fetch(&conn, &a, &x).unwrap().is_some(),
+            "B's removed set must not reach A's identity"
         );
     }
 
@@ -815,7 +825,7 @@ mod tests {
             .insert(Identifier::from(y), entry(y, Some(a), 500, Some(3)));
         apply_in_tx(&mut conn, &a, &cs_a);
 
-        let (claimed, _) = fetch(&conn, &a, &y).unwrap().expect("A claimed Y");
+        let claimed = fetch(&conn, &a, &y).unwrap().expect("A claimed Y");
         assert_eq!(claimed.balance, 500, "promotion applies the new blob");
         assert_eq!(claimed.identity_index, Some(3));
     }
@@ -870,7 +880,7 @@ mod tests {
             .insert((out_of_wallet, 0), key(out_of_wallet, 0xB2));
 
         let tx = conn.transaction().unwrap();
-        apply(&tx, &w, &ids).unwrap();
+        apply_upserts(&tx, &w, &ids).unwrap();
         crate::sqlite::schema::identity_keys::apply(&tx, &w, &keys).unwrap();
         tx.commit().unwrap();
 
@@ -990,8 +1000,8 @@ mod tests {
             let payload = blob::encode(&e).unwrap();
             conn.execute(
                 "INSERT INTO identities \
-                 (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-                 VALUES (?1, ?2, 1, ?3, 0)",
+                 (identity_id, wallet_id, identity_index, entry_blob) \
+                 VALUES (?1, ?2, 1, ?3)",
                 params![&[id_byte; 32][..], &wallet[..], payload],
             )
             .unwrap();
@@ -1036,8 +1046,8 @@ mod tests {
         let payload = blob::encode(&e).unwrap();
         conn.execute(
             "INSERT INTO identities \
-             (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-             VALUES (?1, ?2, 9, ?3, 0)",
+             (identity_id, wallet_id, identity_index, entry_blob) \
+             VALUES (?1, ?2, 9, ?3)",
             params![&[0xC1u8; 32][..], &wallet[..], payload],
         )
         .unwrap();
@@ -1147,7 +1157,7 @@ mod tests {
             .insert((identity, 0), sample_key_entry(identity, 0x11));
         {
             let tx = conn.transaction().unwrap();
-            apply(&tx, &owner, &ids).unwrap();
+            apply_upserts(&tx, &owner, &ids).unwrap();
             crate::sqlite::schema::identity_keys::apply(&tx, &owner, &owner_keys).unwrap();
             tx.commit().unwrap();
         }
@@ -1210,7 +1220,7 @@ mod tests {
         owner_keys.upserts.insert((x, 0), sample_key_entry(x, 0x11));
         {
             let tx = conn.transaction().unwrap();
-            apply(&tx, &owner, &ids).unwrap();
+            apply_upserts(&tx, &owner, &ids).unwrap();
             crate::sqlite::schema::identity_keys::apply(&tx, &owner, &owner_keys).unwrap();
             tx.commit().unwrap();
         }
@@ -1271,7 +1281,7 @@ mod tests {
         keys.upserts.insert((z, 0), sample_key_entry(z, 0x5B));
         {
             let tx = conn.transaction().unwrap();
-            apply(&tx, &unowned, &ids).unwrap();
+            apply_upserts(&tx, &unowned, &ids).unwrap();
             crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &keys)
                 .expect("an unowned key on an unowned identity is legitimate");
             tx.commit().unwrap();
@@ -1417,7 +1427,7 @@ mod tests {
         keys.upserts.insert((z, 0), sample_key_entry(z, 0x6B));
         {
             let tx = conn.transaction().unwrap();
-            apply(&tx, &unowned, &ids).unwrap();
+            apply_upserts(&tx, &unowned, &ids).unwrap();
             crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &keys).unwrap();
             tx.commit().unwrap();
         }
@@ -1438,108 +1448,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(remaining, 0, "the unowned key must actually be deleted");
-    }
-
-    /// `load_prekeyed` skips — never hard-errors on — an `identity_keys`
-    /// entry whose owner is a known-tombstoned identity: those orphaned rows
-    /// are the expected, self-explained fallout of a logical delete.
-    #[test]
-    fn load_prekeyed_skips_orphaned_keys_of_tombstoned_owner_in_recovery() {
-        use platform_wallet::changeset::IdentityKeysChangeSet;
-
-        let mut conn = migrated_conn();
-        let a = [0xA7u8; 32];
-        insert_wallet(&conn, &a);
-        let y = Identifier::from([0x44u8; 32]);
-
-        let mut ids = IdentityChangeSet::default();
-        ids.identities
-            .insert(y, entry([0x44; 32], Some(a), 50, Some(0)));
-        let mut keys = IdentityKeysChangeSet::default();
-        keys.upserts.insert((y, 0), sample_key_entry(y, 0xD4));
-        {
-            let tx = conn.transaction().unwrap();
-            apply(&tx, &a, &ids).unwrap();
-            crate::sqlite::schema::identity_keys::apply(&tx, &a, &keys).unwrap();
-            tx.commit().unwrap();
-        }
-        // Tombstone Y; its key row survives as a logical-delete orphan.
-        let mut removed = IdentityChangeSet::default();
-        removed.removed.insert(y);
-        apply_in_tx(&mut conn, &a, &removed);
-
-        let strict = load_prekeyed(&conn, &a, &LoadCtx::strict())
-            .expect_err("a tombstoned owner's leftover key must abort a strict load");
-        assert!(
-            matches!(strict, WalletStorageError::OrphanedIdentityEntry { .. }),
-            "expected OrphanedIdentityEntry, got {strict:?}"
-        );
-
-        let state = load_prekeyed(&conn, &a, &LoadCtx::recovery())
-            .expect("tombstoned-owner orphan must be skipped in recovery, not fatal");
-        assert!(
-            state
-                .wallet_identities
-                .get(&a)
-                .map(|m| m.is_empty())
-                .unwrap_or(true),
-            "tombstoned identity must not surface in the loaded state"
-        );
-    }
-
-    /// The same logical-delete skip, for a tombstoned UNOWNED identity.
-    ///
-    /// Not a duplicate of the wallet-owned case above: the skip depends on
-    /// `load_tombstoned_ids` recognising the owner as tombstoned, and that
-    /// query is scoped by `wallet_id`. Scoped with `=` it cannot match a
-    /// NULL, so an unowned tombstone is invisible, its surviving key rows
-    /// look like owners that vanished for no reason, and the read fails
-    /// with `OrphanedIdentityEntry` — the exact brick this whole line of
-    /// work exists to prevent, re-entering through the unowned door. The
-    /// NULL-safe `IS` is what closes it, and this test is what holds it
-    /// closed: revert that predicate to `= ?1` and this fails.
-    #[test]
-    fn load_prekeyed_skips_orphaned_keys_of_tombstoned_unowned_owner_in_recovery() {
-        use platform_wallet::changeset::IdentityKeysChangeSet;
-
-        let mut conn = migrated_conn();
-        let unowned = [0u8; 32];
-        let z = Identifier::from([0x9Cu8; 32]);
-
-        let mut ids = IdentityChangeSet::default();
-        ids.identities.insert(z, entry([0x9C; 32], None, 30, None));
-        let mut keys = IdentityKeysChangeSet::default();
-        keys.upserts.insert((z, 0), sample_key_entry(z, 0x9D));
-        {
-            let tx = conn.transaction().unwrap();
-            apply(&tx, &unowned, &ids).unwrap();
-            crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &keys).unwrap();
-            tx.commit().unwrap();
-        }
-
-        // Tombstone Z. Its key row survives — a logical delete tombstones
-        // the identity, it does not reap the children.
-        let mut removed = IdentityChangeSet::default();
-        removed.removed.insert(z);
-        apply_in_tx(&mut conn, &unowned, &removed);
-        let surviving_keys: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1",
-                params![&z.to_buffer()[..]],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(
-            surviving_keys, 1,
-            "the orphaned key row must actually exist, or this test proves nothing"
-        );
-
-        let state = load_prekeyed(&conn, &unowned, &LoadCtx::recovery())
-            .expect("a tombstoned UNOWNED owner's orphan key must be skipped in recovery");
-        assert!(
-            state.out_of_wallet_identities.is_empty(),
-            "the tombstoned identity must not surface in the loaded state"
-        );
     }
 
     /// The delete's scope guard, which nothing else holds in place.
@@ -1568,7 +1476,7 @@ mod tests {
         keys.upserts.insert((x, 0), sample_key_entry(x, 0xC4));
         {
             let tx = conn.transaction().unwrap();
-            apply(&tx, &owner, &ids).unwrap();
+            apply_upserts(&tx, &owner, &ids).unwrap();
             crate::sqlite::schema::identity_keys::apply(&tx, &owner, &keys).unwrap();
             tx.commit().unwrap();
         }
@@ -1676,8 +1584,8 @@ mod tests {
         let blob_id = [0x02u8; 32]; // disagreeing blob
         let payload = blob::encode(&entry(blob_id, Some(a), 100, Some(1))).unwrap();
         conn.execute(
-            "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
-             VALUES (?1, ?2, 1, ?3, 0)",
+            "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob) \
+             VALUES (?1, ?2, 1, ?3)",
             params![&typed_id[..], &a[..], payload],
         )
         .unwrap();
