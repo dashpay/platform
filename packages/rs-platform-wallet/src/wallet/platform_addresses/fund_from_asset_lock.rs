@@ -685,7 +685,7 @@ fn minimum_address_funding_asset_lock_duffs(
 }
 
 fn ceil_credits_to_duffs(credits: Credits) -> u64 {
-    credits / CREDITS_PER_DUFF + u64::from(credits % CREDITS_PER_DUFF != 0)
+    credits / CREDITS_PER_DUFF + u64::from(!credits.is_multiple_of(CREDITS_PER_DUFF))
 }
 
 /// Pre-flight check for the recipient address map:
