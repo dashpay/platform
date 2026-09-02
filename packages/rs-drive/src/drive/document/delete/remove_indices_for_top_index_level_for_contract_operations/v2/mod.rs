@@ -11,7 +11,9 @@ use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, time_range_index_keys,
 };
-use crate::drive::document::time_range_ttl::TimeRangeEntryState;
+use crate::drive::document::time_range_ttl::{
+    request_expired_time_range_drains, TimeRangeEntryState,
+};
 use crate::drive::document::unique_event_id;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
@@ -87,6 +89,24 @@ impl Drive {
             document_and_contract_info.contract.id_ref().as_bytes(),
             document_and_contract_info.document_type.name().as_str(),
         );
+
+        // TTL drainage rides every write into a TTL'd index — deletes
+        // included: without this, an index receiving only deletions would
+        // never advance cleanup, breaking the documented every-write rule.
+        // One request per deduplicated level, run once the transition's
+        // batch has applied (see `apply_batch_low_level_drive_operations`),
+        // so no drop can race the removals queued below. Stateful only —
+        // the estimation dry run neither reads state nor prices drops.
+        // Unbilled — see the ttl module's Billing section.
+        if estimated_costs_only_with_layer_info.is_none() {
+            request_expired_time_range_drains(
+                index_level,
+                &contract_document_type_path,
+                block_time_ms,
+                platform_version,
+                batch_operations,
+            );
+        }
 
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 

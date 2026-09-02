@@ -2,7 +2,9 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
-use crate::drive::document::time_range_ttl::{live_time_range_entry_keys, TimeRangeEntryState};
+use crate::drive::document::time_range_ttl::{
+    live_time_range_entry_keys, request_expired_time_range_drains, TimeRangeEntryState,
+};
 use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
 };
@@ -10,7 +12,7 @@ use crate::drive::document::{
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::{LowLevelDriveOperation, TimeRangeTtlDrainRequest};
+use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
@@ -305,6 +307,29 @@ impl Drive {
         // another index sharing its level; re-tagged ephemeral after the
         // loop.
         let mut ephemeral_batch_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        // TTL drainage rides every write into a TTL'd index — updates
+        // included. One request per deduplicated level (several indexes may
+        // share one grid level), run once the transition's batch has
+        // applied — see `apply_batch_low_level_drive_operations` — so the
+        // removals queued below always target trees that still stand. This
+        // path is stateful-only (estimation redirected to the insert walker
+        // above), and drainage is unbilled — see the ttl module's Billing
+        // section.
+        {
+            let base_path: Vec<Vec<u8>> = contract_document_type_path
+                .iter()
+                .map(|&segment| Vec::from(segment))
+                .collect();
+            request_expired_time_range_drains(
+                index_structure,
+                &base_path,
+                block_info.time_ms,
+                platform_version,
+                &mut batch_operations,
+            );
+        }
+
         // fourth we need to store a reference to the document for each index
         for index in document_type.indexes().values() {
             // at this point the contract path is to the contract documents
@@ -969,33 +994,11 @@ impl Drive {
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
 
-        // TTL drainage rides every write into a TTL'd index — updates
-        // included, mirroring the v2 insert walker: a bounded number of
-        // deepest-first drop operations against the oldest expired bucket,
-        // resuming wherever the previous write's budget ran out. The drain
-        // is requested here and run once the transition's batch has
-        // applied (one drain per level, however many indexes share it —
-        // see `apply_batch_low_level_drive_operations`), so the removals
-        // queued below always target trees that still stand. This path is
-        // stateful-only (estimation redirects to the insert walker at the
-        // top of the v1 update), and drainage is unbilled — see the ttl
-        // module's Billing section.
-        if transform.ttl_seconds.is_some() {
-            if let Some(max_operations) = platform_version
-                .system_limits
-                .max_time_range_ttl_drop_operations_per_write
-            {
-                batch_operations.push(LowLevelDriveOperation::TimeRangeTtlDrain(
-                    TimeRangeTtlDrainRequest {
-                        transform: transform.clone(),
-                        bucket_level: top_index_level.clone(),
-                        level_path: base_index_path.to_vec(),
-                        block_time_ms,
-                        max_operations,
-                    },
-                ));
-            }
-        }
+        // TTL drainage is requested by the caller once per deduplicated
+        // level, before this per-index loop, and runs after the batch
+        // applies — so the removable checks below see standing state and no
+        // drop can race a queued mutation. Do not request it here — several
+        // indexes may share this level.
 
         // New/old raw values for the bucketed source property → entry key
         // sets, mirroring the insert walker's fan-out (see the doc comment).

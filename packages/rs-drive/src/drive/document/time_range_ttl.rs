@@ -612,3 +612,42 @@ fn is_indexed_primary(tree_type: TreeType) -> bool {
             | TreeType::ProvableCountProvableSumIndexedTree
     )
 }
+
+/// Queues one drainage request per TTL'd time-range level of a document
+/// type — the sweep every write (insert, update or delete) into the type
+/// performs. Levels are keyed by their grid-qualified storage key, so
+/// indexes sharing a grid share one level and one request; requests for
+/// the same level collapse again when
+/// `apply_batch_low_level_drive_operations` runs them after the batch.
+/// Stateful only — never call from an estimation dry run.
+pub(crate) fn request_expired_time_range_drains(
+    index_level: &IndexLevel,
+    contract_document_type_path: &[Vec<u8>],
+    block_time_ms: u64,
+    platform_version: &PlatformVersion,
+    batch_operations: &mut Vec<LowLevelDriveOperation>,
+) {
+    let Some(max_operations) = platform_version
+        .system_limits
+        .max_time_range_ttl_drop_operations_per_write
+    else {
+        return;
+    };
+    for (name, sub_level) in index_level.sub_levels() {
+        if let Some(transform) = sub_level.time_range() {
+            if transform.ttl_seconds.is_some() {
+                let mut level_path = contract_document_type_path.to_vec();
+                level_path.push(name.as_bytes().to_vec());
+                batch_operations.push(LowLevelDriveOperation::TimeRangeTtlDrain(
+                    TimeRangeTtlDrainRequest {
+                        transform: transform.clone(),
+                        bucket_level: sub_level.clone(),
+                        level_path,
+                        block_time_ms,
+                        max_operations,
+                    },
+                ));
+            }
+        }
+    }
+}
