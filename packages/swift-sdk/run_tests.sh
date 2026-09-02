@@ -23,10 +23,7 @@ cd "$SCRIPT_DIR" || exit 1
 # touches a developer's keychain configuration; the previous default and
 # search list are restored on exit.
 if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
-  # `security default-keychain -d user` exits non-zero on a runner with no
-  # user default keychain; tolerate it (the restore below skips an empty
-  # value) so `set -euo pipefail` doesn't abort the run before any build.
-  PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user 2>/dev/null | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//' || true)"
+  PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
   PREV_USER_KEYCHAINS_OUTPUT="$(security list-keychains -d user)"
   PREV_USER_KEYCHAINS=()
   while IFS= read -r keychain_path; do
@@ -51,10 +48,7 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
     cleanup_status=0
     trap - EXIT
 
-    # An empty PREV_DEFAULT_KEYCHAIN means the runner had no user default to
-    # begin with, so there is nothing to restore and `security -s ""` would
-    # only fail the cleanup.
-    if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ] && [ -n "${PREV_DEFAULT_KEYCHAIN:-}" ]; then
+    if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
       if ! security default-keychain -d user -s "$PREV_DEFAULT_KEYCHAIN"; then
         cleanup_status=1
       fi

@@ -1336,10 +1336,9 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
 /// the script and the address as independent parameters and validates
 /// neither.
 ///
-/// Height and the confirmation flags describe the *previous* output and
-/// aren't carried in `InputDetail`, so they default (height 0, flags
-/// false); `core_utxos` has no column for either, so those defaults never
-/// become durable state.
+/// Height and the confirmation flags describe the *previous* transaction and
+/// aren't carried in `InputDetail`, so they remain defaulted on this synthetic
+/// spent record (height 0, all flags false).
 fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     record
         .input_details

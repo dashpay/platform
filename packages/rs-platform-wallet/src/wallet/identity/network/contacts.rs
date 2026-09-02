@@ -5,7 +5,6 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -204,9 +203,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             is_watch_only: false,
         };
 
-        // Build the initial funds-bearing state for persistence. The live
-        // insertion below goes through `ManagedAccountOperations` so upstream
-        // also invalidates the wallet's prior filter-scan generation.
+        // DashPay accounts are funds-bearing; use the typed
+        // `insert_funds_bearing_account` API exposed by the post-split
+        // collection rather than wrapping in `OwnedManagedCoreAccount`.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
         // Persist the registration BEFORE the in-memory inserts: a store
@@ -240,7 +239,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "Failed to add contact account to wallet: {e}"
                 ))
             })?;
-        info.add_managed_account(wallet, account_type)
+        info.core_wallet
+            .accounts
+            .insert_funds_bearing_account(managed)
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to register contact account: {e}"
@@ -534,9 +535,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             is_watch_only: true,
         };
 
-        // Build the initial funds-bearing state for persistence. The live
-        // insertion below goes through `ManagedAccountOperations` so upstream
-        // also invalidates the wallet's prior filter-scan generation.
+        // DashpayExternalAccount is funds-bearing; insert via the
+        // typed `insert_funds` API after the upstream split.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
         // Persist the registration BEFORE the in-memory inserts (same
@@ -575,8 +575,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )))
             })?;
 
-        // (b) Insert the managed account and invalidate prior filter coverage.
-        info.add_managed_account(wallet, account_type)
+        // (b) Insert ManagedCoreFundsAccount for address-pool tracking.
+        info.core_wallet
+            .accounts
+            .insert_funds_bearing_account(managed)
             .map_err(|e| {
                 Transient(PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to register external contact account: {}",

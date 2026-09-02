@@ -216,16 +216,6 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// the Rust-side scan cannot see conflicts whose spender was already
     /// pruned.
     case errorAssetLockInputContested = 48
-    // Persister failure classes (49-50) — claimed from the error-code
-    // registry's allocation frontier; these raw values are hand-mirrored ABI.
-    // errorPersisterTransient was originally 48; merged #4356 took 48 for
-    // errorAssetLockInputContested on 2026-08-31, so it moved to 50 — see
-    // the registry's row 50. errorPersisterFatal was never contested and
-    // keeps 49.
-    /// A persister operation failed transiently; callers may retry.
-    case errorPersisterTransient = 50
-    /// A persister operation failed permanently; callers must not retry.
-    case errorPersisterFatal = 49
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -307,10 +297,6 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockFundingMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS:
             self = .errorAssetLockInsufficientFunds
-        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_TRANSIENT:
-            self = .errorPersisterTransient
-        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_FATAL:
-            self = .errorPersisterFatal
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED:
             self = .errorTransactionBroadcastRejected
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE:
@@ -430,10 +416,6 @@ public enum PlatformWalletError: LocalizedError {
     /// The `available` / `required` duff figures are in the message. Kotlin
     /// parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
     case assetLockInsufficientFunds(String)
-    /// A persister operation failed transiently; callers may retry.
-    case persisterTransient(String)
-    /// A persister operation failed permanently; callers must not retry.
-    case persisterFatal(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -595,7 +577,6 @@ public enum PlatformWalletError: LocalizedError {
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
-             .persisterTransient(let m), .persisterFatal(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -665,8 +646,6 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
-        case .errorPersisterTransient: self = .persisterTransient(detail)
-        case .errorPersisterFatal: self = .persisterFatal(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

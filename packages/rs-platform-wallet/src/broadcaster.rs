@@ -124,6 +124,13 @@ impl TransactionBroadcaster for DapiBroadcaster {
     }
 }
 
+/// How long the SPV broadcast waits for a network-acceptance verdict before
+/// reporting the outcome as unknown. Shorter than dash-spv's own default so a
+/// user-facing send does not hang for a full minute. On live Dash networks
+/// acceptance usually resolves in seconds via the InstantSend lock or the
+/// withheld-peer echo, well inside this bound.
+const SPV_ACCEPTANCE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// The SPV broadcast channel: send through P2P peers and await dash-spv's
 /// network-acceptance verdict (rust-dashcore#913).
 #[async_trait]
@@ -181,7 +188,11 @@ impl SpvBroadcaster {
 impl TransactionBroadcaster for SpvBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
         let txid = transaction.txid();
-        match self.spv.broadcast_and_wait(transaction, None).await {
+        match self
+            .spv
+            .broadcast_and_wait(transaction, Some(SPV_ACCEPTANCE_TIMEOUT))
+            .await
+        {
             Ok(BroadcastResult::Accepted { relayed_by }) => {
                 tracing::info!(
                     txid = %txid,
@@ -197,9 +208,9 @@ impl TransactionBroadcaster for SpvBroadcaster {
             // later echo/IS-lock/confirmation or the reservation-TTL
             // backstop reconciles the reservation.
             Ok(BroadcastResult::Uncertain) => Err(BroadcastError::MaybeSent {
-                reason:
-                    "SPV broadcast saw no acceptance signal before dash-spv's acceptance timeout"
-                        .to_string(),
+                reason: format!(
+                    "SPV broadcast saw no acceptance signal within {SPV_ACCEPTANCE_TIMEOUT:?}"
+                ),
             }),
             // Provably never sent (per the SpvChannel error contract): no
             // bytes reached the network, so the reservation is safe to

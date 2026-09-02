@@ -969,10 +969,8 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
 
     /// Record that a scan was abandoned before it could answer every index.
     ///
-    /// Mirrors what `discover` publishes for itself, retry policy included;
-    /// needed separately because a scan dropped mid-await never reaches its own
-    /// bookkeeping. This is the verdict least affordable to lose — it is the
-    /// one that re-opens the identity question on the next launch.
+    /// Mirrors what `discover` publishes for itself; needed separately because
+    /// a scan dropped mid-await never reaches its own bookkeeping.
     async fn record_identity_scan_cut_off(&self, wallet_id: &WalletId) {
         // Coverage of nothing: the scan was dropped mid-await, so it answered
         // no index and may not clear one an earlier scan left open.
@@ -990,24 +988,12 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             identity_scan_state: Some(recorded),
             ..Default::default()
         };
-        // Transient failures are ridden out on the registration path's bounded
-        // policy; the buffer preserves the changeset, so the retries re-drive
-        // it through `flush`. The final outcome is still swallowed — an
-        // abandoned scan must not turn a shutdown into an error.
-        let mut changeset_slot = Some(changeset);
-        let outcome = crate::manager::retry_transient(|| match changeset_slot.take() {
-            Some(cs) => self.persister.store(*wallet_id, cs),
-            None => self.persister.flush(*wallet_id),
-        })
-        .await;
-        if let Err(e) = outcome {
-            tracing::error!(
+        if let Err(e) = self.persister.store(*wallet_id, changeset) {
+            tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
-                transient = e.is_transient(),
                 error = %e,
-                "abandoned scan's verdict could not be persisted after retries; the next \
-                 launch will take the warm shortcut over an identity set nothing proved \
-                 complete"
+                "failed to persist an abandoned scan's verdict; the next launch may take the \
+                 warm shortcut over an incomplete identity set"
             );
         }
     }
