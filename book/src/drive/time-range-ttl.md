@@ -212,8 +212,9 @@ all.
 ## Versioning
 
 Everything rides the still-unreleased PV14 grammar: the `ttl` key joins
-the meta-schema v3 `timeRange` map, the two limits join a new
-`SystemLimits` version, and the ephemeral-bytes rate joins the PV14 fee
-table (`FEE_VERSION3`, which keeps `fee_version_number: 1` — the number
-tags the refund algorithm, which is unchanged). No migration story
-exists or is needed.
+the meta-schema v3 `timeRange` map, the two limits join the (also
+unreleased) `SYSTEM_LIMITS_V4` in place, and the ephemeral-bytes rate
+joins the shared storage fee table directly — no fee-version fork,
+because the rate is dead below PV14 (the grammar does not parse, so no
+ephemeral-classified operation can exist to read it). No migration
+story exists or is needed.

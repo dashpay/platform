@@ -25,7 +25,6 @@ pub mod state_transition_min_fees;
 pub mod storage;
 pub mod v1;
 pub mod v2;
-pub mod v3;
 pub mod vote_resolution_fund_fees;
 
 pub type FeeVersionNumber = u32;
