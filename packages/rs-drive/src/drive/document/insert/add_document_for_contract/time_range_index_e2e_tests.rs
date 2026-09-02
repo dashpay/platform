@@ -3263,31 +3263,39 @@ fn ttl_shared_grid_drains_once_per_write() {
             )
             .expect("an update against a partially drained shared-grid bucket succeeds");
     };
-    update_at(t0 + 6 * h, 2, "zeta2");
-    update_at(t0 + 6 * h + MINUTE_MS_TTL, 3, "zeta3");
-
     let mut level_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
     level_path.push(transform.storage_key("$createdAt").into_bytes());
-    let path_refs: Vec<&[u8]> = level_path
-        .iter()
-        .map(|segment| segment.as_slice())
-        .collect();
-    let mut ops: Vec<LowLevelDriveOperation> = vec![];
-    let bucket_stands = drive
-        .grove_has_raw(
-            SubtreePath::from(path_refs.as_slice()),
-            DocumentPropertyType::encode_date_timestamp(t0).as_slice(),
-            DirectQueryType::StatefulDirectQuery,
-            None,
-            &mut ops,
-            &platform_version.drive,
-        )
-        .expect("existence check");
+    let bucket_stands = || -> bool {
+        let path_refs: Vec<&[u8]> = level_path
+            .iter()
+            .map(|segment| segment.as_slice())
+            .collect();
+        let mut ops: Vec<LowLevelDriveOperation> = vec![];
+        drive
+            .grove_has_raw(
+                SubtreePath::from(path_refs.as_slice()),
+                DocumentPropertyType::encode_date_timestamp(t0).as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut ops,
+                &platform_version.drive,
+            )
+            .expect("existence check")
+    };
+
+    update_at(t0 + 6 * h, 2, "zeta2");
+    // One 8-op budget cannot finish the 13-op bucket, so it must still
+    // stand here — a per-index drain (four budgets in one write) would
+    // already have removed it.
     assert!(
-        !bucket_stands,
-        "two writes' budgets (16 ops) must finish the 13-op shared bucket \
-         — and exactly two must suffice, proving one budget per write, not \
-         one per index"
+        bucket_stands(),
+        "one write spends exactly one budget, so the bucket survives the \
+         first update"
+    );
+    update_at(t0 + 6 * h + MINUTE_MS_TTL, 3, "zeta3");
+    assert!(
+        !bucket_stands(),
+        "two writes' budgets (16 ops) must finish the 13-op shared bucket"
     );
 }
 
