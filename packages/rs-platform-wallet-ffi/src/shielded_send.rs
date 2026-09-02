@@ -771,6 +771,25 @@ fn catch_funding_panic(
 ///   `ErrorWalletOperation` (6) catch-all below, hiding a typed error behind
 ///   the code every unclassified failure already uses and forcing hosts back
 ///   to substring-matching the Display text.
+/// - The double-spend verdicts ride the same typed conversion (both the
+///   fresh-build and resume entry points funnel through here, and the resume
+///   is where the double-spend screen actually fires). What the
+///   screen emits is always `ErrorAssetLockInputContested` (48), the
+///   provisional keep-and-retry verdict; the terminal
+///   `ErrorAssetLockInputConflict` (47) — the code that would authorise a
+///   host to discard a tracked lock — is reserved and currently has no
+///   emitter, but is matched here so it stays typed if a future
+///   finalized-ancestry proof starts raising it. Flattening either to
+///   `ErrorWalletOperation` would strand the user on a lock the host cannot
+///   classify.
+/// - `AssetLockNotTracked` -> `ErrorAssetLockNotTracked` (23) and
+///   `AssetLockFundingMismatch` -> `ErrorAssetLockFundingMismatch` (25),
+///   matching what the non-shielded `asset_lock_manager_resume` surfaces for
+///   the same two lookup failures. A host must classify "this outpoint is not
+///   tracked" / "this lock belongs to a different funding slot" the same way
+///   whichever entry point it came in through — both are caller-state errors
+///   that no retry fixes, unlike the timeout and proof-wait failures below
+///   that keep the contextual `ErrorWalletOperation`.
 fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
@@ -778,6 +797,14 @@ fn map_asset_lock_funding_result(
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
+        Err(
+            e @ (PlatformWalletError::AssetLockNotTracked(_)
+            | PlatformWalletError::AssetLockFundingMismatch { .. }),
+        ) => e.into(),
+        Err(
+            e @ (PlatformWalletError::AssetLockInputConflict { .. }
+            | PlatformWalletError::AssetLockInputContested { .. }),
+        ) => e.into(),
         Err(e @ PlatformWalletError::AssetLockInsufficientFunds { .. }) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
@@ -2392,8 +2419,16 @@ mod tests {
         );
     }
 
+    /// The typed asset-lock outcomes keep their own codes through this
+    /// wrapper — both funding entry points (fresh build and resume) flatten
+    /// everything else to `ErrorWalletOperation`, and a host that saw the
+    /// flattened code could neither hold the consumption-unknown state, nor
+    /// tell a stale/foreign outpoint from a network failure, nor act on a
+    /// lock that cannot confirm while its sibling stands.
     #[test]
     fn map_asset_lock_funding_result_preserves_typed_funding_codes() {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
         let out_point = dashcore::OutPoint {
             txid: dashcore::Txid::all_zeros(),
             vout: 7,
@@ -2407,6 +2442,90 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
         );
         assert!(message_of(&result).contains("Platform completion is unconfirmed"));
+
+        // The two lookup failures `asset_lock_manager_resume` reports
+        // typed must not arrive flattened just because the caller came in
+        // through the shielded entry point.
+        let not_tracked = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockNotTracked(out_point)),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            not_tracked.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
+        );
+        assert!(message_of(&not_tracked).contains("is not tracked by this wallet"));
+
+        let mismatch = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockFundingMismatch {
+                out_point,
+                expected_funding_type: AssetLockFundingType::IdentityRegistration,
+                expected_identity_index: 0,
+                actual_funding_type: AssetLockFundingType::IdentityTopUp,
+                actual_identity_index: 3,
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            mismatch.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
+        );
+        assert!(message_of(&mismatch).contains("is ineligible for"));
+
+        // The resume endpoint is where the double-spend screen fires, and
+        // it funnels through this same wrapper. The screen
+        // itself only ever raises the contested verdict below; the
+        // terminal one is reserved, so it is constructed directly here to
+        // pin that the reserved code would still cross typed.
+        let conflict = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockInputConflict {
+                out_point,
+                input: dashcore::OutPoint {
+                    txid: dashcore::Txid::all_zeros(),
+                    vout: 3,
+                },
+                spent_by: dashcore::Txid::all_zeros(),
+                height: Some(1_234),
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            conflict.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
+        );
+        let conflict_message = message_of(&conflict);
+        assert!(
+            conflict_message.contains("can never confirm"),
+            "the typed Display must survive the wrapper: {conflict_message}"
+        );
+        assert!(
+            conflict_message.contains("chainlocked: true"),
+            "the spender's finality must reach the host: {conflict_message}"
+        );
+
+        // The verdict the screen actually emits rides the same wrapper
+        // under its own code: it bounds the wait but must not surface as
+        // the terminal, discard-licensing 47.
+        let contested = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockInputContested {
+                out_point,
+                input: dashcore::OutPoint {
+                    txid: dashcore::Txid::all_zeros(),
+                    vout: 3,
+                },
+                spent_by: dashcore::Txid::all_zeros(),
+                height: Some(1_234),
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            contested.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInputContested
+        );
+        assert!(
+            message_of(&contested).contains("provisional"),
+            "the contested Display must say the verdict is provisional"
+        );
 
         let unrelated = map_asset_lock_funding_result(
             Err(PlatformWalletError::ShieldedNoUnspentNotes),

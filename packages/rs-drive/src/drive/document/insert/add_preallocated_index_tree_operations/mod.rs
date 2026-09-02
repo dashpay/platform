@@ -302,8 +302,13 @@ impl Drive {
                     };
                     let path_key_info =
                         KeyRef(property_name.as_bytes()).add_path_info(path_info.clone());
+                    // A count-exempt sibling branch re-inverts the
+                    // chain-level choice per child (a preallocated index
+                    // may itself be the plain sibling): its branch tree is
+                    // zero-wrapped even under a chain level that counts its
+                    // own continuation — matching the entry-insert walkers.
                     if !matches!(parent_value_tree_type, TreeType::NormalTree)
-                        && !parent_counts_continuations
+                        && (!parent_counts_continuations || sub_level.count_exempt_branch())
                     {
                         self.batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists(
                             path_key_info,

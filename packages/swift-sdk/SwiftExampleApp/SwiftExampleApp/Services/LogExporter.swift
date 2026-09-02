@@ -19,8 +19,9 @@ enum LogExportError: LocalizedError {
 
 /// Bundles recent SwiftDashSDK log sessions into a shareable zip.
 ///
-/// Each app launch writes one session directory of per-crate
-/// `run.log` files under `Library/Logs/SwiftDashSDK/<timestamp>/`
+/// Each app launch writes one session directory containing the Swift
+/// `swift/run.log` plus per-crate Rust `run.log` files under
+/// `Library/Logs/SwiftDashSDK/<timestamp>/`
 /// (see `LoggingPreferences`). This exporter stages the launch's own
 /// session (passed in by the caller — never inferred from timestamp
 /// order, which a clock rollback or stale future-dated directory
@@ -60,6 +61,10 @@ struct LogExporter {
         appVersion: String,
         currentSession: URL?
     ) throws -> URL {
+        // FileHandle buffers must be synchronized before the detached copy
+        // starts, otherwise the newest events can be missing from the zip.
+        SDKLogger.flush()
+
         let fm = FileManager.default
 
         guard let root = LoggingPreferences.logsRootDirectory,
@@ -98,13 +103,7 @@ struct LogExporter {
         let staging = scratch.appendingPathComponent(archiveName, isDirectory: true)
         defer { try? fm.removeItem(at: scratch) }
 
-        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
-        for session in selected {
-            try fm.copyItem(
-                at: session.url,
-                to: staging.appendingPathComponent(session.url.lastPathComponent, isDirectory: true)
-            )
-        }
+        try stageSessions(selected, at: staging, fileManager: fm)
 
         let summary = summaryText(
             network: network,
@@ -125,6 +124,23 @@ struct LogExporter {
         }
         try zipDirectory(at: staging, to: zipURL)
         return zipURL
+    }
+
+    /// Copy complete session directories into export staging. Keeping this as
+    /// one shared operation is important: the Swift and Rust logs are siblings
+    /// in the same session, so neither side should need a separate allow-list.
+    static func stageSessions(
+        _ sessions: [SessionCandidate],
+        at staging: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+        for session in sessions {
+            try fileManager.copyItem(
+                at: session.url,
+                to: staging.appendingPathComponent(session.url.lastPathComponent, isDirectory: true)
+            )
+        }
     }
 
     /// Pure selection policy, split out for unit testing.
@@ -236,6 +252,9 @@ struct LogExporter {
             "OS: \(ProcessInfo.processInfo.operatingSystemVersionString)",
             "Hardware: \(model) (\(environment))",
             "Network: \(network)",
+            "",
+            "Each session includes structured Swift diagnostics in swift/run.log",
+            "and Rust diagnostics in their component run.log files.",
             "",
             "Each session directory's build_info.txt records the exact",
             "platform-wallet git commit that run was built from.",

@@ -562,8 +562,11 @@ public class PlatformWalletManager: ObservableObject {
         if handle != NULL_HANDLE {
             let h = handle
             let calls = nativeTeardownCalls
-            Self.log.warning(
-                "PlatformWalletManager deallocated without shutdown(); scheduling fallback native teardown off-main for handle \(h, privacy: .public)"
+            SDKLogger.event(
+                "manager_deinit_without_shutdown",
+                category: .lifecycle,
+                severity: .warning,
+                fields: ["fallback_teardown_scheduled": .boolean(true)]
             )
             Self.destroyQueue.async {
                 _ = Self.performNativeTeardown(h, calls: calls)
@@ -632,6 +635,11 @@ public class PlatformWalletManager: ObservableObject {
         // and the generation bumps drop any trailing sync event the main
         // actor delivers after this turn.
         let h = handle
+        SDKLogger.event(
+            "manager_shutdown_started",
+            category: .lifecycle,
+            fields: ["wallet_count": .integer(Int64(wallets.count))]
+        )
         handle = NULL_HANDLE
         isConfigured = false
         progressPollTask?.cancel()
@@ -648,7 +656,17 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
         shutdownTask = task
-        return await task.value
+        let metrics = await task.value
+        SDKLogger.event(
+            "manager_shutdown_completed",
+            category: .lifecycle,
+            fields: [
+                "duration_ms": .integer(Int64(metrics.totalMilliseconds)),
+                "off_main_thread": .boolean(metrics.ranOffMainThread),
+                "step_count": .integer(Int64(metrics.steps.count)),
+            ]
+        )
+        return metrics
     }
 
     /// The blocking native teardown body, shared by [`shutdown()`] and the
@@ -676,8 +694,16 @@ public class PlatformWalletManager: ObservableObject {
             let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
             steps.append(.init(name: name, ffiCode: result.code.rawValue, milliseconds: ms))
             if !result.isSuccess {
-                Self.log.error(
-                    "native teardown step \(name, privacy: .public) failed with \(String(describing: result.code), privacy: .public): \(result.message ?? "<no detail from Rust>", privacy: .public)"
+                SDKLogger.event(
+                    "manager_shutdown_step_failed",
+                    category: .lifecycle,
+                    severity: .error,
+                    fields: [
+                        "duration_ms": .integer(Int64(ms)),
+                        "ffi_code": .integer(Int64(result.code.rawValue)),
+                        "step": .publicText(name),
+                    ],
+                    error: PlatformWalletError(code: result.code, message: result.message)
                 )
             }
         }
@@ -702,11 +728,15 @@ public class PlatformWalletManager: ObservableObject {
             totalMilliseconds: Int((CFAbsoluteTimeGetCurrent() - totalStart) * 1000),
             ranOffMainThread: offMain
         )
-        let stepSummary = steps
-            .map { "\($0.name)=\($0.milliseconds)ms(code \($0.ffiCode))" }
-            .joined(separator: " ")
-        Self.log.info(
-            "native teardown finished in \(metrics.totalMilliseconds, privacy: .public)ms offMain=\(offMain, privacy: .public): \(stepSummary, privacy: .public)"
+        SDKLogger.event(
+            "manager_native_teardown_completed",
+            category: .lifecycle,
+            fields: [
+                "duration_ms": .integer(Int64(metrics.totalMilliseconds)),
+                "failed_steps": .integer(Int64(steps.filter { $0.ffiCode != 0 }.count)),
+                "off_main_thread": .boolean(offMain),
+                "step_count": .integer(Int64(steps.count)),
+            ]
         )
         return metrics
     }
@@ -775,6 +805,14 @@ public class PlatformWalletManager: ObservableObject {
         network: Network? = nil
     ) throws {
         try ensureConfigurationAllowed()
+        SDKLogger.event(
+            "manager_configuration_started",
+            category: .lifecycle,
+            fields: [
+                "network": .publicText(network.map { String(describing: $0) } ?? "unknown"),
+                "persistence_enabled": .boolean(modelContainer != nil),
+            ]
+        )
         var handle: Handle = NULL_HANDLE
 
         let handler: PlatformWalletPersistenceHandler?
@@ -828,6 +866,13 @@ public class PlatformWalletManager: ObservableObject {
             if let context = eventHandlerCallbacks.context {
                 Unmanaged<PlatformWalletEventHandler>.fromOpaque(context).release()
             }
+            SDKLogger.event(
+                "manager_configuration_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["phase": .publicText("native_create")],
+                error: error
+            )
             throw error
         }
 
@@ -843,6 +888,13 @@ public class PlatformWalletManager: ObservableObject {
             ).check()
         } catch {
             _ = platform_wallet_manager_destroy(handle)
+            SDKLogger.event(
+                "manager_configuration_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["phase": .publicText("persistence_capabilities")],
+                error: error
+            )
             throw error
         }
 
@@ -858,6 +910,14 @@ public class PlatformWalletManager: ObservableObject {
         self.isConfigured = true
 
         startProgressPolling()
+        SDKLogger.event(
+            "manager_configuration_completed",
+            category: .lifecycle,
+            fields: [
+                "capabilities_version": .unsignedInteger(UInt64(effectiveCapabilities.version)),
+                "persistence_enabled": .boolean(handler != nil),
+            ]
+        )
     }
 
     /// A manager owns at most one configured native lifetime. A no-op shutdown
@@ -933,23 +993,47 @@ public class PlatformWalletManager: ObservableObject {
         birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
         try ensureSyncNativeOpAllowed("createWallet")
+        SDKLogger.event(
+            "wallet_create_started",
+            category: .lifecycle,
+            fields: [
+                "birth_height_provided": .boolean(birthHeight != nil),
+                "network": .publicText(String(describing: network)),
+                "source": .publicText("mnemonic"),
+            ]
+        )
         var walletHandle: Handle = NULL_HANDLE
         var walletId: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
 
         let accountOptions: UInt32 = createDefaultAccounts ? 1 : 0
 
-        try mnemonic.withCString { mnemonicPtr in
-            try platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
-                handle,
-                mnemonicPtr,
-                network.ffiValue,
-                accountOptions,
-                birthHeight != nil,
-                birthHeight ?? 0,
-                &walletHandle,
-                &walletId
-            ).check()
+        do {
+            try mnemonic.withCString { mnemonicPtr in
+                try platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
+                    handle,
+                    mnemonicPtr,
+                    network.ffiValue,
+                    accountOptions,
+                    birthHeight != nil,
+                    birthHeight ?? 0,
+                    &walletHandle,
+                    &walletId
+                ).check()
+            }
+        } catch {
+            SDKLogger.event(
+                "wallet_create_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: [
+                    "network": .publicText(String(describing: network)),
+                    "source": .publicText("mnemonic"),
+                ],
+                error: error,
+                redacting: [mnemonic]
+            )
+            throw error
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
@@ -958,6 +1042,14 @@ public class PlatformWalletManager: ObservableObject {
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallets[idData] = w
+        SDKLogger.event(
+            "wallet_create_completed",
+            category: .lifecycle,
+            fields: [
+                "source": .publicText("mnemonic"),
+                "wallet_reference": .reference(idData),
+            ]
+        )
         return w
     }
 
@@ -1046,17 +1138,44 @@ public class PlatformWalletManager: ObservableObject {
     ) -> Result<ManagedPlatformWallet, PlatformWalletError> {
         let offMain = !Thread.isMainThread
         let start = CFAbsoluteTimeGetCurrent()
+        SDKLogger.event(
+            "wallet_create_started",
+            category: .lifecycle,
+            fields: [
+                "birth_height_provided": .boolean(params.birthHeight != nil),
+                "network": .publicText(String(describing: params.network)),
+                "off_main_thread": .boolean(offMain),
+                "source": .publicText("mnemonic"),
+            ]
+        )
         let outcome = calls.createFromMnemonic(handle, params)
         let result = PlatformWalletResult(outcome.result)
         let ms = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
         guard result.isSuccess else {
-            Self.log.error(
-                "native create failed in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public) network=\(params.network.rawValue, privacy: .public): \(String(describing: result.code), privacy: .public): \(result.message ?? "<no detail from Rust>", privacy: .public)"
+            SDKLogger.event(
+                "wallet_create_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: [
+                    "duration_ms": .integer(Int64(ms)),
+                    "network": .publicText(String(describing: params.network)),
+                    "off_main_thread": .boolean(offMain),
+                    "source": .publicText("mnemonic"),
+                ],
+                error: PlatformWalletError(code: result.code, message: result.message),
+                redacting: [params.mnemonic]
             )
             return .failure(PlatformWalletError(code: result.code, message: result.message))
         }
-        Self.log.info(
-            "native create finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public) network=\(params.network.rawValue, privacy: .public)"
+        SDKLogger.event(
+            "wallet_create_completed",
+            category: .lifecycle,
+            fields: [
+                "duration_ms": .integer(Int64(ms)),
+                "off_main_thread": .boolean(offMain),
+                "source": .publicText("mnemonic"),
+                "wallet_reference": .reference(outcome.walletId),
+            ]
         )
         return .success(
             ManagedPlatformWallet(handle: outcome.walletHandle, walletId: outcome.walletId))
@@ -1081,6 +1200,15 @@ public class PlatformWalletManager: ObservableObject {
                 "seed must be 64 bytes, got \(seed.count)"
             )
         }
+        SDKLogger.event(
+            "wallet_create_started",
+            category: .lifecycle,
+            fields: [
+                "birth_height_provided": .boolean(birthHeight != nil),
+                "network": .publicText(String(describing: network)),
+                "source": .publicText("seed"),
+            ]
+        )
 
         var walletHandle: Handle = NULL_HANDLE
         var walletId: FFIByteTuple32 =
@@ -1088,18 +1216,32 @@ public class PlatformWalletManager: ObservableObject {
 
         let accountOptions: UInt32 = createDefaultAccounts ? 1 : 0
 
-        try seed.withUnsafeBytes { seedPtr in
-            try platform_wallet_manager_create_wallet_from_seed_with_birth_height(
-                handle,
-                network.ffiValue,
-                seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(seed.count),
-                accountOptions,
-                birthHeight != nil,
-                birthHeight ?? 0,
-                &walletHandle,
-                &walletId
-            ).check()
+        do {
+            try seed.withUnsafeBytes { seedPtr in
+                try platform_wallet_manager_create_wallet_from_seed_with_birth_height(
+                    handle,
+                    network.ffiValue,
+                    seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    UInt(seed.count),
+                    accountOptions,
+                    birthHeight != nil,
+                    birthHeight ?? 0,
+                    &walletHandle,
+                    &walletId
+                ).check()
+            }
+        } catch {
+            SDKLogger.event(
+                "wallet_create_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: [
+                    "network": .publicText(String(describing: network)),
+                    "source": .publicText("seed"),
+                ],
+                error: error
+            )
+            throw error
         }
 
         let idData = withUnsafeBytes(of: &walletId) { Data($0) }
@@ -1108,6 +1250,14 @@ public class PlatformWalletManager: ObservableObject {
         }
         let w = ManagedPlatformWallet(handle: walletHandle, walletId: idData)
         self.wallets[idData] = w
+        SDKLogger.event(
+            "wallet_create_completed",
+            category: .lifecycle,
+            fields: [
+                "source": .publicText("seed"),
+                "wallet_reference": .reference(idData),
+            ]
+        )
         return w
     }
 
@@ -1142,14 +1292,35 @@ public class PlatformWalletManager: ObservableObject {
         // flight — a second Rust loader running concurrently with the one
         // on the destroy queue races load.rs's two-step hydration.
         try ensureSyncNativeOpAllowed("loadFromPersistor")
+        SDKLogger.event(
+            "wallet_restore_started",
+            category: .lifecycle,
+            fields: ["off_main_thread": .boolean(!Thread.isMainThread)]
+        )
 
-        try platform_wallet_manager_load_from_persistor(handle).check()
+        do {
+            try platform_wallet_manager_load_from_persistor(handle).check()
+        } catch {
+            SDKLogger.event(
+                "wallet_restore_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["phase": .publicText("bulk_load")],
+                error: error
+            )
+            throw error
+        }
 
         // Ask SwiftData for the list of wallet ids we just told Rust
         // to load. We reuse the same container rather than shipping a
         // separate FFI "list ids" entry, because SwiftData already is
         // the source of truth.
         guard let persistenceHandler = persistenceHandler else {
+            SDKLogger.event(
+                "wallet_restore_completed",
+                category: .lifecycle,
+                fields: ["wallet_count": .integer(0)]
+            )
             return []
         }
         let walletIds = persistenceHandler.restorableWalletIds()
@@ -1188,6 +1359,13 @@ public class PlatformWalletManager: ObservableObject {
                 // whole restore. Usually means wallet_id / xpub
                 // disagreement (SwiftData drift vs. Rust recompute).
                 self.lastError = error
+                SDKLogger.event(
+                    "wallet_restore_item_failed",
+                    category: .lifecycle,
+                    severity: .error,
+                    fields: ["wallet_reference": .reference(walletId)],
+                    error: error
+                )
             }
         }
 
@@ -1203,6 +1381,12 @@ public class PlatformWalletManager: ObservableObject {
         // `statusRaw = 3 + proofBytes` back to SwiftData. UI updates
         // reactively via `@Query`.
         catchUpStuckAssetLocks(wallets: restored)
+
+        SDKLogger.event(
+            "wallet_restore_completed",
+            category: .lifecycle,
+            fields: ["wallet_count": .integer(Int64(restored.count))]
+        )
 
         return restored
     }
@@ -1239,12 +1423,25 @@ public class PlatformWalletManager: ObservableObject {
     ) -> OffMainLoadOutcome {
         let started = CFAbsoluteTimeGetCurrent()
         let offMain = !Thread.isMainThread
+        SDKLogger.event(
+            "wallet_restore_started",
+            category: .lifecycle,
+            fields: ["off_main_thread": .boolean(offMain)]
+        )
 
         let bulk = PlatformWalletResult(calls.loadFromPersistor(handle))
         guard bulk.isSuccess else {
             let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
-            Self.log.error(
-                "native load failed in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public): \(String(describing: bulk.code), privacy: .public): \(bulk.message ?? "<no detail from Rust>", privacy: .public)"
+            SDKLogger.event(
+                "wallet_restore_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: [
+                    "duration_ms": .integer(Int64(ms)),
+                    "off_main_thread": .boolean(offMain),
+                    "phase": .publicText("bulk_load"),
+                ],
+                error: PlatformWalletError(code: bulk.code, message: bulk.message)
             )
             return OffMainLoadOutcome(
                 bulkResult: .failure(PlatformWalletError(code: bulk.code, message: bulk.message)),
@@ -1263,9 +1460,17 @@ public class PlatformWalletManager: ObservableObject {
                 // doesn't fail the whole restore. Recorded IN SEQUENCE so
                 // the epilogue's `lastError` replay matches the sync
                 // overload's per-wallet ordering.
-                lookups.append(.skipped(PlatformWalletError(
+                let error = PlatformWalletError(
                     code: lookupResult.code,
-                    message: lookupResult.message)))
+                    message: lookupResult.message)
+                SDKLogger.event(
+                    "wallet_restore_item_failed",
+                    category: .lifecycle,
+                    severity: .error,
+                    fields: ["wallet_reference": .reference(walletId)],
+                    error: error
+                )
+                lookups.append(.skipped(error))
                 continue
             }
             lookups.append(.restored(walletId: walletId, walletHandle: lookup.walletHandle))
@@ -1275,8 +1480,14 @@ public class PlatformWalletManager: ObservableObject {
             if case .restored = entry { count += 1 }
         }
         let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
-        Self.log.info(
-            "native load finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public) wallets=\(restoredCount, privacy: .public)"
+        SDKLogger.event(
+            "wallet_restore_native_completed",
+            category: .lifecycle,
+            fields: [
+                "duration_ms": .integer(Int64(ms)),
+                "off_main_thread": .boolean(offMain),
+                "wallet_count": .integer(Int64(restoredCount)),
+            ]
         )
         return OffMainLoadOutcome(bulkResult: .success(()), lookups: lookups)
     }
@@ -1368,8 +1579,13 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
         let unlockMs = Int(unlockSeconds * 1000)
-        Self.log.info(
-            "load unlock loop finished in \(unlockMs, privacy: .public)ms wallets=\(restored.count, privacy: .public)"
+        SDKLogger.event(
+            "wallet_restore_completed",
+            category: .lifecycle,
+            fields: [
+                "unlock_duration_ms": .integer(Int64(unlockMs)),
+                "wallet_count": .integer(Int64(restored.count)),
+            ]
         )
 
         catchUpStuckAssetLocks(wallets: restored)
@@ -1386,13 +1602,13 @@ public class PlatformWalletManager: ObservableObject {
         let walletId = managedWallet.walletId
         do {
             let unlocked = try unlockWalletFromKeychain(managedWallet)
-            // NSLog (not print) so the unlock outcome is observable
-            // off-Xcode — it pairs with the resolver audit line in
-            // MnemonicResolver.resolve for "what touched the seed".
-            NSLog(
-                "🔓 wallet unlock %@: %@",
-                String(walletId.toHexString().prefix(8)),
-                unlocked ? "seed verified" : "no mnemonic — stays watch-only"
+            SDKLogger.event(
+                "wallet_unlock_completed",
+                category: .lifecycle,
+                fields: [
+                    "result": .publicText(unlocked ? "seed_verified" : "watch_only"),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
         } catch let error as PlatformWalletError {
             // Distinguish a wrong-seed binding (Rust `SeedMismatch` →
@@ -1404,18 +1620,39 @@ public class PlatformWalletManager: ObservableObject {
             // Either way the wallet stays external-signable (cannot sign),
             // so no wrong-seed signing can occur.
             if case .invalidParameter = error {
-                print(
-                    "🚫 wallet unlock REJECTED \(walletId.toHexString().prefix(8)): "
-                        + "seed does not bind (mis-mapped Keychain slot?) — stays watch-only"
+                SDKLogger.event(
+                    "wallet_unlock_rejected",
+                    category: .lifecycle,
+                    severity: .error,
+                    fields: [
+                        "reason": .publicText("seed_binding_mismatch"),
+                        "wallet_reference": .reference(walletId),
+                    ],
+                    error: error
                 )
             } else {
                 // Transient (resolver/Keychain unavailable, …) — not
                 // retried this pass; a later signer-present action re-tries.
-                print("⚠️ wallet unlock failed \(walletId.toHexString().prefix(8)) (transient): \(error)")
+                SDKLogger.event(
+                    "wallet_unlock_failed",
+                    category: .lifecycle,
+                    severity: .warning,
+                    fields: [
+                        "transient": .boolean(true),
+                        "wallet_reference": .reference(walletId),
+                    ],
+                    error: error
+                )
             }
             self.lastError = error
         } catch {
-            print("❌ wallet unlock failed \(walletId.toHexString().prefix(8)): \(error)")
+            SDKLogger.event(
+                "wallet_unlock_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["wallet_reference": .reference(walletId)],
+                error: error
+            )
             self.lastError = error
         }
     }
@@ -1604,10 +1841,13 @@ public class PlatformWalletManager: ObservableObject {
                     walletId: walletId,
                     marker: String(cString: ptr)
                 )
-                NSLog(
-                    "🔐 seed binding verified via resolver for %@ — marker "
-                        + "persisted; later launches skip the derivation",
-                    String(walletId.toHexString().prefix(8))
+                SDKLogger.event(
+                    "seed_binding_verified",
+                    category: .lifecycle,
+                    fields: [
+                        "marker_persisted": .boolean(true),
+                        "wallet_reference": .reference(walletId),
+                    ]
                 )
             }
             setDashPaySeedMismatch(walletId, false)
@@ -1655,15 +1895,24 @@ public class PlatformWalletManager: ObservableObject {
             walletHandle, &pendingOps
         )
         if PlatformWalletResultCode(ffi: countResult.code) == .success && pendingOps == 0 {
-            NSLog(
-                "🧵 contact-crypto drain skipped for %@ — no pending ops",
-                String(walletId.toHexString().prefix(8))
+            SDKLogger.event(
+                "contact_crypto_drain_skipped",
+                category: .lifecycle,
+                severity: .debug,
+                fields: [
+                    "reason": .publicText("empty_queue"),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
             return true
         }
-        NSLog(
-            "🧵 contact-crypto drain scheduling for %@ — %u pending op(s)",
-            String(walletId.toHexString().prefix(8)), pendingOps
+        SDKLogger.event(
+            "contact_crypto_drain_scheduled",
+            category: .lifecycle,
+            fields: [
+                "pending_count": .unsignedInteger(UInt64(pendingOps)),
+                "wallet_reference": .reference(walletId),
+            ]
         )
 
         // Don't stack a second drain on an in-flight one: a banner Unlock tap
@@ -1730,17 +1979,24 @@ public class PlatformWalletManager: ObservableObject {
         setDashPayDraining(walletId, false)
         if let drainError {
             lastError = drainError
-            print(
-                "⚠️ contact-crypto drain failed for "
-                    + "\(walletId.toHexString().prefix(8)): \(drainError)"
+            SDKLogger.event(
+                "contact_crypto_drain_failed",
+                category: .lifecycle,
+                severity: .warning,
+                fields: ["wallet_reference": .reference(walletId)],
+                error: drainError
             )
         } else if drained > 0 {
             // `drained` counts cleared queue entries — both completed
             // and permanently-failed (channel-broken) ops — so report
             // it neutrally rather than implying all succeeded.
-            print(
-                "🔑 processed \(drained) deferred contact-crypto op(s) for "
-                    + "\(walletId.toHexString().prefix(8))"
+            SDKLogger.event(
+                "contact_crypto_drain_completed",
+                category: .lifecycle,
+                fields: [
+                    "processed_count": .unsignedInteger(UInt64(drained)),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
         }
     }
@@ -1803,10 +2059,19 @@ public class PlatformWalletManager: ObservableObject {
                 PlatformWalletManager.decodeOutPointForCatchUp($0.outPointHex)
             }
             guard !outpoints.isEmpty else { continue }
+            // A `@MainActor` closure is the only piece of `self` the
+            // detached task needs: it hops back to the main actor to
+            // publish, and capturing it (rather than `self`) keeps the
+            // task's captures Sendable under strict concurrency.
+            let publishConflict: @MainActor @Sendable (PlatformWalletError) -> Void = {
+                [weak self] verdict in
+                self?.lastError = verdict
+            }
             Task.detached(priority: .background) {
-                await withTaskGroup(of: Void.self) { group in
+                await withTaskGroup(of: PlatformWalletError?.self) { group in
                     let maxConcurrent = 4
                     var nextIndex = 0
+                    var published = false
                     // Seed the group with up to `maxConcurrent` tasks.
                     // Each `group.addTask` closure captures
                     // `assetLockManager` — that retain keeps the
@@ -1821,8 +2086,29 @@ public class PlatformWalletManager: ObservableObject {
                         }
                         nextIndex += 1
                     }
-                    // As each finishes, queue the next pending entry.
-                    while await group.next() != nil {
+                    // As each finishes, queue the next pending entry —
+                    // and publish the FIRST double-spend verdict the
+                    // moment its own task returns. A sibling catch-up
+                    // can legitimately sit in its proof wait, and the
+                    // host must not wait on that drain to learn a lock
+                    // is stuck. `lastError` is the manager's one public
+                    // error surface; a UI that explains the stalled lock
+                    // and its pending retry (48 — the only verdict
+                    // emitted; 47 stays reserved) reads it from here.
+                    //
+                    // The verdict arrives at the END of its own lock's
+                    // bounded wait, not ahead of it: Rust deliberately
+                    // does not refuse a resume on a conflict sighting,
+                    // because the sighting can be a restored block record
+                    // that no live event will ever retract, and refusing
+                    // would strand a lock that is free to confirm. The
+                    // wait it runs under is capped below this call's 300s
+                    // ceiling for exactly that case.
+                    while let outcome = await group.next() {
+                        if !published, let verdict = outcome {
+                            published = true
+                            await publishConflict(verdict)
+                        }
                         if nextIndex < outpoints.count {
                             let (txid, vout) = outpoints[nextIndex]
                             group.addTask {
@@ -1849,7 +2135,14 @@ public class PlatformWalletManager: ObservableObject {
     /// `@MainActor`-isolated by default and the detached task body
     /// runs off the main actor — the FFI call is synchronous and
     /// reads no `PlatformWalletManager` state.
-    nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) {
+    /// Returns the typed double-spend verdict when the catch-up hits one —
+    /// the one outcome a host must see so its UI can explain why the lock
+    /// is stuck instead of spinning — and `nil` for every expected failure.
+    /// In practice that verdict is always the provisional
+    /// `assetLockInputContested`; the terminal `assetLockInputConflict` is
+    /// reserved with no emitter and is matched so it would surface intact
+    /// if that ever changes.
+    nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
         var txidTuple: FFIByteTuple32 =
@@ -1861,9 +2154,13 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
         // Five-minute ceiling matches the `wait_for_proof` deadline
-        // the production resume path uses.
-        let result = asset_lock_manager_catch_up_blocking(
-            assetLockManager.handle, &txidTuple, vout, 300
+        // the production resume path uses. Wrapping the raw struct in
+        // `PlatformWalletResult` frees the Rust-owned message when the
+        // wrapper deinits — the raw struct must never be dropped bare.
+        let result = PlatformWalletResult(
+            asset_lock_manager_catch_up_blocking(
+                assetLockManager.handle, &txidTuple, vout, 300
+            )
         )
         // Timeouts and proof-wait failures (catch-up
         // `errorWalletOperation`) are expected during normal
@@ -1874,13 +2171,18 @@ public class PlatformWalletManager: ObservableObject {
         // valid for the duration of this call. If it surfaces, log it
         // loudly via NSLog so an operator running without `tracing`
         // capture still sees the programmer error.
-        let code = PlatformWalletResultCode(ffi: result.code)
-        if code == .errorInvalidHandle {
+        switch result.code {
+        case .errorInvalidHandle:
             NSLog(
                 "[catch-up] asset_lock_manager_catch_up_blocking returned errorInvalidHandle for outpoint %@:%u — handle invalid despite task-owned wrapper retain",
                 txid.map { String(format: "%02x", $0) }.joined(),
                 vout
             )
+            return nil
+        case .errorAssetLockInputConflict, .errorAssetLockInputContested:
+            return PlatformWalletError(result: result)
+        default:
+            return nil
         }
     }
 
