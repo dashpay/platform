@@ -410,6 +410,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let Some(info) = wm.get_wallet_info(wallet_id) else {
             return Vec::new();
         };
+        let last_processed_height = info.core_wallet.metadata.last_processed_height;
         info.core_wallet
             .accounts
             .all_accounts()
@@ -418,7 +419,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // Balance lives on the funds-bearing variant only;
                 // keys-only accounts (identity, asset-lock, provider)
                 // never carry UTXOs.
-                let balance = account.as_funds().map(|a| a.balance).unwrap_or_default();
+                //
+                // Computed FRESH from the account's UTXO set — NOT the cached
+                // `a.balance` field. The cache refreshes only when transaction
+                // processing runs `update_balance()`, and a self-authored
+                // asset-lock spend can leave it stale long after the UTXO set
+                // (which coin selection reads) has moved on. Deriving from the
+                // same source selection uses makes disagreement impossible;
+                // the fold is bounded by the account's UTXO count.
+                let balance = account
+                    .as_funds()
+                    .map(|a| computed_core_balance(a, last_processed_height))
+                    .unwrap_or_default();
                 // Walk every pool on the account, sum
                 // `used` + total entries. Cheap — pools are bounded by
                 // the gap limit.
@@ -1197,7 +1209,7 @@ mod spv_rescan_tests {
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
 
-    struct NoopPersister;
+    pub(super) struct NoopPersister;
 
     impl PlatformWalletPersistence for NoopPersister {
         fn store(
@@ -1217,7 +1229,7 @@ mod spv_rescan_tests {
         }
     }
 
-    struct NoopEventHandler;
+    pub(super) struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
 
@@ -1274,5 +1286,268 @@ mod spv_rescan_tests {
         })
         .await
         .expect("blocking accessor task");
+    }
+}
+
+/// Read-only [`WalletCoreBalance`] over an account's live UTXO set, with the
+/// exact bucket rules of `ManagedCoreFundsAccount::update_balance` (which
+/// requires `&mut self` and mutates the cache, so it cannot serve a
+/// read-path): locked, else immature, else confirmed when in a block /
+/// InstantSend-locked / trusted change, else unconfirmed.
+fn computed_core_balance(
+    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
+    last_processed_height: u32,
+) -> key_wallet::wallet::balance::WalletCoreBalance {
+    let mut confirmed = 0u64;
+    let mut unconfirmed = 0u64;
+    let mut immature = 0u64;
+    let mut locked = 0u64;
+    for utxo in account.utxos.values() {
+        let value = utxo.txout.value;
+        if utxo.is_locked {
+            locked += value;
+        } else if !utxo.is_mature(last_processed_height) {
+            immature += value;
+        } else if utxo.is_confirmed || utxo.is_instantlocked || utxo.is_trusted {
+            confirmed += value;
+        } else {
+            unconfirmed += value;
+        }
+    }
+    key_wallet::wallet::balance::WalletCoreBalance::new(confirmed, unconfirmed, immature, locked)
+}
+
+#[cfg(test)]
+mod computed_balance_tests {
+    use super::spv_rescan_tests::{NoopEventHandler, NoopPersister};
+    use super::*;
+    use key_wallet::account::StandardAccountType;
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::RwLock;
+
+    use crate::events::PlatformEventHandler;
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+    /// Buckets of every account row the accessor returns, folded into one
+    /// `(confirmed, unconfirmed, immature, locked)` tuple. Only the funded
+    /// account carries UTXOs, so the fold IS that account's figure — and
+    /// it stays meaningful once the account is drained to nothing.
+    fn folded_buckets(rows: &[AccountBalanceRow]) -> (u64, u64, u64, u64) {
+        rows.iter().fold((0, 0, 0, 0), |(c, u, i, l), row| {
+            (
+                c + row.balance.confirmed(),
+                u + row.balance.unconfirmed(),
+                i + row.balance.immature(),
+                l + row.balance.locked(),
+            )
+        })
+    }
+
+    /// A manager whose wallet-manager IS the funded fixture's, so the
+    /// production accessor reads the very account the test mutates.
+    /// `account_balances_blocking` takes the manager, not a bare
+    /// `WalletManager`, and there is no constructor that adopts one — so
+    /// the fixture's value is moved into the freshly built manager's slot.
+    async fn manager_over_funded_fixture(
+        funded: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    ) -> Arc<PlatformWalletManager<NoopPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NoopPersister),
+            event_handler,
+        ));
+        let adopted = std::mem::replace(
+            &mut *funded.write().await,
+            WalletManager::<PlatformWalletInfo>::new(key_wallet::Network::Testnet),
+        );
+        *manager.wallet_manager.write().await = adopted;
+        manager
+    }
+
+    /// `account_balances_blocking` uses `blocking_read`, so it may only be
+    /// called off the async runtime's worker.
+    async fn account_buckets(
+        manager: &Arc<PlatformWalletManager<NoopPersister>>,
+        wallet_id: WalletId,
+    ) -> (u64, u64, u64, u64) {
+        let manager = Arc::clone(manager);
+        tokio::task::spawn_blocking(move || {
+            folded_buckets(&manager.account_balances_blocking(&wallet_id))
+        })
+        .await
+        .expect("blocking accessor task")
+    }
+
+    /// The per-account figure the explorer/FFI reads must come from the
+    /// LIVE UTXO set, not the cached `balance` field: a self-authored
+    /// asset-lock spend can leave the cache stale long after selection —
+    /// which reads the UTXO set — has moved on.
+    ///
+    /// Driven through `account_balances_blocking`, the accessor production
+    /// actually calls, and in three steps because "reports the live truth"
+    /// is more than "reports zero": it must first REPRODUCE a freshly
+    /// updated non-empty balance bucket for bucket (an implementation
+    /// returning `WalletCoreBalance::default()` passes an empty-set-only
+    /// test), then track a live re-classification the cache has not seen,
+    /// then track removal.
+    #[tokio::test]
+    async fn account_balances_blocking_ignores_the_stale_cache() {
+        let (funded, wallet_id, _balance, _signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[7_000_000, 3_000_000],
+            )
+            .await;
+        let manager = manager_over_funded_fixture(funded).await;
+
+        // 1. Agreement on a funded account. The accessor's fold and the
+        //    cache are two implementations of the same bucket rules; if
+        //    they disagree here, every later assertion is meaningless.
+        let cached = {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            let height = info.core_wallet.metadata.last_processed_height;
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account 0");
+            account.update_balance(height);
+            account.balance
+        };
+        assert_eq!(cached.total(), 10_000_000, "fixture must be funded");
+        assert_eq!(
+            account_buckets(&manager, wallet_id).await,
+            (
+                cached.confirmed(),
+                cached.unconfirmed(),
+                cached.immature(),
+                cached.locked()
+            ),
+            "the accessor must reproduce a freshly updated non-empty balance, bucket for bucket"
+        );
+
+        // 2. Re-classify one UTXO WITHOUT refreshing the cache. The
+        //    accessor must move its value confirmed → locked live; a
+        //    read of the cached `balance` field cannot.
+        let locked_value = {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account 0");
+            let first = *account.utxos.keys().next().expect("funded utxo");
+            let utxo = account.utxos.get_mut(&first).expect("funded utxo");
+            utxo.is_locked = true;
+            assert_eq!(
+                account.balance, cached,
+                "precondition: the cache must still hold the pre-lock figure"
+            );
+            utxo.txout.value
+        };
+        assert_eq!(
+            account_buckets(&manager, wallet_id).await,
+            (
+                cached.confirmed() - locked_value,
+                cached.unconfirmed(),
+                cached.immature(),
+                locked_value
+            ),
+            "the accessor must see the live lock: value out of confirmed, into locked"
+        );
+
+        // 3. Remove every UTXO — the shape an unprocessed self-spend
+        //    (the asset-lock drain) leaves behind.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            let account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account 0");
+            account.utxos.clear();
+            assert_eq!(
+                account.balance.total(),
+                cached.total(),
+                "precondition: the cache must still hold the stale figure"
+            );
+        }
+        assert_eq!(
+            account_buckets(&manager, wallet_id).await,
+            (0, 0, 0, 0),
+            "the accessor must see the live (empty) UTXO set"
+        );
+    }
+
+    /// Bucket-policy companion to
+    /// [`account_balances_blocking_ignores_the_stale_cache`], asserted
+    /// directly on the fold: `computed_core_balance` duplicates
+    /// `ManagedCoreFundsAccount::update_balance`'s classification rules,
+    /// and nothing in the type system keeps the two in step.
+    #[tokio::test]
+    async fn computed_core_balance_matches_update_balance_bucket_for_bucket() {
+        let (wallet_manager, wallet_id, _balance, _signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[7_000_000, 3_000_000],
+            )
+            .await;
+
+        let mut wm = wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+        let height = info.core_wallet.metadata.last_processed_height;
+        let account = info
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("bip44 account 0");
+
+        account.update_balance(height);
+        let funded = account.balance;
+        assert_eq!(funded.total(), 10_000_000, "fixture must be funded");
+        assert_eq!(
+            computed_core_balance(account, height),
+            funded,
+            "the fold must reproduce a freshly updated non-empty balance, bucket for bucket"
+        );
+
+        let first = *account.utxos.keys().next().expect("funded utxo");
+        let locked_value = {
+            let utxo = account.utxos.get_mut(&first).expect("funded utxo");
+            utxo.is_locked = true;
+            utxo.txout.value
+        };
+        let live = computed_core_balance(account, height);
+        assert_eq!(
+            live.locked(),
+            locked_value,
+            "the locked UTXO must be bucketed as locked"
+        );
+        assert_eq!(
+            live.confirmed(),
+            funded.confirmed() - locked_value,
+            "and must have left the confirmed bucket"
+        );
+        assert_eq!(
+            live.total(),
+            funded.total(),
+            "locking moves value between buckets, it does not destroy it"
+        );
+
+        account.utxos.clear();
+        assert_eq!(
+            computed_core_balance(account, height).total(),
+            0,
+            "the fold must see the live (empty) UTXO set"
+        );
     }
 }

@@ -2,6 +2,31 @@ import Foundation
 import SwiftData
 import DashSDKFFI
 
+/// Read seam for the persistence reads whose failure must reject the round.
+///
+/// The asset-lock guards withhold outputs a finalized lock has already
+/// consumed, so each of them treats an unreadable table as a failure
+/// rather than as "nothing to withhold". Those branches only run when a
+/// `fetch` throws, which a live store never does on demand, so the reads
+/// they protect are taken through a fetcher the handler owns instead of
+/// calling the context directly. Production passes `LiveModelFetcher` —
+/// `ModelContext.fetch` verbatim.
+protocol ModelFetching: Sendable {
+    func fetch<T: PersistentModel>(
+        _ descriptor: FetchDescriptor<T>,
+        in context: ModelContext
+    ) throws -> [T]
+}
+
+struct LiveModelFetcher: ModelFetching {
+    func fetch<T: PersistentModel>(
+        _ descriptor: FetchDescriptor<T>,
+        in context: ModelContext
+    ) throws -> [T] {
+        try context.fetch(descriptor)
+    }
+}
+
 /// Bridges FFI persistence callbacks to SwiftData storage.
 ///
 /// Allocated as a class so its pointer can be passed as the opaque `context`
@@ -94,6 +119,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `markUtxoSpent`, …) assume they are already on the queue.
     private let backgroundContext: ModelContext
 
+    /// Taken instead of `backgroundContext.fetch` by the reads whose
+    /// failure must reject the round (see `ModelFetching`).
+    private let modelFetcher: ModelFetching
+
     /// Context dedicated to tracked-masternode whole-set writes. Those writes
     /// are not part of a wallet changeset and must become durable before their
     /// synchronous FFI callback reports success. Keeping them off
@@ -146,9 +175,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// like all other mutable handler state.
     private var deferredPaymentUpserts: [(ownerIdentityId: Data, payments: [DashPayPayment])] = []
 
-    public init(modelContainer: ModelContainer, network: Network? = nil) {
+    public convenience init(modelContainer: ModelContainer, network: Network? = nil) {
+        self.init(
+            modelContainer: modelContainer,
+            network: network,
+            modelFetcher: LiveModelFetcher()
+        )
+    }
+
+    init(
+        modelContainer: ModelContainer,
+        network: Network?,
+        modelFetcher: ModelFetching
+    ) {
         self.modelContainer = modelContainer
         self.network = network
+        self.modelFetcher = modelFetcher
         self.backgroundContext = ModelContext(modelContainer)
         self.backgroundContext.autosaveEnabled = true
         self.trackedMasternodeContext = ModelContext(modelContainer)
@@ -285,6 +327,29 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - Asset locks
 
+    /// `AssetLockStatus` wire value for `InstantSendLocked`
+    /// (`wallet::asset_lock::tracked`: Built 0, Broadcast 1,
+    /// InstantSendLocked 2, ChainLocked 3, Consumed 4,
+    /// RecoveredFromChain 5). At this value and above the network has
+    /// locked — or the chain has buried — the lock's funding inputs, so
+    /// every TXO the lock spends is gone for good. Mirrors the Kotlin
+    /// handler's `ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED`.
+    private static let assetLockStatusInstantSendLocked = 2
+
+    /// Wire-order (little-endian) funding txid of the asset lock whose
+    /// outpoint is stored as `<txid display hex>:<vout>` — the encoding
+    /// `PersistentAssetLock.encodeOutPoint` writes. `PersistentTransaction`
+    /// stores its `txid` in wire order, so the display hex is decoded and
+    /// reversed before it can be matched against one. Returns `nil` for a
+    /// row whose outpoint string is not decodable.
+    private static func assetLockFundingTxid(outPointHex: String) -> Data? {
+        guard let displayHex = outPointHex.split(separator: ":").first,
+              let displayTxid = Data(hexString: String(displayHex)) else {
+            return nil
+        }
+        return Data(displayTxid.reversed())
+    }
+
     /// Apply an `AssetLockChangeSet` projection to SwiftData.
     ///
     /// The Rust-side asset-lock manager emits a changeset on every
@@ -299,12 +364,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ///
     /// No `save()` here — bracketed by `beginChangeset` /
     /// `endChangeset` from the Rust `store()` round.
+    ///
+    /// Returns `false` when the spend-visibility reconcile below could not
+    /// read the TXOs a now-final lock consumed. That failure is not
+    /// skippable: `Consumed` is terminal, so committing the status while
+    /// its funding TXOs stay `isSpent == false` leaves a phantom UTXO with
+    /// no future callback to repair it. A `false` return fails the Rust
+    /// round, which rolls the changeset back and re-emits the status.
     func persistAssetLocks(
         walletId: Data,
         upserts: [AssetLockEntrySnapshot],
         removed: [Data]
-    ) {
+    ) -> Bool {
         onQueue {
+            var allPersisted = true
             for entry in upserts {
                 let outPointHex = entry.outPointHex
                 let descriptor = FetchDescriptor<PersistentAssetLock>(
@@ -347,6 +420,34 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     )
                     backgroundContext.insert(record)
                 }
+
+                // Spend-visibility reconcile (mirror of the Kotlin handler's
+                // onPersistAssetLockUpsert): an asset-lock tx burns its value
+                // into the special-tx payload and often has no wallet-owned
+                // standard output, so SPV block matching can miss it — the
+                // spender's transaction row then never leaves mempool context
+                // and resolveInputOutpoint's in-block flip never runs, leaving
+                // the funding TXOs isSpent=false forever. The lock's
+                // own STATUS keeps arriving via this callback; from
+                // InstantSendLocked (2) the network has locked the inputs, so
+                // flip the TXOs already linked to this lock's funding tx.
+                if entry.statusRaw >= Self.assetLockStatusInstantSendLocked,
+                   let wireTxid = Self.assetLockFundingTxid(outPointHex: entry.outPointHex) {
+                    let staleDescriptor = FetchDescriptor<PersistentTxo>(
+                        predicate: #Predicate {
+                            $0.spendingTransaction?.txid == wireTxid && $0.isSpent == false
+                        }
+                    )
+                    do {
+                        for txo in try modelFetcher.fetch(staleDescriptor, in: backgroundContext) {
+                            txo.isSpent = true
+                            txo.lastUpdated = Date()
+                        }
+                    } catch {
+                        print("⚠️ persistAssetLocks: stale-TXO fetch failed for \(entry.outPointHex) — failing the round so the lock status does not commit ahead of its spend flags: \(error)")
+                        allPersisted = false
+                    }
+                }
             }
 
             for outPointHex in removed {
@@ -367,6 +468,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     backgroundContext.delete(existing)
                 }
             }
+            return allPersisted
         }
     }
 
@@ -5032,6 +5134,37 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Wire-order funding txids of every persisted asset lock whose
+    /// status is `InstantSendLocked` or beyond — the locks whose
+    /// funding TXOs are provably gone.
+    ///
+    /// Not scoped to a wallet: InstantSend / chain finality is a
+    /// property of the spending transaction, and that transaction can
+    /// consume inputs tracked by more than one wallet. Scoping would
+    /// leave a sibling wallet's input of the same lock stale.
+    ///
+    /// Throws rather than returning an empty set on a fetch failure. An
+    /// empty set is a positive claim — "no lock has finalized" — and the
+    /// caller acts on it by restoring every `isSpent == false` row,
+    /// exactly the phantom UTXOs this guard exists to withhold. A read
+    /// fault must reject the snapshot instead.
+    private func finalizedAssetLockFundingTxids() throws -> Set<Data> {
+        let finalized = Self.assetLockStatusInstantSendLocked
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate { $0.statusRaw >= finalized }
+        )
+        let rows = try modelFetcher.fetch(descriptor, in: backgroundContext)
+        var txids = Set<Data>()
+        txids.reserveCapacity(rows.count)
+        for row in rows {
+            guard let txid = Self.assetLockFundingTxid(outPointHex: row.outPointHex) else {
+                continue
+            }
+            txids.insert(txid)
+        }
+        return txids
+    }
+
     /// Returns `(nil, 0)` if nothing is restorable.
     func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int, errored: Bool) {
         SDKLogger.event(
@@ -5061,7 +5194,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
         let wallets: [PersistentWallet]
         do {
-            wallets = try backgroundContext.fetch(walletDescriptor)
+            wallets = try modelFetcher.fetch(walletDescriptor, in: backgroundContext)
         } catch {
             // Surfacing the SwiftData failure to Rust is critical —
             // returning success-with-empty here would let restore
@@ -5107,7 +5240,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             var unspentDescriptor = FetchDescriptor<PersistentTxo>(
                 predicate: #Predicate { $0.isSpent == false }
             )
-            unspentDescriptor.relationshipKeyPathsForPrefetching = [\.account]
+            unspentDescriptor.relationshipKeyPathsForPrefetching = [
+                \.account,
+                // Read once per row by the asset-lock spend guard below.
+                \.spendingTransaction,
+            ]
             // Bail with `errored = true` on a SwiftData failure rather
             // than degrading to an empty bucket map. Without this, Rust
             // would see `entry.utxos_count == 0` for every wallet,
@@ -5116,7 +5253,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // the failure mode this code path was added to eliminate.
             let unspent: [PersistentTxo]
             do {
-                unspent = try backgroundContext.fetch(unspentDescriptor)
+                unspent = try modelFetcher.fetch(unspentDescriptor, in: backgroundContext)
             } catch {
                 SDKLogger.event(
                     "persistence_wallet_load_failed",
@@ -5127,8 +5264,84 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
                 return (nil, 0, true)
             }
+            // Finalized-asset-lock guard, and the one-shot heal for
+            // rows a missed callback left behind (mirror of Kotlin
+            // `buildUtxoRestoreData`). An asset-lock tx burns its value
+            // into the special-tx payload and often has no wallet-owned
+            // standard output, so SPV block matching can miss it: the
+            // spender's transaction row never leaves mempool context and
+            // the in-block flip in `resolveInputOutpoint` never runs,
+            // leaving its funding TXOs at `isSpent == false` — which this
+            // fetch hands straight back to Rust as spendable, on every
+            // launch. The lock's own status is the finality signal that
+            // did arrive; from `InstantSendLocked` on, the output is gone.
+            //
+            // The callback-time reconcile in `persistAssetLocks` cannot
+            // cover these: `Consumed` is terminal and never re-upserts, so
+            // a wallet whose lock finalized before that reconcile existed
+            // has no future callback to repair it. Load is the one
+            // guaranteed per-launch pass, so it repairs them here.
+            //
+            // Exclusion does not depend on the repair being durable: rows
+            // are dropped from the restore set first, and the heal is
+            // saved opportunistically afterwards.
+            let finalizedLockTxids: Set<Data>
+            do {
+                finalizedLockTxids = try finalizedAssetLockFundingTxids()
+            } catch {
+                // Same contract as the unspent fetch above: bail with
+                // `errored = true` rather than degrade. Treating an
+                // unreadable lock table as "no lock has finalized"
+                // rehydrates the phantom inputs the guard exists to
+                // withhold — the exact inverse of its safety claim.
+                NSLog(
+                    "[persistor-load:swift] PersistentAssetLock finalized fetch failed: %@",
+                    String(describing: error)
+                )
+                return (nil, 0, true)
+            }
+            var liveUnspent = unspent
+            if !finalizedLockTxids.isEmpty {
+                var kept: [PersistentTxo] = []
+                kept.reserveCapacity(unspent.count)
+                var healed = 0
+                for row in unspent {
+                    if let spendingTxid = row.spendingTransaction?.txid,
+                       finalizedLockTxids.contains(spendingTxid) {
+                        if !row.isSpent {
+                            row.isSpent = true
+                            row.lastUpdated = Date()
+                            healed += 1
+                        }
+                        continue
+                    }
+                    kept.append(row)
+                }
+                liveUnspent = kept
+                // Skip the write mid-round: saving inside a changeset
+                // bracket would commit the round's staged writes early.
+                // The exclusion above already holds for this launch.
+                if healed > 0 && !self.inChangeset {
+                    do {
+                        try backgroundContext.save()
+                        NSLog(
+                            "[persistor-load:swift] healed %d asset-lock-consumed UTXO row(s)",
+                            healed
+                        )
+                    } catch {
+                        // Non-fatal: the next launch retries. Roll back so
+                        // the failed heal can't bleed into the restore
+                        // marshalling below.
+                        backgroundContext.rollback()
+                        NSLog(
+                            "[persistor-load:swift] asset-lock UTXO heal save failed: %@",
+                            String(describing: error)
+                        )
+                    }
+                }
+            }
             unspentBuckets.reserveCapacity(restorable.count)
-            for row in unspent {
+            for row in liveUnspent {
                 guard row.account != nil else { continue }
                 let key: Data
                 if !row.walletId.isEmpty {
@@ -8118,6 +8331,13 @@ private func persistDpnsNameStatesCallback(
 /// Swift-owned `Data` snapshots before invoking the handler so the
 /// Rust-side `_storage` Vec can release the byte buffers as soon as
 /// this trampoline returns.
+///
+/// Returns 0 when every asset-lock mutation was staged. A nonzero return
+/// fails the Rust persistence round and rolls the changeset back, and is
+/// reserved for a spend-visibility reconcile that could not read the TXOs
+/// a now-final lock consumed — see `persistAssetLocks`. Acknowledging that
+/// one would commit a terminal `Consumed` status over funding TXOs still
+/// marked spendable, with no later upsert to repair them.
 private func persistAssetLocksCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
@@ -8180,8 +8400,11 @@ private func persistAssetLocksCallback(
         }
     }
 
-    handler.persistAssetLocks(walletId: walletId, upserts: upserts, removed: removed)
-    return 0
+    return handler.persistAssetLocks(
+        walletId: walletId,
+        upserts: upserts,
+        removed: removed
+    ) ? 0 : 1
 }
 
 /// C shim for `on_persist_contacts_fn`. Same snapshot + cast pattern
