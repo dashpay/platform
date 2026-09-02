@@ -88,6 +88,26 @@ impl Drive {
             document_and_contract_info.document_type.name().as_str(),
         );
 
+        // TTL drainage rides every write into a TTL'd index — deletes
+        // included: without this, an index receiving only deletions would
+        // never advance cleanup, breaking the documented every-write rule.
+        // One sweep over the deduplicated levels, BEFORE any delete
+        // mutation is queued (drainage applies directly to grovedb, so a
+        // later drain could remove a path a queued operation targets), and
+        // before the expired/standing detection below so it sees post-drain
+        // state. Stateful only — the estimation dry run neither reads state
+        // nor prices drops. Unbilled — see the ttl module's Billing
+        // section.
+        if estimated_costs_only_with_layer_info.is_none() {
+            self.drain_expired_time_range_levels(
+                index_level,
+                &contract_document_type_path,
+                block_time_ms,
+                transaction,
+                platform_version,
+            )?;
+        }
+
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {

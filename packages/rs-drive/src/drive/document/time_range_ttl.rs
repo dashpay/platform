@@ -200,6 +200,50 @@ impl Drive {
     /// construction. The host completes reclamation by calling
     /// `GroveDb::flush_pending_prefix_drops` after committing the block's
     /// transaction (and once at startup).
+    /// One budgeted drainage pass for every TTL'd time-range level of a
+    /// document type. Levels are keyed by their grid-qualified storage key,
+    /// so indexes sharing a grid share one level and drain exactly once per
+    /// write — draining per *index* would multiply the per-write budget and,
+    /// worse, interleave direct grovedb drops with already-queued batch
+    /// mutations (a later index's drain can remove a path an earlier
+    /// index's pending operation targets). Callers must therefore run this
+    /// sweep BEFORE queuing any batch mutations, so every queued operation
+    /// describes post-drain state. Stateful only — never call from an
+    /// estimation dry run.
+    pub(crate) fn drain_expired_time_range_levels(
+        &self,
+        index_level: &IndexLevel,
+        contract_document_type_path: &[Vec<u8>],
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let Some(max_operations) = platform_version
+            .system_limits
+            .max_time_range_ttl_drop_operations_per_write
+        else {
+            return Ok(());
+        };
+        for (name, sub_level) in index_level.sub_levels() {
+            if let Some(transform) = sub_level.time_range() {
+                if transform.ttl_seconds.is_some() {
+                    let mut level_path = contract_document_type_path.to_vec();
+                    level_path.push(name.as_bytes().to_vec());
+                    self.drain_expired_time_range_buckets(
+                        transform,
+                        sub_level,
+                        &level_path,
+                        block_time_ms,
+                        max_operations,
+                        transaction,
+                        platform_version,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn drain_expired_time_range_buckets(
         &self,
