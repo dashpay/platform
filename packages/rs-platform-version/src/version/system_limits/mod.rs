@@ -1,7 +1,7 @@
 pub mod v1;
 pub mod v2;
 pub mod v3;
-pub mod v5;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -106,7 +106,7 @@ pub struct SystemLimits {
     /// The cap is what makes the TTL fee model safe: entries under a TTL'd
     /// index bill their bytes as processing (the ephemeral-bytes rate)
     /// instead of storage, and a flat rate is only an honest price while
-    /// the lifetime it covers is bounded. One week in v5.
+    /// the lifetime it covers is bounded. One week in V4.
     /// See `book/src/drive/time-range-ttl.md`.
     ///
     /// `None` preserves the behavior of protocol versions that predate the

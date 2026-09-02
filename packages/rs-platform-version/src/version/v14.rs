@@ -25,7 +25,7 @@ use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v3::SYSTEM_DATA_CONTRACT_VERSIONS_V3;
-use crate::version::system_limits::v5::SYSTEM_LIMITS_V5;
+use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
@@ -68,7 +68,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    resource at all.
 /// 4. **Relative daily withdrawal limit**: the flat 2000 Dash per 24 hours that
 ///    applied from v8 becomes 15% of the total credits Platform held a day ago
-///    (`SYSTEM_LIMITS_V5.daily_withdrawal_limit_percent`, read by
+///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
 ///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
 ///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
 ///    withdrawal eventually fits and cannot block the pooling queue. The base is
@@ -223,7 +223,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
     fee_version: FEE_VERSION3, // changed: TTL ephemeral-bytes storage rate (270 credits/byte to processing)
-    system_limits: SYSTEM_LIMITS_V5, // changed: daily withdrawal 15% of total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (8)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal 15% of total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (8)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
