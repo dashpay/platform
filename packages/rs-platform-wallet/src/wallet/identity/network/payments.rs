@@ -670,6 +670,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// retried on the next sweep.
     ///
     /// Returns the number of entries confirmed this pass.
+    ///
+    /// # Errors
+    ///
+    /// Transient persistence read failures are deferred to the next sweep;
+    /// permanent failures return [`PlatformWalletError::PersisterLoad`].
     pub async fn reconcile_sent_payments(&self) -> Result<usize, PlatformWalletError> {
         use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
 
@@ -704,14 +709,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let record = match self.persister.get_core_tx_record(&txid) {
                 Ok(Some(record)) => record,
                 Ok(None) => continue,
-                Err(e) => {
+                Err(e) if e.is_transient() => {
                     tracing::warn!(
                         error = %e,
                         txid = %txid_str,
-                        "reconcile_sent_payments: tx-record read failed; will retry next sweep"
+                        "reconcile_sent_payments: transient tx-record read failed; \
+                         will retry next sweep"
                     );
                     continue;
                 }
+                Err(e) => return Err(PlatformWalletError::PersisterLoad(e)),
             };
             // An InstantSend lock is final for DashPay display, same as a
             // mined block — one definition of "final", shared with the
@@ -1648,7 +1655,8 @@ mod tests {
     use key_wallet::Network;
 
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
     };
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
@@ -1698,6 +1706,9 @@ mod tests {
                 key_wallet::managed_account::transaction_record::TransactionRecord,
             >,
         >,
+        /// `Some(kind)` makes every `get_core_tx_record` fail with that
+        /// error class instead of answering from `records`.
+        read_error_kind: Mutex<Option<PersistenceErrorKind>>,
         /// Txids the enumeration lists but `get_core_tx_record` answers
         /// `Ok(None)` for — the FFI shape for "row exists, record not
         /// available yet" (missing bytes, undecodable, pending InstantSend).
@@ -1746,6 +1757,12 @@ mod tests {
             PersistenceError,
         > {
             *self.get_core_tx_record_calls.lock().unwrap() += 1;
+            if let Some(kind) = *self.read_error_kind.lock().unwrap() {
+                return Err(PersistenceError::backend_with_kind(
+                    kind,
+                    "simulated tx-record read failure",
+                ));
+            }
             if self.listed_but_unavailable.lock().unwrap().contains(txid) {
                 return Ok(None);
             }
@@ -3584,6 +3601,26 @@ mod tests {
             0,
             "reconcile must be idempotent"
         );
+
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Transient);
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments()
+                .await
+                .expect("transient read failure must wait for the next sweep"),
+            0
+        );
+
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Fatal);
+        let err = iw
+            .dashpay()
+            .reconcile_sent_payments()
+            .await
+            .expect_err("permanent read failure must abort the reconcile sweep");
+        assert!(matches!(
+            err,
+            PlatformWalletError::PersisterLoad(ref source) if !source.is_transient()
+        ));
     }
 
     #[tokio::test]
