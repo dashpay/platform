@@ -47,5 +47,16 @@ mod tests {
 
         // This assertion will check if all fields are considered in the equality comparison
         assert_eq!(version1, version2, "FeeStorageVersion equality test failed. If a field was added or removed, update the Eq implementation.");
+
+        // And the inequality direction: a difference in the newest field
+        // alone must be visible to Eq.
+        let version3 = FeeStorageVersion {
+            ttl_ephemeral_disk_usage_credit_per_byte: 7,
+            ..version2.clone()
+        };
+        assert_ne!(
+            version1, version3,
+            "FeeStorageVersion equality must distinguish ttl_ephemeral_disk_usage_credit_per_byte"
+        );
     }
 }
