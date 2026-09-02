@@ -14,7 +14,6 @@ use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
-use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::StateTransition;
@@ -28,7 +27,8 @@ use crate::runtime::block_on_worker;
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
-const IDENTITY_UPDATE_VARIANT_TAG: u8 = 6;
+/// Positional bincode variant tag of `StateTransition::IdentityUpdate`.
+pub(crate) const IDENTITY_UPDATE_VARIANT_TAG: u8 = 6;
 
 /// Owned C representation of one public key carried by a parsed
 /// `IdentityUpdateTransition`.
@@ -80,37 +80,13 @@ fn parse_identity_update_transition_bytes(
     dpp::state_transition::identity_update_transition::IdentityUpdateTransition,
     PlatformWalletFFIResult,
 > {
-    let mut prefixed = Vec::with_capacity(bytes.len() + 1);
-    prefixed.push(IDENTITY_UPDATE_VARIANT_TAG);
-    prefixed.extend_from_slice(bytes);
-
-    // A leading variant tag usually means the payload is already framed as a
-    // state transition, and Yappr's tagless framing needs the tag prepended.
-    // Neither test is conclusive — a tagless body can start with the tag byte
-    // by coincidence — so the likelier framing is only tried first, and the
-    // other one is still tried before the payload is rejected.
-    let (first, first_label, second, second_label) =
-        if bytes.first().copied() == Some(IDENTITY_UPDATE_VARIANT_TAG) {
-            (bytes, "as-is", prefixed.as_slice(), "variant tag prepended")
-        } else {
-            (prefixed.as_slice(), "variant tag prepended", bytes, "as-is")
-        };
-
-    let state_transition = match StateTransition::deserialize_from_bytes(first) {
-        Ok(state_transition) => state_transition,
-        Err(first_error) => match StateTransition::deserialize_from_bytes(second) {
-            Ok(state_transition) => state_transition,
-            Err(second_error) => {
-                return Err(PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorDeserialization,
-                    format!(
-                        "Failed to deserialize IdentityUpdateTransition in either framing \
-                         ({first_label}: {first_error}; {second_label}: {second_error})"
-                    ),
-                ));
-            }
-        },
-    };
+    // Tolerates Yappr's tagless framing next to standard tagged bytes — see
+    // the shared helper for the ordering heuristic.
+    let state_transition =
+        crate::parse_state_transition::deserialize_transition_with_flexible_framing(
+            bytes,
+            &[(IDENTITY_UPDATE_VARIANT_TAG, "IdentityUpdate")],
+        )?;
 
     match state_transition {
         StateTransition::IdentityUpdate(identity_update) => Ok(identity_update),
@@ -170,7 +146,7 @@ unsafe fn free_parsed_public_keys(keys: &mut [ParsedIdentityUpdatePublicKeyFFI])
     }
 }
 
-fn project_parsed_identity_update(
+pub(crate) fn project_parsed_identity_update(
     transition: &dpp::state_transition::identity_update_transition::IdentityUpdateTransition,
 ) -> Result<ParsedIdentityUpdateFFI, PlatformWalletFFIResult> {
     let identity_id = transition.identity_id().to_buffer();
