@@ -2403,16 +2403,22 @@ fn ttl_partial_drain_resumes_across_writes_and_removals_stay_exact() {
     let t0 = 2_000 * h;
     let old_bucket_key = DocumentPropertyType::encode_date_timestamp(t0);
 
-    // Five groups in the doomed bucket: full drainage costs
-    // 5 × ([0] drop + value-tree delete) + property-name drop + bucket
-    // drop = 12 operations, above the per-write budget of 8.
-    let docs: Vec<Document> = (1..=5)
-        .map(|i| insert_at(t0 + i * MINUTE_MS_TTL, &format!("g{i}")))
+    // Enough groups that full drainage exceeds one write's budget: each
+    // group costs 2 drop operations ([0] drop + value-tree delete), plus
+    // the property-name drop and the bucket drop — budget/2 + 1 groups
+    // puts the total at budget + 4.
+    let budget = platform_version
+        .system_limits
+        .max_time_range_ttl_drop_operations_per_write
+        .expect("PV14 declares a drain budget") as u64;
+    let groups = budget / 2 + 1;
+    let docs: Vec<Document> = (1..=groups)
+        .map(|i| insert_at(t0 + i * MINUTE_MS_TTL, &format!("g{i:02}")))
         .collect();
 
-    // First write past the horizon: budget 8 drains groups g1..g4 (2 ops
-    // each) and stops — the bucket stands, partially drained, with g5 and
-    // the property-name tree intact.
+    // First write past the horizon: the budget drains the first budget/2
+    // groups (2 ops each) and stops — the bucket stands, partially
+    // drained, with the last group and the property-name tree intact.
     insert_at(t0 + 6 * h, "w1");
     let bucket_path = {
         let mut path = level_path.clone();
@@ -2429,18 +2435,26 @@ fn ttl_partial_drain_resumes_across_writes_and_removals_stay_exact() {
         path.push(tag.as_bytes().to_vec());
         path
     };
-    for gone in ["g1", "g2", "g3", "g4"] {
+    for i in 1..=(budget / 2) {
+        let gone = format!("g{i:02}");
         assert!(
-            !path_exists(&group_path(gone)),
+            !path_exists(&group_path(&gone)),
             "group {gone} drains in the first write"
         );
     }
-    assert!(path_exists(&group_path("g5")), "the budget stops before g5");
+    let last_group = format!("g{groups:02}");
+    assert!(
+        path_exists(&group_path(&last_group)),
+        "the budget stops before {last_group}"
+    );
 
     // A document whose group the drain took deletes as a clean skip; one
     // whose group still stands deletes normally. Both under the standing,
     // partially drained bucket.
-    for (doc, label) in [(&docs[0], "drained group"), (&docs[4], "standing group")] {
+    for (doc, label) in [
+        (&docs[0], "drained group"),
+        (docs.last().expect("groups is nonzero"), "standing group"),
+    ] {
         drive
             .delete_document_for_contract(
                 doc.id(),
@@ -3295,12 +3309,12 @@ fn ttl_index_bytes_bill_to_processing_without_refunds() {
 /// Several indexes may share one grid-qualified level (same grid, same
 /// ttl); the walkers must drain that level exactly ONCE per write, before
 /// any batch mutation is queued. The per-index regression: four countable
-/// indexes share `$createdAt#7200#7200`, so a full bucket costs 13 drop
-/// operations — more than one 8-op budget — and a per-index drain would
-/// keep dropping paths (directly) that an earlier index's queued removals
+/// indexes share `$createdAt#7200#7200` and the bucket holds enough groups
+/// that a full drain exceeds one budget — a per-index drain would keep
+/// dropping paths (directly) that an earlier index's queued removals
 /// target, failing batch apply with `InvalidPath`, while spending up to
 /// four budgets. One update past the horizon must succeed against the
-/// partially drained bucket, and a second write finishes the job.
+/// partially drained bucket, and later writes finish the job.
 #[test]
 fn ttl_shared_grid_drains_once_per_write() {
     use crate::drive::document::paths::contract_document_type_path_vec;
@@ -3445,9 +3459,60 @@ fn ttl_shared_grid_drains_once_per_write() {
         )
         .expect("add document");
 
-    // First write past the horizon: the bucket needs 13 drop operations,
-    // the budget allows 8 — a partial drain is guaranteed, and every
-    // index's queued removals must stay consistent with it.
+    // Seed enough further groups that draining the bucket exceeds one
+    // write's budget: with G distinct values per property, the bucket
+    // costs 4 property-name trees x 2G + 4 + 1 = 8G + 5 drop operations,
+    // so G = budget/8 + 1 guarantees a partial first drain.
+    let budget = platform_version
+        .system_limits
+        .max_time_range_ttl_drop_operations_per_write
+        .expect("PV14 declares a drain budget") as u64;
+    let extra_groups = budget / 8;
+    for i in 1..=extra_groups {
+        let extra_owner = fixture_bytes(24, t0 + i, "extra");
+        let extra = Document::V0(DocumentV0 {
+            id: Identifier::from(fixture_bytes(25, t0 + i, "extra")),
+            owner_id: Identifier::from(extra_owner),
+            properties: BTreeMap::from([
+                ("hashtag".to_string(), Value::Text(format!("tag{i:02}"))),
+                ("amount".to_string(), Value::U64(100 + i)),
+                ("alpha".to_string(), Value::Text(format!("alp{i:02}"))),
+                ("beta".to_string(), Value::Text(format!("bet{i:02}"))),
+            ]),
+            created_at: Some(t0 + MINUTE_MS_TTL + i),
+            revision: Some(1),
+            ..Default::default()
+        });
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &extra,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(extra_owner),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo {
+                    time_ms: t0 + MINUTE_MS_TTL + i,
+                    ..Default::default()
+                },
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("add extra group document");
+    }
+    let total_drop_operations = 8 * (extra_groups + 1) + 5;
+
+    // First write past the horizon: one budget cannot finish the bucket —
+    // a partial drain is guaranteed, and every index's queued removals
+    // must stay consistent with it.
     let mut update_at = |time_ms: u64, revision: u64, hashtag: &str| {
         document.set("hashtag", Value::Text(hashtag.to_string()));
         document.set_revision(Some(revision));
@@ -3490,18 +3555,26 @@ fn ttl_shared_grid_drains_once_per_write() {
     };
 
     update_at(t0 + 6 * h, 2, "zeta2");
-    // One 8-op budget cannot finish the 13-op bucket, so it must still
-    // stand here — a per-index drain (four budgets in one write) would
-    // already have removed it.
+    // One budget cannot finish the bucket, so it must still stand here — a
+    // per-index drain (four budgets in one write) would already have
+    // removed it.
     assert!(
         bucket_stands(),
         "one write spends exactly one budget, so the bucket survives the \
          first update"
     );
-    update_at(t0 + 6 * h + MINUTE_MS_TTL, 3, "zeta3");
+    let finishing_writes = total_drop_operations.div_ceil(budget);
+    for write in 1..finishing_writes {
+        update_at(
+            t0 + 6 * h + write * MINUTE_MS_TTL,
+            2 + write,
+            &format!("zeta{write}"),
+        );
+    }
     assert!(
         !bucket_stands(),
-        "two writes' budgets (16 ops) must finish the 13-op shared bucket"
+        "{finishing_writes} writes' budgets must finish the \
+         {total_drop_operations}-op shared bucket"
     );
 }
 

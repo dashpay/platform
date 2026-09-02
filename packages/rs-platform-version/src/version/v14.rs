@@ -226,7 +226,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal 15% of total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (8)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal 15% of total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

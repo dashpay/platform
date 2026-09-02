@@ -37,10 +37,11 @@ buckets are drained **lazily, on write**: every state transition that
 writes into the index continues draining the oldest expired bucket,
 deepest-first, under a per-write operation budget. A fully drained
 window is provably absent, exactly like a window that never held
-documents; during the drainage lag an expired-but-not-yet-drained window
-can still serve its remaining contents to an absolute (`byStart`) query
-— correct answers about current state, within the "at most `ttl` plus
-lag" lifetime. Everything written under the index's grid-qualified level
+documents. An expired window is **not queryable at all** — `byStart`
+rejects starts past the horizon, so the drainage lag is purely internal:
+drainage only ever touches expired buckets, which makes every window a
+query can address complete. Everything written under the index's
+grid-qualified level
 bills as **processing, not storage** — including the transitional bytes
 — at an ephemeral-bytes rate.
 
@@ -197,17 +198,20 @@ bounded reads per write.
 
 ## Queries
 
-Unchanged in shape. A **drained** window is a provable empty answer
-through every surface (document, count/sum/avg, ranked, having-range).
-Two documented consequences: on a TTL'd index, `byStart` addresses
-historic windows *within the TTL horizon* — beyond it, absence is the
-(correct, provable) eventual answer; and during the bounded drainage lag
-an expired-but-standing window may still serve its remaining, possibly
-partially drained contents. Those are correct, provable answers about
-what is currently stored — TTL promises entries live *at most* `ttl`
-plus the lag, not that they vanish at the horizon instant. The relative
-selectors (`newest` / `oldest`) can never address an expired window at
-all.
+Unchanged in shape, with one hard rule: on a TTL'd index, **expired
+windows are not queryable**. `byStart` resolution rejects any start past
+the expiry horizon (the same strictly-below predicate the drain uses),
+on the server from committed block time and on the verifier from the
+quorum-signed response `time_ms` — so a node cannot serve an expired
+window's remnants past a verifying client. The point of the gate is that
+a mid-drainage window would otherwise serve a truncated answer that
+looks authoritative; rejecting the question is deterministic where
+"whatever the drain has left" is not. Because drainage only ever touches
+expired buckets, every window the resolver admits is **complete**, and a
+window a past drain fully emptied inside its lifetime never existed —
+absence proves normally. The relative selectors (`newest` / `oldest`)
+can never address an expired window at all (`ttl >= range` guarantees
+it).
 
 ## Versioning
 

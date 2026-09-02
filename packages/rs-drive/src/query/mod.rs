@@ -821,9 +821,11 @@ impl ResolvedTimeRange {
 /// response metadata `time_ms`, so both produce the identical concrete
 /// equality query — the existing index/count proofs apply unchanged and the
 /// engine never needs a dedicated time-range operator. A
-/// [`TimeRangeSelector::ByStart`] selection ignores `block_time_ms`
-/// entirely: the start is in the query itself (validated to lie on the
-/// grid), so both sides read the same window with no clock involved.
+/// [`TimeRangeSelector::ByStart`] selection reads its start from the query
+/// itself (validated to lie on the grid) and consults `block_time_ms` only
+/// to reject windows past a declared `ttl`'s horizon — a window that may be
+/// mid-drainage must not serve a truncated answer, and since drainage only
+/// touches expired buckets, every window this resolver admits is complete.
 ///
 /// `grid` selects among several time-range indexes on the same field: `None`
 /// is accepted only while exactly one grid buckets the field (the common
@@ -893,8 +895,9 @@ pub fn resolve_time_range_bucket_clause(
     let bucket_start = match selector {
         TimeRangeSelector::Newest => transform.newest_active_start(block_time_ms),
         TimeRangeSelector::Oldest => transform.oldest_active_start(block_time_ms),
-        // Absolute selection: the start comes from the query itself, so no
-        // clock is consulted — prover and verifier agree by construction.
+        // Absolute selection: the start comes from the query itself, so the
+        // clock is consulted only for the TTL gate — prover and verifier
+        // agree by construction (the verifier passes the signed time_ms).
         // Only grid membership is checked; an empty (or not-yet-started)
         // window is a provable empty answer, not an invalid question.
         TimeRangeSelector::ByStart { start_ms } => {
@@ -908,6 +911,25 @@ pub fn resolve_time_range_bucket_clause(
                     transform.range_seconds,
                     transform.step_seconds,
                     transform.phase_seconds
+                ))));
+            }
+            // TTL gate: an expired window may be mid-drainage, and a
+            // partially drained window would serve a truncated answer that
+            // looks authoritative. Drainage only ever touches expired
+            // buckets (same `bucket_expired` predicate), so everything on
+            // the queryable side of this gate is complete — and rejecting
+            // the question is deterministic where "whatever the drain has
+            // left" is not. The verifier resolves this clause with the
+            // quorum-signed response `time_ms`, so a node cannot serve an
+            // expired window's remnants past a verifying client.
+            if transform.bucket_expired(start_ms, block_time_ms) {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "byStart {} on \"{}\" is past the ttl horizon ({}s): expired windows \
+                     drain lazily and may be mid-removal, so they are not queryable — \
+                     entries under this index live at most `ttl` past their window's start",
+                    start_ms,
+                    field,
+                    transform.ttl_seconds.unwrap_or_default()
                 ))));
             }
             Some(start_ms)
@@ -3638,6 +3660,115 @@ mod tests {
 
         validate_resolved_time_range_clause_shapes(&[other], &resolved)
             .expect_err("a resolved field with no equality at all must be rejected");
+    }
+
+    /// The TTL horizon gate: an expired window may be mid-drainage, so
+    /// `byStart` must reject it rather than serve whatever the drain has
+    /// left. The boundary is the drain's own predicate — a window starting
+    /// exactly at the horizon is not yet expired and stays queryable — and
+    /// an index without a `ttl` keeps serving arbitrarily old windows.
+    #[test]
+    fn by_start_rejects_windows_past_the_ttl_horizon() {
+        use crate::query::{resolve_time_range_bucket_clause, TimeRangeSelector};
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        use dpp::prelude::Identifier;
+
+        let factory =
+            DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+        let hour_ms: u64 = 3_600_000;
+        let build = |seed: u8, with_ttl: bool| {
+            let mut time_range = vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (Value::Text("range".to_string()), Value::U64(7_200)),
+                (Value::Text("step".to_string()), Value::U64(7_200)),
+            ];
+            if with_ttl {
+                time_range.push((Value::Text("ttl".to_string()), Value::U64(14_400)));
+            }
+            let index_map = vec![
+                (
+                    Value::Text("name".to_string()),
+                    Value::Text("trending".to_string()),
+                ),
+                (
+                    Value::Text("properties".to_string()),
+                    Value::Array(vec![
+                        platform_value!({"$createdAt": "asc"}),
+                        platform_value!({"hashtag": "asc"}),
+                    ]),
+                ),
+                (Value::Text("timeRange".to_string()), Value::Map(time_range)),
+                (
+                    Value::Text("countable".to_string()),
+                    Value::Text("countable".to_string()),
+                ),
+            ];
+            let document_schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "hashtag": {"type": "string", "maxLength": 61, "position": 0},
+                },
+                "required": ["hashtag", "$createdAt"],
+                "indices": Value::Array(vec![Value::Map(index_map)]),
+                "additionalProperties": false,
+            });
+            factory
+                .create_with_value_config(
+                    Identifier::from([seed; 32]),
+                    0,
+                    platform_value!({ "post": document_schema }),
+                    None,
+                    None,
+                )
+                .expect("contract registers")
+                .data_contract_owned()
+        };
+
+        let ttl_contract = build(101, true);
+        let standing_contract = build(102, false);
+        let expired_start = 5_000 * hour_ms;
+        let block_time = expired_start + 6 * hour_ms;
+
+        let resolve = |contract: &DataContract, start_ms: u64| {
+            resolve_time_range_bucket_clause(
+                "$createdAt",
+                TimeRangeSelector::ByStart { start_ms },
+                None,
+                contract
+                    .document_type_for_name("post")
+                    .expect("document type"),
+                block_time,
+            )
+        };
+
+        let error = resolve(&ttl_contract, expired_start)
+            .expect_err("a window past the ttl horizon must be rejected, not served");
+        assert!(
+            error.to_string().contains("ttl horizon"),
+            "the rejection names the horizon: {error}"
+        );
+        resolve(&ttl_contract, expired_start + 2 * hour_ms).expect(
+            "a window starting exactly at the horizon is not expired — same \
+             strictly-below boundary the drain uses",
+        );
+        resolve(&ttl_contract, expired_start + 4 * hour_ms)
+            .expect("a live window resolves normally");
+        resolve_time_range_bucket_clause(
+            "$createdAt",
+            TimeRangeSelector::Newest,
+            None,
+            ttl_contract
+                .document_type_for_name("post")
+                .expect("document type"),
+            block_time,
+        )
+        .expect("relative selectors never address expired windows and stay unaffected");
+        resolve(&standing_contract, expired_start)
+            .expect("without a ttl, arbitrarily old windows stay queryable");
     }
 
     #[test]
