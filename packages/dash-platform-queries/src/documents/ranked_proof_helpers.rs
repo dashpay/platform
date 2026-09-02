@@ -132,29 +132,17 @@ pub(super) fn verify_ranked_query(
         .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
     // Resolve any pending time-range (`IN_TIME_RANGE`) selections through
-    // the shared normalization helper, then reject the request outright if
-    // anything resolved — mirroring the server, whose
-    // `execute_document_ranked_request` refuses non-empty provenance. The
-    // rejection is load-bearing, not a shape formality: ranked mode accepts
-    // equality pins on compound ranked indexes, and the ranked picker
-    // excludes transformed indexes, so a resolved bucket-start equality
-    // would pin a *plain* ranked index on the same timestamp field. A
-    // malicious node could then return a valid proof over that subtree —
-    // documents whose raw timestamp equals the bucket boundary, not the
-    // requested window — and without this guard the verifier would
-    // authenticate it even though an honest server rejects the request.
+    // the shared normalization helper — a `newest`/`oldest` selector
+    // re-derives its window from the quorum-signed metadata time, a
+    // `byStart` from the query itself, so client and prover land on the
+    // identical bucket-start pin. The provenance is threaded into index
+    // resolution below, whose admissibility rule is the load-bearing
+    // half: a resolved bucket-start equality is only ever matched against
+    // the index bucketing that field with exactly the resolved grid —
+    // never a plain index over raw timestamps, where a malicious node
+    // could authenticate boundary-timestamp matches as window membership.
     let resolved_time_ranges =
         normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
-    if !resolved_time_ranges.is_empty() {
-        return Err(drive_proof_verifier::Error::RequestError {
-            error: "a ranked query cannot carry a time-range (IN_TIME_RANGE) selection: \
-                    ranking groups by an index's own property, a document belongs to every \
-                    bucket containing its timestamp, and the resolved bucket-start equality \
-                    could only pin a plain index over raw timestamps — the server rejects \
-                    this request and the verifier must not authenticate a proof for it"
-                .to_string(),
-        });
-    }
 
     let document_type = request
         .data_contract
@@ -181,6 +169,7 @@ pub(super) fn verify_ranked_query(
         request.document_type_name.clone(),
         document_type.indexes(),
         &mode,
+        &resolved_time_ranges,
         platform_version,
     )
     .map_err(|e| drive_proof_verifier::Error::RequestError {

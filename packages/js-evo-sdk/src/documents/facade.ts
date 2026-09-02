@@ -23,6 +23,31 @@ export class DocumentsFacade {
     return w.getDocumentsWithProofInfo(query);
   }
 
+  /**
+   * Chained document query — a provable semi-join:
+   * `SELECT * FROM <outerDocumentType> WHERE $id IN
+   *   (SELECT <joinProperty> FROM <innerDocumentType> WHERE ...)`.
+   *
+   * "Posts I liked" in one verified round trip: inner `like` through
+   * its byLiker-style index, join `postId`, outer `post`. Both halves
+   * ride ONE merged proof — a single quorum-signed state root by
+   * construction — and the outer query is re-derived and checked
+   * against the proven inner values, so the responding node cannot
+   * steer the join. Paginate on the inner query with a range clause on
+   * the join property.
+   */
+  async chained(query: wasm.ChainedDocumentsQuery): Promise<wasm.ChainedDocumentsResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getChainedDocuments(query);
+  }
+
+  async chainedWithProof(
+    query: wasm.ChainedDocumentsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ChainedDocumentsResult>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getChainedDocumentsWithProofInfo(query);
+  }
+
   async history(query: wasm.DocumentHistoryQuery): Promise<Map<bigint, wasm.Document>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentHistory(query);

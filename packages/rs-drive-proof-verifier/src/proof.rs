@@ -1,3 +1,7 @@
+/// Verified chained-document (provable semi-join) result: two grovedb
+/// proofs — the inner indexOnly page and the outer by-ids fetch derived
+/// from its proven values — bound to one quorum-signed root.
+pub mod chained_document;
 /// Verified average result. Holds the `(count, sum)` pair recovered
 /// from a `CountSumTree` / PCPS proof; client divides to obtain the
 /// average. Lights up alongside grovedb PR 670's

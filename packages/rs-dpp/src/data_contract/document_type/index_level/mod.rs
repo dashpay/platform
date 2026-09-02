@@ -176,6 +176,23 @@ pub struct IndexLevel {
     /// `rangeCountable`). Same PV14+ gating and same non-ambiguity argument
     /// as `ranked_count_grouping`.
     count_propagating: bool,
+    /// When `true`, this level is the branch point of a PLAIN sibling index
+    /// inside another index's prefix-ranking chain: its parent level is a
+    /// [`Self::ranked_count_grouping`] or [`Self::count_propagating`] level,
+    /// but this level continues no ranked chain (it is neither stamped nor a
+    /// range-countable terminal). The rs-drive write paths lay its
+    /// property-name tree out wrapped in `Element::NonCounted` inside the
+    /// chain's count-bearing value trees — readable and provable as usual,
+    /// contributing zero to every subtree total the ranking keys on — the
+    /// same demotion range-countable value trees apply to their sibling
+    /// continuations. Structural validation admits only flag-free
+    /// (countable/summable/range/ranked-free) siblings here, so nothing
+    /// under an exempt branch ever needs the counts the wrapper suppresses.
+    /// Stamped by a post-pass over the fully merged tree (the sibling and
+    /// the ranked index can be walked in either order), and only ever `true`
+    /// on PV14+ contracts (the `at` grammar is rejected below meta-schema
+    /// v3), so every historical index level derives bit-identically.
+    count_exempt_branch: bool,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -206,6 +223,13 @@ impl IndexLevel {
     /// docs on [`IndexLevel`].
     pub fn count_propagating(&self) -> bool {
         self.count_propagating
+    }
+
+    /// Whether this level is a plain sibling's branch point inside a
+    /// prefix-ranking chain, laid out count-exempt (`Element::NonCounted`)
+    /// — see the field docs on [`IndexLevel`].
+    pub fn count_exempt_branch(&self) -> bool {
+        self.count_exempt_branch
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -312,6 +336,7 @@ impl IndexLevel {
             time_range: None,
             ranked_count_grouping: false,
             count_propagating: false,
+            count_exempt_branch: false,
             level_identifier: 0,
         };
 
@@ -358,6 +383,7 @@ impl IndexLevel {
                             time_range: None,
                             ranked_count_grouping: false,
                             count_propagating: false,
+                            count_exempt_branch: false,
                         }
                     });
 
@@ -445,7 +471,45 @@ impl IndexLevel {
             }
         }
 
+        // Post-pass: stamp the branch points of plain siblings inside
+        // prefix-ranking chains. Runs over the fully merged tree because
+        // the stamps depend on BOTH indexes — the ranked one stamps the
+        // chain levels, the sibling contributes the branch child — and
+        // the iteration order of `indices` must not matter. A no-op for
+        // every index set without an `at` ranking (no level is stamped
+        // grouping or propagating), which is every pre-PV14 contract.
+        Self::stamp_count_exempt_branches(&mut index_level);
+
         Ok(index_level)
+    }
+
+    /// Recursively marks, under every prefix-ranking chain level (grouping
+    /// or count-propagating), the child levels that do NOT continue the
+    /// chain as [`Self::count_exempt_branch`]. The chain child is the one
+    /// that is itself stamped (a deeper `at` level, or a propagating level
+    /// between two chain levels) or that terminates the ranked index — the
+    /// `at` grammar requires `rangeCountable`, so the chain's terminal
+    /// level always carries a range-countable terminator stamp, while
+    /// structural validation guarantees every admitted sibling is flag-free
+    /// at and below the shared levels. For an unvalidated index set that
+    /// violates those invariants this derivation stays total (fixtures and
+    /// check_tx reach it); the rs-drive tree-type resolver keeps its own
+    /// fail-closed guards for the genuinely contradictory shapes.
+    fn stamp_count_exempt_branches(level: &mut IndexLevel) {
+        let level_is_chain = level.ranked_count_grouping || level.count_propagating;
+        for child in level.sub_index_levels.values_mut() {
+            if level_is_chain {
+                let child_continues_chain = child.ranked_count_grouping
+                    || child.count_propagating
+                    || child
+                        .has_index_with_type
+                        .as_ref()
+                        .map(|info| info.range_countable)
+                        .unwrap_or(false);
+                child.count_exempt_branch = !child_continues_chain;
+            }
+            Self::stamp_count_exempt_branches(child);
+        }
     }
 
     #[cfg(feature = "validation")]
@@ -1587,6 +1651,186 @@ mod tests {
             .expect("the index terminates at the last property level");
         assert!(!info.ranked_countable);
         assert!(info.range_countable);
+    }
+
+    /// A plain lookup index with the given properties and no flags at all.
+    fn plain_index(name: &str, properties: &[&str]) -> Index {
+        Index {
+            name: name.to_string(),
+            properties: properties
+                .iter()
+                .map(|name| IndexProperty {
+                    name: name.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        }
+    }
+
+    /// A plain sibling sharing a prefix-ranking's `at` level gets its
+    /// branch point stamped [`IndexLevel::count_exempt_branch`], while the
+    /// chain's own continuation (here the ranked terminal, which carries
+    /// `range_countable`) stays contributing — in either walk order, since
+    /// the stamp comes from a post-pass over the merged tree.
+    #[test]
+    fn a_plain_sibling_branch_is_stamped_count_exempt() {
+        let platform_version = PlatformVersion::latest();
+        let ranked = prefix_ranked_index("first");
+        let sibling = plain_index("sibling", &["first", "day", "extra"]);
+
+        for indices in [
+            vec![ranked.clone(), sibling.clone()],
+            vec![sibling.clone(), ranked.clone()],
+        ] {
+            let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+                .expect("index level must build");
+
+            let first = structure
+                .sub_levels()
+                .get("first")
+                .expect("the shared at level exists");
+            assert!(first.ranked_count_grouping());
+            assert!(!first.count_exempt_branch());
+
+            let second = first
+                .sub_levels()
+                .get("second")
+                .expect("the chain continuation exists");
+            assert!(second.count_propagating());
+            assert!(
+                !second.count_exempt_branch(),
+                "the chain's own continuation must stay contributing"
+            );
+
+            let day = first
+                .sub_levels()
+                .get("day")
+                .expect("the sibling branch exists");
+            assert!(!day.ranked_count_grouping());
+            assert!(!day.count_propagating());
+            assert!(
+                day.count_exempt_branch(),
+                "the sibling branch point must be stamped count-exempt"
+            );
+
+            let extra = day
+                .sub_levels()
+                .get("extra")
+                .expect("the sibling's deeper level exists");
+            assert!(
+                !extra.count_exempt_branch(),
+                "only the branch point is exempt; below it the wrapper already shields the chain"
+            );
+        }
+    }
+
+    /// A plain sibling that shares the ENTIRE ranked property list and
+    /// extends past its terminal stamps nothing: the ranked terminal is a
+    /// chain member (its `range_countable` terminator is the chain's count
+    /// source), and the extension hangs under a non-chain level, where the
+    /// pre-existing continuation demotion already applies.
+    #[test]
+    fn a_sibling_past_the_ranked_terminal_stamps_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let mut ranked = prefix_ranked_index("first");
+        ranked.properties.truncate(2); // [first, second], at first
+        let sibling = plain_index("sibling", &["first", "second", "day"]);
+
+        let structure = IndexLevel::try_from_indices([&ranked, &sibling], "test", platform_version)
+            .expect("index level must build");
+
+        let second = structure
+            .sub_levels()
+            .get("first")
+            .and_then(|level| level.sub_levels().get("second"))
+            .expect("the shared terminal level exists");
+        assert!(
+            !second.count_exempt_branch(),
+            "the ranked terminal is the chain's contributing continuation"
+        );
+        assert!(
+            second
+                .has_index_with_type()
+                .expect("the ranked index terminates here")
+                .range_countable
+        );
+
+        let day = second
+            .sub_levels()
+            .get("day")
+            .expect("the sibling's extension exists");
+        assert!(
+            !day.count_exempt_branch(),
+            "an extension below a non-chain level relies on the existing demotion, not the stamp"
+        );
+    }
+
+    /// Without an `at` ranking the post-pass stamps nothing — pinned so
+    /// the derivation stays bit-identical for every existing contract.
+    #[test]
+    fn count_exempt_branch_defaults_off_without_at() {
+        let platform_version = PlatformVersion::latest();
+        let indices = vec![
+            ranked_index(true, false, false),
+            plain_index("sibling", &["first", "day"]),
+        ];
+
+        let structure = IndexLevel::try_from_indices(&indices, "test", platform_version)
+            .expect("index level must build");
+        let first = structure
+            .sub_levels()
+            .get("first")
+            .expect("first level exists");
+        assert!(!first.count_exempt_branch());
+        for child in first.sub_levels().values() {
+            assert!(!child.count_exempt_branch());
+        }
+    }
+
+    /// Adding the plain sibling to an existing prefix-ranked doctype on
+    /// update is rejected like any added index (subset rule); pinned so
+    /// the sibling admission can't be read as an update carve-out.
+    #[test]
+    fn adding_a_sibling_on_update_stays_rejected() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![prefix_ranked_index("first")];
+        let new_indices = vec![
+            prefix_ranked_index("first"),
+            plain_index("sibling", &["first", "day", "extra"]),
+        ];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "first -> day"
+        );
     }
 
     /// A middle-property `at` leaves the levels above it unstamped.

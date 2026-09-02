@@ -119,12 +119,17 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
     let (property_name_tree_type, ranked_axes) =
         property_name_tree_type_and_ranked_axes_for_level(sub_level)?;
     // A prefix-ranking chain level (the `rankedCountable: { at }` grouping
-    // level or a count-propagating level below it) counts its single
+    // level or a count-propagating level below it) counts its chain
     // continuation: the value tree's count IS the subtree total the
-    // grouping secondary ranks by, so the continuation is inserted
-    // contributing rather than zero-wrapped (see the walkers). No index
-    // terminates at such a level (the resolver above fails closed on one),
-    // so the terminator-flag derivation below never applies to it.
+    // grouping secondary ranks by, so that continuation is inserted
+    // contributing rather than zero-wrapped (see the walkers). A plain
+    // sibling's branch sharing such a level (`count_exempt_branch` on the
+    // CHILD level) is the one other child the validation admits — the
+    // walkers insert it `Element::NonCounted`-wrapped, contributing zero,
+    // which a `CountTree` parent accepts (only the provable count-bearing
+    // variants reject suppressed children). No index terminates at a chain
+    // level itself (the resolver above fails closed on one), so the
+    // terminator-flag derivation below never applies to it.
     let value_tree_type = if sub_level.ranked_count_grouping() || sub_level.count_propagating() {
         TreeType::CountTree
     } else {
@@ -520,6 +525,99 @@ mod tests {
             },
             "the terminal keeps its rangeCountable derivation — the boolean ranked axis is off"
         );
+    }
+
+    /// A plain sibling admitted beside a `rankedCountable: { at }` chain
+    /// resolves its branch level to plain trees, and the chain's
+    /// `CountTree` value trees accept it as a zero-contributing
+    /// (`Element::NonCounted`-wrapped) child — the layout the walkers
+    /// create for the count-exempt sibling shape.
+    #[test]
+    fn a_count_exempt_sibling_branch_resolves_plain_and_wraps_under_the_chain() {
+        use dpp::data_contract::document_type::{Index, IndexProperty};
+        use dpp::version::PlatformVersion;
+
+        let base = |name: &str, properties: &[&str]| Index {
+            name: name.to_string(),
+            properties: properties
+                .iter()
+                .map(|property| IndexProperty {
+                    name: property.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: None,
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        };
+        let mut ranked = base("byAuthorPost", &["postAuthor", "postId"]);
+        ranked.countable = IndexCountability::Countable;
+        ranked.range_countable = true;
+        ranked.ranked_countable_at = vec!["postAuthor".to_string()];
+        let sibling = base("byAuthorTimePost", &["postAuthor", "day", "postId"]);
+
+        let index_structure =
+            IndexLevel::try_from_indices([&ranked, &sibling], "like", PlatformVersion::latest())
+                .expect("index level must build");
+
+        let author_level = index_structure
+            .sub_levels()
+            .get("postAuthor")
+            .expect("the grouping level exists");
+        let author_types = index_level_tree_types_with_continuation_demotion(author_level)
+            .expect("grouping resolution must succeed");
+        assert_eq!(
+            author_types.value_tree_type,
+            TreeType::CountTree,
+            "the chain's value trees stay count-bearing with the sibling present"
+        );
+
+        // The chain continuation is not exempt; the sibling branch is.
+        let chain_child = author_level
+            .sub_levels()
+            .get("postId")
+            .expect("the chain continuation exists");
+        assert!(!chain_child.count_exempt_branch());
+        let branch = author_level
+            .sub_levels()
+            .get("day")
+            .expect("the sibling branch exists");
+        assert!(branch.count_exempt_branch());
+
+        // The branch resolves to plain trees…
+        let branch_types = index_level_tree_types_with_continuation_demotion(branch)
+            .expect("branch resolution must succeed");
+        assert_eq!(
+            branch_types,
+            IndexLevelTreeTypes {
+                property_name_tree_type: TreeType::NormalTree,
+                ranked_axes: Vec::new(),
+                value_tree_type: TreeType::NormalTree,
+            }
+        );
+
+        // …and the zero-contribution dispatcher wraps it under the chain's
+        // CountTree value trees (NonCounted around a plain tree).
+        LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent(
+            vec![b"path".to_vec()],
+            b"day".to_vec(),
+            author_types.value_tree_type,
+            branch_types.property_name_tree_type,
+            None,
+        )
+        .expect("the sibling branch must be insertable zero-wrapped under the chain value tree");
     }
 
     /// A grouping level that also carries a terminator stamp has two

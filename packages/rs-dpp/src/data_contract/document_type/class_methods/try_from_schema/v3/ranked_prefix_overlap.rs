@@ -108,15 +108,23 @@ pub(super) fn validate_no_ranked_prefix_overlap(
     // Prefix-level rankings (`rankedCountable: { at }`) add two rules of
     // their own, both keyed off the declared `at` level (position `p`):
     //
-    // 1. **Exclusivity of the `at` level and everything below.** From `p`
-    //    down, the ranked index's levels are one count-propagation chain:
-    //    the `at` property-name tree is the indexed tree ranking by
-    //    whole-subtree count, and its value trees count exactly one
-    //    continuation each. Any other index reaching the `at` level —
-    //    terminating there (its member bucket and aggregates would collide
-    //    with the grouping tree) or continuing below it (a second
-    //    continuation whose members would pollute every subtree total) —
-    //    has no coherent layout, whatever its flags.
+    // 1. **Exclusivity of the `at` level and everything below — except
+    //    plain continuing siblings.** From `p` down, the ranked index's
+    //    levels are one count-propagation chain: the `at` property-name
+    //    tree is the indexed tree ranking by whole-subtree count, and its
+    //    value trees count their chain continuation. Another index reaching
+    //    the `at` level is only coherent when it is PLAIN (no countable /
+    //    summable / range / ranked flags, nothing contested), CONTINUES
+    //    below the `at` level, and BRANCHES OFF the chain: its branch trees
+    //    are then wrapped `Element::NonCounted` inside the chain's value
+    //    trees (the same demotion range-countable value trees apply to
+    //    their sibling continuations), so they read normally and contribute
+    //    zero to every subtree total. An aggregating/ranked sibling (its
+    //    aggregates need the counts the wrapper suppresses), one
+    //    terminating exactly at the `at` level (member bucket + aggregates
+    //    on the grouping tree itself), or one whose levels never leave the
+    //    chain (it would terminate ON a grouping/propagating level) still
+    //    has no coherent layout.
     //
     // 2. **The same wrapped-indexed impossibility as above, one level up.**
     //    The grouping tree sits inside the value trees of level `p - 1`
@@ -149,23 +157,73 @@ pub(super) fn validate_no_ranked_prefix_overlap(
             let shares_at_level = other.properties.len() > at_position
                 && shares_leading_levels(ranked, other, at_position + 1);
             if shares_at_level {
-                return Err(consensus_or_protocol_data_contract_error(
-                    DataContractError::InvalidContractStructure(format!(
-                        "prefix-ranked index `{}` conflicts with index `{}`: the levels from \
-                         its rankedCountable.at property (\"{}\") down form the ranking's \
-                         count-propagation chain and must belong to it exclusively, but the \
-                         other index shares the [{}] level. Diverge the other index before \
-                         the `at` property, or move the ranking",
-                        ranked.name,
-                        other.name,
-                        at,
-                        ranked.properties[..=at_position]
-                            .iter()
-                            .map(|p| p.name.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    )),
-                ));
+                // One shape is admissible inside the chain's range: a PLAIN
+                // sibling — no countable/summable/range/ranked flags, whose
+                // semantics would all attach at-or-below the shared levels —
+                // that CONTINUES below the `at` level. Its branch
+                // (property-name) trees are laid out `Element::NonCounted`
+                // inside the chain's value trees by the rs-drive walkers,
+                // so the branch reads and proves normally while
+                // contributing zero to every subtree total the ranking
+                // keys on — the same demotion the range-countable value
+                // trees already apply to their sibling continuations.
+                // Everything else keeps failing closed:
+                // - an aggregating/ranked sibling would need the very
+                //   counts the wrapper suppresses;
+                // - a sibling terminating EXACTLY at the `at` level would
+                //   put its member bucket and aggregates on the grouping
+                //   tree itself (its plain spelling is left to a possible
+                //   follow-up; no known consumer needs it);
+                // - a plain sibling whose levels never leave the chain (a
+                //   level-key prefix of the ranked index's properties)
+                //   contributes no branch to wrap — it would terminate ON
+                //   a grouping/propagating level, the terminal-plus-chain
+                //   stamp the rs-drive resolver fails closed on;
+                // - a contested sibling's layout is owned by the votes
+                //   subsystem and is excluded conservatively.
+                let sibling_is_plain = !other.countable.is_countable()
+                    && other.summable.is_none()
+                    && !other.range_countable
+                    && !other.range_summable
+                    && !other.ranked_countable
+                    && !other.ranked_summable
+                    && !other.ranked_averageable
+                    && other.ranked_countable_at.is_empty()
+                    && other.contested_index.is_none();
+                let continues_below_at = other.properties.len() > at_position + 1;
+                // Continuing below `at` is not enough — the sibling must
+                // also BRANCH OFF the chain. One whose levels are all chain
+                // levels (a level-key prefix of the ranked index's, by
+                // `shares_leading_levels`) terminates on a grouping or
+                // count-propagating level itself; a longer sibling always
+                // leaves the chain (the helper returns `false` past the
+                // ranked index's length), by diverging or by extending past
+                // the ranked terminal into the pre-existing continuation
+                // demotion.
+                let branches_off_the_chain =
+                    !shares_leading_levels(ranked, other, other.properties.len());
+                if !(sibling_is_plain && continues_below_at && branches_off_the_chain) {
+                    return Err(consensus_or_protocol_data_contract_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "prefix-ranked index `{}` conflicts with index `{}`: the levels from \
+                             its rankedCountable.at property (\"{}\") down form the ranking's \
+                             count-propagation chain, and the other index shares the [{}] level. \
+                             Only a plain sibling (no countable/summable/ranked flags) that \
+                             continues past the `at` property and branches off the chain can be \
+                             laid out count-exempt beside the ranking; diverge the other index \
+                             before the `at` property or below it, mark it plain, or move the \
+                             ranking",
+                            ranked.name,
+                            other.name,
+                            at,
+                            ranked.properties[..=at_position]
+                                .iter()
+                                .map(|p| p.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        )),
+                    ));
+                }
             }
             if at_position >= 1 {
                 let prefix = &ranked.properties[..at_position];
@@ -285,8 +343,10 @@ mod tests {
 
     /// Same identity rule for the prefix-level exclusivity: a bucketed
     /// index reaching the `at` level's declared name forks at its
-    /// qualified first key and coexists; the plain spelling violates the
-    /// chain's exclusivity.
+    /// qualified first key and coexists whatever its flags; the bare-key
+    /// spelling of an aggregating sibling really shares the level and
+    /// stays rejected. (The bare-key PLAIN continuing spelling is now the
+    /// admitted count-exempt sibling — covered below.)
     #[test]
     fn a_bucketed_sibling_coexists_with_a_prefix_ranking() {
         let mut ranked = index("byTimeTagPost", &["$createdAt", "tag", "postId"]);
@@ -294,15 +354,175 @@ mod tests {
         ranked.range_countable = true;
         ranked.ranked_countable_at = vec!["$createdAt".to_string()];
 
-        let mut bucketed = index("byHourTag", &["$createdAt", "tag"]);
+        let mut bucketed = countable("byHourTag", &["$createdAt", "tag"]);
         bucketed.time_range = Some(hourly());
         run(vec![ranked.clone(), bucketed])
             .expect("a grid-qualified sibling shares no level with the at chain");
 
-        let plain = index("byTimeTag", &["$createdAt", "tag"]);
+        let aggregating = countable("byTimeTag", &["$createdAt", "tag"]);
         assert!(
-            run(vec![ranked, plain]).is_err(),
-            "the bare-key spelling reaches the at level and must stay rejected"
+            run(vec![ranked, aggregating]).is_err(),
+            "the bare-key spelling reaches the at level and, aggregating, must stay rejected"
+        );
+    }
+
+    /// A ranked index `[postAuthor, postId]` with `at: postAuthor`.
+    fn author_ranked() -> Index {
+        let mut ranked = index("byAuthorPost", &["postAuthor", "postId"]);
+        ranked.countable = IndexCountability::Countable;
+        ranked.range_countable = true;
+        ranked.ranked_countable_at = vec!["postAuthor".to_string()];
+        ranked
+    }
+
+    /// The motivating shape: a plain lookup sibling that shares the `at`
+    /// level and continues below it is admitted — its branch is laid out
+    /// count-exempt (`Element::NonCounted`) by the storage layer.
+    #[test]
+    fn a_plain_continuing_sibling_coexists_with_a_prefix_ranking() {
+        let sibling = index("byAuthorTimePost", &["postAuthor", "day", "postId"]);
+        run(vec![author_ranked(), sibling])
+            .expect("a plain sibling continuing below the at level must be admitted");
+    }
+
+    /// A plain sibling sharing the WHOLE ranked property list and extending
+    /// past the ranked index's terminal is the same admissible shape — its
+    /// branch hangs inside the terminal level's value trees.
+    #[test]
+    fn a_plain_sibling_past_the_ranked_terminal_coexists() {
+        let sibling = index("byAuthorPostTime", &["postAuthor", "postId", "day"]);
+        run(vec![author_ranked(), sibling])
+            .expect("a plain sibling extending past the ranked terminal must be admitted");
+    }
+
+    /// Deeper `at` positions admit plain siblings the same way, wherever
+    /// the sibling diverges inside the chain's range.
+    #[test]
+    fn a_plain_sibling_diverging_at_a_propagating_level_coexists() {
+        let mut ranked = index("byTagRegionPost", &["tag", "region", "postId"]);
+        ranked.countable = IndexCountability::Countable;
+        ranked.range_countable = true;
+        ranked.ranked_countable_at = vec!["tag".to_string()];
+        let sibling = index("byTagRegionDay", &["tag", "region", "day"]);
+        run(vec![ranked, sibling])
+            .expect("a plain sibling diverging below the propagating level must be admitted");
+    }
+
+    /// A plain sibling that continues below `at` but never leaves the
+    /// chain — its properties are a strict level-key prefix of the ranked
+    /// index's — is rejected: it has no branch to lay out count-exempt,
+    /// and its member bucket would land ON a count-propagating level, the
+    /// terminal-plus-chain stamp the rs-drive resolver fails closed on
+    /// (turning a registrable contract into one whose first document
+    /// insert errors). The same properties diverging at the last level
+    /// stay admitted.
+    #[test]
+    fn a_plain_sibling_terminating_inside_the_chain_stays_rejected() {
+        let mut ranked = index("byTagRegionPost", &["tag", "region", "postId"]);
+        ranked.countable = IndexCountability::Countable;
+        ranked.range_countable = true;
+        ranked.ranked_countable_at = vec!["tag".to_string()];
+
+        let strict_prefix = index("byTagRegion", &["tag", "region"]);
+        assert!(
+            run(vec![ranked.clone(), strict_prefix]).is_err(),
+            "a plain strict-prefix sibling terminates on a propagating level and must be rejected"
+        );
+
+        let full_overlap = index("byTagRegionPostToo", &["tag", "region", "postId"]);
+        assert!(
+            run(vec![ranked.clone(), full_overlap]).is_err(),
+            "a plain sibling occupying exactly the chain's levels must be rejected"
+        );
+
+        let diverging = index("byTagRegionDay", &["tag", "region", "day"]);
+        run(vec![ranked, diverging])
+            .expect("the same shape diverging at the last level must stay admitted");
+    }
+
+    /// A sibling terminating EXACTLY at the `at` level stays rejected even
+    /// when plain: its member bucket would sit on the grouping tree itself
+    /// (the plain spelling is possible follow-up work, not admitted here).
+    #[test]
+    fn a_sibling_terminating_exactly_at_the_at_level_stays_rejected() {
+        let terminator = index("byAuthor", &["postAuthor"]);
+        assert!(
+            run(vec![author_ranked(), terminator]).is_err(),
+            "an exact-at terminator must stay rejected"
+        );
+    }
+
+    /// Aggregating and ranked siblings stay rejected — their own aggregates
+    /// would need exactly the counts the NonCounted wrapper suppresses.
+    #[test]
+    fn aggregating_and_ranked_siblings_stay_rejected() {
+        let countable_sibling = {
+            let mut sibling = countable("byAuthorTime", &["postAuthor", "day", "postId"]);
+            sibling.countable = IndexCountability::Countable;
+            sibling
+        };
+        assert!(
+            run(vec![author_ranked(), countable_sibling]).is_err(),
+            "a countable sibling must stay rejected"
+        );
+
+        let range_countable_sibling = {
+            let mut sibling = index("byAuthorTime", &["postAuthor", "day", "postId"]);
+            sibling.countable = IndexCountability::Countable;
+            sibling.range_countable = true;
+            sibling
+        };
+        assert!(
+            run(vec![author_ranked(), range_countable_sibling]).is_err(),
+            "a range-countable sibling must stay rejected"
+        );
+
+        let summable_sibling = {
+            let mut sibling = index("byAuthorTime", &["postAuthor", "day", "postId"]);
+            sibling.summable = Some("score".to_string());
+            sibling
+        };
+        assert!(
+            run(vec![author_ranked(), summable_sibling]).is_err(),
+            "a summable sibling must stay rejected"
+        );
+
+        let ranked_sibling = {
+            let mut sibling = index("byAuthorTime", &["postAuthor", "day", "postId"]);
+            sibling.countable = IndexCountability::Countable;
+            sibling.range_countable = true;
+            sibling.ranked_countable_at = vec!["day".to_string()];
+            sibling
+        };
+        assert!(
+            run(vec![author_ranked(), ranked_sibling]).is_err(),
+            "a sibling carrying its own prefix ranking must stay rejected"
+        );
+
+        let terminal_ranked_sibling = {
+            let mut sibling = count_ranked("byAuthorTime", &["postAuthor", "day", "postId"]);
+            sibling.name = "byAuthorTimeRanked".to_string();
+            sibling
+        };
+        assert!(
+            run(vec![author_ranked(), terminal_ranked_sibling]).is_err(),
+            "a terminal-ranked sibling must stay rejected"
+        );
+    }
+
+    /// The carve-out is scoped to the second loop's at-level rule: an
+    /// aggregating index terminating at the exact prefix ABOVE a deeper
+    /// `at` level still hits the wrapped-indexed impossibility.
+    #[test]
+    fn aggregating_prefix_above_the_at_level_stays_rejected() {
+        let mut ranked = index("byTagRegionPost", &["tag", "region", "postId"]);
+        ranked.countable = IndexCountability::Countable;
+        ranked.range_countable = true;
+        ranked.ranked_countable_at = vec!["region".to_string()];
+        let aggregating_prefix = countable("byTag", &["tag"]);
+        assert!(
+            run(vec![ranked, aggregating_prefix]).is_err(),
+            "the rule one level above the at stays untouched"
         );
     }
 }
