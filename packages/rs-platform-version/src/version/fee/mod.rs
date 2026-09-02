@@ -11,7 +11,7 @@ use crate::version::fee::signature::FeeSignatureVersion;
 use crate::version::fee::state_transition_min_fees::{
     StateTransitionMinFees, StateTransitionMinFeesBeforeProtocolVersion11,
 };
-use crate::version::fee::storage::FeeStorageVersion;
+use crate::version::fee::storage::{FeeStorageVersion, FeeStorageVersionBeforeVersion14};
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::fee::vote_resolution_fund_fees::VoteResolutionFundFees;
 use bincode::{Decode, Encode};
@@ -90,7 +90,7 @@ impl FeeVersion {
 pub struct FeeVersionFieldsBeforeVersion4 {
     // Permille means devise by 1000
     pub uses_version_fee_multiplier_permille: Option<u64>,
-    pub storage: FeeStorageVersion,
+    pub storage: FeeStorageVersionBeforeVersion14,
     pub signature: FeeSignatureVersion,
     pub hashing: FeeHashingVersionBeforeVersion11,
     pub processing: FeeProcessingVersionFieldsBeforeVersion1Point4,
@@ -104,7 +104,7 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
         FeeVersion {
             fee_version_number: 1,
             uses_version_fee_multiplier_permille: value.uses_version_fee_multiplier_permille,
-            storage: value.storage,
+            storage: FeeStorageVersion::from(value.storage),
             signature: value.signature,
             hashing: FEE_HASHING_VERSION1,
             processing: FeeProcessingVersion::from(value.processing),

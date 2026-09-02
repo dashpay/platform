@@ -2159,4 +2159,84 @@ mod tests {
             );
         }
     }
+
+    /// A time-range `ttl` is immutable across contract updates even though
+    /// it is not part of the grid identity — old and new resolve to the
+    /// same `storage_key` level, so the diff helper must compare the whole
+    /// transform. Entries written before a TTL carry storage flags, and an
+    /// ephemeral level must stay flagless.
+    #[test]
+    fn should_return_invalid_result_if_time_range_ttl_changed() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let index_with_ttl = |ttl_seconds: Option<u64>| Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "$createdAt".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_countable_at: vec![],
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range: Some(TimeRangeTransform {
+                source: "$createdAt".to_string(),
+                range_seconds: 3600,
+                step_seconds: 3600,
+                phase_seconds: 0,
+                ttl_seconds,
+            }),
+            terminal: None,
+            preallocated: false,
+            skip_if_absent: false,
+        };
+        let fmt_ttl = |ttl: Option<u64>| {
+            ttl.map(|ttl| format!("{}s", ttl))
+                .unwrap_or_else(|| "None".to_string())
+        };
+
+        for (old_ttl, new_ttl) in [
+            (None, Some(86_400)),
+            (Some(86_400), None),
+            (Some(86_400), Some(172_800)),
+        ] {
+            let old_index_structure = IndexLevel::try_from_indices(
+                &[index_with_ttl(old_ttl)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create old index level");
+            let new_index_structure = IndexLevel::try_from_indices(
+                &[index_with_ttl(new_ttl)],
+                document_type_name,
+                platform_version,
+            )
+            .expect("failed to create new index level");
+
+            let result =
+                old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+            let expected_path = format!(
+                "$createdAt#3600#3600 -> (timeRange: \
+                 Some(on: \"$createdAt\", range: 3600s, step: 3600s, phase: 0s, ttl: {}) -> \
+                 Some(on: \"$createdAt\", range: 3600s, step: 3600s, phase: 0s, ttl: {}))",
+                fmt_ttl(old_ttl),
+                fmt_ttl(new_ttl),
+            );
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == expected_path
+            );
+        }
+    }
 }

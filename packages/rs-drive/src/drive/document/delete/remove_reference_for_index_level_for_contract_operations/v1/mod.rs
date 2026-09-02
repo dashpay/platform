@@ -102,12 +102,13 @@ impl Drive {
                 path_segments.push(vec![0]);
             }
             // The document-type path plus the (grid-qualified) index level
-            // key exist for every registered contract: the flag is only
-            // ever set for a bucketed index, whose level tree is created at
-            // contract registration — so the walk starts below them.
+            // key exist for every registered contract, and the flag is only
+            // set once the top-level walker found the bucket standing
+            // (`time_range_entry_state`) — so the walk starts below the
+            // bucket.
             if !self.expired_entry_path_exists(
                 &path_segments,
-                usize::from(CONTRACT_DOCUMENTS_PATH_HEIGHT) + 1,
+                usize::from(CONTRACT_DOCUMENTS_PATH_HEIGHT) + 2,
                 transaction,
                 platform_version,
             )? {

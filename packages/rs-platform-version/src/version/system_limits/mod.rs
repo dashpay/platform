@@ -113,7 +113,8 @@ pub struct SystemLimits {
     /// `ttl` key (nothing to bound: the key does not parse there).
     pub max_time_range_ttl_seconds: Option<u64>,
     /// Maximum number of O(1) drop operations one write into a TTL'd
-    /// `timeRange` index may spend draining expired buckets.
+    /// `timeRange` index may spend draining expired buckets — per index
+    /// level: indexes sharing a level share one drain per transition.
     ///
     /// A bucket drains deepest-first through flat-subtree drops (one per
     /// `[0]` reference tree, per emptied value tree, per property-name

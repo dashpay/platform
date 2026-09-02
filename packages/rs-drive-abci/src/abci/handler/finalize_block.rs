@@ -110,10 +110,21 @@ where
         .flush_pending_prefix_drops(&platform_version.drive.grove_version)
     {
         Ok(report) => {
-            if report.reclaimed_records > 0 || report.skipped_live > 0 {
-                tracing::debug!(
+            // A skipped record means a dropped path was re-created before
+            // its reclamation ran — a violation of the flat-drop path-reuse
+            // contract that leaks the old prefix data until the path is
+            // dropped again, so it is worth a warning rather than a debug
+            // line.
+            if report.skipped_live > 0 {
+                tracing::warn!(
                     reclaimed_records = report.reclaimed_records,
                     skipped_live = report.skipped_live,
+                    "flushed pending prefix drops; some dropped paths were live again and \
+                     were skipped"
+                );
+            } else if report.reclaimed_records > 0 {
+                tracing::debug!(
+                    reclaimed_records = report.reclaimed_records,
                     "flushed pending prefix drops"
                 );
             }

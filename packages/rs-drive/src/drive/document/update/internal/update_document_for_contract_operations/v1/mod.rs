@@ -2,7 +2,7 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
-use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
+use crate::drive::document::time_range_ttl::{live_time_range_entry_keys, TimeRangeEntryState};
 use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
 };
@@ -10,7 +10,7 @@ use crate::drive::document::{
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::{LowLevelDriveOperation, TimeRangeTtlDrainRequest};
 use crate::util::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
@@ -300,6 +300,11 @@ impl Drive {
         // beneath a `ProvableCount*` / `ProvableSum*` parent —
         // diverging from the insert path (consensus break).
         let index_structure = document_type.index_structure();
+        // Operations under TTL'd (ephemeral) levels — one vec for the whole
+        // walk, so the emptiness climb of one index sees the removals of
+        // another index sharing its level; re-tagged ephemeral after the
+        // loop.
+        let mut ephemeral_batch_operations: Vec<LowLevelDriveOperation> = vec![];
         // fourth we need to store a reference to the document for each index
         for index in document_type.indexes().values() {
             // at this point the contract path is to the contract documents
@@ -360,14 +365,30 @@ impl Drive {
             // from ancestor sum aggregates (the document body remains
             // queryable but SUM/AVG proofs would exclude it — a soundness
             // bug an attacker could trigger with any benign no-op update).
+            //
+            // TTL'd (ephemeral) levels ride their own op batch and carry no
+            // storage flags — same routing as the insert and delete
+            // walkers; see the ttl module's Billing section. The reference
+            // is built with the level's flags: an ephemeral reference must
+            // be flagless or its later removal turns sectioned (refundable).
+            let index_is_ephemeral = current_index_level
+                .time_range()
+                .is_some_and(|transform| transform.ttl_seconds.is_some());
+            let index_storage_flags = if index_is_ephemeral {
+                None
+            } else {
+                storage_flags
+            };
             let index_document_reference = if let Some(sum_property_name) = &index.summable {
                 let sum_value = read_document_sum_contribution(document, sum_property_name)?;
                 make_document_reference_with_sum_item(
                     document,
                     document_and_contract_info.document_type,
                     sum_value,
-                    storage_flags,
+                    index_storage_flags,
                 )
+            } else if index_is_ephemeral {
+                make_document_reference(document, document_and_contract_info.document_type, None)
             } else {
                 document_reference.clone()
             };
@@ -384,44 +405,11 @@ impl Drive {
             // transform is exactly the grid every index sharing this level
             // declared.)
             if let Some(transform) = current_index_level.time_range() {
-                // TTL'd (ephemeral) sub-levels ride their own op batch and carry
-                // no storage flags — same routing as the insert and delete
-                // walkers; see the ttl module's Billing section.
-                let index_is_ephemeral = transform.ttl_seconds.is_some();
-                let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
                 let index_batch_operations: &mut Vec<LowLevelDriveOperation> = if index_is_ephemeral
                 {
-                    &mut ephemeral_local_operations
+                    &mut ephemeral_batch_operations
                 } else {
                     &mut batch_operations
-                };
-                let index_storage_flags = if index_is_ephemeral {
-                    None
-                } else {
-                    storage_flags
-                };
-                // The prebuilt reference bakes the document's flags into the
-                // element; ephemeral references must be flagless or their
-                // later removal turns sectioned (refundable).
-                let index_document_reference = if index_is_ephemeral {
-                    if let Some(sum_property_name) = &index.summable {
-                        let sum_value =
-                            read_document_sum_contribution(document, sum_property_name)?;
-                        make_document_reference_with_sum_item(
-                            document,
-                            document_and_contract_info.document_type,
-                            sum_value,
-                            None,
-                        )
-                    } else {
-                        make_document_reference(
-                            document,
-                            document_and_contract_info.document_type,
-                            None,
-                        )
-                    }
-                } else {
-                    index_document_reference
                 };
                 self.update_time_range_index_for_contract_operations_v1(
                     index,
@@ -441,13 +429,6 @@ impl Drive {
                     transaction,
                     platform_version,
                 )?;
-                if index_is_ephemeral {
-                    batch_operations.extend(
-                        ephemeral_local_operations
-                            .into_iter()
-                            .map(LowLevelDriveOperation::retag_ephemeral),
-                    );
-                }
                 continue;
             }
 
@@ -920,6 +901,10 @@ impl Drive {
                 }
             }
         }
+        LowLevelDriveOperation::push_retagged_ephemeral(
+            &mut batch_operations,
+            ephemeral_batch_operations,
+        );
         Ok(batch_operations)
     }
 
@@ -987,27 +972,28 @@ impl Drive {
         // TTL drainage rides every write into a TTL'd index — updates
         // included, mirroring the v2 insert walker: a bounded number of
         // deepest-first drop operations against the oldest expired bucket,
-        // resuming wherever the previous write's budget ran out. Running it
-        // FIRST keeps the rest of this update coherent with the drained
-        // state: if the drain takes a bucket this document's old entries
-        // lived in, the old-entry loop's removable checks skip it. This
-        // path is stateful-only (estimation redirects to the insert walker
-        // at the top of the v1 update), and drainage is unbilled — see the
-        // ttl module's Billing section.
+        // resuming wherever the previous write's budget ran out. The drain
+        // is requested here and run once the transition's batch has
+        // applied (one drain per level, however many indexes share it —
+        // see `apply_batch_low_level_drive_operations`), so the removals
+        // queued below always target trees that still stand. This path is
+        // stateful-only (estimation redirects to the insert walker at the
+        // top of the v1 update), and drainage is unbilled — see the ttl
+        // module's Billing section.
         if transform.ttl_seconds.is_some() {
             if let Some(max_operations) = platform_version
                 .system_limits
                 .max_time_range_ttl_drop_operations_per_write
             {
-                self.drain_expired_time_range_buckets(
-                    transform,
-                    top_index_level,
-                    base_index_path,
-                    block_time_ms,
-                    max_operations,
-                    transaction,
-                    platform_version,
-                )?;
+                batch_operations.push(LowLevelDriveOperation::TimeRangeTtlDrain(
+                    TimeRangeTtlDrainRequest {
+                        transform: transform.clone(),
+                        bucket_level: top_index_level.clone(),
+                        level_path: base_index_path.to_vec(),
+                        block_time_ms,
+                        max_operations,
+                    },
+                ));
             }
         }
 
@@ -1348,38 +1334,35 @@ impl Drive {
             // bucket behaves exactly as before. This path is stateful-only
             // (estimation redirects to the insert walker at the top of the
             // v1 update), so the existence reads are always legal here.
-            let expired_entry = entry_key_bucket_start(entry_key)
-                .zip(transform.expiry_horizon_ms(block_time_ms))
-                .is_some_and(|(start, horizon)| start < horizon);
-            if expired_entry {
-                if !self.time_range_entry_is_removable(
-                    transform,
-                    entry_key,
-                    block_time_ms,
-                    base_index_path,
-                    transaction,
-                    platform_version,
-                )? {
-                    continue;
-                }
-                let mut entry_path_segments: Vec<Vec<u8>> = base_index_path.to_vec();
-                entry_path_segments.push(entry_key.clone());
-                for segment in &old_suffix {
-                    entry_path_segments.push(segment.clone());
-                }
-                if !old_terminator_is_unique {
-                    entry_path_segments.push(vec![0]);
-                }
-                // `base_index_path` — the document-type path plus the
-                // grid-qualified level key — exists for every registered
-                // contract, so the walk starts below it.
-                if !self.expired_entry_path_exists(
-                    &entry_path_segments,
-                    base_index_path.len(),
-                    transaction,
-                    platform_version,
-                )? {
-                    continue;
+            match self.time_range_entry_state(
+                transform,
+                entry_key,
+                block_time_ms,
+                base_index_path,
+                transaction,
+                platform_version,
+            )? {
+                TimeRangeEntryState::Live => {}
+                TimeRangeEntryState::ExpiredGone => continue,
+                TimeRangeEntryState::ExpiredStanding => {
+                    let mut entry_path_segments: Vec<Vec<u8>> = base_index_path.to_vec();
+                    entry_path_segments.push(entry_key.clone());
+                    for segment in &old_suffix {
+                        entry_path_segments.push(segment.clone());
+                    }
+                    if !old_terminator_is_unique {
+                        entry_path_segments.push(vec![0]);
+                    }
+                    // The bucket itself was just found standing, so the
+                    // walk starts below it.
+                    if !self.expired_entry_path_exists(
+                        &entry_path_segments,
+                        base_index_path.len() + 1,
+                        transaction,
+                        platform_version,
+                    )? {
+                        continue;
+                    }
                 }
             }
             let mut key_info_path: Vec<KeyInfo> = base_index_path

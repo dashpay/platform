@@ -11,7 +11,7 @@ use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, time_range_index_keys,
 };
-use crate::drive::document::time_range_ttl::entry_key_bucket_start;
+use crate::drive::document::time_range_ttl::TimeRangeEntryState;
 use crate::drive::document::unique_event_id;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
@@ -124,7 +124,6 @@ impl Drive {
             let sub_level_is_ephemeral = sub_level
                 .time_range()
                 .is_some_and(|transform| transform.ttl_seconds.is_some());
-            let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
             let index_storage_flags = if sub_level_is_ephemeral {
                 None
             } else {
@@ -237,98 +236,92 @@ impl Drive {
             );
 
             let bucket_count = index_keys.len();
-            for (bucket, index_key) in index_keys.into_iter().enumerate() {
-                // TTL: an expired bucket may already have been dropped
-                // entirely (this document's entries went with it — skip),
-                // or stand PARTIALLY drained (drainage removes whole `[0]`
-                // and group value trees before the bucket): removal then
-                // proceeds, but at full-path granularity — the deeper
-                // walkers skip any entry whose path the drain already
-                // took. Live buckets behave exactly as before. Stateful
-                // reads have no place in the estimation dry run, which
-                // processes every bucket — the upper bound.
-                let mut skip_missing_expired_entry = false;
-                if estimated_costs_only_with_layer_info.is_none() {
-                    if let Some(transform) = sub_level.time_range() {
-                        let entry_key_bytes = match &index_key {
-                            DriveKeyInfo::Key(key) => Some(key.as_slice()),
-                            DriveKeyInfo::KeyRef(key) => Some(*key),
-                            DriveKeyInfo::KeySize(_) => None,
-                        };
-                        if let Some(entry_key_bytes) = entry_key_bytes {
-                            let expired = entry_key_bucket_start(entry_key_bytes)
-                                .zip(transform.expiry_horizon_ms(block_time_ms))
-                                .is_some_and(|(start, horizon)| start < horizon);
-                            if expired {
-                                if !self.time_range_entry_is_removable(
-                                    transform,
-                                    entry_key_bytes,
-                                    block_time_ms,
-                                    &index_path,
-                                    transaction,
-                                    platform_version,
-                                )? {
-                                    continue;
+            LowLevelDriveOperation::with_ephemeral_routing(
+                batch_operations,
+                sub_level_is_ephemeral,
+                |index_batch_operations| {
+                    for (bucket, index_key) in index_keys.into_iter().enumerate() {
+                        // TTL: an expired bucket may already have been
+                        // dropped entirely (this document's entries went
+                        // with it — skip), or stand PARTIALLY drained
+                        // (drainage removes whole `[0]` and group value
+                        // trees before the bucket): removal then proceeds,
+                        // but at full-path granularity — the deeper walkers
+                        // skip any entry whose path the drain already took.
+                        // Live buckets behave exactly as before. Stateful
+                        // reads have no place in the estimation dry run,
+                        // which processes every bucket — the upper bound.
+                        let mut skip_missing_expired_entry = false;
+                        if estimated_costs_only_with_layer_info.is_none() {
+                            if let Some(transform) = sub_level.time_range() {
+                                let entry_key_bytes = match &index_key {
+                                    DriveKeyInfo::Key(key) => Some(key.as_slice()),
+                                    DriveKeyInfo::KeyRef(key) => Some(*key),
+                                    DriveKeyInfo::KeySize(_) => None,
+                                };
+                                if let Some(entry_key_bytes) = entry_key_bytes {
+                                    match self.time_range_entry_state(
+                                        transform,
+                                        entry_key_bytes,
+                                        block_time_ms,
+                                        &index_path,
+                                        transaction,
+                                        platform_version,
+                                    )? {
+                                        TimeRangeEntryState::Live => {}
+                                        TimeRangeEntryState::ExpiredGone => continue,
+                                        TimeRangeEntryState::ExpiredStanding => {
+                                            skip_missing_expired_entry = true
+                                        }
+                                    }
                                 }
-                                skip_missing_expired_entry = true;
                             }
                         }
+                        // The final bucket takes ownership of `index_path`;
+                        // earlier buckets (only a time-range fan-out has
+                        // more than one) clone it.
+                        let own_index_path = if bucket + 1 == bucket_count {
+                            std::mem::take(&mut index_path)
+                        } else {
+                            index_path.clone()
+                        };
+                        let mut index_path_info = if document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .is_document_size()
+                        {
+                            // This is a stateless operation
+                            PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(
+                                own_index_path,
+                            ))
+                        } else {
+                            PathInfo::PathAsVec::<0>(own_index_path)
+                        };
+
+                        // we push the actual value of the index path
+                        index_path_info.push(index_key)?;
+                        // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
+
+                        self.remove_indices_for_index_level_for_contract_operations(
+                            document_and_contract_info,
+                            index_path_info,
+                            sub_level,
+                            any_fields_null,
+                            all_fields_null,
+                            value_tree_type,
+                            &index_storage_flags,
+                            previous_batch_operations,
+                            estimated_costs_only_with_layer_info,
+                            skip_missing_expired_entry,
+                            event_id,
+                            transaction,
+                            index_batch_operations,
+                            platform_version,
+                        )?;
                     }
-                }
-                // The final bucket takes ownership of `index_path`; earlier
-                // buckets (only a time-range fan-out has more than one)
-                // clone it.
-                let own_index_path = if bucket + 1 == bucket_count {
-                    std::mem::take(&mut index_path)
-                } else {
-                    index_path.clone()
-                };
-                let mut index_path_info = if document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .is_document_size()
-                {
-                    // This is a stateless operation
-                    PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(own_index_path))
-                } else {
-                    PathInfo::PathAsVec::<0>(own_index_path)
-                };
-
-                // we push the actual value of the index path
-                index_path_info.push(index_key)?;
-                // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
-
-                let index_batch_operations: &mut Vec<LowLevelDriveOperation> =
-                    if sub_level_is_ephemeral {
-                        &mut ephemeral_local_operations
-                    } else {
-                        &mut *batch_operations
-                    };
-                self.remove_indices_for_index_level_for_contract_operations(
-                    document_and_contract_info,
-                    index_path_info,
-                    sub_level,
-                    any_fields_null,
-                    all_fields_null,
-                    value_tree_type,
-                    &index_storage_flags,
-                    previous_batch_operations,
-                    estimated_costs_only_with_layer_info,
-                    skip_missing_expired_entry,
-                    event_id,
-                    transaction,
-                    index_batch_operations,
-                    platform_version,
-                )?;
-            }
-
-            if sub_level_is_ephemeral {
-                batch_operations.extend(
-                    ephemeral_local_operations
-                        .into_iter()
-                        .map(LowLevelDriveOperation::retag_ephemeral),
-                );
-            }
+                    Ok(())
+                },
+            )?;
         }
         Ok(())
     }

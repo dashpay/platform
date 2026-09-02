@@ -5,6 +5,7 @@ use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
 };
 use std::collections::BTreeMap;
 
+use dpp::data_contract::document_type::{IndexLevel, TimeRangeTransform};
 use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
@@ -20,7 +21,7 @@ use crate::error::Error;
 use crate::fees::get_overflow_error;
 use crate::fees::op::LowLevelDriveOperation::{
     CalculatedCostOperation, CalculatedEphemeralCostOperation, EphemeralGroveOperation,
-    FunctionOperation, GroveOperation, PreCalculatedFeeResult,
+    FunctionOperation, GroveOperation, PreCalculatedFeeResult, TimeRangeTtlDrain,
 };
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::storage_flags::StorageFlags;
@@ -197,6 +198,32 @@ impl FunctionOp {
     }
 }
 
+/// A deferred TTL drainage request for one time-range index level.
+///
+/// The document walkers emit one per write into a TTL'd `timeRange`
+/// level instead of draining inline: drainage performs real grovedb
+/// removals, and running it while a transition's other operations were
+/// still queued let it take subtrees those pending operations targeted.
+/// `apply_batch_low_level_drive_operations` runs the requests once the
+/// batch is applied, one drain per level (requests for the same level
+/// collapse), so the per-write budget holds per level however many
+/// indexes share it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimeRangeTtlDrainRequest {
+    /// The level's transform (carries the ttl).
+    pub transform: TimeRangeTransform,
+    /// The merged contract structure below the level's buckets.
+    pub bucket_level: IndexLevel,
+    /// The level path: the document-type path plus the grid-qualified key.
+    pub level_path: Vec<Vec<u8>>,
+    /// Block time the expiry horizon derives from.
+    pub block_time_ms: u64,
+    /// The drop budget (`SystemLimits::max_time_range_ttl_drop_operations_per_write`).
+    pub max_operations: u16,
+}
+
+impl Eq for TimeRangeTtlDrainRequest {}
+
 /// Drive operation
 // GroveOperation dominates every op vec on the write path; boxing it would
 // trade one inline copy for a per-op heap allocation in consensus-critical
@@ -226,6 +253,10 @@ pub enum LowLevelDriveOperation {
     CalculatedEphemeralCostOperation(OperationCost),
     /// Pre Calculated Fee Result
     PreCalculatedFeeResult(FeeResult),
+    /// A deferred TTL drainage request, executed by
+    /// `apply_batch_low_level_drive_operations` after the batch is applied
+    /// — see [`TimeRangeTtlDrainRequest`]. Never reaches fee consumption.
+    TimeRangeTtlDrain(TimeRangeTtlDrainRequest),
 }
 
 /// Shared rejection message for the three `Element` wrappers
@@ -382,42 +413,62 @@ impl LowLevelDriveOperation {
             FunctionOperation(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "function operations should not be requested by operation costs",
             ))),
+            TimeRangeTtlDrain(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "time-range ttl drain requests must be executed by \
+                 apply_batch_low_level_drive_operations, not transformed to costs",
+            ))),
         }
     }
 
-    /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    /// Sums the calculated costs of a list of operations, both pricing
+    /// classes included.
     pub fn combine_cost_operations(operations: &[LowLevelDriveOperation]) -> OperationCost {
         let mut cost = OperationCost::default();
         operations.iter().for_each(|op| {
-            if let CalculatedCostOperation(operation_cost) = op {
+            if let CalculatedCostOperation(operation_cost)
+            | CalculatedEphemeralCostOperation(operation_cost) = op
+            {
                 cost += operation_cost.clone()
             }
         });
         cost
     }
 
+    /// The grove operation this op carries, whichever pricing class it is
+    /// tagged with.
+    pub fn grove_op_ref(&self) -> Option<&QualifiedGroveDbOp> {
+        match self {
+            GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => Some(grovedb_op),
+            _ => None,
+        }
+    }
+
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    ///
+    /// Ephemeral (TTL'd-subtree) ops are included so no write is ever
+    /// dropped; only [`Self::grovedb_operations_batch_consume_split_ephemeral`]
+    /// keeps the two pricing classes apart.
     pub fn grovedb_operations_batch(
         insert_operations: &[LowLevelDriveOperation],
     ) -> GroveDbOpBatch {
         let operations = insert_operations
             .iter()
-            .filter_map(|op| match op {
-                GroveOperation(grovedb_op) => Some(grovedb_op.clone()),
-                _ => None,
-            })
+            .filter_map(|op| op.grove_op_ref().cloned())
             .collect();
         GroveDbOpBatch::from_operations(operations)
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    /// Ephemeral ops are included — see [`Self::grovedb_operations_batch`].
     pub fn grovedb_operations_batch_consume(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> GroveDbOpBatch {
         let operations = insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) => Some(grovedb_op),
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                    Some(grovedb_op)
+                }
                 _ => None,
             })
             .collect();
@@ -425,15 +476,13 @@ impl LowLevelDriveOperation {
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    /// Ephemeral ops are folded into the batch — see [`Self::grovedb_operations_batch`].
     pub fn grovedb_operations_batch_consume_with_leftovers(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> (GroveDbOpBatch, Vec<LowLevelDriveOperation>) {
-        let (batch, ephemeral_batch, other_operations) =
+        let (mut batch, ephemeral_batch, other_operations) =
             Self::grovedb_operations_batch_consume_split_ephemeral(insert_operations);
-        debug_assert!(
-            ephemeral_batch.is_empty(),
-            "ephemeral grove operations must go through the ephemeral-aware apply"
-        );
+        batch.operations.extend(ephemeral_batch.operations);
         (batch, other_operations)
     }
 
@@ -474,14 +523,40 @@ impl LowLevelDriveOperation {
         }
     }
 
+    /// Appends `local` to `batch_operations`, re-tagged ephemeral.
+    pub fn push_retagged_ephemeral(batch_operations: &mut Vec<Self>, local: Vec<Self>) {
+        batch_operations.extend(local.into_iter().map(Self::retag_ephemeral));
+    }
+
+    /// Runs `f` against the vec an index sub-level's operations belong in:
+    /// `batch_operations` itself for a standing level, a local vec that is
+    /// re-tagged ephemeral on the way out for a TTL'd one. The single
+    /// spelling of the walkers' ephemeral routing.
+    pub fn with_ephemeral_routing<T>(
+        batch_operations: &mut Vec<Self>,
+        is_ephemeral: bool,
+        f: impl FnOnce(&mut Vec<Self>) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        if !is_ephemeral {
+            return f(batch_operations);
+        }
+        let mut local = vec![];
+        let result = f(&mut local)?;
+        Self::push_retagged_ephemeral(batch_operations, local);
+        Ok(result)
+    }
+
     /// Filters the groveDB ops from a list of operations and collects them in a `Vec<QualifiedGroveDbOp>`.
+    /// Ephemeral ops are included — see [`Self::grovedb_operations_batch`].
     pub fn grovedb_operations_consume(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> Vec<QualifiedGroveDbOp> {
         insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) => Some(grovedb_op),
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                    Some(grovedb_op)
+                }
                 _ => None,
             })
             .collect()

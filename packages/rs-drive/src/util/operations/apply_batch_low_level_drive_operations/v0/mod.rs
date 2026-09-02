@@ -20,7 +20,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let (grove_db_operations, ephemeral_grove_db_operations, mut other_operations) =
+        let (grove_db_operations, ephemeral_grove_db_operations, other_operations) =
             LowLevelDriveOperation::grovedb_operations_batch_consume_split_ephemeral(
                 batch_operations,
             );
@@ -59,6 +59,25 @@ impl Drive {
                     .into_iter()
                     .map(LowLevelDriveOperation::retag_ephemeral),
             );
+        }
+        // Deferred TTL drainage runs only now, with every operation of the
+        // transition applied: draining earlier could remove subtrees that
+        // queued removals still targeted. One drain per level — requests
+        // from indexes sharing a level collapse, so the per-write budget is
+        // spent once per level. Unbilled, like the drain itself.
+        let (drain_requests, mut other_operations): (Vec<_>, Vec<_>) = other_operations
+            .into_iter()
+            .partition(|op| matches!(op, LowLevelDriveOperation::TimeRangeTtlDrain(_)));
+        let mut drained_levels: Vec<Vec<Vec<u8>>> = vec![];
+        for request in drain_requests {
+            let LowLevelDriveOperation::TimeRangeTtlDrain(request) = request else {
+                continue;
+            };
+            if drained_levels.contains(&request.level_path) {
+                continue;
+            }
+            self.drain_expired_time_range_buckets(&request, transaction, drive_version)?;
+            drained_levels.push(request.level_path);
         }
         drive_operations.append(&mut other_operations);
         Ok(())

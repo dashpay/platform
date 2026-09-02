@@ -2,7 +2,6 @@ use super::EmptyTreeInsertMode;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use crate::fees::op::{LowLevelDriveOperation, LowLevelDriveOperationTreeTypeConverter};
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyInfo;
@@ -108,10 +107,11 @@ impl Drive {
                         // if it already exists then just ignore things
                         // if we had a delete then we need to remove the delete
                         let previous_drive_operation = &existing_operations[i];
-                        if previous_drive_operation == &drive_operation {
+                        if previous_drive_operation.grove_op_ref() == drive_operation.grove_op_ref()
+                        {
                             found = true;
                             break;
-                        } else if let GroveOperation(grove_op) = previous_drive_operation {
+                        } else if let Some(grove_op) = previous_drive_operation.grove_op_ref() {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
                                 && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
@@ -171,10 +171,11 @@ impl Drive {
                         // if it already exists then just ignore things
                         // if we had a delete then we need to remove the delete
                         let previous_drive_operation = &existing_operations[i];
-                        if previous_drive_operation == &drive_operation {
+                        if previous_drive_operation.grove_op_ref() == drive_operation.grove_op_ref()
+                        {
                             found = true;
                             break;
-                        } else if let GroveOperation(grove_op) = previous_drive_operation {
+                        } else if let Some(grove_op) = previous_drive_operation.grove_op_ref() {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
                                 && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
@@ -232,10 +233,11 @@ impl Drive {
                         // if it already exists then just ignore things
                         // if we had a delete then we need to remove the delete
                         let previous_drive_operation = &existing_operations[i];
-                        if previous_drive_operation == &drive_operation {
+                        if previous_drive_operation.grove_op_ref() == drive_operation.grove_op_ref()
+                        {
                             found = true;
                             break;
-                        } else if let GroveOperation(grove_op) = previous_drive_operation {
+                        } else if let Some(grove_op) = previous_drive_operation.grove_op_ref() {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
                                 && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
@@ -293,10 +295,11 @@ impl Drive {
                         // if it already exists then just ignore things
                         // if we had a delete then we need to remove the delete
                         let previous_drive_operation = &existing_operations[i];
-                        if previous_drive_operation == &drive_operation {
+                        if previous_drive_operation.grove_op_ref() == drive_operation.grove_op_ref()
+                        {
                             found = true;
                             break;
-                        } else if let GroveOperation(grove_op) = previous_drive_operation {
+                        } else if let Some(grove_op) = previous_drive_operation.grove_op_ref() {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
                                 && matches!(grove_op.op, GroveOp::DeleteTree(_, _))

@@ -94,9 +94,13 @@ pub struct TimeRangeTransform {
     /// means entries live forever, exactly as before the key existed.
     ///
     /// Deliberately **not part of the grid identity**: [`Self::storage_key`]
-    /// excludes it, so a TTL never forks the storage level, and query-side
-    /// grid matching (`TimeRangeGridSpec`) compares `(range, step, phase)`
-    /// only. Contract validation requires `ttl >= range` (a window still
+    /// excludes it and query-side grid matching (`TimeRangeGridSpec`)
+    /// compares `(range, step, phase)` only. Like the rest of the transform
+    /// it is nonetheless immutable once the contract is registered: contract
+    /// updates reject any change, including adding or removing a TTL,
+    /// because entries written before a TTL carry storage flags and an
+    /// ephemeral level must stay flagless (refund-free). Contract validation
+    /// requires `ttl >= range` (a window still
     /// able to receive consensus-timestamped writes, or to serve as the
     /// `oldest` selector's window, can never expire) and caps it at
     /// `SystemLimits::max_time_range_ttl_seconds` — the cap is what makes

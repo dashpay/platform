@@ -34,11 +34,68 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllReference};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
+/// Which `Option<&StorageFlags>` the terminal reference element is built
+/// with: v0 reads the document info's own flags, v1 the walker-passed ones.
+#[derive(Clone, Copy)]
+pub(super) enum TerminalReferenceFlagsSource {
+    DocumentInfo,
+    Walker,
+}
+
+impl TerminalReferenceFlagsSource {
+    fn select<'a>(
+        self,
+        document_info: Option<&'a StorageFlags>,
+        walker: Option<&'a StorageFlags>,
+    ) -> Option<&'a StorageFlags> {
+        match self {
+            Self::DocumentInfo => document_info,
+            Self::Walker => walker,
+        }
+    }
+}
+
 impl Drive {
     /// Adds the terminal reference.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_reference_for_index_level_for_contract_operations_v0(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        index_path_info: PathInfo<0>,
+        // See the wrapper's docstring for why this is a borrow now.
+        index_type: &IndexLevelTypeInfo,
+        any_fields_null: bool,
+        all_fields_null: bool,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        storage_flags: &Option<&StorageFlags>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.add_reference_for_index_level_for_contract_operations_inner(
+            document_and_contract_info,
+            index_path_info,
+            index_type,
+            any_fields_null,
+            all_fields_null,
+            previous_batch_operations,
+            storage_flags,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            platform_version,
+            TerminalReferenceFlagsSource::DocumentInfo,
+        )
+    }
+
+    /// Shared body of the v0 and v1 terminal-reference insert; the versions
+    /// differ only in `terminal_flags_source`.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn add_reference_for_index_level_for_contract_operations_inner(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         mut index_path_info: PathInfo<0>,
@@ -54,6 +111,7 @@ impl Drive {
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
+        terminal_flags_source: TerminalReferenceFlagsSource,
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
 
@@ -205,19 +263,25 @@ impl Drive {
 
             let key_element_info =
                 match &document_and_contract_info.owned_document_info.document_info {
-                    DocumentRefAndSerialization((document, _, storage_flags))
-                    | DocumentRefInfo((document, storage_flags)) => {
+                    DocumentRefAndSerialization((document, _, document_flags))
+                    | DocumentRefInfo((document, document_flags)) => {
                         let document_reference = make_terminal_ref(
                             document,
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            terminal_flags_source.select(
+                                document_flags.as_ref().map(|flags| flags.as_ref()),
+                                *storage_flags,
+                            ),
                         )?;
                         KeyElement((document.id_ref().as_slice(), document_reference))
                     }
-                    DocumentOwnedInfo((document, storage_flags))
-                    | DocumentAndSerialization((document, _, storage_flags)) => {
+                    DocumentOwnedInfo((document, document_flags))
+                    | DocumentAndSerialization((document, _, document_flags)) => {
                         let document_reference = make_terminal_ref(
                             document,
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            terminal_flags_source.select(
+                                document_flags.as_ref().map(|flags| flags.as_ref()),
+                                *storage_flags,
+                            ),
                         )?;
                         KeyElement((document.id_ref().as_slice(), document_reference))
                     }
@@ -263,19 +327,25 @@ impl Drive {
         } else {
             let key_element_info =
                 match &document_and_contract_info.owned_document_info.document_info {
-                    DocumentRefAndSerialization((document, _, storage_flags))
-                    | DocumentRefInfo((document, storage_flags)) => {
+                    DocumentRefAndSerialization((document, _, document_flags))
+                    | DocumentRefInfo((document, document_flags)) => {
                         let document_reference = make_terminal_ref(
                             document,
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            terminal_flags_source.select(
+                                document_flags.as_ref().map(|flags| flags.as_ref()),
+                                *storage_flags,
+                            ),
                         )?;
                         KeyElement((&[0], document_reference))
                     }
-                    DocumentOwnedInfo((document, storage_flags))
-                    | DocumentAndSerialization((document, _, storage_flags)) => {
+                    DocumentOwnedInfo((document, document_flags))
+                    | DocumentAndSerialization((document, _, document_flags)) => {
                         let document_reference = make_terminal_ref(
                             document,
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            terminal_flags_source.select(
+                                document_flags.as_ref().map(|flags| flags.as_ref()),
+                                *storage_flags,
+                            ),
                         )?;
                         KeyElement((&[0], document_reference))
                     }

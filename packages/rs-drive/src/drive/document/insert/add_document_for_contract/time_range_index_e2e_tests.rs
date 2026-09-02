@@ -2403,16 +2403,16 @@ fn ttl_partial_drain_resumes_across_writes_and_removals_stay_exact() {
     let t0 = 2_000 * h;
     let old_bucket_key = DocumentPropertyType::encode_date_timestamp(t0);
 
-    // Five groups in the doomed bucket: full drainage costs
-    // 5 × ([0] drop + value-tree delete) + property-name drop + bucket
-    // drop = 12 operations, above the per-write budget of 8.
-    let docs: Vec<Document> = (1..=5)
+    // Six groups in the doomed bucket: full drainage costs
+    // 6 × ([0] drop + value-tree delete) + property-name drop + bucket
+    // drop = 14 operations, above the per-write budget of 8.
+    let docs: Vec<Document> = (1..=6)
         .map(|i| insert_at(t0 + i * MINUTE_MS_TTL, &format!("g{i}")))
         .collect();
 
     // First write past the horizon: budget 8 drains groups g1..g4 (2 ops
-    // each) and stops — the bucket stands, partially drained, with g5 and
-    // the property-name tree intact.
+    // each) and stops — the bucket stands, partially drained, with g5, g6
+    // and the property-name tree intact.
     insert_at(t0 + 6 * h, "w1");
     let bucket_path = {
         let mut path = level_path.clone();
@@ -2436,6 +2436,7 @@ fn ttl_partial_drain_resumes_across_writes_and_removals_stay_exact() {
         );
     }
     assert!(path_exists(&group_path("g5")), "the budget stops before g5");
+    assert!(path_exists(&group_path("g6")), "g6 stands untouched");
 
     // A document whose group the drain took deletes as a clean skip; one
     // whose group still stands deletes normally. Both under the standing,
@@ -2458,8 +2459,18 @@ fn ttl_partial_drain_resumes_across_writes_and_removals_stay_exact() {
             .unwrap_or_else(|e| panic!("deleting a doc from a {label} must succeed: {e:?}"));
     }
 
-    // The next write finishes whatever drainage the deletes' own up-tree
-    // pruning left behind; the bucket is gone.
+    // The deletes' own up-tree pruning takes the emptied g5 chain but
+    // stops at the property-name tree, which still holds g6 — so the
+    // bucket stands, and only the next write's drain can finish it.
+    assert!(
+        !path_exists(&group_path("g5")),
+        "deleting g5's only document prunes the group"
+    );
+    assert!(path_exists(&group_path("g6")), "g6 still stands");
+    assert!(
+        path_exists(&bucket_path),
+        "the bucket stands until drainage resumes"
+    );
     insert_at(t0 + 6 * h + 20 * MINUTE_MS_TTL, "w2");
     assert!(
         !path_exists(&bucket_path),
@@ -2712,7 +2723,7 @@ fn ttl_drainage_covers_every_parent_layout() {
 #[test]
 fn ttl_budget_boundary_after_zero_tree_keeps_deletes_exact() {
     use crate::drive::document::paths::contract_document_type_path_vec;
-    use crate::fees::op::LowLevelDriveOperation;
+    use crate::fees::op::{LowLevelDriveOperation, TimeRangeTtlDrainRequest};
     use crate::util::grove_operations::DirectQueryType;
     use dpp::data_contract::document_type::DocumentPropertyType;
     use grovedb_path::SubtreePath;
@@ -2803,16 +2814,15 @@ fn ttl_budget_boundary_after_zero_tree_keeps_deletes_exact() {
 
     // Budget 1: exactly the group's `[0]` tree drops; its value tree
     // stands without it.
+    let drain_request = |max_operations: u16| TimeRangeTtlDrainRequest {
+        transform: transform.clone(),
+        bucket_level: bucket_level.clone(),
+        level_path: level_path.clone(),
+        block_time_ms: after_expiry_ms,
+        max_operations,
+    };
     drive
-        .drain_expired_time_range_buckets(
-            &transform,
-            bucket_level,
-            &level_path,
-            after_expiry_ms,
-            1,
-            None,
-            platform_version,
-        )
+        .drain_expired_time_range_buckets(&drain_request(1), None, &platform_version.drive)
         .expect("a budget of one drops exactly the [0] tree");
     let exists = |segments: &[Vec<u8>]| -> bool {
         let (key, parents) = segments.split_last().expect("non-empty");
@@ -2859,15 +2869,7 @@ fn ttl_budget_boundary_after_zero_tree_keeps_deletes_exact() {
 
     // A later drain finishes the bucket.
     drive
-        .drain_expired_time_range_buckets(
-            &transform,
-            bucket_level,
-            &level_path,
-            after_expiry_ms,
-            16,
-            None,
-            platform_version,
-        )
+        .drain_expired_time_range_buckets(&drain_request(16), None, &platform_version.drive)
         .expect("the rest of the bucket drains");
     let mut bucket_path = level_path.clone();
     bucket_path.push(bucket_key);
@@ -3290,4 +3292,205 @@ fn ttl_index_bytes_bill_to_processing_without_refunds() {
         "a TTL'd delete refunds exactly the primary document row — the same \
          as a contract with no indexes at all"
     );
+}
+
+/// Two TTL'd indexes sharing one grid on `$createdAt` (`byTag` and
+/// `byAmount`): they share the level, its buckets and its drain.
+fn build_shared_grid_ttl_contract(seed: u8) -> DataContract {
+    let factory =
+        DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+    let time_range = || {
+        Value::Map(vec![
+            (
+                Value::Text("on".to_string()),
+                Value::Text("$createdAt".to_string()),
+            ),
+            (
+                Value::Text("range".to_string()),
+                Value::U64(2 * HOUR_SECONDS),
+            ),
+            (
+                Value::Text("step".to_string()),
+                Value::U64(2 * HOUR_SECONDS),
+            ),
+            (Value::Text("ttl".to_string()), Value::U64(4 * HOUR_SECONDS)),
+        ])
+    };
+    let index = |name: &str, second: &str| {
+        Value::Map(vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text(name.to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    platform_value!({"$createdAt": "asc"}),
+                    Value::Map(vec![(
+                        Value::Text(second.to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                ]),
+            ),
+            (Value::Text("timeRange".to_string()), time_range()),
+        ])
+    };
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": {"type": "string", "maxLength": 59, "position": 0},
+            "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 1},
+        },
+        "required": ["hashtag", "amount", "$createdAt"],
+        "indices": Value::Array(vec![index("byTag", "hashtag"), index("byAmount", "amount")]),
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "post": document_schema });
+    factory
+        .create_with_value_config(Identifier::from([seed; 32]), 0, schemas, None, None)
+        .expect("contract registers")
+        .data_contract_owned()
+}
+
+/// Regression: drainage must never run while a transition's own removals
+/// are still queued. A documents batch of `[delete D, create E]` (and
+/// `[update D, create E]`) where D's window is expired but still standing
+/// queues removals under that bucket; had the create's drain executed
+/// inline, it would have flat-dropped the very subtrees those removals
+/// target and the batch would have failed to apply. The drain now runs
+/// after the batch, once for the level both indexes share.
+#[test]
+fn ttl_removals_queued_before_a_draining_write_in_one_batch_still_apply() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::batch::{DocumentOperationType, DriveOperation};
+    use crate::util::grove_operations::DirectQueryType;
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+    use dpp::data_contract::document_type::DocumentPropertyType;
+    use grovedb_path::SubtreePath;
+
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = build_shared_grid_ttl_contract(218);
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+    let document_type = contract.document_type_for_name("post").expect("post");
+    let transform = document_type
+        .indexes()
+        .get("byTag")
+        .expect("index")
+        .time_range
+        .clone()
+        .expect("transform");
+
+    let h = HOUR_MS;
+    let t0 = 8_000 * h;
+    let make_doc = |marker: u8, created_at: u64, tag: &str| -> Document {
+        Document::V0(DocumentV0 {
+            id: Identifier::from(fixture_bytes(marker, created_at, tag)),
+            owner_id: Identifier::from(fixture_bytes(marker + 1, created_at, tag)),
+            properties: BTreeMap::from([
+                ("hashtag".to_string(), Value::Text(tag.to_string())),
+                ("amount".to_string(), Value::U64(3)),
+            ]),
+            created_at: Some(created_at),
+            revision: Some(1),
+            ..Default::default()
+        })
+    };
+    fn add_op<'a>(contract: &'a DataContract, document: &'a Document) -> DriveOperation<'a> {
+        DriveOperation::DocumentOperation(DocumentOperationType::AddDocument {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((document, None)),
+                owner_id: Some(document.owner_id().to_buffer()),
+            },
+            contract_info: DataContractInfo::BorrowedDataContract(contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("post"),
+            override_document: false,
+        })
+    }
+    let apply = |operations: Vec<DriveOperation>, time_ms: u64| {
+        drive.apply_drive_operations(
+            operations,
+            true,
+            &BlockInfo {
+                time_ms,
+                ..Default::default()
+            },
+            None,
+            platform_version,
+            None,
+        )
+    };
+
+    // Two documents in the doomed bucket, in different groups on both
+    // indexes; no write happens between their insertion and expiry.
+    let d1 = make_doc(20, t0 + MINUTE_MS_TTL, "d1");
+    let d2 = make_doc(22, t0 + MINUTE_MS_TTL, "d2");
+    apply(vec![add_op(&contract, &d1)], t0 + MINUTE_MS_TTL).expect("d1 inserts");
+    apply(vec![add_op(&contract, &d2)], t0 + MINUTE_MS_TTL).expect("d2 inserts");
+
+    let mut level_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "post");
+    level_path.push(transform.storage_key("$createdAt").into_bytes());
+    let exists = |segments: &[Vec<u8>]| -> bool {
+        let (key, parents) = segments.split_last().expect("non-empty");
+        let mut ops: Vec<LowLevelDriveOperation> = vec![];
+        drive
+            .grove_has_raw(
+                SubtreePath::from(parents),
+                key.as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut ops,
+                &platform_version.drive,
+            )
+            .expect("existence check")
+    };
+    let mut old_bucket_path = level_path.clone();
+    old_bucket_path.push(DocumentPropertyType::encode_date_timestamp(t0));
+    assert!(exists(&old_bucket_path), "the bucket stands before expiry");
+
+    // Past the horizon: delete d1 (queued under the expired-but-standing
+    // bucket), update d2 (its old entries queued the same way, on both
+    // indexes), then create e — whose drain would have run inline.
+    let mut d2_updated = d2.clone();
+    d2_updated.set("hashtag", Value::Text("d2b".to_string()));
+    d2_updated.set_revision(Some(2));
+    let e = make_doc(24, t0 + 6 * h, "e");
+    apply(
+        vec![
+            DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
+                document_id: d1.id(),
+                contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("post"),
+            }),
+            DriveOperation::DocumentOperation(DocumentOperationType::UpdateDocument {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&d2_updated, None)),
+                    owner_id: Some(d2_updated.owner_id().to_buffer()),
+                },
+                contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("post"),
+            }),
+            add_op(&contract, &e),
+        ],
+        t0 + 6 * h,
+    )
+    .expect("removals queued before a draining write must still apply");
+
+    assert!(
+        !exists(&old_bucket_path),
+        "the expired bucket is gone once the batch and its drain applied"
+    );
+    let mut new_bucket_path = level_path.clone();
+    new_bucket_path.push(DocumentPropertyType::encode_date_timestamp(t0 + 6 * h));
+    assert!(exists(&new_bucket_path), "the live bucket took the create");
 }

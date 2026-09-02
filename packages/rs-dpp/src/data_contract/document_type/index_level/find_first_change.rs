@@ -197,6 +197,9 @@ impl IndexLevel {
     /// dictates how many index entries each document produces and under
     /// which bucket keys, so changing it after creation would leave already
     /// stored documents indexed under stale buckets — it is immutable.
+    /// That includes `ttl`, which the storage key leaves out: entries
+    /// written before a TTL carry storage flags, and an ephemeral level
+    /// must stay flagless.
     ///
     /// Returns `None` if the transform is the same everywhere.
     #[cfg(feature = "validation")]
@@ -204,8 +207,14 @@ impl IndexLevel {
         if self.time_range() != new.time_range() {
             let fmt = |t: Option<&super::TimeRangeTransform>| match t {
                 Some(t) => format!(
-                    "Some(on: {:?}, range: {}s, step: {}s, phase: {}s)",
-                    t.source, t.range_seconds, t.step_seconds, t.phase_seconds
+                    "Some(on: {:?}, range: {}s, step: {}s, phase: {}s, ttl: {})",
+                    t.source,
+                    t.range_seconds,
+                    t.step_seconds,
+                    t.phase_seconds,
+                    t.ttl_seconds
+                        .map(|ttl| format!("{}s", ttl))
+                        .unwrap_or_else(|| "None".to_string()),
                 ),
                 None => "None".to_string(),
             };

@@ -12,9 +12,10 @@ use crate::version::system_limits::SystemLimits;
 ///   honest price for transitional storage while the lifetime it covers is
 ///   bounded. See `book/src/drive/time-range-ttl.md`.
 /// * `max_time_range_ttl_drop_operations_per_write` is set to 8: each
-///   write into a TTL'd index spends at most this many O(1) flat-drop
-///   operations draining expired buckets, deepest-first, resuming across
-///   writes.
+///   write into a TTL'd index level spends at most this many O(1)
+///   flat-drop operations draining its expired buckets, deepest-first,
+///   resuming across writes (once per level and transition, however many
+///   indexes share the level).
 ///
 /// The changes carried over from the folded-in V4:
 ///

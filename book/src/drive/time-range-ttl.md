@@ -67,10 +67,13 @@ That single property pays off three times:
 
 - `ttl` is an optional key of the `timeRange` map, in seconds, parsed
   into the transform. It is **not part of the grid identity**:
-  [`TimeRangeTransform::storage_key`] excludes it, so declaring or
-  changing a TTL never forks the storage level, and query-side grid
+  [`TimeRangeTransform::storage_key`] excludes it and query-side grid
   matching ([`TimeRangeGridSpec`]) continues to compare
-  `(range, step, phase)` only.
+  `(range, step, phase)` only. Like the rest of the transform it is
+  **immutable once the contract is registered**: contract updates reject
+  any change, including adding or removing a TTL — entries written before
+  a TTL carry storage flags, and an ephemeral level must stay flagless
+  (refund-free).
 - **`ttl ≥ range`.** `$createdAt` is consensus-assigned from block time,
   so writes only ever target windows containing *now*; this invariant
   guarantees no bucket that can still receive entries (or serve as the
@@ -95,6 +98,14 @@ TTL'd index continues drainage of the oldest expired bucket (start
 `SystemLimits::max_time_range_ttl_drop_operations_per_write` O(1) drop
 operations and resuming exactly where the previous write's budget ran
 out. When nothing is expired, the check is a single bounded range read.
+The walkers only *request* the drain; it runs once the state
+transition's own batch has applied — one drain per level, however many
+indexes share it or how many documents the transition carries — so it
+can never remove a subtree a queued removal of the same transition still
+targets. Its flat drops are collected and applied as one grovedb batch
+(a single root-hash propagation per drain); only the indexed-tree
+deletes under ranked levels, which have no batched form, execute
+immediately.
 The operation count of a full bucket scales with its distinct groups,
 and write volume scales with group volume, so drainage keeps pace
 roughly one window behind; after a quiet spell the backlog amortizes
@@ -151,7 +162,8 @@ A time-range bucket is *not* flat, so the platform drains it
    prefixes when ranked);
 4. the emptied bucket is flat-dropped.
 
-Every step is O(1); the *number* of steps scales with the window's
+Every step is O(1) in the subtree it drops (the batched drops share one
+root-hash propagation); the *number* of steps scales with the window's
 distinct groups, and that count is what
 `SystemLimits::max_time_range_ttl_drop_operations_per_write` bounds.
 **Every write** into a TTL'd index continues drainage where the previous
@@ -185,6 +197,17 @@ a not-yet-expired document — is basic removal with no refund entries:
 there is nothing to refund, which is also where TTL writers collectively
 pre-pay the drainage described below. Cost estimation routes through the
 same split, so estimated and actual fees stay in the same class.
+
+Two consequences show up in a fee breakdown. Per byte, an ephemeral
+write costs 400 (the ordinary written-byte processing rate,
+`storage_processing_credit_per_byte`) + 270 = **670 processing credits**,
+against 400 processing + 27,000 storage for an ordinary byte. And because
+the ephemeral batch is applied *second*, the ancestor chain it shares
+with the standing batch (document-type tree up through the contract
+tree, contracts root and root key) is re-opened, re-hashed and re-written
+once more per state transition; that second propagation is billed as
+ephemeral processing — roughly 0.2–0.25M credits per TTL'd write — in
+both the estimate and the actual, so `estimated >= actual` still holds.
 
 Drainage itself and the walkers' TTL bookkeeping reads are **unbilled**:
 their costs go to scratch accounting, never to the triggering user. That
