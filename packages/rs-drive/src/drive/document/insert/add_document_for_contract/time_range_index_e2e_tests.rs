@@ -3540,7 +3540,7 @@ fn ttl_delete_only_write_drains_expired_buckets() {
 
     let h = HOUR_MS;
     let t0 = 8_000 * h;
-    let mut insert = |tag: &str, seed: u8| -> Identifier {
+    let insert = |tag: &str, seed: u8| -> Identifier {
         let owner_bytes = fixture_bytes(seed, t0, tag);
         let document = Document::V0(DocumentV0 {
             id: Identifier::from(fixture_bytes(seed.wrapping_add(1), t0, tag)),
