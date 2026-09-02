@@ -2882,10 +2882,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return 0;
         }
 
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let now_secs = crate::util::now_secs();
 
         let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
         // Permanent verify failures to mark so the sync sweep's enqueue gate
