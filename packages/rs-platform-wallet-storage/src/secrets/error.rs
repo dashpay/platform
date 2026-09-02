@@ -63,6 +63,27 @@ pub enum SecretStoreError {
     #[error("passphrase or password is blank or too short")]
     BlankPassphrase,
 
+    /// A vault passphrase (Tier-1 `open`/`rekey`) or an object password
+    /// (Tier-2 enrol/unwrap) was longer than [`MAX_PASSPHRASE_LEN`].
+    ///
+    /// Passphrases live in guarded, `mlock`ed pages for as long as the
+    /// store they unlock, and up to three are resident at once during a
+    /// re-protect, so an unbounded one would blow the crate's
+    /// locked-memory budget (documented at
+    /// [`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN)). The ceiling is
+    /// far above any human-typed passphrase; only a programmatic or
+    /// config-supplied value realistically reaches it. Carries lengths
+    /// only, never any part of the value (CWE-209).
+    ///
+    /// [`MAX_PASSPHRASE_LEN`]: crate::secrets::MAX_PASSPHRASE_LEN
+    #[error("passphrase exceeds maximum length of {max} bytes (got {found})")]
+    PassphraseTooLong {
+        /// Length of the offending passphrase, in bytes.
+        found: usize,
+        /// The enforced ceiling, in bytes.
+        max: usize,
+    },
+
     /// AEAD tag failure on a stored entry (or rekey re-encrypt) *after*
     /// the header verify-token passed: the entry ciphertext is corrupt or
     /// tampered, **not** a wrong passphrase. No plaintext (CWE-347).
@@ -128,6 +149,35 @@ pub enum SecretStoreError {
     /// [`reprotect`]: crate::secrets::SecretStore::reprotect
     #[error("no entry under (service, label)")]
     NoEntry,
+
+    /// The host's memory pages are larger than the crate's locked-memory
+    /// budget assumes, so no store can honour that budget here (CWE-316).
+    ///
+    /// `memsec` rounds every guarded allocation up to the page size it
+    /// reads from the kernel at run time, while the budget documented at
+    /// [`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN) is denominated
+    /// in 16 KiB pages. On a larger-paged host the real peak exceeds the
+    /// budgeted one by the ratio between the two sizes; `mlock` then
+    /// fails open with a warning and seed / xpriv material silently
+    /// becomes swappable. Construction refuses instead of degrading.
+    ///
+    /// Reserved for exotic hosts — 64 KiB-page aarch64 RHEL/SLES builds.
+    /// 4 KiB Linux and 16 KiB Apple Silicon / iOS both pass.
+    ///
+    /// Smaller-than-assumed pages are accepted: they turn every
+    /// `locked_cost` figure into an over-estimate, which leaves the budget
+    /// conservative rather than overrun.
+    #[error(
+        "host memory pages are {found} bytes but locked secret memory is budgeted for {assumed}; \
+         secret pages would exceed RLIMIT_MEMLOCK and silently become swappable — \
+         run this process on a host with {assumed}-byte memory pages"
+    )]
+    HostPageSizeExceedsBudget {
+        /// The page size this host reported (not secret).
+        found: usize,
+        /// The page size the compiled-in budget assumes (not secret).
+        assumed: usize,
+    },
 
     /// A pre-existing vault file had permissions looser than `0600`.
     /// Refuse rather than tighten-and-trust.
@@ -248,6 +298,7 @@ impl SecretStoreError {
             | Self::NeedsPassword
             | Self::WrongPassword
             | Self::BlankPassphrase
+            | Self::PassphraseTooLong { .. }
             | Self::Corruption
             | Self::KdfFailure
             | Self::EntropyUnavailable
@@ -256,6 +307,7 @@ impl SecretStoreError {
             | Self::MalformedVault
             | Self::InvalidLabel
             | Self::NoEntry
+            | Self::HostPageSizeExceedsBudget { .. }
             | Self::InsecurePermissions { .. }
             | Self::InsecureParentDir { .. }
             | Self::SecretTooLarge { .. }
@@ -278,6 +330,7 @@ impl SecretStoreError {
             Self::NeedsPassword => "needs_password",
             Self::WrongPassword => "wrong_password",
             Self::BlankPassphrase => "blank_passphrase",
+            Self::PassphraseTooLong { .. } => "passphrase_too_long",
             Self::Corruption => "corruption",
             Self::KdfFailure => "kdf_failure",
             Self::EntropyUnavailable => "entropy_unavailable",
@@ -286,6 +339,7 @@ impl SecretStoreError {
             Self::MalformedVault => "malformed_vault",
             Self::InvalidLabel => "invalid_label",
             Self::NoEntry => "no_entry",
+            Self::HostPageSizeExceedsBudget { .. } => "host_page_size_exceeds_budget",
             Self::InsecurePermissions { .. } => "insecure_permissions",
             Self::InsecureParentDir { .. } => "insecure_parent_dir",
             Self::SecretTooLarge { .. } => "secret_too_large",
@@ -390,7 +444,8 @@ impl From<std::io::Error> for SecretStoreError {
 ///   [`KeyringError::BadStoreFormat`] (a static secret-free string — that
 ///   variant has no box slot).
 /// - [`InvalidLabel`] → `KeyringError::Invalid("user", _)`;
-///   [`Io`] → [`KeyringError::PlatformFailure`].
+///   [`Io`] and [`HostPageSizeExceedsBudget`] (a host the crate cannot run
+///   on, not a store-format problem) → [`KeyringError::PlatformFailure`].
 ///
 /// [`WrongPassphrase`]: SecretStoreError::WrongPassphrase
 /// [`AlreadyLocked`]: SecretStoreError::AlreadyLocked
@@ -402,6 +457,7 @@ impl From<std::io::Error> for SecretStoreError {
 /// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
 /// [`InvalidLabel`]: SecretStoreError::InvalidLabel
 /// [`Io`]: SecretStoreError::Io
+/// [`HostPageSizeExceedsBudget`]: SecretStoreError::HostPageSizeExceedsBudget
 impl From<SecretStoreError> for KeyringError {
     fn from(e: SecretStoreError) -> Self {
         use SecretStoreError as E;
@@ -421,6 +477,7 @@ impl From<SecretStoreError> for KeyringError {
             | E::InsecurePermissions { .. }
             | E::InsecureParentDir { .. }
             | E::SecretTooLarge { .. }
+            | E::PassphraseTooLong { .. }
             | E::VaultTooLarge { .. }
             | E::Decrypt
             | E::Encrypt
@@ -429,6 +486,7 @@ impl From<SecretStoreError> for KeyringError {
                 KeyringError::Invalid("user".to_string(), "label allowlist violation".to_string())
             }
             E::NoEntry => KeyringError::NoEntry,
+            E::HostPageSizeExceedsBudget { .. } => KeyringError::PlatformFailure(Box::new(e)),
             E::Io(io) => KeyringError::PlatformFailure(Box::new(io.source)),
         }
     }

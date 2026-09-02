@@ -318,6 +318,10 @@ fn samples() -> Vec<WalletStorageError> {
             identity_id: [0xEF; 32],
             identity_index: 3,
         },
+        WalletStorageError::IdentityScanStateContradiction {
+            wallet_id: [0xFA; 32],
+            failed_indices: 2,
+        },
     ]
 }
 
@@ -381,6 +385,9 @@ fn tc_p2_005_is_transient_table() {
                 (false, "identity_key_wallet_mismatch")
             }
             WalletStorageError::IdentityEntryIdMismatch => (false, "identity_entry_id_mismatch"),
+            WalletStorageError::IdentityScanStateContradiction { .. } => {
+                (false, "identity_scan_state_contradiction")
+            }
             WalletStorageError::IdentityIndexConflict { .. } => (false, "identity_index_conflict"),
             WalletStorageError::WalletlessIdentityIndex { .. } => {
                 (false, "walletless_identity_index")

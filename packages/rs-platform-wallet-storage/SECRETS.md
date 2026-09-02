@@ -309,11 +309,48 @@ operation (defence in depth — credentials are long-lived).
 never crosses the public boundary. Internally, the upstream SPI returns
 plaintext as `Vec<u8>` from `CredentialApi::get_secret`; that result is
 wrapped into `SecretBytes::new(...)` **immediately**, with no named
-intermediate `Vec` binding. `SecretBytes::new` takes the
-`Vec<u8>` by value and `std::mem::take`s it into a `Zeroizing<Vec<u8>>` —
-no copy of the bare buffer ever survives past the constructor
-expression, so the bare-`Vec` exposure window is zero statements. The
-wrapper is also best-effort `mlock`ed and `Debug` is redacted.
+intermediate `Vec` binding.
+
+`SecretBytes::new` takes the `Vec<u8>` by value, **copies** it into
+guarded memory, then zeroizes the source before it drops. The copy is
+unavoidable and load-bearing: guarded memory comes from a dedicated
+allocator, so a `Vec`'s own allocation can never *become* the protected
+buffer — wiping the original is the only thing that keeps an
+unprotected duplicate off the general-purpose heap. `SecretString::new`
+does the same for a moved-in `String`; `From<&str>` and the
+`serde`-gated `visit_str` bypass the intermediate allocation entirely.
+`Debug` is redacted on both.
+
+`SecretString` is additionally **editable in place**, through the single
+`replace_range(range, replacement)` primitive (insertion is an empty
+range, deletion an empty replacement, wholesale replacement `..`) — it
+backs live text-input widgets downstream without them keeping a
+duplicate guarded buffer of their own. No plaintext leaves the wrapper
+through it: an edit that outgrows the buffer allocates a fresh guarded
+one, copies through a safe slice, and lets the outgrown one wipe itself
+on drop; a shrinking edit wipes the bytes it vacates. An invalid range
+panics (matching `String::replace_range`) with a message naming **only
+indices** — never content, since `str`'s own slicing panic would print
+the surrounding plaintext (CWE-209/CWE-532). The buffer is deliberately
+**uncapped** here: a value type cannot report a refusal, so enforcement
+stays at the UI that accepts the input and at the vault write, which
+applies `MAX_PLAINTEXT_LEN`.
+
+**Every secret owns its own guarded pages.** The buffer comes from
+`memsec`'s hardened allocator (`src/secrets/guarded.rs`, the crate's
+only `unsafe`): page-aligned, fenced by inaccessible `PROT_NONE` guard
+pages, canary-checked, `mlock`ed, and excluded from core dumps
+(`MADV_DONTDUMP` on Linux). Because the data pages belong to one buffer
+outright, **no two live secrets ever share a page**, so freeing one can
+never unlock memory another still holds — the failure mode that makes
+page-granular locking hazardous over ordinary allocations. The wipe
+covers the buffer's full capacity, not just the live length.
+
+The `mlock` remains **best-effort / fail-open**: if the kernel refuses
+the lock the secret is still allocated, guard-paged and wiped, merely
+swappable. That refusal is logged at `warn` (with no address, length or
+content), so a degraded lock is observable rather than silent. An
+opt-in fail-closed strict mode is not implemented.
 
 `SecretStore::set` takes `&SecretBytes`, exposing the wrapped bytes to
 the SPI's `set_secret(&[u8])` only at the last moment; no long-lived
@@ -347,10 +384,15 @@ unwrapped copy is allocated.
   `SecretStoreError::InsecureParentDir` (the A1 guarantee depends on it).
   A read-only group-accessible parent (`0o750`) is accepted — it only
   leaks filenames, never the 0600-protected vault contents.
-  Each secret is capped at `MAX_SECRET_LEN` (64 KiB) at the write
-  boundary — generously above any mnemonic/seed/xpriv — so a single
-  oversized entry cannot inflate the shared document past the read-side
-  128 MiB ceiling and brick every wallet on the next open. (Through
+  Each secret is capped at `MAX_SECRET_LEN` (8176 B) at the write
+  boundary — still ~30× any mnemonic/seed/xpriv — so a single oversized
+  entry cannot inflate the shared document past the read-side 128 MiB
+  ceiling and brick every wallet on the next open. The value is set by
+  locked memory, not by the document: secrets live in `mlock`ed pages,
+  and 8176 fits inside a single guarded page on every supported host.
+  The full budget — which path peaks, at what, against a 256 KiB
+  `RLIMIT_MEMLOCK` — is documented at the constant and measured by
+  `store::tests::file_reprotect_peak_matches_the_documented_budget`. (Through
   `SecretStore::set_secret`/`set` the user-facing plaintext cap is the
   slightly lower `MAX_PLAINTEXT_LEN`, leaving room for the envelope
   overhead; see **Two-tier secret protection**.)
@@ -362,6 +404,16 @@ unwrapped copy is allocated.
   `SecretStore::file_unprotected(path)` door instead (use it only where the
   stored secrets carry their own Tier-2 object password, or as a staging
   step before `rekey` to a real passphrase — the empty→real migration).
+  **Over-long passphrases are rejected too.** `open`/`rekey` and both
+  sides of the Tier-2 object-password path refuse anything past
+  `MAX_PASSPHRASE_LEN` (4080 B, one guarded page) with
+  `SecretStoreError::PassphraseTooLong`. This is a memory bound, not a
+  policy one: a passphrase stays resident in `mlock`ed pages for its
+  store's whole lifetime, and three are live at once during a
+  `reprotect`, so an unbounded one would break the locked-memory budget
+  above. The `serde`-gated `Deserialize` impl applies the same ceiling,
+  since config is the one construction path whose size this crate does
+  not control.
 - **OS keyring (`SecretStore::os` / `default_credential_store`)** —
   returns an `Arc<dyn CredentialStoreApi + Send + Sync>` over the
   platform's default credential store. The backend on Linux/FreeBSD is
@@ -412,12 +464,13 @@ automatic fallback between backends.
 
 ### Error surface
 
-`SecretStore` returns the typed `SecretStoreError`. For the file arm this
-is **lossless**: `WrongPassphrase`, `Corruption`, `AlreadyLocked`,
-`KdfFailure`, `VersionUnsupported`, `MalformedVault`, `InsecurePermissions`,
-`InsecureParentDir`, `SecretTooLarge`, `VaultTooLarge`, `Encrypt`, and
-`InvalidLabel` are distinct typed variants. The Tier-2 layer adds five more:
-`ExpectedProtectedButUnsealed` (the fail-closed strip refusal),
+`SecretStore` returns the typed `SecretStoreError` — 23 variants in total.
+For the file arm this is **lossless**: `WrongPassphrase`, `Corruption`,
+`AlreadyLocked`, `KdfFailure`, `EntropyUnavailable`, `VersionUnsupported`,
+`MalformedVault`, `InsecurePermissions`, `InsecureParentDir`,
+`SecretTooLarge`, `VaultTooLarge`, `PassphraseTooLong`, `Encrypt`, `NoEntry`,
+`Io`, and `InvalidLabel` are distinct typed variants. The Tier-2 layer adds
+five more: `ExpectedProtectedButUnsealed` (the fail-closed strip refusal),
 `NeedsPassword` (a protected object read with no password), `WrongPassword`
 (object-password tag fail — distinct from the Tier-1 `WrongPassphrase`),
 `BlankPassphrase` (a blank or sub-floor vault passphrase or object password), and
@@ -428,12 +481,26 @@ downcast-recoverable, like `WrongPassphrase`); `UnsupportedEnvelopeVersion`
 joins the secret-free `BadStoreFormat` group. `VaultTooLarge` surfaces when
 the on-disk vault exceeds the read-side ceiling; `SecretTooLarge` rejects an
 oversized secret at the write boundary before it can inflate the shared
-vault; `InsecureParentDir` refuses a vault whose ancestor chain has unsafe
+vault; `PassphraseTooLong` rejects a vault passphrase or object password
+past the 4080-byte `mlock`ed-page ceiling before it is ever derived (see
+"Short passphrases are rejected" above); `EntropyUnavailable` marks an
+exhausted or blocked OS CSPRNG draw for a salt, nonce, or key — kept
+distinct from `KdfFailure` so it is not misdiagnosed as an Argon2 parameter
+problem; `InsecureParentDir` refuses a vault whose ancestor chain has unsafe
 ownership or a group/other-writable component without the sticky bit (an
 attacker who can replace an ancestor can replace the `0600` file); `Encrypt`
 is the (effectively unreachable) AEAD
 encrypt-side failure, kept typed so a write failure is never mislabeled a
-key-derivation error. For the OS arm,
+key-derivation error; `NoEntry` surfaces from mutators that need an
+existing `(service, label)` entry to act on (e.g. `reprotect`, see above);
+`Io` wraps a filesystem failure (open/write/rename/fsync) with the OS error
+code and, when known, the non-secret caller-supplied path. `Decrypt` is an
+internal AEAD-tag discriminant with no vault context attached — every
+caller-facing path resolves it to `WrongPassphrase` (header verify-token),
+`Corruption` (entry, post-header), or `WrongPassword` (Tier-2 envelope)
+before it can escape, so it never reaches a `SecretStore` caller, but it is
+still a variant every exhaustive match below (including the `KeyringError`
+projection) must classify. For the OS arm,
 `keyring_core::Error` projects best-effort into
 `SecretStoreError::OsKeyring { kind: OsKeyringErrorKind }`, a payload-free
 discriminant — keyring variants carrying raw bytes (`BadEncoding`,
@@ -463,14 +530,17 @@ keyring_core::Error` keeps the `WrongPassphrase` / `AlreadyLocked` variants
 recoverable: they ride in `NoStorageAccess` with the typed
 `SecretStoreError` boxed as the source, so an SPI-only consumer can recover
 them via `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
-The `BadStoreFormat` group (`Corruption`, `KdfFailure`,
+The `BadStoreFormat` group (`Corruption`, `KdfFailure`, `EntropyUnavailable`,
 `VersionUnsupported`, `UnsupportedEnvelopeVersion`, `MalformedVault`,
 `InsecurePermissions`, `InsecureParentDir`, `SecretTooLarge`,
-`VaultTooLarge`, `Decrypt`, `Encrypt`, `OsKeyring`) has no box slot and
-carries only a secret-free
-string; those remain fully typed on the `SecretStore` path (so e.g.
+`PassphraseTooLong`, `VaultTooLarge`, `Decrypt`, `Encrypt`, `OsKeyring`) has
+no box slot and carries only a secret-free string; those remain fully typed
+on the `SecretStore` path (so e.g.
 `VaultTooLarge` / `SecretTooLarge` are not losslessly recoverable through
-the SPI downcast).
+the SPI downcast). The remaining two variants project outside both groups:
+`InvalidLabel` → `KeyringError::Invalid("user", _)`, and `NoEntry` and `Io`
+pass through as `KeyringError::NoEntry` and `KeyringError::PlatformFailure`
+respectively (`Io`'s inner OS error boxed as the source).
 
 `keyring_core::Error` is safe to `Display` (`{ }`-format), but
 `{:?}`-format embeds `BadEncoding(Vec<u8>)` / `BadDataFormat(Vec<u8>, _)`
@@ -521,9 +591,63 @@ The CI advisory check runs `rustsec/audit-check` over `Cargo.lock`;
 because `secrets` is in the default feature set, the pinned
 `argon2` / `chacha20poly1305` / `zeroize` / `subtle` / `getrandom`
 (the `OsRng` source for the salt + per-entry nonces, specified as the
-exact pin `getrandom = "=0.2.17"`) / `region` / `keyring-core` /
+exact pin `getrandom = "=0.2.17"`) / `memsec` / `keyring-core` /
 per-platform store crate versions are unconditionally in the lockfile
-and therefore unconditionally in audit scope.
+and therefore unconditionally in audit scope. `memsec` (exact pin
+`=0.7.0`) deserves the closest reading of the set: it performs every
+page lock, every guard-page `mprotect`, and backs the crate's only
+`unsafe`, all inside `src/secrets/guarded.rs`. `region` (exact pin
+`=3.0.2`) is a normal dependency enabled by the `secrets` feature and
+**is in the production dependency graph**: `verify_host_page_size` calls
+`region::page::size()` on every store construction, not only from the
+page-isolation tests. Its audit surface is that one query.
+
+## Integration constraints
+
+Guarded allocation is not free, and it constrains what a consuming
+binary may do. Three consequences, none of them visible from the public
+API:
+
+- **Every non-empty secret costs at least one locked page** — 4 KiB on
+  x86-64/aarch64 Linux, 16 KiB on Apple Silicon and iOS — plus guard
+  pages of address space, however small it is: a 32-byte AEAD key
+  included. That is the price of the no-shared-page guarantee.
+  Empty secrets are the one case optimised away: `SecretString::empty()`
+  and an empty `SecretBytes` hold no allocation at all. Budget one page
+  per live secret and check `RLIMIT_MEMLOCK` against it; if the limit is
+  too low the locks fail open (see "Memory hygiene at the seam") and a
+  `warn` is logged per affected allocation.
+- **The budget assumes 16 KiB pages and refuses a host with larger
+  ones.** `memsec` rounds each allocation to the page size the kernel
+  reports at run time, which a compile-time budget cannot see, so
+  `ASSUMED_PAGE_SIZE` (16 KiB) bounds the largest supported host rather
+  than describing the commonest. Every mainstream target passes: 4 KiB
+  x86-64 and aarch64 Linux, 16 KiB Apple Silicon and iOS. A larger-paged
+  host — a 64 KiB-page aarch64 RHEL/SLES build — is refused at store
+  construction with `SecretStoreError::HostPageSizeExceedsBudget` rather
+  than allowed to overrun its budget and fail open. On a 4 KiB host the
+  accounting is a deliberate over-estimate: the crate charges four times
+  what the kernel really locks.
+- **Nothing calls `getrlimit`.** `MEMLOCK_BUDGET` (256 KiB) is an
+  arithmetic ceiling the constants are asserted against at compile time,
+  not a limit checked against the host at run time. It is set far below
+  what hosts actually grant — systemd has defaulted
+  `DefaultLimitMEMLOCK` to 8 MiB for years, and a default Docker
+  container inherits it — but a consumer running under a deliberately
+  restrictive limit gets the fail-open path and a `warn`, not a refusal.
+  Check the limit at your own startup if that matters to you.
+- **No custom global allocator.** `memsec` takes its pages from the Rust
+  global allocator and `mprotect`s them in place. A binary installing
+  `mimalloc`/`jemalloc`/`snmalloc` may hand it pages whose allocator
+  metadata sits inside the protected block; the failure mode is a
+  segfault or silently ineffective guard pages, on the secret path.
+- **No Miri, ASan, LSan or libFuzzer over this crate.** Miri cannot
+  execute the `mprotect`/`mlock` FFI, and the sanitizers segfault on
+  memsec's guard pages (memsec issue #14). A sanitizer or fuzz job must
+  build without the `secrets` feature. The `unsafe` this forecloses
+  verification of is confined to `src/secrets/guarded.rs` and is small
+  enough to review by inspection — which is now the only line of
+  defence, and the reason it stays that small.
 
 ## Backup retention and secrets
 

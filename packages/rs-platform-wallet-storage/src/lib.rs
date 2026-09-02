@@ -50,12 +50,9 @@ pub mod secrets;
 #[cfg(feature = "kv")]
 pub use kv::{KvError, KvStore, ObjectId};
 #[cfg(feature = "sqlite")]
-#[cfg(any(test, feature = "__test-helpers", feature = "rehydration-apply"))]
-pub use sqlite::LoadCtx;
-#[cfg(feature = "sqlite")]
 pub use sqlite::{
     default_auto_backup_dir, AutoBackupOperation, CommitReport, DeleteWalletReport, FlushMode,
-    JournalMode, LoadDegradation, LoadPolicy, LoadSite, PruneReport, RetentionPolicy,
+    JournalMode, LoadCtx, LoadDegradation, LoadPolicy, LoadSite, PruneReport, RetentionPolicy,
     SqlitePersister, SqlitePersisterConfig, Synchronous, WalletStorageError,
 };
 

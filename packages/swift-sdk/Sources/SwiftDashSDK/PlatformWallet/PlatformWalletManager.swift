@@ -1158,10 +1158,6 @@ public class PlatformWalletManager: ObservableObject {
 
         for walletId in walletIds {
             guard walletId.count == 32 else { continue }
-            // A wallet Rust declined to register (corrupt/skipped row) is
-            // still listed by SwiftData; `get_wallet` returns NotFound for
-            // it, which the do/catch below logs to `lastError` and skips —
-            // one bad row never fails the whole restore.
             var walletHandle: Handle = NULL_HANDLE
             do {
                 try walletId.withUnsafeBytes { idPtr in
@@ -1807,10 +1803,19 @@ public class PlatformWalletManager: ObservableObject {
                 PlatformWalletManager.decodeOutPointForCatchUp($0.outPointHex)
             }
             guard !outpoints.isEmpty else { continue }
+            // A `@MainActor` closure is the only piece of `self` the
+            // detached task needs: it hops back to the main actor to
+            // publish, and capturing it (rather than `self`) keeps the
+            // task's captures Sendable under strict concurrency.
+            let publishConflict: @MainActor @Sendable (PlatformWalletError) -> Void = {
+                [weak self] verdict in
+                self?.lastError = verdict
+            }
             Task.detached(priority: .background) {
-                await withTaskGroup(of: Void.self) { group in
+                await withTaskGroup(of: PlatformWalletError?.self) { group in
                     let maxConcurrent = 4
                     var nextIndex = 0
+                    var published = false
                     // Seed the group with up to `maxConcurrent` tasks.
                     // Each `group.addTask` closure captures
                     // `assetLockManager` — that retain keeps the
@@ -1825,8 +1830,29 @@ public class PlatformWalletManager: ObservableObject {
                         }
                         nextIndex += 1
                     }
-                    // As each finishes, queue the next pending entry.
-                    while await group.next() != nil {
+                    // As each finishes, queue the next pending entry —
+                    // and publish the FIRST double-spend verdict the
+                    // moment its own task returns. A sibling catch-up
+                    // can legitimately sit in its proof wait, and the
+                    // host must not wait on that drain to learn a lock
+                    // is stuck. `lastError` is the manager's one public
+                    // error surface; a UI that explains the stalled lock
+                    // and its pending retry (48 — the only verdict
+                    // emitted; 47 stays reserved) reads it from here.
+                    //
+                    // The verdict arrives at the END of its own lock's
+                    // bounded wait, not ahead of it: Rust deliberately
+                    // does not refuse a resume on a conflict sighting,
+                    // because the sighting can be a restored block record
+                    // that no live event will ever retract, and refusing
+                    // would strand a lock that is free to confirm. The
+                    // wait it runs under is capped below this call's 300s
+                    // ceiling for exactly that case.
+                    while let outcome = await group.next() {
+                        if !published, let verdict = outcome {
+                            published = true
+                            await publishConflict(verdict)
+                        }
                         if nextIndex < outpoints.count {
                             let (txid, vout) = outpoints[nextIndex]
                             group.addTask {
@@ -1853,7 +1879,14 @@ public class PlatformWalletManager: ObservableObject {
     /// `@MainActor`-isolated by default and the detached task body
     /// runs off the main actor — the FFI call is synchronous and
     /// reads no `PlatformWalletManager` state.
-    nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) {
+    /// Returns the typed double-spend verdict when the catch-up hits one —
+    /// the one outcome a host must see so its UI can explain why the lock
+    /// is stuck instead of spinning — and `nil` for every expected failure.
+    /// In practice that verdict is always the provisional
+    /// `assetLockInputContested`; the terminal `assetLockInputConflict` is
+    /// reserved with no emitter and is matched so it would surface intact
+    /// if that ever changes.
+    nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
         var txidTuple: FFIByteTuple32 =
@@ -1865,9 +1898,13 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
         // Five-minute ceiling matches the `wait_for_proof` deadline
-        // the production resume path uses.
-        let result = asset_lock_manager_catch_up_blocking(
-            assetLockManager.handle, &txidTuple, vout, 300
+        // the production resume path uses. Wrapping the raw struct in
+        // `PlatformWalletResult` frees the Rust-owned message when the
+        // wrapper deinits — the raw struct must never be dropped bare.
+        let result = PlatformWalletResult(
+            asset_lock_manager_catch_up_blocking(
+                assetLockManager.handle, &txidTuple, vout, 300
+            )
         )
         // Timeouts and proof-wait failures (catch-up
         // `errorWalletOperation`) are expected during normal
@@ -1878,13 +1915,18 @@ public class PlatformWalletManager: ObservableObject {
         // valid for the duration of this call. If it surfaces, log it
         // loudly via NSLog so an operator running without `tracing`
         // capture still sees the programmer error.
-        let code = PlatformWalletResultCode(ffi: result.code)
-        if code == .errorInvalidHandle {
+        switch result.code {
+        case .errorInvalidHandle:
             NSLog(
                 "[catch-up] asset_lock_manager_catch_up_blocking returned errorInvalidHandle for outpoint %@:%u — handle invalid despite task-owned wrapper retain",
                 txid.map { String(format: "%02x", $0) }.joined(),
                 vout
             )
+            return nil
+        case .errorAssetLockInputConflict, .errorAssetLockInputContested:
+            return PlatformWalletError(result: result)
+        default:
+            return nil
         }
     }
 

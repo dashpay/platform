@@ -1203,6 +1203,52 @@ struct IndexStorageDetailView: View {
                 FieldRow(label: "Null Searchable", value: record.nullSearchable ? "Yes" : "No")
                 FieldRow(label: "Contested", value: record.contested ? "Yes" : "No")
             }
+            // Protocol v14 index keywords - persisted verbatim as authored
+            // and rendered raw here (this is the storage debug view); rows
+            // appear only when set, so pre-v14 indexes render as before
+            if record.countable != nil || record.summable != nil || record.averageable != nil
+                || record.terminal != nil || record.preallocated || record.timeRangeJSON != nil {
+                Section("Axes & Storage Mode") {
+                    if let countable = record.countable {
+                        FieldRow(label: "Countable", value: countable)
+                    }
+                    if record.rangeCountable {
+                        FieldRow(label: "Range Countable", value: "Yes")
+                    }
+                    if let summable = record.summable {
+                        FieldRow(label: "Summable", value: summable)
+                    }
+                    if record.rangeSummable {
+                        FieldRow(label: "Range Summable", value: "Yes")
+                    }
+                    if let averageable = record.averageable {
+                        FieldRow(label: "Averageable", value: averageable)
+                    }
+                    if record.rangeAverageable {
+                        FieldRow(label: "Range Averageable", value: "Yes")
+                    }
+                    if record.rankedCountable {
+                        FieldRow(label: "Ranked by Count", value: "Yes")
+                    }
+                    if record.rankedSummable {
+                        FieldRow(label: "Ranked by Sum", value: "Yes")
+                    }
+                    if record.rankedAverageable {
+                        FieldRow(label: "Ranked by Average", value: "Yes")
+                    }
+                    if let terminal = record.terminal {
+                        FieldRow(label: "Terminal", value: terminal)
+                    }
+                    if record.preallocated {
+                        FieldRow(label: "Preallocated", value: "Yes")
+                    }
+                    if let timeRange = record.timeRange,
+                       let range = timeRange["range"] as? Int,
+                       let step = timeRange["step"] as? Int {
+                        FieldRow(label: "Time Range", value: "\(range)s windows every \(step)s")
+                    }
+                }
+            }
             if let props = record.properties, !props.isEmpty {
                 Section("Properties") {
                     ForEach(props, id: \.self) { prop in

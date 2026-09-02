@@ -47,6 +47,10 @@ pub enum LoadSite {
     /// `identity_index`. Only one can occupy the derivation slot, so the
     /// loser is dropped from the wallet's identity map.
     IdentityIndexCollision,
+    /// An `identity_scan_states` row claims a complete scan while unanswered
+    /// indices sit beside it. Clamped toward incomplete, which costs one
+    /// extra scan instead of an identity that never reappears.
+    IdentityScanStateContradiction,
 }
 
 impl LoadSite {
@@ -64,6 +68,7 @@ impl LoadSite {
             Self::MissingIdentityOwner => "missing_identity_owner",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
+            Self::IdentityScanStateContradiction => "identity_scan_state_contradiction",
         }
     }
 }
@@ -158,17 +163,14 @@ impl LoadCtx {
     }
 
     /// Context that aborts the load on any inconsistency. A production
-    /// load takes its policy from the config, so this exists for the
-    /// builds where the module is public.
-    #[cfg(any(test, feature = "__test-helpers", feature = "rehydration-apply"))]
+    /// load takes its policy from the config; this is the shorthand for a
+    /// caller driving a reader directly.
     pub fn strict() -> Self {
         Self::new(LoadPolicy::Strict)
     }
 
     /// Context that tolerates, logs, and counts recoverable
-    /// inconsistencies. Public on the same terms as
-    /// [`strict`](Self::strict).
-    #[cfg(any(test, feature = "__test-helpers", feature = "rehydration-apply"))]
+    /// inconsistencies. The counterpart to [`strict`](Self::strict).
     pub fn recovery() -> Self {
         Self::new(LoadPolicy::Recovery)
     }

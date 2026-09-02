@@ -28,7 +28,7 @@ Schema evolution is version-gated by refinery. Every read-write connection turns
 - **`wallet_id`-scoped meta** (`meta_wallet`, `meta_contact`, `meta_platform_address`) carries a `wallet_id` column, so `cascade_meta_on_wallet_delete` brooms it directly — regardless of the lifecycle state of any typed parent and even for rows written ahead of (or without) a typed parent.
 - **identity-scoped meta** (`meta_identity`, `meta_token`) carries no `wallet_id` — only `identity_id` (+ `token_id`). It is cleaned by `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`), which fires for the wallet's own identities when the FK cascade removes them on a wallet delete.
 
-Deleting an `identities` row — on its own, or cascaded from a wallet delete — additionally fires `cascade_children_on_identity_delete` (V015), which brooms `identity_keys`, `contacts`, and `ignored_senders` by the deleted `identity_id`. That trigger exists because no live foreign key reaches those rows in every case: `identity_keys`' FK to `identities` is compound (`wallet_id, identity_id`), and SQLite's default MATCH SIMPLE skips FK enforcement entirely once ANY column of the child key is NULL, leaving it dormant for an out-of-wallet identity; `contacts` and `ignored_senders` are keyed by `owner_id` (an identity id) but carry no FK to `identities` at all. Keying the broom on `identity_id` alone covers the wallet-owned case too, as an idempotent overlap with the live cascade.
+Deleting an `identities` row — on its own, or cascaded from a wallet delete — additionally fires `cascade_children_on_identity_delete` (V016), which brooms `identity_keys`, `contacts`, and `ignored_senders` by the deleted `identity_id`. That trigger exists because no live foreign key reaches those rows in every case: `identity_keys`' FK to `identities` is compound (`wallet_id, identity_id`), and SQLite's default MATCH SIMPLE skips FK enforcement entirely once ANY column of the child key is NULL, leaving it dormant for an out-of-wallet identity; `contacts` and `ignored_senders` are keyed by `owner_id` (an identity id) but carry no FK to `identities` at all. Keying the broom on `identity_id` alone covers the wallet-owned case too, as an idempotent overlap with the live cascade.
 
 ### Orphan metadata and future garbage collection
 
@@ -39,7 +39,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover the current `core_utxos` shape and the V001 tables; `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003), plus `invitations` (V004), the V005–V006 pool columns, and V008's shielded viewing keys are not yet documented here — see the [Migrations](#migrations) log for what they add in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Nine tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003, plus its V005–V006 `core_address_pool` columns), `invitations` (V004), `shielded_viewing_keys` (V008), `dpns_name_states` (V011), `tracked_masternodes` (V013), and the `identity_scan_states` / `identity_scan_failed_indices` pair (V015) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -127,9 +127,9 @@ erDiagram
     }
 
     IDENTITY_KEYS {
-        BLOB wallet_id PK "32-byte WalletId"
         BLOB identity_id PK
         INTEGER key_id PK "KeyID"
+        BLOB wallet_id FK "nullable; denormalised copy of identities.wallet_id, not part of the key"
         BLOB public_key_blob "bincode-encoded IdentityKeyWire (public material only)"
         BLOB public_key_hash "20-byte HASH160 of the key"
         BLOB derivation_blob "reserved typed projection; always NULL today"
@@ -217,6 +217,7 @@ erDiagram
         INTEGER address_index
         INTEGER balance "credits"
         INTEGER nonce
+        INTEGER as_of_height "Platform-block-height pin (V002); DEFAULT 0 = unknown provenance"
     }
 
     PLATFORM_ADDRESS_SYNC {
@@ -229,7 +230,7 @@ erDiagram
     ASSET_LOCKS {
         BLOB wallet_id PK
         BLOB outpoint PK "bincode-encoded OutPoint"
-        TEXT status "built | broadcast | is_locked | chain_locked | consumed"
+        TEXT status "built | broadcast | is_locked | chain_locked | consumed | recovered_from_chain (V010)"
         INTEGER account_index
         INTEGER identity_index
         INTEGER amount_duffs
@@ -436,6 +437,10 @@ parent out from under its own child inserts.
 - PK: `identity_id`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE` (nullable).
 - Index: `idx_identities_wallet(wallet_id)`.
+- Index: `idx_identities_wallet_identity(wallet_id, identity_id)` UNIQUE —
+  parent key for `identity_keys`' compound FK (SQLite requires the
+  referenced columns to carry a UNIQUE index); adds no new restriction,
+  since `identity_id` is already `PRIMARY KEY`.
 
 ### `identity_keys`
 
@@ -446,9 +451,23 @@ to work around a serde-tag incompatibility. `derivation_blob` is a
 reserved column for a future typed projection and is always NULL today
 (derivation indices live inside `public_key_blob`).
 
-- PK: `(wallet_id, identity_id, key_id)`.
-- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
-- FK: `(wallet_id, identity_id) → identities(wallet_id, identity_id) ON DELETE CASCADE` — dormant under MATCH SIMPLE when `wallet_id` is NULL.
+`identities` keys on `identity_id` alone, so an identity has exactly one
+owning wallet; `identity_keys.wallet_id` is a nullable, denormalised copy
+of that owner, not a discriminator. The PK was narrowed from the wider
+`(wallet_id, identity_id, key_id)` — that shape let the same key exist
+twice under two different scopes, a state the domain layer
+(`IdentityKeysChangeSet`, keyed `(identity_id, key_id)`) cannot express,
+and was the enabling condition for duplicate-row corruption. NULL is the
+canonical "owned by no wallet" scope, matching `identities.wallet_id`;
+because SQLite's default `MATCH SIMPLE` skips FK enforcement entirely when
+any child-key column is NULL, a NULL-scoped row's FKs are both dormant —
+the `identity_keys_null_scope_requires_unowned_identity{,_on_update}`
+triggers (`migrations/V001__initial.rs`) are the only guard against a
+NULL-scoped key naming a wallet-owned identity.
+
+- PK: `(identity_id, key_id)`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE` (nullable; belt-and-braces — already implied by the compound FK below).
+- FK: `(wallet_id, identity_id) → identities(wallet_id, identity_id) ON DELETE CASCADE` (compound; a key may only be filed under the wallet that owns its identity).
 - Trigger cleanup: `cascade_children_on_identity_delete` brooms by `identity_id`, closing the dormant case.
 - Index: `idx_identity_keys_wallet_identity(wallet_id, identity_id)`.
 
@@ -486,7 +505,12 @@ deleted; `ignored_at` records when the mute was applied.
 
 Platform P2PKH address pool entries. `address` stores the 20-byte
 HASH160; `balance` and `nonce` are the last-synced values from the
-Platform layer.
+Platform layer. `as_of_height` (V002) is the Platform-block-height pin
+reconciling proof-attested absolute balances against the recent/compacted
+delta stream: a delta recorded at or below the pin is already included in
+the absolute and must not be re-applied. `DEFAULT 0` on pre-existing rows
+means "unknown provenance" — every delta applies and any pinned absolute
+supersedes them.
 
 - PK: `(wallet_id, address)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -502,7 +526,11 @@ fields advance monotonically (new values are `max(current, incoming)`).
 ### `asset_locks`
 
 Lifecycle tracking for asset-lock outpoints. `status` is a queryable
-text column; `lifecycle_blob` carries the full `AssetLockEntry`. Consumed
+text column (`built | broadcast | is_locked | chain_locked | consumed`,
+widened by V010 to add `recovered_from_chain` — the restore-scan
+reconstruction status for a lock rebuilt from a chain-locked on-chain
+record, Core finality proven but Platform-side consumption unknown);
+`lifecycle_blob` carries the full `AssetLockEntry`. Consumed
 locks are **retained permanently** with `status = 'consumed'` (an upsert,
 never a `DELETE` — they are not routed through `AssetLockChangeSet::removed`),
 so the full lifecycle history stays on disk and remains visible via the
@@ -679,9 +707,13 @@ having to grep this repo.
   `dashpay_payments_overlay`) have no `wallet_id` column. Cascade reaches
   them via `identities(identity_id)`.
 - `identity_keys` is the exception among identity-owned tables: it carries
-  a `wallet_id BLOB NOT NULL` column and two `ON DELETE CASCADE` FKs
-  (`wallet_id → wallets`, `identity_id → identities`), so a delete on
-  either parent cascades to it.
+  a nullable `wallet_id BLOB` column (a denormalised copy of
+  `identities.wallet_id`, not part of its `(identity_id, key_id)` PK) and
+  two `ON DELETE CASCADE` FKs — a simple `wallet_id → wallets(wallet_id)`
+  and a compound `(wallet_id, identity_id) → identities(wallet_id,
+  identity_id)` — so a delete on either parent cascades to it. Both FKs go
+  dormant together on a NULL-scoped (unowned-identity) row; see
+  `identity_keys` under Tables.
 - The five typed `meta_*` tables carry **no FK** (writes may precede the parent);
   cleanup is an `AFTER DELETE` soft cascade. A wallet delete fires a wallet-rooted
   trigger that brooms the wallet-scoped `meta_*` tables by `wallet_id`, and the
@@ -699,6 +731,8 @@ having to grep this repo.
 | `cascade_meta_token_on_token_balance_delete` | AFTER DELETE ON `token_balances` | delete matching `meta_token` rows (direct balance delete) |
 | `cascade_meta_contact_on_contact_delete` | AFTER DELETE ON `contacts` | delete matching `meta_contact` rows (any state; direct contact delete) |
 | `cascade_meta_platform_address_on_address_delete` | AFTER DELETE ON `platform_addresses` | delete matching `meta_platform_address` rows (direct address delete) |
+| `identity_keys_null_scope_requires_unowned_identity` | BEFORE INSERT ON `identity_keys` WHEN `NEW.wallet_id IS NULL` | abort unless the named identity exists and is itself unowned — the sole guard against a NULL-scoped key naming a wallet-owned (or, since V014, missing) identity, since SQLite's `MATCH SIMPLE` leaves both `identity_keys` FKs dormant whenever a child-key column is NULL |
+| `identity_keys_null_scope_requires_unowned_identity_on_update` | BEFORE UPDATE ON `identity_keys` WHEN `NEW.wallet_id IS NULL` | the same guard on the UPDATE path — necessary because the writer's upsert resolves an existing `(identity_id, key_id)` to `DO UPDATE`, which never fires a `BEFORE INSERT` trigger |
 
 ## Migrations
 
@@ -713,5 +747,10 @@ having to grep this repo.
 | V007 | `V007__drop_core_utxo_metadata.rs` | Removes unused `core_utxos.account_index` and `core_utxos.spent_in_txid` metadata and the associated cleanup trigger; owning-account identity is resolved from `core_address_pool` during reads. |
 | V008 | `V008__shielded_viewing_keys.rs` | Adds `shielded_viewing_keys` to persist Orchard full viewing keys by wallet and shielded account. |
 | V009 | `V009__single_source_core_confirmation_height.rs` | Rebuilds `core_transactions` with nullable `record_blob` for height-only rows, preserves existing transaction metadata and blobs, and drops `core_utxos.height` so UTXO confirmation height has one authority (#4178). |
+| V010 | `V010__asset_lock_recovered_status.rs` | Widens `asset_locks.status` to add `recovered_from_chain` (the restore-scan reconstruction status: Core finality proven via a chain-locked record, Platform-side consumption unknown). SQLite can't alter a CHECK in place, so the table is rebuilt — widened twin created, rows copied (dropping any orphaned by a wallet deleted while FK enforcement happened to be off), old table dropped and the twin renamed. The status list is FROZEN as of this migration, like V001's; a further variant is added only by another rebuild, never by editing this file. |
+| V011 | `V011__dpns_name_states.rs` | Adds `dpns_name_states` for the DPNS username marketplace: one row per tracked domain document, carrying sale state (`owned \| sold \| transferred`), listed `price`, and `counterparty_id` (buyer/recipient, NULL for `owned` rows). |
 | V012 | `V012__purge_legacy_empty_script_spent_utxos.rs` | Deletes legacy `core_utxos` rows matching `spent = 1 AND length(script) = 0`, left by a producer that fabricated an empty script for a spend of an output the wallet never recorded. One such row rejects the load of the whole file, since `load_used_addresses` decodes every stored script with no load-policy escape hatch. Balance-neutral: the balance readers select `spent = 0` only. |
-| V015 | `V015__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` by the deleted `identity_id`, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner` and `idx_ignored_senders_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
+| V013 | `V013__tracked_masternodes.rs` | Adds `tracked_masternodes`, keyed by `(network, pro_tx_hash)` and deliberately NOT wallet-scoped — a tracked masternode belongs to no wallet and survives deleting any one of them. `snapshot_json` caches public DML/Platform-identity data only; any key material a user attaches to a tracked node lives in host secure storage, never here. |
+| V014 | `V014__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V001's guard caught only the wallet-owned case. Recreated rather than edited into V001, since refinery never re-runs an applied migration and editing V001 in place would tighten only freshly created databases. |
+| V015 | `V015__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
+| V016 | `V016__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` by the deleted `identity_id`, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner` and `idx_ignored_senders_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |

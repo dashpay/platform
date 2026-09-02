@@ -1,7 +1,7 @@
 use crate::drive::contract::paths;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::{contract_documents_path, votes, Drive, RootTree};
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::util::storage_flags::StorageFlags;
@@ -11,7 +11,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
@@ -285,79 +285,89 @@ impl Drive {
                 type_key.as_bytes(),
             ];
 
-            // primary key tree — route through the centralized
-            // primary_key_tree_type() so contract creation, document inserts,
-            // deletes, and estimation paths all see the same tree-variant
-            // selection (under whichever drive method version is active).
-            let key_info = Key(vec![0]);
-            match document_type
-                .as_ref()
-                .primary_key_tree_type(platform_version)?
-            {
-                TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                TreeType::CountTree => self.batch_insert_empty_count_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                // Sum-capable variants — route to the matching helper so the
-                // doctype's primary-key tree is created with the correct
-                // sum-bearing element variant at contract apply time. Without
-                // these arms the previous catch-all `_` arm would create a
-                // plain `NormalTree`, and subsequent sum-aware document
-                // inserts / range proofs would operate on the wrong element
-                // type.
-                TreeType::SumTree => self.batch_insert_empty_sum_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                TreeType::ProvableCountSumTree => self.batch_insert_empty_provable_count_sum_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                TreeType::ProvableCountProvableSumTree => self
-                    .batch_insert_empty_provable_count_provable_sum_tree(
+            // indexOnly document types have no primary-key tree at all —
+            // the index entries are the rows, and nothing is ever addressed
+            // by document id, so the `[0]` tree is skipped and only the
+            // top-level property-name trees below are created.
+            // `index_only()` can only be true on a PV14+ contract (the
+            // grammar rejects the keyword below meta-schema v3), so
+            // historical contract inserts replay byte-identically.
+            if !document_type.as_ref().index_only() {
+                // primary key tree — route through the centralized
+                // primary_key_tree_type() so contract creation, document inserts,
+                // deletes, and estimation paths all see the same tree-variant
+                // selection (under whichever drive method version is active).
+                let key_info = Key(vec![0]);
+                match document_type
+                    .as_ref()
+                    .primary_key_tree_type(platform_version)?
+                {
+                    TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
                         type_path,
                         key_info,
                         storage_flags.as_ref(),
                         &mut batch_operations,
                         &platform_version.drive,
                     )?,
-                TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
-                _ => self.batch_insert_empty_tree(
-                    type_path,
-                    key_info,
-                    storage_flags.as_ref(),
-                    &mut batch_operations,
-                    &platform_version.drive,
-                )?,
+                    TreeType::CountTree => self.batch_insert_empty_count_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                    // Sum-capable variants — route to the matching helper so the
+                    // doctype's primary-key tree is created with the correct
+                    // sum-bearing element variant at contract apply time. Without
+                    // these arms the previous catch-all `_` arm would create a
+                    // plain `NormalTree`, and subsequent sum-aware document
+                    // inserts / range proofs would operate on the wrong element
+                    // type.
+                    TreeType::SumTree => self.batch_insert_empty_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                    TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                    TreeType::ProvableCountSumTree => self
+                        .batch_insert_empty_provable_count_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?,
+                    TreeType::ProvableCountProvableSumTree => self
+                        .batch_insert_empty_provable_count_provable_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?,
+                    TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                    _ => self.batch_insert_empty_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                }
             }
 
             let document_type_ref = document_type.as_ref();
@@ -404,15 +414,18 @@ impl Drive {
                     // Meta schema v3 (PV14) layers the ranking axes on top:
                     // any `ranked*` flag upgrades the chosen variant to its
                     // *indexed* mirror, which additionally carries one
-                    // ordered secondary Merk per axis. Note this dispatch
-                    // only ever sees a TERMINAL level — `has_index_with_type`
-                    // is `Some` exactly for single-property indexes, whose
-                    // top-level property-name tree IS the terminal one. A
-                    // compound index's terminal level lives deeper and is
-                    // materialized lazily by the document index walker.
-                    let index_info = level.has_index_with_type();
+                    // ordered secondary Merk per axis. This dispatch sees a
+                    // TERMINAL level for single-property indexes (whose
+                    // top-level property-name tree IS the terminal one) —
+                    // a compound index's terminal level lives deeper and is
+                    // materialized lazily by the document index walker —
+                    // and, since the `rankedCountable: { at }` grammar, a
+                    // GROUPING level when a compound index ranks at its
+                    // first property: the level-aware resolver then yields
+                    // the Count-axis indexed tree, created here so the
+                    // ranking secondary exists from registration.
                     let (tree_type, ranked_axes) =
-                        property_name_tree_type_and_ranked_axes(index_info)?;
+                        property_name_tree_type_and_ranked_axes_for_level(level)?;
                     match tree_type {
                         TreeType::ProvableCountProvableSumTree => self
                             .batch_insert_empty_provable_count_provable_sum_tree(

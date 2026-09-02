@@ -240,6 +240,21 @@ pub enum WalletStorageError {
     #[error("identity entry id disagrees with its map key")]
     IdentityEntryIdMismatch,
 
+    /// An `identity_scan_states` row claims a complete scan while
+    /// `identity_scan_failed_indices` still holds unanswered indices for it.
+    /// No fold can produce that pair, so the row contradicts itself.
+    #[error(
+        "identity scan verdict for wallet {} claims completeness over {failed_indices} \
+         unanswered index(es)",
+        hex::encode(wallet_id)
+    )]
+    IdentityScanStateContradiction {
+        /// The wallet whose verdict contradicts itself.
+        wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
+        /// How many unanswered indices sit beside the completeness claim.
+        failed_indices: usize,
+    },
+
     /// Two different identities claimed one wallet's derivation slot.
     /// `identity_index` is an HD path component, so `(wallet_id,
     /// identity_index)` names exactly one identity; a second claim is a
@@ -625,6 +640,7 @@ impl WalletStorageError {
             | Self::IdentityKeyEntryMismatch
             | Self::IdentityKeyWalletMismatch { .. }
             | Self::IdentityEntryIdMismatch
+            | Self::IdentityScanStateContradiction { .. }
             | Self::IdentityIndexConflict { .. }
             | Self::WalletlessIdentityIndex { .. }
             | Self::OrphanedIdentityEntry { .. }
@@ -734,6 +750,7 @@ impl WalletStorageError {
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::IdentityKeyWalletMismatch { .. } => "identity_key_wallet_mismatch",
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
+            Self::IdentityScanStateContradiction { .. } => "identity_scan_state_contradiction",
             Self::IdentityIndexConflict { .. } => "identity_index_conflict",
             Self::WalletlessIdentityIndex { .. } => "walletless_identity_index",
             Self::OrphanedIdentityEntry { .. } => "orphaned_identity_entry",

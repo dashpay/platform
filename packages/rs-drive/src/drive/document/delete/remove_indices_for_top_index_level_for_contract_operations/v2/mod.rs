@@ -25,7 +25,7 @@ use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 
 use crate::drive::document::paths::contract_document_type_path_vec;
 use dpp::version::PlatformVersion;
@@ -57,15 +57,23 @@ impl Drive {
         let index_level = document_type.index_structure();
         let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
-        let storage_flags =
-            if document_type.documents_mutable() || contract.config().can_be_deleted() {
-                document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .get_storage_flags_ref()
-            } else {
-                None //there are no need for storage flags if documents are not mutable and contract can not be deleted
-            };
+        let storage_flags = if document_type.documents_mutable()
+                || contract.config().can_be_deleted()
+                // indexOnly entries ARE the rows: they are deleted (and
+                // refunded) whenever the doctype allows deletion, so their
+                // flags must ride even though the type is immutable and the
+                // contract may not be deletable. PV14-only (`index_only()`
+                // cannot be true below meta-schema v3), so historical
+                // replay is untouched.
+                || (document_type.index_only() && document_type.documents_can_be_deleted())
+        {
+            document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_storage_flags_ref()
+        } else {
+            None //there are no need for storage flags if documents are not mutable and contract can not be deleted
+        };
 
         // we need to construct the path for documents on the contract
         // the path is
@@ -124,7 +132,7 @@ impl Drive {
 
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
-            let document_top_field = document_and_contract_info
+            let document_top_field = match document_and_contract_info
                 .owned_document_info
                 .document_info
                 .get_raw_for_document_type(
@@ -133,8 +141,26 @@ impl Drive {
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
                     platform_version,
-                )?
-                .unwrap_or_default();
+                )? {
+                Some(document_top_field) => document_top_field,
+                // An unrequired top-level property on an indexOnly type is a
+                // skipIfAbsent index's trigger: the insert walker wrote no
+                // entries through this branch for a trigger-absent document,
+                // so its delete removes none — mirroring the insert skip is
+                // what keeps delete-by-values exact. The delete's estimation
+                // dry-run runs on a worst-case document info that always
+                // resolves a value, so estimation sweeps this branch as
+                // written — a deliberate over-estimate that keeps the dry
+                // run an upper bound.
+                None if document_type.index_only()
+                    && !document_type.required_fields().contains(property_name) =>
+                {
+                    continue;
+                }
+                // A stored type's absent value keeps its null-layout empty
+                // key.
+                None => DriveKeyInfo::default(),
+            };
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {

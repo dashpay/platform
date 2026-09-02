@@ -651,9 +651,6 @@ public class WalletManager {
     /// Import a wallet from serialized bytes
     /// - Parameters:
     ///   - walletBytes: The serialized wallet data
-    ///   - birthHeight: Block height to start scanning from. Defaults to 0
-    ///     (genesis), a safe full rescan; pass the wallet's known birth
-    ///     height to skip pre-birth blocks.
     /// - Returns: The wallet ID of the imported wallet
     public func importWallet(from walletBytes: Data, birthHeight: UInt32 = 0) throws -> Data {
         guard !walletBytes.isEmpty else {

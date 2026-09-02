@@ -127,7 +127,7 @@ pub fn apply_upserts(
 /// is the same end state and the documented "removal wins" rule.
 ///
 /// Dependents go through three paths: the native `ON DELETE CASCADE` on
-/// `identity_id`, V001's `cascade_meta_on_identity_delete`, and V015's
+/// `identity_id`, V001's `cascade_meta_on_identity_delete`, and V016's
 /// `cascade_children_on_identity_delete` for the rows no live foreign
 /// key reaches (an out-of-wallet identity's `identity_keys`, whose
 /// compound FK is dormant under MATCH SIMPLE, plus `contacts` and
@@ -438,6 +438,15 @@ pub fn load_prekeyed(
         ..Default::default()
     };
     merge_contacts_and_keys(&mut state, contacts, identity_keys, ctx)?;
+    // The scan verdict rides the same per-wallet start state the identities
+    // do, because it is the fact the startup sequence weighs against them:
+    // "we already have one" is not evidence we have them all unless the scan
+    // behind it answered every index (dashpay/platform#4365).
+    if let Some(scan_state) =
+        crate::sqlite::schema::identity_scan_states::load_for_wallet(conn, wallet_id, ctx)?
+    {
+        state.scan_states.insert(*wallet_id, scan_state);
+    }
     Ok(state)
 }
 

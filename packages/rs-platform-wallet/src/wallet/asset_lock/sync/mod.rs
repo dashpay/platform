@@ -6,5 +6,5 @@
 
 mod proof;
 pub(crate) mod reconstruction;
-mod recovery;
+pub(crate) mod recovery;
 mod tracking;

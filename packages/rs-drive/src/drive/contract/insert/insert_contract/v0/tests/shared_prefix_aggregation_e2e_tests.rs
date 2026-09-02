@@ -871,3 +871,234 @@ fn shared_prefix_aggregate_v13_and_v14_layouts_coexist() {
         "v14-created value tree must be cleaned up once empty"
     );
 }
+
+/// The two demotions on one doctype: a shared-prefix aggregating pair
+/// (`[resourceId]` count+sum terminator with a plain `[resourceId,
+/// rating]` continuation → `NonCounted` under a `CountSumTree`) next to
+/// a prefix-ranked chain with a plain count-exempt sibling
+/// (`rankedCountable: { at: "author" }` on `[author, rating]` with the
+/// sibling `[author, day, rating]` → `NonCounted` under the chain's
+/// `CountTree`). Both wrappers must land, and both aggregate surfaces
+/// must stay exact with all four indexes populated by the same rows.
+#[test]
+fn range_demotion_and_at_chain_exemption_coexist_in_one_doctype() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+
+    let factory = DataContractFactory::new(platform_version.protocol_version)
+        .expect("expected to create factory");
+    let document_schema = platform_value!({
+        "type": "object",
+        "documentsMutable": true,
+        "documentsKeepHistory": false,
+        "canBeDeleted": true,
+        "properties": {
+            "resourceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "position": 0,
+            },
+            "rating": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5,
+                "position": 1,
+            },
+            "author": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 61,
+                "position": 2,
+            },
+            "day": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16,
+                "position": 3,
+            },
+        },
+        "required": ["resourceId", "rating", "author", "day"],
+        "additionalProperties": false,
+        "indices": [
+            {
+                "name": "resourceAggregate",
+                "properties": [{"resourceId": "asc"}],
+                "countable": "countable",
+                "summable": "rating",
+            },
+            {
+                "name": "resourceRating",
+                "properties": [{"resourceId": "asc"}, {"rating": "asc"}],
+            },
+            {
+                "name": "authorRating",
+                "properties": [{"author": "asc"}, {"rating": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+                "rankedCountable": {"at": "author"},
+            },
+            {
+                "name": "authorDayRating",
+                "properties": [{"author": "asc"}, {"day": "asc"}, {"rating": "asc"}],
+            },
+        ],
+    });
+    let schemas = platform_value!({ "mixed": document_schema });
+    let owner_id = generate_random_identifier_struct();
+    let contract = factory
+        .create_with_value_config(owner_id, 0, schemas, None, None)
+        .expect("both demotions must be admitted on one doctype")
+        .data_contract_owned();
+    apply_contract(&drive, &contract, platform_version).expect("expected to apply the contract");
+
+    let document_type = contract
+        .document_type_for_name("mixed")
+        .expect("mixed doctype exists");
+    let rows: [(&str, u8, &str, &str); 4] = [
+        ("r1", 5, "alice", "d1"),
+        ("r1", 3, "alice", "d2"),
+        ("r2", 4, "alice", "d1"),
+        ("r1", 2, "bob", "d1"),
+    ];
+    for (seed, (resource, rating, author, day)) in rows.iter().enumerate() {
+        let mut document = document_type
+            .random_document(Some(seed as u64 + 1), platform_version)
+            .expect("random mixed document");
+        let mut properties = BTreeMap::new();
+        properties.insert("resourceId".to_string(), Value::Text(resource.to_string()));
+        properties.insert("rating".to_string(), Value::U8(*rating));
+        properties.insert("author".to_string(), Value::Text(author.to_string()));
+        properties.insert("day".to_string(), Value::Text(day.to_string()));
+        document.set_properties(properties);
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a mixed document");
+    }
+
+    let probe_mixed = |sub_path: &[&str], key: &[u8]| -> Option<Element> {
+        use crate::drive::RootTree;
+        use crate::util::grove_operations::DirectQueryType;
+        use grovedb_path::SubtreePath;
+        let contract_id = contract.id().to_buffer();
+        let mut path: Vec<Vec<u8>> = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            contract_id.to_vec(),
+            vec![1u8],
+            b"mixed".to_vec(),
+        ];
+        path.extend(sub_path.iter().map(|segment| segment.as_bytes().to_vec()));
+        let path_slices: Vec<&[u8]> = path.iter().map(|segment| segment.as_slice()).collect();
+        drive
+            .grove_get_raw_optional(
+                SubtreePath::from(path_slices.as_slice()),
+                key,
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("probe must succeed")
+    };
+
+    // Shared-prefix surface: r1's value tree aggregates exactly its three
+    // reviews' (count, sum) and the compound continuation is wrapped.
+    match probe_mixed(&["resourceId"], b"r1") {
+        Some(Element::CountSumTree(_, count, sum, _)) => {
+            assert_eq!((count, sum), (3, 10), "r1 aggregates its own rows exactly");
+        }
+        other => panic!("expected a CountSumTree value tree for r1, got {other:?}"),
+    }
+    assert!(
+        matches!(
+            probe_mixed(&["resourceId", "r1"], b"rating"),
+            Some(Element::NonCounted(inner)) if matches!(inner.as_ref(), Element::Tree(..))
+        ),
+        "the shared-prefix continuation must stay NonCounted-wrapped"
+    );
+
+    // Ranked surface: alice counts exactly her three rows, the chain
+    // continuation contributes, and the sibling branch is wrapped.
+    match probe_mixed(&["author"], b"alice") {
+        Some(element @ Element::CountTree(..)) => {
+            assert_eq!(element.count_value_or_default(), 3);
+        }
+        other => panic!("expected a CountTree value tree for alice, got {other:?}"),
+    }
+    assert!(
+        matches!(
+            probe_mixed(&["author", "alice"], b"rating"),
+            Some(Element::ProvableCountTree(..))
+        ),
+        "the chain continuation must stay contributing"
+    );
+    assert!(
+        matches!(
+            probe_mixed(&["author", "alice"], b"day"),
+            Some(Element::NonCounted(inner)) if matches!(inner.as_ref(), Element::Tree(..))
+        ),
+        "the count-exempt sibling branch must be NonCounted-wrapped"
+    );
+
+    // The grouping secondary ranks by the exact totals.
+    let grouping_path: Vec<Vec<u8>> = vec![
+        vec![crate::drive::RootTree::DataContractDocuments as u8],
+        contract.id().to_buffer().to_vec(),
+        vec![1u8],
+        b"mixed".to_vec(),
+        b"author".to_vec(),
+    ];
+    let path_query = grovedb::PathQuery::new_axis(
+        grouping_path,
+        grovedb_query::AxisQuery::top_k(grovedb_query::IndexAxis::Count, 10, 0, true).keys_only(),
+    );
+    let pairs = match drive
+        .grove
+        .run_path_query(
+            &path_query,
+            true,
+            true,
+            true,
+            grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType,
+            None,
+            &platform_version.drive.grove_version,
+        )
+        .unwrap()
+        .expect("the keys-only axis read must succeed")
+    {
+        grovedb::PathQueryRun::AxisKeys {
+            keys: grovedb::AxisKeys::Count(pairs),
+            ..
+        } => pairs,
+        other => panic!("expected count keys, got {other:?}"),
+    };
+    assert_eq!(
+        pairs,
+        vec![(3, b"alice".to_vec()), (1, b"bob".to_vec())],
+        "the ranking must key on exact totals with all four indexes populated"
+    );
+
+    let issues = drive
+        .grove
+        .verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+        .expect("verify_grovedb must run");
+    assert!(
+        issues.is_empty(),
+        "grovedb integrity verification reported issues: {issues:?}"
+    );
+}

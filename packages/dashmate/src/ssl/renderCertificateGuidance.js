@@ -1,13 +1,8 @@
 import { SSL_PROVIDERS } from '../constants.js';
 import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
-
-/**
- * @param {Object} verdict
- * @param {string} code
- * @return {boolean}
- */
-const hasReason = (verdict, code) => verdict.reasons.some((reason) => reason.code === code);
+import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from './renewalGuidance.js';
+import renderObtainCommand from './renderObtainCommand.js';
 
 /**
  * Faults in the files themselves. The gateway is handed the pair as-is, so any
@@ -82,7 +77,28 @@ function renderObservation(verdict) {
  *
  * @return {string}
  */
-function renderZeroSslExplanation() {
+function renderZeroSslExplanation(renewal) {
+  // Once ZeroSSL has actually said so, this stops being background about how
+  // the free tier works and becomes what happened to this node.
+  // Only where ZeroSSL actually said so. Printed against an unrelated failure
+  // - an unreachable API, an interrupted renewal - it reads as the diagnosis
+  // and sends an operator to switch provider over something transient.
+  if (renewal?.code === 'PROVIDER_PLAN_REQUIRED') {
+    return `  This node uses ZeroSSL, and ${renewal.cause}.
+`;
+  }
+
+  if (renewal?.code === 'QUOTA_EXHAUSTED') {
+    return `  This node uses ZeroSSL, and its free account has used all three of its
+  certificates - so ZeroSSL will not issue another one.
+`;
+  }
+
+  if (renewal?.cause) {
+    return `  This node uses ZeroSSL. Renewal is failing: ${renewal.cause}.
+`;
+  }
+
   return `  This node uses ZeroSSL. A free ZeroSSL account allows three certificates in
   total, so renewals stop working after about 270 days.
 `;
@@ -133,7 +149,16 @@ function renderSwitchIncompleteGuidance(config, cfg) {
  * @param {string} cfg
  * @return {string}
  */
-function renderLetsEncryptDiagnosis(cfg) {
+function renderLetsEncryptDiagnosis(cfg, renewal) {
+  // Only a guess while nothing recorded what happened. With a record there is
+  // no reason to name a likely cause, and no reason to send an operator to a
+  // log stream that a container recreation may already have discarded.
+  if (renewal?.cause) {
+    return `  This node already uses Let's Encrypt, so there is no provider to switch to.
+  Renewal is failing: ${renewal.cause}.
+`;
+  }
+
   return `  This node already uses Let's Encrypt, so there is no provider to switch to.
   Inbound port 80 is the most common cause. Check the renewal logs:
 
@@ -150,12 +175,52 @@ function renderLetsEncryptDiagnosis(cfg) {
  * @param {string} cfg
  * @return {string}
  */
-function renderNoExternalIpGuidance(cfg) {
-  return `  To fix it, tell dashmate this node's public address, then get a
-  certificate for it:
+function renderNoExternalIpGuidance(cfg, mayObtain, configName, guidance) {
+  // The address is required either way. The request that follows it is not
+  // exempt from the decision every other request goes through - an issuance
+  // already outstanding is still outstanding once the address is set.
+  const request = mayObtain
+    ? `      ${renderObtainCommand({ configName, guidance })}\n`
+    : '';
+
+  return `  To fix it, tell dashmate this node's public address${mayObtain ? `, then get a
+  certificate for it` : ''}:
 
       dashmate config set ${cfg} externalIp <your-public-ip>
-      dashmate ssl obtain ${cfg} --provider letsencrypt
+${request}`;
+}
+
+/**
+ * @param {string} cfg
+ * @param {Object} renewal
+ * @return {string}
+ */
+function renderWithheldObtain(cfg, renewal) {
+  if (renewal.issuanceStatus === ISSUANCE_STATUS.SPENT) {
+    return `  A certificate was issued and could not be saved, so it is already spent
+  against this node's limit and asking again spends another. Check free space
+  and permissions where dashmate saves certificates first:
+
+      dashmate doctor ${cfg}
+`;
+  }
+
+  // Not the same claim. dashmate does not know whether a certificate exists,
+  // and saying one could not be saved would assert something it cannot.
+  if (renewal.issuanceStatus === ISSUANCE_STATUS.UNCERTAIN) {
+    return `  An earlier attempt may already have been issued a certificate without dashmate
+  seeing it, so asking again could spend a second one. Check whether one
+  arrived first:
+
+      dashmate doctor ${cfg}
+`;
+  }
+
+  return `  Do not obtain a certificate right now - it would not succeed, and each
+  attempt counts against this node's limits. Check again once the cause above
+  has cleared:
+
+      dashmate doctor ${cfg}
 `;
 }
 
@@ -165,7 +230,7 @@ function renderNoExternalIpGuidance(cfg) {
  * @param {Object} verdict - decides whether the certificate can be reinstated
  * @return {string}
  */
-function renderFix(cfg, isAlreadyLetsEncrypt, verdict) {
+function renderFix(cfg, isAlreadyLetsEncrypt, verdict, configName, guidance) {
   // A node already on Let's Encrypt has nothing to switch to, so the heading
   // that offers a switch would contradict the diagnosis above it.
   const heading = isAlreadyLetsEncrypt
@@ -180,7 +245,25 @@ function renderFix(cfg, isAlreadyLetsEncrypt, verdict) {
 
   Then:
 
-      dashmate ssl obtain ${cfg} --provider letsencrypt${requiresReplacement(verdict) ? ' --force' : ''}
+      ${renderObtainCommand({
+    configName, guidance, force: requiresReplacement(verdict),
+  })}
+`;
+}
+
+/**
+ * The node still works and renewal comes back around by itself, so a command
+ * here spends one of the few failed attempts this node is allowed on a repair
+ * that has not been made yet.
+ *
+ * @param {string} cfg
+ * @return {string}
+ */
+function renderFixLocallyThenWait(cfg) {
+  return `  Fix the cause above. dashmate retries by itself, so there is no command to
+  run - check it worked afterwards:
+
+      dashmate doctor ${cfg}
 `;
 }
 
@@ -202,6 +285,9 @@ function renderFix(cfg, isAlreadyLetsEncrypt, verdict) {
  *   determined, in which case nothing is said about the node's state
  * @param {boolean} [options.obtainAttemptFailed] - an obtain was run and threw
  * @param {{ok: boolean, failed: number, total: number}|null} options.pull
+ * @param {Object|null} [options.renewal] - the recorded renewal failure, when
+ *   one applies to the certificate this node is using
+ * @param {Object} options.renewal - derived once by deriveRenewalGuidance
  * @return {string}
  */
 export default function renderCertificateGuidance({
@@ -210,8 +296,16 @@ export default function renderCertificateGuidance({
   isNodeRunning,
   pull,
   obtainAttemptFailed = false,
+  renewal = null,
 }) {
   const cfg = renderConfigFlag(config.getName());
+  // A caller with nothing recorded still gets a decision, so no branch below
+  // has to work out for itself what an absent record means.
+  const guidance = renewal ?? deriveRenewalGuidance({
+    hasNoExternalIp: verdict.reasons
+      .some(({ code }) => code === CERTIFICATE_REASONS.NO_EXTERNAL_IP),
+    isCertificateUsable: false,
+  });
   const provider = config.get('platform.gateway.ssl.provider');
   // Only when the interrupted switch is the whole problem. The installed pair
   // being the one lego produced says nothing about whether it is still valid,
@@ -256,17 +350,36 @@ ${obtainAttemptFailed
     blocks.push(renderSwitchIncompleteGuidance(config, cfg));
   } else {
     if (provider === SSL_PROVIDERS.ZEROSSL) {
-      blocks.push(renderZeroSslExplanation());
+      blocks.push(renderZeroSslExplanation(guidance));
     }
 
     if (provider === SSL_PROVIDERS.LETSENCRYPT) {
-      blocks.push(renderLetsEncryptDiagnosis(cfg));
+      blocks.push(renderLetsEncryptDiagnosis(cfg, guidance));
     }
 
-    if (hasReason(verdict, CERTIFICATE_REASONS.NO_EXTERNAL_IP)) {
-      blocks.push(renderNoExternalIpGuidance(cfg));
-    } else {
-      blocks.push(renderFix(cfg, provider === SSL_PROVIDERS.LETSENCRYPT, verdict));
+    // The address is a prerequisite for every other repair, so it is said
+    // first and regardless - the obtain command refuses to start without one.
+    if (guidance.prerequisites.includes('EXTERNAL_IP')) {
+      blocks.push(renderNoExternalIpGuidance(
+        cfg,
+        guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN,
+        config.getName(),
+        guidance,
+      ));
+    }
+
+    if (guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN) {
+      blocks.push(renderWithheldObtain(cfg, guidance));
+    } else if (guidance.safeAction === SAFE_ACTION.WAIT_AFTER_LOCAL_FIX) {
+      blocks.push(renderFixLocallyThenWait(cfg));
+    } else if (!guidance.prerequisites.includes('EXTERNAL_IP')) {
+      blocks.push(renderFix(
+        cfg,
+        provider === SSL_PROVIDERS.LETSENCRYPT,
+        verdict,
+        config.getName(),
+        guidance,
+      ));
     }
 
     blocks.push(renderPortEightyPermanence());

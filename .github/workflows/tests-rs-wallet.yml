@@ -201,9 +201,16 @@ jobs:
             --locked \
             -- --no-deps -D warnings
 
-      # Mirrors the workspace job's non-shielded step for the wallet crates:
-      # same package subset, same `not test(~shield)` filter (shielded wallet
-      # tests are not run there either).
+      # The shielded-wallet suite (Orchard proving, viewing-key binds, note
+      # scans) is excluded by MODULE PATH, not by the word "shield". A
+      # `test(~shield)` substring match also swept up ~47 pure-logic tests
+      # across the three crates — input selection, FFI error codes, memo
+      # encoding, SQLite viewing-key rows — that cost a tenth of a second and
+      # have no compensating job anywhere.
+      #
+      # `--no-tests fail` is the zero-match guard: a filter that stops
+      # selecting anything must fail the step, not pass green. Pinned rather
+      # than left to nextest's default, which is a default and not a promise.
       - name: Run wallet tests (non-shielded)
         run: |
           cargo nextest run \
@@ -212,7 +219,8 @@ jobs:
             --package platform-wallet-ffi \
             --all-features \
             --locked \
-            -E 'not test(~shield)'
+            --no-tests fail \
+            -E 'not test(~wallet::shielded::)'
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"

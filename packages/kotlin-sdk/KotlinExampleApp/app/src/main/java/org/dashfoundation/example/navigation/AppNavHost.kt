@@ -284,7 +284,12 @@ fun AppNavHost(
         }
 
         composable<ShieldedFund> { entry ->
-            ShieldedFundScreen(entry.toRoute<ShieldedFund>().walletIdHex, navController)
+            val route = entry.toRoute<ShieldedFund>()
+            ShieldedFundScreen(
+                walletIdHex = route.walletIdHex,
+                navController = navController,
+                resumeOutPointHex = route.resumeOutPointHex.takeIf { it.isNotEmpty() },
+            )
         }
 
         composable<ShieldedFundProgress> { entry ->

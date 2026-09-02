@@ -16,6 +16,7 @@ pub mod dashpay;
 pub mod dpns_name_states;
 pub mod identities;
 pub mod identity_keys;
+pub mod identity_scan_states;
 pub mod invitations;
 pub mod pending_contact_crypto;
 pub mod platform_addrs;

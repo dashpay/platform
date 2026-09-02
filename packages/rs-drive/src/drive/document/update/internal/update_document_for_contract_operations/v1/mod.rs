@@ -444,6 +444,13 @@ impl Drive {
             let top_level_tree_types =
                 index_level_tree_types_with_continuation_demotion(current_index_level)?;
             let mut parent_value_tree_type = top_level_tree_types.value_tree_type;
+            // A prefix-ranking chain level (`rankedCountable: { at }`)
+            // inverts the zero-contribution choice below: its value trees
+            // count exactly their single continuation, so the continuation
+            // is inserted unwrapped and contributes its subtree count —
+            // matching the v2 insert walker's dispatch.
+            let mut parent_counts_continuations = current_index_level.ranked_count_grouping()
+                || current_index_level.count_propagating();
 
             if change_occurred_on_index {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
@@ -585,7 +592,17 @@ impl Drive {
                         // `INDEXED_INNER_UNWRAPPABLE` in `fees::op`).
                         let property_name_tree_type = sub_level_tree_types.property_name_tree_type;
                         let ranked_axes = sub_level_tree_types.ranked_axes.as_slice();
-                        let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree) {
+                        // A count-exempt sibling branch (`count_exempt_branch`,
+                        // stamped by the IndexLevel derivation) re-inverts the
+                        // chain-level choice per child: even though the chain
+                        // level counts its own continuation, the sibling's
+                        // branch tree must be zero-wrapped so its entries
+                        // never pollute the subtree totals — matching the v2
+                        // insert walker's dispatch.
+                        let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree)
+                            || (parent_counts_continuations
+                                && !current_index_level.count_exempt_branch())
+                        {
                             self.batch_insert_empty_index_tree_if_not_exists(
                                 PathKeyInfo::PathKeyRef::<0>((
                                     index_path.clone(),
@@ -671,6 +688,8 @@ impl Drive {
                 // The next-deeper continuation (if any) hangs inside
                 // this level's value tree.
                 parent_value_tree_type = sub_level_tree_types.value_tree_type;
+                parent_counts_continuations = current_index_level.ranked_count_grouping()
+                    || current_index_level.count_propagating();
 
                 // we push the actual value of the index path, both for the new and the old
                 index_path.push(document_index_field);

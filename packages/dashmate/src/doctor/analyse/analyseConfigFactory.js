@@ -5,6 +5,11 @@ import { ERRORS as ZEROSSL_ERRORS } from '../../ssl/zerossl/validateZeroSslCerti
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
 import renderConfigFlag from '../../util/renderConfigFlag.js';
+import { DOCS_LINKS } from '../../docsLinks.js';
+import { RENEWAL_RECORD_STATES } from '../../ssl/renewalRecord/RenewalRecordRepository.js';
+import RenewalRecord from '../../ssl/renewalRecord/RenewalRecord.js';
+import deriveRenewalGuidance, { SAFE_ACTION } from '../../ssl/renewalGuidance.js';
+import renderObtainCommand from '../../ssl/renderObtainCommand.js';
 
 /**
  * Whether a ZeroSSL certificate can be renewed depends on the operator's plan, which dashmate
@@ -15,6 +20,60 @@ of charge:
   {bold.cyanBright dashmate config set platform.gateway.ssl.provider letsencrypt}
   {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email EMAIL}
   {bold.cyanBright dashmate ssl obtain}`;
+
+/**
+ * What to say instead of a certificate request, when the renewal record forbids
+ * one - or nothing, when it does not.
+ *
+ * The legacy checks below cannot be left to decide this for themselves. They
+ * predate the record entirely, and each one ends in its own command.
+ *
+ * @param {Samples} samples
+ * @param {Config} config
+ * @return {string|null}
+ */
+function withheldRequest(samples, config) {
+  const sample = samples.getServiceInfo('gateway', 'certificateRenewal');
+  const record = sample?.state === RENEWAL_RECORD_STATES.PRESENT
+    ? RenewalRecord.fromObject(sample)
+    : null;
+
+  // A record left by a provider this node no longer uses says nothing about the
+  // one it does. The configuration watcher hands over without clearing it, so
+  // without this a stale spent or uncertain record would suppress a request
+  // that is now perfectly valid - the renewal-aware analyser already ignores it
+  // for exactly that reason, and these two must not disagree.
+  // The same two inputs the renewal-aware analyser uses. Without the installed
+  // certificate's date, a failure that a newer certificate has already overtaken
+  // still counts here - so this analyser would replace a valid repair with stale
+  // no-obtain guidance while the other one correctly ignored the same record.
+  const applicable = record?.isFailed()
+    && record.appliesTo({
+      provider: config.get('platform.gateway.ssl.provider'),
+      certificateValidFrom: samples.getServiceInfo('gateway', 'installedCertificate')?.validFrom
+        ?? null,
+    })
+    ? record
+    : null;
+
+  const guidance = deriveRenewalGuidance({
+    record: applicable,
+    isRecordUnreadable: sample?.state === RENEWAL_RECORD_STATES.UNREADABLE
+      || (sample?.state === RENEWAL_RECORD_STATES.PRESENT && record === null),
+    isCertificateUsable: false,
+  });
+
+  // A provider switch forbids these remedies just as firmly as an outright
+  // refusal: they ask this provider for another certificate, while the
+  // renewal-aware analyser in the same report says this provider will never
+  // issue one again.
+  if (guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN
+    && guidance.safeAction !== SAFE_ACTION.SWITCH_PROVIDER) {
+    return null;
+  }
+
+  return renderObtainCommand({ configName: config.getName(), guidance });
+}
 
 export default function analyseConfigFactory() {
   /**
@@ -52,7 +111,7 @@ export default function analyseConfigFactory() {
             if (config.get('network') !== NETWORK_LOCAL) {
               const problem = new Problem(
                 'SSL certificates are disabled. Clients won\'t be able to connect securely',
-                chalk`Please enable and set up SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate}`,
+                chalk`Please enable and set up SSL certificates {bold.cyanBright ${DOCS_LINKS.SSL_CERTIFICATES}}`,
                 SEVERITY.HIGH,
               );
 
@@ -63,7 +122,7 @@ export default function analyseConfigFactory() {
             if (config.get('network') === NETWORK_MAINNET) {
               const problem = new Problem(
                 'Self-signed SSL certificate is used on mainnet. Clients won\'t be able to connect securely',
-                chalk`Please use valid SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate}`,
+                chalk`Please use valid SSL certificates {bold.cyanBright ${DOCS_LINKS.SSL_CERTIFICATES}}`,
                 SEVERITY.HIGH,
               );
 
@@ -88,7 +147,7 @@ Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}`,
 Certificate chain file path: {bold.cyanBright ${ssl?.data?.chainFilePath}}
 Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}
 
-Or use ZeroSSL https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate`,
+Or use ZeroSSL ${DOCS_LINKS.SSL_CERTIFICATES}`,
               },
             };
 
@@ -211,9 +270,14 @@ a working certificate.`,
             }[ssl.error] ?? {};
 
             if (description) {
+              // These checks predate the renewal record and each ends in its
+              // own request. They run before the renewal-aware analyser in the
+              // same report, so a node whose recorded cause forbids asking
+              // again would read "do not obtain" from one and a runnable
+              // command from the other - and follow the command.
               const problem = new Problem(
                 description,
-                solution,
+                withheldRequest(samples, config) ?? solution,
                 severity,
               );
 

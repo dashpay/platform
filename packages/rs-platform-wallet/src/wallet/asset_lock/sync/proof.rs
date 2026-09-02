@@ -27,9 +27,9 @@ use super::super::manager::AssetLockManager;
 /// Persister errors are surfaced as `Err(PersistenceError)` so call
 /// sites can choose their own policy:
 ///
-/// - **Poll loops** (`wait_for_chain_lock`, `wait_for_proof`) downgrade
-///   transient failures to `None` for the current iteration and surface
-///   permanent failures — see [`record_or_persister_or_log`].
+/// - **Poll loops** (`wait_for_chain_lock`, `wait_for_proof`) typically
+///   downgrade to `None` for the current iteration so the next tick
+///   retries — see [`record_or_persister_or_log`] for that policy.
 /// - **One-shot recovery / fast-fail call sites** want the error
 ///   visible so a transient backend failure isn't silently classified
 ///   as "tx not found" — they handle the `Err` arm explicitly.
@@ -68,6 +68,17 @@ pub(in crate::wallet::asset_lock) fn funding_tx_record(
     account_index: u32,
     txid: &Txid,
 ) -> Option<TransactionRecord> {
+    funding_accounts(accounts, account_index)
+        .find_map(|account| account.transactions().get(txid).cloned())
+}
+
+/// The account families a lock funded from `account_index` can have filed
+/// its funding transaction under, in the order [`funding_tx_record`]
+/// documents.
+fn funding_accounts(
+    accounts: &key_wallet::account::ManagedAccountCollection,
+    account_index: u32,
+) -> impl Iterator<Item = &key_wallet::managed_account::ManagedCoreFundsAccount> {
     let at_index = [
         accounts.standard_bip44_accounts.get(&account_index),
         accounts.standard_bip32_accounts.get(&account_index),
@@ -77,30 +88,81 @@ pub(in crate::wallet::asset_lock) fn funding_tx_record(
         .into_iter()
         .flatten()
         .chain(accounts.dashpay_receival_accounts.values())
-        .find_map(|account| account.transactions().get(txid).cloned())
 }
 
-/// Variant of [`record_or_persister`] that retries transient failures as a miss.
+/// Whether any account family that could hold the funding transaction
+/// reports `txid` as chainlock-finalized.
 ///
-/// Use this from poll loops where the next iteration retries. Permanent
-/// failures remain errors so an unbounded poll cannot hide them.
+/// This is the same finality question [`record_holds_local_finality`] asks,
+/// for the record that is no longer there to ask it of. Under the default
+/// `keep-finalized-transactions` configuration a chainlock promotion drops
+/// the promoted record and keeps only its txid in the account's finalized
+/// set, so from that moment on a lookup by record cannot see a finality the
+/// wallet has already recorded — the txid set is the only place it survives.
+/// Searched over the same families, in the same order, as
+/// [`funding_tx_record`].
+pub(in crate::wallet::asset_lock) fn funding_tx_is_finalized(
+    accounts: &key_wallet::account::ManagedAccountCollection,
+    account_index: u32,
+    txid: &Txid,
+) -> bool {
+    funding_accounts(accounts, account_index).any(|account| account.transaction_is_finalized(txid))
+}
+
+/// Whether `record` on its own already establishes local finality for a
+/// funding transaction — the three record shapes [`AssetLockManager::wait_for_proof`]
+/// turns into a proof, reduced to a yes/no.
+///
+/// It exists so a caller holding a wallet read guard can ask the finality
+/// question inside its own snapshot instead of taking a second read. The
+/// answer must be read together with the rest of a decision that depends on
+/// it; splitting the two reads lets finality land in between and be missed.
+///
+/// `wallet_chain_lock_height` and `networks_match` come from the same
+/// snapshot as `record`. They serve only the third shape — a record whose
+/// own context is not yet promoted but whose block the wallet's applied
+/// chainlock already buries — and carry the same chain-id refusal as the
+/// proof builder: a `last_applied_chain_lock` persisted from a different
+/// network says nothing about this record's block.
+pub(in crate::wallet::asset_lock) fn record_holds_local_finality(
+    record: &TransactionRecord,
+    wallet_chain_lock_height: Option<dashcore::prelude::CoreBlockHeight>,
+    networks_match: bool,
+) -> bool {
+    use key_wallet::transaction_checking::TransactionContext;
+    match &record.context {
+        TransactionContext::InstantSend(_) => true,
+        TransactionContext::InChainLockedBlock(_) => record.height().is_some(),
+        _ => {
+            networks_match
+                && matches!(
+                    (wallet_chain_lock_height, record.height()),
+                    (Some(chain_lock), Some(height)) if chain_lock >= height
+                )
+        }
+    }
+}
+
+/// Variant of [`record_or_persister`] that swallows persister errors
+/// as `None` after a `warn`-level log. Use this from poll loops where
+/// the next iteration retries — a hard error from a single tick would
+/// abort the whole poll prematurely.
 pub(super) fn record_or_persister_or_log(
     in_memory: Option<TransactionRecord>,
     persister: &crate::wallet::persister::WalletPersister,
     txid: &Txid,
-) -> Result<Option<TransactionRecord>, crate::changeset::PersistenceError> {
+) -> Option<TransactionRecord> {
     match record_or_persister(in_memory, persister, txid) {
-        Ok(opt) => Ok(opt),
-        Err(e) if e.is_transient() => {
+        Ok(opt) => opt,
+        Err(e) => {
             tracing::warn!(
                 txid = %txid,
                 error = %e,
-                "Transient persister fallback for core tx record failed; \
+                "Persister fallback for core tx record failed; \
                  treating as miss for this poll iteration"
             );
-            Ok(None)
+            None
         }
-        Err(e) => Err(e),
     }
 }
 
@@ -331,7 +393,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 })
             };
             if let Some(record) =
-                record_or_persister_or_log(in_memory, &self.persister, &out_point.txid)?
+                record_or_persister_or_log(in_memory, &self.persister, &out_point.txid)
             {
                 if matches!(record.context, TransactionContext::InChainLockedBlock(_)) {
                     if let Some(h) = record.height() {
@@ -458,7 +520,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 })
             };
             if let Some(record) =
-                record_or_persister_or_log(in_memory, &self.persister, &out_point.txid)?
+                record_or_persister_or_log(in_memory, &self.persister, &out_point.txid)
             {
                 match &record.context {
                     TransactionContext::InstantSend(instant_lock) => {
@@ -907,7 +969,8 @@ mod tests {
         }
     }
 
-    /// Test persister that returns a permanent `get_core_tx_record` error.
+    /// Test persister that always errors out on `get_core_tx_record`,
+    /// to exercise the error-swallowing branch in `record_or_persister`.
     struct ErroringStore;
 
     impl PlatformWalletPersistence for ErroringStore {
@@ -930,34 +993,6 @@ mod tests {
             _txid: &Txid,
         ) -> Result<Option<TransactionRecord>, PersistenceError> {
             Err(PersistenceError::backend("simulated backend failure"))
-        }
-    }
-
-    struct TransientErroringStore;
-
-    impl PlatformWalletPersistence for TransientErroringStore {
-        fn store(
-            &self,
-            _wallet_id: WalletId,
-            _changeset: PlatformWalletChangeSet,
-        ) -> Result<(), PersistenceError> {
-            Ok(())
-        }
-        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
-            Ok(())
-        }
-        fn load(&self) -> Result<ClientStartState, PersistenceError> {
-            Ok(ClientStartState::default())
-        }
-        fn get_core_tx_record(
-            &self,
-            _wallet_id: WalletId,
-            _txid: &Txid,
-        ) -> Result<Option<TransactionRecord>, PersistenceError> {
-            Err(PersistenceError::backend_with_kind(
-                crate::changeset::PersistenceErrorKind::Transient,
-                "simulated transient backend failure",
-            ))
         }
     }
 
@@ -1025,7 +1060,9 @@ mod tests {
     #[test]
     fn record_or_persister_propagates_backend_errors() {
         // Backend errors surface as `Err` so call sites can choose
-        // their own policy; poll loops only downgrade transient errors.
+        // their own policy (one-shot recovery logs at error and
+        // degrades; poll loops downgrade to None for one tick via
+        // `record_or_persister_or_log`).
         let unknown_txid = Txid::from([0xFF; 32]);
         let persister = wallet_persister(Arc::new(ErroringStore));
 
@@ -1034,21 +1071,14 @@ mod tests {
     }
 
     #[test]
-    fn record_or_persister_or_log_surfaces_permanent_backend_errors() {
+    fn record_or_persister_or_log_swallows_backend_errors_as_none() {
+        // The poll-loop variant downgrades errors to `None` (after a
+        // `warn` log) so a transient backend failure on one tick
+        // doesn't abort the whole poll.
         let unknown_txid = Txid::from([0xFF; 32]);
         let persister = wallet_persister(Arc::new(ErroringStore));
 
         let resolved = record_or_persister_or_log(None, &persister, &unknown_txid);
-        assert!(resolved.is_err());
-    }
-
-    #[test]
-    fn record_or_persister_or_log_retries_transient_backend_errors() {
-        let unknown_txid = Txid::from([0xFF; 32]);
-        let persister = wallet_persister(Arc::new(TransientErroringStore));
-
-        let resolved = record_or_persister_or_log(None, &persister, &unknown_txid)
-            .expect("transient poll error must be downgraded for retry");
         assert!(resolved.is_none());
     }
 }

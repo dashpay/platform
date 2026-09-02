@@ -269,6 +269,10 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
                 removed: Default::default(),
             });
         }
+        Domain::IdentityScanState => {
+            use platform_wallet::changeset::IdentityScanStateEntry;
+            cs.identity_scan_state = Some(IdentityScanStateEntry::incomplete(0, 5, vec![1]));
+        }
         #[cfg(feature = "shielded")]
         Domain::ShieldedViewingKeys => {
             let mut shielded = ShieldedChangeSet::default();
@@ -380,7 +384,7 @@ fn tc_b_013_every_domain_maps_and_isolates() {
     use std::collections::BTreeSet;
     assert_eq!(
         Domain::ALL.len(),
-        if cfg!(feature = "shielded") { 16 } else { 15 },
+        if cfg!(feature = "shielded") { 17 } else { 16 },
         "every compiled persistence domain must be covered"
     );
     let mut covered = BTreeSet::new();

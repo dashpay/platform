@@ -46,7 +46,7 @@
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::data_contract::document_type::IndexLevelTypeInfo;
+use dpp::data_contract::document_type::{IndexLevel, IndexLevelTypeInfo};
 use grovedb::element::IndexAxis;
 use grovedb::TreeType;
 
@@ -149,6 +149,41 @@ pub(crate) fn property_name_tree_type_and_ranked_axes(
     ))
 }
 
+/// Level-aware form of [`property_name_tree_type_and_ranked_axes`], covering
+/// the prefix-level Count ranking (`rankedCountable: { at }`, meta-schema v3):
+///
+/// - A **grouping** level (`ranked_count_grouping`) hosts the ranking itself:
+///   its property-name tree is the Count-axis indexed tree, whose secondary
+///   ranks the property's values by each value tree's whole-subtree count.
+/// - A **propagating** level (`count_propagating`, strictly between the
+///   grouping level and its index's terminal) gets a `CountTree` property-name
+///   tree so the subtree counts flow through it toward the grouping secondary.
+/// - Every other level resolves through the terminator-info path unchanged.
+///
+/// rs-dpp's structural validation guarantees no index terminates at a
+/// grouping or propagating level; both fail closed here on a stamped
+/// terminator rather than pick one of two contradictory layouts.
+pub(crate) fn property_name_tree_type_and_ranked_axes_for_level(
+    level: &IndexLevel,
+) -> Result<(TreeType, Vec<IndexAxis>), Error> {
+    if level.ranked_count_grouping() || level.count_propagating() {
+        if level.has_index_with_type().is_some() {
+            return Err(Error::Drive(DriveError::CorruptedContractIndexes(
+                "a prefix-ranking (grouping or count-propagating) index level cannot also \
+                 terminate an index; contract validation rejects every shape that shares \
+                 such a level"
+                    .to_string(),
+            )));
+        }
+        return if level.ranked_count_grouping() {
+            Ok((TreeType::ProvableCountIndexedTree, vec![IndexAxis::Count]))
+        } else {
+            Ok((TreeType::CountTree, Vec::new()))
+        };
+    }
+    property_name_tree_type_and_ranked_axes(level.has_index_with_type())
+}
+
 /// The non-indexed tree type an indexed tree mirrors, or `tree_type` itself
 /// when it isn't indexed.
 ///
@@ -193,6 +228,8 @@ mod tests {
             ranked_countable,
             ranked_summable,
             ranked_averageable,
+            terminal: None,
+            preallocated: false,
         }
     }
 

@@ -85,6 +85,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         cs
     }
 
+    // NOTE: there is deliberately no `untrack_unproven_broadcast_asset_lock`
+    // companion here. A `Rejected` verdict from a re-broadcast describes only
+    // that attempt (with the production `SpvBroadcaster`: an unstarted client
+    // or zero connected peers), never the ORIGINAL broadcast that moved the
+    // row to `Broadcast` in an earlier process — so it is not evidence that
+    // the transaction is absent from the network, and removing the row on it
+    // deleted tracking for possibly-mined asset locks during ordinary offline
+    // relaunches. `resume_asset_lock` now surfaces the typed error and leaves
+    // the row untouched.
+
     /// Mark a tracked asset lock as
     /// [`Consumed`](AssetLockStatus::Consumed) after a successful
     /// identity registration or top-up.

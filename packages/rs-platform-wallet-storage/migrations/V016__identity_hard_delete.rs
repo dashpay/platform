@@ -23,6 +23,10 @@
 //! need nothing new: their FK column is `identity_id NOT NULL`, so it is
 //! never dormant. `meta_identity` / `meta_token` keep riding V001's
 //! `cascade_meta_on_identity_delete`, which this migration leaves alone.
+//! V015's `identity_scan_states` / `identity_scan_failed_indices` are
+//! wallet-scoped (FK to `wallets`, no `identity_id`), so a scan verdict
+//! outliving one identity is the intended reading: it records how far the
+//! wallet's index space was probed, not which identities came back.
 
 pub fn migration() -> String {
     "\

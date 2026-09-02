@@ -139,10 +139,19 @@ impl Drive {
             // deduped.
             let index_structure = document_type_ref.index_structure();
             for level in index_structure.sub_levels().values() {
-                let terminator_tree_type = level
-                    .has_index_with_type()
-                    .map(property_name_tree_type_from_flags)
-                    .unwrap_or(TreeType::NormalTree);
+                // A compound index ranked at its FIRST property
+                // (`rankedCountable: { at }`) makes its top level the
+                // grouping tree — the Count-axis indexed tree
+                // `insert_contract_v0` creates through the level-aware
+                // resolver — even though no index terminates there.
+                let terminator_tree_type = if level.ranked_count_grouping() {
+                    TreeType::ProvableCountIndexedTree
+                } else {
+                    level
+                        .has_index_with_type()
+                        .map(property_name_tree_type_from_flags)
+                        .unwrap_or(TreeType::NormalTree)
+                };
                 tree_weights.tally(terminator_tree_type);
             }
 

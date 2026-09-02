@@ -11,6 +11,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
             query_documents: 0,
+            query_chained_documents: 0,
             query_contested_documents: 0,
             query_contested_documents_vote_state: 0,
             query_documents_with_flags: 0,
@@ -38,6 +39,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             delete_document_for_contract_id_with_named_type_operations: 0,
             delete_document_for_contract_with_named_type_operations: 0,
             delete_document_for_contract_operations: 0,
+            delete_index_only_document_for_contract_operations: 0,
+            delete_index_only_document_for_contract: 0,
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document: 0,

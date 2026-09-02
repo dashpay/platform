@@ -37,6 +37,7 @@ pub enum Domain {
     PendingContactCrypto,
     Invitations,
     DpnsNameStates,
+    IdentityScanState,
     #[cfg(feature = "shielded")]
     ShieldedViewingKeys,
 }
@@ -61,6 +62,11 @@ impl Domain {
             Domain::PendingContactCrypto => "pending_contact_crypto",
             Domain::Invitations => "invitations",
             Domain::DpnsNameStates => "dpns_name_states",
+            // Named for the table, not for this variant: the string is
+            // written into `meta_data_versions.domain` in every deployed
+            // database and outlives any Rust identifier. Renaming the type
+            // must not rename it.
+            Domain::IdentityScanState => "identity_scan_states",
             #[cfg(feature = "shielded")]
             Domain::ShieldedViewingKeys => "shielded_viewing_keys",
         }
@@ -69,6 +75,28 @@ impl Domain {
     /// Every domain, for coverage tests.
     #[cfg(any(test, feature = "__test-helpers"))]
     #[cfg(feature = "shielded")]
+    pub const ALL: [Domain; 17] = [
+        Domain::Core,
+        Domain::Identities,
+        Domain::IdentityKeys,
+        Domain::Contacts,
+        Domain::PlatformAddresses,
+        Domain::AssetLocks,
+        Domain::TokenBalances,
+        Domain::DashpayProfiles,
+        Domain::DashpayPaymentsOverlay,
+        Domain::WalletMetadata,
+        Domain::AccountRegistrations,
+        Domain::AccountAddressPools,
+        Domain::PendingContactCrypto,
+        Domain::Invitations,
+        Domain::DpnsNameStates,
+        Domain::IdentityScanState,
+        Domain::ShieldedViewingKeys,
+    ];
+
+    /// Every domain, for coverage tests without shielded persistence.
+    #[cfg(all(any(test, feature = "__test-helpers"), not(feature = "shielded")))]
     pub const ALL: [Domain; 16] = [
         Domain::Core,
         Domain::Identities,
@@ -85,27 +113,7 @@ impl Domain {
         Domain::PendingContactCrypto,
         Domain::Invitations,
         Domain::DpnsNameStates,
-        Domain::ShieldedViewingKeys,
-    ];
-
-    /// Every domain, for coverage tests without shielded persistence.
-    #[cfg(all(any(test, feature = "__test-helpers"), not(feature = "shielded")))]
-    pub const ALL: [Domain; 15] = [
-        Domain::Core,
-        Domain::Identities,
-        Domain::IdentityKeys,
-        Domain::Contacts,
-        Domain::PlatformAddresses,
-        Domain::AssetLocks,
-        Domain::TokenBalances,
-        Domain::DashpayProfiles,
-        Domain::DashpayPaymentsOverlay,
-        Domain::WalletMetadata,
-        Domain::AccountRegistrations,
-        Domain::AccountAddressPools,
-        Domain::PendingContactCrypto,
-        Domain::Invitations,
-        Domain::DpnsNameStates,
+        Domain::IdentityScanState,
     ];
 }
 
@@ -139,6 +147,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         pending_contact_crypto_cleared,
         invitations,
         dpns_name_states,
+        identity_scan_state,
         #[cfg(feature = "shielded")]
         shielded,
         #[cfg(not(feature = "shielded"))]
@@ -199,6 +208,11 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     }
     if present(dpns_name_states) {
         out.push(Domain::DpnsNameStates);
+    }
+    // Not a `Merge` type — a verdict is one absolute value, not a mergeable
+    // collection, so presence is the whole test.
+    if identity_scan_state.is_some() {
+        out.push(Domain::IdentityScanState);
     }
     #[cfg(feature = "shielded")]
     if shielded

@@ -286,6 +286,13 @@ pub enum PlatformWalletFFIResultCode {
     //   38  ErrorDocumentPriceChanged       DPNS username marketplace
     //   39  ErrorInsufficientIdentityCredits DPNS username marketplace
     //   40  ErrorContestedNameNotTradable   DPNS username marketplace
+    //   41  ErrorShieldedInsufficientBalance Platform→Shielded capacity preflight
+    //   42  ErrorMasternodeWithdrawalUnconfirmed masternode withdrawal status
+    //   43-45 RESERVED by open dashpay/platform#4313 (shielded-invite claim)
+    //   46  ErrorMasternodeListUnavailable  masternode list source
+    //   47  ErrorAssetLockInputConflict     asset-lock double-spend detection
+    //                                       (terminal; RESERVED, no emitter yet)
+    //   48  ErrorAssetLockInputContested    asset-lock double-spend detection (provisional)
     //
     // 38/39/40 carry a STABLE JSON detail object in the result `message`
     // instead of the typed `Display` rendering — see each variant's doc for
@@ -305,6 +312,23 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorReservationWalletMismatch`] (36, minted against a different
     /// wallet generation). All three are non-retryable-in-place and none touched
     /// the network; they are distinct codes so a host can message each precisely.
+    ///
+    /// Also maps `PlatformWalletError::StaleReservation` from the atomic
+    /// finalized-transaction handle path
+    /// (`core_wallet_broadcast_signed_transaction`): a pinned handle whose
+    /// funding reservation aged past the SAME `RESERVATION_MAX_AGE_BLOCKS` bound
+    /// carries the identical "may already have been swept — rebuild" meaning, so
+    /// the two surfaces intentionally share this one code. The handle carries
+    /// no numeric reservation token, hence a distinct (token-less) wallet-error
+    /// variant behind the same FFI code. The refusal reconciles the reservation
+    /// on the way out: a funded finalize always stamps an owner token, so the
+    /// release is owner-guarded (safe at any age — a no-op once ownership
+    /// transferred) and the still-owned inputs are freed for the instructed
+    /// rebuild. Abandon/free of a handle never surfaces this — abandon returns
+    /// no result code and likewise releases owner-guarded at any age; only a
+    /// token-less build skips its unguarded by-outpoint release past the bound
+    /// (leaving the aged outpoint to key-wallet's TTL, since releasing it
+    /// unguarded could free an unrelated newer build's reservation).
     ErrorStaleReservationToken = 34,
 
     /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
@@ -412,15 +436,73 @@ pub enum PlatformWalletFFIResultCode {
     /// per the error-code registry (#4318).
     ErrorMasternodeListUnavailable = 46,
 
-    // -----------------------------------------------------------------
-    // Embedded-persister failures (48-49), claimed from the allocation
-    // frontier in the error-code registry (#4318). 28, 30, 32 and 33 are
-    // reserved-not-free, so the frontier is the only allocation source.
-    // -----------------------------------------------------------------
-    /// A persister operation failed transiently; callers may retry.
-    ErrorPersisterTransient = 48,
-    /// A persister operation failed permanently; callers must not retry.
-    ErrorPersisterFatal = 49,
+    /// Maps `PlatformWalletError::AssetLockInputConflict`. **RESERVED —
+    /// no wallet code path currently produces it**, so this code does not
+    /// cross the boundary today.
+    ///
+    /// It is the terminal form of the double-spend verdict: a tracked
+    /// asset-lock transaction spending an outpoint that a different,
+    /// already-confirmed transaction of the same wallet spent first, where
+    /// that spender's block is PROVEN to be on the finalized chain. That
+    /// proof is what is missing. The wallet can see a confirmed spender,
+    /// a chainlocked record context and the applied chainlock height, but
+    /// all of those are height-based promotion artifacts rather than
+    /// evidence of finalized ancestry (the SPV chainlock manager counts a
+    /// missing header as a passing block-hash check, so a chainlock on a
+    /// replacement branch can promote losing-branch records). Until the
+    /// SPV layer exposes an ancestry predicate, every hit — chainlocked
+    /// spenders included — reports
+    /// [`Self::ErrorAssetLockInputContested`] (48) instead.
+    ///
+    /// The code number and this variant are kept pinned so the reserved
+    /// slot stays stable for hosts and for the future emitter. A host must
+    /// read NOTHING into its absence: it is not a liveness signal, not a
+    /// "not final yet" signal, and not a statement about any lock. Hosts
+    /// that already branch on it may keep doing so — if it ever ships, it
+    /// keeps its meaning: the one code that authorises discarding a
+    /// tracked asset lock and rebuilding from currently-unspent inputs.
+    ///
+    /// Message (when it ships): the typed `Display` rendering, which names
+    /// the asset-lock outpoint, the conflicting input, the confirmed
+    /// spender's txid, and the spender's finality (always chainlocked for
+    /// this code).
+    ErrorAssetLockInputConflict = 47,
+
+    /// Maps `PlatformWalletError::AssetLockInputContested`. The double-spend
+    /// screen's ONLY verdict: a confirmed transaction of this wallet
+    /// already spent one of the tracked lock's inputs. The resume still
+    /// ran — the sighting bounds the proof wait instead of replacing it,
+    /// so the lock was (re-)broadcast and waited on, and this is what that
+    /// bounded wait expired with. PROVISIONAL — the wallet cannot prove the
+    /// spender's block is on the finalized branch (see
+    /// [`Self::ErrorAssetLockInputConflict`] (47), the reserved terminal
+    /// form), so this is what a chainlocked-looking spender reports too.
+    ///
+    /// NOT a discard licence. The host keeps the tracked lock and retries
+    /// later (next launch, or after the next chainlock) — but note that a
+    /// chainlock does NOT upgrade this to 47 today; what a retry can
+    /// resolve is the other direction, a reorg dropping the sibling so the
+    /// next resume proceeds normally. Nor does repetition license a
+    /// discard: a conflict that persists across sessions still proves
+    /// nothing about finalized ancestry — the sighting can be a block
+    /// record restored from a previous session whose block was reorganized
+    /// out while the host was offline. Only code 47, or an independent
+    /// finalized-ancestry proof, authorises dropping the tracked state,
+    /// because a lock whose sibling sits on a losing branch can still be
+    /// replayed and confirm. Keeping the lock costs the host nothing: the
+    /// conflicting spender is this wallet's own transaction, so the value
+    /// lives on in the sibling either way.
+    ///
+    /// Raised only on a positive detection; its ABSENCE is not a liveness
+    /// signal. The wallet-side scan reads confirmed records still held in
+    /// memory, and under the default `keep-finalized-transactions = OFF`
+    /// build those are pruned once chainlocked, so an old conflict can go
+    /// unseen and surface as the usual finality timeout instead.
+    ///
+    /// Message: the typed `Display` rendering, which names the asset-lock
+    /// outpoint, the conflicting input, the confirmed spender's txid and
+    /// height, and says the verdict is provisional.
+    ErrorAssetLockInputContested = 48,
 
     /// The named thing does not exist.
     ///
@@ -441,31 +523,6 @@ pub enum PlatformWalletFFIResultCode {
     /// against (`dashpay/platform#4185`).
     NotFound = 98,
     ErrorUnknown = 99,
-}
-
-fn persistence_result_code(
-    error: &platform_wallet::changeset::PersistenceError,
-) -> PlatformWalletFFIResultCode {
-    if error.is_transient() {
-        PlatformWalletFFIResultCode::ErrorPersisterTransient
-    } else {
-        PlatformWalletFFIResultCode::ErrorPersisterFatal
-    }
-}
-
-fn platform_wallet_persister_result_code(
-    mut error: &PlatformWalletError,
-) -> PlatformWalletFFIResultCode {
-    loop {
-        match error {
-            PlatformWalletError::PersisterLoad(error)
-            | PlatformWalletError::PersisterStore(error) => {
-                return persistence_result_code(error);
-            }
-            PlatformWalletError::PersisterRestore(inner) => error = inner,
-            _ => return PlatformWalletFFIResultCode::ErrorPersisterFatal,
-        }
-    }
 }
 
 /// Must be freed with ['platform_wallet_ffi_result_free']
@@ -667,6 +724,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code
             // so hosts can distinguish it from a definitive rejection.
+            PlatformWalletError::MasternodeListUnavailable => {
+                PlatformWalletFFIResultCode::ErrorMasternodeListUnavailable
+            }
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
             }
@@ -677,6 +737,34 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::TransactionBroadcast(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
+            }
+            // The finalized-transaction handle path's age guard. Shares the
+            // `ErrorStaleReservationToken` code with the deferred registry-token
+            // sibling (`SignedPaymentError::StaleReservationToken`): both mean
+            // "the funding reservation may already have been swept — rebuild",
+            // and neither touched the network. See the code's doc note.
+            PlatformWalletError::StaleReservation => {
+                PlatformWalletFFIResultCode::ErrorStaleReservationToken
+            }
+            // A coin selection that picked an input still held by an in-flight
+            // broadcast dispatch. Typed on the Rust side (it carries the
+            // conflicting `OutPoint`; see the variant docs for the retry
+            // contract — the intent is re-attemptable only after the fenced
+            // dispatch's outcome is reconciled), but DELIBERATELY mapped to the
+            // same numeric code it produced before that variant existed: all three
+            // choke points previously returned it as
+            // `TransactionBuild` / `AssetLockTransaction`, neither of which is
+            // matched here, so both fell to `ErrorUnknown`.
+            //
+            // Minting a dedicated code is a separate, coordinated change — the
+            // numeric space is a cross-PR registry (see the claim table on
+            // `ErrorStaleReservationToken` above) and every new value has to be
+            // mirrored into the Swift and Kotlin result enums. This arm exists
+            // so the mapping is an explicit, reviewable decision in one place
+            // rather than an accident of the catch-all, and so it is a one-line
+            // change when a code is claimed (`dashpay/platform#4309`).
+            PlatformWalletError::InputMidBroadcast { .. } => {
+                PlatformWalletFFIResultCode::ErrorUnknown
             }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
@@ -704,6 +792,19 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
             }
+            // Double-spend verdicts. `AssetLockInputContested` is the one
+            // the wallet actually raises — without this arm it reached
+            // `ErrorUnknown` and a host could only render a spinner. The
+            // terminal `AssetLockInputConflict` has no emitter today (it
+            // needs a finalized-ancestry proof the SPV layer does not
+            // expose); its arm is kept so the reserved code stays wired
+            // for the future emitter and for direct constructions.
+            PlatformWalletError::AssetLockInputConflict { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
+            }
+            PlatformWalletError::AssetLockInputContested { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockInputContested
+            }
             // The asset-lock coin-selection shortfall (dashpay/platform#4073).
             // Without this arm it flattens to `ErrorUnknown` (99), hiding a
             // typed shortfall behind the catch-all and forcing hosts to
@@ -713,11 +814,6 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // branch on the shortfall without parsing text.
             PlatformWalletError::AssetLockInsufficientFunds { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
-            }
-            PlatformWalletError::PersisterLoad(..)
-            | PlatformWalletError::PersisterStore(..)
-            | PlatformWalletError::PersisterRestore(..) => {
-                platform_wallet_persister_result_code(&error)
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
@@ -986,8 +1082,10 @@ impl From<dpp::platform_value::Error> for PlatformWalletFFIResult {
 
 impl From<platform_wallet::changeset::PersistenceError> for PlatformWalletFFIResult {
     fn from(e: platform_wallet::changeset::PersistenceError) -> Self {
-        let code = persistence_result_code(&e);
-        Self::err(code, format!("persistence error: {e}"))
+        Self::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("persistence error: {e}"),
+        )
     }
 }
 
@@ -1012,19 +1110,6 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn result_code_discriminants_remain_stable() {
-        assert_eq!(
-            PlatformWalletFFIResultCode::ErrorPersisterTransient as i32,
-            48
-        );
-        assert_eq!(PlatformWalletFFIResultCode::ErrorPersisterFatal as i32, 49);
-        assert_eq!(
-            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected as i32,
-            26
-        );
-    }
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 
@@ -1062,71 +1147,6 @@ mod tests {
             "before\0after",
         );
         assert!(!r.message.is_null());
-    }
-
-    fn persistence_error(
-        kind: platform_wallet::changeset::PersistenceErrorKind,
-    ) -> platform_wallet::changeset::PersistenceError {
-        platform_wallet::changeset::PersistenceError::backend_with_kind(kind, "test failure")
-    }
-
-    #[test]
-    fn should_map_persistence_errors_by_retry_classification() {
-        use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
-
-        let transient: PlatformWalletFFIResult =
-            persistence_error(PersistenceErrorKind::Transient).into();
-        assert_eq!(
-            transient.code,
-            PlatformWalletFFIResultCode::ErrorPersisterTransient
-        );
-
-        for error in [
-            persistence_error(PersistenceErrorKind::Fatal),
-            persistence_error(PersistenceErrorKind::Constraint),
-            PersistenceError::LockPoisoned,
-        ] {
-            let result: PlatformWalletFFIResult = error.into();
-            assert_eq!(
-                result.code,
-                PlatformWalletFFIResultCode::ErrorPersisterFatal
-            );
-        }
-    }
-
-    #[test]
-    fn should_map_platform_wallet_persister_errors_by_retry_classification() {
-        use platform_wallet::changeset::PersistenceErrorKind;
-
-        let cases = [
-            (
-                PlatformWalletError::PersisterLoad(persistence_error(
-                    PersistenceErrorKind::Transient,
-                )),
-                PlatformWalletFFIResultCode::ErrorPersisterTransient,
-            ),
-            (
-                PlatformWalletError::PersisterStore(persistence_error(PersistenceErrorKind::Fatal)),
-                PlatformWalletFFIResultCode::ErrorPersisterFatal,
-            ),
-            (
-                PlatformWalletError::PersisterRestore(Box::new(
-                    PlatformWalletError::PersisterStore(persistence_error(
-                        PersistenceErrorKind::Transient,
-                    )),
-                )),
-                PlatformWalletFFIResultCode::ErrorPersisterTransient,
-            ),
-            (
-                PlatformWalletError::PersisterRestore(Box::new(PlatformWalletError::WalletLocked)),
-                PlatformWalletFFIResultCode::ErrorPersisterFatal,
-            ),
-        ];
-
-        for (error, expected) in cases {
-            let result: PlatformWalletFFIResult = error.into();
-            assert_eq!(result.code, expected);
-        }
     }
 
     /// The three "can't-select-inputs" wallet variants (`NoSpendableInputs`,
@@ -1469,6 +1489,74 @@ mod tests {
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
     }
 
+    /// The finalized-transaction handle age guard
+    /// (`core_wallet_broadcast_signed_transaction` → `broadcast_finalized_transaction`)
+    /// surfaces `PlatformWalletError::StaleReservation` through the blanket
+    /// `From` impl, which must reuse the deferred registry-token path's
+    /// `ErrorStaleReservationToken` (34) code rather than flattening to
+    /// `ErrorUnknown` — the two surfaces share the "reservation may have been
+    /// swept; rebuild" meaning and this one code. The typed Display rendering
+    /// survives across the boundary as the message.
+    #[test]
+    fn stale_reservation_maps_to_shared_stale_reservation_code() {
+        let err = PlatformWalletError::StaleReservation;
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorStaleReservationToken,
+            "StaleReservation must reuse the registry-token stale code (rendered: {rendered})"
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            msg, rendered,
+            "Display payload must survive the FFI boundary verbatim"
+        );
+    }
+
+    /// Code 26 is a promise about cleanup, not about the broadcaster's
+    /// verdict: the row was untracked and the funding reservation released,
+    /// so a rebuild is safe. An asset-lock build whose rejection raced a
+    /// concurrent resume keeps both — the guard retains the advanced row and
+    /// the release is skipped — and reports the unknown outcome instead. The
+    /// two must never collapse to one code across the boundary: a host that
+    /// read 26 there would rebuild from other UTXOs and create a second asset
+    /// lock beside a transaction the advance says reached the network.
+    #[test]
+    fn a_retained_asset_lock_row_reports_the_unknown_outcome_not_the_rejection() {
+        let retained: PlatformWalletFFIResult =
+            PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "asset lock 0000..:0 stays tracked and reserved: the broadcast was \
+                 rejected, but a concurrent resume had already advanced the row past \
+                 Built, so the transaction may be on the network"
+                    .to_string(),
+            )
+            .into();
+        assert_eq!(
+            retained.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+            "a rejection that released nothing must reach the host as code 20"
+        );
+
+        let cleaned_up: PlatformWalletFFIResult =
+            PlatformWalletError::TransactionBroadcast("bad-txns-inputs-missingorspent".to_string())
+                .into();
+        assert_eq!(
+            cleaned_up.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected,
+            "the untracked-and-released path keeps the safe-to-retry code 26"
+        );
+        assert_ne!(
+            retained.code, cleaned_up.code,
+            "the retained-row and released-reservation outcomes must stay \
+             distinguishable at the FFI boundary — code 26 licenses the rebuild \
+             that the retained row makes unsafe"
+        );
+    }
+
     /// `AddressNonceMismatch` maps to the dedicated `ErrorAddressNonceMismatch`
     /// FFI code through the blanket `From` impl (the path identity
     /// `top_up_from_addresses` takes via `?`/`.into()`) rather than flattening
@@ -1808,6 +1896,49 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance as i32,
             41
+        );
+    }
+
+    /// The terminal double-spend verdict is RESERVED — no wallet path
+    /// constructs it today — but its slot stays pinned, so this builds the
+    /// error directly and checks both halves of the contract: the number
+    /// the Swift/Kotlin mirrors decode, and the conversion that keeps it
+    /// from flattening to `ErrorUnknown` if a future ancestry predicate
+    /// starts emitting it. The message must carry the typed `Display` —
+    /// including the spender's finality — since that is the only detail
+    /// channel the frozen `{ code, message }` ABI has.
+    #[test]
+    fn asset_lock_input_conflict_code_is_pinned_at_47() {
+        use dashcore::OutPoint;
+
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockInputConflict as i32,
+            47
+        );
+
+        let out_point = OutPoint::null();
+        let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockInputConflict {
+            out_point,
+            input: OutPoint {
+                txid: out_point.txid,
+                vout: 3,
+            },
+            spent_by: out_point.txid,
+            height: Some(1_234),
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInputConflict
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("can never confirm"),
+            "the typed Display must survive the conversion: {message}"
+        );
+        assert!(
+            message.contains("chainlocked: true"),
+            "the spender's finality must reach the host: {message}"
         );
     }
 

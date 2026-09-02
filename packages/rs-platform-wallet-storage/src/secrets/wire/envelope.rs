@@ -12,7 +12,7 @@ use bincode::config::{BigEndian, Configuration, Limit, Varint};
 
 use crate::secrets::error::SecretStoreError;
 use crate::secrets::file::crypto::{self, KdfParams, NONCE_LEN, SALT_LEN};
-use crate::secrets::secret::{SecretBytes, SecretString};
+use crate::secrets::secret::{SecretBytes, SecretString, MAX_PASSPHRASE_LEN};
 use crate::secrets::validate::WalletId;
 use crate::secrets::wire::aad::Tier2Aad;
 use crate::secrets::wire::config::{ENVELOPE_VERSION, TIER2_DOMAIN_V2, WIRE_CONFIG};
@@ -136,17 +136,27 @@ pub(crate) fn wrap_with_params(
         return Ok(SecretBytes::new(encoded));
     };
 
-    // Reject a sub-floor object password before any salt or derivation.
+    // Reject an out-of-range object password before any salt or derivation.
     if pw.is_below_minimum_passphrase_len() {
         return Err(SecretStoreError::BlankPassphrase);
+    }
+    if pw.exceeds_maximum_passphrase_len() {
+        return Err(SecretStoreError::PassphraseTooLong {
+            found: pw.len(),
+            max: MAX_PASSPHRASE_LEN,
+        });
     }
 
     let mut salt = [0u8; SALT_LEN];
     crypto::random_bytes(&mut salt)?;
-    let key = crypto::derive_key(pw, &salt, params)?;
     let kdf = KdfParamsEncoded::from(params);
     let aad = encode_tier2_aad(wallet_id, label, kdf, &salt);
-    let (nonce, ciphertext) = crypto::seal(&key, &aad, plaintext)?;
+    // Scoped so the derived key's guarded page is released before the
+    // envelope buffer is allocated; the two are never both needed.
+    let (nonce, ciphertext) = {
+        let key = crypto::derive_key(pw, &salt, params)?;
+        crypto::seal(&key, &aad, plaintext)?
+    };
 
     let envelope = Envelope {
         version: ENVELOPE_VERSION,
@@ -271,6 +281,17 @@ fn unwrap_password_payload(
     // plant a weakly sealed envelope for an accidentally weak caller input.
     if password.is_below_minimum_passphrase_len() {
         return Err(SecretStoreError::BlankPassphrase);
+    }
+    // (a1) Mirror wrap's ceiling too. A re-protect holds the old password,
+    // the new one and the resident vault passphrase at once, so all three
+    // must be bounded for the budget at `MAX_SECRET_LEN` to hold. Refusing
+    // here locks nobody out: wrap applies the same ceiling, so no
+    // legitimately enrolled entry can need a longer password.
+    if password.exceeds_maximum_passphrase_len() {
+        return Err(SecretStoreError::PassphraseTooLong {
+            found: password.len(),
+            max: MAX_PASSPHRASE_LEN,
+        });
     }
     // (a) Wider Argon2 floors/ceilings — refuses an inflated header
     // before any allocation.
@@ -420,6 +441,53 @@ mod tests {
         assert!(
             matches!(err, SecretStoreError::BlankPassphrase),
             "blank object password must be refused before KDF/AEAD, got {err:?}"
+        );
+    }
+
+    /// The object-password ceiling is enforced symmetrically, wrap and
+    /// unwrap. Both sides matter: a re-protect holds the old password, the
+    /// new one and the resident vault passphrase at once, so all three
+    /// must be bounded for `MAX_SECRET_LEN`'s budget to hold. Enforcing it
+    /// on read locks nobody out, because wrap refuses to enrol one.
+    #[test]
+    fn object_password_cap_accept_then_reject_on_both_sides() {
+        let at_cap = SecretString::new("p".repeat(MAX_PASSPHRASE_LEN));
+        let over = SecretString::new("p".repeat(MAX_PASSPHRASE_LEN + 1));
+
+        let blob = wrap_with_params(
+            &wid(1),
+            "seed",
+            Some(&at_cap),
+            b"seed",
+            KdfParams::floor_target(),
+        )
+        .expect("a password exactly at the cap must be accepted");
+        assert_eq!(
+            unwrap(&wid(1), "seed", Some(&at_cap), blob.expose_secret())
+                .unwrap()
+                .expose_secret(),
+            b"seed"
+        );
+
+        let wrap_err = wrap_with_params(
+            &wid(1),
+            "seed",
+            Some(&over),
+            b"seed",
+            KdfParams::floor_target(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(wrap_err, SecretStoreError::PassphraseTooLong { found, max }
+                if found == MAX_PASSPHRASE_LEN + 1 && max == MAX_PASSPHRASE_LEN),
+            "got {wrap_err:?}"
+        );
+
+        // Refused before any KDF or AEAD work, so never as WrongPassword.
+        let unwrap_err = unwrap(&wid(1), "seed", Some(&over), blob.expose_secret()).unwrap_err();
+        assert!(
+            matches!(unwrap_err, SecretStoreError::PassphraseTooLong { .. }),
+            "got {unwrap_err:?}"
         );
     }
 
