@@ -279,7 +279,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Snapshot per-account xpubs and address-pool entries BEFORE
         // the wallet / managed-info are moved into insert_wallet. The
         // persister sees everything needed to rebuild the wallet
-        // watch-only (via `Wallet::new_watch_only`) plus populate
+        // external-signable (via `Wallet::new_external_signable`) plus populate
         // SwiftData's address table on next launch.
         let account_specs: Vec<(
             key_wallet::account::AccountType,
