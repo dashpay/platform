@@ -754,7 +754,10 @@ describe('analyseGatewayCertificateFactory', () => {
         detail: 'acme: error: 400 :: urn:ietf:params:acme:error:connection :: timeout',
         attemptedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
         lastSuccessAt: new Date(Date.now() - 5 * DAY_MS).toISOString(),
-        consecutiveFailures: 37,
+        // A sentinel no rendered date or time can contain: the counter-leak
+        // assertions below match it verbatim, so a coincidental "37" in a
+        // minute field can no longer fail them.
+        consecutiveFailures: 739577,
         issuanceSpentAt: null,
         issuanceUncertainAt: null,
         gatewayReloadFailedAt: null,
@@ -912,8 +915,8 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getDescription()).to.not.contain('failing since');
       expect(renewal.getSolution()).to.not.contain('failing since');
       // The counter counts scheduler wake-ups, not attempts.
-      expect(renewal.getDescription()).to.not.contain('37');
-      expect(renewal.getSolution()).to.not.contain('37');
+      expect(renewal.getDescription()).to.not.contain('739577');
+      expect(renewal.getSolution()).to.not.contain('739577');
     });
 
     it('should name the cause instead of sending an operator to the logs', () => {
