@@ -471,15 +471,16 @@ mod tests {
     /// doesn't hit `WalletStorageError::AlreadyOpen` masking the real error
     /// (issue #4133).
     ///
-    /// This is a **manager-side proxy**, not a full end-to-end proof: it asserts
-    /// the persister's strong count returns to 1 (the test's own probe) after a
-    /// failed load + teardown — a lingering adapter clone would keep it above 1
-    /// — which is the necessary precondition for a clean re-open. It does not
-    /// itself open a real `SqlitePersister`, fail, and re-open on the same path;
-    /// the platform-wallet ⇄ platform-wallet-storage dev-dependency cycle
-    /// precludes using the concrete persister here. That end-to-end
-    /// open → fail → reopen is covered by the storage crate's own round-trip
-    /// coverage test.
+    /// This is a **manager-side proxy**, not an end-to-end proof: a strong count
+    /// back at 1 (the test's own probe) after a failed load + teardown is the
+    /// necessary precondition for a clean re-open, not the re-open itself. The
+    /// concrete `SqlitePersister` lives in `platform-wallet-storage`, which
+    /// depends on this crate, so only that side can drive the composed path —
+    /// and its `sqlite_second_open_guard` covers just the other half (dropping
+    /// the last handle frees the path claim), never building a
+    /// `PlatformWalletManager`.
+    // TODO: cover the composed open -> failed load -> reopen from
+    // platform-wallet-storage; neither side asserts it today.
     // Multi-thread: dropping the manager runs upstream's `Drop`, whose
     // `ThreadRegistry::shutdown()` asserts a multi-thread runtime.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
