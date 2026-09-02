@@ -29,7 +29,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dashevo/DashJS.git"
+    "url": "https://github.com/dashpay/platform.git",
+    "directory": "packages/js-dash-sdk"
   },
   "author": "Dash Core Group <contact@dash.org>",
   "license": "MIT",

@@ -1,6 +1,11 @@
 {
   "name": "@dashevo/dpns-contract",
   "version": "4.2.0-dev.7",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashpay/platform.git",
+    "directory": "packages/dpns-contract"
+  },
   "description": "A contract and helper scripts for DPNS DApp",
   "scripts": {
     "lint": "eslint .",

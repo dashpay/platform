@@ -1,6 +1,11 @@
 {
   "name": "@dashevo/wasm-sdk",
   "version": "4.2.0-dev.7",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashpay/platform.git",
+    "directory": "packages/wasm-sdk"
+  },
   "type": "module",
   "main": "./dist/sdk.js",
   "types": "./dist/sdk.d.ts",

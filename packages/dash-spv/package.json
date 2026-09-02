@@ -1,6 +1,11 @@
 {
   "name": "@dashevo/dash-spv",
   "version": "5.2.0-dev.7",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashpay/platform.git",
+    "directory": "packages/dash-spv"
+  },
   "description": "Repository containing SPV functions used by @dashevo",
   "main": "index.js",
   "scripts": {
