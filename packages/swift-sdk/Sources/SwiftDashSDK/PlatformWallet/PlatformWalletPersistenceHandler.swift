@@ -32,6 +32,21 @@ struct LiveModelFetcher: ModelFetching {
 /// Allocated as a class so its pointer can be passed as the opaque `context`
 /// to the Rust persistence callbacks. Must be retained for the lifetime of
 /// the `PlatformWalletManager`.
+///
+/// Callback return values: `0` succeeds and any non-zero value fails. A
+/// plain non-zero failure means "do not retry". A callback that can
+/// classify its own failure may instead return
+/// `PLATFORM_WALLET_PERSIST_RC_TRANSIENT` (-2) for a retryable failure
+/// after which nothing was applied, or
+/// `PLATFORM_WALLET_PERSIST_RC_CONSTRAINT` (-3) for an integrity
+/// violation; Rust forwards the classification to its caller (as
+/// `PlatformWalletError.persisterStoreTransient` and friends) and never
+/// retries on this handler's behalf. Returning the transient sentinel from
+/// a callback inside a changeset round additionally asserts that a failed
+/// round is rolled back whole — which this handler does, via
+/// `endChangeset(success: false)`. The handlers below currently return
+/// only `0` / `1` / `-1`, so they always read as fatal; opting in is a
+/// per-callback change.
 // All mutable state (`backgroundContext`, caches) is confined to `serialQueue`
 // — the handler's de-facto actor — so it is safe to hand to a `@Sendable`
 // closure (e.g. the off-main `serialQueue.async` backfill dispatch).

@@ -217,6 +217,43 @@ class DashSdkErrorTest {
         )
     }
 
+    // TODO: not compiled or run locally — no Kotlin/Gradle toolchain in the
+    // authoring environment. CI is the first execution of this test and of
+    // the `DashSdkError.PlatformWallet.Persister*` types it covers.
+    @Test
+    fun persisterCodes49Through54MapTypedWithCorrectRetryability() {
+        // The whole point of the persister block: a host must be able to tell
+        // a busy store from a corrupt one WITHOUT parsing the message. Before
+        // these codes all three wallet variants flattened to ErrorUnknown and
+        // the classification died at the boundary.
+        val cases = listOf(
+            Triple(49, DashSdkError.PlatformWallet.PersisterLoadTransient::class.java, true),
+            Triple(50, DashSdkError.PlatformWallet.PersisterLoadFatal::class.java, false),
+            Triple(51, DashSdkError.PlatformWallet.PersisterStoreTransient::class.java, true),
+            Triple(52, DashSdkError.PlatformWallet.PersisterStoreFatal::class.java, false),
+            Triple(53, DashSdkError.PlatformWallet.PersisterStoreConstraint::class.java, false),
+            Triple(54, DashSdkError.PlatformWallet.PersisterRestore::class.java, false),
+        )
+
+        for ((code, type, retryable) in cases) {
+            val message = "persistence backend error from code $code"
+            val mapped = DashSdkError.fromNative(
+                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, message),
+            )
+
+            assertTrue(
+                "code $code must not fall through to Generic",
+                type.isInstance(mapped),
+            )
+            assertEquals(message, mapped.message)
+            assertEquals(
+                "code $code retryability is part of its contract",
+                retryable,
+                mapped.isRetryable,
+            )
+        }
+    }
+
     @Test
     fun assetLockInputConflictCode47MapsTyped() {
         // TERMINAL and RESERVED: no native path emits it today (that needs a

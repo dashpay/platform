@@ -479,6 +479,77 @@ sealed class DashSdkError(
         )
 
         /**
+         * `ErrorPersisterLoadTransient` (native code 49). Reading persisted
+         * wallet state failed on a store that reported the failure as
+         * retryable (`SQLITE_BUSY` and friends). Nothing was mutated — a
+         * load is a read — so this is retryable. The Android analog of
+         * Swift's `PlatformWalletError.persisterLoadTransient`.
+         */
+        class PersisterLoadTransient(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorPersisterLoadFatal` (native code 50). Reading persisted
+         * wallet state failed permanently — a corrupt or unreadable store,
+         * or a decode that will fail identically next time. Do NOT retry;
+         * the store needs repair or re-provisioning. Constraint-class read
+         * failures fold in here: a read cannot violate one, and neither is
+         * retryable.
+         */
+        class PersisterLoadFatal(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorPersisterStoreTransient` (native code 51). Writing wallet
+         * state failed on a busy or momentarily unavailable store.
+         *
+         * **Nothing was committed.** The native side only emits this when
+         * the persister guarantees the failed changeset round was rolled
+         * back whole, so re-issuing the operation cannot double-apply part
+         * of it — which is why this, uniquely among the store failures, is
+         * retryable. A wallet registration against a locked database
+         * produces it (dashpay/platform#4365); the retry decision is the
+         * host's, not the wallet's.
+         */
+        class PersisterStoreTransient(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorPersisterStoreFatal` (native code 52). Writing wallet state
+         * failed permanently — a full disk, a corrupt schema, an I/O error
+         * outside the retryable class. Do NOT retry; the wallet rolled its
+         * in-memory state back, so the operation may be re-attempted once
+         * the underlying fault is fixed.
+         */
+        class PersisterStoreFatal(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorPersisterStoreConstraint` (native code 53). A write violated
+         * a constraint / foreign key / integrity rule. Deliberately distinct
+         * from [PersisterStoreFatal]: this is "the data is wrong" (a caller
+         * or schema-mapping bug) rather than "the storage engine is unhappy"
+         * (an operator problem), and the two route to different people. Do
+         * NOT retry unchanged.
+         */
+        class PersisterStoreConstraint(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorPersisterRestore` (native code 54). Rehydrating persisted
+         * platform-address state into a freshly registered wallet failed.
+         * One code rather than three: it wraps a wallet error, not a store
+         * error, so it carries no retry classification. The wrapped error's
+         * rendering is in [message].
+         */
+        class PersisterRestore(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -657,6 +728,17 @@ sealed class DashSdkError(
             // the deferred-token trio sits at 34-36 above. See
             // PlatformWalletFFIResultCode for the authoritative map.)
             31 -> PlatformWallet.SigningKeyUnavailable(message, cause)
+            // Persister failures, operation x retry classification. These are
+            // exactly the "retry-semantics-bearing" codes this mapping exists
+            // for: only the two transients are retryable, and a constraint is
+            // kept apart from a fatal so hosts can route "your data is wrong"
+            // differently from "the storage engine is unhappy".
+            49 -> PlatformWallet.PersisterLoadTransient(message, cause)
+            50 -> PlatformWallet.PersisterLoadFatal(message, cause)
+            51 -> PlatformWallet.PersisterStoreTransient(message, cause)
+            52 -> PlatformWallet.PersisterStoreFatal(message, cause)
+            53 -> PlatformWallet.PersisterStoreConstraint(message, cause)
+            54 -> PlatformWallet.PersisterRestore(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

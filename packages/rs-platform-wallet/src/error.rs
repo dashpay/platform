@@ -21,6 +21,11 @@ pub enum PlatformWalletError {
     /// transient backend hiccup (e.g. `SQLITE_BUSY`) stays distinguishable
     /// from a permanent failure and can be retried.
     ///
+    /// FFI hosts receive the classification too: the boundary maps this
+    /// variant to result code 49 when the kind is `Transient` and 50
+    /// otherwise, so the distinction survives the C ABI rather than
+    /// flattening to "unknown error".
+    ///
     /// [`PersistenceError`]: crate::changeset::PersistenceError
     /// [`PersistenceErrorKind`]: crate::changeset::PersistenceErrorKind
     #[error("failed to load persisted client state: {0}")]
@@ -34,6 +39,11 @@ pub enum PlatformWalletError {
     /// Distinct from [`Self::PersisterLoad`] so callers can tell a failed
     /// registration write from a failed rehydration read; not `#[from]`
     /// because that conversion is already claimed by [`Self::PersisterLoad`].
+    ///
+    /// FFI hosts receive the classification too: the boundary maps this
+    /// variant to result code 51 (`Transient`), 53 (`Constraint`) or 52
+    /// (everything else), so a host can tell a busy store from a rejected
+    /// row from a broken one without parsing the message.
     ///
     /// [`PersistenceError`]: crate::changeset::PersistenceError
     /// [`PersistenceErrorKind`]: crate::changeset::PersistenceErrorKind
