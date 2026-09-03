@@ -8,7 +8,9 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, PersistDpnsNameStatesFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    FFIPersister, FreeTrackedMasternodesFn, LoadTrackedMasternodesFn, PersistDpnsNameStatesFn,
+    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
+    PersistWalletChangesetSweepsFn, PersistenceCallbacks, PersistenceCallbacksExtension,
     PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
@@ -185,21 +187,27 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
 /// `$extension` must point to a live extension struct of type `$ext_ty`
 /// whose `struct_size` honestly describes its allocation.
 macro_rules! negotiated_extension_slot {
-    ($extension:expr, $ext_ty:ty, $supplied_size:expr, $version_ok:expr, $field:ident) => {{
+    ($extension:expr, $ext_ty:ty, $supplied_size:expr, $version_ok:expr, $field:ident, $fn_ty:ty) => {{
         let extension: *const $ext_ty = $extension;
-        // The gate is computed from the FIELD's own width, not from a type
-        // named at the call site: a slot's size and the slot being read are
-        // then the same fact, so a mismatched second argument cannot compute
-        // `callback_end` against the wrong width — refusing a slot the host
-        // allocated, or (if the real field is wider) accepting a read past
-        // the host's allocation. It also lets a future slot hold something
-        // that is not an `Option<fn>` without the macro needing to know.
+        // Width from the TYPE, deliberately — not `size_of_val` of the
+        // field. Taking `&(*extension).$field` would form a reference into
+        // memory the host may not have allocated (a field past `struct_size`
+        // is the very case this gate exists for), and a reference to invalid
+        // memory is undefined behaviour even when it is never read.
+        //
+        // The type still cannot silently disagree with the field: the read
+        // below binds to `Option<$fn_ty>`, so a mismatched `$fn_ty` fails to
+        // COMPILE rather than sizing the gate against the wrong width —
+        // refusing a slot the host allocated, or accepting a read past its
+        // allocation. Before the gate passes nothing but `offset_of!` and
+        // `size_of` arithmetic happens; the host allocation is not touched.
         let callback_end =
-            std::mem::offset_of!($ext_ty, $field) + std::mem::size_of_val(&(*extension).$field);
+            std::mem::offset_of!($ext_ty, $field) + std::mem::size_of::<Option<$fn_ty>>();
         if !$version_ok || $supplied_size < callback_end {
             None
         } else {
-            std::ptr::addr_of!((*extension).$field).read()
+            let slot: Option<$fn_ty> = std::ptr::addr_of!((*extension).$field).read();
+            slot
         }
     }};
 }
@@ -225,24 +233,37 @@ unsafe fn persistence_extension_callbacks(
             == PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION;
 
     macro_rules! slot {
-        ($field:ident) => {
+        ($field:ident, $fn_ty:ty) => {
             negotiated_extension_slot!(
                 extension,
                 PersistenceCallbacksExtension,
                 supplied_size,
                 version_ok,
-                $field
+                $field,
+                $fn_ty
             )
         };
     }
 
     PersistenceExtensionCallbacks {
-        dpns_name_states: slot!(on_persist_dpns_name_states_fn),
-        persist_tracked_masternodes: slot!(on_persist_tracked_masternodes_fn),
-        load_tracked_masternodes: slot!(on_load_tracked_masternodes_fn),
-        load_tracked_masternodes_free: slot!(on_load_tracked_masternodes_free_fn),
-        wallet_changeset_sweeps: slot!(on_persist_wallet_changeset_sweeps_fn),
-        wallet_changeset_chain_lock_height: slot!(on_persist_wallet_changeset_chain_lock_height_fn),
+        dpns_name_states: slot!(on_persist_dpns_name_states_fn, PersistDpnsNameStatesFn),
+        persist_tracked_masternodes: slot!(
+            on_persist_tracked_masternodes_fn,
+            PersistTrackedMasternodesFn
+        ),
+        load_tracked_masternodes: slot!(on_load_tracked_masternodes_fn, LoadTrackedMasternodesFn),
+        load_tracked_masternodes_free: slot!(
+            on_load_tracked_masternodes_free_fn,
+            FreeTrackedMasternodesFn
+        ),
+        wallet_changeset_sweeps: slot!(
+            on_persist_wallet_changeset_sweeps_fn,
+            PersistWalletChangesetSweepsFn
+        ),
+        wallet_changeset_chain_lock_height: slot!(
+            on_persist_wallet_changeset_chain_lock_height_fn,
+            PersistWalletChangesetChainLockHeightFn
+        ),
     }
 }
 
@@ -260,7 +281,8 @@ unsafe fn event_extension_dpns_callback(
         EventHandlerCallbacksExtension,
         supplied_size,
         version_ok,
-        on_dpns_marketplace_sync_completed_fn
+        on_dpns_marketplace_sync_completed_fn,
+        DpnsMarketplaceSyncCompletedFn
     )
 }
 

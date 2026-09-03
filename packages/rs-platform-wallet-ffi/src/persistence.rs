@@ -25,7 +25,7 @@ use std::str::FromStr;
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    ListedCoreTxid, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    ListedCoreTxid, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
     PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
     PERSISTENCE_CAPABILITIES_VERSION,
 };
