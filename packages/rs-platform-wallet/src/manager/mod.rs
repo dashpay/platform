@@ -335,7 +335,23 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// update their lock-free balance atomics from event-handler
     /// context, without touching the SPV-contended `wallet_manager`
     /// lock.
-    pub(super) wallets: Arc<RwLock<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    ///
+    /// An [`arc_swap::ArcSwap`] rather than a lock: readers take a
+    /// wait-free snapshot that can never fail or block, which the
+    /// balance handler depends on — the event bus neither retries nor
+    /// coalesces, so a snapshot dropped during a lifecycle write would
+    /// be lost for good (see `BalanceUpdateHandler`). Writers are the
+    /// rare manager lifecycle paths (create/remove/load) and publish
+    /// via `rcu`. That closure can run more than once under a
+    /// concurrent-writer retry, and only the invocation whose
+    /// compare-and-swap succeeds is published — so captured state it
+    /// writes must be OVERWRITTEN per attempt, never accumulated across
+    /// them. `remove_wallet`'s generation verdict and the load rollback's
+    /// reclaimed-id list both rely on exactly that: each attempt recomputes
+    /// its answer from the map the closure was handed, which is the same
+    /// map the CAS compares against.
+    pub(super) wallets:
+        Arc<arc_swap::ArcSwap<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     /// Notified on InstantLock / ChainLock events for `AssetLockManager` waiters.
     pub(super) lock_notify: Arc<Notify>,
     pub(super) spv_manager: Arc<SpvRuntime>,
@@ -474,7 +490,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .take_persistence_receiver()
             .expect("persistence receiver is available exactly once on a fresh WalletManager");
         let wallet_manager = Arc::new(RwLock::new(wallet_manager_inner));
-        let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
+        let wallets = Arc::new(arc_swap::ArcSwap::from_pointee(
+            std::collections::BTreeMap::new(),
+        ));
         let lock_notify = Arc::new(Notify::new());
         // Shared registry that owns the coordinators' loop-thread join
         // handles for a clean, panic-aware shutdown join.
@@ -498,10 +516,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         // Build handler list: app handler + internal handlers.
         // BalanceUpdateHandler holds a clone of the wallets map (a
-        // separate lock from wallet_manager) so it can look up
-        // PlatformWallets and write to their lock-free balance
-        // atomics from broadcast-handler context without contending
-        // with SPV's write lock.
+        // wait-free `ArcSwap`, separate from the wallet_manager lock)
+        // so it can look up PlatformWallets and write to their
+        // lock-free balance atomics from broadcast-handler context
+        // without contending with SPV's write lock — and without any
+        // window in which a lifecycle write could make the lookup fail.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
         let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
         // SpendObservationHandler releases in-broadcast input fences when the
@@ -846,14 +865,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             ));
         };
 
-        // Snapshot Arc clones under a short read lock; never hold the
-        // `wallets` read guard across the per-wallet `.await`s below —
-        // that would block registration and invite lock-ordering
-        // issues against each wallet's `wallet_manager` lock.
-        let wallets: Vec<Arc<PlatformWallet>> = {
-            let guard = self.wallets.read().await;
-            guard.values().cloned().collect()
-        };
+        // Snapshot Arc clones from the wait-free map; clone out rather
+        // than holding the `ArcSwap` guard across the per-wallet
+        // `.await`s below.
+        let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
 
         for wallet in wallets {
             wallet.platform().reset_sync_state().await;
@@ -1137,7 +1152,11 @@ mod tests {
             Arc::new(NoopPersister) as Arc<dyn PlatformWalletPersistence>,
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
         ));
-        mgr.wallets.write().await.insert(wallet_id, wallet);
+        mgr.wallets.rcu(|wallets| {
+            let mut next = std::collections::BTreeMap::clone(wallets);
+            next.insert(wallet_id, Arc::clone(&wallet));
+            next
+        });
 
         // Fence an outpoint the way a dispatch does: pin, then settle into the
         // pending-spend phase that only an observed spend may end.
@@ -1379,5 +1398,93 @@ mod tests {
             !flag.load(std::sync::atomic::Ordering::Acquire),
             "guard must clear the slot during unwind"
         );
+    }
+
+    /// A balance snapshot delivered while a lifecycle write to the
+    /// `wallets` map is in flight must still land in the wallet's
+    /// lock-free balance atomics. The event bus neither retries nor
+    /// coalesces, so a snapshot dropped here is gone for good: the
+    /// wallet keeps displaying the superseded totals until some later
+    /// event happens to carry a fresh balance, and nothing guarantees
+    /// one arrives.
+    ///
+    /// When the map was a `tokio::sync::RwLock` and the handler used
+    /// `try_read()`, this exact delivery-under-contention scenario
+    /// dropped the snapshot (the pre-fix form of this test held
+    /// `wallets.write()` across the delivery and failed). With the map
+    /// an `ArcSwap`, the closest reachable window is a lifecycle writer
+    /// parked mid-`rcu`; the handler's `load()` must observe a committed
+    /// map and apply the balance immediately, before that writer
+    /// completes.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn balance_snapshot_survives_wallets_map_write_contention() {
+        use std::collections::BTreeMap;
+
+        use crate::test_support::test_platform_wallet_manager;
+        use crate::wallet::core::BalanceUpdateHandler;
+        use key_wallet::wallet::balance::WalletCoreBalance;
+
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("fixture wallet is registered");
+
+        // The production unit under test, holding the same map the
+        // manager registers at construction.
+        let handler = BalanceUpdateHandler::new(Arc::clone(&manager.wallets));
+
+        // Park a lifecycle writer mid-publication: its `rcu` closure has
+        // read the current map but not yet committed the replacement.
+        // This pins open the window in which the old lock-based map
+        // made `try_read()` fail and lose the event.
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let wallets_for_writer = Arc::clone(&manager.wallets);
+        let writer = std::thread::spawn(move || {
+            // `rcu` re-runs its closure if the compare-and-swap loses, so the
+            // release must be waited on ONCE: a second `recv()` would block
+            // forever on a channel the test only sends to once, and
+            // `writer.join()` below would hang the suite instead of failing
+            // it. Nothing else writes this map today, so the retry is latent
+            // — which is exactly why it must not be able to wedge the test.
+            let mut parked = false;
+            wallets_for_writer.rcu(|current| {
+                if !parked {
+                    parked = true;
+                    let _ = entered_tx.send(());
+                    let _ = release_rx.recv();
+                }
+                Arc::clone(current)
+            });
+        });
+        entered_rx
+            .recv()
+            .expect("the writer must reach its rcu closure");
+
+        // Deliver the balance-bearing event while the write is in flight.
+        let corrected = WalletCoreBalance::new(1_234, 0, 0, 0);
+        handler.on_wallet_event(&crate::events::WalletEvent::BlockProcessed {
+            wallet_id,
+            height: 1_000,
+            chain_lock: None,
+            inserted: vec![],
+            updated: vec![],
+            matured: vec![],
+            balance: corrected,
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        });
+
+        // Observable immediately — before the lifecycle writer commits.
+        assert_eq!(
+            wallet.balance().confirmed(),
+            corrected.confirmed(),
+            "the balance snapshot was dropped: a lifecycle write to the wallets map \
+             was in flight during delivery, and the bus will not re-deliver it"
+        );
+
+        release_tx.send(()).expect("writer still parked");
+        writer.join().expect("writer thread completes");
     }
 }
