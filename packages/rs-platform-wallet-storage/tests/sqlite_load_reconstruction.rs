@@ -714,7 +714,7 @@ fn tc_p4_004b_received_only_round_trip() {
 }
 
 /// an established contact round-trips into `established` with
-/// both request blobs and all four metadata columns intact.
+/// both request blobs and all five metadata columns intact.
 #[test]
 fn tc_p4_004c_established_round_trip() {
     let key = SentContactRequestKey {

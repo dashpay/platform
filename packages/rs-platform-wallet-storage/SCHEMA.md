@@ -23,9 +23,10 @@ see [SECRETS.md](./SECRETS.md).
 
 ## How integrity is kept
 
-Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active. Deleting a `wallets` row cleans that wallet's metadata along two paths:
+Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active. Deleting a `wallets` row cleans that wallet's metadata along three paths:
 
 - **`wallet_id`-scoped meta** (`meta_wallet`, `meta_contact`, `meta_platform_address`) carries a `wallet_id` column, so `cascade_meta_on_wallet_delete` brooms it directly — regardless of the lifecycle state of any typed parent and even for rows written ahead of (or without) a typed parent.
+- **metadata-version rows** (`meta_data_versions`) carry a `wallet_id` column and are cleaned directly by `cascade_meta_data_versions_on_wallet_delete`.
 - **identity-scoped meta** (`meta_identity`, `meta_token`) carries no `wallet_id` — only `identity_id` (+ `token_id`). It is cleaned by `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`), which fires for the wallet's own identities when the FK cascade removes them on a wallet delete.
 
 ### Orphan metadata and future garbage collection
@@ -37,7 +38,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Nine tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003, plus its V005–V006 `core_address_pool` columns), `invitations` (V004), `shielded_viewing_keys` (V008), `dpns_name_states` (V011), `tracked_masternodes` (V013), and the `identity_scan_states` / `identity_scan_failed_indices` pair (V015) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Nine tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003, plus its V005–V006 `core_address_pool` columns), `invitations` (V004), `shielded_viewing_keys` (V008), `dpns_name_states` (V011), `tracked_masternodes` (V013), and the `identity_scan_states` / `identity_scan_failed_indices` pair (V015) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -183,6 +184,7 @@ erDiagram
         TEXT note "established-only (NULL when pending)"
         INTEGER is_hidden "established-only (NULL when pending)"
         BLOB accepted_accounts "bincode-encoded Vec u32; established-only"
+        INTEGER payment_channel_broken "established-only; NULL = false"
         INTEGER updated_at "unixepoch() default"
     }
 ```
@@ -191,7 +193,7 @@ erDiagram
 > are NOT declared `FOREIGN KEY` columns. The relationship to `IDENTITIES` shown above is
 > logical — enforced at the application layer, not by SQLite constraints. A pending row is
 > `sent` XOR `received` and carries only the matching request blob; an `established` row sets
-> both request blobs plus the four metadata columns.
+> both request blobs plus the five metadata columns.
 
 ## Diagram 4 — Platform addresses + Asset locks (Platform L2 funding)
 
@@ -451,8 +453,11 @@ canonical "owned by no wallet" scope, matching `identities.wallet_id`;
 because SQLite's default `MATCH SIMPLE` skips FK enforcement entirely when
 any child-key column is NULL, a NULL-scoped row's FKs are both dormant —
 the `identity_keys_null_scope_requires_unowned_identity{,_on_update}`
-triggers (`migrations/V001__initial.rs`) are the only guard against a
-NULL-scoped key naming a wallet-owned identity.
+triggers (`migrations/V014__identity_keys_null_scope_requires_existing_identity.rs`)
+are the only guard against a NULL-scoped key naming a wallet-owned identity.
+
+A trigger change belongs in a new migration that drops and recreates the
+trigger; an applied migration is never edited.
 
 - PK: `(identity_id, key_id)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE` (nullable; belt-and-braces — already implied by the compound FK below).
@@ -466,10 +471,13 @@ All DashPay contact relationships in one table, keyed by lifecycle
 counterparty. A pending relationship is `sent` (we sent the request) XOR
 `received` (we received it) and carries only the matching request blob; an
 `established` relationship carries both `outgoing_request` and
-`incoming_request` plus the four metadata columns (`alias`, `note`,
-`is_hidden`, `accepted_accounts`, NULL while pending). The request columns
-hold a bincode-encoded `ContactRequest`; `accepted_accounts` holds a
-bincode-encoded `Vec<u32>`.
+`incoming_request` plus the five metadata columns (`alias`, `note`,
+`is_hidden`, `accepted_accounts`, `payment_channel_broken`; NULL while
+pending). The request columns hold a bincode-encoded `ContactRequest`;
+`accepted_accounts` holds a bincode-encoded `Vec<u32>`.
+`payment_channel_broken` is nullable and read as false when NULL; it is set
+when external-account registration permanently fails for a contact and
+cleared on a superseding rotation.
 
 - PK: `(wallet_id, owner_id, contact_id)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -528,9 +536,11 @@ lock is never resurrected as actionable.
 
 ### `token_balances`
 
-Per-identity token balance cache, keyed by `(identity_id, token_id)`.
+Per-identity token-balance rows, keyed by `(identity_id, token_id)`.
 Cascade flows `wallets → identities → token_balances` through the
 nullable `identities.wallet_id` link; no direct `wallet_id` column exists.
+`apply` writes these rows, but `load()` does not return them today;
+`IdentitySyncManager` rebuilds the canonical token-balance copy from Platform.
 
 - PK: `(identity_id, token_id)`.
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
@@ -539,6 +549,8 @@ nullable `identities.wallet_id` link; no direct `wallet_id` column exists.
 
 At most one DashPay profile blob per identity. `None` profile maps to a
 DELETE rather than a NULL blob — the row is absent, not nulled.
+`apply` writes these rows, but `load()` does not return them today;
+`IdentitySyncManager` rebuilds the canonical token-balance copy from Platform.
 
 - PK: `identity_id` (single-row-per-identity).
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
@@ -548,6 +560,8 @@ DELETE rather than a NULL blob — the row is absent, not nulled.
 Payment overlay entries for DashPay, keyed by transaction-level
 `payment_id` string. Cascade flows through `identities` as with
 `token_balances`.
+`apply` writes these rows, but `load()` does not return them today;
+`IdentitySyncManager` rebuilds the canonical token-balance copy from Platform.
 
 - PK: `(identity_id, payment_id)`.
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
@@ -711,6 +725,7 @@ having to grep this repo.
 | Trigger | Fires | Action |
 |---|---|---|
 | `cascade_meta_on_wallet_delete` | AFTER DELETE ON `wallets` | delete `meta_wallet`, `meta_contact`, `meta_platform_address` rows by `wallet_id` |
+| `cascade_meta_data_versions_on_wallet_delete` | AFTER DELETE ON `wallets` | delete `meta_data_versions` rows by `wallet_id` |
 | `cascade_meta_on_identity_delete` | AFTER DELETE ON `identities` | delete `meta_identity`, `meta_token` rows by `identity_id` |
 | `cascade_meta_token_on_token_balance_delete` | AFTER DELETE ON `token_balances` | delete matching `meta_token` rows (direct balance delete) |
 | `cascade_meta_contact_on_contact_delete` | AFTER DELETE ON `contacts` | delete matching `meta_contact` rows (any state; direct contact delete) |

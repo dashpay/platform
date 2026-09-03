@@ -149,7 +149,6 @@ to be explicit about the backend.
 flush, 5 s busy timeout, WAL journal, `NORMAL` synchronous, and an
 auto-backup dir at `<db_dir>/backups/auto/`.
 
-The trait surface is `store` / `flush` / `load` / `get_core_tx_record`.
 Schema migrations are versioned Rust files under `migrations/`, applied via
 [`refinery`](https://github.com/rust-db/refinery) on every `open`. The current
 migration set is still unreleased, so every migration may be edited in place

@@ -99,7 +99,7 @@ pub struct ContactsRecords {
 /// precedence — a pending upsert (`sent` / `received`) never downgrades
 /// an already-`established` row, and an `established` upsert collapses
 /// any prior pending row for the same pair (both request blobs + the
-/// four metadata columns are set, `state = 'established'`).
+/// five metadata columns are set, `state = 'established'`).
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -204,7 +204,7 @@ pub fn apply(
     }
     if !cs.established.is_empty() {
         // Establishment collapses any prior pending row for the pair: set
-        // both request blobs + the four metadata columns and force the
+        // both request blobs + the five metadata columns and force the
         // `established` state.
         let established_label = contact_state_db_label(ContactState::Established);
         let mut stmt = tx.prepare_cached(
