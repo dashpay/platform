@@ -13,6 +13,7 @@ use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_collection::ManagedAccountCollection;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
@@ -365,17 +366,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Missing sources are skipped, as in a pooled build: a wallet without a
     /// BIP32 account or without DashPay contacts still has a spendable balance.
     ///
-    /// **Gross, not net of fee.** This is the sum a build may draw on; a build
-    /// needs `amount + fee`, so a host offering this verbatim as a max amount
-    /// moves the shortfall from the CoinJoin edge to the max-amount edge rather
-    /// than removing it. Hosts must keep reserving fee headroom, as they did
-    /// against the wallet-wide figure this replaces — the fee is unchanged by
-    /// this call, only the account set is.
-    ///
-    /// Subtracting it here would mean re-declaring key-wallet's per-input and
-    /// per-output sizes in this crate, which is the same duplication the call
-    /// exists to remove. The estimate belongs beside `MAX_STANDARD_TX_INPUTS`
-    /// and `FeeRate`, in key-wallet.
+    /// **Gross, not net of fee** — the sum a build may draw on, which is what an
+    /// "available balance" line should show. A build needs `amount + fee`, so
+    /// this is NOT the number to put behind a max/"send all" control: use
+    /// [`Self::pooled_max_sendable`], which prices the fee off the inputs that
+    /// spending it all would take.
     ///
     /// Reservations are NOT subtracted: key-wallet keeps each account's
     /// `ReservationSet` private, so reading it needs an accessor there and a pin
@@ -418,6 +413,84 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 .sum::<u64>();
         }
         Ok(total)
+    }
+
+    /// The largest amount a pooled build could actually pay out, net of the fee
+    /// that spending it costs — the figure a "send max" control must use.
+    ///
+    /// [`Self::pooled_spendable_balance`] is the gross sum a build may draw on.
+    /// Entering that verbatim as an amount fails: coin selection clears its
+    /// `total_available >= amount` check and then cannot cover `amount + fee`,
+    /// so the shortfall this API exists to remove simply moves from the CoinJoin
+    /// edge to the max-amount edge. The fee is not a rounding concern here —
+    /// with `use_only_added_inputs` draining accounts hundreds of UTXOs at a
+    /// time, the input count, and so the fee, runs far above dust.
+    ///
+    /// Computed the way "spend everything" actually builds: one output, no
+    /// change, sizes from key-wallet's own [`estimate_tx_size`] and
+    /// [`FeeRate`] rather than sizes re-declared here. A UTXO whose value does
+    /// not cover the fee its own input adds is left out — including it would
+    /// lower the answer — so this is a true maximum, not a subtraction from the
+    /// gross figure.
+    ///
+    /// `fee_rate` defaults to [`FeeRate::normal()`], which is what
+    /// `TransactionBuilder::new` starts from; pass the host's rate if it sets
+    /// one, or the answer will not match the build.
+    ///
+    /// Two limits are deliberately NOT modelled, both of which can only make the
+    /// real ceiling lower: reservations held by another in-flight build (see
+    /// [`Self::pooled_spendable_balance`]), and the standard-transaction input
+    /// cap, which key-wallet keeps private and which a pool above it must reach
+    /// through batched sends rather than a larger amount.
+    pub async fn pooled_max_sendable(
+        &self,
+        sources: &[AccountTypePreference],
+        source_index: u32,
+        fee_rate: Option<FeeRate>,
+    ) -> Result<u64, PlatformWalletError> {
+        let fee_rate = fee_rate.unwrap_or_else(FeeRate::normal);
+        // Per-input and per-output costs derived from key-wallet's estimator by
+        // difference, so this crate never re-declares a size that could drift
+        // from the one the build charges.
+        let empty = estimate_tx_size(0, 1, false);
+        let per_input = estimate_tx_size(1, 1, false).saturating_sub(empty);
+
+        let manager = self.wallet_manager.read().await;
+        let (wallet, info) = manager
+            .get_wallet_and_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
+        let height = info.core_wallet.last_processed_height();
+
+        let resolved = resolved_funding_accounts(
+            &info.core_wallet.accounts,
+            wallet,
+            sources,
+            source_index,
+            sources.len() == 1,
+        )?;
+
+        // A UTXO earns its place only if it brings in more than its own input
+        // costs at this rate; the rest are dead weight and are dropped.
+        let input_cost = fee_rate.calculate_fee(per_input);
+        let mut selected: u64 = 0;
+        let mut count: usize = 0;
+        for at in resolved {
+            let Some(managed) = info.core_wallet.accounts.funds_account(&at) else {
+                continue;
+            };
+            for utxo in managed.spendable_utxos(height) {
+                if utxo.value() > input_cost {
+                    selected += utxo.value();
+                    count += 1;
+                }
+            }
+        }
+        if count == 0 {
+            return Ok(0);
+        }
+
+        let fee = fee_rate.calculate_fee(estimate_tx_size(count, 1, false));
+        Ok(selected.saturating_sub(fee))
     }
 
     /// Consume a configured builder, atomically fund and reserve its selected
@@ -1070,6 +1143,121 @@ mod tests {
         assert!(
             matches!(missed, Err(PlatformWalletError::WalletNotFound(_))),
             "a single-source miss must error as it does in finalize, got {missed:?}"
+        );
+    }
+
+    /// The fee question, settled by building rather than by arithmetic: the
+    /// gross figure is NOT an amount a build accepts, and the net one is.
+    ///
+    /// This is the failure review described — a host wiring "send max" to the
+    /// gross balance and passing it through verbatim relocates the shortfall
+    /// from the CoinJoin edge to the max-amount edge. Asserting only that
+    /// `max < gross` would not catch an estimate that is merely close; running
+    /// both numbers through `finalize_transaction` does.
+    #[tokio::test]
+    async fn pooled_max_sendable_is_an_amount_a_build_accepts() {
+        let (manager, wallet_id, generation, signer) =
+            funded_wallet_manager_dual_standard(&[700_000], &[700_000]).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        let gross = core
+            .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+            .await
+            .expect("gross balance");
+        let max = core
+            .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+            .await
+            .expect("max sendable");
+        assert!(
+            max < gross,
+            "the fee has to come off somewhere: gross {gross}, max {max}"
+        );
+
+        let spend = |amount: u64, tag: u8| {
+            TransactionBuilder::new().add_output(
+                &DashAddress::dummy(Network::Testnet, usize::from(tag)),
+                amount,
+            )
+        };
+
+        // The gross figure is unbuildable — the whole of review's point.
+        let over = core
+            .finalize_transaction(spend(gross, 70), &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .await;
+        assert!(
+            over.is_err(),
+            "the gross balance must not be offerable as an amount, got {over:?}"
+        );
+
+        // The net figure builds, and takes every UTXO with it.
+        let finalized = core
+            .finalize_transaction(spend(max, 71), &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .await
+            .expect("max sendable must be an amount a build accepts");
+        assert_eq!(
+            finalized.transaction().input.len(),
+            2,
+            "spending the maximum must draw on both funded accounts"
+        );
+        core.abandon_transaction(&finalized).await;
+    }
+
+    /// A UTXO that does not cover the fee its own input adds must be left out:
+    /// including it would LOWER the answer, so the maximum is a selection
+    /// problem, not a subtraction from the gross figure. Without this the doc's
+    /// "true maximum" claim is untested.
+    #[tokio::test]
+    async fn pooled_max_sendable_drops_utxos_that_cost_more_than_they_bring() {
+        let sdk = || Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+
+        let (manager, wallet_id, generation, _signer) =
+            funded_wallet_manager_dual_standard(&[700_000], &[700_000]).await;
+        let plain = CoreWallet::new(
+            sdk(),
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+        let baseline = plain
+            .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+            .await
+            .expect("max sendable");
+
+        // The same wallet plus one UTXO worth far less than the ~296 duffs its
+        // input costs at the default rate.
+        let (manager, wallet_id, generation, _signer) =
+            funded_wallet_manager_dual_standard(&[700_000, 100], &[700_000]).await;
+        let with_dust = CoreWallet::new(
+            sdk(),
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        assert_eq!(
+            with_dust
+                .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .await
+                .expect("gross balance"),
+            1_400_100,
+            "the gross figure counts every spendable UTXO, dust included"
+        );
+        assert_eq!(
+            with_dust
+                .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+                .await
+                .expect("max sendable"),
+            baseline,
+            "a UTXO that cannot pay for its own input must not move the maximum"
         );
     }
 
