@@ -351,6 +351,20 @@ pub(crate) fn resolve_source_accounts(
         .collect()
 }
 
+/// The most inputs one standard transaction may carry. key-wallet enforces this
+/// (`BuilderError::TooManyInputs`) but keeps its constant private, so the value
+/// is mirrored here rather than imported.
+///
+/// A mirrored constant is exactly the hand-copy that drifts, so the direction
+/// that matters is pinned by behaviour rather than by trust:
+/// `pooled_max_sendable_respects_the_input_cap` builds a transaction filled to
+/// this number, so a value ABOVE key-wallet's real limit turns red — that is
+/// the direction that breaks the promise, since it names an amount no build can
+/// reach. A value below it cannot be caught the same way (a test written in
+/// terms of the mirror moves with it) and is merely conservative: the maximum
+/// is under-reported and the last UTXOs stay unreachable in one send.
+const MAX_STANDARD_TX_INPUTS: usize = 500;
+
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// The balance a pooled build could actually select from — the same
     /// accounts [`Self::finalize_transaction`] funds from, counting only UTXOs
@@ -437,11 +451,14 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// `TransactionBuilder::new` starts from; pass the host's rate if it sets
     /// one, or the answer will not match the build.
     ///
-    /// Two limits are deliberately NOT modelled, both of which can only make the
-    /// real ceiling lower: reservations held by another in-flight build (see
-    /// [`Self::pooled_spendable_balance`]), and the standard-transaction input
-    /// cap, which key-wallet keeps private and which a pool above it must reach
-    /// through batched sends rather than a larger amount.
+    /// A pool holding more than [`MAX_STANDARD_TX_INPUTS`] eligible UTXOs is
+    /// capped at its largest that many: one transaction cannot carry the rest,
+    /// so offering their value would name an amount no build could reach. Money
+    /// beyond the cap is not lost, only unreachable in a single send.
+    ///
+    /// One limit is still NOT modelled, and it can only make the real ceiling
+    /// lower, never higher: reservations held by another in-flight build (see
+    /// [`Self::pooled_spendable_balance`]).
     pub async fn pooled_max_sendable(
         &self,
         sources: &[AccountTypePreference],
@@ -472,24 +489,33 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // A UTXO earns its place only if it brings in more than its own input
         // costs at this rate; the rest are dead weight and are dropped.
         let input_cost = fee_rate.calculate_fee(per_input);
-        let mut selected: u64 = 0;
-        let mut count: usize = 0;
+        let mut values: Vec<u64> = Vec::new();
         for at in resolved {
             let Some(managed) = info.core_wallet.accounts.funds_account(&at) else {
                 continue;
             };
-            for utxo in managed.spendable_utxos(height) {
-                if utxo.value() > input_cost {
-                    selected += utxo.value();
-                    count += 1;
-                }
-            }
+            values.extend(
+                managed
+                    .spendable_utxos(height)
+                    .iter()
+                    .map(|utxo| utxo.value())
+                    .filter(|value| *value > input_cost),
+            );
         }
-        if count == 0 {
+        if values.is_empty() {
             return Ok(0);
         }
 
-        let fee = fee_rate.calculate_fee(estimate_tx_size(count, 1, false));
+        // One transaction cannot carry more inputs than the relay cap, so a pool
+        // above it can only offer its largest `MAX_STANDARD_TX_INPUTS` — asking
+        // for more would need a build key-wallet refuses outright.
+        if values.len() > MAX_STANDARD_TX_INPUTS {
+            values.sort_unstable_by(|a, b| b.cmp(a));
+            values.truncate(MAX_STANDARD_TX_INPUTS);
+        }
+
+        let selected: u64 = values.iter().sum();
+        let fee = fee_rate.calculate_fee(estimate_tx_size(values.len(), 1, false));
         Ok(selected.saturating_sub(fee))
     }
 
@@ -923,6 +949,7 @@ mod tests {
         funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
         AlwaysRejectedBroadcaster, WalletSigner,
     };
+    use crate::wallet::core::transaction::MAX_STANDARD_TX_INPUTS;
     use crate::wallet::core::CoreWallet;
     use crate::PlatformWalletError;
 
@@ -1259,6 +1286,94 @@ mod tests {
             baseline,
             "a UTXO that cannot pay for its own input must not move the maximum"
         );
+    }
+
+    /// The input cap, and the value of `MAX_STANDARD_TX_INPUTS` itself.
+    ///
+    /// A wallet holding one UTXO more than a transaction can carry cannot spend
+    /// everything in one send, so a maximum computed from every eligible UTXO
+    /// names an amount no build could reach. Both halves are asserted by
+    /// building: the uncapped figure fails, the capped one succeeds with exactly
+    /// the cap's worth of inputs.
+    ///
+    /// This is also what pins the mirrored constant, in the direction that can
+    /// break the API's promise: the build filled to the cap only succeeds if
+    /// key-wallet's private limit is at least the mirrored value, so raising the
+    /// mirror above key-wallet's reds this test (verified with 600). Lowering it
+    /// does not, and cannot — every assertion here is written in terms of the
+    /// mirror and moves with it — but under-reporting is safe, only stingy.
+    #[tokio::test]
+    async fn pooled_max_sendable_respects_the_input_cap() {
+        // One more than a standard transaction can carry, each well above the
+        // ~296-duff cost of its own input so none is dropped as unprofitable.
+        let outputs = vec![10_000u64; MAX_STANDARD_TX_INPUTS + 1];
+        let (manager, wallet_id, generation, signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &outputs,
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        let sources = &[AccountTypePreference::BIP44][..];
+        let gross = core
+            .pooled_spendable_balance(sources, 0)
+            .await
+            .expect("gross balance");
+        assert_eq!(
+            gross,
+            10_000 * (MAX_STANDARD_TX_INPUTS as u64 + 1),
+            "the gross figure counts every UTXO, cap or no cap"
+        );
+
+        let max = core
+            .pooled_max_sendable(sources, 0, None)
+            .await
+            .expect("max sendable");
+
+        // The capped total, minus the fee for a transaction that full.
+        let capped_value = 10_000 * MAX_STANDARD_TX_INPUTS as u64;
+        assert!(
+            max < capped_value,
+            "the fee for {MAX_STANDARD_TX_INPUTS} inputs has to come off: max {max}"
+        );
+
+        let spend = |amount: u64, tag: u8| {
+            TransactionBuilder::new().add_output(
+                &DashAddress::dummy(Network::Testnet, usize::from(tag)),
+                amount,
+            )
+        };
+
+        // Anything needing the UTXO beyond the cap is unbuildable — this is the
+        // amount an uncapped maximum would have offered.
+        let over = core
+            .finalize_transaction(spend(capped_value + 1, 80), sources, 0, &signer)
+            .await;
+        assert!(
+            over.is_err(),
+            "an amount requiring more than the cap must not build, got {over:?}"
+        );
+
+        // The reported maximum builds, and fills the transaction exactly to the
+        // cap — which is only true if the mirrored constant matches key-wallet's.
+        let finalized = core
+            .finalize_transaction(spend(max, 81), sources, 0, &signer)
+            .await
+            .expect("the capped maximum must be an amount a build accepts");
+        assert_eq!(
+            finalized.transaction().input.len(),
+            MAX_STANDARD_TX_INPUTS,
+            "spending the capped maximum must fill the transaction to the cap"
+        );
+        core.abandon_transaction(&finalized).await;
     }
 
     /// The DashPay leg, and the exclusion the ticket turned on: contact funds
