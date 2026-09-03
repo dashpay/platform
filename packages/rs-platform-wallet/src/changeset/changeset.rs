@@ -1997,8 +1997,8 @@ pub struct PlatformWalletChangeSet {
     /// Present in every feature combination — downstream crates cannot
     /// `cfg` on this crate's features, so a conditional field breaks their
     /// exhaustive destructures under Cargo feature unification. Without
-    /// `shielded` the payload is an inert stand-in that stays empty and is
-    /// left out of the serde surface, so nothing observable changes.
+    /// `shielded` the payload is an inert stand-in that stays empty; omitting
+    /// it from serde preserves the feature-off wire shape.
     #[cfg_attr(all(feature = "serde", not(feature = "shielded")), serde(skip))]
     pub shielded: Option<crate::changeset::ShieldedChangeSet>,
 }
@@ -2281,6 +2281,18 @@ mod tests {
 
         cs.merge(PlatformWalletChangeSet::default());
         assert!(cs.is_empty());
+    }
+
+    #[cfg(all(feature = "serde", not(feature = "shielded")))]
+    #[test]
+    fn feature_off_serde_omits_inert_shielded_slot() {
+        let value =
+            serde_json::to_value(PlatformWalletChangeSet::default()).expect("changeset serializes");
+
+        assert!(!value
+            .as_object()
+            .expect("changeset serializes as an object")
+            .contains_key("shielded"));
     }
 
     /// Asset-lock merge is last-write-wins EXCEPT for the Consumed
