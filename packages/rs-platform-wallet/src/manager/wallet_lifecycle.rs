@@ -602,6 +602,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // into the atomic here (as `manager::load` does for restored
         // wallets); any later block events are applied normally now that
         // the wallet is mapped.
+        //
+        // Last writer wins between this seed and the handler: if SPV
+        // processes another block between the read below and the `set`, the
+        // atomic briefly goes back to the older totals. The next
+        // balance-bearing event corrects it, and during the rescan this
+        // exists for those arrive continuously.
         {
             let wm = self.wallet_manager.read().await;
             if let Some(info) = wm.get_wallet_info(&wallet_id) {

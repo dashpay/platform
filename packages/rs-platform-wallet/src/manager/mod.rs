@@ -339,8 +339,14 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// coalesces, so a snapshot dropped during a lifecycle write would
     /// be lost for good (see `BalanceUpdateHandler`). Writers are the
     /// rare manager lifecycle paths (create/remove/load) and publish
-    /// via `rcu`, whose closure must stay pure map manipulation — it
-    /// can run more than once under a concurrent-writer retry.
+    /// via `rcu`. That closure can run more than once under a
+    /// concurrent-writer retry, and only the invocation whose
+    /// compare-and-swap succeeds is published — so captured state it
+    /// writes must be OVERWRITTEN per attempt, never accumulated across
+    /// them. `remove_wallet`'s generation verdict and the load rollback's
+    /// reclaimed-id list both rely on exactly that: each attempt recomputes
+    /// its answer from the map the closure was handed, which is the same
+    /// map the CAS compares against.
     pub(super) wallets:
         Arc<arc_swap::ArcSwap<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     /// Notified on InstantLock / ChainLock events for `AssetLockManager` waiters.
@@ -1411,9 +1417,19 @@ mod tests {
         let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
         let wallets_for_writer = Arc::clone(&manager.wallets);
         let writer = std::thread::spawn(move || {
+            // `rcu` re-runs its closure if the compare-and-swap loses, so the
+            // release must be waited on ONCE: a second `recv()` would block
+            // forever on a channel the test only sends to once, and
+            // `writer.join()` below would hang the suite instead of failing
+            // it. Nothing else writes this map today, so the retry is latent
+            // — which is exactly why it must not be able to wedge the test.
+            let mut parked = false;
             wallets_for_writer.rcu(|current| {
-                let _ = entered_tx.send(());
-                let _ = release_rx.recv();
+                if !parked {
+                    parked = true;
+                    let _ = entered_tx.send(());
+                    let _ = release_rx.recv();
+                }
                 Arc::clone(current)
             });
         });

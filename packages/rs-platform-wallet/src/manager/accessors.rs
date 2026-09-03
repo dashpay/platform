@@ -373,9 +373,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Get a clone of a wallet by its ID.
+    ///
+    /// The lookup is wait-free since the map became an `ArcSwap`, so this
+    /// suspends at no point; it delegates to the synchronous twin and keeps
+    /// its `async` signature for source compatibility with existing callers.
     pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
-        let wallets = self.wallets.load();
-        wallets.get(wallet_id).cloned()
+        self.get_wallet_blocking(wallet_id)
     }
 
     /// Synchronous twin of [`Self::get_wallet`] for FFI entry points that
@@ -390,9 +393,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// List all wallet IDs.
+    ///
+    /// Wait-free like [`Self::get_wallet`]; delegates to the synchronous
+    /// twin and keeps its `async` signature for source compatibility.
     pub async fn wallet_ids(&self) -> Vec<WalletId> {
-        let wallets = self.wallets.load();
-        wallets.keys().copied().collect()
+        self.list_wallet_ids_blocking()
     }
 
     /// Read per-account balance + key-usage snapshots for a wallet.

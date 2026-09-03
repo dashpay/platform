@@ -1195,9 +1195,19 @@ mod tests {
         let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
         let map_for_writer = Arc::clone(&map);
         let writer = std::thread::spawn(move || {
+            // `rcu` re-runs its closure if the compare-and-swap loses, so the
+            // release must be waited on ONCE: a second `recv()` would block
+            // forever on a channel the test only sends to once, and
+            // `writer.join()` below would hang the suite instead of failing
+            // it. Nothing else writes this map today, so the retry is latent
+            // — which is exactly why it must not be able to wedge the test.
+            let mut parked = false;
             map_for_writer.rcu(|current| {
-                let _ = entered_tx.send(());
-                let _ = release_rx.recv();
+                if !parked {
+                    parked = true;
+                    let _ = entered_tx.send(());
+                    let _ = release_rx.recv();
+                }
                 Arc::clone(current)
             });
         });

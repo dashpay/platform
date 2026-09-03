@@ -69,11 +69,15 @@ impl EventHandler for BalanceUpdateHandler {
             WalletEvent::ChainLockProcessed { .. } => return,
         };
 
-        // Wait-free snapshot of the wallets map; cannot fail or block,
-        // so no balance-bearing event is ever dropped here. A wallet
-        // not in the snapshot is one registered concurrently with this
-        // event — its creation path re-seeds the balance atomics from
-        // the inner wallet after publishing it, covering that window.
+        // Wait-free snapshot of the wallets map; cannot fail or block, so
+        // a lifecycle write can no longer cost a snapshot. A wallet absent
+        // from the snapshot is one still inside its creation window: it is
+        // registered in the inner manager (and therefore SPV-visible)
+        // several `.await`s before it is published here. Both creation
+        // paths close that window by re-seeding the atomics from the inner
+        // wallet immediately after publishing — `register_wallet` and
+        // `load_from_persistor` alike — so the window costs a snapshot, not
+        // the balance.
         let wallets = self.wallets.load();
         if let Some(pw) = wallets.get(wallet_id) {
             pw.balance().set(

@@ -217,6 +217,38 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 wallets
             });
             inserted_in_wallets.push((wallet_id, Arc::clone(platform_wallet.generation())));
+
+            // Re-seed the balance atomic now that the wallet is published.
+            //
+            // The seed above ran before `insert_wallet`, and the wallet
+            // becomes SPV-visible the moment that insert lands — several
+            // `.await`s before the `rcu` above. Any `BlockProcessed` for it
+            // in that window finds the wallet absent from the map and its
+            // snapshot is dropped, leaving the atomic at the persisted total
+            // while the inner `ManagedWalletInfo` balance has moved on.
+            // `register_wallet` closes the same window this way; without it
+            // here, a restored wallet whose catch-up completes inside the
+            // window keeps a stale total on screen with no later event
+            // guaranteed to correct it.
+            //
+            // Last writer wins between this seed and the handler: if SPV
+            // processes another block between the read below and the `set`,
+            // the atomic briefly goes back to the older totals. The next
+            // balance-bearing event corrects it, and during catch-up those
+            // arrive continuously — which is why the seed is worth more than
+            // the window it can briefly re-open.
+            {
+                let wm = self.wallet_manager.read().await;
+                if let Some(info) = wm.get_wallet_info(&wallet_id) {
+                    let b = &info.core_wallet.balance;
+                    platform_wallet.balance().set(
+                        b.confirmed(),
+                        b.unconfirmed(),
+                        b.immature(),
+                        b.locked(),
+                    );
+                }
+            }
         }
 
         if let Some(err) = load_error {
@@ -244,6 +276,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 });
             }
             let rolled_back = rolled_back.into_inner();
+            // Wait-free, purely for the diagnostics below: an id still in the
+            // map after the rollback is one a same-id re-registration owns.
+            let still_mapped = self.wallets.load();
             if !inserted_in_manager.is_empty() {
                 let mut wm = self.wallet_manager.write().await;
                 for id in &inserted_in_manager {
@@ -255,11 +290,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     // as before.
                     let published = inserted_in_wallets.iter().any(|(w, _)| w == id);
                     if published && !rolled_back.contains(id) {
-                        tracing::warn!(
-                            wallet_id = %hex::encode(id),
-                            "rollback after load failure: a new generation was registered under \
-                             this id, leaving the new registration in place"
-                        );
+                        // Two distinct states reach here, and saying the wrong
+                        // one sends whoever reads this after a
+                        // wallet-disappeared report chasing the wrong
+                        // generation: either something else already removed
+                        // the entry (a completed concurrent `remove_wallet`),
+                        // or a same-id re-registration published a generation
+                        // that is not ours. Only the second leaves anything in
+                        // place.
+                        if still_mapped.contains_key(id) {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(id),
+                                "rollback after load failure: a new generation was registered \
+                                 under this id, leaving the new registration in place"
+                            );
+                        } else {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(id),
+                                "rollback after load failure: this id was already removed by \
+                                 something else; nothing left to roll back"
+                            );
+                        }
                         continue;
                     }
                     if let Err(e) = wm.remove_wallet(id) {
@@ -360,6 +411,47 @@ mod idempotent_load_tests {
                     unused_asset_locks: BTreeMap::new(),
                 },
             );
+            Ok(ClientStartState {
+                wallets,
+                ..Default::default()
+            })
+        }
+    }
+
+    /// Two entries: the real wallet under its true id, and the same wallet
+    /// under a key that cannot be the id it recomputes to. The second entry
+    /// sorts last, so the loader publishes the first and then fails the
+    /// id-match check — the only way to drive the rollback without racing a
+    /// real failure.
+    struct MismatchedSecondWalletPersister {
+        wallet: Wallet,
+        managed: ManagedWalletInfo,
+    }
+
+    impl PlatformWalletPersistence for MismatchedSecondWalletPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let entry = || ClientWalletStartState {
+                wallet: self.wallet.clone(),
+                wallet_info: self.managed.clone(),
+                identity_manager: IdentityManagerStartState::default(),
+                unused_asset_locks: BTreeMap::new(),
+            };
+            let mut wallets = BTreeMap::new();
+            wallets.insert(self.wallet.compute_wallet_id(), entry());
+            // Sorts after any real id, so it is processed second.
+            wallets.insert([0xFF; 32], entry());
             Ok(ClientStartState {
                 wallets,
                 ..Default::default()
@@ -475,6 +567,51 @@ mod idempotent_load_tests {
         assert!(
             rollback_targets(&[(expected_id, superseding)], &published).is_empty(),
             "a generation this load never published must survive its rollback"
+        );
+    }
+
+    /// Drives the rollback itself, not just the predicate it consults.
+    ///
+    /// `rollback_only_reclaims_the_generation_this_load_published` covers
+    /// `rollback_targets` in isolation; this one fails a load AFTER a wallet
+    /// has been published, so the `rcu` closure, the per-attempt verdict
+    /// hand-off, and the branch that decides whether the inner manager entry
+    /// is removed all execute. Inverting that decision leaves the sibling
+    /// test green while stripping a live wallet of its backing, so the two
+    /// are not redundant.
+    #[tokio::test]
+    async fn a_failed_load_rolls_back_the_wallet_it_had_already_published() {
+        let ctx = TestWalletContext::new_random();
+        let expected_id = ctx.wallet.compute_wallet_id();
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(MismatchedSecondWalletPersister {
+                wallet: ctx.wallet,
+                managed: ctx.managed_wallet,
+            }),
+            event_handler,
+        ));
+
+        let result = manager.load_from_persistor().await;
+        assert!(
+            result.is_err(),
+            "the id-mismatched second entry must fail the load"
+        );
+
+        assert!(
+            manager.get_wallet(&expected_id).await.is_none(),
+            "the wallet published before the failure must be rolled back out of the map"
+        );
+        assert!(
+            manager
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet(&expected_id)
+                .is_none(),
+            "and out of the inner manager, so a retry can re-insert it"
         );
     }
 }
