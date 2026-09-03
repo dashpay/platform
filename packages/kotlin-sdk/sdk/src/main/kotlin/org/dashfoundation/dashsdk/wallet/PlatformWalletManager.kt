@@ -61,6 +61,30 @@ data class PlatformWalletPersistenceCapabilities(
         const val WALLET_RESTORE: Long = 1L shl 7
         const val DPNS_NAME_STATES: Long = 1L shl 8
         const val TRACKED_ASSET_LOCKS: Long = 1L shl 9
+        /**
+         * Tracked (wallet-independent) masternodes are persisted and
+         * restored across restarts. Mirrors
+         * `PersistenceCapabilities::TRACKED_MASTERNODES`. Android does not
+         * wire the trio and never attests this bit; the constant exists so
+         * the diagnostic mirror stays bit-for-bit with Rust.
+         */
+        const val TRACKED_MASTERNODES: Long = 1L shl 10
+        /**
+         * A stored core changeset's non-empty sweeps are durably applied
+         * batch by batch and in order: each swept transaction and its
+         * outputs are excluded from every restore and enumeration path
+         * (physical deletion or a durable marker alike — an inert
+         * globally-swept row may remain until every wallet's scoped
+         * cleanup lands), each released outpoint is freed unless a later
+         * surviving claim supersedes that release, and each non-released
+         * input RETAINS a durable spend claim even when its funding TXO
+         * has not materialized yet — a detached claim must outlive its
+         * loser, or a post-restart funding delivery credits a coin the
+         * network already consumed. Physical row deletion is an
+         * implementation detail, not the contract. Mirrors
+         * `PersistenceCapabilities::CORE_SWEEP_REMOVAL`.
+         */
+        const val CORE_SWEEP_REMOVAL: Long = 1L shl 11
     }
 }
 

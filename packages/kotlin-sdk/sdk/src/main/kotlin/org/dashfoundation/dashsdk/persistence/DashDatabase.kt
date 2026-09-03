@@ -119,9 +119,45 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * document id, ownership/sale state, counterparty, document timestamps and
  * marketplace reconciliation watermark. Defaults keep every legacy label an
  * owned, unlisted row until the first native marketplace sync refreshes it.
+ *
+ * Version 11 (sweep claim durability): adds `txos.supersededByTxid` and
+ * `pending_inputs.isSweptTombstone`. A sweep's winner can beat a loser to an
+ * input whose funding TXO hasn't landed here yet, and until now the only
+ * record of that claim was the loser's own `pending_inputs` row, which
+ * cascades away with the loser it names — leaving the funding TXO's later
+ * arrival free to re-insert the outpoint as an ordinary unspent UTXO. Both
+ * columns are additive with defaults, so every pre-migration row reads back
+ * as an ordinary (non-tombstone, non-superseded) entry.
+ *
+ * Version 12 (sweep deletion durability): adds `transactions.isGloballySwept`.
+ * `commit_batch` calls `store()` once per wallet and each commits
+ * independently, so a shared loser row could be held back for as long as a
+ * second wallet's own claim on it was outstanding — which, before this
+ * column existed, meant the row AND the outputs it created stayed fully live
+ * (enumerable, funds-bearing) for however long that second wallet's callback
+ * took to arrive, or forever if it never did. This flag is set in every
+ * wallet's callback that observes the sweep, not only the one whose delete
+ * happens to remove the row, so the exclusion from restore/enumeration is
+ * durable from the first committed callback regardless of what the others
+ * do. Additive with a default, so every pre-migration row reads back as not
+ * swept.
+ *
+ * Version 13 (bounded tombstone lifetime): adds
+ * `pending_inputs.winnerMinedHeight` — the sweep winner's own mined block
+ * height, the stamp the collector compares against the chainlock finality
+ * boundary `min(chainlockHeight, syncedHeight)` — and
+ * `wallets.lastAppliedChainLockHeight`, the numeric chainlock height
+ * delivered by `onWalletChangesetChainLockHeight` that supplies the
+ * chainlock half of that boundary (the bincode chainlock blob is opaque
+ * here). A tombstone for a foreign input of a swept incoming payment
+ * never drains, and before these columns existed it was permanent — junk
+ * an attacker could grow without limit by double-spending payments at the
+ * wallet. Both nullable and additive: pre-migration tombstones read back
+ * unstamped and are never collected (no proof of finality), and a wallet
+ * with no recorded chainlock height has no boundary at all.
  */
 @Database(
-    version = 10,
+    version = 13,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -557,6 +593,53 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v10 → v11: additive sweep-claim-durability columns, both
+         * defaulted so every existing row reads as "not a tombstone, not
+         * superseded" (column order = entity field order).
+         */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `txos` ADD COLUMN `supersededByTxid` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `isSweptTombstone` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+        /**
+         * v11 → v12: adds `transactions.isGloballySwept` (additive,
+         * defaulted `false`) — see the version-12 class doc above.
+         */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `transactions` ADD COLUMN `isGloballySwept` " +
+                        "INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+        /**
+         * v12 → v13: adds `pending_inputs.winnerMinedHeight` and
+         * `wallets.lastAppliedChainLockHeight` (both additive, nullable —
+         * no default needed) — see the version-13 class doc above.
+         * Pre-migration tombstones read back unstamped and are never
+         * collected; the chainlock height starts NULL, so no boundary
+         * exists until `onWalletChangesetChainLockHeight` records one.
+         */
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `pending_inputs` ADD COLUMN `winnerMinedHeight` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `wallets` ADD COLUMN `lastAppliedChainLockHeight` INTEGER",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -574,6 +657,9 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
                 )
                 .build()
 

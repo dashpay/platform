@@ -77,7 +77,10 @@ data class TxoEntity(
     val isConfirmed: Boolean = false,
     val isInstantLocked: Boolean = false,
     val isLocked: Boolean = false,
-    /** Denormalized `spendingTxid != null`; kept explicit (hot filter path). */
+    /**
+     * Denormalized `spendingTxid != null || supersededByTxid != null`; kept
+     * explicit (hot filter path).
+     */
     val isSpent: Boolean = false,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
@@ -100,6 +103,29 @@ data class TxoEntity(
      * navigation pointer.
      */
     val coreAddressId: String? = null,
+    /**
+     * Port of Swift `PersistentTxo.supersededByTxid` — the winner a sweep
+     * attributed this coin's consumption to, mirroring the SQLite store's
+     * `spent_in_txid`. Two writers set it: `holdSpentWithoutSpender`, when
+     * a sweep holds an already-materialized input, and
+     * `onWalletChangesetUtxoAdded` resolving a `pending_inputs` row with
+     * `isSweptTombstone` — the funding output arrived only after the loser
+     * that spent it was swept and deleted. Deliberately NOT an FK: the
+     * winner named here need not have its own `transactions` row (it can be
+     * wallet-irrelevant), so this column has to hold a bare txid that
+     * `transactions(txid)` may never contain.
+     *
+     * The stamp is what makes a hold durable. The `isSpent` carry-over
+     * above and `onWalletChangesetUtxoAdded`'s recovery clear both key on
+     * it: a coin the wallet re-delivers as unspent only lifts `isSpent`
+     * when both `spendingTxid` and this are null — a rescan re-finds the
+     * funding output precisely because it is blind to an unconfirmed
+     * winner no block carries yet, so re-delivery cannot outrank the
+     * sweep's verdict. Cleared only by `releaseByOutpoint`, when a later
+     * sweep proves the coin came free after all; a pre-stamp row (written
+     * before holds named their winner) still frees on re-delivery.
+     */
+    val supersededByTxid: ByteArray? = null,
 ) {
     override fun equals(other: Any?): Boolean =
         other is TxoEntity && outpoint.contentEquals(other.outpoint)

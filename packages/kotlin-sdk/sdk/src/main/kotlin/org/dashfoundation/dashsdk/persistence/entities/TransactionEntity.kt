@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.persistence.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -54,6 +55,23 @@ data class TransactionEntity(
     val firstSeen: Long = 0,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
+    /**
+     * Port of Swift `PersistentTransaction.isGloballySwept`. Set by
+     * `onWalletChangesetTransactionsSwept` in EVERY wallet's callback that
+     * observes this row's sweep, not only the one whose
+     * `TransactionDao.deleteByTxid` happens to remove it — see that
+     * function's class doc for why the physical delete alone is not durable
+     * enough (each wallet's `store()` commits independently). `true` means
+     * Rust has already proven this transaction can never confirm; every
+     * restore/enumeration query must exclude the row regardless of whether
+     * it still physically exists.
+     *
+     * Declares its default so the exported schema agrees with what
+     * `MIGRATION_11_12` writes (see `PendingInputEntity.isSweptTombstone`
+     * for why this is required, not optional).
+     */
+    @ColumnInfo(defaultValue = "0")
+    val isGloballySwept: Boolean = false,
 ) {
     override fun equals(other: Any?): Boolean =
         other is TransactionEntity && txid.contentEquals(other.txid)
