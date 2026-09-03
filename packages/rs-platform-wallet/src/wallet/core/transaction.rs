@@ -365,11 +365,14 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // this build still owns, even if a TTL sweep re-reserved them under
             // a new token meanwhile (`dashpay/platform#4185`).
             let mut builder = builder.set_current_height(height);
-            // Accounts whose UTXOs were OFFERED to selection, in funding order.
-            // Not the same as the accounts that end up contributing inputs —
-            // selection may take nothing from most of them — so this drives
-            // build-time cleanup only, and the contributor list stored on the
-            // transaction is derived from the selected inputs below.
+            // Accounts that took on this build's reservation bookkeeping, in
+            // funding order — i.e. the ones a failure path must release. Under
+            // `reservation_only` nothing is offered to selection at all; without
+            // it these are also the accounts whose UTXOs were offered. Either
+            // way this is NOT the list of accounts that end up contributing
+            // inputs — selection may take nothing from most of them — so it
+            // drives build-time cleanup only, and the contributor list stored on
+            // the transaction is derived from the selected inputs below.
             let mut offered_accounts: Vec<AccountType> = Vec::new();
             let mut offered_seen: HashSet<AccountType> = HashSet::new();
             let mut paths: HashMap<Address, DerivationPath> = HashMap::new();
@@ -913,6 +916,119 @@ mod tests {
             &DashAddress::dummy(Network::Testnet, usize::from(tag)),
             1_000_000,
         )
+    }
+
+    /// `reservation_only` end to end IN THIS WORKSPACE. key-wallet #994 covers
+    /// `add_funding_reservation_only` on its own side, but nothing here proved
+    /// the flag survives the crossing: it travels an FFI struct field, a
+    /// finalizer bool, and a key-wallet call, and a refactor that drops it
+    /// anywhere along that path leaves every test in this repo green while
+    /// silently reintroducing the >500-input build this branch exists to fix.
+    ///
+    /// The account holds two UTXOs; the builder is seeded with exactly one.
+    /// Under the flag the build must spend that one and nothing else — and a
+    /// payment only the pair could cover must FAIL, which is the assertion that
+    /// actually proves the second UTXO was never offered to selection. The
+    /// unflagged control shows the same wallet funds it happily.
+    #[tokio::test]
+    async fn reservation_only_finalize_spends_only_the_seeded_inputs() {
+        let account_type = StandardAccountType::BIP44Account;
+        let (manager, wallet_id, generation, signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                account_type,
+                &[900_000, 900_000],
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        // One of the account's two spendable UTXOs, chosen by outpoint so the
+        // pick is deterministic across runs.
+        let seeded = {
+            use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+            let wm = core.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&core.wallet_id())
+                .expect("wallet present in manager");
+            let height = info.core_wallet.last_processed_height();
+            let account = info
+                .core_wallet
+                .first_bip44_managed_account()
+                .expect("bip44 managed account");
+            let mut utxos: Vec<key_wallet::Utxo> = account
+                .spendable_utxos(height)
+                .into_iter()
+                .cloned()
+                .collect();
+            assert_eq!(utxos.len(), 2, "fixture must fund two separate UTXOs");
+            utxos.sort_by_key(|u| u.outpoint);
+            utxos.remove(0)
+        };
+
+        // A payment neither UTXO covers alone. With the flag the unseeded one
+        // is not a candidate, so selection must come up short.
+        let err = core
+            .finalize_transaction_with_options(
+                payment_builder(60).add_inputs([seeded.clone()]),
+                &[preference(account_type)],
+                0,
+                &signer,
+                true,
+            )
+            .await
+            .expect_err("the account's other UTXO must not be reachable under the flag");
+        assert!(
+            matches!(err, PlatformWalletError::CoreInsufficientFunds { .. }),
+            "expected a funding shortfall, got {err:?}"
+        );
+
+        // Within what the seeded input alone covers: exactly that input, and
+        // the account's own change address still comes from its bookkeeping.
+        let finalized = core
+            .finalize_transaction_with_options(
+                TransactionBuilder::new()
+                    .add_output(&DashAddress::dummy(Network::Testnet, 61), 500_000)
+                    .add_inputs([seeded.clone()]),
+                &[preference(account_type)],
+                0,
+                &signer,
+                true,
+            )
+            .await
+            .expect("the seeded input alone covers this payment");
+        let inputs = &finalized.transaction().input;
+        assert_eq!(inputs.len(), 1, "only the seeded input may be spent");
+        assert_eq!(
+            inputs[0].previous_output, seeded.outpoint,
+            "the spent input must be the seeded one"
+        );
+        core.abandon_transaction(&finalized).await;
+
+        // Control: the same wallet, the same payment, no flag — proof the
+        // shortfall above came from the restriction and not from the fixture.
+        let pooled = core
+            .finalize_transaction_with_options(
+                payment_builder(62),
+                &[preference(account_type)],
+                0,
+                &signer,
+                false,
+            )
+            .await
+            .expect("without the flag both UTXOs fund the payment");
+        assert_eq!(
+            pooled.transaction().input.len(),
+            2,
+            "the unflagged build must reach for both UTXOs"
+        );
+        core.abandon_transaction(&pooled).await;
     }
 
     #[tokio::test]
