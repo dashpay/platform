@@ -717,11 +717,11 @@ pub unsafe extern "C" fn core_wallet_pooled_max_sendable(
 
     let fee_rate = (fee_rate_sat_per_kb != 0).then(|| FeeRate::new(fee_rate_sat_per_kb));
     let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
-    let max_sendable = unwrap_result_or_return!(runtime().block_on(wallet.core().pooled_max_sendable(
-        account_type.funding_sources(),
-        account_index,
-        fee_rate,
-    )));
+    let max_sendable = unwrap_result_or_return!(runtime().block_on(
+        wallet
+            .core()
+            .pooled_max_sendable(account_type.funding_sources(), account_index, fee_rate)
+    ));
 
     *out_max_sendable = max_sendable;
     PlatformWalletFFIResult::ok()
