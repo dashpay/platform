@@ -31,9 +31,9 @@ pub enum Domain {
     TokenBalances,
     DashpayProfiles,
     DashpayPaymentsOverlay,
-    WalletMetadata,
+    Wallets,
     AccountRegistrations,
-    AccountAddressPools,
+    CoreAddressPool,
     PendingContactCrypto,
     Invitations,
     DpnsNameStates,
@@ -43,8 +43,8 @@ pub enum Domain {
 }
 
 impl Domain {
-    /// Stable `meta_data_versions.domain` label. `Debug` is not a stable
-    /// wire format; this match is the contract.
+    /// Stable `meta_data_versions.domain` label: the live SQL table name persisted in every database.
+    /// Renaming a Rust variant must never change this string without a migration.
     pub fn as_str(self) -> &'static str {
         match self {
             Domain::Core => "core",
@@ -56,16 +56,12 @@ impl Domain {
             Domain::TokenBalances => "token_balances",
             Domain::DashpayProfiles => "dashpay_profiles",
             Domain::DashpayPaymentsOverlay => "dashpay_payments_overlay",
-            Domain::WalletMetadata => "wallet_metadata",
+            Domain::Wallets => "wallets",
             Domain::AccountRegistrations => "account_registrations",
-            Domain::AccountAddressPools => "account_address_pools",
+            Domain::CoreAddressPool => "core_address_pool",
             Domain::PendingContactCrypto => "pending_contact_crypto",
             Domain::Invitations => "invitations",
             Domain::DpnsNameStates => "dpns_name_states",
-            // Named for the table, not for this variant: the string is
-            // written into `meta_data_versions.domain` in every deployed
-            // database and outlives any Rust identifier. Renaming the type
-            // must not rename it.
             Domain::IdentityScanState => "identity_scan_states",
             #[cfg(feature = "shielded")]
             Domain::ShieldedViewingKeys => "shielded_viewing_keys",
@@ -85,9 +81,9 @@ impl Domain {
         Domain::TokenBalances,
         Domain::DashpayProfiles,
         Domain::DashpayPaymentsOverlay,
-        Domain::WalletMetadata,
+        Domain::Wallets,
         Domain::AccountRegistrations,
-        Domain::AccountAddressPools,
+        Domain::CoreAddressPool,
         Domain::PendingContactCrypto,
         Domain::Invitations,
         Domain::DpnsNameStates,
@@ -107,9 +103,9 @@ impl Domain {
         Domain::TokenBalances,
         Domain::DashpayProfiles,
         Domain::DashpayPaymentsOverlay,
-        Domain::WalletMetadata,
+        Domain::Wallets,
         Domain::AccountRegistrations,
-        Domain::AccountAddressPools,
+        Domain::CoreAddressPool,
         Domain::PendingContactCrypto,
         Domain::Invitations,
         Domain::DpnsNameStates,
@@ -192,13 +188,13 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         out.push(Domain::DashpayPaymentsOverlay);
     }
     if wallet_metadata.is_some() {
-        out.push(Domain::WalletMetadata);
+        out.push(Domain::Wallets);
     }
     if !account_registrations.is_empty() || !provider_key_account_registrations.is_empty() {
         out.push(Domain::AccountRegistrations);
     }
     if !account_address_pools.is_empty() {
-        out.push(Domain::AccountAddressPools);
+        out.push(Domain::CoreAddressPool);
     }
     if !pending_contact_crypto_added.is_empty() || !pending_contact_crypto_cleared.is_empty() {
         out.push(Domain::PendingContactCrypto);
