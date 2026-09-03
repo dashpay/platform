@@ -224,6 +224,17 @@ fn seed_identity_index_collision(persister: &SqlitePersister, wallet_id: WalletI
         )
         .expect("plant duplicate identity index");
     }
+    // Skew the planner's statistics so it prefers the cheap non-covering
+    // `idx_identities_wallet` over the covering `(wallet_id, identity_id)`
+    // index — that is what makes an unordered read return insertion order
+    // instead of ascending `identity_id`.
+    //
+    // This is a SIMULATION, and worth being honest about: production never
+    // runs `ANALYZE`, so it has no `sqlite_stat1`, the covering index always
+    // wins, and the reader's explicit `ORDER BY` therefore changes nothing in
+    // production *today*. The clause is a guarantee against a future planner,
+    // not a live bug fix, and this fixture exists to prove the guarantee is
+    // load-bearing rather than decorative.
     conn.execute_batch(
         "ANALYZE; \
          UPDATE sqlite_stat1 SET stat = '1000000 1000000' \
@@ -232,6 +243,27 @@ fn seed_identity_index_collision(persister: &SqlitePersister, wallet_id: WalletI
          ANALYZE sqlite_schema;",
     )
     .expect("make the unordered query prefer insertion order");
+
+    // Assert the simulation actually took. Sensitivity rests on planner
+    // behaviour, so a future SQLite that ignores the skew would make the
+    // collision test pass for a reason unrelated to the `ORDER BY` it exists
+    // to protect — silently, and looking exactly like success. Fail here
+    // instead, at the fixture, where the message can say why.
+    let unordered_first: Vec<u8> = conn
+        .query_row(
+            "SELECT identity_id FROM identities WHERE wallet_id IS ?1 LIMIT 1",
+            params![wallet_id.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("read back the first unordered row");
+    assert_eq!(
+        unordered_first,
+        vec![0xEEu8; 32],
+        "fixture no longer simulates an unordered read: this query must yield \
+         insertion order (0xEE first), or the collision test proves nothing \
+         about the reader's ORDER BY. Re-skew sqlite_stat1 for the current \
+         planner."
+    );
 }
 
 fn seed_asset_lock_status_drift(
