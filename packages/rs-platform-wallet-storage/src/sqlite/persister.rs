@@ -829,6 +829,20 @@ impl PlatformWalletPersistence for SqlitePersister {
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // `load()` still reports `ClientStartState::wallets` in
         // `LOAD_UNIMPLEMENTED`. Shielded state lives in a separate store.
+        // `core_state::apply_sweep` deletes the loser row and resolves every
+        // input it claimed via `released` — including the held-but-unfunded
+        // case, where it leaves a `core_utxos` placeholder keyed by outpoint
+        // rather than by any relationship to the loser. That is what makes a
+        // later sweep of the winner that replaces it chain-safe with no
+        // extra bookkeeping: the next sweep matches the same outpoint
+        // directly — through the loser's decoded inputs when its row is on
+        // hand, and through the batch's own released set when it is not —
+        // so it repoints or releases the placeholder regardless of how many
+        // sweeps deep it is. A placeholder that never materialises is
+        // bounded, not permanent: `core_state::collect_finalized_tombstones`
+        // evicts it once the persisted chainlock finality boundary passes
+        // its creation stamp, so foreign-input junk from swept incoming
+        // payments cannot grow the store without limit.
         PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -837,6 +851,8 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
+            .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
     }
 
     fn persist_tracked_masternodes(
