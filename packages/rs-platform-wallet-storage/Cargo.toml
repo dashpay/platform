@@ -28,8 +28,8 @@ hex = "0.4"
 # `dpp` types reach the persister via `IdentityPublicKey` (identity_keys
 # writer), `AssetLockProof` (asset_locks writer) and `Identifier`
 # (dashpay writer). `dash-sdk` is here for the `AddressFunds` re-export
-# in `schema/platform_addrs.rs`. Feature set mirrors sibling
-# `rs-platform-wallet` so the resolver picks identical hashes.
+# in `schema/platform_addrs.rs`. Storage declares only the features it uses
+# directly; `platform-wallet` adds `dash-sdk/wallet` to Cargo's unified set.
 platform-wallet = { path = "../rs-platform-wallet", features = [
     "serde",
 ], optional = true }
@@ -283,4 +283,4 @@ test-util = []
 # Persists and restores Orchard viewing keys from the
 # `PlatformWalletChangeSet::shielded` field. Other shielded state remains in
 # the host-provided `ShieldedStore`.
-shielded = ["platform-wallet/shielded"]
+shielded = ["sqlite", "platform-wallet?/shielded"]

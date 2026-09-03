@@ -14,11 +14,11 @@ ignore = [
     #   - The advisory reports maintenance status, not a known exploit.
     #   - Variable-length wallet decode boundaries are budgeted: storage
     #     enforces MAX_VALUE_LEN / BLOB_SIZE_LIMIT_BYTES, per-secret write
-    #     caps, and MAX_VAULT_SIZE_BYTES; FFI asset-lock recovery rejects
-    #     proofs over 16 MiB and applies the same bincode decode budget.
+    #     caps, and MAX_VAULT_SIZE_BYTES.
     #   - Malformed or oversized persisted data fails with a typed error.
     #
-    # Residual risk: a future bincode defect would go unpatched upstream.
+    # Residual risk: a future bincode defect would go unpatched upstream;
+    # FFI asset-lock recovery lacks its planned size gate until #4585 lands.
     # Remediation plan: migrate the BLOB codec to a maintained equivalent
     # (postcard / bitcode candidates) once the wire format is frozen at
     # release; revisit this ignore at that time.
