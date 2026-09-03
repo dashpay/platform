@@ -547,8 +547,10 @@ secret-free.
   `default_credential_store` from the crate root; the body never
   exercises a backend, so the proof is that it compiles. The negative
   direction — `--no-default-features --features sqlite,cli` must build
-  the persister without the `secrets` module — is enforced by the
-  feature gate plus the CI off-state build, not by a test file.
+  the persister without the `secrets` module — rests on the feature gate
+  alone. No test file and **no CI job** cover it: that invocation is a
+  local/manual check, so a regression in the off-state build reaches
+  `main` unnoticed.
 - **`tests/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`**:
   all public method signatures use concrete error types
   (`WalletStorageError`, `PersistenceError`) — never
