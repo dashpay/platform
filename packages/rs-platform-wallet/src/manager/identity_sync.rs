@@ -527,6 +527,13 @@ where
         drained
     }
 
+    /// Test-only: whether new sync passes are currently barred — a drain in
+    /// flight, a latched timeout, or the terminal seal `shutdown` applies.
+    #[cfg(test)]
+    pub(crate) fn sync_admission_closed(&self) -> bool {
+        self.quiescing.is_closed()
+    }
+
     /// Run one sync pass across every registered identity.
     ///
     /// If a pass is already in flight, returns immediately without

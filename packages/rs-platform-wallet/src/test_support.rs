@@ -650,7 +650,9 @@ impl crate::changeset::PlatformWalletPersistence for NoopTestPersister {
     }
 }
 
-struct NoopTestEventHandler;
+/// Event handler that ignores every event — for tests whose subject is not
+/// the event fan-out.
+pub(crate) struct NoopTestEventHandler;
 impl crate::events::EventHandler for NoopTestEventHandler {}
 impl crate::events::PlatformEventHandler for NoopTestEventHandler {}
 
