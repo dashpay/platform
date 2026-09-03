@@ -143,20 +143,16 @@ pub(in crate::wallet::asset_lock) fn record_holds_local_finality(
     }
 }
 
-/// Variant of [`record_or_persister`] for poll loops: never aborts the
-/// wait, whatever the persister does.
+/// Variant of [`record_or_persister`] for poll loops: never aborts the wait,
+/// whatever the persister does.
 ///
-/// This read is a FALLBACK for records the in-memory map evicted; the live
-/// SPV stream can still deliver the record and end the wait. So a failure
-/// here reads as a miss and the loop keeps waiting, bounded by its own
-/// finality timeout — aborting would turn a degraded read path into a
-/// failed operation.
+/// This read is a FALLBACK for records the in-memory map evicted — the live
+/// SPV stream can still deliver one — so any failure reads as a miss and the
+/// loop keeps waiting, bounded by its own finality timeout.
 ///
-/// A transient failure is a miss and nothing more; the next iteration
-/// retries it. A permanent one is a miss too, but is reported once per
-/// wait via `reported` — per-iteration logging would let a broken backend
-/// flood the log from inside a loop, and the condition is the same one
-/// every time.
+/// A permanent failure is reported once per wait via `reported`: per-iteration
+/// logging would let a broken backend flood the log from inside an unbounded
+/// poll loop, saying the same thing every time.
 pub(super) fn record_or_persister_for_poll(
     in_memory: Option<TransactionRecord>,
     persister: &crate::wallet::persister::WalletPersister,
@@ -180,8 +176,8 @@ pub(super) fn record_or_persister_for_poll(
     }
 }
 
-/// The transient half of the poll policy, split out so the permanent arm
-/// above owns the once-per-wait reporting.
+/// The transient half of the poll policy, split out so the permanent arm owns
+/// the once-per-wait reporting.
 fn persister_read_for_poll(
     in_memory: Option<TransactionRecord>,
     persister: &crate::wallet::persister::WalletPersister,
@@ -392,8 +388,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         use key_wallet::transaction_checking::TransactionContext;
 
         let deadline = timeout.map(|t| tokio::time::Instant::now() + t);
-        // Once-per-wait guard for the tx-record fallback read (see
-        // `record_or_persister_for_poll`).
+        // Once-per-wait guard; see `record_or_persister_for_poll`.
         let mut read_failure_reported = false;
 
         loop {
@@ -487,8 +482,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         tracing::info!(outpoint = %out_point, ?timeout, "wait_for_proof: entered");
         let deadline = timeout.map(|t| tokio::time::Instant::now() + t);
         let mut iter: u32 = 0;
-        // Once-per-wait guard for the tx-record fallback read (see
-        // `record_or_persister_for_poll`).
+        // Once-per-wait guard; see `record_or_persister_for_poll`.
         let mut read_failure_reported = false;
 
         // Read account_index and transaction from the tracked lock.
@@ -1008,7 +1002,7 @@ mod tests {
         }
     }
 
-    /// Test persister that returns a permanent `get_core_tx_record` error.
+    /// Persister with a permanent `get_core_tx_record` failure.
     struct ErroringStore;
 
     impl PlatformWalletPersistence for ErroringStore {
@@ -1134,14 +1128,8 @@ mod tests {
         assert!(resolved.is_err());
     }
 
-    /// A poll loop must DEGRADE on a permanent read failure, not abort.
-    ///
-    /// The persister read is a fallback for records the in-memory map
-    /// evicted; the live SPV stream can still deliver the record and end
-    /// the wait. Aborting turns a degraded read path into a failed
-    /// operation, and the wait is already bounded by its finality timeout.
-    /// The failure is reported once per wait rather than once per
-    /// iteration, so a broken backend cannot flood the log from a loop.
+    /// A poll loop degrades on a permanent read failure rather than aborting:
+    /// the live SPV stream can still end the wait.
     #[test]
     fn poll_read_degrades_to_a_miss_on_permanent_backend_errors() {
         let unknown_txid = Txid::from([0xFF; 32]);
@@ -1163,14 +1151,11 @@ mod tests {
         assert!(still_reported);
     }
 
-    /// The permanent-failure report fires ONCE per wait, not once per
-    /// iteration.
+    /// The report fires ONCE per wait: a poll loop spins many times against the
+    /// same broken backend, and per-iteration reporting buries the log.
     ///
-    /// A poll loop can spin many times against the same broken backend, so
-    /// reporting per iteration would bury the log under one repeated line
-    /// while saying nothing new. Counting the events is the point: an
-    /// assertion that merely finds a report present passes just as happily
-    /// when every iteration emits one.
+    /// Counting is the point — an assertion that merely finds a report present
+    /// passes just as happily when every iteration emits one.
     #[test]
     fn poll_read_reports_a_permanent_failure_once_per_wait_not_once_per_iteration() {
         use crate::test_support::tracing_capture::{RecordedEvents, RecordingGuard};
@@ -1204,9 +1189,7 @@ mod tests {
         );
     }
 
-    /// A transient failure is a miss for this iteration and is NOT worth
-    /// the once-per-wait permanent-failure report — the next iteration
-    /// retries it.
+    /// A transient failure must not consume the once-per-wait report.
     #[test]
     fn poll_read_treats_transient_backend_errors_as_a_silent_miss() {
         let unknown_txid = Txid::from([0xFF; 32]);
@@ -1221,8 +1204,7 @@ mod tests {
         );
     }
 
-    /// The shared read helper collapses a transient failure into a miss so
-    /// every caller gets one policy, and leaves permanent failures visible.
+    /// The shared helper collapses transient failures, not permanent ones.
     #[test]
     fn transient_miss_read_helper_separates_transient_from_permanent() {
         let unknown_txid = Txid::from([0xFF; 32]);

@@ -4,6 +4,10 @@
 //! data is available (e.g., address balances), it is sent across FFI in
 //! C-compatible structs so the caller can persist it incrementally (e.g., via
 //! SwiftData on iOS).
+//!
+//! The negative callback return codes defined here are unrelated to
+//! `rs-unified-sdk-jni`'s `RESOLVE_*` mnemonic-resolver codes, which reuse the
+//! same integers on a different callback family.
 
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
@@ -272,27 +276,20 @@ pub struct PersistenceExtensionCallbacks {
 }
 
 /// Return value by which a persistence callback reports a **retryable**
-/// failure after which nothing was applied (the host's own
-/// `SQLITE_BUSY` / `SQLITE_FULL` / `SQLITE_IOERR` class).
+/// failure after which nothing was applied (the host's own `SQLITE_BUSY` /
+/// `SQLITE_FULL` / `SQLITE_IOERR` class).
 ///
-/// The host holds the real storage handle and is the only party that can
-/// see the native status code, so this is the only channel through which
-/// a retry classification reaches the Rust side. Failures reported this
-/// way surface to the Rust caller as
+/// The host holds the storage handle and is the only party that can see the
+/// native status code, so this is the only channel through which a retry
+/// classification reaches Rust. Surfaces to the caller as
 /// [`PersistenceErrorKind::Transient`]; the caller — never this crate —
 /// decides whether to retry.
-///
-/// Unrelated to `rs-unified-sdk-jni`'s `RESOLVE_*` mnemonic-resolver
-/// codes, which share these integers on a different callback family.
 pub const PLATFORM_WALLET_PERSIST_RC_TRANSIENT: i32 = -2;
 
 /// Return value by which a persistence callback reports a constraint /
 /// foreign-key / integrity violation, surfacing as
-/// [`PersistenceErrorKind::Constraint`] — "the data is wrong", as
-/// opposed to "the storage engine is unhappy". Not retryable.
-///
-/// Same caveat about `rs-unified-sdk-jni`'s `RESOLVE_*` codes as
-/// [`PLATFORM_WALLET_PERSIST_RC_TRANSIENT`].
+/// [`PersistenceErrorKind::Constraint`] — "the data is wrong", as opposed to
+/// "the storage engine is unhappy". Not retryable.
 pub const PLATFORM_WALLET_PERSIST_RC_CONSTRAINT: i32 = -3;
 
 /// Classify a non-zero persistence-callback return value.
@@ -309,21 +306,18 @@ fn persist_rc_kind(rc: i32) -> PersistenceErrorKind {
     }
 }
 
-/// Build the error for a non-zero return from a **single-call** callback
-/// (a load, a flush, a standalone persist), carrying the host's own
-/// classification of `rc`.
-///
-/// Round-participating callbacks do not use this: their verdicts are
-/// accumulated by [`RoundOutcome`] and classified once for the round.
+/// Build the error for a non-zero return from a **single-call** callback (a
+/// load, a flush, a standalone persist), carrying the host's classification of
+/// `rc`. Round callbacks instead accumulate into [`RoundOutcome`], which
+/// classifies once for the whole round.
 fn persist_callback_error(rc: i32, message: impl Into<String>) -> PersistenceError {
     PersistenceError::backend_with_kind(persist_rc_kind(rc), message.into())
 }
 
-/// The verdict of one `store` round's callbacks.
-///
-/// A round fails if any callback failed, and reports the MOST SEVERE kind
-/// any of them returned (`Fatal` > `Constraint` > `Transient`) so one
-/// host-declared transient can never mask a fatal sibling.
+/// The verdict of one `store` round's callbacks: fails if any callback failed,
+/// reporting the MOST SEVERE kind any returned
+/// (`Fatal` > `Constraint` > `Transient`) so one host-declared transient can
+/// never mask a fatal sibling.
 #[derive(Default)]
 struct RoundOutcome {
     worst: Option<PersistenceErrorKind>,
@@ -335,8 +329,8 @@ impl RoundOutcome {
         self.escalate(persist_rc_kind(rc));
     }
 
-    /// Record a Rust-side failure to encode a payload. Never transient:
-    /// the same changeset will not encode on a later attempt.
+    /// Record a Rust-side encoding failure. Never transient: the same
+    /// changeset will not encode on a later attempt.
     fn record_fatal(&mut self) {
         self.escalate(PersistenceErrorKind::Fatal);
     }
@@ -355,8 +349,8 @@ impl RoundOutcome {
         }
     }
 
-    /// `true` while every callback so far has returned success. This is
-    /// what `on_changeset_end_fn` receives as its `success` argument.
+    /// `true` while every callback so far has succeeded — what
+    /// `on_changeset_end_fn` receives as its `success` argument.
     fn is_success(&self) -> bool {
         self.worst.is_none()
     }
@@ -396,35 +390,32 @@ impl RoundOutcome {
 /// reading Rust has always applied, so a host written against the original
 /// contract needs no change.
 ///
-/// A host that can classify its own failure (it holds the storage handle
-/// and sees the native status code) may instead return one of two
-/// sentinels, which reach the Rust caller as a typed retry classification:
+/// A host that can classify its own failure (it holds the storage handle and
+/// sees the native status code) may instead return one of two sentinels,
+/// which reach the Rust caller as a typed retry classification:
 ///
 /// * [`PLATFORM_WALLET_PERSIST_RC_TRANSIENT`] — a retryable failure after
 ///   which **nothing was applied** (`SQLITE_BUSY` and friends).
 /// * [`PLATFORM_WALLET_PERSIST_RC_CONSTRAINT`] — a constraint / integrity
 ///   violation: the data is wrong, and retrying it unchanged will not help.
 ///
-/// The Rust side never retries on a host's behalf; it forwards the
-/// classification and the caller decides.
+/// Rust never retries on a host's behalf; it forwards the classification and
+/// the caller decides.
 ///
 /// ## What a transient verdict promises, and who must honour it
 ///
-/// A caller acting on "transient" re-issues the WHOLE changeset, and
-/// changeset vectors merge by appending. So a transient verdict is only
-/// meaningful when the failed round left nothing applied — which is exactly
-/// what `ATOMIC_CHANGESETS` attests ("a changeset is committed or rolled
-/// back as one unit"), and what [`Self::on_changeset_end_fn`] with
-/// `success = false` exists to drive.
-///
-/// A `store` round therefore reports a transient failure ONLY when both
-/// round brackets are wired and the host declared `ATOMIC_CHANGESETS`;
-/// otherwise Rust downgrades it to fatal, because a partially applied round
-/// re-sent in full would duplicate rows rather than replace them. **A host
-/// that does not roll a failed round back must not return the transient
-/// sentinel from a round callback.** Single-call callbacks (loads, flush,
-/// the changeset-begin abort) have no such precondition: each is one
-/// operation that either happened or did not.
+/// A caller acting on "transient" re-issues the WHOLE changeset, and changeset
+/// vectors merge by appending — so the verdict is only meaningful when the
+/// failed round left nothing applied. That is exactly what
+/// `ATOMIC_CHANGESETS` attests and what [`Self::on_changeset_end_fn`] with
+/// `success = false` exists to drive, so a `store` round reports a transient
+/// failure ONLY when both round brackets are wired AND the host declared
+/// `ATOMIC_CHANGESETS`; otherwise Rust downgrades it to fatal, because a
+/// partially applied round re-sent in full duplicates rows rather than
+/// replacing them. **A host that does not roll a failed round back must not
+/// return the transient sentinel from a round callback.** Single-call
+/// callbacks (loads, flush, the changeset-begin abort) have no such
+/// precondition: each is one operation that either happened or did not.
 #[repr(C)]
 #[allow(clippy::type_complexity)]
 pub struct PersistenceCallbacks {
@@ -1271,22 +1262,12 @@ impl FFIPersister {
         }
     }
 
-    /// Narrow a `store` round's failure kind to what the caller may safely
-    /// act on.
-    ///
-    /// [`PersistenceErrorKind::Transient`] invites the caller to re-send the
-    /// whole changeset, which is only sound when a failed round left nothing
-    /// applied — `Merge for Vec<T>` appends, so re-sending a partially
-    /// applied round doubles its vector fields instead of overwriting them.
-    /// A round is all-or-nothing exactly when
-    /// [`PersistenceCapabilities::ATOMIC_CHANGESETS`] holds, which requires
-    /// both round brackets to be wired AND the host to have attested
-    /// "committed or rolled back as one unit". Without that attestation a
-    /// transient verdict is downgraded to `Fatal`: losing a retry
-    /// opportunity costs less than duplicating data.
-    ///
-    /// `Constraint` and `Fatal` pass through unchanged — neither invites a
-    /// retry, so neither depends on the round being atomic.
+    /// Narrow a round's failure kind to what the caller may safely act on:
+    /// `Transient` survives only under
+    /// [`PersistenceCapabilities::ATOMIC_CHANGESETS`] (see
+    /// [`PersistenceCallbacks`]), since losing a retry opportunity costs less
+    /// than the rows a re-sent partial round would duplicate. `Constraint` and
+    /// `Fatal` invite no retry, so they pass through.
     fn reportable_round_kind(&self, reported: PersistenceErrorKind) -> PersistenceErrorKind {
         let atomic = self
             .persistence_capabilities()
@@ -2715,10 +2696,9 @@ impl PlatformWalletPersistence for FFIPersister {
                          ignored"
                     );
                 } else {
-                    // This branch runs only without an end callback, so the
-                    // per-kind writes already landed individually and the
-                    // round is not all-or-nothing — `reportable_round_kind`
-                    // withholds a retryable verdict accordingly.
+                    // No end callback, so the per-kind writes already landed
+                    // individually and the round is not all-or-nothing —
+                    // `reportable_round_kind` withholds a retryable verdict.
                     return Err(PersistenceError::backend_with_kind(
                         self.reportable_round_kind(persist_rc_kind(result)),
                         format!("Persistence store callback returned error code {result}"),
@@ -8392,8 +8372,7 @@ mod tests {
 
     // ── Inbound retry classification from host return codes ──
 
-    /// Metadata callback returning the host's "retryable, nothing applied"
-    /// sentinel.
+    /// Returns the "retryable, nothing applied" sentinel.
     extern "C" fn transient_metadata(
         _ctx: *mut TestCVoid,
         _wallet_id: *const u8,
@@ -8404,7 +8383,7 @@ mod tests {
         PLATFORM_WALLET_PERSIST_RC_TRANSIENT
     }
 
-    /// Metadata callback returning the host's constraint sentinel.
+    /// Returns the constraint sentinel.
     extern "C" fn constraint_metadata(
         _ctx: *mut TestCVoid,
         _wallet_id: *const u8,
@@ -8415,8 +8394,7 @@ mod tests {
         PLATFORM_WALLET_PERSIST_RC_CONSTRAINT
     }
 
-    /// Metadata callback returning a plain non-zero value, the way every
-    /// host written against the original contract does.
+    /// Returns a plain non-zero value, as a host on the original contract does.
     extern "C" fn unclassified_metadata(
         _ctx: *mut TestCVoid,
         _wallet_id: *const u8,
@@ -8435,8 +8413,7 @@ mod tests {
         0
     }
 
-    /// A changeset carrying exactly one payload: the metadata entry, whose
-    /// callback each test below drives.
+    /// One payload: the metadata entry whose callback each test drives.
     fn metadata_changeset() -> PlatformWalletChangeSet {
         PlatformWalletChangeSet {
             wallet_metadata: Some(platform_wallet::changeset::WalletMetadataEntry {
@@ -8448,8 +8425,8 @@ mod tests {
         }
     }
 
-    /// Build a persister whose metadata callback is `metadata`, optionally
-    /// bracketing rounds and attesting atomicity.
+    /// Persister with metadata callback `metadata`, optionally bracketing
+    /// rounds and attesting atomicity.
     fn store_failing_persister(
         metadata: unsafe extern "C" fn(
             *mut TestCVoid,
@@ -8477,10 +8454,8 @@ mod tests {
             .kind()
     }
 
-    /// The point of the whole inbound direction: a host that sees its own
-    /// `SQLITE_BUSY` can say so, and the caller receives a retryable
-    /// classification instead of the blanket `Fatal` every FFI failure used
-    /// to collapse into.
+    /// The point of the inbound direction: a host that sees its own
+    /// `SQLITE_BUSY` can say so, and the caller learns it may retry.
     #[test]
     fn transient_sentinel_reaches_the_caller_from_an_atomic_round() {
         let persister = store_failing_persister(
@@ -8494,10 +8469,9 @@ mod tests {
         );
     }
 
-    /// A transient verdict tells the caller to re-send the WHOLE changeset,
-    /// and changeset vectors merge by appending. Without an all-or-nothing
-    /// round the failed round may have applied part of itself, so re-sending
-    /// would duplicate rows — the verdict is withheld and reported fatal.
+    /// A transient verdict invites re-sending the WHOLE changeset, and
+    /// changeset vectors merge by appending — so without an all-or-nothing
+    /// round the re-send would duplicate rows. The verdict is withheld.
     #[test]
     fn transient_sentinel_is_withheld_when_the_round_is_not_atomic() {
         // Brackets wired, but the host never attested atomicity.
@@ -8523,8 +8497,7 @@ mod tests {
         );
     }
 
-    /// `Constraint` never invites a retry, so it does not depend on the
-    /// round being atomic and passes through either way.
+    /// `Constraint` invites no retry, so it passes through either way.
     #[test]
     fn constraint_sentinel_survives_whether_or_not_the_round_is_atomic() {
         for (bracketed, capabilities) in [
@@ -8539,8 +8512,8 @@ mod tests {
         }
     }
 
-    /// Back-compatibility: a host that returns a plain non-zero value keeps
-    /// the conservative reading it has always had.
+    /// Back-compatibility: a plain non-zero value keeps its conservative
+    /// reading.
     #[test]
     fn unclassified_non_zero_return_stays_fatal() {
         let persister = store_failing_persister(
@@ -8554,10 +8527,8 @@ mod tests {
         );
     }
 
-    /// One transient callback must never soften a fatal sibling: the round
-    /// reports the most severe kind any callback returned. Here the commit
-    /// itself fails unclassified after a per-kind callback reported
-    /// transient — the round is fatal.
+    /// The round reports the most severe kind any callback returned: here the
+    /// commit fails unclassified after a per-kind callback said transient.
     #[test]
     fn a_fatal_callback_masks_a_transient_sibling() {
         extern "C" fn fatal_end(
@@ -8585,8 +8556,8 @@ mod tests {
         );
     }
 
-    /// A load is one call that either happened or did not, so it carries the
-    /// host's classification with no atomicity precondition.
+    /// A load either happened or did not, so it carries the host's
+    /// classification with no atomicity precondition.
     #[test]
     fn transient_sentinel_reaches_the_caller_from_a_load() {
         extern "C" fn transient_load(
@@ -8607,8 +8578,7 @@ mod tests {
         assert_eq!(err.kind(), Some(PersistenceErrorKind::Transient));
     }
 
-    /// The two sentinels must stay off the values a host already returns —
-    /// success, and the plain failure codes the shipping hosts use.
+    /// The sentinels must stay off the values a host already returns.
     #[test]
     fn sentinels_do_not_collide_with_established_return_values() {
         for taken in [0, 1, -1] {

@@ -483,9 +483,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         }
 
-        // Persist the registration changeset. `store` is not retried here —
-        // the caller receives the typed, kind-classified `PersistenceError`
-        // (its transient/fatal classification preserved) and decides.
+        // `store` is not retried here: the caller receives the typed,
+        // kind-classified `PersistenceError` and decides.
         if let Err(e) = self.persister.store(wallet_id, registration_changeset) {
             tracing::error!(
                 wallet_id = %hex::encode(wallet_id),
@@ -532,9 +531,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // poisoning every retry on `WalletAlreadyExists`. Roll back
         // before bailing — same shape as `manager::load`.
         // `load` is an idempotent read, so a transient blip is retried
-        // in-crate — unlike `store` above, which the caller decides on.
-        // Clone the per-wallet persister handle rather than moving
-        // `platform_wallet` itself, which is still needed below.
+        // in-crate — unlike `store` above. Clone the persister handle rather
+        // than moving `platform_wallet`, still needed below.
         let load_persister = platform_wallet.persister().clone();
         let load_result = super::retry_transient_load(move || load_persister.load()).await;
         let crate::changeset::ClientStartState {
@@ -582,8 +580,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         "rollback: remove_wallet failed while unwinding a failed wallet setup"
                     );
                 }
-                // `initialize_from_persisted` already returns a typed
-                // `PlatformWalletError`; wrap (boxed) rather than stringify so
+                // Wrap the already-typed error rather than stringify it, so
                 // its concrete variant and source chain survive.
                 return Err(PlatformWalletError::from_restore_failure(e));
             }
@@ -1314,8 +1311,8 @@ mod register_wallet_duplicate_tests {
 
 #[cfg(test)]
 mod persist_retry_tests {
-    //! Registration-path persistence: single-attempt `store` with typed
-    //! error propagation, bounded `load` retry, and log-level policy.
+    //! Registration-path persistence: single-attempt `store`, bounded `load`
+    //! retry, typed error propagation, log-level policy.
 
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -1353,37 +1350,30 @@ mod persist_retry_tests {
 
     use crate::test_support::tracing_capture::{RecordedEvents, RecordingGuard};
 
-    /// Persister whose `store` / `flush` / `load` outcomes are scripted so
-    /// the registration path can be driven deterministically.
+    /// Persister with scripted `store` / `flush` / `load` outcomes.
     ///
-    /// `store` counts registration and identity-scan-verdict writes
-    /// separately. Registration ends with a best-effort `identity().sync()`,
-    /// so a successful registration issues a SECOND `store` carrying the scan
-    /// verdict; a single counter would make every assertion about the
-    /// registration write depend on unrelated discovery behaviour. The
-    /// changeset itself is the discriminator.
+    /// `store` counts registration and scan-verdict writes separately,
+    /// discriminated by the changeset: registration ends with a best-effort
+    /// `identity().sync()` that issues a SECOND `store`, and a single counter
+    /// would couple every registration-write assertion to discovery.
     #[derive(Default)]
     struct FaultyPersister {
         /// Stores of the registration changeset.
         registration_store_calls: AtomicUsize,
         /// Stores of the identity-scan verdict published by `identity().sync()`.
         scan_verdict_store_calls: AtomicUsize,
-        /// Never scripted to fail — every assertion here expects this to
-        /// stay 0, since a `store` failure is never retried through it.
+        /// Never scripted to fail: a `store` failure is never retried through
+        /// it, so every assertion expects 0.
         flush_calls: AtomicUsize,
         load_calls: AtomicUsize,
-        /// The registration `store` call fails transiently.
         store_transient: bool,
-        /// The registration `store` call fails fatally.
         store_fatal: bool,
-        /// Number of leading scan-verdict `store` calls that fail transiently.
+        /// Leading scan-verdict `store` calls that fail transiently.
         scan_verdict_store_transient_failures: usize,
-        /// Number of leading `load` calls that fail transiently.
+        /// Leading `load` calls that fail transiently.
         load_transient_failures: usize,
-        /// Every `load` fails fatally (must NOT retry).
         load_fatal: bool,
-        /// After `load_transient_failures` transient failures, fail fatally
-        /// instead of succeeding.
+        /// Fail fatally after `load_transient_failures`, instead of succeeding.
         load_then_fatal: bool,
     }
 
@@ -1393,13 +1383,9 @@ mod persist_retry_tests {
             _wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
-            // One changeset can carry both: `merge` folds a buffered
-            // registration write and a scan verdict into a single round. Each
-            // counter answers only its own question — "was this changeset
-            // handed over?" — so both increment. Letting the first match win
-            // would make an assertion about the registration write depend on
-            // whether discovery happened to be batched with it, which is the
-            // coupling these separate counters exist to remove.
+            // `merge` can fold a registration write and a scan verdict into
+            // one round, so both counters increment; letting the first match
+            // win would reintroduce the batching dependency.
             let registration = changeset
                 .wallet_metadata
                 .is_some()
@@ -1409,9 +1395,8 @@ mod persist_retry_tests {
                 .is_some()
                 .then(|| self.scan_verdict_store_calls.fetch_add(1, Ordering::SeqCst));
 
-            // The registration half decides a combined round's outcome: its
-            // failure aborts the whole registration, while a verdict's is
-            // swallowed.
+            // The registration half decides a combined round: its failure
+            // aborts registration, a verdict's is swallowed.
             if registration.is_some() {
                 if self.store_fatal {
                     return Err(fatal());
@@ -1462,8 +1447,7 @@ mod persist_retry_tests {
             .to_seed("")
     }
 
-    /// `Some(0)` skips the SPV-tip birth-height lookup so the test never
-    /// consults SPV.
+    /// `Some(0)` skips the SPV-tip birth-height lookup.
     async fn register(
         manager: &PlatformWalletManager<FaultyPersister>,
     ) -> Result<(), PlatformWalletError> {
@@ -1478,9 +1462,7 @@ mod persist_retry_tests {
             .map(|_| ())
     }
 
-    /// A transient `store` failure surfaces to the caller on the first
-    /// attempt — never retried via `flush` — and rolls the in-memory
-    /// registration back.
+    /// Surfaces on the first attempt, and rolls the in-memory insert back.
     #[tokio::test]
     async fn transient_store_failure_surfaces_as_persister_store_without_retry() {
         let persister = Arc::new(FaultyPersister {
@@ -1517,9 +1499,7 @@ mod persist_retry_tests {
         );
     }
 
-    /// A fatal `store` failure fails fast — no retry — and
-    /// surfaces as the typed `PersisterStore` whose inner classification is
-    /// non-transient.
+    /// A fatal `store` failure fails fast, keeping its classification.
     #[tokio::test]
     async fn fatal_store_failure_fails_fast_without_retry() {
         let persister = Arc::new(FaultyPersister {
@@ -1552,8 +1532,7 @@ mod persist_retry_tests {
         );
     }
 
-    /// A transient `load` blip during rehydration is retried (an
-    /// idempotent read), so registration succeeds.
+    /// A transient `load` blip is retried — it is an idempotent read.
     #[tokio::test]
     async fn transient_load_failure_is_retried_and_succeeds() {
         let persister = Arc::new(FaultyPersister {
@@ -1576,8 +1555,6 @@ mod persist_retry_tests {
         );
     }
 
-    /// A fatal `load` fails fast and surfaces as the typed
-    /// `PersisterLoad` — never the flattened `WalletCreation(String)`.
     #[tokio::test]
     async fn fatal_load_failure_surfaces_as_persister_load() {
         let persister = Arc::new(FaultyPersister {
@@ -1601,9 +1578,6 @@ mod persist_retry_tests {
         );
     }
 
-    /// A load that turns fatal after riding out a transient blip surfaces
-    /// the fatal classification, not the earlier transient one, after
-    /// exactly the two calls that produced it.
     #[tokio::test]
     async fn transient_then_fatal_load_surfaces_as_persister_load_fatal() {
         let persister = Arc::new(FaultyPersister {
@@ -1629,9 +1603,7 @@ mod persist_retry_tests {
         assert_eq!(persister.load_calls.load(Ordering::SeqCst), 2);
     }
 
-    /// The load-retry schedule sleeps `[20, 40, 80]` ms across the 4 total
-    /// attempts it allows for an always-transient failure — driven with
-    /// virtual time so the test itself doesn't wait 140 ms.
+    /// Virtual time, so the test itself doesn't wait the schedule's 140 ms.
     #[tokio::test(start_paused = true)]
     async fn transient_load_retry_follows_the_backoff_schedule() {
         let calls = Arc::new(AtomicUsize::new(0));
@@ -1657,11 +1629,9 @@ mod persist_retry_tests {
         assert_eq!(tokio::time::Instant::now() - start, expected);
     }
 
-    /// A transient failure persisting the identity-scan verdict is logged
-    /// and swallowed on the first attempt — never retried — so a merely busy
-    /// backend costs the verdict its durability this launch
-    /// (dashpay/platform#4365) rather than failing the registration that
-    /// just succeeded.
+    /// A busy backend costs the scan verdict its durability this launch
+    /// (dashpay/platform#4365) rather than failing the registration that just
+    /// succeeded: logged and swallowed, never retried.
     #[tokio::test]
     async fn transient_scan_verdict_store_failure_is_logged_not_retried() {
         let persister = Arc::new(FaultyPersister {
@@ -1696,8 +1666,6 @@ mod persist_retry_tests {
         );
     }
 
-    /// An unpersistable verdict never escalates into failing the registration
-    /// that just succeeded.
     #[tokio::test]
     async fn unpersistable_scan_verdict_does_not_fail_registration() {
         let persister = Arc::new(FaultyPersister {
@@ -1714,15 +1682,13 @@ mod persist_retry_tests {
         assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 0);
     }
 
-    /// The typed persister-phase variants preserve retry
-    /// classification, enable structural matching, and keep the `#[source]`
-    /// chain instead of flattening to a string.
+    /// The typed variants preserve retry classification, allow structural
+    /// matching, and keep the `#[source]` chain.
     ///
-    /// Also pins the named constructors to the operation each is named
-    /// for. That is the whole reason no blanket `From<PersistenceError>`
-    /// exists: the same value can come from a load, a store or a flush, so
-    /// only the call site knows which variant is truthful, and an inferred
-    /// conversion reports failed writes as failed reads.
+    /// Also pins each constructor to the operation it names — the reason no
+    /// blanket `From<PersistenceError>` exists: only the call site knows
+    /// whether a load, a store or a flush produced the value, so an inferred
+    /// conversion would report failed writes as failed reads.
     #[test]
     fn typed_variants_preserve_classification_matching_and_source() {
         use std::error::Error;
@@ -1744,8 +1710,7 @@ mod persist_retry_tests {
         }
         assert!(load_err.source().is_some());
 
-        // The restore variant wraps a typed inner error; structural matching
-        // must recover the concrete inner variant, not an opaque string.
+        // Structural matching must recover the concrete inner variant.
         let restore_err =
             PlatformWalletError::from_restore_failure(PlatformWalletError::WalletLocked);
         assert!(restore_err.source().is_some());
@@ -1756,10 +1721,8 @@ mod persist_retry_tests {
             other => panic!("expected PersisterRestore, got {other:?}"),
         }
 
-        // The two persister-error constructors take the SAME input type, so
-        // nothing but the call site distinguishes them — mixing them up is
-        // silent, and is exactly the defect the removed blanket conversion
-        // produced downstream.
+        // Both take the SAME input type, so only the call site distinguishes
+        // them and a mix-up is silent.
         assert!(
             matches!(
                 PlatformWalletError::from_store_failure(fatal()),

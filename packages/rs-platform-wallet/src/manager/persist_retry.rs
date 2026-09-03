@@ -1,12 +1,12 @@
 //! Bounded retry for transient persister *reads*.
 //!
 //! Only `load` is retried in-crate: it is idempotent and the crate owns both
-//! ends. Writes are never retried here — a failed `store` propagates typed
-//! and kind-classified, and the caller decides.
+//! ends. A failed `store` propagates typed and kind-classified instead, and the
+//! caller decides.
 //!
 //! Each attempt runs on the blocking pool; worst case per call is
-//! `attempts × backend timeout + Σ backoff` (SQLite `busy_timeout` defaults
-//! to 5 s).
+//! `attempts × backend timeout + Σ backoff` (SQLite `busy_timeout` defaults to
+//! 5 s).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,13 +21,12 @@ pub(crate) const LOAD_RETRY_BACKOFF: [Duration; 3] = [
     Duration::from_millis(80),
 ];
 
-/// Retry a synchronous persister `load` while it fails *transiently*, off
-/// the async runtime, on the fixed [`LOAD_RETRY_BACKOFF`] schedule.
+/// Retry a synchronous persister `load` while it fails *transiently*, off the
+/// async runtime, on the fixed [`LOAD_RETRY_BACKOFF`] schedule.
 ///
-/// `op` runs on the blocking pool once per attempt. A fatal error (or
-/// success) returns immediately — a fatal failure never retries. A panic
-/// inside `op` propagates to the caller; a cancelled attempt (runtime
-/// shutting down) surfaces as a backend error instead of panicking.
+/// `op` runs on the blocking pool once per attempt; success or a fatal error
+/// returns immediately. A panic inside `op` propagates to the caller; a
+/// cancelled attempt (runtime shutting down) surfaces as a backend error.
 pub(crate) async fn retry_transient_load<T, F>(op: F) -> Result<T, PersistenceError>
 where
     F: Fn() -> Result<T, PersistenceError> + Send + Sync + 'static,

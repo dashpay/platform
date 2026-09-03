@@ -971,8 +971,8 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     ///
     /// Mirrors what `discover` publishes for itself, retry policy included;
     /// needed separately because a scan dropped mid-await never reaches its own
-    /// bookkeeping. This is the verdict least affordable to lose — it is the
-    /// one that re-opens the identity question on the next launch.
+    /// bookkeeping. This is the verdict least affordable to lose — the one that
+    /// re-opens the identity question on the next launch.
     async fn record_identity_scan_cut_off(&self, wallet_id: &WalletId) {
         // Coverage of nothing: the scan was dropped mid-await, so it answered
         // no index and may not clear one an earlier scan left open.

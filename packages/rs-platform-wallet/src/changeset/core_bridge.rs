@@ -224,9 +224,9 @@ impl std::fmt::Display for BatchDiagnostics {
 /// `Arc<P>` (not to the `Arc<dyn PlatformWalletPersistence>` coercion) to
 /// actually realize the static-dispatch win.
 ///
-/// The reference is **weak**: the task upgrades it for the duration of each
-/// batch commit and holds nothing while idle, so the persister is released
-/// as soon as its owner drops rather than when this task next polls.
+/// The reference is **weak**: the task upgrades it for each batch commit and
+/// holds nothing while idle, so the persister is released when its owner drops
+/// rather than when this task next polls.
 pub fn spawn_wallet_event_adapter<P>(
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     persister: Weak<P>,
@@ -431,9 +431,9 @@ async fn run_wallet_event_adapter<P>(
         // accounted for" and "nobody knows".
         let settled: Arc<Mutex<Vec<WalletId>>> = Arc::new(Mutex::new(Vec::new()));
         let settled_for_commit = Arc::clone(&settled);
-        // Upgraded per batch and held only for the commit: an idle adapter
-        // must not keep the persister open, or a manager whose owner dropped
-        // it stays "open" until this task next polls (issue #4133).
+        // Held only for the commit: an idle adapter keeping the persister
+        // open leaves a dropped manager's store "open" until the next poll
+        // (issue #4133).
         let Some(persister_for_commit) = persister.upgrade() else {
             tracing::debug!("persister released; wallet-event adapter exiting");
             break;
@@ -3442,11 +3442,9 @@ mod tests {
     }
 
     /// The adapter upgrades its weak persister reference for exactly the span
-    /// of a batch commit, and holds nothing outside it.
-    ///
-    /// That span is the sole bound on the manager's synchronous release: a
-    /// drop racing a commit reclaims the persister when the parked `store()`
-    /// returns, not immediately (issue #4133).
+    /// of a batch commit — the sole bound on the manager's synchronous release,
+    /// since a drop racing a commit reclaims the persister only when the parked
+    /// `store()` returns (issue #4133).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn an_in_flight_commit_holds_a_strong_persister_reference() {
         use std::time::{Duration, Instant};

@@ -227,11 +227,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// # Errors
     ///
-    /// Transient tx-record read failures leave the scan incomplete so the
-    /// guard stays unstamped and the next sweep retries; permanent ones
-    /// return [`PlatformWalletError::PersisterLoad`]. Retrying a permanent
-    /// failure every sweep would never succeed and would never be
-    /// reported.
+    /// Transient tx-record read failures leave the scan incomplete, so the
+    /// guard stays unstamped and the next sweep retries. Permanent ones return
+    /// [`PlatformWalletError::PersisterLoad`] rather than deferring: retrying
+    /// them every sweep would never succeed and never be reported.
     pub async fn reconcile_sent_payments_from_tx_history(
         &self,
     ) -> Result<usize, PlatformWalletError> {
@@ -435,9 +434,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             .collect(),
                     });
                 }
-                // Either the row is genuinely unreadable yet, or a
-                // transient failure already read as a miss. Both mean the
-                // same thing here: retry on the next sweep.
+                // Not readable yet, or a transient failure read as a miss.
+                // Both mean: retry on the next sweep.
                 Ok(None) => {
                     incomplete_scan = true;
                     tracing::debug!(
@@ -446,8 +444,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     );
                 }
                 // A permanent failure will not fix itself, so deferring it
-                // re-runs the whole sweep on every sync forever and never
-                // says why. Same policy as the confirmation sweep.
+                // re-runs the whole sweep on every sync forever, silently.
                 Err(e) => return Err(PlatformWalletError::from_load_failure(e)),
             }
         }
@@ -1706,8 +1703,7 @@ mod tests {
                 key_wallet::managed_account::transaction_record::TransactionRecord,
             >,
         >,
-        /// `Some(kind)` makes every `get_core_tx_record` fail with that
-        /// error class instead of answering from `records`.
+        /// `Some(kind)` fails every `get_core_tx_record` with that class.
         read_error_kind: Mutex<Option<PersistenceErrorKind>>,
         /// Txids the enumeration lists but `get_core_tx_record` answers
         /// `Ok(None)` for — the FFI shape for "row exists, record not
@@ -3701,13 +3697,9 @@ mod tests {
         );
     }
 
-    /// A permanent tx-record read failure surfaces from the reconstruction
-    /// sweep; only a transient one is folded into "incomplete, retry next
-    /// time".
-    ///
-    /// The distinction is what stops a permanently unreadable store from
-    /// re-running the whole sweep on every dashpay sync, indefinitely and
-    /// silently. Same policy as the confirmation sweep.
+    /// Only a transient failure folds into "incomplete, retry next time" — the
+    /// distinction stops a permanently unreadable store from silently
+    /// re-running the whole sweep on every dashpay sync.
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_surfaces_permanent_read_failures() {
         use dashcore::hashes::Hash;

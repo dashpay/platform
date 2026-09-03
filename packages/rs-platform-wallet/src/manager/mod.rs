@@ -1056,17 +1056,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 }
 
-/// Drop backstop for the wallet-event adapter task: cancels its token and
-/// aborts the task, which a dirty drop would otherwise merely detach.
+/// Drop backstop for the wallet-event adapter task, which a dirty drop would
+/// otherwise merely detach.
 ///
-/// The persister is released here with the manager's own `Arc<P>` — the
-/// adapter holds a `Weak<P>` — so a reconstruct on the same path cannot hit a
-/// spurious `WalletStorageError::AlreadyOpen` (issue #4133). The one bound: a
-/// batch commit in flight has upgraded that weak reference and keeps the
-/// persister alive until its `store()` returns.
-///
-/// Use [`shutdown`](PlatformWalletManager::shutdown) for a release that is
-/// joined rather than aborted.
+/// The persister is released here with the manager's own `Arc<P>` — the adapter
+/// holds only a `Weak<P>` — so a reconstruct on the same path cannot hit a
+/// spurious `WalletStorageError::AlreadyOpen` (issue #4133), bounded only by a
+/// batch commit in flight holding its upgrade until `store()` returns. Use
+/// [`shutdown`](PlatformWalletManager::shutdown) to join rather than abort.
 impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
     fn drop(&mut self) {
         self.event_adapter_cancel.cancel();
