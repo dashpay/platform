@@ -688,6 +688,15 @@ fn commit_wallet<P>(
             // watermark the backend has already made durable. `offered_height`
             // keeps the original so the rejection is still diagnosed as a
             // withheld advance rather than as a round that carried none.
+            //
+            // `last_processed_height` is deliberately NOT stripped, matching
+            // the existing fault guard (`freeze_synced_height_if_faulted`,
+            // dashpay/platform#4069). The two watermarks answer different
+            // questions: `synced_height` is the durable claim "everything up
+            // to here is scanned AND persisted", which is what must not
+            // outrun an unapplied removal, while `last_processed_height` is
+            // the adapter's own progress marker and holding it back would
+            // re-drive work without making anything safer.
             core.synced_height = None;
         }
 
@@ -714,9 +723,15 @@ fn commit_wallet<P>(
                 // attested `CORE_SWEEP_REMOVAL` is not known to have applied
                 // the one subtractive part of this round — reporting it
                 // durable would let the swept loser return at the next
-                // `load()`. Fault exactly like a rejection: the next scan
-                // re-emits the sweep and the idempotent removal is retried
-                // against (hopefully, by then) a capable backend.
+                // `load()`. Fault exactly like a rejection: the watermark is
+                // held, so the next scan re-emits the sweep and the
+                // idempotent removal is retried.
+                //
+                // Recovery is not in-session: the persister does not change
+                // under a running adapter, so a host that lacks the slot
+                // stays frozen until it ships one and relaunches. Freezing
+                // is the point — it is what keeps a height that outran an
+                // unapplied removal from becoming durable.
                 if fault_and_freeze(
                     diag,
                     offered_height,
@@ -4528,9 +4543,11 @@ mod tests {
         );
 
         let (obs_tx, mut obs_rx) = unbounded_channel();
-        // Attested for sweeps AND payments: the removal must ride an
-        // ordinary round, and the flip's overlay is only staged for a
-        // payment-durable backend.
+        // Attested for sweeps AND payments. Only the sweep half matters
+        // here: nothing in this PR writes `dashpay_payments_overlay`, so
+        // the payments bit is inert — it is declared so this fixture keeps
+        // describing a fully capable backend once the payment-flip coupling
+        // lands (dashpay/platform#4442) and starts staging that overlay.
         let persister = Arc::new(ProbePersister::with_capabilities(
             obs_tx,
             crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
