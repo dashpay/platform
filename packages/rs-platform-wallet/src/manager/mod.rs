@@ -492,7 +492,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let event_adapter_cancel = CancellationToken::new();
         let event_adapter_join = spawn_wallet_event_adapter(
             Arc::clone(&wallet_manager),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             event_receiver,
             Arc::clone(&sync_fault),
             event_adapter_cancel.clone(),
@@ -1043,22 +1043,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 }
 
-/// Drop backstop for the wallet-event adapter task.
+/// Drop backstop for the wallet-event adapter task: cancels its token and
+/// aborts the task, which a dirty drop would otherwise merely detach.
 ///
-/// The graceful teardown is [`shutdown`](PlatformWalletManager::shutdown)
-/// (cancel + await the join). A dirty drop that skips it would otherwise merely
-/// detach the `JoinHandle`, leaving the adapter task running and holding its
-/// `Arc<P>` clone — which keeps the persister "open" and turns a later re-open
-/// on the same path into a spurious `WalletStorageError::AlreadyOpen` that
-/// masks the real error (issue #4133). Cancelling the token and aborting the
-/// task here starts that release — but note it is *eventual*, not synchronous:
-/// `abort()` only requests cancellation, so the runtime drops the task (and its
-/// `Arc<P>` clone) at the task's next poll, not inside this `drop`. In practice
-/// the adapter loop parks on an `.await` almost every iteration, so the clone is
-/// reclaimed promptly. Only the graceful
-/// [`shutdown`](PlatformWalletManager::shutdown) path *guarantees* the reference
-/// is gone before it returns (it awaits the join); this backstop guarantees
-/// eventual reclamation, not synchronous.
+/// The persister is released here with the manager's own `Arc<P>` — the
+/// adapter holds a `Weak<P>` — so a reconstruct on the same path cannot hit a
+/// spurious `WalletStorageError::AlreadyOpen` (issue #4133). The one bound: a
+/// batch commit in flight has upgraded that weak reference and keeps the
+/// persister alive until its `store()` returns.
+///
+/// Use [`shutdown`](PlatformWalletManager::shutdown) for a release that is
+/// joined rather than aborted.
 impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
     fn drop(&mut self) {
         self.event_adapter_cancel.cancel();

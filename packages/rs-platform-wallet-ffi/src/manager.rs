@@ -591,6 +591,11 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
 /// produce wallet handles — the caller should follow up with
 /// [`platform_wallet_manager_get_wallet`] per `wallet_id` it knows
 /// about.
+///
+/// On error the handle stays valid and the manager is unchanged: fix the
+/// store and call again, or `platform_wallet_manager_destroy` it and
+/// reconstruct. Destroying releases the persister before it returns, which a
+/// reconstruct over the same store path needs.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
     manager_handle: Handle,
