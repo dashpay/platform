@@ -178,13 +178,26 @@ pub fn apply(
         .flat_map(|b| b.txids.iter())
         .copied()
         .collect();
-    let claimed_by_survivors: HashSet<dashcore::OutPoint> = cs
-        .records
+    // Only a round that actually releases something reads this, and the
+    // common sweep — a resend whose winner spends every input its loser did
+    // — releases nothing. Hashing every surviving record's inputs for such a
+    // round would pay a per-record cost, with the writer held, for a set
+    // nothing consults. Same reasoning as the lazily-built `stored_claims`
+    // below.
+    let releases_anything = cs
+        .sweeps
         .iter()
-        .filter(|record| !swept_txids.contains(&record.txid))
-        .flat_map(|record| record.transaction.input.iter())
-        .map(|input| input.previous_output)
-        .collect();
+        .any(|batch| !batch.released_outpoints.is_empty());
+    let claimed_by_survivors: HashSet<dashcore::OutPoint> = if releases_anything {
+        cs.records
+            .iter()
+            .filter(|record| !swept_txids.contains(&record.txid))
+            .flat_map(|record| record.transaction.input.iter())
+            .map(|input| input.previous_output)
+            .collect()
+    } else {
+        HashSet::new()
+    };
     // The changeset is not the whole answer, though. Upstream computes
     // `released_outpoints` from its *live* records, and under the default
     // `keep-finalized-transactions = off` a chainlocked record is pruned to
@@ -251,9 +264,10 @@ pub fn apply(
         // wipes a buffered round (the winner's record with it) while the
         // faulted wallet keeps persisting later rounds, and `apply_sweep`
         // above returns before its input loop when the swept txid has no
-        // row. Dropping the release set there would leave the `:340` valve
-        // holding the placeholder's `spent_in_txid` forever — the release
-        // is the one channel that clears it. Running after the loser loop
+        // row. Dropping the release set there would leave the
+        // `spent_in_txid` guard in `execute_upsert_utxo`'s conflict clause
+        // holding the placeholder's claim forever — the release is the one
+        // channel that clears it. Running after the loser loop
         // rather than inside it changes nothing for inputs the loop already
         // freed (same UPDATE, idempotent), and a coin a surviving record in
         // this round re-claimed was already filtered out of `released`
@@ -489,6 +503,17 @@ fn apply_sweep(
             |row| row.get(0),
         )
         .optional()?;
+    // Before the early return, deliberately. `instant_locks_for_non_final_records`
+    // is a separate map that merges independently of `records`, so a lock row can
+    // outlive its record — a fatal flush that discards a buffered round is the
+    // documented way. Nothing ties that table to `core_transactions` (no foreign
+    // key, no trigger), so a lock skipped here survives forever, describing a
+    // transaction the wallet has removed. The delete is txid-keyed and
+    // idempotent, so running it on the missing-record path costs nothing.
+    tx.execute(
+        "DELETE FROM core_instant_locks WHERE wallet_id = ?1 AND txid = ?2",
+        params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
+    )?;
     let Some(loser_blob) = loser_blob else {
         return Ok(());
     };
@@ -513,14 +538,6 @@ fn apply_sweep(
         "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
         params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
     )?;
-    // An InstantSend-locked loser is evictable by a chainlocked winner, so a
-    // swept transaction can own a row here. Nothing ties that table to
-    // `core_transactions` — no foreign key, no trigger — so the lock would
-    // outlive the transaction it describes forever.
-    tx.execute(
-        "DELETE FROM core_instant_locks WHERE wallet_id = ?1 AND txid = ?2",
-        params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
-    )?;
     let mut delete_output_stmt =
         tx.prepare_cached("DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2")?;
     for vout in 0..loser.transaction.output.len() as u32 {
@@ -530,7 +547,6 @@ fn apply_sweep(
         })?;
         delete_output_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
     }
-    drop(delete_output_stmt);
 
     // Each input is set outright rather than only touched when it changes:
     // whichever way it went, the row must end this round agreeing with the
@@ -604,10 +620,7 @@ fn apply_sweep(
         // its way.
         if swept_txids.contains(&outpoint.txid) {
             let key = blob::encode_outpoint(&outpoint)?;
-            tx.execute(
-                "DELETE FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-                params![wallet_id.as_slice(), &key[..]],
-            )?;
+            delete_output_stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
             continue;
         }
         let key = blob::encode_outpoint(&outpoint)?;
