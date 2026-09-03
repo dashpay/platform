@@ -84,7 +84,7 @@ fn sqlite_advertises_shielded_viewing_key_capability() {
 }
 
 #[test]
-fn delete_wallet_trait_cascades_shielded_viewing_keys() {
+fn delete_wallet_cascades_shielded_viewing_keys() {
     let (persister, _tmp, path) = fresh_persister();
     let wallet_id = wid(0x61);
     let subwallet_id = SubwalletId::new(wallet_id, 7);
@@ -93,8 +93,9 @@ fn delete_wallet_trait_cascades_shielded_viewing_keys() {
         .store(wallet_id, changeset(subwallet_id, [0xA7; 96]))
         .expect("store viewing key");
 
-    PlatformWalletPersistence::delete_wallet(&persister, wallet_id)
-        .expect("trait deletion must succeed");
+    persister
+        .delete_wallet(wallet_id)
+        .expect("inherent deletion must succeed");
 
     let remaining: i64 = common::ro_conn(&path)
         .query_row(

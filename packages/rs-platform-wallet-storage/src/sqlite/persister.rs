@@ -1305,12 +1305,6 @@ impl PlatformWalletPersistence for SqlitePersister {
         self.flush_inner(&wallet_id)
     }
 
-    fn delete_wallet(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
-        SqlitePersister::delete_wallet(self, wallet_id)
-            .map(|_| ())
-            .map_err(PersistenceError::from)
-    }
-
     /// Load every wallet's start-state from disk.
     ///
     /// Populates `platform_addresses` and the keyless per-wallet `wallets`
