@@ -86,6 +86,7 @@ pub(crate) fn restore_provider_platform_node_pool(
     conn: &rusqlite::Connection,
     wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
     network: Network,
+    ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     if wallet_info.accounts.provider_platform_keys.is_none() {
         return Ok(());
@@ -115,7 +116,32 @@ pub(crate) fn restore_provider_platform_node_pool(
             )
         })?;
         let script_pubkey = dashcore::ScriptBuf::from_bytes(script_bytes);
-        let address = dashcore::Address::from_script(&script_pubkey, network)?;
+        // Same condition `core_pool`/`core_state` tolerate as
+        // `LoadSite::UndecodableAddressScript`, so it must be tolerable here
+        // too — otherwise the crate tolerates an undecodable script in two
+        // readers and aborts on it in a third. Doubly worth it here: this
+        // error `?`-propagates out of `load()`'s per-wallet loop, so one
+        // damaged wallet would abort the load of EVERY wallet in the file, and
+        // the data at stake is a re-derivable cache of pre-derived
+        // platform-node public keys — no funds, no identity, no address-reuse
+        // guard. If anything in this crate should degrade rather than fail,
+        // it is this.
+        let address = match dashcore::Address::from_script(&script_pubkey, network) {
+            Ok(address) => address,
+            Err(e) => {
+                ctx.tolerate_at(
+                    LoadSite::UndecodableAddressScript,
+                    SiteCoords {
+                        wallet_id: Some(*wallet_id),
+                        account_type: &AccountType::ProviderPlatformKeys,
+                        affected: 1,
+                        detail: Some(&AddressPoolType::AbsentHardened),
+                    },
+                    WalletStorageError::from(e),
+                )?;
+                continue;
+            }
+        };
         insert_platform_node_pool_entry(
             wallet_info,
             network,
@@ -733,13 +759,31 @@ fn extend_pools_for_restored_addresses(
                 break;
             }
 
-            // NOTE(recovery-mode): the `Err(e)` branch below has no reachable
+            // NOTE(recovery-mode): the `Err(e)` branch below has no *known*
             // seed from a persisted row — the `key_source` here already derived
             // this pool, so a refill failure needs a key source that derives
-            // some indices and not others. Kept fail-closed like
-            // `ensure_derived` above: a short window means a previously-used
-            // address can be re-issued as fresh. (The size cap above it is a
-            // live, tested guard — see MAX_REHYDRATION_GAP_REFILL.)
+            // some indices and not others. Phrased as unknown rather than
+            // unreachable on purpose: `ensure_derived_failure_fixture` in
+            // tests/sqlite_recovery_mode.rs has since shown this class of
+            // fixture is buildable, which weakens the old flat claim that
+            // nothing could reach it.
+            //
+            // TODO(maintain-gap-limit-coverage): one untried lead — set
+            // `highest_used`/`highest_generated` near 2^31 with a small
+            // `gap_limit`, so `implied` stays under MAX_REHYDRATION_GAP_REFILL
+            // (the pre-flight guard above must not `break` first) while
+            // `target` crosses the non-hardened child-index boundary and makes
+            // `maintain_gap_limit` fail. Not attempted: a planted high
+            // `address_index` also has to survive the discovery-walk cap and
+            // address resolution, either of which fires a different site
+            // first. If it turns out unreachable, record that here WITH the
+            // evidence — do not restore a bare "unreachable" claim on
+            // assumption.
+            //
+            // Kept fail-closed like `ensure_derived` above: a short window
+            // means a previously-used address can be re-issued as fresh. (The
+            // size cap above it is a live, tested guard — see
+            // MAX_REHYDRATION_GAP_REFILL.)
             if let Err(e) = pool.maintain_gap_limit(key_source) {
                 ctx.tolerate_at(
                     LoadSite::RehydrationMaintainGapLimit,

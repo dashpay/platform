@@ -110,7 +110,27 @@ impl LoadSite {
             Self::TombstonedIdentityOrphan => {
                 "recovery mode: skipping rows owned by a tombstoned identity"
             }
-            _ => "recovery mode: tolerating a persisted inconsistency instead of failing the load",
+            // Sites whose site tag plus the logged error already say
+            // everything a reader needs, so they share the generic line.
+            // Listed explicitly rather than behind a `_` arm: a new
+            // `LoadSite` must fail to compile here and force a decision,
+            // instead of silently inheriting a message that describes it
+            // wrongly.
+            Self::ChainLockBlob
+            | Self::CoreTransactionColumnDrift
+            | Self::AccountRegistrationDrift
+            | Self::ProviderKeyRegistrationDrift
+            | Self::ProviderKeyCurveMismatch
+            | Self::AssetLockStatusDrift
+            | Self::OrphanedUtxoOwner
+            | Self::UnresolvedUtxoAddress
+            | Self::UndecodableAddressScript
+            | Self::UsedAddressOwnerConflict
+            | Self::UnownedIdentityHasRegistrationIndex
+            | Self::IdentityIndexCollision
+            | Self::IdentityScanStateContradiction => {
+                "recovery mode: tolerating a persisted inconsistency instead of failing the load"
+            }
         }
     }
 
@@ -122,7 +142,32 @@ impl LoadSite {
             Self::UnresolvedUtxoAddress => {
                 "load degraded: deferring addresses that did not resolve against the account xpub"
             }
-            _ => "load degraded: an ambiguous persisted inconsistency was accepted as-is",
+            // Only the two sites above are never-fatal, so only they reach
+            // this function through `note_degraded`. The rest are listed —
+            // not hidden behind a `_` arm — so that adding a `LoadSite`
+            // fails to compile here and forces the author to say whether it
+            // is never-fatal. That decision is precisely what the Strict
+            // invariant of `LoadDegradation::by_site` rests on, and a
+            // wildcard would let a Strict-fatal site acquire a
+            // "accepted as-is" message silently.
+            Self::ChainLockBlob
+            | Self::ShieldedViewingKeyRow
+            | Self::CoreTransactionColumnDrift
+            | Self::AccountRegistrationDrift
+            | Self::ProviderKeyRegistrationDrift
+            | Self::ProviderKeyCurveMismatch
+            | Self::AssetLockStatusDrift
+            | Self::RehydrationEnsureDerived
+            | Self::RehydrationGapLimit
+            | Self::RehydrationMaintainGapLimit
+            | Self::UndecodableAddressScript
+            | Self::UsedAddressOwnerConflict
+            | Self::TombstonedIdentityOrphan
+            | Self::UnownedIdentityHasRegistrationIndex
+            | Self::IdentityIndexCollision
+            | Self::IdentityScanStateContradiction => {
+                "load degraded: an ambiguous persisted inconsistency was accepted as-is"
+            }
         }
     }
 }

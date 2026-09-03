@@ -1584,8 +1584,14 @@ impl PlatformWalletPersistence for SqlitePersister {
             if account_manifest.provider.iter().any(|entry| {
                 entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys
             }) {
-                restore_provider_platform_node_pool(&mut wallet_info, &conn, &wallet_id, network)
-                    .map_err(|e| {
+                restore_provider_platform_node_pool(
+                    &mut wallet_info,
+                    &conn,
+                    &wallet_id,
+                    network,
+                    &ctx,
+                )
+                .map_err(|e| {
                     PersistenceError::backend(format!(
                         "platform-node pool rehydration failed for {}: {e}",
                         hex::encode(wallet_id)
