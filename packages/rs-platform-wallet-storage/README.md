@@ -149,7 +149,6 @@ to be explicit about the backend.
 flush, 5 s busy timeout, WAL journal, `NORMAL` synchronous, and an
 auto-backup dir at `<db_dir>/backups/auto/`.
 
-The trait surface is `store` / `flush` / `load` / `get_core_tx_record`.
 Schema migrations are versioned Rust files under `migrations/`, applied via
 [`refinery`](https://github.com/rust-db/refinery) on every `open`. The current
 migration set is still unreleased, so every migration may be edited in place
@@ -370,6 +369,42 @@ future variant must force every consumer `match` to update explicitly. The
 SQLite side classifies its native errors through
 `WalletStorageError::persistence_kind` and exposes the retry decision
 directly via `WalletStorageError::is_transient`.
+
+### Database trust model
+
+The wallet `.db` is **trusted local state**, not untrusted input. It is
+expected to sit under the host application's own private directory, owned
+by the same user at the same privilege level as the process reading it. An
+adversary who can write arbitrary rows into the `.db` has already achieved
+same-privilege local code execution, at which point the process's own
+memory, its keyring entries, and its vault passphrase prompt are all
+equally reachable — so hardening the read path against that adversary buys
+nothing. **Threat models premised on an attacker-authored database are out
+of scope for this crate.**
+
+The read path is nonetheless defensive, and deliberately so — against
+*corruption*, not against attack:
+
+- Layered size limits (16 MiB per-value cap, bounded bincode decode,
+  32 MiB connection backstop) keep a truncated or bit-rotted blob from
+  becoming an allocation the process cannot survive.
+- Typed columns are cross-checked against their decoded BLOB counterparts
+  on every read, so a partially-applied write is caught rather than
+  silently trusted.
+- Key/identity co-ownership is structurally enforced (compound FK plus a
+  trigger fallback where SQLite's own FK check goes dormant on NULL
+  columns), so a half-written relation fails closed.
+- `PRAGMA integrity_check` and `PRAGMA foreign_key_check` run
+  unconditionally at open in both load policies.
+
+Read every one of those as bounding the blast radius of a bug, a crash
+mid-write, or failing storage hardware. None of them is a security control,
+and none should be cited as one. Where a bound exists only to keep work
+finite — the rehydration derivation caps, for instance — its documentation
+says so in those terms rather than claiming to stop an attacker.
+
+Backups inherit the same model: restore validation establishes structure,
+not provenance. Protect backup directories as you protect the live DB.
 
 ### Schema
 

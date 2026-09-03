@@ -153,12 +153,17 @@ filetime = "0.2"
 # Test-only: construct the `Zeroizing<[u8; 32]>` secret on an
 # `IdentityKeyEntry` to prove the on-disk wire shape drops it. The
 # production `zeroize` dep is gated behind the `secrets` feature, which
-# the off-state CI build disables, so the test surface needs its own.
+# the off-state build disables, so the test surface needs its own.
+# NOTE: that off-state build (`--no-default-features --features
+# sqlite,cli`) is a local/manual check, NOT a CI gate — no workflow runs
+# it today. Keep this dev-dep regardless: it is what lets the off-state
+# build succeed when someone does run it.
 zeroize = { version = "=1.8.2", features = ["derive"] }
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 serial_test = "3"
-# `default-features = false` so the off-state CI invocation
-# (`--no-default-features --features sqlite,cli`) actually exercises a
+# `default-features = false` so the off-state build
+# (`--no-default-features --features sqlite,cli`, a local/manual check —
+# see the note above; no CI job runs it) actually exercises a
 # build with `secrets`/`kv` disabled — otherwise the dev-dep view would
 # silently re-enable the default feature set for every integration test.
 # Test surface is opted into explicitly: `secrets` and `kv` are listed
