@@ -191,7 +191,8 @@ impl SecretString {
     /// vault write. The consequence is that growth driven by untrusted
     /// input (a paste into a text field) is unbounded `mlock`ed,
     /// page-rounded memory, and the locks fail open once `RLIMIT_MEMLOCK`
-    /// runs out. Bound such input at your own boundary.
+    /// runs out. Crossing [`MAX_PASSPHRASE_LEN`] emits a warning containing
+    /// only lengths; callers must still bound such input at their own boundary.
     ///
     /// ```
     /// use platform_wallet_storage::secrets::SecretString;
@@ -205,6 +206,13 @@ impl SecretString {
         let old_len = self.len;
         // `resolve_range` guarantees `start <= end <= old_len`.
         let new_len = old_len - (end - start) + replacement.len();
+        if old_len <= MAX_PASSPHRASE_LEN && new_len > MAX_PASSPHRASE_LEN {
+            tracing::warn!(
+                length = new_len,
+                maximum = MAX_PASSPHRASE_LEN,
+                "secret string grew beyond the store passphrase ceiling"
+            );
+        }
         self.reserve(new_len);
 
         let Some(buf) = &mut self.buf else {

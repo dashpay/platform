@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{Entry, Error as KeyringError};
+use zeroize::Zeroize;
 
 use super::error::{OsKeyringErrorKind, SecretStoreError};
 use super::file::crypto::KdfParams;
@@ -80,12 +81,13 @@ impl SecretStore {
     }
 
     /// Open (or create) a **deliberately keyless** file-backed vault — the
-    /// only door that takes no passphrase. Obfuscation, not confidentiality
-    /// (the key derives from an empty passphrase under the public salt): use
-    /// it where the stored secrets carry their own Tier-2 object password,
-    /// or as a staging step before [`EncryptedFileStore::rekey`] to a real
-    /// passphrase. [`file`](SecretStore::file) rejects sub-floor passphrases;
-    /// this is the explicit keyless alternative.
+    /// only door that takes no passphrase. It provides neither confidentiality
+    /// nor authenticity: anyone who can write the file can derive its key,
+    /// forge a valid vault, and inject a chosen unprotected secret. Use it where
+    /// the stored secrets carry their own Tier-2 object password, or as a staging
+    /// step before [`EncryptedFileStore::rekey`] to a real passphrase.
+    /// [`file`](SecretStore::file) rejects sub-floor passphrases; this is the
+    /// explicit keyless alternative.
     pub fn file_unprotected(path: impl AsRef<std::path::Path>) -> Result<Self, SecretStoreError> {
         Ok(Self::File(EncryptedFileStore::open_unprotected(path)?))
     }
@@ -223,7 +225,7 @@ impl SecretStore {
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
                 match entry.get_secret() {
-                    Ok(v) => {
+                    Ok(mut v) => {
                         // Defense-in-depth: reject an oversized backend blob
                         // before it reaches the envelope parse/derive path.
                         // The File arm's stored bytes are already capped at
@@ -233,10 +235,9 @@ impl SecretStore {
                         // headroom.
                         let cap = MAX_SECRET_LEN + envelope::MAX_ENVELOPE_OVERHEAD;
                         if v.len() > cap {
-                            return Err(SecretStoreError::SecretTooLarge {
-                                found: v.len(),
-                                max: cap,
-                            });
+                            let found = v.len();
+                            v.zeroize();
+                            return Err(SecretStoreError::SecretTooLarge { found, max: cap });
                         }
                         Ok(Some(SecretBytes::new(v)))
                     }
