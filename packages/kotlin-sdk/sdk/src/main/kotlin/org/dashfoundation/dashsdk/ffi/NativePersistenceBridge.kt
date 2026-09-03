@@ -32,6 +32,18 @@ package org.dashfoundation.dashsdk.ffi
  *   [onWalletChangesetAccountBegin] / [onWalletChangesetAccountEnd].
  * - Persist slots return `Int` (0 = ok, non-zero flips the round's
  *   success flag so [onChangesetEnd] delivers the rollback).
+ * - A plain non-zero return means "failed, do not retry". A handler that
+ *   can classify its own failure may instead return one of the two
+ *   sentinels `platform-wallet-ffi` defines —
+ *   `PLATFORM_WALLET_PERSIST_RC_TRANSIENT` (-2) for a retryable failure
+ *   after which nothing was applied, or
+ *   `PLATFORM_WALLET_PERSIST_RC_CONSTRAINT` (-3) for an integrity
+ *   violation. The native side forwards the classification to its caller
+ *   (surfacing as `DashSdkError.PlatformWallet.PersisterStoreTransient`
+ *   and friends) and never retries on the handler's behalf. Returning the
+ *   transient sentinel from a ROUND callback additionally asserts that a
+ *   failed round is rolled back whole — see `PersistenceCallbacks` in
+ *   `rs-platform-wallet-ffi/src/persistence.rs` for the exact contract.
  * - Load slots return flattened representations (`Array<...>` / typed
  *   holder objects) that the trampoline re-packs into Rust-owned FFI
  *   structs; Kotlin never allocates native memory.

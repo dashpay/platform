@@ -25,9 +25,9 @@ use std::str::FromStr;
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    ListedCoreTxid, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
-    PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
-    PERSISTENCE_CAPABILITIES_VERSION,
+    ListedCoreTxid, Merge, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
+    PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
+    ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
@@ -271,6 +271,102 @@ pub struct PersistenceExtensionCallbacks {
     pub load_tracked_masternodes_free: Option<FreeTrackedMasternodesFn>,
 }
 
+/// Return value by which a persistence callback reports a **retryable**
+/// failure after which nothing was applied (the host's own
+/// `SQLITE_BUSY` / `SQLITE_FULL` / `SQLITE_IOERR` class).
+///
+/// The host holds the real storage handle and is the only party that can
+/// see the native status code, so this is the only channel through which
+/// a retry classification reaches the Rust side. Failures reported this
+/// way surface to the Rust caller as
+/// [`PersistenceErrorKind::Transient`]; the caller — never this crate —
+/// decides whether to retry.
+///
+/// Unrelated to `rs-unified-sdk-jni`'s `RESOLVE_*` mnemonic-resolver
+/// codes, which share these integers on a different callback family.
+pub const PLATFORM_WALLET_PERSIST_RC_TRANSIENT: i32 = -2;
+
+/// Return value by which a persistence callback reports a constraint /
+/// foreign-key / integrity violation, surfacing as
+/// [`PersistenceErrorKind::Constraint`] — "the data is wrong", as
+/// opposed to "the storage engine is unhappy". Not retryable.
+///
+/// Same caveat about `rs-unified-sdk-jni`'s `RESOLVE_*` codes as
+/// [`PLATFORM_WALLET_PERSIST_RC_TRANSIENT`].
+pub const PLATFORM_WALLET_PERSIST_RC_CONSTRAINT: i32 = -3;
+
+/// Classify a non-zero persistence-callback return value.
+///
+/// Only the two documented sentinels carry a classification; every other
+/// non-zero value keeps the conservative [`PersistenceErrorKind::Fatal`]
+/// reading, so hosts written against the plain `0` / non-zero contract
+/// behave exactly as before.
+fn persist_rc_kind(rc: i32) -> PersistenceErrorKind {
+    match rc {
+        PLATFORM_WALLET_PERSIST_RC_TRANSIENT => PersistenceErrorKind::Transient,
+        PLATFORM_WALLET_PERSIST_RC_CONSTRAINT => PersistenceErrorKind::Constraint,
+        _ => PersistenceErrorKind::Fatal,
+    }
+}
+
+/// Build the error for a non-zero return from a **single-call** callback
+/// (a load, a flush, a standalone persist), carrying the host's own
+/// classification of `rc`.
+///
+/// Round-participating callbacks do not use this: their verdicts are
+/// accumulated by [`RoundOutcome`] and classified once for the round.
+fn persist_callback_error(rc: i32, message: impl Into<String>) -> PersistenceError {
+    PersistenceError::backend_with_kind(persist_rc_kind(rc), message.into())
+}
+
+/// The verdict of one `store` round's callbacks.
+///
+/// A round fails if any callback failed, and reports the MOST SEVERE kind
+/// any of them returned (`Fatal` > `Constraint` > `Transient`) so one
+/// host-declared transient can never mask a fatal sibling.
+#[derive(Default)]
+struct RoundOutcome {
+    worst: Option<PersistenceErrorKind>,
+}
+
+impl RoundOutcome {
+    /// Record a non-zero return `rc` from a round callback.
+    fn record(&mut self, rc: i32) {
+        self.escalate(persist_rc_kind(rc));
+    }
+
+    /// Record a Rust-side failure to encode a payload. Never transient:
+    /// the same changeset will not encode on a later attempt.
+    fn record_fatal(&mut self) {
+        self.escalate(PersistenceErrorKind::Fatal);
+    }
+
+    fn escalate(&mut self, kind: PersistenceErrorKind) {
+        let severity = |kind| match kind {
+            PersistenceErrorKind::Transient => 0,
+            PersistenceErrorKind::Constraint => 1,
+            PersistenceErrorKind::Fatal => 2,
+        };
+        if self
+            .worst
+            .is_none_or(|worst| severity(kind) > severity(worst))
+        {
+            self.worst = Some(kind);
+        }
+    }
+
+    /// `true` while every callback so far has returned success. This is
+    /// what `on_changeset_end_fn` receives as its `success` argument.
+    fn is_success(&self) -> bool {
+        self.worst.is_none()
+    }
+
+    /// The kind to report for the round, or `None` if it succeeded.
+    fn failure_kind(&self) -> Option<PersistenceErrorKind> {
+        self.worst
+    }
+}
+
 /// C callback vtable for wallet persistence.
 ///
 /// General-purpose notifications (`on_store_fn`, `on_flush_fn`) plus
@@ -292,6 +388,43 @@ pub struct PersistenceExtensionCallbacks {
 /// callback returns and the lock is released.) Keep the work bounded; the call
 /// blocks every other wallet accessor while it runs. Mirrors the Rust-side
 /// `PlatformWalletPersistence::store` reentrancy contract.
+///
+/// # Reporting a failure's retry classification
+///
+/// Every callback below returns `0` for success and non-zero for failure.
+/// A plain non-zero value means "failed, do not retry" — the conservative
+/// reading Rust has always applied, so a host written against the original
+/// contract needs no change.
+///
+/// A host that can classify its own failure (it holds the storage handle
+/// and sees the native status code) may instead return one of two
+/// sentinels, which reach the Rust caller as a typed retry classification:
+///
+/// * [`PLATFORM_WALLET_PERSIST_RC_TRANSIENT`] — a retryable failure after
+///   which **nothing was applied** (`SQLITE_BUSY` and friends).
+/// * [`PLATFORM_WALLET_PERSIST_RC_CONSTRAINT`] — a constraint / integrity
+///   violation: the data is wrong, and retrying it unchanged will not help.
+///
+/// The Rust side never retries on a host's behalf; it forwards the
+/// classification and the caller decides.
+///
+/// ## What a transient verdict promises, and who must honour it
+///
+/// A caller acting on "transient" re-issues the WHOLE changeset, and
+/// changeset vectors merge by appending. So a transient verdict is only
+/// meaningful when the failed round left nothing applied — which is exactly
+/// what `ATOMIC_CHANGESETS` attests ("a changeset is committed or rolled
+/// back as one unit"), and what [`Self::on_changeset_end_fn`] with
+/// `success = false` exists to drive.
+///
+/// A `store` round therefore reports a transient failure ONLY when both
+/// round brackets are wired and the host declared `ATOMIC_CHANGESETS`;
+/// otherwise Rust downgrades it to fatal, because a partially applied round
+/// re-sent in full would duplicate rows rather than replace them. **A host
+/// that does not roll a failed round back must not return the transient
+/// sentinel from a round callback.** Single-call callbacks (loads, flush,
+/// the changeset-begin abort) have no such precondition: each is one
+/// operation that either happened or did not.
 #[repr(C)]
 #[allow(clippy::type_complexity)]
 pub struct PersistenceCallbacks {
@@ -1138,6 +1271,32 @@ impl FFIPersister {
         }
     }
 
+    /// Narrow a `store` round's failure kind to what the caller may safely
+    /// act on.
+    ///
+    /// [`PersistenceErrorKind::Transient`] invites the caller to re-send the
+    /// whole changeset, which is only sound when a failed round left nothing
+    /// applied — `Merge for Vec<T>` appends, so re-sending a partially
+    /// applied round doubles its vector fields instead of overwriting them.
+    /// A round is all-or-nothing exactly when
+    /// [`PersistenceCapabilities::ATOMIC_CHANGESETS`] holds, which requires
+    /// both round brackets to be wired AND the host to have attested
+    /// "committed or rolled back as one unit". Without that attestation a
+    /// transient verdict is downgraded to `Fatal`: losing a retry
+    /// opportunity costs less than duplicating data.
+    ///
+    /// `Constraint` and `Fatal` pass through unchanged — neither invites a
+    /// retry, so neither depends on the round being atomic.
+    fn reportable_round_kind(&self, reported: PersistenceErrorKind) -> PersistenceErrorKind {
+        let atomic = self
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::ATOMIC_CHANGESETS);
+        match reported {
+            PersistenceErrorKind::Transient if !atomic => PersistenceErrorKind::Fatal,
+            kind => kind,
+        }
+    }
+
     /// Compute the callback contracts that are structurally complete in this
     /// vtable. This mask is only an upper bound: the host must separately attest
     /// the semantics it actually implements.
@@ -1276,9 +1435,10 @@ impl PlatformWalletPersistence for FFIPersister {
             )
         };
         if rc != 0 {
-            return Err(PersistenceError::backend(format!(
-                "on_persist_tracked_masternodes_fn returned error code {rc}"
-            )));
+            return Err(persist_callback_error(
+                rc,
+                format!("on_persist_tracked_masternodes_fn returned error code {rc}"),
+            ));
         }
         Ok(())
     }
@@ -1315,9 +1475,10 @@ impl PlatformWalletPersistence for FFIPersister {
             )
         };
         if rc != 0 {
-            return Err(PersistenceError::backend(format!(
-                "on_load_tracked_masternodes_fn returned error code {rc}"
-            )));
+            return Err(persist_callback_error(
+                rc,
+                format!("on_load_tracked_masternodes_fn returned error code {rc}"),
+            ));
         }
         let mut out = Vec::with_capacity(count);
         if !rows_ptr.is_null() && count > 0 {
@@ -1394,19 +1555,21 @@ impl PlatformWalletPersistence for FFIPersister {
                 // A nonzero begin means the client could NOT open its
                 // transaction. Proceeding would run every per-kind
                 // callback against no batch and then fire an unmatched
-                // `end`. Treat it as fatal: close the Rust-side round
-                // (so `in_round` doesn't wedge) and fail now, before any
-                // per-kind write. (Unlike the previous advisory-log
-                // behavior, the round is aborted so no state advances
-                // against an unopened batch.)
+                // `end`. Close the Rust-side round (so `in_round` doesn't
+                // wedge) and fail now, before any per-kind write — nothing
+                // was applied, so the host's own classification of `result`
+                // is reported as-is.
                 let _ = round.end_round();
-                return Err(PersistenceError::backend(format!(
-                    "changeset-begin callback returned error code {result}; \
+                return Err(persist_callback_error(
+                    result,
+                    format!(
+                        "changeset-begin callback returned error code {result}; \
                      round aborted before any write"
-                )));
+                    ),
+                ));
             }
         }
-        let mut round_success = true;
+        let mut outcome = RoundOutcome::default();
 
         // Wallet-registration metadata. Fires at most once per round
         // (registration emits the entry; subsequent rounds carry
@@ -1427,7 +1590,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Wallet metadata persistence callback returned error code {}",
                         result
                     );
-                    round_success = false;
+                    outcome.record(result);
                 }
             }
         }
@@ -1464,12 +1627,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                 "Account registrations persistence callback returned error code {}",
                                 result
                             );
-                            round_success = false;
+                            outcome.record(result);
                         }
                     }
                     Err(e) => {
                         eprintln!("Failed to encode account registration specs: {}", e);
-                        round_success = false;
+                        outcome.record_fatal();
                     }
                 }
             }
@@ -1501,12 +1664,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                 "Account address pools persistence callback returned error code {}",
                                 result
                             );
-                            round_success = false;
+                            outcome.record(result);
                         }
                     }
                     Err(e) => {
                         eprintln!("Failed to encode account address pool entries: {}", e);
-                        round_success = false;
+                        outcome.record_fatal();
                     }
                 }
             }
@@ -1541,7 +1704,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Address balance persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -1581,12 +1744,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                     "Derived-address persistence callback returned error code {}",
                                     result
                                 );
-                                round_success = false;
+                                outcome.record(result);
                             }
                         }
                         Err(e) => {
                             eprintln!("Failed to encode derived address pool entries: {}", e);
-                            round_success = false;
+                            outcome.record_fatal();
                         }
                     }
                 }
@@ -1624,12 +1787,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                     "Marked-used address persistence callback returned error code {}",
                                     result
                                 );
-                                round_success = false;
+                                outcome.record(result);
                             }
                         }
                         Err(e) => {
                             eprintln!("Failed to encode marked-used address pool entries: {}", e);
-                            round_success = false;
+                            outcome.record_fatal();
                         }
                     }
                 }
@@ -1644,7 +1807,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Wallet changeset persistence callback returned error code {}",
                         result
                     );
-                    round_success = false;
+                    outcome.record(result);
                 }
             }
         }
@@ -1688,7 +1851,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Identity changeset persistence callback returned error code {}",
                         result
                     );
-                    round_success = false;
+                    outcome.record(result);
                 }
             }
         }
@@ -1727,7 +1890,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "DashPay payment persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -1773,7 +1936,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Identity keys changeset persistence callback returned error code {}",
                         result
                     );
-                    round_success = false;
+                    outcome.record(result);
                 }
             }
         }
@@ -1824,7 +1987,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Token balance persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -1869,7 +2032,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Asset lock persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -1910,7 +2073,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Invitation persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -1960,7 +2123,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "DPNS name state persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2114,7 +2277,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Contact persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2141,7 +2304,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Sync state persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2194,7 +2357,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded notes persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2226,7 +2389,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded nullifier-spent persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2286,7 +2449,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded outgoing-notes persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2316,7 +2479,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded synced-index persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2362,7 +2525,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded viewing-key persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2476,7 +2639,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded activity persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                     // `rows` and `entries` drop here, after the callback
                     // has copied everything it needs.
@@ -2485,13 +2648,19 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
-        // Close the round. Clients use this to commit (if
-        // `round_success == true`) or roll back (otherwise) the
+        // Close the round. Clients use this to commit (if the round
+        // succeeded) or roll back (otherwise) the
         // staged writes accumulated across the per-kind callbacks
         // above, making the whole store() call a single atomic
         // transaction from their perspective.
         if let Some(cb) = self.callbacks.on_changeset_end_fn {
-            let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), round_success) };
+            let result = unsafe {
+                cb(
+                    self.callbacks.context,
+                    wallet_id.as_ptr(),
+                    outcome.is_success(),
+                )
+            };
             if result != 0 {
                 eprintln!("Changeset-end callback returned error code {}", result);
                 // The end callback is where the client COMMITS the round (e.g.
@@ -2503,7 +2672,7 @@ impl PlatformWalletPersistence for FFIPersister {
                 // cleared drain entries, ignored-sender deltas) against data
                 // that was dropped. Otherwise the failure is silent and the
                 // dropped writes resurface or are lost with no signal.
-                round_success = false;
+                outcome.record(result);
             }
         }
 
@@ -2516,8 +2685,9 @@ impl PlatformWalletPersistence for FFIPersister {
         // which cannot happen here since `begin_round` succeeded above.)
         round.end_round()?;
 
-        if !round_success {
-            return Err(PersistenceError::backend(
+        if let Some(kind) = outcome.failure_kind() {
+            return Err(PersistenceError::backend_with_kind(
+                self.reportable_round_kind(kind),
                 "one or more persistence callbacks failed; changeset was rolled back",
             ));
         }
@@ -2545,9 +2715,14 @@ impl PlatformWalletPersistence for FFIPersister {
                          ignored"
                     );
                 } else {
-                    return Err(PersistenceError::backend(format!(
-                        "Persistence store callback returned error code {result}"
-                    )));
+                    // This branch runs only without an end callback, so the
+                    // per-kind writes already landed individually and the
+                    // round is not all-or-nothing — `reportable_round_kind`
+                    // withholds a retryable verdict accordingly.
+                    return Err(PersistenceError::backend_with_kind(
+                        self.reportable_round_kind(persist_rc_kind(result)),
+                        format!("Persistence store callback returned error code {result}"),
+                    ));
                 }
             }
         }
@@ -2556,19 +2731,16 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
-        // TODO: deferred — FFI callback failures are classified as
-        // `Fatal` (no transient-retry signal across the C ABI), and
-        // trailing-byte validation on decoded FFI payloads is not yet
-        // applied here. Both are tracked for a follow-up; no behavior
-        // change in this change.
+        // TODO: deferred — trailing-byte validation on decoded FFI
+        // payloads is not yet applied here.
         // Notify caller.
         if let Some(cb) = self.callbacks.on_flush_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                return Err(PersistenceError::backend(format!(
-                    "Persistence flush callback returned error code {}",
-                    result
-                )));
+                return Err(persist_callback_error(
+                    result,
+                    format!("Persistence flush callback returned error code {}", result),
+                ));
             }
         }
 
@@ -2594,10 +2766,10 @@ impl PlatformWalletPersistence for FFIPersister {
         let mut count: usize = 0;
         let rc = unsafe { load_cb(self.callbacks.context, &mut entries_ptr, &mut count) };
         if rc != 0 {
-            return Err(PersistenceError::backend(format!(
-                "on_load_wallet_list_fn returned error code {}",
-                rc
-            )));
+            return Err(persist_callback_error(
+                rc,
+                format!("on_load_wallet_list_fn returned error code {}", rc),
+            ));
         }
         let _guard = LoadGuard {
             context: self.callbacks.context,
@@ -2685,10 +2857,10 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_notes_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_notes_fn returned error code {}", rc),
+                    ));
                 }
                 struct NotesGuard {
                     context: *mut c_void,
@@ -2750,10 +2922,13 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_outgoing_notes_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!(
+                            "on_load_shielded_outgoing_notes_fn returned error code {}",
+                            rc
+                        ),
+                    ));
                 }
                 struct OutgoingGuard {
                     context: *mut c_void,
@@ -2814,10 +2989,10 @@ impl PlatformWalletPersistence for FFIPersister {
                     load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
                 };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_sync_states_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_sync_states_fn returned error code {}", rc),
+                    ));
                 }
                 struct StatesGuard {
                     context: *mut c_void,
@@ -2872,10 +3047,10 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_activity(self.callbacks.context, &mut act_ptr, &mut act_count) };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_activity_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_activity_fn returned error code {}", rc),
+                    ));
                 }
                 struct ActivityGuard {
                     context: *mut c_void,
@@ -3035,10 +3210,13 @@ impl PlatformWalletPersistence for FFIPersister {
                     load_viewing_keys(self.callbacks.context, &mut vk_ptr, &mut vk_count)
                 };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_viewing_keys_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!(
+                            "on_load_shielded_viewing_keys_fn returned error code {}",
+                            rc
+                        ),
+                    ));
                 }
                 struct ViewingKeysGuard {
                     context: *mut c_void,
@@ -3348,9 +3526,10 @@ impl PlatformWalletPersistence for FFIPersister {
         // free a buffer the host still owns on the failure path, which is a
         // double free for any host that cleans up its own failed allocation.
         if rc != 0 {
-            return Err(PersistenceError::backend(format!(
-                "on_list_wallet_core_txids_fn returned non-zero status {rc}"
-            )));
+            return Err(persist_callback_error(
+                rc,
+                format!("on_list_wallet_core_txids_fn returned non-zero status {rc}"),
+            ));
         }
 
         // Success: ownership is ours now, and every return below must release
@@ -8209,6 +8388,237 @@ mod tests {
         );
 
         unsafe { free_contact_requests_ffi(rows.as_mut_ptr(), rows.len()) };
+    }
+
+    // ── Inbound retry classification from host return codes ──
+
+    /// Metadata callback returning the host's "retryable, nothing applied"
+    /// sentinel.
+    extern "C" fn transient_metadata(
+        _ctx: *mut TestCVoid,
+        _wallet_id: *const u8,
+        _network: FFINetwork,
+        _wallet_group_id: *const u8,
+        _birth_height: u32,
+    ) -> i32 {
+        PLATFORM_WALLET_PERSIST_RC_TRANSIENT
+    }
+
+    /// Metadata callback returning the host's constraint sentinel.
+    extern "C" fn constraint_metadata(
+        _ctx: *mut TestCVoid,
+        _wallet_id: *const u8,
+        _network: FFINetwork,
+        _wallet_group_id: *const u8,
+        _birth_height: u32,
+    ) -> i32 {
+        PLATFORM_WALLET_PERSIST_RC_CONSTRAINT
+    }
+
+    /// Metadata callback returning a plain non-zero value, the way every
+    /// host written against the original contract does.
+    extern "C" fn unclassified_metadata(
+        _ctx: *mut TestCVoid,
+        _wallet_id: *const u8,
+        _network: FFINetwork,
+        _wallet_group_id: *const u8,
+        _birth_height: u32,
+    ) -> i32 {
+        7
+    }
+
+    extern "C" fn ok_begin(_ctx: *mut TestCVoid, _wallet_id: *const u8) -> i32 {
+        0
+    }
+
+    extern "C" fn ok_end(_ctx: *mut TestCVoid, _wallet_id: *const u8, _success: bool) -> i32 {
+        0
+    }
+
+    /// A changeset carrying exactly one payload: the metadata entry, whose
+    /// callback each test below drives.
+    fn metadata_changeset() -> PlatformWalletChangeSet {
+        PlatformWalletChangeSet {
+            wallet_metadata: Some(platform_wallet::changeset::WalletMetadataEntry {
+                network: Network::Testnet,
+                wallet_group_id: [1u8; 32],
+                birth_height: 1,
+            }),
+            ..PlatformWalletChangeSet::default()
+        }
+    }
+
+    /// Build a persister whose metadata callback is `metadata`, optionally
+    /// bracketing rounds and attesting atomicity.
+    fn store_failing_persister(
+        metadata: unsafe extern "C" fn(
+            *mut TestCVoid,
+            *const u8,
+            FFINetwork,
+            *const u8,
+            u32,
+        ) -> i32,
+        bracketed: bool,
+        capabilities: PersistenceCapabilities,
+    ) -> FFIPersister {
+        let callbacks = PersistenceCallbacks {
+            on_persist_wallet_metadata_fn: Some(metadata),
+            on_changeset_begin_fn: bracketed.then_some(ok_begin as _),
+            on_changeset_end_fn: bracketed.then_some(ok_end as _),
+            ..PersistenceCallbacks::default()
+        };
+        FFIPersister::new_with_persistence_capabilities(callbacks, capabilities)
+    }
+
+    fn store_error_kind(persister: &FFIPersister) -> Option<PersistenceErrorKind> {
+        persister
+            .store([1u8; 32], metadata_changeset())
+            .expect_err("the metadata callback fails every round here")
+            .kind()
+    }
+
+    /// The point of the whole inbound direction: a host that sees its own
+    /// `SQLITE_BUSY` can say so, and the caller receives a retryable
+    /// classification instead of the blanket `Fatal` every FFI failure used
+    /// to collapse into.
+    #[test]
+    fn transient_sentinel_reaches_the_caller_from_an_atomic_round() {
+        let persister = store_failing_persister(
+            transient_metadata,
+            true,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&persister),
+            Some(PersistenceErrorKind::Transient)
+        );
+    }
+
+    /// A transient verdict tells the caller to re-send the WHOLE changeset,
+    /// and changeset vectors merge by appending. Without an all-or-nothing
+    /// round the failed round may have applied part of itself, so re-sending
+    /// would duplicate rows — the verdict is withheld and reported fatal.
+    #[test]
+    fn transient_sentinel_is_withheld_when_the_round_is_not_atomic() {
+        // Brackets wired, but the host never attested atomicity.
+        let unattested =
+            store_failing_persister(transient_metadata, true, PersistenceCapabilities::NONE);
+        assert_eq!(
+            store_error_kind(&unattested),
+            Some(PersistenceErrorKind::Fatal),
+            "an unattested round must not invite a retry"
+        );
+
+        // Attested, but with no round brackets to roll anything back — the
+        // structural half of ATOMIC_CHANGESETS is missing.
+        let unbracketed = store_failing_persister(
+            transient_metadata,
+            false,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&unbracketed),
+            Some(PersistenceErrorKind::Fatal),
+            "an attestation without begin/end brackets must not invite a retry"
+        );
+    }
+
+    /// `Constraint` never invites a retry, so it does not depend on the
+    /// round being atomic and passes through either way.
+    #[test]
+    fn constraint_sentinel_survives_whether_or_not_the_round_is_atomic() {
+        for (bracketed, capabilities) in [
+            (true, PersistenceCapabilities::ATOMIC_CHANGESETS),
+            (false, PersistenceCapabilities::NONE),
+        ] {
+            let persister = store_failing_persister(constraint_metadata, bracketed, capabilities);
+            assert_eq!(
+                store_error_kind(&persister),
+                Some(PersistenceErrorKind::Constraint)
+            );
+        }
+    }
+
+    /// Back-compatibility: a host that returns a plain non-zero value keeps
+    /// the conservative reading it has always had.
+    #[test]
+    fn unclassified_non_zero_return_stays_fatal() {
+        let persister = store_failing_persister(
+            unclassified_metadata,
+            true,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&persister),
+            Some(PersistenceErrorKind::Fatal)
+        );
+    }
+
+    /// One transient callback must never soften a fatal sibling: the round
+    /// reports the most severe kind any callback returned. Here the commit
+    /// itself fails unclassified after a per-kind callback reported
+    /// transient — the round is fatal.
+    #[test]
+    fn a_fatal_callback_masks_a_transient_sibling() {
+        extern "C" fn fatal_end(
+            _ctx: *mut TestCVoid,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            7
+        }
+
+        let callbacks = PersistenceCallbacks {
+            on_persist_wallet_metadata_fn: Some(transient_metadata),
+            on_changeset_begin_fn: Some(ok_begin),
+            on_changeset_end_fn: Some(fatal_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&persister),
+            Some(PersistenceErrorKind::Fatal),
+            "a transient sibling must not soften the round's fatal verdict"
+        );
+    }
+
+    /// A load is one call that either happened or did not, so it carries the
+    /// host's classification with no atomicity precondition.
+    #[test]
+    fn transient_sentinel_reaches_the_caller_from_a_load() {
+        extern "C" fn transient_load(
+            _ctx: *mut TestCVoid,
+            _out_entries: *mut *const WalletRestoreEntryFFI,
+            _out_count: *mut usize,
+        ) -> i32 {
+            PLATFORM_WALLET_PERSIST_RC_TRANSIENT
+        }
+
+        let callbacks = PersistenceCallbacks {
+            on_load_wallet_list_fn: Some(transient_load),
+            ..PersistenceCallbacks::default()
+        };
+        let err = FFIPersister::new(callbacks)
+            .load()
+            .expect_err("the load callback fails");
+        assert_eq!(err.kind(), Some(PersistenceErrorKind::Transient));
+    }
+
+    /// The two sentinels must stay off the values a host already returns —
+    /// success, and the plain failure codes the shipping hosts use.
+    #[test]
+    fn sentinels_do_not_collide_with_established_return_values() {
+        for taken in [0, 1, -1] {
+            assert_ne!(PLATFORM_WALLET_PERSIST_RC_TRANSIENT, taken);
+            assert_ne!(PLATFORM_WALLET_PERSIST_RC_CONSTRAINT, taken);
+        }
+        assert_ne!(
+            PLATFORM_WALLET_PERSIST_RC_TRANSIENT,
+            PLATFORM_WALLET_PERSIST_RC_CONSTRAINT
+        );
     }
 
     // ── Round serialization + defensive state machine (dashpay/platform#4069) ──
