@@ -613,7 +613,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
 
@@ -659,7 +659,7 @@ mod tests {
     }
 
     fn seed_for(phrase: &str) -> [u8; 64] {
-        Mnemonic::from_phrase(phrase, Language::English)
+        Mnemonic::from_phrase(phrase)
             .expect("valid test mnemonic")
             .to_seed("")
     }
