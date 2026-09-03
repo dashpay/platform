@@ -224,6 +224,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Local-only and idempotent: an existing payment entry under the
     /// txid is never overwritten.
+    ///
+    /// # Errors
+    ///
+    /// Transient tx-record read failures leave the scan incomplete so the
+    /// guard stays unstamped and the next sweep retries; permanent ones
+    /// return [`PlatformWalletError::PersisterLoad`]. Retrying a permanent
+    /// failure every sweep would never succeed and would never be
+    /// reported.
     pub async fn reconcile_sent_payments_from_tx_history(
         &self,
     ) -> Result<usize, PlatformWalletError> {
@@ -407,7 +415,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 continue;
             }
             let txid = entry.txid;
-            match self.persister.get_core_tx_record(&txid) {
+            match self.persister.get_core_tx_record_or_transient_miss(&txid) {
                 Ok(Some(record)) => {
                     // Walk the decoded transaction's outputs, NOT
                     // `record.output_details`. Records handed back by
@@ -427,6 +435,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             .collect(),
                     });
                 }
+                // Either the row is genuinely unreadable yet, or a
+                // transient failure already read as a miss. Both mean the
+                // same thing here: retry on the next sweep.
                 Ok(None) => {
                     incomplete_scan = true;
                     tracing::debug!(
@@ -434,14 +445,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         "reconcile_sent_payments_from_tx_history: listed tx record unavailable; will retry next sweep"
                     );
                 }
-                Err(e) => {
-                    incomplete_scan = true;
-                    tracing::warn!(
-                        error = %e,
-                        %txid,
-                        "reconcile_sent_payments_from_tx_history: tx-record read failed; will retry next sweep"
-                    );
-                }
+                // A permanent failure will not fix itself, so deferring it
+                // re-runs the whole sweep on every sync forever and never
+                // says why. Same policy as the confirmation sweep.
+                Err(e) => return Err(PlatformWalletError::from_load_failure(e)),
             }
         }
 
@@ -706,19 +713,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let Ok(txid) = txid_str.parse::<dashcore::Txid>() else {
                 continue;
             };
-            let record = match self.persister.get_core_tx_record(&txid) {
+            // A transient failure reads as a miss, so both are the same
+            // "not final yet, look again next sweep" outcome.
+            let record = match self.persister.get_core_tx_record_or_transient_miss(&txid) {
                 Ok(Some(record)) => record,
                 Ok(None) => continue,
-                Err(e) if e.is_transient() => {
-                    tracing::warn!(
-                        error = %e,
-                        txid = %txid_str,
-                        "reconcile_sent_payments: transient tx-record read failed; \
-                         will retry next sweep"
-                    );
-                    continue;
-                }
-                Err(e) => return Err(PlatformWalletError::PersisterLoad(e)),
+                Err(e) => return Err(PlatformWalletError::from_load_failure(e)),
             };
             // An InstantSend lock is final for DashPay display, same as a
             // mined block — one definition of "final", shared with the
@@ -3698,6 +3698,76 @@ mod tests {
                 .expect("second pass"),
             0,
             "reconstruction must be idempotent"
+        );
+    }
+
+    /// A permanent tx-record read failure surfaces from the reconstruction
+    /// sweep; only a transient one is folded into "incomplete, retry next
+    /// time".
+    ///
+    /// The distinction is what stops a permanently unreadable store from
+    /// re-running the whole sweep on every dashpay sync, indefinitely and
+    /// silently. Same policy as the confirmation sweep.
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_surfaces_permanent_read_failures() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+        let contact_addresses = install_external_account(&manager, wallet_id, owner, contact).await;
+        let change_address = first_standard_wallet_address(&manager, wallet_id).await;
+        let record = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(123, BlockHash::all_zeros(), 0)),
+            vec![
+                (contact_addresses[0].clone(), 25_000, OutputRole::Sent),
+                (change_address, 90_000, OutputRole::Change),
+            ],
+        );
+        persister
+            .records
+            .lock()
+            .unwrap()
+            .insert(record.txid, record);
+
+        // Transient: the sweep defers, exactly as before.
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Transient);
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("a transient read failure must wait for the next sweep"),
+            0
+        );
+
+        // Permanent: the sweep reports it as a failed read.
+        *persister.read_error_kind.lock().unwrap() = Some(PersistenceErrorKind::Fatal);
+        let err = iw
+            .dashpay()
+            .reconcile_sent_payments_from_tx_history()
+            .await
+            .expect_err("a permanent read failure must surface, not loop forever");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::PersisterLoad(ref source) if !source.is_transient()
+            ),
+            "expected a permanent PersisterLoad, got {err:?}"
         );
     }
 

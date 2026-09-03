@@ -52,7 +52,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // Debug, not Display: it carries the real cause (e.g. a
                 // bincode decode failure) rather than flattening the chain.
                 tracing::debug!(error = ?e, "persister load failed during rehydration");
-                return Err(PlatformWalletError::PersisterLoad(e));
+                return Err(PlatformWalletError::from_load_failure(e));
             }
         };
         let ClientStartState {
