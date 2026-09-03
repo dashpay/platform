@@ -351,8 +351,6 @@ pub(crate) fn resolve_source_accounts(
 }
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
-    /// Consume a configured builder, atomically fund and reserve its selected
-    /// inputs, then sign without holding the wallet-manager lock.
     /// The balance a pooled build could actually select from — the same
     /// accounts [`Self::finalize_transaction`] funds from, counting only UTXOs
     /// coin selection would accept.
@@ -422,6 +420,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         Ok(total)
     }
 
+    /// Consume a configured builder, atomically fund and reserve its selected
+    /// inputs, then sign without holding the wallet-manager lock.
     pub async fn finalize_transaction<S: TransactionSigner + ?Sized + Sync>(
         &self,
         builder: TransactionBuilder,
@@ -1019,6 +1019,103 @@ mod tests {
         assert!(
             matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
             "explicit single-source misses must stay strict, got {result:?}"
+        );
+    }
+
+    /// The coupling this getter exists to enforce: the total must come from the
+    /// same accounts `finalize_transaction` funds from, and the strictness rule
+    /// must match too. Nothing else pins that — the two are separate code paths
+    /// over the same rule, which is exactly how the host's hand-copy drifted in
+    /// the first place (support ticket 32081).
+    #[tokio::test]
+    async fn pooled_spendable_balance_reports_the_funding_set_and_stays_strict() {
+        let (manager, wallet_id, generation, _signer) =
+            funded_wallet_manager_dual_standard(&[700_000], &[700_000]).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        // The pooled selector sums BOTH standard families — the same set
+        // `pooled_send_spans_families_and_abandon_releases_all` proves a build
+        // draws on. An account counted here but skipped by the build (or the
+        // reverse) breaks this number.
+        assert_eq!(
+            core.pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .await
+                .expect("pooled balance"),
+            1_400_000,
+            "the pooled figure must be both families, and nothing else"
+        );
+
+        // A single-family selector sees only its own family.
+        assert_eq!(
+            core.pooled_spendable_balance(&[AccountTypePreference::BIP44], 0)
+                .await
+                .expect("bip44 balance"),
+            700_000
+        );
+
+        // Strictness matches `single_source_missing_account_still_errors`: a
+        // single-source miss is an error here too, never a silent `Ok(0)` that
+        // the host would render as "insufficient funds" while the matching
+        // `finalize` call says "no such account".
+        let missed = core
+            .pooled_spendable_balance(&[AccountTypePreference::BIP44], 7)
+            .await;
+        assert!(
+            matches!(missed, Err(PlatformWalletError::WalletNotFound(_))),
+            "a single-source miss must error as it does in finalize, got {missed:?}"
+        );
+    }
+
+    /// The DashPay leg, and the exclusion the ticket turned on: contact funds
+    /// count toward the pooled figure, CoinJoin does not.
+    #[tokio::test]
+    async fn pooled_spendable_balance_counts_contacts_and_excludes_coinjoin() {
+        let (manager, wallet_id, generation, _signer, _contact) =
+            funded_wallet_manager_with_contact(&[700_000], &[700_000]).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+        assert_eq!(
+            core.pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .await
+                .expect("pooled balance"),
+            1_400_000,
+            "AllDashpayReceivingFunds must contribute the contact account's funds"
+        );
+
+        // A wallet whose money is ALL in CoinJoin: the wallet-level balance the
+        // host used to gate on reports the full 10_000_000, the pooled figure
+        // reports nothing, and the build agrees with the pooled figure. That
+        // gap, on a 94 DASH wallet, is the whole of ticket 32081.
+        let (manager, wallet_id, generation, _signer) =
+            crate::test_support::funded_coinjoin_wallet_manager().await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let coinjoin_only = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+        assert_eq!(
+            coinjoin_only
+                .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .await
+                .expect("pooled balance"),
+            0,
+            "CoinJoin is excluded from the send pool, so it must not be offered as spendable"
         );
     }
 
