@@ -5,16 +5,14 @@ pub mod dashpay_sync;
 pub mod dpns_sync;
 pub mod identity_sync;
 mod load;
+mod persist_retry;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod startup;
 mod wallet_lifecycle;
 
-/// Re-exported so the identity-scan verdict publishers under `wallet::`
-/// retry on the same policy the registration path uses. The module itself
-/// stays private — this is the only item it owes the rest of the crate.
-pub(crate) use wallet_lifecycle::retry_transient;
+pub(crate) use persist_retry::retry_transient_load;
 
 use std::sync::Arc;
 use std::time::Duration;
