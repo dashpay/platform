@@ -8,9 +8,7 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadTrackedMasternodesFn, PersistDpnsNameStatesFn,
-    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    FFIPersister, PersistDpnsNameStatesFn, PersistenceCallbacks, PersistenceCallbacksExtension,
     PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
@@ -187,16 +185,18 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
 /// `$extension` must point to a live extension struct of type `$ext_ty`
 /// whose `struct_size` honestly describes its allocation.
 macro_rules! negotiated_extension_slot {
-    ($extension:expr, $ext_ty:ty, $version_const:expr, $field:ident, $fn_ty:ty) => {{
+    ($extension:expr, $ext_ty:ty, $supplied_size:expr, $version_ok:expr, $field:ident) => {{
         let extension: *const $ext_ty = $extension;
-        let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
-        let version_end = std::mem::offset_of!($ext_ty, version) + std::mem::size_of::<u32>();
+        // The gate is computed from the FIELD's own width, not from a type
+        // named at the call site: a slot's size and the slot being read are
+        // then the same fact, so a mismatched second argument cannot compute
+        // `callback_end` against the wrong width — refusing a slot the host
+        // allocated, or (if the real field is wider) accepting a read past
+        // the host's allocation. It also lets a future slot hold something
+        // that is not an `Option<fn>` without the macro needing to know.
         let callback_end =
-            std::mem::offset_of!($ext_ty, $field) + std::mem::size_of::<Option<$fn_ty>>();
-        if supplied_size < version_end
-            || std::ptr::addr_of!((*extension).version).read() != $version_const
-            || supplied_size < callback_end
-        {
+            std::mem::offset_of!($ext_ty, $field) + std::mem::size_of_val(&(*extension).$field);
+        if !$version_ok || $supplied_size < callback_end {
             None
         } else {
             std::ptr::addr_of!((*extension).$field).read()
@@ -211,49 +211,56 @@ macro_rules! negotiated_extension_slot {
 unsafe fn persistence_extension_callbacks(
     extension: *const PersistenceCallbacksExtension,
 ) -> PersistenceExtensionCallbacks {
+    // ONE snapshot of the header for the whole negotiation. Reading
+    // `struct_size` and `version` per slot would let a host that mutates its
+    // extension while `create` runs — or one whose struct lives in shared or
+    // mapped memory — have slot 1 negotiated against one declared layout and
+    // slot 6 against another, producing a callback set that never
+    // corresponded to any single declaration the host made.
+    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
+    let version_end =
+        std::mem::offset_of!(PersistenceCallbacksExtension, version) + std::mem::size_of::<u32>();
+    let version_ok = supplied_size >= version_end
+        && std::ptr::addr_of!((*extension).version).read()
+            == PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION;
+
     macro_rules! slot {
-        ($field:ident, $fn_ty:ty) => {
+        ($field:ident) => {
             negotiated_extension_slot!(
                 extension,
                 PersistenceCallbacksExtension,
-                PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
-                $field,
-                $fn_ty
+                supplied_size,
+                version_ok,
+                $field
             )
         };
     }
 
     PersistenceExtensionCallbacks {
-        dpns_name_states: slot!(on_persist_dpns_name_states_fn, PersistDpnsNameStatesFn),
-        persist_tracked_masternodes: slot!(
-            on_persist_tracked_masternodes_fn,
-            PersistTrackedMasternodesFn
-        ),
-        load_tracked_masternodes: slot!(on_load_tracked_masternodes_fn, LoadTrackedMasternodesFn),
-        load_tracked_masternodes_free: slot!(
-            on_load_tracked_masternodes_free_fn,
-            FreeTrackedMasternodesFn
-        ),
-        wallet_changeset_sweeps: slot!(
-            on_persist_wallet_changeset_sweeps_fn,
-            PersistWalletChangesetSweepsFn
-        ),
-        wallet_changeset_chain_lock_height: slot!(
-            on_persist_wallet_changeset_chain_lock_height_fn,
-            PersistWalletChangesetChainLockHeightFn
-        ),
+        dpns_name_states: slot!(on_persist_dpns_name_states_fn),
+        persist_tracked_masternodes: slot!(on_persist_tracked_masternodes_fn),
+        load_tracked_masternodes: slot!(on_load_tracked_masternodes_fn),
+        load_tracked_masternodes_free: slot!(on_load_tracked_masternodes_free_fn),
+        wallet_changeset_sweeps: slot!(on_persist_wallet_changeset_sweeps_fn),
+        wallet_changeset_chain_lock_height: slot!(on_persist_wallet_changeset_chain_lock_height_fn),
     }
 }
 
 unsafe fn event_extension_dpns_callback(
     extension: *const EventHandlerCallbacksExtension,
 ) -> Option<DpnsMarketplaceSyncCompletedFn> {
+    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
+    let version_end =
+        std::mem::offset_of!(EventHandlerCallbacksExtension, version) + std::mem::size_of::<u32>();
+    let version_ok = supplied_size >= version_end
+        && std::ptr::addr_of!((*extension).version).read()
+            == PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION;
     negotiated_extension_slot!(
         extension,
         EventHandlerCallbacksExtension,
-        PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
-        on_dpns_marketplace_sync_completed_fn,
-        DpnsMarketplaceSyncCompletedFn
+        supplied_size,
+        version_ok,
+        on_dpns_marketplace_sync_completed_fn
     )
 }
 

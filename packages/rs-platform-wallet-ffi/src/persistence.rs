@@ -19,7 +19,7 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
@@ -210,9 +210,11 @@ pub type PersistWalletChangesetSweepsFn = unsafe extern "C" fn(
 /// [`SweepBatchFFI::winner_mined_height`]); without it a host either
 /// cannot collect at all or has to guess from the synced height alone,
 /// which is not finality. Fired inside the round's begin/end bracket,
-/// after `on_persist_wallet_changeset_fn`, only when the round advanced
-/// the chainlock watermark. Monotonic-max semantics at the host: chain
-/// locks only move forward, so store `max(stored, incoming)`. A non-zero
+/// after `on_persist_wallet_changeset_fn`, on every round whose changeset
+/// carries a chainlock — including a re-application at a height already
+/// stored, since Rust does not track what the host has. Monotonic-max
+/// semantics at the host are what make that harmless: chain locks only
+/// move forward, so store `max(stored, incoming)`. A non-zero
 /// return fails the round like any other per-kind callback.
 pub type PersistWalletChangesetChainLockHeightFn =
     unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, chain_lock_height: u32) -> i32;
@@ -1140,7 +1142,6 @@ pub struct FFIPersister {
     /// vtable by the additive manager-create API. Keeping this out of
     /// `PersistenceCallbacks` preserves that established C struct's size.
     declared_capabilities: PersistenceCapabilities,
-    pending: RwLock<BTreeMap<WalletId, PlatformWalletChangeSet>>,
     /// Serializes the ENTIRE begin→per-kind→end callback round of
     /// [`Self::store`]. Every round producer (the core-changeset bridge,
     /// platform-address sync, shielded sync, spawned DashPay tasks) shares
@@ -1257,7 +1258,6 @@ impl FFIPersister {
                 .wallet_changeset_chain_lock_height,
             tracked_masternodes_callbacks: extensions,
             declared_capabilities,
-            pending: RwLock::new(BTreeMap::new()),
             round_lock: Mutex::new(RoundGuardState::default()),
         }
     }
@@ -1838,15 +1838,21 @@ impl PlatformWalletPersistence for FFIPersister {
 
             // The round's sweeps ride their own size-negotiated extension
             // callback rather than the changeset struct (see the layout note
-            // on `WalletChangeSetFFI`), fired immediately after it — still
-            // inside the same begin/end bracket — so the additive half of
-            // the round, a wallet-relevant winner's own record included, is
-            // already staged when the removal decides which links point at a
-            // dead transaction. A host without the slot simply never sees
-            // them; that is safe to leave silent here because such a host
-            // can never attest `CORE_SWEEP_REMOVAL`, and the core bridge
-            // already freezes the sync watermark for a sweep-carrying round
-            // against a persister without that capability.
+            // on `WalletChangeSetFFI`), fired after the changeset callback
+            // and after the chainlock-height slot, still inside the same
+            // begin/end bracket — so the additive half of the round, a
+            // wallet-relevant winner's own record included, is already
+            // staged when the removal decides which links point at a dead
+            // transaction.
+            //
+            // A host without the slot simply never sees them, and this block
+            // stays silent about that on purpose: such a host can never
+            // attest `CORE_SWEEP_REMOVAL` (the derivation below requires the
+            // slot structurally), so the round is refused one layer up
+            // instead. NOTE: that refusal is the watermark-strip gate in the
+            // core bridge, which lands with the producer — nothing in THIS
+            // crate consults `CORE_SWEEP_REMOVAL` yet, and until the
+            // producer exists no round can carry sweeps at all.
             if !core_cs.sweeps.is_empty() {
                 if let Some(cb) = self.wallet_changeset_sweeps_callback {
                     let (batches, _batch_storage) = build_sweep_batches_for_callback(core_cs);
@@ -2742,15 +2748,6 @@ impl PlatformWalletPersistence for FFIPersister {
             ));
         }
 
-        // Merge into pending changesets. No secret rides the changeset any
-        // more — the client derives identity keys on demand from the Keychain
-        // seed at the breadcrumb path, so nothing here needs scrubbing.
-        let mut pending = self.pending.write();
-        pending
-            .entry(wallet_id)
-            .and_modify(|existing| existing.merge(changeset.clone()))
-            .or_insert(changeset);
-
         // Preserve the legacy notification phase. With an end callback, the
         // host transaction is already committed and a notification failure is
         // advisory. Without that atomic boundary, preserve the established
@@ -2791,10 +2788,6 @@ impl PlatformWalletPersistence for FFIPersister {
                 )));
             }
         }
-
-        // Clear pending after successful flush notification.
-        let mut pending = self.pending.write();
-        pending.remove(&wallet_id);
 
         Ok(())
     }
@@ -6959,7 +6952,9 @@ mod tests {
                 ..Default::default()
             }
         }
-        /// Everything the bit needs except the atomic round.
+        /// Everything the bit needs, atomic round included — the "without
+        /// the atomic round" case is the one below, which passes
+        /// `CORE_SWEEP_REMOVAL` on its own.
         fn declared() -> PersistenceCapabilities {
             PersistenceCapabilities::CORE_SWEEP_REMOVAL
                 .union(PersistenceCapabilities::ATOMIC_CHANGESETS)
@@ -7063,7 +7058,15 @@ mod tests {
             let sink = &*(ctx as *const Sink);
             let mut events = sink.events.lock().unwrap();
             for batch in slice::from_raw_parts(sweeps, sweeps_count) {
-                let txids = slice::from_raw_parts(batch.txids, batch.txids_count);
+                // Both pointers are null at count 0 (see `SweepBatchFFI`), and
+                // `from_raw_parts(null, 0)` is UB — not merely a no-op — so
+                // the guard is symmetric with `released_outpoints` below. A
+                // host binding copying this consumer inherits the same shape.
+                let txids = if batch.txids.is_null() {
+                    &[][..]
+                } else {
+                    slice::from_raw_parts(batch.txids, batch.txids_count)
+                };
                 let released = if batch.released_outpoints.is_null() {
                     &[][..]
                 } else {

@@ -72,8 +72,22 @@ impl PersistenceCapabilities {
     /// never reads unless the host's declared `struct_size` proved it exists
     /// — so an older host processes the rest of the round, returns success,
     /// and never sees the sweeps at all; this bit tells the wallet that the
-    /// complete sweep contract was implemented rather than silently
-    /// truncated.
+    /// removal half was implemented rather than silently truncated.
+    ///
+    /// # What this bit does NOT cover: collection
+    ///
+    /// Retention is in the contract, collection is not. A tombstone stamped
+    /// with its winner's mined height becomes collectible at
+    /// `min(chainlock_height, synced_height)`, and a non-Rust host learns
+    /// the chainlock half only through the extension's separate
+    /// chain-lock-height slot. That slot is deliberately NOT required here:
+    /// gating removal on it would refuse the rounds of a host that
+    /// implements removal but not collection, freezing its watermark over
+    /// what is only unbounded retention. Such a host is correct but keeps
+    /// stamped tombstones forever — holding a coin spent is the safe
+    /// direction, and never leaks one back into the unspent set. A host
+    /// that wants the rows collected must wire the chain-lock-height slot
+    /// as well; both in-tree mobile persisters do.
     pub const CORE_SWEEP_REMOVAL: Self = Self(1 << 11);
     /// A stored changeset's `dashpay_payments_overlay` rows are durably
     /// applied. This is what lets the wallet-event adapter couple a sweep's
@@ -91,6 +105,14 @@ impl PersistenceCapabilities {
     /// declaration only when `on_persist_dashpay_payments_fn` is actually
     /// wired.
     pub const DASHPAY_PAYMENTS: Self = Self(1 << 12);
+
+    /// Index of the highest bit declared above. It lives here, beside the
+    /// constants, so adding a bit and bumping this is one edit in one place
+    /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
+    /// bit that never reaches `KNOWN` fails a test instead of gating
+    /// behaviour invisibly. The same test asserts nothing above it is named,
+    /// which is what catches a bit added without bumping this.
+    const HIGHEST_DECLARED_BIT: u32 = 12;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -236,16 +258,34 @@ mod tests {
     /// still gates behaviour but vanishes from every diagnostic that
     /// reports capabilities by name, so a host debugging why its rows
     /// never landed sees nothing about the capability that withheld them
-    /// — which is exactly what `DASHPAY_PAYMENTS` did until this test.
+    /// — the shape `DASHPAY_PAYMENTS` would have had if it had shipped
+    /// without its `KNOWN` entry, which is what this test now prevents for
+    /// every bit added after it.
     #[test]
     fn every_declared_bit_has_a_stable_name() {
-        for shift in 0..13u32 {
-            let bit = PersistenceCapabilities::from_bits_retain(1 << shift);
+        // Derived from the declared set, not hardcoded: a hardcoded bound
+        // stops at today's highest bit, so the NEXT bit added without a
+        // `KNOWN` entry would gate behaviour while staying invisible to
+        // every `names()`-based diagnostic — exactly what this test exists
+        // to prevent. Walking the whole width cannot go stale.
+        for shift in 0..=PersistenceCapabilities::HIGHEST_DECLARED_BIT {
+            let bit = PersistenceCapabilities::from_bits_retain(1u64 << shift);
             assert_eq!(
                 bit.names().len(),
                 1,
                 "bit 1 << {shift} is declarable but has no name in KNOWN"
             );
         }
+        // Keeps the bound honest: a bit added above without bumping
+        // `HIGHEST_DECLARED_BIT` would otherwise sit outside the loop and
+        // stay invisible, which is the very failure the loop guards.
+        let above = PersistenceCapabilities::from_bits_retain(
+            1u64 << (PersistenceCapabilities::HIGHEST_DECLARED_BIT + 1),
+        );
+        assert!(
+            above.names().is_empty(),
+            "bit 1 << {} is named, so HIGHEST_DECLARED_BIT is stale",
+            PersistenceCapabilities::HIGHEST_DECLARED_BIT + 1
+        );
     }
 }

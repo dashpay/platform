@@ -249,10 +249,19 @@ pub struct CoreChangeSet {
     /// Union the release sets and the first answer outlives the last one that
     /// is actually true. Applied in order, each batch corrects the one before
     /// it, which is what the wallet itself did.
-    /// `serde(default)`: this field postdates the serialized representation,
-    /// so a payload written before it necessarily omits it. An empty vec is
-    /// the exact backward-compatible reading — a changeset from then could
-    /// not have carried a sweep.
+    /// `serde(default)` so a payload written before this field existed still
+    /// reads, as an empty vec — the exact backward-compatible meaning, since
+    /// a changeset from then could not have carried a sweep.
+    ///
+    /// Scope of that claim: it holds for SELF-DESCRIBING encodings (JSON and
+    /// friends), where a missing field is a fact the decoder can see. It does
+    /// NOT hold for a non-self-describing one — bincode, which is what this
+    /// workspace persists every stored blob with — where appending a field is
+    /// a wire break `default` cannot absorb. That is not a live hazard today:
+    /// nothing in-tree serializes a changeset at all (the derive is behind the
+    /// optional `serde` feature for out-of-tree consumers), and this note
+    /// exists so nobody starts persisting one with bincode believing the
+    /// attribute makes it upgrade-safe.
     #[cfg_attr(feature = "serde", serde(default))]
     pub sweeps: Vec<SweepBatch>,
 }
@@ -2207,6 +2216,42 @@ mod serde_compat_tests {
         assert!(cs.sweeps.is_empty());
         assert_eq!(cs.last_processed_height, Some(1000));
         assert_eq!(cs.synced_height, Some(900));
+    }
+
+    /// The compat test above only proves a MISSING `sweeps` reads as empty.
+    /// This one proves a present one survives the trip at all: `SweepBatch`
+    /// carries `Txid` and `OutPoint` from `dashcore`, whose `Serialize` /
+    /// `Deserialize` arrive through that crate's own feature wiring — if
+    /// that wiring were wrong or absent, every sweep-carrying changeset
+    /// would silently fail to round-trip and nothing else here would catch
+    /// it.
+    #[test]
+    fn a_populated_sweep_batch_round_trips() {
+        use dashcore::hashes::Hash;
+
+        let loser = Txid::from_byte_array([0x11; 32]);
+        let winner = Txid::from_byte_array([0x22; 32]);
+        let released = OutPoint::new(Txid::from_byte_array([0x33; 32]), 7);
+        let cs = CoreChangeSet {
+            sweeps: vec![SweepBatch {
+                txids: vec![loser],
+                superseded_by: winner,
+                winner_mined_height: Some(4_242),
+                released_outpoints: vec![released],
+            }],
+            ..Default::default()
+        };
+
+        let encoded = serde_json::to_string(&cs).expect("a sweep-carrying changeset serializes");
+        let decoded: CoreChangeSet =
+            serde_json::from_str(&encoded).expect("and reads back identically");
+
+        assert_eq!(decoded.sweeps.len(), 1);
+        let batch = &decoded.sweeps[0];
+        assert_eq!(batch.txids, vec![loser]);
+        assert_eq!(batch.superseded_by, winner);
+        assert_eq!(batch.winner_mined_height, Some(4_242));
+        assert_eq!(batch.released_outpoints, vec![released]);
     }
 }
 

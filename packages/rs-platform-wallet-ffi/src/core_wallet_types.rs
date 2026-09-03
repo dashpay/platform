@@ -15,18 +15,29 @@ pub struct OutPointFFI {
     pub vout: u32,
 }
 
+impl OutPointFFI {
+    /// The one authority for building this value, for callers that hold a
+    /// txid and an index rather than an `OutPoint` — the additive UTXO path
+    /// (`record_utxos_ffi`) is exactly that shape.
+    ///
+    /// This value is the join key a sweep's `released_outpoints` uses to
+    /// find additive-path rows on the host side, so byte-order drift
+    /// between hand-rolled copies would silently unlink them: the release
+    /// would match nothing and the coin would stay spent. Both this and the
+    /// `From<&OutPoint>` impl below exist so no site has to spell the copy
+    /// out again.
+    pub fn new(txid: &dashcore::Txid, vout: u32) -> Self {
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(txid.as_ref());
+        Self { txid: bytes, vout }
+    }
+}
+
 impl From<&dashcore::OutPoint> for OutPointFFI {
-    /// The one authority for `OutPoint` → FFI conversion. This value is
-    /// the join key sweep releases use to find additive-path rows on the
-    /// host side, so a byte-order drift between hand-rolled copies would
-    /// silently unlink them — every conversion site routes through here.
+    /// Conversion for callers holding a whole `OutPoint`; delegates to
+    /// [`OutPointFFI::new`], which is where the byte copy lives.
     fn from(outpoint: &dashcore::OutPoint) -> Self {
-        let mut txid = [0u8; 32];
-        txid.copy_from_slice(outpoint.txid.as_ref());
-        Self {
-            txid,
-            vout: outpoint.vout,
-        }
+        Self::new(&outpoint.txid, outpoint.vout)
     }
 }
 
@@ -283,6 +294,13 @@ pub struct WalletChangeSetFFI {
 /// handed back at the next load and re-create a balance the wallet has
 /// already corrected.
 #[repr(C)]
+/// # Null at count 0
+///
+/// `txids` and `released_outpoints` are BOTH null when their count is zero —
+/// a batch can carry an empty release set, and (defensively) an empty txid
+/// list. A consumer must check each pointer before forming a slice from it:
+/// `slice::from_raw_parts(null, 0)` is undefined behaviour in Rust, not a
+/// harmless empty slice, and a naive host binding would dereference null.
 pub struct SweepBatchFFI {
     /// Removed transactions, raw 32-byte txids. Delete these rows and every
     /// UTXO they created.
@@ -1051,13 +1069,10 @@ fn record_new_utxos_ffi(
             let script_bytes = txout.script_pubkey.as_bytes().to_vec();
             let script_len = script_bytes.len();
             let script_ptr = vec_to_ptr_u8(script_bytes, script_len);
-            let mut txid = [0u8; 32];
-            txid.copy_from_slice(rec.txid.as_ref());
             Some(UtxoEntryFFI {
-                outpoint: OutPointFFI {
-                    txid,
-                    vout: d.index,
-                },
+                // Through the shared authority: this is the row a sweep's
+                // release later joins against by outpoint.
+                outpoint: OutPointFFI::new(&rec.txid, d.index),
                 amount: txout.value,
                 address: address.into_raw(),
                 script_pubkey: script_ptr,
