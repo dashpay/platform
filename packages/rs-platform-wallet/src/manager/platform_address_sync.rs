@@ -15,12 +15,11 @@ use std::sync::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use arc_swap::ArcSwapOption;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
 use key_wallet::PlatformP2PKHAddress;
 
 use crate::wallet::PlatformAddressTag;
-use tokio::sync::RwLock;
 
 use dash_async::ThreadRegistry;
 
@@ -98,7 +97,7 @@ impl PlatformAddressSyncSummary {
 /// `sync_now` again returns an empty summary immediately (the caller can
 /// check `is_syncing()` to distinguish).
 pub struct PlatformAddressSyncManager {
-    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_manager: Arc<PlatformEventManager>,
     /// Shared registry that owns this loop's lifecycle: it spawns the
     /// OS thread, owns its cancellation token, and joins it at shutdown.
@@ -127,7 +126,7 @@ pub struct PlatformAddressSyncManager {
 
 impl PlatformAddressSyncManager {
     pub fn new(
-        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+        wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         event_manager: Arc<PlatformEventManager>,
         registry: Arc<ThreadRegistry<WalletWorker>>,
     ) -> Self {
@@ -357,7 +356,7 @@ impl PlatformAddressSyncManager {
         }
 
         let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
-            let wallets = self.wallets.read().await;
+            let wallets = self.wallets.load();
             wallets.iter().map(|(id, w)| (*id, Arc::clone(w))).collect()
         };
 
@@ -454,7 +453,7 @@ impl PlatformAddressSyncManager {
         }
 
         let wallet = {
-            let wallets = self.wallets.read().await;
+            let wallets = self.wallets.load();
             wallets.get(wallet_id).cloned()
         };
         let wallet =
@@ -514,7 +513,7 @@ mod tests {
     /// but still drives the full flag → gate → completion-event protocol
     /// we're testing here.
     fn make_manager() -> (Arc<PlatformAddressSyncManager>, Arc<CompletionCounter>) {
-        let wallets = Arc::new(RwLock::new(BTreeMap::new()));
+        let wallets = Arc::new(ArcSwap::from_pointee(BTreeMap::new()));
         let counter = Arc::new(CompletionCounter::new());
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             Arc::clone(&counter) as Arc<dyn PlatformEventHandler>

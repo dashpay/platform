@@ -146,7 +146,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 
     let signer =
         MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
-    let reservation_only = (*builder).reservation_only;
+    let reservation_only = ffi.reservation_only;
     let finalized = runtime().block_on(wallet.core().finalize_transaction_with_options(
         inner,
         account_type.funding_sources(),
@@ -283,11 +283,19 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
         MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
 
     // Atomic select + reserve + sign in one wallet-manager critical section.
-    let finalized = runtime().block_on(wallet.core().finalize_transaction(
+    // `reservation_only` is read off the reclaimed box (never through `builder`,
+    // whose provenance ends at `Box::from_raw`) and threaded through here for the
+    // same reason as in the immediate sibling: a host that called
+    // `core_wallet_tx_builder_use_only_added_inputs` and then finalized a
+    // DEFERRED payment would otherwise have the restriction silently discarded,
+    // and the account's UTXOs would be offered to selection after all.
+    let reservation_only = ffi.reservation_only;
+    let finalized = runtime().block_on(wallet.core().finalize_transaction_with_options(
         inner,
         account_type.funding_sources(),
         account_index,
         &signer,
+        reservation_only,
     ));
     let finalized = unwrap_result_or_return!(finalized);
 
@@ -635,6 +643,23 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_fee_rate(
 /// each stay under the standard-transaction input limit needs this, or every
 /// batch sees the whole account and fails with a too-many-inputs error.
 ///
+/// Honoured by BOTH finalizers — `core_wallet_tx_builder_finalize` and the
+/// deferred `core_wallet_signed_payment_finalize` — so the restriction cannot
+/// be lost by picking one submission path over the other. It only removes
+/// candidates: the account still takes on the build's reservation bookkeeping
+/// and still supplies its change address.
+///
+/// # Safety
+/// `builder` must be a valid, non-destroyed pointer.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_tx_builder_use_only_added_inputs(
+    builder: *mut FFITransactionBuilder,
+) -> PlatformWalletFFIResult {
+    check_ptr!(builder);
+    (*builder).reservation_only = true;
+    PlatformWalletFFIResult::ok()
+}
+
 /// The balance a build funded by `account_type` could actually select from — the
 /// same accounts `core_wallet_tx_builder_finalize` would fund from, counting
 /// only UTXOs coin selection accepts.
@@ -665,17 +690,6 @@ pub unsafe extern "C" fn core_wallet_pooled_spendable_balance(
     ));
 
     *out_balance = balance;
-    PlatformWalletFFIResult::ok()
-}
-
-/// # Safety
-/// `builder` must be a valid, non-destroyed pointer.
-#[no_mangle]
-pub unsafe extern "C" fn core_wallet_tx_builder_use_only_added_inputs(
-    builder: *mut FFITransactionBuilder,
-) -> PlatformWalletFFIResult {
-    check_ptr!(builder);
-    (*builder).reservation_only = true;
     PlatformWalletFFIResult::ok()
 }
 

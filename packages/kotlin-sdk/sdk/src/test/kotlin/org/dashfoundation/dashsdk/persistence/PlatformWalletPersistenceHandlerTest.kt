@@ -1,5 +1,14 @@
 package org.dashfoundation.dashsdk.persistence
 
+import android.content.Context
+import android.database.Cursor
+import android.database.sqlite.SQLiteException
+import android.os.CancellationSignal
+import androidx.room.Room
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.SupportSQLiteQuery
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -8,7 +17,10 @@ import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.wallet.PlatformWalletPersistenceCapabilities
+import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
+import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
@@ -2881,6 +2893,335 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(db.accountDao().observeByWallet(walletId).first().isEmpty())
     }
 
+    // ── Asset-lock spend visibility ────────────────────────────────────
+
+    /**
+     * An asset-lock tx burns its value into the special-tx payload and often
+     * has no wallet-owned standard output, so SPV block matching can miss it:
+     * the spender's transaction row never advances past mempool context and
+     * the in-block flip in onWalletChangesetTransaction never runs — the
+     * funding TXO sits at isSpent=false (spendingTxid set) FOREVER, and every
+     * isSpent-based balance read overstates the wallet. The lock's own status
+     * DOES keep arriving; from InstantSendLocked on, the upsert must flip
+     * linked TXOs.
+     */
+    @Test
+    fun assetLockStatusAdvanceFlipsItsFundingTxos() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val lockTxid = ByteArray(32) { 7 }
+        db.transactionDao().upsert(
+            TransactionEntity(txid = lockTxid, transactionData = ByteArray(4), context = 0),
+        )
+        val outpoint = ByteArray(36) { 9 }
+        db.txoDao().upsert(
+            TxoEntity(
+                outpoint = outpoint,
+                vout = 0,
+                amount = 1_000_000,
+                address = "yTest",
+                walletId = walletId,
+                spendingTxid = lockTxid,
+                spendingInputIndex = 0,
+                isSpent = false,
+            ),
+        )
+
+        // Broadcast (1) must NOT flip — the network holds no lock yet and a
+        // pre-broadcast abort could still release the inputs.
+        handler.onPersistAssetLockUpsert(
+            walletId, lockTxid + ByteArray(4), ByteArray(4), 0, 1, 0, 999_545, 1, null,
+        )
+        assertFalse(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+
+        // InstantSendLocked (2): the network has locked the inputs — flip.
+        handler.onPersistAssetLockUpsert(
+            walletId, lockTxid + ByteArray(4), ByteArray(4), 0, 1, 0, 999_545, 2, null,
+        )
+        assertTrue(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+    }
+
+    /** The Consumed (4) terminal upsert heals rows a missed IS/CL never flipped. */
+    @Test
+    fun assetLockConsumedHealsAStaleUnspentRow() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val lockTxid = ByteArray(32) { 8 }
+        db.transactionDao().upsert(
+            TransactionEntity(txid = lockTxid, transactionData = ByteArray(4), context = 0),
+        )
+        val outpoint = ByteArray(36) { 10 }
+        db.txoDao().upsert(
+            TxoEntity(
+                outpoint = outpoint,
+                vout = 0,
+                amount = 9_999_545,
+                address = "yTest2",
+                walletId = walletId,
+                spendingTxid = lockTxid,
+                spendingInputIndex = 0,
+                isSpent = false,
+            ),
+        )
+
+        handler.onPersistAssetLockUpsert(
+            walletId, lockTxid + ByteArray(4), ByteArray(4), 0, 1, 0, 9_999_545, 4, null,
+        )
+        assertTrue(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+    }
+
+    /**
+     * Registers [wallet] with one BIP44 account, one owned [address], and
+     * one plain unspent output on `<txid>:0` — the ordinary restorable
+     * shape, with no spender linked.
+     */
+    private suspend fun seedRestorableWallet(
+        wallet: ByteArray,
+        address: String,
+        txid: ByteArray,
+        xpubFill: Byte,
+    ) {
+        handler.onPersistWalletMetadata(wallet, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            wallet, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { xpubFill },
+        )
+        val account = db.accountDao().observeByWallet(wallet).first().single()
+        db.coreAddressDao().upsert(
+            CoreAddressEntity(
+                address = address,
+                poolTypeTag = 0,
+                addressIndex = 0,
+                derivationPath = "m/44'/1'/0'/0/0",
+                accountId = account.id,
+            ),
+        )
+
+        handler.onChangesetBegin(wallet)
+        handler.onWalletChangesetUtxoAdded(
+            wallet, txid, 0, 999_545, address, ByteArray(25) { 6 },
+            100, false, true, false, false,
+        )
+        handler.onChangesetEnd(wallet, success = true)
+    }
+
+    /**
+     * Seeds the state an OLDER build left behind on [wallet]: a funding
+     * TXO whose spender is the asset-lock transaction [lockTxid], stuck
+     * at MEMPOOL context because SPV block matching never matched the
+     * lock, so `onWalletChangesetTransaction`'s in-block flip never ran
+     * and the row stays `isSpent = false` with `spendingTxid` linked.
+     */
+    private suspend fun seedFundingTxoSpentByAMempoolAssetLock(
+        wallet: ByteArray,
+        address: String,
+        fundingTxid: ByteArray,
+        lockTxid: ByteArray,
+        xpubFill: Byte,
+    ) {
+        seedRestorableWallet(wallet, address, fundingTxid, xpubFill)
+
+        handler.onChangesetBegin(wallet)
+        handler.onWalletChangesetTransaction(
+            wallet, lockTxid, ByteArray(10) { 5 }, 0, 0, ByteArray(32),
+            0, 1, "AssetLock", 0, -999_545, 0, false, "", 1_700_000_100,
+            makeOutpoint(fundingTxid, 0), 1,
+        )
+        handler.onChangesetEnd(wallet, success = true)
+
+        val txo = db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!
+        assertFalse("precondition: the missed flip leaves the row unspent", txo.isSpent)
+        assertTrue(lockTxid.contentEquals(txo.spendingTxid!!))
+    }
+
+    /**
+     * A directly-written asset-lock row, the way a build predating the
+     * callback-time reconcile would have left it: terminal `Consumed`,
+     * no further upsert coming.
+     */
+    private suspend fun seedConsumedAssetLockRow(
+        wallet: ByteArray,
+        lockTxid: ByteArray,
+        vout: Int,
+    ) {
+        db.assetLockDao().upsert(
+            AssetLockEntity(
+                outPointHex = encodeOutPointHex(makeOutpoint(lockTxid, vout)),
+                walletId = wallet,
+                transactionBytes = ByteArray(10) { 5 },
+                fundingTypeRaw = 0,
+                identityIndexRaw = 0,
+                amountDuffs = 999_545,
+                statusRaw = 4,
+            ),
+        )
+    }
+
+    private fun restoredUtxoCount(wallet: ByteArray): Int = restoredUtxoTxids(wallet).size
+
+    /** Hex prev-txids the restore hands back for [wallet], sorted. */
+    private fun restoredUtxoTxids(wallet: ByteArray): List<String> {
+        val entry = handler.onLoadWalletList().firstOrNull { it.walletId.contentEquals(wallet) }
+        // `guardedLoad` degrades to an empty array, which Rust reads as a
+        // fresh coinless device — name that failure rather than letting it
+        // surface as a NoSuchElementException.
+        assertNotNull("the restore must still carry this wallet", entry)
+        return entry!!.utxos.map { it.prevTxid.toHex() }.sorted()
+    }
+
+    /**
+     * The restore-time half of the same defect, on the state an OLDER
+     * build left behind: the funding TXO is linked to a spending tx
+     * stuck at MEMPOOL context (SPV block matching never matched the
+     * lock, so the in-block flip never ran) while the lock row itself
+     * already reads `Consumed`.
+     *
+     * `Consumed` is terminal — the lock never upserts again — so the
+     * callback-time reconcile has no future event to repair this with.
+     * Every relaunch would hand the consumed output back to Rust as
+     * spendable and re-inflate the balance. The restore guard must both
+     * exclude it and heal the row in place.
+     */
+    @Test
+    fun loadSkipsAndHealsATxoConsumedByAFinalizedAssetLock() = runTest {
+        val fundingTxid = ByteArray(32) { 51 }
+        val lockTxid = ByteArray(32) { 52 }
+        seedFundingTxoSpentByAMempoolAssetLock(
+            walletId, "yLockFunder", fundingTxid, lockTxid, 30,
+        )
+
+        // Without a finalized lock row this IS the phantom UTXO: the
+        // restore hands the consumed output straight back to Rust.
+        assertEquals(1, restoredUtxoCount(walletId))
+
+        seedConsumedAssetLockRow(walletId, lockTxid, vout = 0)
+
+        assertEquals(
+            "the finalized lock's funding output must not rehydrate as spendable",
+            0,
+            restoredUtxoCount(walletId),
+        )
+        assertTrue(
+            "and the stale flag must be healed in place",
+            db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent,
+        )
+    }
+
+    /**
+     * Same defect, on the outpoint shape DIP-0027 actually permits: one
+     * funding transaction may carry several credit outputs, and Rust
+     * persists each tracked lock under its own credit-output index
+     * (`wallet/asset_lock/sync/reconstruction.rs`), so a perfectly valid
+     * lock row can be keyed `<txid>:1` with no `<txid>:0` row anywhere.
+     *
+     * A guard that probes the synthetic vout-0 outpoint misses it and
+     * hands the consumed output straight back as spendable — the finality
+     * signal belongs to the transaction, not to one of its outputs.
+     */
+    @Test
+    fun loadSkipsATxoConsumedByAFinalizedAssetLockPersistedAtANonZeroVout() = runTest {
+        val fundingTxid = ByteArray(32) { 61 }
+        val lockTxid = ByteArray(32) { 62 }
+        seedFundingTxoSpentByAMempoolAssetLock(
+            walletId, "yLockFunderVout1", fundingTxid, lockTxid, 31,
+        )
+        assertEquals(1, restoredUtxoCount(walletId))
+
+        // ONLY the second credit output is persisted — no `:0` row exists.
+        seedConsumedAssetLockRow(walletId, lockTxid, vout = 1)
+        assertNull(
+            "the fixture must not leave a vout-0 row for the guard to find",
+            db.assetLockDao().getByOutPointHex(encodeOutPointHex(makeOutpoint(lockTxid, 0))),
+        )
+
+        assertEquals(
+            "finality belongs to the funding transaction, not to credit output 0",
+            0,
+            restoredUtxoCount(walletId),
+        )
+        assertTrue(
+            "and the stale flag must be healed in place",
+            db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent,
+        )
+    }
+
+    /**
+     * Failure policy for the finality lookup the guard depends on.
+     *
+     * `onLoadWalletList` runs under `guardedLoad(emptyArray())` and the
+     * Android load surface is array-only — there is no error result — so
+     * an escaping read failure returns a SUCCESSFUL EMPTY restore, which
+     * Rust reads as a fresh, coinless device for EVERY wallet. The lookup
+     * must therefore contain its own failure: drop the one candidate it
+     * could not answer for (never healing it, since nothing was proven)
+     * and leave every unrelated wallet and TXO restoring normally.
+     *
+     * The fault is injected at the single prepared statement, not at the
+     * table, because the table is read by two other restore builders
+     * whose own failure modes are out of this guard's hands.
+     */
+    @Test
+    fun aFailingFinalizedLockLookupDropsOnlyItsOwnCandidate() = runTest {
+        // The helper factory is fixed when the database is built, so the
+        // shared fixture is replaced with one that can be faulted.
+        val faults = SingleStatementFaultInjector("SELECT MAX(statusRaw) FROM asset_locks")
+        db.close()
+        db = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext<Context>(),
+            DashDatabase::class.java,
+        )
+            .allowMainThreadQueries()
+            .openHelperFactory(faults)
+            .build()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+
+        val fundingTxid = ByteArray(32) { 71 }
+        val lockTxid = ByteArray(32) { 72 }
+        seedFundingTxoSpentByAMempoolAssetLock(
+            walletId, "yLockFunderThrow", fundingTxid, lockTxid, 32,
+        )
+        seedConsumedAssetLockRow(walletId, lockTxid, vout = 0)
+        // Sentinel 1: an ordinary unspent output on the SAME wallet, with
+        // no spender at all, so it never reaches the lookup.
+        val sentinelTxid = ByteArray(32) { 73 }
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetUtxoAdded(
+            walletId, sentinelTxid, 0, 500_000, "yLockFunderThrow",
+            ByteArray(25) { 6 }, 100, false, true, false, false,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        // Sentinel 2: an unrelated wallet with its own restorable output.
+        val otherWallet = ByteArray(32) { 74 }
+        val otherTxid = ByteArray(32) { 75 }
+        seedRestorableWallet(otherWallet, "yOtherFunder", otherTxid, 33)
+
+        // Readable lookup: the guard excludes the consumed output and
+        // keeps both sentinels.
+        assertEquals(listOf(sentinelTxid.toHex()), restoredUtxoTxids(walletId))
+        assertEquals(listOf(otherTxid.toHex()), restoredUtxoTxids(otherWallet))
+        assertTrue(db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent)
+
+        // Re-stale the healed row so the unreadable pass faces the same
+        // decision the readable one just made.
+        db.txoDao().upsert(
+            db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.copy(isSpent = false),
+        )
+        faults.armed = true
+
+        assertEquals(
+            "only the unanswerable candidate is dropped; the unrelated output survives",
+            listOf(sentinelTxid.toHex()),
+            restoredUtxoTxids(walletId),
+        )
+        assertEquals(
+            "and so does the unrelated wallet's — one bad lookup cannot empty the restore",
+            listOf(otherTxid.toHex()),
+            restoredUtxoTxids(otherWallet),
+        )
+        assertFalse(
+            "an unanswerable lookup proves nothing, so it must not heal the flag",
+            db.txoDao().getByOutpoint(makeOutpoint(fundingTxid, 0))!!.isSpent,
+        )
+    }
+
     // ── Asset locks: Consumed is terminal ─────────────────────────────
     //
     // Swift parity with `persistAssetLocks`
@@ -3237,5 +3578,54 @@ class PlatformWalletPersistenceHandlerTest {
 
         // Promote-only and idempotent: a second pass matches nothing.
         assertEquals(0, db.identityDao().healIsLocalFlags())
+    }
+}
+
+/**
+ * Room open-helper factory that fails exactly one prepared statement —
+ * the one whose SQL starts with [failingSqlPrefix] — once [armed], and
+ * delegates every other read and write to real SQLite.
+ *
+ * Faults ONE query rather than dropping its table: `asset_locks` is read
+ * by three independent restore builders, so a table-level fault proves
+ * nothing about the isolation of any single one of them.
+ */
+private class SingleStatementFaultInjector(
+    private val failingSqlPrefix: String,
+) : SupportSQLiteOpenHelper.Factory {
+    private val real = FrameworkSQLiteOpenHelperFactory()
+
+    /** Off while the fixture is seeded, then flipped on by the test. */
+    var armed: Boolean = false
+
+    override fun create(
+        configuration: SupportSQLiteOpenHelper.Configuration,
+    ): SupportSQLiteOpenHelper = Helper(real.create(configuration))
+
+    private inner class Helper(
+        private val delegate: SupportSQLiteOpenHelper,
+    ) : SupportSQLiteOpenHelper by delegate {
+        override val writableDatabase: SupportSQLiteDatabase
+            get() = Db(delegate.writableDatabase)
+        override val readableDatabase: SupportSQLiteDatabase
+            get() = Db(delegate.readableDatabase)
+    }
+
+    private inner class Db(
+        private val delegate: SupportSQLiteDatabase,
+    ) : SupportSQLiteDatabase by delegate {
+        private fun shouldFail(query: SupportSQLiteQuery) =
+            armed && query.sql.startsWith(failingSqlPrefix)
+
+        override fun query(query: SupportSQLiteQuery): Cursor =
+            if (shouldFail(query)) throw SQLiteException("injected read failure: ${query.sql}")
+            else delegate.query(query)
+
+        override fun query(
+            query: SupportSQLiteQuery,
+            cancellationSignal: CancellationSignal?,
+        ): Cursor =
+            if (shouldFail(query)) throw SQLiteException("injected read failure: ${query.sql}")
+            else delegate.query(query, cancellationSignal)
     }
 }

@@ -9,6 +9,9 @@ mod proof;
 pub mod types;
 mod verify;
 pub use error::Error;
+pub use proof::chained_document::{
+    verify_chained_documents_proof as verify_chained_documents_tenderdash_proof, ChainedDocuments,
+};
 pub use proof::document_count::{
     verify_aggregate_count_proof, verify_carrier_aggregate_count_proof,
     verify_distinct_count_proof, verify_point_lookup_count_proof,

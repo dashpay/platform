@@ -256,6 +256,44 @@ describe('Document', () => {
 
       expect(documentInstance.properties).to.deep.equal(document2);
     });
+
+    it('should surface identifier-typed properties as base58 strings', () => {
+      const contractWithIdentifier = {
+        ...dataContractValue,
+        documentSchemas: {
+          note: {
+            type: 'object',
+            properties: {
+              message: { type: 'string', position: 0 },
+              authorId: {
+                type: 'array',
+                byteArray: true,
+                contentMediaType: 'application/x.dash.dpp.identifier',
+                minItems: 32,
+                maxItems: 32,
+                position: 1,
+              },
+            },
+            additionalProperties: false,
+          },
+        },
+      };
+      const dataContract = wasm.DataContract.fromJSON(contractWithIdentifier, false);
+      const documentInstance = createDocument({
+        id,
+        properties: { message: 'hi', authorId: id },
+        dataContractId: dataContract.id.toBase58(),
+      });
+
+      const bytes = documentInstance.toBytes(dataContract, new PlatformVersion(1));
+      const restored = wasm.Document.fromBytes(bytes, dataContract, 'note', new PlatformVersion(1));
+
+      // The schema-typed decode yields Value::Identifier for authorId,
+      // and the properties getter surfaces it as base58 — the form
+      // where-clauses accept back as a cursor.
+      expect(restored.properties.authorId).to.equal(id);
+      expect(restored.properties.message).to.equal('hi');
+    });
   });
 
   describe('revision', () => {

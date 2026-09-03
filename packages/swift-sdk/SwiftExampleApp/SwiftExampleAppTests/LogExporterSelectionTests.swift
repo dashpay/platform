@@ -122,4 +122,40 @@ final class LogExporterSelectionTests: XCTestCase {
     func testNoSessionsSelectsNothing() {
         XCTAssertEqual(LogExporter.selectSessions(current: nil, others: []), [])
     }
+
+    func testStagingCopiesSwiftAndRustLogsFromTheSameSession() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory
+            .appendingPathComponent("LogExporterTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let session = root.appendingPathComponent("2026-08-31T12-00-00Z", isDirectory: true)
+        let swiftDirectory = session.appendingPathComponent("swift", isDirectory: true)
+        let rustDirectory = session.appendingPathComponent("platform_wallet", isDirectory: true)
+        try fm.createDirectory(at: swiftDirectory, withIntermediateDirectories: true)
+        try fm.createDirectory(at: rustDirectory, withIntermediateDirectories: true)
+        try "swift event\n".write(
+            to: swiftDirectory.appendingPathComponent("run.log"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "rust event\n".write(
+            to: rustDirectory.appendingPathComponent("run.log"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let staging = root.appendingPathComponent("staging", isDirectory: true)
+        try LogExporter.stageSessions(
+            [.init(url: session, bytes: 24)],
+            at: staging,
+            fileManager: fm
+        )
+
+        let stagedSession = staging.appendingPathComponent(session.lastPathComponent)
+        XCTAssertTrue(fm.fileExists(atPath: stagedSession.appendingPathComponent("swift/run.log").path))
+        XCTAssertTrue(
+            fm.fileExists(atPath: stagedSession.appendingPathComponent("platform_wallet/run.log").path)
+        )
+    }
 }
