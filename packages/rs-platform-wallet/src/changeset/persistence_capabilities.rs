@@ -214,6 +214,19 @@ impl PersistenceCapabilities {
     }
 }
 
+/// Ties `HIGHEST_DECLARED_BIT` to the bit that actually is the highest.
+///
+/// Bumping one without the other stops the build here instead of silently
+/// shrinking what `every_declared_bit_has_a_stable_name` walks — the test
+/// would then pass while a real bit sat outside its range, which is the
+/// failure the test exists to catch. Written as a module-level `const _` so
+/// it is evaluated in every build, test or not.
+const _: () = assert!(
+    PersistenceCapabilities::DASHPAY_PAYMENTS.bits()
+        == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
+    "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
