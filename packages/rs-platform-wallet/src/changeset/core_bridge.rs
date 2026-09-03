@@ -619,6 +619,14 @@ where
 
 /// Commit one wallet's folded changeset — the per-wallet unit of
 /// [`commit_batch`].
+///
+/// Eight parameters, one over clippy's threshold: every one is a distinct
+/// piece of the drain's state that this function must both read and write —
+/// the fault map, the sync flag, the one-shot freeze log, the diagnostics
+/// and the settled set that the panic arm in `run_wallet_event_adapter`
+/// reads back. Bundling them into a struct would only rename the same
+/// eight, and the borrow split is what keeps them separately mutable here.
+#[allow(clippy::too_many_arguments)]
 fn commit_wallet<P>(
     persister: &P,
     wallet_id: WalletId,
