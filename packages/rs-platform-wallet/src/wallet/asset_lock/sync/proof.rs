@@ -1163,6 +1163,47 @@ mod tests {
         assert!(still_reported);
     }
 
+    /// The permanent-failure report fires ONCE per wait, not once per
+    /// iteration.
+    ///
+    /// A poll loop can spin many times against the same broken backend, so
+    /// reporting per iteration would bury the log under one repeated line
+    /// while saying nothing new. Counting the events is the point: an
+    /// assertion that merely finds a report present passes just as happily
+    /// when every iteration emits one.
+    #[test]
+    fn poll_read_reports_a_permanent_failure_once_per_wait_not_once_per_iteration() {
+        use crate::test_support::tracing_capture::{RecordedEvents, RecordingGuard};
+        use tracing::Level;
+
+        let unknown_txid = Txid::from([0xFF; 32]);
+        let persister = wallet_persister(Arc::new(ErroringStore));
+        let mut reported = false;
+
+        let recorder = RecordedEvents::default();
+        let _guard = RecordingGuard::install(recorder.clone());
+
+        // Three iterations of ONE wait, as a poll loop would.
+        for _ in 0..3 {
+            assert!(
+                record_or_persister_for_poll(None, &persister, &unknown_txid, &mut reported)
+                    .is_none()
+            );
+        }
+
+        let reports = recorder
+            .entries()
+            .into_iter()
+            .filter(|(level, msg)| {
+                *level == Level::ERROR && msg.contains("Core tx-record fallback read")
+            })
+            .count();
+        assert_eq!(
+            reports, 1,
+            "three iterations of one wait must produce exactly one report, got {reports}"
+        );
+    }
+
     /// A transient failure is a miss for this iteration and is NOT worth
     /// the once-per-wait permanent-failure report — the next iteration
     /// retries it.
