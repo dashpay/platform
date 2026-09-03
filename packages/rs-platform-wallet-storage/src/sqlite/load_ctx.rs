@@ -25,16 +25,28 @@ pub enum LoadSite {
     ShieldedViewingKeyRow,
     /// A `core_transactions` row's typed columns disagreed with its blob.
     CoreTransactionColumnDrift,
+    /// An ECDSA account-registration row's typed columns disagreed with its blob.
+    AccountRegistrationDrift,
+    /// A provider account-registration row's typed columns disagreed with its blob.
+    ProviderKeyRegistrationDrift,
+    /// A provider account-registration row carries the wrong key curve.
+    ProviderKeyCurveMismatch,
+    /// An `asset_locks` row's typed status disagreed with its lifecycle blob.
+    AssetLockStatusDrift,
     /// Rehydration could not derive a resolved index into an address pool.
     RehydrationEnsureDerived,
-    /// Rehydration's gap-limit refill failed for an address pool.
+    /// Rehydration rejected an address pool's oversized gap-limit refill.
     RehydrationGapLimit,
+    /// Rehydration could not maintain an address pool's gap limit.
+    RehydrationMaintainGapLimit,
     /// A restored UTXO or used address names an account this wallet lacks.
     /// Counted per address, though one record covers a whole account's.
     OrphanedUtxoOwner,
     /// A restored address did not resolve against its account's xpub.
     /// Counted per address, though one record covers a whole account's.
     UnresolvedUtxoAddress,
+    /// A stored UTXO or pool script could not be decoded as an address.
+    UndecodableAddressScript,
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
     /// An `identity_keys` / `contacts` row's owner identity is tombstoned.
@@ -44,8 +56,11 @@ pub enum LoadSite {
     /// An identity owned by no wallet carries a registration index.
     UnownedIdentityHasRegistrationIndex,
     /// Two live `identities` rows of one wallet claim the same
-    /// `identity_index`. Only one can occupy the derivation slot, so the
-    /// loser is dropped from the wallet's identity map.
+    /// `identity_index`. Only one can occupy the derivation slot; the loser
+    /// is moved to `out_of_wallet_identities` rather than dropped, since
+    /// nothing persisted establishes which row truly owns the slot and a
+    /// Recovery load is read-only — anything discarded here could never be
+    /// re-persisted.
     IdentityIndexCollision,
     /// An `identity_scan_states` row claims a complete scan while unanswered
     /// indices sit beside it. Clamped toward incomplete, which costs one
@@ -60,15 +75,54 @@ impl LoadSite {
             Self::ChainLockBlob => "chain_lock_blob",
             Self::ShieldedViewingKeyRow => "shielded_viewing_key_row",
             Self::CoreTransactionColumnDrift => "core_transaction_column_drift",
+            Self::AccountRegistrationDrift => "account_registration_drift",
+            Self::ProviderKeyRegistrationDrift => "provider_key_registration_drift",
+            Self::ProviderKeyCurveMismatch => "provider_key_curve_mismatch",
+            Self::AssetLockStatusDrift => "asset_lock_status_drift",
             Self::RehydrationEnsureDerived => "rehydration_ensure_derived",
             Self::RehydrationGapLimit => "rehydration_gap_limit",
+            Self::RehydrationMaintainGapLimit => "rehydration_maintain_gap_limit",
             Self::OrphanedUtxoOwner => "orphaned_utxo_owner",
             Self::UnresolvedUtxoAddress => "unresolved_utxo_address",
+            Self::UndecodableAddressScript => "undecodable_address_script",
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
             Self::TombstonedIdentityOrphan => "tombstoned_identity_orphan",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
             Self::IdentityScanStateContradiction => "identity_scan_state_contradiction",
+        }
+    }
+
+    fn recovery_message(self) -> &'static str {
+        match self {
+            Self::ShieldedViewingKeyRow => {
+                "recovery mode: skipping an unreadable shielded viewing-key row"
+            }
+            Self::RehydrationEnsureDerived => {
+                "recovery mode: leaving an address pool short after derivation failed"
+            }
+            Self::RehydrationGapLimit => {
+                "recovery mode: refusing an oversized address-pool gap refill"
+            }
+            Self::RehydrationMaintainGapLimit => {
+                "recovery mode: leaving an address pool short after gap maintenance failed"
+            }
+            Self::TombstonedIdentityOrphan => {
+                "recovery mode: skipping rows owned by a tombstoned identity"
+            }
+            _ => "recovery mode: tolerating a persisted inconsistency instead of failing the load",
+        }
+    }
+
+    fn degradation_message(self) -> &'static str {
+        match self {
+            Self::OrphanedUtxoOwner => {
+                "load degraded: routing addresses from an unavailable owner to the first funds account"
+            }
+            Self::UnresolvedUtxoAddress => {
+                "load degraded: deferring addresses that did not resolve against the account xpub"
+            }
+            _ => "load degraded: an ambiguous persisted inconsistency was accepted as-is",
         }
     }
 }
@@ -132,12 +186,13 @@ impl LoadDegradation {
 
 /// Where a degraded site fired, as structured log fields.
 ///
-/// `account_type` is `dyn Debug` so this stays free of the wallet types;
-/// `affected` is how many rows, addresses or entries the incident covers.
+/// `account_type` and optional `detail` are `dyn Debug` so this stays free of
+/// wallet types; `affected` is how many rows, addresses or entries it covers.
 pub(crate) struct SiteCoords<'a> {
-    pub wallet_id: [u8; 32],
+    pub wallet_id: Option<[u8; 32]>,
     pub account_type: &'a dyn fmt::Debug,
     pub affected: usize,
+    pub detail: Option<&'a dyn fmt::Debug>,
 }
 
 /// Per-`load()` policy + counters, created on the loading thread's stack.
@@ -214,6 +269,35 @@ impl LoadCtx {
         Ok(())
     }
 
+    /// [`tolerate`](Self::tolerate) with coordinates in the recovery log.
+    ///
+    /// Strict returns `err`; Recovery counts the incident and logs its error
+    /// kind and location. Unlike [`note_degraded`](Self::note_degraded), this
+    /// is never used for incidents accepted under Strict.
+    pub(crate) fn tolerate_at(
+        &self,
+        site: LoadSite,
+        coords: SiteCoords<'_>,
+        err: WalletStorageError,
+    ) -> Result<(), WalletStorageError> {
+        if self.policy == LoadPolicy::Strict {
+            return Err(err);
+        }
+        let occurrences = u32::try_from(coords.affected).unwrap_or(u32::MAX).max(1);
+        self.count(site, occurrences);
+        tracing::warn!(
+            site = site.as_str(),
+            wallet_id = ?coords.wallet_id.map(hex::encode),
+            account_type = ?coords.account_type,
+            affected = coords.affected,
+            detail = ?coords.detail,
+            error_kind = err.error_kind_str(),
+            error = %err,
+            message = site.recovery_message(),
+        );
+        Ok(())
+    }
+
     /// Record an inconsistency that is never fatal, in either policy.
     ///
     /// For sites whose signal cannot distinguish corruption from a healthy
@@ -230,11 +314,12 @@ impl LoadCtx {
         self.count(site, occurrences);
         tracing::warn!(
             site = site.as_str(),
-            wallet_id = %hex::encode(coords.wallet_id),
+            wallet_id = ?coords.wallet_id.map(hex::encode),
             account_type = ?coords.account_type,
             affected = coords.affected,
+            detail = ?coords.detail,
             cause,
-            "load degraded: an ambiguous persisted inconsistency was accepted as-is"
+            message = site.degradation_message(),
         );
     }
 
@@ -316,9 +401,10 @@ mod tests {
         ctx.note_degraded(
             LoadSite::UnresolvedUtxoAddress,
             SiteCoords {
-                wallet_id: [7u8; 32],
+                wallet_id: Some([7u8; 32]),
                 account_type: &"Standard[0]",
                 affected: 900,
+                detail: None,
             },
             "nine hundred addresses did not resolve",
         );
@@ -336,9 +422,10 @@ mod tests {
         ctx.note_degraded(
             LoadSite::OrphanedUtxoOwner,
             SiteCoords {
-                wallet_id: [7u8; 32],
+                wallet_id: Some([7u8; 32]),
                 account_type: &"Standard[0]",
                 affected: 1,
+                detail: None,
             },
             "ambiguous owner",
         );

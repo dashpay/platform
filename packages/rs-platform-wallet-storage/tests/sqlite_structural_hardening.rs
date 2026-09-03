@@ -398,7 +398,8 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
     }
 
     let conn = persister.lock_conn_for_test();
-    let err = asset_locks::load_state(&conn, &w).expect_err("mismatch must fail");
+    let err = asset_locks::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect_err("mismatch must fail");
     assert!(
         matches!(err, WalletStorageError::AssetLockEntryMismatch { .. }),
         "expected AssetLockEntryMismatch, got {err:?}"

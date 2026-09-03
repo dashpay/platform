@@ -14,6 +14,7 @@ use platform_wallet::changeset::{
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 
@@ -361,12 +362,13 @@ fn provider_curve_matches_type(at: &AccountType, key: &ProviderKeyExtendedPubKey
 
 /// Read the provider key-material accounts of one wallet.
 ///
-/// Entries are ordered by `account_type`; a row that fails to decode,
-/// contradicts its typed columns, or carries the wrong curve for its account
-/// type is a hard [`WalletStorageError`].
+/// Entries are ordered by `account_type`. Decode failures stay fatal;
+/// Recovery skips typed-column drift and wrong-curve rows under distinct
+/// degradation sites.
 pub(crate) fn load_provider_state(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<Vec<ProviderKeyAccountEntry>, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT account_type, account_index, key_class, \
@@ -414,9 +416,19 @@ pub(crate) fn load_provider_state(
             || account_key_class(&entry.account_type) != typed_key_class
             || blob_user.as_slice() != typed_user.as_slice()
             || blob_friend.as_slice() != typed_friend.as_slice()
-            || !provider_curve_matches_type(&entry.account_type, &entry.extended_public_key)
         {
-            return Err(WalletStorageError::ProviderKeyAccountEntryMismatch);
+            ctx.tolerate(
+                LoadSite::ProviderKeyRegistrationDrift,
+                WalletStorageError::ProviderKeyAccountEntryMismatch,
+            )?;
+            continue;
+        }
+        if !provider_curve_matches_type(&entry.account_type, &entry.extended_public_key) {
+            ctx.tolerate(
+                LoadSite::ProviderKeyCurveMismatch,
+                WalletStorageError::ProviderKeyAccountEntryMismatch,
+            )?;
+            continue;
         }
 
         out.push(ProviderKeyAccountEntry {
@@ -431,15 +443,18 @@ pub(crate) fn load_provider_state(
 /// [`AccountManifest`] — the rehydration account-set oracle (which accounts to
 /// re-derive + the per-account xpubs the wrong-account gate checks). PUBLIC
 /// material only (xpub + account type), no `Wallet` minted. Each list is
-/// ordered by its typed columns for determinism; a row that fails to decode is
-/// a hard [`WalletStorageError`].
+/// ordered by its typed columns for determinism. Typed-column drift is fatal
+/// under Strict; Recovery drops the offending registration row. Persisted
+/// funds attributed to that missing account fall back to the first remaining
+/// funds account until the next sync rebuilds per-account attribution.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<AccountManifest, WalletStorageError> {
     Ok(AccountManifest {
-        ecdsa: load_ecdsa_state(conn, wallet_id)?,
-        provider: load_provider_state(conn, wallet_id)?,
+        ecdsa: load_ecdsa_state(conn, wallet_id, ctx)?,
+        provider: load_provider_state(conn, wallet_id, ctx)?,
     })
 }
 
@@ -448,6 +463,7 @@ pub fn load_state(
 fn load_ecdsa_state(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<Vec<AccountRegistrationEntry>, WalletStorageError> {
     // Select typed columns alongside the blob so we can cross-check them
     // against the decoded entry — a row whose blob disagrees with its indexed
@@ -508,7 +524,11 @@ fn load_ecdsa_state(
             || blob_user.as_slice() != typed_user.as_slice()
             || blob_friend.as_slice() != typed_friend.as_slice()
         {
-            return Err(WalletStorageError::AccountRegistrationEntryMismatch);
+            ctx.tolerate(
+                LoadSite::AccountRegistrationDrift,
+                WalletStorageError::AccountRegistrationEntryMismatch,
+            )?;
+            continue;
         }
         out.push(entry);
     }
@@ -694,7 +714,8 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_state(&conn, &w).expect_err("load_state must fail on type mismatch");
+        let err = load_state(&conn, &w, &LoadCtx::strict())
+            .expect_err("load_state must fail on type mismatch");
         assert!(
             matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
             "expected AccountRegistrationEntryMismatch, got {err:?}"
@@ -733,7 +754,8 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_state(&conn, &w).expect_err("load_state must fail on index mismatch");
+        let err = load_state(&conn, &w, &LoadCtx::strict())
+            .expect_err("load_state must fail on index mismatch");
         assert!(
             matches!(err, WalletStorageError::AccountRegistrationEntryMismatch),
             "expected AccountRegistrationEntryMismatch, got {err:?}"
@@ -814,7 +836,7 @@ mod tests {
         )
         .unwrap();
 
-        let loaded = load_state(&conn, &w)
+        let loaded = load_state(&conn, &w, &LoadCtx::strict())
             .expect("consistent row must load cleanly")
             .ecdsa;
         assert_eq!(loaded.len(), 1);
@@ -849,7 +871,9 @@ mod tests {
             apply_registrations(&tx, &w, &[entry(0), entry(1)]).unwrap();
             tx.commit().unwrap();
         }
-        let loaded = load_state(&conn, &w).expect("both key classes load").ecdsa;
+        let loaded = load_state(&conn, &w, &LoadCtx::strict())
+            .expect("both key classes load")
+            .ecdsa;
         assert_eq!(loaded.len(), 2, "distinct key classes must both persist");
         let key_classes: HashSet<u32> = loaded
             .iter()
@@ -887,7 +911,9 @@ mod tests {
             apply_registrations(&tx, &w, &[entry([0x01; 32]), entry([0x02; 32])]).unwrap();
             tx.commit().unwrap();
         }
-        let loaded = load_state(&conn, &w).expect("both contacts load").ecdsa;
+        let loaded = load_state(&conn, &w, &LoadCtx::strict())
+            .expect("both contacts load")
+            .ecdsa;
         assert_eq!(loaded.len(), 2, "distinct contacts must both persist");
         let friends: HashSet<[u8; 32]> = loaded
             .iter()
@@ -926,7 +952,9 @@ mod tests {
             apply_registrations(&tx, &w, std::slice::from_ref(&entry)).unwrap();
             tx.commit().unwrap();
         }
-        let loaded = load_state(&conn, &w).expect("load").ecdsa;
+        let loaded = load_state(&conn, &w, &LoadCtx::strict())
+            .expect("load")
+            .ecdsa;
         assert_eq!(loaded.len(), 1, "re-persist must not duplicate the row");
     }
 

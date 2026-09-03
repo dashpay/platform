@@ -91,7 +91,8 @@ fn rt4_consumed_excluded_from_rehydration_feed() {
     assert_eq!(consumed_rows, 1, "Consumed row must persist on disk");
 
     // Unfiltered reader still returns the Consumed entry...
-    let unfiltered = asset_locks::load_state(&conn, &w).unwrap();
+    let unfiltered =
+        asset_locks::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict()).unwrap();
     let all_ops: Vec<_> = unfiltered
         .values()
         .flat_map(|m| m.keys().copied())
@@ -103,7 +104,8 @@ fn rt4_consumed_excluded_from_rehydration_feed() {
 
     // (b)+(c) the filtered rehydration feed excludes Consumed, keeps
     // the rest.
-    let feed = asset_locks::load_unconsumed(&conn, &w).unwrap();
+    let feed = asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .unwrap();
     drop(conn);
     let feed_ops: Vec<_> = feed.values().flat_map(|m| m.keys().copied()).collect();
     assert!(
@@ -137,7 +139,8 @@ fn a2_all_consumed_yields_empty_feed() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let feed = asset_locks::load_unconsumed(&conn, &w).unwrap();
+    let feed = asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .unwrap();
     drop(conn);
     assert!(feed.is_empty(), "all-consumed wallet → empty feed");
 }

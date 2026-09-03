@@ -126,6 +126,9 @@ pub(crate) fn restore_provider_platform_node_pool(
             used,
         )
         .map_err(|error| match error {
+            PlatformNodePoolError::NoManagedAccount => {
+                WalletStorageError::blob_decode("provider platform account is not managed")
+            }
             PlatformNodePoolError::InvalidAccountPath { source } => {
                 WalletStorageError::AccountRecordInvalid { e: source }
             }
@@ -344,9 +347,10 @@ pub fn apply_persisted_core_state(
             ctx.note_degraded(
                 LoadSite::OrphanedUtxoOwner,
                 SiteCoords {
-                    wallet_id,
+                    wallet_id: Some(wallet_id),
                     account_type: &orphaned_owners,
                     affected: orphaned_owners.len(),
+                    detail: None,
                 },
                 "restored UTXOs or used addresses were routed to the first funds account \
                  because their own owning accounts are not funds accounts of this wallet; \
@@ -604,9 +608,10 @@ fn extend_pools_for_restored_addresses(
             ctx.note_degraded(
                 LoadSite::UnresolvedUtxoAddress,
                 SiteCoords {
-                    wallet_id,
+                    wallet_id: Some(wallet_id),
                     account_type: &account_type,
                     affected: unresolved.len(),
+                    detail: None,
                 },
                 "restored addresses did not resolve against this account's xpub; they re-warm \
                  on the next full sync and the balance total is exact",
@@ -659,16 +664,16 @@ fn extend_pools_for_restored_addresses(
         if let Some(deepest) = *deepest_resolved {
             if let Some(key_source) = key_source.as_ref() {
                 if ensure_derived(pool, key_source, deepest).is_none() {
-                    ctx.tolerate(
+                    ctx.tolerate_at(
                         LoadSite::RehydrationEnsureDerived,
+                        SiteCoords {
+                            wallet_id: Some(wallet_id),
+                            account_type: &account_type,
+                            affected: 1,
+                            detail: Some(&pool.pool_type),
+                        },
                         WalletStorageError::RehydrationEnsureDerivedFailed { index: deepest },
                     )?;
-                    warn_deferred_pool(
-                        LoadSite::RehydrationEnsureDerived,
-                        wallet_id,
-                        &account_type,
-                        pool.pool_type,
-                    );
                 }
             }
         }
@@ -710,8 +715,14 @@ fn extend_pools_for_restored_addresses(
             let refill =
                 ImpliedRefill::of(pool.highest_used, pool.highest_generated, pool.gap_limit);
             if refill.implied > MAX_REHYDRATION_GAP_REFILL {
-                ctx.tolerate(
+                ctx.tolerate_at(
                     LoadSite::RehydrationGapLimit,
+                    SiteCoords {
+                        wallet_id: Some(wallet_id),
+                        account_type: &account_type,
+                        affected: 1,
+                        detail: Some(&pool.pool_type),
+                    },
                     WalletStorageError::RehydrationGapLimitRefillTooLarge {
                         refill_target: refill.target,
                         already_generated: refill.already_generated,
@@ -719,12 +730,6 @@ fn extend_pools_for_restored_addresses(
                         cap: MAX_REHYDRATION_GAP_REFILL,
                     },
                 )?;
-                warn_deferred_pool(
-                    LoadSite::RehydrationGapLimit,
-                    wallet_id,
-                    &account_type,
-                    pool.pool_type,
-                );
                 break;
             }
 
@@ -736,16 +741,16 @@ fn extend_pools_for_restored_addresses(
             // address can be re-issued as fresh. (The size cap above it is a
             // live, tested guard — see MAX_REHYDRATION_GAP_REFILL.)
             if let Err(e) = pool.maintain_gap_limit(key_source) {
-                ctx.tolerate(
-                    LoadSite::RehydrationGapLimit,
+                ctx.tolerate_at(
+                    LoadSite::RehydrationMaintainGapLimit,
+                    SiteCoords {
+                        wallet_id: Some(wallet_id),
+                        account_type: &account_type,
+                        affected: 1,
+                        detail: Some(&pool.pool_type),
+                    },
                     WalletStorageError::RehydrationGapLimitFailed { source: e },
                 )?;
-                warn_deferred_pool(
-                    LoadSite::RehydrationGapLimit,
-                    wallet_id,
-                    &account_type,
-                    pool.pool_type,
-                );
                 break;
             }
         }
@@ -787,25 +792,6 @@ impl ImpliedRefill {
             implied: target.saturating_add(1).saturating_sub(already_generated),
         }
     }
-}
-
-/// Locate a pool whose window a tolerated derivation failure left short.
-/// The failure itself is logged by [`LoadCtx::tolerate`]; this adds the
-/// coordinates under the same `site`, so the two records join, and fires
-/// only when the policy tolerated it.
-fn warn_deferred_pool(
-    site: LoadSite,
-    wallet_id: [u8; 32],
-    account_type: &AccountType,
-    pool_type: key_wallet::managed_account::address_pool::AddressPoolType,
-) {
-    tracing::warn!(
-        site = site.as_str(),
-        wallet_id = %hex::encode(wallet_id),
-        account_type = ?account_type,
-        pool_type = ?pool_type,
-        "rehydration: this address pool's window is short until the next sync"
-    );
 }
 
 /// Ensure `pool` has derived through `index` (generating only the missing
@@ -2534,6 +2520,56 @@ mod tests {
         }
     }
 
+    fn ensure_derived_failure_fixture(seed: u8) -> GapRefillFixture {
+        use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = Wallet::from_seed_bytes(
+            [seed; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        let (marked, generated_before, gap_limit) = {
+            let mut funding = wallet_info.accounts.all_funding_accounts_mut();
+            let account = funding.first_mut().expect("a funds account");
+            let account_type = account.managed_account_type().to_account_type();
+            let key_source = KeySource::Public(
+                manifest
+                    .iter()
+                    .find(|entry| entry.account_type == account_type)
+                    .expect("manifest entry")
+                    .account_xpub,
+            );
+            let mut pools = account.managed_account_type_mut().address_pools_mut();
+            let pool: &mut AddressPool = pools
+                .iter_mut()
+                .find(|pool| pool.is_external())
+                .expect("an external pool");
+            let mut probe = pool.clone();
+            let marked = probe
+                .generate_addresses(1, &key_source, true)
+                .expect("derive the next address")
+                .pop()
+                .expect("one derived address");
+            let missing_index = probe.highest_generated.expect("derived index");
+            pool.highest_generated = Some(missing_index);
+            (marked, pool.highest_generated, pool.gap_limit)
+        };
+
+        GapRefillFixture {
+            wallet_info,
+            manifest,
+            marked,
+            generated_before,
+            gap_limit,
+        }
+    }
+
     /// The first funds account's external pool.
     fn external_pool_state(
         wallet_info: &key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
@@ -2607,6 +2643,35 @@ mod tests {
             external_pool_state(&fixture.wallet_info),
             generated_before,
             "a rejected refill must derive nothing"
+        );
+    }
+
+    #[test]
+    fn ensure_derived_failure_is_strictly_fatal_and_recovery_is_deferred() {
+        let mut strict_fixture = ensure_derived_failure_fixture(24);
+        let missing_index = strict_fixture.generated_before.expect("missing index");
+        let err = rehydrate_fixture(&mut strict_fixture, &LoadCtx::strict())
+            .expect_err("strict must reject the inconsistent pool high-water mark");
+        assert!(matches!(
+            err,
+            WalletStorageError::RehydrationEnsureDerivedFailed { index }
+                if index == missing_index
+        ));
+
+        let mut recovery_fixture = ensure_derived_failure_fixture(25);
+        let generated_before = recovery_fixture.generated_before;
+        let ctx = LoadCtx::recovery();
+        rehydrate_fixture(&mut recovery_fixture, &ctx)
+            .expect("recovery must defer the inconsistent pool");
+        let degradation = ctx.degradation();
+        assert_eq!(
+            degradation.by_site.get(&LoadSite::RehydrationEnsureDerived),
+            Some(&1)
+        );
+        assert_eq!(degradation.by_site.len(), 1);
+        assert_eq!(
+            external_pool_state(&recovery_fixture.wallet_info),
+            generated_before
         );
     }
 

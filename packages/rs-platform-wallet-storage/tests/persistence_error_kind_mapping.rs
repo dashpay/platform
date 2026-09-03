@@ -247,6 +247,14 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             },
         ),
         (
+            "AssetLockStatusMismatch",
+            WalletStorageError::AssetLockStatusMismatch {
+                outpoint: "txid:0".into(),
+                typed_status: "built".into(),
+                blob_status: "consumed".into(),
+            },
+        ),
+        (
             "IntegerOverflow",
             WalletStorageError::IntegerOverflow {
                 field: "x",

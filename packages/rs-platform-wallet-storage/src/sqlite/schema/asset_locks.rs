@@ -20,6 +20,7 @@ use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
 
 use {
@@ -237,19 +238,18 @@ pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock
 /// tuple into the typed `(account_index, OutPoint, TrackedAssetLock)`
 /// triple that the reader functions consume.
 ///
-/// Hard-fail behaviour: a malformed outpoint, blob, out-of-range
-/// account index, or a mismatch between the typed columns and the blob
-/// returns a typed [`WalletStorageError`]. Every caller propagates that
-/// error — corruption is never silently skipped.
+/// Malformed fields and entry mismatches are always fatal. Status drift is
+/// policy-controlled: Recovery uses the blob status with consumption sticky.
 fn decode_row(
     op_bytes: &[u8],
     account_index: i64,
     blob_bytes: &[u8],
     typed_status: &str,
+    ctx: &LoadCtx,
 ) -> Result<(u32, OutPoint, TrackedAssetLock), WalletStorageError> {
     let outpoint = blob::decode_outpoint(op_bytes)?;
     let wire: AssetLockEntryWire = blob::decode(blob_bytes)?;
-    let entry = wire.into_entry()?;
+    let mut entry = wire.into_entry()?;
     let account_index =
         crate::sqlite::util::safe_cast::i64_to_u32("asset_locks.account_index", account_index)?;
     // Typed-column vs blob cross-check: corruption that passes PRAGMA
@@ -264,14 +264,23 @@ fn decode_row(
             blob_account_index: entry.account_index,
         });
     }
-    // Status cross-check: the typed `status` column drives SQL-level filters
-    // (e.g. `load_unconsumed`'s `status NOT IN ('consumed')`), so a blob that
-    // disagrees with the column would cause a consumed lock to re-enter the
-    // live set or an active lock to be filtered out.
-    if status_str(&entry.status) != typed_status {
-        return Err(WalletStorageError::BlobDecode {
-            reason: "asset_locks.status column disagrees with lifecycle_blob status",
-        });
+    let blob_status = status_str(&entry.status);
+    if blob_status != typed_status {
+        let consumed = typed_status == "consumed" || entry.status == AssetLockStatus::Consumed;
+        ctx.tolerate(
+            LoadSite::AssetLockStatusDrift,
+            WalletStorageError::AssetLockStatusMismatch {
+                outpoint: outpoint.to_string(),
+                typed_status: typed_status.to_owned(),
+                blob_status: blob_status.to_owned(),
+            },
+        )?;
+        // `load_unconsumed` pre-filters typed `consumed` rows, so the blob can
+        // only withdraw a lock there. Sticky consumption also keeps the
+        // unfiltered test/inspection reader conservative.
+        if consumed {
+            entry.status = AssetLockStatus::Consumed;
+        }
     }
     let tracked = TrackedAssetLock {
         out_point: entry.out_point,
@@ -288,12 +297,13 @@ fn decode_row(
 
 /// Full-history asset-lock slice bucketed by account index, **including**
 /// terminal `Consumed` rows (inspection reader for this crate's tests). Use
-/// [`load_unconsumed`] for the rehydration feed. A row that fails to decode is
-/// a hard error.
+/// [`load_unconsumed`] for the rehydration feed. Status drift is fatal under
+/// Strict; Recovery uses the blob status with consumption kept sticky.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
@@ -308,7 +318,8 @@ pub fn load_state(
         blob::check_size(row.get::<_, i64>(3)?)?;
         let blob_bytes: Vec<u8> = row.get(4)?;
         let status: String = row.get(5)?;
-        let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes, &status)?;
+        let (acct, outpoint, tracked) =
+            decode_row(&op_bytes, account_index, &blob_bytes, &status, ctx)?;
         out.entry(acct).or_default().insert(outpoint, tracked);
     }
     Ok(out)
@@ -319,10 +330,12 @@ pub fn load_state(
 /// into the live set would resurrect a spent one-shot lock as actionable
 /// (A04/A08), so the exclusion is at the SQL level (`status NOT IN
 /// ('consumed')`, `status` indexed); history stays visible via [`load_state`].
-/// A row that fails to decode is a hard [`WalletStorageError`].
+/// Malformed rows remain fatal; Recovery tolerates status drift and excludes
+/// the row if either representation says it is consumed.
 pub fn load_unconsumed(
     conn: &Connection,
     wallet_id: &WalletId,
+    ctx: &LoadCtx,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
@@ -337,7 +350,11 @@ pub fn load_unconsumed(
         blob::check_size(row.get::<_, i64>(3)?)?;
         let blob_bytes: Vec<u8> = row.get(4)?;
         let status: String = row.get(5)?;
-        let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes, &status)?;
+        let (acct, outpoint, tracked) =
+            decode_row(&op_bytes, account_index, &blob_bytes, &status, ctx)?;
+        if tracked.status == AssetLockStatus::Consumed {
+            continue;
+        }
         out.entry(acct).or_default().insert(outpoint, tracked);
     }
     Ok(out)
@@ -352,23 +369,7 @@ pub fn list_active(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
-    let mut stmt = conn.prepare(
-        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status \
-         FROM asset_locks WHERE wallet_id = ?1",
-    )?;
-    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
-    let mut out: AssetLocksByAccount = BTreeMap::new();
-    while let Some(row) = rows.next()? {
-        blob::check_size(row.get::<_, i64>(0)?)?;
-        let op_bytes: Vec<u8> = row.get(1)?;
-        let account_index: i64 = row.get(2)?;
-        blob::check_size(row.get::<_, i64>(3)?)?;
-        let blob_bytes: Vec<u8> = row.get(4)?;
-        let status: String = row.get(5)?;
-        let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes, &status)?;
-        out.entry(acct).or_default().insert(outpoint, tracked);
-    }
-    Ok(out)
+    load_state(conn, wallet_id, &LoadCtx::strict())
 }
 
 #[cfg(test)]
@@ -438,7 +439,7 @@ mod tests {
             apply(&tx, &w, &cs).unwrap();
             tx.commit().unwrap();
         }
-        let mut locks = load_state(&conn, &w).unwrap();
+        let mut locks = load_state(&conn, &w, &LoadCtx::strict()).unwrap();
         locks
             .remove(&entry.account_index)
             .and_then(|mut by_op| by_op.remove(&entry.out_point))
@@ -549,10 +550,8 @@ mod tests {
         );
     }
 
-    /// `decode_row` (and the reader functions that call it) must reject a row
-    /// whose `status` TEXT column disagrees with the `lifecycle_blob` status,
-    /// returning a `BlobDecode` corrupt error rather than silently mis-bucketing
-    /// a lock (e.g. treating a `Consumed` lock as `Built`).
+    /// Strict rejects status drift with a typed error; Recovery keeps
+    /// consumption sticky so a stale blob cannot resurrect a spent lock.
     #[test]
     fn load_state_rejects_status_column_mismatch() {
         let mut conn = migrated_conn();
@@ -603,12 +602,23 @@ mod tests {
             tx.commit().unwrap();
         }
 
-        // load_state must fail: status column ('consumed') ≠ blob status ('built').
-        let err = load_state(&conn, &w)
+        // Strict rejects the disagreement with the purpose-built error.
+        let err = load_state(&conn, &w, &LoadCtx::strict())
             .expect_err("load_state must reject a status column vs blob mismatch");
         assert!(
-            matches!(err, WalletStorageError::BlobDecode { .. }),
-            "expected BlobDecode for status mismatch, got {err:?}"
+            matches!(err, WalletStorageError::AssetLockStatusMismatch { .. }),
+            "expected AssetLockStatusMismatch, got {err:?}"
+        );
+
+        // Recovery keeps consumption sticky even though the blob says Built.
+        let ctx = LoadCtx::recovery();
+        let state = load_state(&conn, &w, &ctx).expect("recovery tolerates status drift");
+        assert_eq!(state[&0][&outpoint].status, AssetLockStatus::Consumed);
+        assert_eq!(
+            ctx.degradation()
+                .by_site
+                .get(&LoadSite::AssetLockStatusDrift),
+            Some(&1)
         );
     }
 

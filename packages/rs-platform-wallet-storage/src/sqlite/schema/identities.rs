@@ -15,7 +15,7 @@ use platform_wallet::{
 
 use super::wallet_id_to_param;
 use crate::sqlite::error::WalletStorageError;
-use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 
@@ -297,7 +297,8 @@ pub fn load_state(
 /// an `identity_index` this wallet has already filled is fatal under
 /// `Strict` and a counted, logged drop under `Recovery`. The typed-column
 /// cross-checks stay unconditional — a row whose columns contradict its own
-/// blob is corruption, not a recoverable projection.
+/// blob is corruption, not a recoverable projection. Rows are read by
+/// `identity_id` ascending, so the lexicographically higher id wins a collision.
 pub fn load_state_with_ctx(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -312,7 +313,7 @@ pub fn load_state_with_ctx(
     let wallet_id_param = wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
         "SELECT identity_id, length(entry_blob), entry_blob, tombstoned, identity_index \
-         FROM identities WHERE wallet_id IS ?1",
+         FROM identities WHERE wallet_id IS ?1 ORDER BY identity_id",
     )?;
     // The ignored-senders TABLE is the authoritative ignore record (every
     // ignore/un-ignore maintains it transactionally); the `entry_blob`'s
@@ -370,15 +371,25 @@ pub fn load_state_with_ctx(
                 {
                     // `identities` carries no `(wallet_id, identity_index)`
                     // UNIQUE index, so a pre-guard duplicate can still be on
-                    // disk. Left unreported the map keyed by `idx` just drops
-                    // whichever row SQLite happened to yield first — an
-                    // identity silently missing from the wallet.
+                    // disk. Nothing in the persisted rows establishes which
+                    // identity genuinely holds `idx`, so the slot winner is
+                    // arbitrary on the merits — which is exactly why the loser
+                    // MUST NOT be dropped. Park it in
+                    // `out_of_wallet_identities` (the same bucket a NULL
+                    // `identity_index` row lands in) so a Recovery load hands
+                    // the caller every identity it read, slot or no slot. The
+                    // persister is read-only in Recovery, so anything dropped
+                    // here could never be recovered from a later flush.
+                    let displaced_identity_id = displaced.identity.id();
+                    state
+                        .out_of_wallet_identities
+                        .insert(displaced_identity_id, displaced);
                     ctx.tolerate(
                         LoadSite::IdentityIndexCollision,
                         WalletStorageError::IdentityIndexConflict {
                             wallet_id: *wallet_id,
                             identity_index: idx,
-                            existing: displaced.identity.id().to_buffer(),
+                            existing: displaced_identity_id.to_buffer(),
                             incoming: entry_id.to_buffer(),
                         },
                     )?;
@@ -420,7 +431,14 @@ pub fn load_prekeyed(
         ..Default::default()
     };
     let tombstoned = load_tombstoned_ids(conn, wallet_id)?;
-    merge_contacts_and_keys(&mut state, contacts, identity_keys, &tombstoned, ctx)?;
+    merge_contacts_and_keys(
+        &mut state,
+        contacts,
+        identity_keys,
+        &tombstoned,
+        *wallet_id,
+        ctx,
+    )?;
     // The scan verdict rides the same per-wallet start state the identities
     // do, because it is the fact the startup sequence weighs against them:
     // "we already have one" is not evidence we have them all unless the scan
@@ -584,6 +602,7 @@ pub fn merge_contacts_and_keys(
     contacts: ContactChangeSet,
     identity_keys: IdentityKeysChangeSet,
     tombstoned: &HashSet<Identifier>,
+    wallet_id: WalletId,
     ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
     // One transient id → &mut ManagedIdentity view over both buckets so
@@ -606,6 +625,7 @@ pub fn merge_contacts_and_keys(
             .map(|entry| (entry.identity_id, entry.public_key)),
         &mut by_id,
         tombstoned,
+        wallet_id,
         ctx,
         "identity_keys",
         |managed, key| managed.identity.add_public_key(key),
@@ -617,6 +637,7 @@ pub fn merge_contacts_and_keys(
             .map(|(key, entry)| (key.owner_id, entry.request)),
         &mut by_id,
         tombstoned,
+        wallet_id,
         ctx,
         "sent_contact_requests",
         |managed, request| managed.apply_sent_contact_request(request),
@@ -628,6 +649,7 @@ pub fn merge_contacts_and_keys(
             .map(|(key, entry)| (key.owner_id, entry.request)),
         &mut by_id,
         tombstoned,
+        wallet_id,
         ctx,
         "incoming_contact_requests",
         |managed, request| managed.apply_incoming_contact_request(request),
@@ -639,6 +661,7 @@ pub fn merge_contacts_and_keys(
             .map(|(key, established)| (key.owner_id, established)),
         &mut by_id,
         tombstoned,
+        wallet_id,
         ctx,
         "established_contacts",
         |managed, established| managed.apply_established_contact(established),
@@ -659,6 +682,7 @@ fn route_by_owner<T>(
     entries: impl IntoIterator<Item = (Identifier, T)>,
     by_id: &mut HashMap<Identifier, &mut ManagedIdentity>,
     tombstoned: &HashSet<Identifier>,
+    wallet_id: WalletId,
     ctx: &LoadCtx,
     collection: &'static str,
     apply: impl Fn(&mut ManagedIdentity, T),
@@ -680,22 +704,18 @@ fn route_by_owner<T>(
         }
     }
     if let Some(owner) = first_skipped_owner {
-        // Saturating, not fallible: a tally must never fail a load it is
-        // only describing.
-        let skipped = u32::try_from(skipped).unwrap_or(u32::MAX);
-        ctx.tolerate_many(
+        ctx.tolerate_at(
             LoadSite::TombstonedIdentityOrphan,
-            skipped,
+            SiteCoords {
+                wallet_id: Some(wallet_id),
+                account_type: &"identity",
+                affected: skipped,
+                detail: Some(&collection),
+            },
             WalletStorageError::OrphanedIdentityEntry {
                 owner: owner.to_buffer(),
             },
         )?;
-        tracing::warn!(
-            site = LoadSite::TombstonedIdentityOrphan.as_str(),
-            collection,
-            count = skipped,
-            "skipped rehydration entries whose owning identity is tombstoned"
-        );
     }
     Ok(())
 }

@@ -1440,8 +1440,8 @@ impl PlatformWalletPersistence for SqlitePersister {
                 ))
             })?;
 
-            let account_manifest =
-                schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
+            let account_manifest = schema::accounts::load_state(&conn, &wallet_id, &ctx)
+                .map_err(PersistenceError::from)?;
             let (core_state, utxo_accounts) =
                 schema::core_state::load_state(&conn, &wallet_id, network, &ctx)
                     .map_err(PersistenceError::from)?;
@@ -1452,7 +1452,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             // `.identity_keys` stay empty — nothing is layered on afterwards.
             let identity_manager = schema::identities::load_prekeyed(&conn, &wallet_id, &ctx)
                 .map_err(PersistenceError::from)?;
-            let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
+            let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id, &ctx)
                 .map_err(PersistenceError::from)?;
             // Used addresses drive the reuse guard: a used-then-emptied
             // address must never be handed back as a fresh receive address,
@@ -1474,13 +1474,17 @@ impl PlatformWalletPersistence for SqlitePersister {
                     dashcore::Address,
                     Option<schema::core_pool::OwningAccount>,
                 > = std::collections::HashMap::new();
-                let pool = schema::core_pool::load_used_addresses(&conn, &wallet_id, network)
-                    .map_err(PersistenceError::from)?;
+                let pool = schema::core_pool::load_used_addresses_with_ctx(
+                    &conn, &wallet_id, network, &ctx,
+                )
+                .map_err(PersistenceError::from)?;
                 for (addr, owner) in pool {
                     union.entry(addr).or_insert(Some(owner));
                 }
-                let utxo = schema::core_state::load_used_addresses(&conn, &wallet_id, network)
-                    .map_err(PersistenceError::from)?;
+                let utxo = schema::core_state::load_used_addresses_with_ctx(
+                    &conn, &wallet_id, network, &ctx,
+                )
+                .map_err(PersistenceError::from)?;
                 for (addr, owner) in utxo {
                     match union.entry(addr) {
                         std::collections::hash_map::Entry::Occupied(existing) => {

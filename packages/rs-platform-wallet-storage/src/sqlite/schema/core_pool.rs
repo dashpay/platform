@@ -19,6 +19,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::accounts;
 use crate::sqlite::schema::blob;
 
@@ -358,27 +359,36 @@ pub(crate) fn owning_account_for_script(
 /// marked used. An unused row can therefore own a UTXO while a different used
 /// row supplies the reuse guard, which preserves each resolver's distinct
 /// source contract. `network` turns each stored `script` back into an
-/// [`Address`](dashcore::Address); a script that isn't a valid address is a
-/// hard error — corruption is never silently dropped, matching
+/// [`Address`](dashcore::Address); an invalid script is fatal under Strict and
+/// skipped under Recovery, matching
 /// [`crate::sqlite::schema::core_state::load_used_addresses`].
+/// This compatibility entry point uses Strict; rehydration calls
+/// [`load_used_addresses_with_ctx`] with its policy context.
 pub fn load_used_addresses(
     conn: &rusqlite::Connection,
     wallet_id: &WalletId,
     network: dashcore::Network,
 ) -> Result<Vec<(dashcore::Address, OwningAccount)>, WalletStorageError> {
+    load_used_addresses_with_ctx(conn, wallet_id, network, &LoadCtx::strict())
+}
+
+/// [`load_used_addresses`] under an explicit load policy.
+pub fn load_used_addresses_with_ctx(
+    conn: &rusqlite::Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+    ctx: &LoadCtx,
+) -> Result<Vec<(dashcore::Address, OwningAccount)>, WalletStorageError> {
     // Gate the largest stored `script` with a cheap aggregate BEFORE the
     // ordered read materializes or sorts any blob, so a corrupt/oversize
     // column raises a typed `BlobTooLarge` (the crate's 16 MiB cap) rather
     // than SQLite's own `TooBig` mid-sort, and never OOMs the host.
-    let max_script_len: Option<i64> = conn.query_row(
+    blob::check_max_column_len(
+        conn,
         "SELECT MAX(length(script)) FROM core_address_pool \
          WHERE wallet_id = ?1 AND used = 1",
-        params![wallet_id.as_slice()],
-        |row| row.get(0),
+        wallet_id,
     )?;
-    if let Some(len) = max_script_len {
-        blob::check_size(len)?;
-    }
     // Order by script then the pool PK so the first row per script is the
     // tie-break winner; a `HashSet` on script drops the trailing duplicates.
     let mut stmt = conn.prepare(
@@ -412,8 +422,13 @@ pub fn load_used_addresses(
         if !seen.insert(raw_script.clone()) {
             continue;
         }
-        let script = dashcore::ScriptBuf::from_bytes(raw_script);
-        let address = dashcore::Address::from_script(&script, network)?;
+        let address = match blob::decode_script_to_address(raw_script, network) {
+            Ok(address) => address,
+            Err(error) => {
+                ctx.tolerate(LoadSite::UndecodableAddressScript, error)?;
+                continue;
+            }
+        };
         let account_index =
             crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
         let user_identity_id = super::id32("core_address_pool.user_identity_id", &user)?;
@@ -494,7 +509,9 @@ mod tests {
         );
         tx.commit().unwrap();
 
-        let used = load_used_addresses(&conn, &w, dashcore::Network::Testnet).unwrap();
+        let used =
+            load_used_addresses_with_ctx(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
+                .unwrap();
         assert_eq!(used.len(), 1);
         assert_eq!(used[0].0, address);
         assert_eq!(used[0].1.account_index, 9);
@@ -525,8 +542,9 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_used_addresses(&conn, &w, dashcore::Network::Testnet)
-            .expect_err("an unparseable script must be a hard error");
+        let err =
+            load_used_addresses_with_ctx(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
+                .expect_err("an unparseable script must be a hard error");
         assert!(
             matches!(err, WalletStorageError::AddressDecode { .. }),
             "expected AddressDecode carrying the upstream error, got {err:?}"

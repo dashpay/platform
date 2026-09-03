@@ -198,6 +198,11 @@ fn samples() -> Vec<WalletStorageError> {
             typed_account_index: 5,
             blob_account_index: 9,
         },
+        WalletStorageError::AssetLockStatusMismatch {
+            outpoint: "txid:0".into(),
+            typed_status: "built".into(),
+            blob_status: "consumed".into(),
+        },
         WalletStorageError::CoreTransactionEntryMismatch {
             typed_txid: "11".repeat(32),
             blob_txid: "22".repeat(32),
@@ -395,6 +400,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::OrphanedIdentityEntry { .. } => (false, "orphaned_identity_entry"),
             WalletStorageError::AssetLockEntryMismatch { .. } => {
                 (false, "asset_lock_entry_mismatch")
+            }
+            WalletStorageError::AssetLockStatusMismatch { .. } => {
+                (false, "asset_lock_status_mismatch")
             }
             WalletStorageError::CoreTransactionEntryMismatch { .. } => {
                 (false, "core_transaction_entry_mismatch")

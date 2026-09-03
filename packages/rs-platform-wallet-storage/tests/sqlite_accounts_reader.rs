@@ -74,7 +74,9 @@ fn a1_account_registrations_roundtrip() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let manifest = accounts::load_state(&conn, &w).expect("load_state").ecdsa;
+    let manifest = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state")
+        .ecdsa;
     drop(conn);
 
     assert_eq!(manifest.len(), 2, "all rows must be returned");
@@ -112,7 +114,9 @@ fn a1_empty_manifest_is_ok() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let manifest = accounts::load_state(&conn, &w).expect("load_state").ecdsa;
+    let manifest = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state")
+        .ecdsa;
     drop(conn);
     assert!(manifest.is_empty());
 }
@@ -137,7 +141,7 @@ fn a1_corrupt_blob_is_hard_error() {
     drop(persister);
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let result = accounts::load_state(&conn, &w);
+    let result = accounts::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict());
     drop(conn);
     assert!(
         matches!(result, Err(WalletStorageError::BincodeDecode { .. })),

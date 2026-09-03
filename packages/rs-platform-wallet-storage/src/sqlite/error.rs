@@ -371,6 +371,17 @@ pub enum WalletStorageError {
         blob_account_index: u32,
     },
 
+    /// An `asset_locks` row's typed status disagreed with its lifecycle blob.
+    #[error(
+        "asset lock {outpoint} status disagrees with lifecycle blob \
+         (typed status={typed_status}, blob status={blob_status})"
+    )]
+    AssetLockStatusMismatch {
+        outpoint: String,
+        typed_status: String,
+        blob_status: String,
+    },
+
     /// A `core_transactions` row's typed txid or height disagreed with its
     /// decoded transaction record.
     #[error(
@@ -651,6 +662,7 @@ impl WalletStorageError {
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
             | Self::AssetLockEntryMismatch { .. }
+            | Self::AssetLockStatusMismatch { .. }
             | Self::CoreTransactionEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. }
@@ -761,6 +773,7 @@ impl WalletStorageError {
             Self::ProviderKeyAccountConflict { .. } => "provider_key_account_conflict",
             Self::TypedPoolKeyConflict { .. } => "typed_pool_key_conflict",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
+            Self::AssetLockStatusMismatch { .. } => "asset_lock_status_mismatch",
             Self::CoreTransactionEntryMismatch { .. } => "core_transaction_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
