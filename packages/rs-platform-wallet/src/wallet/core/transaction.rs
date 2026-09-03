@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use dashcore::{Address, OutPoint, Transaction};
 use key_wallet::account::AccountType;
+use key_wallet::managed_account::managed_account_collection::ManagedAccountCollection;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
@@ -17,6 +18,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::Wallet;
 use key_wallet::{DerivationPath, ReservationToken, Utxo};
 
 use super::{CoreWallet, WalletGeneration};
@@ -267,6 +269,58 @@ pub const ASSET_LOCK_FUNDING_SOURCES: [AccountTypePreference; 3] = SEND_FUNDING_
 /// DashPay source. A set selector matching nothing resolves to an empty list,
 /// not an error — a wallet with no contacts still sends from its standard
 /// accounts.
+/// The accounts a pooled build will actually fund from, in funding order and
+/// deduplicated: those `resolve_source_accounts` names AND that resolve on both
+/// halves — the keys side (`wallet.accounts`) and the managed side
+/// (`info.core_wallet.accounts`). An account present in only one is skipped,
+/// because funding needs both.
+///
+/// `strict` reproduces the single-source contract: naming ONE account is an
+/// explicit request for it, so a miss is an error rather than a silent skip. A
+/// pooled call skips instead — a wallet without a BIP32 account or without
+/// DashPay contacts still funds from what it has.
+///
+/// Shared by `finalize_transaction_with_options` and
+/// `pooled_spendable_balance` so the set one reports can never drift from the
+/// set the other funds.
+pub(crate) fn resolved_funding_accounts(
+    accounts: &ManagedAccountCollection,
+    wallet: &Wallet,
+    sources: &[AccountTypePreference],
+    source_index: u32,
+    strict: bool,
+) -> Result<Vec<AccountType>, PlatformWalletError> {
+    let mut seen: HashSet<AccountType> = HashSet::new();
+    let mut resolved: Vec<AccountType> = Vec::new();
+    for &preference in sources {
+        for at in resolve_source_accounts(accounts, preference, source_index) {
+            if !seen.insert(at) {
+                continue;
+            }
+            if wallet.accounts.account_of_type(at).is_none()
+                || accounts.funds_account(&at).is_none()
+            {
+                if strict {
+                    return Err(PlatformWalletError::WalletNotFound(format!(
+                        "wallet account {preference:?} #{source_index} not found"
+                    )));
+                }
+                continue;
+            }
+            resolved.push(at);
+        }
+    }
+    // A strict SET selector (a DashPay preference naming zero accounts) is a
+    // miss too: the caller asked for exactly those funds.
+    if strict && resolved.is_empty() {
+        return Err(PlatformWalletError::WalletNotFound(format!(
+            "wallet account {:?} #{source_index} not found",
+            sources.first()
+        )));
+    }
+    Ok(resolved)
+}
+
 pub(crate) fn resolve_source_accounts(
     accounts: &key_wallet::account::ManagedAccountCollection,
     preference: AccountTypePreference,
@@ -313,6 +367,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Missing sources are skipped, as in a pooled build: a wallet without a
     /// BIP32 account or without DashPay contacts still has a spendable balance.
     ///
+    /// **Gross, not net of fee.** This is the sum a build may draw on; a build
+    /// needs `amount + fee`, so a host offering this verbatim as a max amount
+    /// moves the shortfall from the CoinJoin edge to the max-amount edge rather
+    /// than removing it. Hosts must keep reserving fee headroom, as they did
+    /// against the wallet-wide figure this replaces — the fee is unchanged by
+    /// this call, only the account set is.
+    ///
+    /// Subtracting it here would mean re-declaring key-wallet's per-input and
+    /// per-output sizes in this crate, which is the same duplication the call
+    /// exists to remove. The estimate belongs beside `MAX_STANDARD_TX_INPUTS`
+    /// and `FeeRate`, in key-wallet.
+    ///
     /// Reservations are NOT subtracted: key-wallet keeps each account's
     /// `ReservationSet` private, so reading it needs an accessor there and a pin
     /// bump. The figure is therefore optimistic by whatever another in-flight
@@ -327,29 +393,31 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         sources: &[AccountTypePreference],
         source_index: u32,
     ) -> Result<u64, PlatformWalletError> {
-        let mut manager = self.wallet_manager.write().await;
-        let (_wallet, info) = manager
-            .get_wallet_and_info_mut(&self.wallet_id)
+        let manager = self.wallet_manager.read().await;
+        let (wallet, info) = manager
+            .get_wallet_and_info(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
         let height = info.core_wallet.last_processed_height();
 
-        let mut seen: HashSet<AccountType> = HashSet::new();
+        // Same resolver, same strictness rule, as the funding path.
+        let resolved = resolved_funding_accounts(
+            &info.core_wallet.accounts,
+            wallet,
+            sources,
+            source_index,
+            sources.len() == 1,
+        )?;
+
         let mut total: u64 = 0;
-        for &preference in sources {
-            for at in resolve_source_accounts(&info.core_wallet.accounts, preference, source_index)
-            {
-                if !seen.insert(at) {
-                    continue;
-                }
-                let Some(managed) = info.core_wallet.accounts.funds_account_mut(&at) else {
-                    continue;
-                };
-                total += managed
-                    .spendable_utxos(height)
-                    .iter()
-                    .map(|utxo| utxo.value())
-                    .sum::<u64>();
-            }
+        for at in resolved {
+            let Some(managed) = info.core_wallet.accounts.funds_account(&at) else {
+                continue;
+            };
+            total += managed
+                .spendable_utxos(height)
+                .iter()
+                .map(|utxo| utxo.value())
+                .sum::<u64>();
         }
         Ok(total)
     }
@@ -426,24 +494,20 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // build-time cleanup only, and the contributor list stored on the
             // transaction is derived from the selected inputs below.
             let mut offered_accounts: Vec<AccountType> = Vec::new();
-            let mut offered_seen: HashSet<AccountType> = HashSet::new();
             let mut paths: HashMap<Address, DerivationPath> = HashMap::new();
-            for &preference in sources {
-                for at in
-                    resolve_source_accounts(&info.core_wallet.accounts, preference, source_index)
-                {
-                    if !offered_seen.insert(at) {
-                        continue;
-                    }
+            let resolved = resolved_funding_accounts(
+                &info.core_wallet.accounts,
+                wallet,
+                sources,
+                source_index,
+                strict,
+            )?;
+            {
+                for at in resolved {
                     let (Some(account), Some(managed)) = (
                         wallet.accounts.account_of_type(at),
                         info.core_wallet.accounts.funds_account_mut(&at),
                     ) else {
-                        if strict {
-                            return Err(PlatformWalletError::WalletNotFound(format!(
-                                "wallet account {preference:?} #{source_index} not found"
-                            )));
-                        }
                         continue;
                     };
                     for utxo in managed.utxos.values() {
@@ -457,14 +521,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         builder.add_funding(managed, account)
                     };
                     offered_accounts.push(at);
-                }
-                // A strict single-source SET selector (a DashPay preference
-                // naming zero accounts) also errors — the caller asked for
-                // exactly those funds.
-                if strict && offered_accounts.is_empty() {
-                    return Err(PlatformWalletError::WalletNotFound(format!(
-                        "wallet account {preference:?} #{source_index} not found"
-                    )));
                 }
             }
             if offered_accounts.is_empty() {
