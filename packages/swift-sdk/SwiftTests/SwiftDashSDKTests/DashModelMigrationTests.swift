@@ -24,7 +24,11 @@ final class DashModelMigrationTests: XCTestCase {
         var v1Container: ModelContainer? = try ModelContainer(
             for: v1Schema,
             configurations: [v1Configuration])
-        v1Container?.mainContext.insert(PersistentKeyword(
+        // V1 registers the FROZEN component (see `DashSchemaFrozenModels`),
+        // so a row written into a V1 container is that type — inserting the
+        // live one would materialise as the frozen entity and then fail its
+        // cast on read.
+        v1Container?.mainContext.insert(DashSchemaV1.PersistentKeyword(
             keyword: "preserved",
             contractId: "contract"))
         try v1Container?.mainContext.save()
@@ -42,7 +46,9 @@ final class DashModelMigrationTests: XCTestCase {
             migrationPlan: DashMigrationPlan.self,
             configurations: [v2Configuration])
 
-        let keywords = try migrated.mainContext.fetch(FetchDescriptor<PersistentKeyword>())
+        // V2 registers the same frozen copy, so the read side is frozen too.
+        let keywords = try migrated.mainContext.fetch(
+            FetchDescriptor<DashSchemaV1.PersistentKeyword>())
         XCTAssertEqual(keywords.map(\.keyword), ["preserved"])
 
         migrated.mainContext.insert(PersistentTrackedMasternode(
@@ -56,6 +62,59 @@ final class DashModelMigrationTests: XCTestCase {
             try migrated.mainContext.fetchCount(
                 FetchDescriptor<PersistentTrackedMasternode>()),
             1)
+    }
+
+    /// The stage this change adds: a V3 store must migrate to V4 and read
+    /// back with the sweep columns backfilled to their "nothing swept yet"
+    /// values. V3 registers the frozen component, so the row goes in as the
+    /// frozen type and comes out as the live one — which is the whole point
+    /// of the freeze: the same entity, one property wider.
+    @MainActor
+    func testV3StoreMigratesToV4AndBackfillsTheSweepColumns() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("dash.store")
+
+        let walletId = Data(repeating: 0x5A, count: 32)
+
+        let v3Schema = Schema(versionedSchema: DashSchemaV3.self)
+        let v3Configuration = ModelConfiguration(
+            "DashSweepMigrationTest",
+            schema: v3Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        var v3Container: ModelContainer? = try ModelContainer(
+            for: v3Schema,
+            configurations: [v3Configuration])
+        v3Container?.mainContext.insert(DashSchemaV1.PersistentWallet(
+            walletId: walletId,
+            network: .testnet))
+        try v3Container?.mainContext.save()
+        v3Container = nil
+
+        let v4Schema = Schema(versionedSchema: DashSchemaV4.self)
+        let v4Configuration = ModelConfiguration(
+            "DashSweepMigrationTest",
+            schema: v4Schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none)
+        let migrated = try ModelContainer(
+            for: v4Schema,
+            migrationPlan: DashMigrationPlan.self,
+            configurations: [v4Configuration])
+
+        let wallets = try migrated.mainContext.fetch(
+            FetchDescriptor<PersistentWallet>())
+        XCTAssertEqual(wallets.count, 1, "the V3 row must survive the migration")
+        XCTAssertNil(
+            wallets.first?.lastAppliedChainLockHeight,
+            "a wallet migrated from V3 has no chainlock boundary yet, so no "
+                + "tombstone it later takes can be collected on a fabricated one")
     }
 
     /// Guards the freeze itself: `DashSchemaV1.PersistentAssetLock` only
