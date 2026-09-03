@@ -64,6 +64,34 @@ impl WalletPersister {
         self.inner.get_core_tx_record(self.wallet_id, txid)
     }
 
+    /// [`Self::get_core_tx_record`] with the shared transient-as-miss
+    /// read policy applied.
+    ///
+    /// A transient backend failure (a busy store) is indistinguishable in
+    /// outcome from "the row is not readable right now", and every caller
+    /// of this read already handles a miss by retrying on its next pass —
+    /// so it collapses to `Ok(None)` and is logged at debug. A permanent
+    /// failure stays an `Err`: it will not fix itself, so a caller that
+    /// swallowed it would repeat the same doomed work forever with no
+    /// signal. Callers that need to tell the two apart use
+    /// [`Self::get_core_tx_record`] directly.
+    pub(crate) fn get_core_tx_record_or_transient_miss(
+        &self,
+        txid: &Txid,
+    ) -> Result<Option<TransactionRecord>, PersistenceError> {
+        match self.get_core_tx_record(txid) {
+            Err(e) if e.is_transient() => {
+                tracing::debug!(
+                    %txid,
+                    error = %e,
+                    "Core tx-record read hit a transient backend failure; reading as a miss"
+                );
+                Ok(None)
+            }
+            other => other,
+        }
+    }
+
     /// Enumerate the persisted Core transaction ids scoped to this
     /// wallet, tagged with the host's wallet-funded verdict. Used by
     /// DashPay sent-payment reconstruction to fetch the full records

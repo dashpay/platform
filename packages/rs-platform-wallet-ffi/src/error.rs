@@ -2095,9 +2095,10 @@ mod tests {
             49
         );
 
-        let result: PlatformWalletFFIResult =
-            PlatformWalletError::PersisterLoad(persistence_error(PersistenceErrorKind::Transient))
-                .into();
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_load_failure(
+            persistence_error(PersistenceErrorKind::Transient),
+        )
+        .into();
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorPersisterLoadTransient
@@ -2124,7 +2125,8 @@ mod tests {
             platform_wallet::changeset::PersistenceError::LockPoisoned,
         ] {
             let rendered = error.to_string();
-            let result: PlatformWalletFFIResult = PlatformWalletError::PersisterLoad(error).into();
+            let result: PlatformWalletFFIResult =
+                PlatformWalletError::from_load_failure(error).into();
             assert_eq!(
                 result.code,
                 PlatformWalletFFIResultCode::ErrorPersisterLoadFatal,
@@ -2143,9 +2145,10 @@ mod tests {
             51
         );
 
-        let result: PlatformWalletFFIResult =
-            PlatformWalletError::PersisterStore(persistence_error(PersistenceErrorKind::Transient))
-                .into();
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            persistence_error(PersistenceErrorKind::Transient),
+        )
+        .into();
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorPersisterStoreTransient
@@ -2165,7 +2168,8 @@ mod tests {
             persistence_error(PersistenceErrorKind::Fatal),
             platform_wallet::changeset::PersistenceError::LockPoisoned,
         ] {
-            let result: PlatformWalletFFIResult = PlatformWalletError::PersisterStore(error).into();
+            let result: PlatformWalletFFIResult =
+                PlatformWalletError::from_store_failure(error).into();
             assert_eq!(
                 result.code,
                 PlatformWalletFFIResultCode::ErrorPersisterStoreFatal
@@ -2183,7 +2187,7 @@ mod tests {
             53
         );
 
-        let result: PlatformWalletFFIResult = PlatformWalletError::PersisterStore(
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
             persistence_error(PersistenceErrorKind::Constraint),
         )
         .into();
@@ -2207,9 +2211,9 @@ mod tests {
             54
         );
 
-        let result: PlatformWalletFFIResult = PlatformWalletError::PersisterRestore(Box::new(
+        let result: PlatformWalletFFIResult = PlatformWalletError::from_restore_failure(
             PlatformWalletError::WalletCreation("no address pool".to_string()),
-        ))
+        )
         .into();
         assert_eq!(
             result.code,

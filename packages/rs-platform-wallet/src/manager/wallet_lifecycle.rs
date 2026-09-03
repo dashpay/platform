@@ -502,7 +502,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     "rollback: remove_wallet failed while unwinding a failed wallet registration"
                 );
             }
-            return Err(PlatformWalletError::PersisterStore(e));
+            return Err(PlatformWalletError::from_store_failure(e));
         }
 
         // Build the PlatformWallet handle.
@@ -560,7 +560,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         "rollback: remove_wallet failed while unwinding a failed wallet setup"
                     );
                 }
-                return Err(PlatformWalletError::PersisterLoad(e));
+                return Err(PlatformWalletError::from_load_failure(e));
             }
         };
 
@@ -586,7 +586,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // `initialize_from_persisted` already returns a typed
                 // `PlatformWalletError`; wrap (boxed) rather than stringify so
                 // its concrete variant and source chain survive.
-                return Err(PlatformWalletError::PersisterRestore(Box::new(e)));
+                return Err(PlatformWalletError::from_restore_failure(e));
             }
         } else {
             platform_wallet.platform().initialize().await;
@@ -1785,11 +1785,17 @@ mod persist_retry_tests {
     /// The typed persister-phase variants preserve retry
     /// classification, enable structural matching, and keep the `#[source]`
     /// chain instead of flattening to a string.
+    ///
+    /// Also pins the named constructors to the operation each is named
+    /// for. That is the whole reason no blanket `From<PersistenceError>`
+    /// exists: the same value can come from a load, a store or a flush, so
+    /// only the call site knows which variant is truthful, and an inferred
+    /// conversion reports failed writes as failed reads.
     #[test]
     fn typed_variants_preserve_classification_matching_and_source() {
         use std::error::Error;
 
-        let store_err = PlatformWalletError::PersisterStore(transient());
+        let store_err = PlatformWalletError::from_store_failure(transient());
         match &store_err {
             PlatformWalletError::PersisterStore(pe) => assert!(pe.is_transient()),
             other => panic!("expected PersisterStore, got {other:?}"),
@@ -1799,7 +1805,7 @@ mod persist_retry_tests {
             "PersisterStore must expose its PersistenceError source"
         );
 
-        let load_err = PlatformWalletError::PersisterLoad(fatal());
+        let load_err = PlatformWalletError::from_load_failure(fatal());
         match &load_err {
             PlatformWalletError::PersisterLoad(pe) => assert!(!pe.is_transient()),
             other => panic!("expected PersisterLoad, got {other:?}"),
@@ -1809,7 +1815,7 @@ mod persist_retry_tests {
         // The restore variant wraps a typed inner error; structural matching
         // must recover the concrete inner variant, not an opaque string.
         let restore_err =
-            PlatformWalletError::PersisterRestore(Box::new(PlatformWalletError::WalletLocked));
+            PlatformWalletError::from_restore_failure(PlatformWalletError::WalletLocked);
         assert!(restore_err.source().is_some());
         match restore_err {
             PlatformWalletError::PersisterRestore(inner) => {
@@ -1817,6 +1823,25 @@ mod persist_retry_tests {
             }
             other => panic!("expected PersisterRestore, got {other:?}"),
         }
+
+        // The two persister-error constructors take the SAME input type, so
+        // nothing but the call site distinguishes them — mixing them up is
+        // silent, and is exactly the defect the removed blanket conversion
+        // produced downstream.
+        assert!(
+            matches!(
+                PlatformWalletError::from_store_failure(fatal()),
+                PlatformWalletError::PersisterStore(_)
+            ),
+            "a failed store must never be reported as a failed load"
+        );
+        assert!(
+            matches!(
+                PlatformWalletError::from_load_failure(fatal()),
+                PlatformWalletError::PersisterLoad(_)
+            ),
+            "a failed load must never be reported as a failed store"
+        );
     }
 }
 

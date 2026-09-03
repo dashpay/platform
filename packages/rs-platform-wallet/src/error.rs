@@ -28,8 +28,10 @@ pub enum PlatformWalletError {
     ///
     /// [`PersistenceError`]: crate::changeset::PersistenceError
     /// [`PersistenceErrorKind`]: crate::changeset::PersistenceErrorKind
+    ///
+    /// Construct with [`Self::from_load_failure`].
     #[error("failed to load persisted client state: {0}")]
-    PersisterLoad(#[from] crate::changeset::PersistenceError),
+    PersisterLoad(#[source] crate::changeset::PersistenceError),
 
     /// The persister failed to store the wallet-registration changeset.
     /// Like [`Self::PersisterLoad`], it carries the typed
@@ -37,8 +39,7 @@ pub enum PlatformWalletError {
     /// / [`PersistenceErrorKind`]) survives the boundary — a transient
     /// `SQLITE_BUSY` stays distinguishable from a permanent failure.
     /// Distinct from [`Self::PersisterLoad`] so callers can tell a failed
-    /// registration write from a failed rehydration read; not `#[from]`
-    /// because that conversion is already claimed by [`Self::PersisterLoad`].
+    /// registration write from a failed rehydration read.
     ///
     /// FFI hosts receive the classification too: the boundary maps this
     /// variant to result code 51 (`Transient`), 53 (`Constraint`) or 52
@@ -47,6 +48,8 @@ pub enum PlatformWalletError {
     ///
     /// [`PersistenceError`]: crate::changeset::PersistenceError
     /// [`PersistenceErrorKind`]: crate::changeset::PersistenceErrorKind
+    ///
+    /// Construct with [`Self::from_store_failure`].
     #[error("failed to persist wallet registration changeset: {0}")]
     PersisterStore(#[source] crate::changeset::PersistenceError),
 
@@ -55,6 +58,8 @@ pub enum PlatformWalletError {
     /// [`PlatformWalletError`](Self) (boxed to break the recursive type) so
     /// its concrete variant and `#[source]` chain survive instead of being
     /// flattened into a string.
+    ///
+    /// Construct with [`Self::from_restore_failure`], which boxes for you.
     #[error("failed to restore persisted platform-address state: {0}")]
     PersisterRestore(#[source] Box<PlatformWalletError>),
 
@@ -952,6 +957,41 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+}
+
+impl PlatformWalletError {
+    /// A persister `load` failed. Wraps the typed cause so its retry
+    /// classification survives.
+    ///
+    /// There is deliberately no blanket `From<PersistenceError>`: the
+    /// conversion is undecidable from the value, because a
+    /// [`PersistenceError`] does not record whether a load, a store or a
+    /// flush produced it. Pick the constructor naming the operation that
+    /// actually failed — an inferred one would silently label failed
+    /// writes as failed reads. Constructing through these rather than the
+    /// variants also lets the enum's internals change without touching
+    /// call sites.
+    ///
+    /// [`PersistenceError`]: crate::changeset::PersistenceError
+    pub fn from_load_failure(source: crate::changeset::PersistenceError) -> Self {
+        Self::PersisterLoad(source)
+    }
+
+    /// A persister `store` failed. Distinct from
+    /// [`Self::from_load_failure`] so a failed write is never reported as
+    /// a failed read. See that constructor for why no blanket conversion
+    /// exists.
+    pub fn from_store_failure(source: crate::changeset::PersistenceError) -> Self {
+        Self::PersisterStore(source)
+    }
+
+    /// Restoring persisted platform-address state into a freshly
+    /// registered wallet failed. Boxes `source` internally, so callers
+    /// never write `Box::new`. See [`Self::from_load_failure`] for why no
+    /// blanket conversion exists.
+    pub fn from_restore_failure(source: PlatformWalletError) -> Self {
+        Self::PersisterRestore(Box::new(source))
+    }
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was
