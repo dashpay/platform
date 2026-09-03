@@ -77,12 +77,21 @@ pub(crate) enum Access {
 /// For [`Access::ReadWrite`], enables `PRAGMA foreign_keys = ON` and
 /// reads it back, returning [`WalletStorageError::ForeignKeysNotEnforced`]
 /// if the result is not `1`. For [`Access::ReadOnly`], opens with
-/// `SQLITE_OPEN_READ_ONLY` and performs no pragma. URI filename parsing is
-/// deliberately left off so a path can't smuggle query parameters (e.g.
-/// `?mode=rwc`) that defeat the read-only intent.
+/// `SQLITE_OPEN_READ_ONLY` and performs no pragma. URI-like filenames are
+/// rejected and `SQLITE_OPEN_URI` is omitted so a path can't smuggle query
+/// parameters (e.g. `?mode=rwc`) that defeat the read-only intent.
 pub(crate) fn open_conn(path: &Path, access: Access) -> Result<Connection, WalletStorageError> {
+    // Bundled SQLite enables URI parsing globally, independently of open flags.
+    if path.as_os_str().as_encoded_bytes().starts_with(b"file:") {
+        return Err(rusqlite::Error::InvalidPath(path.to_path_buf()).into());
+    }
     let conn = match access {
-        Access::ReadWrite => Connection::open(path)?,
+        Access::ReadWrite => Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?,
         Access::ReadOnly => Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
     };
     // Hard-cap every string/BLOB column at SQLITE_MAX_BLOB_BYTES (32 MiB).
@@ -111,6 +120,18 @@ pub(crate) fn enforce_foreign_keys(conn: &Connection) -> Result<(), WalletStorag
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_write_open_does_not_interpret_uri_filenames() {
+        let path = Path::new("file:probe.db?mode=ro");
+        let result = open_conn(path, Access::ReadWrite);
+
+        assert!(matches!(
+            result,
+            Err(WalletStorageError::Sqlite(rusqlite::Error::InvalidPath(found)))
+                if found == path
+        ));
+    }
 
     /// A read-write open enables FK and the read-back confirms it — the
     /// assertion path that guards against a silently no-op pragma.

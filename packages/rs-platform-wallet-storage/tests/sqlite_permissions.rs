@@ -9,9 +9,9 @@
 mod common;
 
 use std::ffi::OsString;
-use std::os::unix::ffi::OsStringExt;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::symlink;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use common::{ensure_wallet_meta, wid};
 use platform_wallet::changeset::{
@@ -36,6 +36,40 @@ fn open_rejects_group_or_other_writable_parent() {
         ),
         "open must return the typed insecure-parent error"
     );
+    assert!(!db_path.exists(), "the database must not be pre-created");
+}
+
+#[test]
+fn open_rejects_parent_owned_by_another_user_when_chown_is_permitted() {
+    let tmp = common::secure_tempdir().unwrap();
+    let parent = tmp.path().join("foreign-owner");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    // SAFETY: `geteuid` takes no arguments and cannot fail.
+    let current_uid = unsafe { libc::geteuid() };
+    let root_uid = std::fs::metadata("/").unwrap().uid();
+    let foreign_uid = (1..=u16::MAX as u32)
+        .find(|uid| *uid != current_uid && *uid != root_uid)
+        .unwrap();
+    let path = std::ffi::CString::new(parent.as_os_str().as_bytes()).unwrap();
+    // SAFETY: `path` is a live NUL-terminated string and both IDs are valid values.
+    let result = unsafe { libc::chown(path.as_ptr(), foreign_uid, !0 as libc::gid_t) };
+    if result != 0 {
+        let error = std::io::Error::last_os_error();
+        if matches!(error.raw_os_error(), Some(libc::EPERM) | Some(libc::EINVAL)) {
+            return;
+        }
+        panic!("chown fixture failed: {error}");
+    }
+
+    let db_path = parent.join("wallet.db");
+    let result = SqlitePersister::open(SqlitePersisterConfig::new(&db_path));
+
+    assert!(matches!(
+        result,
+        Err(WalletStorageError::InsecureParentDir { mode }) if mode == 0o755
+    ));
     assert!(!db_path.exists(), "the database must not be pre-created");
 }
 

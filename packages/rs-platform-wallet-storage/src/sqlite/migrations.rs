@@ -110,6 +110,29 @@ pub fn assert_schema_version_supported(
     Ok(())
 }
 
+fn refinery_timestamp_is_valid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let digits = |range: std::ops::Range<usize>| bytes[range].iter().all(u8::is_ascii_digit);
+    let shape_is_valid = bytes.len() >= 20
+        && bytes.len() <= 30
+        && digits(0..4)
+        && bytes[4] == b'-'
+        && digits(5..7)
+        && bytes[7] == b'-'
+        && digits(8..10)
+        && bytes[10] == b'T'
+        && digits(11..13)
+        && bytes[13] == b':'
+        && digits(14..16)
+        && bytes[16] == b':'
+        && digits(17..19)
+        && bytes[17] <= b'5'
+        && bytes[bytes.len() - 1] == b'Z'
+        && (bytes.len() == 20 || (bytes[19] == b'.' && digits(20..bytes.len().saturating_sub(1))));
+
+    shape_is_valid && chrono::DateTime::parse_from_rfc3339(value).is_ok()
+}
+
 /// Probe `refinery_schema_history` rows BEFORE handing the connection to
 /// refinery, which parses `applied_on` (RFC3339) and `checksum` (`u64`)
 /// with `unwrap()` — a malformed value would abort the process. Surfaces
@@ -129,9 +152,16 @@ pub(crate) fn assert_schema_history_well_formed(
     })?;
     for row in rows {
         let (applied_on, checksum) = row?;
-        // Validate the way refinery will parse, so a malformed value fails
-        // typed here rather than panicking inside the runner.
-        if chrono::DateTime::parse_from_rfc3339(&applied_on).is_err() {
+        // Deliberately NARROWER than refinery's own reader, which accepts any
+        // RFC3339 value (`drivers/rusqlite.rs` parses with `time::Rfc3339`).
+        // We can be narrower because refinery only ever WRITES the canonical
+        // UTC shape: `runner.rs` stamps `OffsetDateTime::now_utc()` and
+        // `traits/mod.rs` formats it with `time::Rfc3339`, which emits a
+        // trailing `Z` for a UTC offset rather than `+00:00`. So every value
+        // refinery produced passes this gate, while a hand-written `+00:00`
+        // is refused — a typed error, which is the point: the panic this
+        // guard replaces is unrecoverable.
+        if !refinery_timestamp_is_valid(&applied_on) {
             return Err(WalletStorageError::SchemaHistoryMalformed {
                 reason: "applied_on is not a valid RFC3339 timestamp",
             });
@@ -224,7 +254,31 @@ pub fn embedded_migrations_sql() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::Connection;
+    use rusqlite::{params, Connection};
+
+    #[test]
+    fn schema_history_guard_rejects_timestamps_refinery_rejects() {
+        for applied_on in ["2024-01-01T00:00:00−00:00", "2024-01-01T00:00:60Z"] {
+            let conn = Connection::open_in_memory().unwrap();
+            conn.execute_batch(
+                "CREATE TABLE refinery_schema_history (
+                    applied_on TEXT NOT NULL,
+                    checksum TEXT NOT NULL
+                )",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO refinery_schema_history (applied_on, checksum) VALUES (?1, '0')",
+                params![applied_on],
+            )
+            .unwrap();
+
+            assert!(matches!(
+                assert_schema_history_well_formed(&conn),
+                Err(WalletStorageError::SchemaHistoryMalformed { .. })
+            ));
+        }
+    }
 
     /// The helper returns false on a brand-new in-memory DB (no
     /// `refinery_schema_history`), and true after the table is created.
