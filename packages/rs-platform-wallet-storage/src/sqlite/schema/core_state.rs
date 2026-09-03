@@ -488,13 +488,24 @@ pub fn load_state(
 /// resolved per script via [`owning_account_for_script`]; the result is
 /// `None` when the script matches no pool row (the caller then routes to the
 /// first funds account). `network` turns each persisted `script` back into an
-/// [`Address`](dashcore::Address); a script that isn't a valid address is a
-/// hard error (corruption is never silently dropped), matching [`load_state`]'s
-/// unspent-UTXO handling.
+/// [`Address`](dashcore::Address). An invalid script is fatal under Strict;
+/// Recovery counts and skips that address while continuing with the rest.
+/// This compatibility entry point uses Strict; rehydration calls
+/// [`load_used_addresses_with_ctx`] with its policy context.
 pub fn load_used_addresses(
     conn: &Connection,
     wallet_id: &WalletId,
     network: dashcore::Network,
+) -> Result<Vec<(dashcore::Address, Option<OwningAccount>)>, WalletStorageError> {
+    load_used_addresses_with_ctx(conn, wallet_id, network, &LoadCtx::strict())
+}
+
+/// [`load_used_addresses`] under an explicit load policy.
+pub fn load_used_addresses_with_ctx(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+    ctx: &LoadCtx,
 ) -> Result<Vec<(dashcore::Address, Option<OwningAccount>)>, WalletStorageError> {
     // Gate the largest stored `script` with a cheap aggregate BEFORE the
     // `DISTINCT ... ORDER BY script` read materializes or sorts any blob, so a
@@ -502,14 +513,11 @@ pub fn load_used_addresses(
     // cap) rather than SQLite's own `TooBig` mid-sort, and never OOMs the host.
     // `core_utxos` has no `(wallet_id, script)` index, so the read would sort
     // the blob; the aggregate gate fires first regardless of query plan.
-    let max_script_len: Option<i64> = conn.query_row(
+    blob::check_max_column_len(
+        conn,
         "SELECT MAX(length(script)) FROM core_utxos WHERE wallet_id = ?1",
-        params![wallet_id.as_slice()],
-        |row| row.get(0),
+        wallet_id,
     )?;
-    if let Some(len) = max_script_len {
-        blob::check_size(len)?;
-    }
     // Materialize the scripts before resolving ownership: `owning_account_for_script`
     // prepares its own statement on `conn`, so the reader statement must be
     // finished first.
@@ -525,8 +533,13 @@ pub fn load_used_addresses(
     let mut out = Vec::with_capacity(scripts.len());
     for raw in scripts {
         let owner = owning_account_for_script(conn, wallet_id, &raw)?;
-        let script = dashcore::ScriptBuf::from_bytes(raw);
-        let address = dashcore::Address::from_script(&script, network)?;
+        let address = match blob::decode_script_to_address(raw, network) {
+            Ok(address) => address,
+            Err(error) => {
+                ctx.tolerate(LoadSite::UndecodableAddressScript, error)?;
+                continue;
+            }
+        };
         out.push((address, owner));
     }
     Ok(out)
@@ -1426,8 +1439,9 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_used_addresses(&conn, &w, dashcore::Network::Testnet)
-            .expect_err("an unparseable script must be a hard error");
+        let err =
+            load_used_addresses_with_ctx(&conn, &w, dashcore::Network::Testnet, &LoadCtx::strict())
+                .expect_err("an unparseable script must be a hard error");
         assert!(
             matches!(err, WalletStorageError::AddressDecode { .. }),
             "expected AddressDecode carrying the upstream error, got {err:?}"

@@ -10,6 +10,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::sqlite::error::WalletStorageError;
+use platform_wallet::wallet::platform_wallet::WalletId;
+use rusqlite::{params, Connection};
 
 /// Sealed-trait machinery enforcing the no-key-material-in-DB invariant at
 /// the type level: only types opting in via [`impl_persistable_blob!`] can
@@ -62,6 +64,29 @@ pub(crate) fn check_size(len: i64) -> Result<(), WalletStorageError> {
         });
     }
     Ok(())
+}
+
+/// Gate the largest value selected by a one-column aggregate query.
+pub(crate) fn check_max_column_len(
+    conn: &Connection,
+    sql: &'static str,
+    wallet_id: &WalletId,
+) -> Result<(), WalletStorageError> {
+    let max_len: Option<i64> =
+        conn.query_row(sql, params![wallet_id.as_slice()], |row| row.get(0))?;
+    if let Some(len) = max_len {
+        check_size(len)?;
+    }
+    Ok(())
+}
+
+/// Decode a stored script into an address for `network`.
+pub(crate) fn decode_script_to_address(
+    raw: impl Into<Vec<u8>>,
+    network: dashcore::Network,
+) -> Result<dashcore::Address, WalletStorageError> {
+    let script = dashcore::ScriptBuf::from_bytes(raw.into());
+    Ok(dashcore::Address::from_script(&script, network)?)
 }
 
 /// Gate a fixed-width blob column BEFORE materializing the `Vec<u8>`.

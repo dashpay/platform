@@ -39,29 +39,42 @@ use platform_wallet_storage::SqlitePersister;
 /// reuse-guard set `load()` reads (owner dropped; these tests assert addresses).
 fn pool_used(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
     let conn = persister.lock_conn_for_test();
-    core_pool::load_used_addresses(&conn, w, Network::Testnet)
-        .expect("pool used-set")
-        .into_iter()
-        .map(|(addr, _owner)| addr)
-        .collect()
+    core_pool::load_used_addresses_with_ctx(
+        &conn,
+        w,
+        Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("pool used-set")
+    .into_iter()
+    .map(|(addr, _owner)| addr)
+    .collect()
 }
 
 /// `core_utxos`-derived used addresses (spent + unspent) — the UTXO half.
 fn utxo_used(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
     let conn = persister.lock_conn_for_test();
-    core_state::load_used_addresses(&conn, w, Network::Testnet)
-        .expect("utxo used-set")
-        .into_iter()
-        .map(|(addr, _owner)| addr)
-        .collect()
+    core_state::load_used_addresses_with_ctx(
+        &conn,
+        w,
+        Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("utxo used-set")
+    .into_iter()
+    .map(|(addr, _owner)| addr)
+    .collect()
 }
 
 /// The assembled reuse-guard set `load()` hands the manager: pool ∪ UTXO,
 /// deduped by script (mirrors `SqlitePersister::load`).
 fn used_set(persister: &SqlitePersister, w: &WalletId) -> Vec<Address> {
     let conn = persister.lock_conn_for_test();
-    let pool = core_pool::load_used_addresses(&conn, w, Network::Testnet).expect("pool used-set");
-    let utxo = core_state::load_used_addresses(&conn, w, Network::Testnet).expect("utxo used-set");
+    let ctx = platform_wallet_storage::LoadCtx::strict();
+    let pool = core_pool::load_used_addresses_with_ctx(&conn, w, Network::Testnet, &ctx)
+        .expect("pool used-set");
+    let utxo = core_state::load_used_addresses_with_ctx(&conn, w, Network::Testnet, &ctx)
+        .expect("utxo used-set");
     drop(conn);
     let mut seen = std::collections::HashSet::new();
     let mut union = Vec::new();

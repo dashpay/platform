@@ -251,6 +251,9 @@ pub fn populate_platform_node_pool(
 #[cfg(feature = "eddsa")]
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformNodePoolError {
+    /// The wallet has no managed provider-platform account.
+    #[error("wallet has no managed provider platform account")]
+    NoManagedAccount,
     /// The provider-platform account path cannot be constructed for the network.
     #[error("provider platform account derivation path is invalid")]
     InvalidAccountPath {
@@ -271,12 +274,12 @@ pub enum PlatformNodePoolError {
 
 /// Insert one pre-derived Ed25519 key into the managed platform-node pool.
 ///
-/// A wallet without a managed provider-platform account is left unchanged.
-///
 /// # Errors
 ///
-/// Returns [`PlatformNodePoolError::MissingHardenedPool`] when the account
-/// exists without its required `AbsentHardened` pool,
+/// Returns [`PlatformNodePoolError::NoManagedAccount`] when the wallet has no
+/// managed provider-platform account,
+/// [`PlatformNodePoolError::MissingHardenedPool`] when the account exists
+/// without its required `AbsentHardened` pool,
 /// [`PlatformNodePoolError::InvalidAccountPath`] when its network-scoped path
 /// cannot be constructed, or
 /// [`PlatformNodePoolError::InvalidChildIndex`] when `index` is not a valid
@@ -296,7 +299,7 @@ pub fn insert_platform_node_pool_entry(
     use key_wallet::AddressInfo;
 
     let Some(account) = wallet_info.accounts.provider_platform_keys.as_mut() else {
-        return Ok(());
+        return Err(PlatformNodePoolError::NoManagedAccount);
     };
     let account_path = AccountType::ProviderPlatformKeys
         .derivation_path(network)
@@ -1198,6 +1201,36 @@ mod tests {
         assert!(restored.is_used());
         assert!(pool.used_indices.contains(&key.index));
         assert_eq!(pool.highest_used, Some(key.index));
+    }
+
+    #[cfg(feature = "eddsa")]
+    #[test]
+    fn insert_platform_node_pool_entry_rejects_unmanaged_account() {
+        use dashcore::hashes::Hash;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+        let wallet = seed_bearing_wallet(Network::Mainnet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        wallet_info.accounts.provider_platform_keys = None;
+        let address = dashcore::Address::new(
+            Network::Mainnet,
+            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
+                [0x42; 20],
+            )),
+        );
+
+        let err = insert_platform_node_pool_entry(
+            &mut wallet_info,
+            Network::Mainnet,
+            0,
+            address.clone(),
+            address.script_pubkey(),
+            [0x24; 32],
+            false,
+        )
+        .expect_err("an unmanaged account must not report a successful insert");
+
+        assert!(matches!(err, PlatformNodePoolError::NoManagedAccount));
     }
 
     #[cfg(feature = "eddsa")]

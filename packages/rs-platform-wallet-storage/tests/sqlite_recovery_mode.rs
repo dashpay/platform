@@ -13,9 +13,12 @@ mod common;
 use common::{ensure_wallet_meta, fresh_persister, fresh_recovery_persister, wid};
 use dashcore::hashes::Hash;
 use dashcore::Txid;
+use dpp::identity::accessors::IdentityGettersV0;
 use platform_wallet::changeset::{
-    CoreChangeSet, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    AccountRegistrationEntry, CoreChangeSet, IdentityEntry, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence, WalletMetadataEntry,
 };
+use platform_wallet::wallet::identity::IdentityStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::{LoadSite, SqlitePersister, WalletStorageError};
 use rusqlite::params;
@@ -129,6 +132,424 @@ fn confirmed_record() -> key_wallet::managed_account::transaction_record::Transa
     );
     record.txid = drifted_txid();
     record
+}
+
+/// Register a deterministic keyless wallet and return its BIP44 external
+/// index-zero address.
+fn seed_registered_wallet(
+    persister: &SqlitePersister,
+    wallet_id: WalletId,
+    seed: u8,
+) -> dashcore::Address {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::wallet::Wallet;
+
+    let wallet = Wallet::from_seed_bytes(
+        [seed; 64],
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("test wallet");
+    let info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let address = info.accounts.standard_bip44_accounts[&0]
+        .managed_account_type()
+        .address_pools()
+        .into_iter()
+        .find(|pool| pool.is_external())
+        .and_then(|pool| pool.address_at_index(0))
+        .expect("BIP44 external address");
+    let account_registrations = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|account| AccountRegistrationEntry {
+            account_type: account.account_type,
+            account_xpub: account.account_xpub,
+        })
+        .collect();
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: key_wallet::Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 1,
+                }),
+                account_registrations,
+                ..Default::default()
+            },
+        )
+        .expect("register wallet");
+    address
+}
+
+fn identity_entry(wallet_id: WalletId, id: u8, index: u32) -> IdentityEntry {
+    IdentityEntry {
+        id: dpp::prelude::Identifier::from([id; 32]),
+        balance: u64::from(id),
+        revision: 1,
+        identity_index: Some(index),
+        last_updated_balance_block_time: None,
+        last_synced_keys_block_time: None,
+        dpns_names: Vec::new(),
+        contested_dpns_names: Vec::new(),
+        status: IdentityStatus::Active,
+        wallet_id: Some(wallet_id),
+        dashpay_profile: None,
+        dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
+    }
+}
+
+fn seed_identity_index_collision(persister: &SqlitePersister, wallet_id: WalletId) {
+    use platform_wallet_storage::sqlite::schema::blob;
+
+    ensure_wallet_meta(persister, &wallet_id);
+    let conn = persister.lock_conn_for_test();
+    for id in [0xEE, 0x11] {
+        let entry = identity_entry(wallet_id, id, 7);
+        conn.execute(
+            "INSERT INTO identities \
+                (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+             VALUES (?1, ?2, 7, ?3, 0)",
+            params![
+                entry.id.as_slice(),
+                wallet_id.as_slice(),
+                blob::encode(&entry).unwrap()
+            ],
+        )
+        .expect("plant duplicate identity index");
+    }
+    conn.execute_batch(
+        "ANALYZE; \
+         UPDATE sqlite_stat1 SET stat = '1000000 1000000' \
+             WHERE idx = 'idx_identities_wallet_identity'; \
+         UPDATE sqlite_stat1 SET stat = '2 2' WHERE idx = 'idx_identities_wallet'; \
+         ANALYZE sqlite_schema;",
+    )
+    .expect("make the unordered query prefer insertion order");
+}
+
+fn seed_asset_lock_status_drift(
+    persister: &SqlitePersister,
+    wallet_id: WalletId,
+) -> dashcore::OutPoint {
+    use dashcore::{OutPoint, Transaction};
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::changeset::AssetLockEntry;
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+    use platform_wallet_storage::sqlite::schema::{asset_locks, blob};
+
+    ensure_wallet_meta(persister, &wallet_id);
+    let outpoint = OutPoint::new(Txid::from_byte_array([0xA5; 32]), 0);
+    let entry = AssetLockEntry {
+        out_point: outpoint,
+        transaction: Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        },
+        account_index: 0,
+        funding_type: AssetLockFundingType::IdentityTopUp,
+        identity_index: 0,
+        amount_duffs: 1_000,
+        status: AssetLockStatus::Consumed,
+        proof: None,
+    };
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO asset_locks \
+            (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
+         VALUES (?1, ?2, 'built', 0, 0, 1000, ?3)",
+        params![
+            wallet_id.as_slice(),
+            blob::encode_outpoint(&outpoint).unwrap(),
+            asset_locks::encode_entry_for_test(&entry).unwrap()
+        ],
+    )
+    .expect("plant asset-lock status drift");
+
+    let live_outpoint = OutPoint::new(Txid::from_byte_array([0xB6; 32]), 0);
+    let live_entry = AssetLockEntry {
+        out_point: live_outpoint,
+        status: AssetLockStatus::Built,
+        ..entry
+    };
+    conn.execute(
+        "INSERT INTO asset_locks \
+            (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
+         VALUES (?1, ?2, 'built', 0, 0, 1000, ?3)",
+        params![
+            wallet_id.as_slice(),
+            blob::encode_outpoint(&live_outpoint).unwrap(),
+            asset_locks::encode_entry_for_test(&live_entry).unwrap()
+        ],
+    )
+    .expect("plant live asset-lock control");
+    live_outpoint
+}
+
+#[test]
+fn account_registration_drift_is_strictly_fatal_and_recovery_drops_only_that_row() {
+    let wallet = wid(0x3E);
+    let outpoint = dashcore::OutPoint::new(Txid::from_byte_array([0x3E; 32]), 0);
+    let seed = |persister: &SqlitePersister| {
+        let address = seed_registered_wallet(persister, wallet, 0x3E);
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, key_class, pool_type, \
+                 address_index, script, used) \
+             VALUES (?1, 'standard_bip44', 0, 0, 0, 0, ?2, 0)",
+            params![wallet.as_slice(), address.script_pubkey().as_bytes()],
+        )
+        .expect("plant BIP44 ownership row");
+        conn.execute(
+            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 7000, ?3, 0)",
+            params![
+                wallet.as_slice(),
+                platform_wallet_storage::sqlite::schema::blob::encode_outpoint(&outpoint).unwrap(),
+                address.script_pubkey().as_bytes()
+            ],
+        )
+        .expect("plant BIP44 UTXO");
+        assert_eq!(
+            conn.execute(
+                "UPDATE account_registrations SET account_index = 99 \
+                 WHERE wallet_id = ?1 AND account_type = 'standard_bip44'",
+                params![wallet.as_slice()],
+            )
+            .unwrap(),
+            1
+        );
+    };
+
+    let (strict, _tmp, _path) = fresh_persister();
+    seed(&strict);
+    let err = typed(
+        strict
+            .load()
+            .expect_err("strict must reject registration drift"),
+    );
+    assert!(matches!(
+        err,
+        WalletStorageError::AccountRegistrationEntryMismatch
+    ));
+
+    let (recovery, _tmp, _path) = fresh_recovery_persister(seed);
+    let state = recovery
+        .load()
+        .expect("recovery drops only the drifted row");
+    let loaded = &state.wallets[&wallet];
+    assert!(loaded.wallet.accounts.standard_bip44_accounts.is_empty());
+    assert!(loaded
+        .wallet
+        .accounts
+        .standard_bip32_accounts
+        .contains_key(&0));
+    assert!(loaded.wallet.accounts.coinjoin_accounts.contains_key(&0));
+    let fallback = &loaded.wallet_info.accounts.standard_bip32_accounts[&0];
+    assert!(fallback.utxos.contains_key(&outpoint));
+    assert_eq!(fallback.balance.total(), 7_000);
+    assert_eq!(loaded.wallet_info.balance.total(), 7_000);
+    let degradation = recovery.last_load_degradation();
+    assert_eq!(
+        degradation.by_site.get(&LoadSite::AccountRegistrationDrift),
+        Some(&1)
+    );
+    assert_eq!(
+        degradation.by_site.get(&LoadSite::OrphanedUtxoOwner),
+        Some(&2)
+    );
+    assert_eq!(
+        degradation.by_site.get(&LoadSite::UnresolvedUtxoAddress),
+        Some(&1)
+    );
+    assert_eq!(degradation.by_site.len(), 3);
+    assert_eq!(degradation.total, 4);
+}
+
+#[test]
+fn consumed_blob_status_withdraws_asset_lock_from_recovery_live_set() {
+    let wallet = wid(0x3F);
+    let (strict, _tmp, _path) = fresh_persister();
+    seed_asset_lock_status_drift(&strict, wallet);
+    let err = typed(strict.load().expect_err("strict must reject status drift"));
+    assert!(matches!(
+        err,
+        WalletStorageError::AssetLockStatusMismatch { .. }
+    ));
+
+    let live_outpoint = dashcore::OutPoint::new(Txid::from_byte_array([0xB6; 32]), 0);
+    let (recovery, _tmp, _path) = fresh_recovery_persister(|strict| {
+        seed_asset_lock_status_drift(strict, wallet);
+    });
+    let state = recovery
+        .load()
+        .expect("recovery lets the blob withdraw the lock");
+    let locks = &state.wallets[&wallet].unused_asset_locks;
+    assert_eq!(locks.len(), 1);
+    assert_eq!(locks[&0].len(), 1);
+    assert!(locks[&0].contains_key(&live_outpoint));
+    let drifted_outpoint = dashcore::OutPoint::new(Txid::from_byte_array([0xA5; 32]), 0);
+    assert!(!locks[&0].contains_key(&drifted_outpoint));
+    assert_only_site(&recovery, LoadSite::AssetLockStatusDrift, 1);
+}
+
+// -- previously uncovered load sites -----------------------------------
+
+#[test]
+fn identity_index_collision_is_strictly_fatal_and_recovery_loses_no_identity() {
+    let wallet = wid(0x40);
+    let (strict, _tmp, _path) = fresh_persister();
+    seed_identity_index_collision(&strict, wallet);
+    let err = typed(strict.load().expect_err("strict must reject the collision"));
+    assert!(matches!(
+        err,
+        WalletStorageError::IdentityIndexConflict { .. }
+    ));
+
+    let (recovery, _tmp, _path) =
+        fresh_recovery_persister(|strict| seed_identity_index_collision(strict, wallet));
+    let state = recovery.load().expect("recovery must select one identity");
+    let manager = &state.wallets[&wallet].identity_manager;
+    let identities = &manager.wallet_identities[&wallet];
+    // Only one identity can hold slot 7 — that part is unavoidable.
+    assert_eq!(identities.len(), 1);
+    assert_eq!(
+        identities[&7].identity.id(),
+        dpp::prelude::Identifier::from([0xEE; 32]),
+        "ascending identity_id order makes the lexicographically higher row the winner"
+    );
+    // The load must not LOSE the other one. Nothing on disk says which
+    // identity truly owns index 7, so the displaced row is parked in the
+    // no-slot bucket rather than dropped. Recovery makes the persister
+    // read-only, so an identity dropped here could never be re-persisted.
+    let displaced = dpp::prelude::Identifier::from([0x11; 32]);
+    assert!(
+        manager.out_of_wallet_identities.contains_key(&displaced),
+        "the displaced identity must survive the load, not vanish; got keys {:?}",
+        manager.out_of_wallet_identities.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        manager.out_of_wallet_identities[&displaced].identity.id(),
+        displaced
+    );
+    assert_only_site(&recovery, LoadSite::IdentityIndexCollision, 1);
+}
+
+#[test]
+fn orphaned_utxo_owner_is_counted_by_recovery_load() {
+    let wallet = wid(0x41);
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        let address = seed_registered_wallet(strict, wallet, 0x41);
+        let conn = strict.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, key_class, pool_type, \
+                 address_index, script, used) \
+             VALUES (?1, 'standard_bip44', 999, 0, 0, 0, ?2, 1)",
+            params![wallet.as_slice(), address.script_pubkey().as_bytes()],
+        )
+        .expect("plant orphaned pool owner");
+    });
+
+    persister.load().expect("recovery load");
+    assert_only_site(&persister, LoadSite::OrphanedUtxoOwner, 1);
+}
+
+#[test]
+fn unresolved_and_undecodable_addresses_are_counted_separately() {
+    let wallet = wid(0x42);
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        seed_registered_wallet(strict, wallet, 0x42);
+        let conn = strict.lock_conn_for_test();
+        let bad_script = [0x6A_u8];
+        conn.execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, key_class, pool_type, \
+                 address_index, script, used) \
+             VALUES (?1, 'standard_bip44', 0, 0, 0, 0, ?2, 1)",
+            params![wallet.as_slice(), bad_script.as_slice()],
+        )
+        .expect("plant undecodable pool script");
+        conn.execute(
+            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 0, ?3, 1)",
+            params![wallet.as_slice(), &[0xFF_u8; 36], bad_script.as_slice()],
+        )
+        .expect("plant undecodable UTXO script");
+
+        for index in 0_u32..900 {
+            let mut hash = [0_u8; 20];
+            hash[..4].copy_from_slice(&index.to_le_bytes());
+            let address = dashcore::Address::new(
+                dashcore::Network::Testnet,
+                dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(hash)),
+            );
+            let mut outpoint = [0_u8; 36];
+            outpoint[..4].copy_from_slice(&index.to_le_bytes());
+            outpoint[4] = 1;
+            conn.execute(
+                "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+                 VALUES (?1, ?2, 0, ?3, 1)",
+                params![
+                    wallet.as_slice(),
+                    outpoint,
+                    address.script_pubkey().as_bytes()
+                ],
+            )
+            .expect("plant unresolved used address");
+        }
+    });
+
+    persister
+        .load()
+        .expect("recovery must skip undecodable scripts");
+    let degradation = persister.last_load_degradation();
+    assert_eq!(
+        degradation.by_site.get(&LoadSite::UnresolvedUtxoAddress),
+        Some(&900)
+    );
+    assert_eq!(
+        degradation.by_site.get(&LoadSite::UndecodableAddressScript),
+        Some(&2)
+    );
+    assert_eq!(degradation.by_site.len(), 2);
+    assert_eq!(degradation.total, 900 + 2);
+}
+
+#[test]
+fn identity_scan_state_contradiction_is_counted_by_recovery_load() {
+    let wallet = wid(0x43);
+    let (persister, _tmp, _path) = fresh_recovery_persister(|strict| {
+        ensure_wallet_meta(strict, &wallet);
+        let conn = strict.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO identity_scan_states \
+                (wallet_id, complete, probed_from, probed_through, unlocated_gap) \
+             VALUES (?1, 1, 0, 9, 0)",
+            params![wallet.as_slice()],
+        )
+        .expect("plant complete verdict");
+        conn.execute(
+            "INSERT INTO identity_scan_failed_indices (wallet_id, failed_index) \
+             VALUES (?1, 4)",
+            params![wallet.as_slice()],
+        )
+        .expect("plant unanswered index");
+    });
+
+    let state = persister.load().expect("recovery clamps the verdict");
+    assert!(!state.wallets[&wallet].identity_manager.scan_states[&wallet].complete);
+    assert_only_site(&persister, LoadSite::IdentityScanStateContradiction, 1);
 }
 
 // ── (a) chain-lock blob ─────────────────────────────────────────────────

@@ -1099,10 +1099,13 @@ fn tc_p4_005_load_asset_locks_bucketed() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let a_buckets = platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &a)
-        .expect("asset_locks load_state A");
-    let b_buckets = platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &b)
-        .expect("asset_locks load_state B");
+    let ctx = platform_wallet_storage::LoadCtx::strict();
+    let a_buckets =
+        platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &a, &ctx)
+            .expect("asset_locks load_state A");
+    let b_buckets =
+        platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &b, &ctx)
+            .expect("asset_locks load_state B");
     drop(conn);
     assert_eq!(a_buckets.len(), 2, "expected 2 account buckets for A");
     assert_eq!(a_buckets[&0].len(), 2);
@@ -1365,9 +1368,11 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let blob_result = asset_locks::load_state(&conn, &bad_blob);
-    let op_result = asset_locks::load_state(&conn, &bad_op);
-    let good_state = asset_locks::load_state(&conn, &good).expect("intact wallet must decode");
+    let ctx = platform_wallet_storage::LoadCtx::strict();
+    let blob_result = asset_locks::load_state(&conn, &bad_blob, &ctx);
+    let op_result = asset_locks::load_state(&conn, &bad_op, &ctx);
+    let good_state =
+        asset_locks::load_state(&conn, &good, &ctx).expect("intact wallet must decode");
     drop(conn);
 
     assert!(

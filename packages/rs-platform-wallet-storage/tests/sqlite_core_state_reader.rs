@@ -706,14 +706,23 @@ fn rehydration_routes_used_addresses_to_owning_account() {
     // pool source carries the known owner (CoinJoin), authoritative on conflict.
     let used: HashMap<key_wallet::Address, Option<OwningAccount>> = {
         let mut map: HashMap<key_wallet::Address, Option<OwningAccount>> = HashMap::new();
-        for (addr, owner) in core_pool::load_used_addresses(&conn, &w, key_wallet::Network::Testnet)
-            .expect("core_pool used addresses")
+        for (addr, owner) in core_pool::load_used_addresses_with_ctx(
+            &conn,
+            &w,
+            key_wallet::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .expect("core_pool used addresses")
         {
             map.entry(addr).or_insert(Some(owner));
         }
-        for (addr, owner) in
-            core_state::load_used_addresses(&conn, &w, key_wallet::Network::Testnet)
-                .expect("core_utxos used addresses")
+        for (addr, owner) in core_state::load_used_addresses_with_ctx(
+            &conn,
+            &w,
+            key_wallet::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .expect("core_utxos used addresses")
         {
             map.entry(addr).or_insert(owner);
         }

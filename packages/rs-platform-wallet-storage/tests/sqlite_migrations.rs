@@ -466,8 +466,13 @@ fn tc046_v012_purges_legacy_empty_script_spent_utxos() {
 
     // 3. The damage V012 exists to repair: at V011 the single poisoned row
     //    rejects the used-set read for the whole wallet.
-    let err = core_state::load_used_addresses(&conn, &poisoned, dashcore::Network::Testnet)
-        .expect_err("the poisoned row must reject the used-set read before V012");
+    let err = core_state::load_used_addresses_with_ctx(
+        &conn,
+        &poisoned,
+        dashcore::Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect_err("the poisoned row must reject the used-set read before V012");
     assert!(
         matches!(err, WalletStorageError::AddressDecode { .. }),
         "expected AddressDecode from the empty script, got {err:?}"
@@ -501,8 +506,13 @@ fn tc046_v012_purges_legacy_empty_script_spent_utxos() {
 
     // 7. ...so the read the poisoned row was rejecting now succeeds, and
     //    the real address still guards against reuse.
-    let used = core_state::load_used_addresses(&conn, &poisoned, dashcore::Network::Testnet)
-        .expect("the used-set read recovers after the purge");
+    let used = core_state::load_used_addresses_with_ctx(
+        &conn,
+        &poisoned,
+        dashcore::Network::Testnet,
+        &platform_wallet_storage::LoadCtx::strict(),
+    )
+    .expect("the used-set read recovers after the purge");
     let used_scripts: Vec<Vec<u8>> = used
         .iter()
         .map(|(addr, _owner)| addr.script_pubkey().to_bytes())
