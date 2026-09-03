@@ -323,8 +323,10 @@ impl EncryptedFileStore {
     /// Open (or create) a **deliberately keyless** vault — the only door
     /// that accepts no passphrase. The vault key is derived from an empty
     /// passphrase under the public salt, so this is **obfuscation, not
-    /// confidentiality**: use it only where the stored secrets carry their
-    /// own Tier-2 object password, or as a staging step before
+    /// confidentiality or authenticity**: anyone who can write the file can
+    /// forge a valid vault and inject a chosen unprotected secret. Use it only
+    /// where the stored secrets carry their own Tier-2 object password, or as
+    /// a staging step before
     /// [`rekey`](Self::rekey) to a real passphrase. This is the explicit
     /// keyless door, distinct from [`open`](Self::open), which enforces the
     /// passphrase length floor.
@@ -369,7 +371,10 @@ impl EncryptedFileStore {
                 SecretStoreError::io_at(parent, source)
             }
             crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
-                SecretStoreError::InsecureParentDir { mode }
+                SecretStoreError::InsecureParentDir {
+                    path: parent.to_path_buf(),
+                    mode,
+                }
             }
         })?;
 
@@ -802,6 +807,16 @@ fn build_fresh_vault(
 /// token *before* any entry is touched. An authentication failure means either
 /// a wrong passphrase or a corrupted vault header; both yield
 /// `WrongPassphrase` with no plaintext.
+///
+/// The header's Argon2 params are bounded by `KdfParams::enforce_bounds`,
+/// which `crypto::derive_key` runs BEFORE touching the allocator. That band
+/// (`ARGON2_MIN_M_KIB..=ARGON2_MAX_M_KIB`, 19 MiB..=1 GiB) is deliberately far
+/// wider than the shipped `default_target()`: per-vault params exist precisely
+/// so a vault may be hardened above the default, and clamping reads to the
+/// current default would make every such vault — and every vault at all, were
+/// the default ever lowered — permanently unopenable. Do not narrow this to
+/// the target; the ceiling is the DoS control, the target is only what NEW
+/// vaults get.
 fn derive_and_verify(
     vault: &Vault,
     passphrase: &SecretString,
@@ -816,7 +831,8 @@ fn derive_and_verify(
 }
 
 /// Read + parse the vault at `path`, or `None` if absent. Refuses
-/// looser-than-0600 perms and a file over [`MAX_VAULT_SIZE_BYTES`].
+/// looser-than-0600 perms, foreign ownership, and a file over
+/// [`MAX_VAULT_SIZE_BYTES`].
 /// Opens once with `O_NOFOLLOW` and derives perms/size from the same fd
 /// to avoid a metadata→read TOCTOU.
 fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
@@ -828,7 +844,7 @@ fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
     let meta = file
         .metadata()
         .map_err(|e| SecretStoreError::io_at(path, e))?;
-    check_perms(&meta)?;
+    check_perms(path, &meta)?;
     let len = meta.len();
     if len > MAX_VAULT_SIZE_BYTES {
         return Err(SecretStoreError::VaultTooLarge {
@@ -1308,19 +1324,46 @@ fn entry_decrypt_or_corruption(
 }
 
 #[cfg(unix)]
-fn check_perms(meta: &fs::Metadata) -> Result<(), SecretStoreError> {
+fn check_perms(path: &Path, meta: &fs::Metadata) -> Result<(), SecretStoreError> {
+    check_perms_for_uid(path, meta, effective_uid())
+}
+
+#[cfg(unix)]
+fn check_perms_for_uid(
+    path: &Path,
+    meta: &fs::Metadata,
+    effective_uid: u32,
+) -> Result<(), SecretStoreError> {
     use std::os::unix::fs::MetadataExt;
     let mode = meta.mode() & 0o777;
     if mode & 0o077 != 0 {
-        return Err(SecretStoreError::InsecurePermissions { mode });
+        return Err(SecretStoreError::InsecurePermissions {
+            path: path.to_path_buf(),
+            mode,
+        });
+    }
+    if meta.uid() != effective_uid {
+        return Err(SecretStoreError::InsecureOwnership {
+            path: path.to_path_buf(),
+            found: meta.uid(),
+            expected: effective_uid,
+        });
     }
     Ok(())
+}
+
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "libc geteuid requires an unsafe call")]
+fn effective_uid() -> u32 {
+    // SAFETY: geteuid takes no arguments, has no failure mode, and reads only
+    // the process credential maintained by the kernel.
+    unsafe { libc::geteuid() }
 }
 
 // INTENTIONAL: Windows ACL read-check (needs GetSecurityInfo) deferred to
 // https://github.com/dashpay/platform/issues/3754 — set ACLs manually.
 #[cfg(not(unix))]
-fn check_perms(_meta: &fs::Metadata) -> Result<(), SecretStoreError> {
+fn check_perms(_path: &Path, _meta: &fs::Metadata) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
@@ -1590,7 +1633,38 @@ mod tests {
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("loose perms must be refused at open");
         assert!(
-            matches!(err, SecretStoreError::InsecurePermissions { mode: 0o644 }),
+            matches!(
+                err,
+                SecretStoreError::InsecurePermissions { mode: 0o644, .. }
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn foreign_owned_preexisting_file_refused() {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let _s = store_at(&path);
+        }
+        let meta = fs::metadata(&path).unwrap();
+        let owner = meta.uid();
+        let other_uid = owner.wrapping_add(1);
+        let err = check_perms_for_uid(&path, &meta, other_uid)
+            .expect_err("a vault owned by another user must be refused");
+        assert!(
+            matches!(
+                err,
+                SecretStoreError::InsecureOwnership {
+                    path: ref error_path,
+                    found,
+                    expected,
+                } if error_path == &path && found == owner && expected == other_uid
+            ),
             "got {err:?}"
         );
     }
@@ -2184,6 +2258,49 @@ mod tests {
         assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
     }
 
+    /// A header above the absolute DoS ceiling is refused on the read path,
+    /// before `m_kib` reaches the allocator.
+    #[test]
+    fn vault_header_read_ceiling_rejects_inflated_m_kib() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let _s = store_at(&path);
+        }
+        let mut vault = read_vault_at(&path).unwrap().unwrap();
+        vault.kdf.m_kib = crypto::ARGON2_MAX_M_KIB + 1;
+        write_vault_at(&path, &vault, None).unwrap();
+
+        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect_err("a vault header above the DoS ceiling must be refused");
+        assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+    }
+
+    /// The read path must NOT clamp to `default_target()`: a vault hardened
+    /// above the shipped default stays openable. Guards against a
+    /// well-meaning "reject stronger-than-default" change bricking vaults.
+    #[test]
+    fn vault_hardened_above_default_target_still_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let target = KdfParams::default_target();
+        // Only just above the target: enough to prove the read path does not
+        // clamp, without paying a second full-size Argon2 derivation.
+        let hardened = KdfParams {
+            m_kib: target.m_kib + 1024,
+            t: target.t + 1,
+            ..target
+        };
+        assert!(hardened.enforce_bounds().is_ok(), "fixture must be in-band");
+        assert!(hardened.m_kib > target.m_kib && hardened.t > target.t);
+
+        let pass = SecretString::new("pw-correct");
+        let (vault, _key) = build_fresh_vault(&pass, hardened).expect("build hardened vault");
+        write_vault_at(&path, &vault, None).expect("write hardened vault");
+        EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect("a vault hardened above the shipped target must still open");
+    }
+
     #[test]
     fn persistence_is_until_delete() {
         let dir = tempfile::tempdir().unwrap();
@@ -2362,7 +2479,7 @@ mod tests {
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("writable parent dir must be refused");
         assert!(
-            matches!(err, SecretStoreError::InsecureParentDir { mode } if mode & 0o022 != 0),
+            matches!(err, SecretStoreError::InsecureParentDir { mode, .. } if mode & 0o022 != 0),
             "got {err:?}"
         );
         // Dropping the write bits (still group-readable at 0o750) lets the
