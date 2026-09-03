@@ -10,18 +10,18 @@
 
 use std::path::Path;
 
-use platform_wallet_storage::sqlite::migrations as mig;
+use platform_wallet_storage::sqlite::{migrations as mig, schema::versions::Domain};
 
 /// Golden `(version, name)` fingerprint of the frozen migration set. Bump
 /// deliberately only when adding/removing/renaming a migration file.
 const EXPECTED_ID_FINGERPRINT: &str =
-    "7f16e9243f9c0cf2beb477dab2ac267277efa08c1efd0f5e86a14f81cbd29228";
+    "0cde2078d8d001be233972b40cbaf4cd0f29aef0095231cbcdd0b2e1a1626724";
 
 /// Golden content-level fingerprint over every migration's rendered SQL.
 /// Bump deliberately only when the DDL body itself changes; an accidental
 /// change (a silent table rename) must fail this test, not slip through.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "8972ebe5330b2cd54cbc4c9aca1ee7ea3c2634456f22094ddf930c78e27e7af3";
+    "a1939b885ade6a23102051ee35559f3d149539e5fb27afe481012296f347d046";
 
 /// Table names that lost the cross-branch reconciliation and must never
 /// resurface as SQL identifiers on this frozen (`wallets`) baseline.
@@ -30,6 +30,17 @@ const RETIRED_SQL_NAMES: &[&str] = &[
     "account_address_pools",
     "core_derived_addresses",
 ];
+
+#[test]
+fn domain_labels_are_live_sql_names() {
+    for domain in Domain::ALL {
+        assert!(
+            !RETIRED_SQL_NAMES.contains(&domain.as_str()),
+            "Domain::{domain:?} uses retired SQL name `{}`",
+            domain.as_str()
+        );
+    }
+}
 
 /// TC-B-040 (identity) — the migration set's identity is pinned.
 #[test]
@@ -54,15 +65,17 @@ fn tc_b_040_sql_fingerprint_pinned() {
     );
 }
 
-/// The retired names appear nowhere in the rendered migration SQL.
+/// The retired names appear nowhere as table identifiers in migration SQL.
 #[test]
 fn tc_b_041_migration_sql_has_no_retired_names() {
     for sql in mig::embedded_migrations_sql() {
         for name in RETIRED_SQL_NAMES {
-            assert!(
-                !sql.contains(name),
-                "retired table name `{name}` present in migration SQL"
-            );
+            for keyword in ["FROM", "INTO", "UPDATE", "TABLE", "JOIN", "ON"] {
+                assert!(
+                    !sql.contains(&format!("{keyword} {name}")),
+                    "retired table name `{name}` present in migration SQL"
+                );
+            }
         }
     }
 }

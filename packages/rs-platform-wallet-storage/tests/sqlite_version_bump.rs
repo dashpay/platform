@@ -183,7 +183,7 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
             m.insert(Identifier::from([0x09; 32]), inner);
             cs.dashpay_payments_overlay = Some(m);
         }
-        Domain::WalletMetadata => {
+        Domain::Wallets => {
             cs.wallet_metadata = Some(WalletMetadataEntry {
                 network: Network::Testnet,
                 wallet_group_id: [0; 32],
@@ -199,7 +199,7 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
             // land in `account_registrations` rows (dashpay/platform#4113).
             cs.provider_key_account_registrations = vec![provider_operator_entry()];
         }
-        Domain::AccountAddressPools => {
+        Domain::CoreAddressPool => {
             cs.account_address_pools = vec![AccountAddressPoolEntry {
                 account_type: std_account(),
                 pool_type: AddressPoolType::External,
@@ -434,7 +434,7 @@ fn tc_b_011_bump_rides_the_flush() {
         )
         .unwrap();
     assert!(pool_rows >= 1, "pool row must be present");
-    let seq = versions::read_seq(&conn, &w, Domain::AccountAddressPools).unwrap();
+    let seq = versions::read_seq(&conn, &w, Domain::CoreAddressPool).unwrap();
     assert_eq!(seq, 1, "the domain's seq bumped in the same flush");
     // No unrelated domain bumped.
     assert_eq!(versions::read_seq(&conn, &w, Domain::Core).unwrap(), 0);
@@ -448,14 +448,11 @@ fn repeated_flush_increments_seq() {
     ensure_wallet_meta(&persister, &w);
     for _ in 0..2 {
         persister
-            .store(w, single_domain_changeset(Domain::WalletMetadata))
+            .store(w, single_domain_changeset(Domain::Wallets))
             .unwrap();
     }
     let conn = persister.lock_conn_for_test();
-    assert_eq!(
-        versions::read_seq(&conn, &w, Domain::WalletMetadata).unwrap(),
-        2
-    );
+    assert_eq!(versions::read_seq(&conn, &w, Domain::Wallets).unwrap(), 2);
 }
 
 /// TC-B-012 — atomicity: a flush that fails partway persists neither the
@@ -521,17 +518,17 @@ fn tc_b_014_seq_saturates_at_i64_max() {
         let conn = persister.lock_conn_for_test();
         conn.execute(
             "INSERT INTO meta_data_versions (wallet_id, domain, seq) \
-             VALUES (?1, 'wallet_metadata', 9223372036854775807)",
+             VALUES (?1, 'wallets', 9223372036854775807)",
             rusqlite::params![w.as_slice()],
         )
         .unwrap();
     }
     persister
-        .store(w, single_domain_changeset(Domain::WalletMetadata))
+        .store(w, single_domain_changeset(Domain::Wallets))
         .unwrap();
     let conn = persister.lock_conn_for_test();
     assert_eq!(
-        versions::read_seq(&conn, &w, Domain::WalletMetadata).unwrap(),
+        versions::read_seq(&conn, &w, Domain::Wallets).unwrap(),
         i64::MAX,
         "seq must saturate, never wrap"
     );

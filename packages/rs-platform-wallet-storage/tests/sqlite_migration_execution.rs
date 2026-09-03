@@ -227,6 +227,49 @@ fn tc_b_031_populated_v001_migration_preserves_data() {
     );
 }
 
+#[test]
+fn v016_renames_persisted_domain_labels() {
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("pre-v016.db");
+    let wallet_id = wid(0xC4);
+    {
+        let mut conn = Connection::open(&path).unwrap();
+        mig::runner()
+            .set_target(refinery::Target::Version(15))
+            .run(&mut conn)
+            .unwrap();
+        conn.execute(
+            "INSERT INTO meta_data_versions (wallet_id, domain, seq) VALUES \
+             (?1, 'wallet_metadata', 7), (?1, 'account_address_pools', 11)",
+            rusqlite::params![wallet_id.as_slice()],
+        )
+        .unwrap();
+    }
+
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let conn = persister.lock_conn_for_test();
+    let mut stmt = conn
+        .prepare(
+            "SELECT domain, seq FROM meta_data_versions \
+             WHERE wallet_id = ?1 ORDER BY domain",
+        )
+        .unwrap();
+    let rows = stmt
+        .query_map(rusqlite::params![wallet_id.as_slice()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            ("core_address_pool".to_string(), 11),
+            ("wallets".to_string(), 7)
+        ]
+    );
+}
+
 /// V009 must preserve a legacy confirmed UTXO whose transaction record was
 /// never persisted and whose confirmation height therefore lives only on the
 /// pre-V009 `core_utxos` row.
