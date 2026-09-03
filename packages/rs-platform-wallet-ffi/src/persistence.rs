@@ -1120,10 +1120,12 @@ pub struct FFIPersister {
     /// Additive callbacks negotiated outside the legacy unsized vtable.
     dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
     /// `Some` only when the host's extension `struct_size` proved the slot
-    /// was allocated (see `persistence_extension_sweeps_callback` in
-    /// `manager.rs`) — which is also what makes it a real structural
-    /// attestation of `CORE_SWEEP_REMOVAL`, unlike the legacy changeset
-    /// callback whose unchanged signature proves nothing.
+    /// was allocated — read by `persistence_extension_callbacks` in
+    /// `manager.rs` through the `negotiated_extension_slot!` macro, which
+    /// is the single gate authority for every negotiated slot. That proof
+    /// is also what makes this a real structural attestation of
+    /// `CORE_SWEEP_REMOVAL`, unlike the legacy changeset callback whose
+    /// unchanged signature proves nothing.
     wallet_changeset_sweeps_callback: Option<PersistWalletChangesetSweepsFn>,
     /// `Some` only when the host's extension `struct_size` proved the slot
     /// was allocated. Carries the numeric chainlock height a non-Rust host
