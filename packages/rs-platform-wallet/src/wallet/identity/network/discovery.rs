@@ -643,11 +643,10 @@ impl IdentityWallet {
     /// survival across a restart, and it must not be allowed to fail the scan
     /// that just succeeded.
     ///
-    /// Best-effort is not one-shot, though. A backend that is merely busy
-    /// would otherwise cost the verdict its durability outright, which is the
-    /// gap the verdict exists to close (dashpay/platform#4365), so a transient
-    /// failure is ridden out on the same bounded policy the registration path
-    /// uses before the outcome is swallowed.
+    /// `store` is a single attempt — not retried here, per the caller-decides
+    /// persister-error policy — so a merely busy backend (dashpay/platform#4365)
+    /// costs the verdict its durability this launch; the outcome is logged and
+    /// swallowed either way.
     async fn publish_scan_verdict(
         &self,
         wallet_id: crate::wallet::platform_wallet::WalletId,
@@ -677,23 +676,14 @@ impl IdentityWallet {
             identity_scan_state: Some(recorded),
             ..Default::default()
         };
-        // On a transient `store` failure the persister keeps the changeset
-        // buffered (its documented contract), so the retries re-drive that
-        // same write through `flush` rather than handing it over twice.
-        let mut changeset_slot = Some(changeset);
-        let outcome = crate::manager::retry_transient(|| match changeset_slot.take() {
-            Some(cs) => self.persister.store(cs),
-            None => self.persister.flush(),
-        })
-        .await;
-        if let Err(e) = outcome {
-            tracing::error!(
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 transient = e.is_transient(),
                 error = %e,
-                "identity-scan verdict could not be persisted after retries; a partial scan \
-                 will not be retried after a restart, so an identity at an unanswered index \
-                 stays hidden until a later scan publishes a verdict that lands"
+                "identity-scan verdict could not be persisted; a partial scan will not be \
+                 retried after a restart, so an identity at an unanswered index stays hidden \
+                 until a later scan publishes a verdict that lands"
             );
         }
     }

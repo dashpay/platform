@@ -650,7 +650,7 @@ impl crate::changeset::PlatformWalletPersistence for NoopTestPersister {
     }
 }
 
-struct NoopTestEventHandler;
+pub(crate) struct NoopTestEventHandler;
 impl crate::events::EventHandler for NoopTestEventHandler {}
 impl crate::events::PlatformEventHandler for NoopTestEventHandler {}
 

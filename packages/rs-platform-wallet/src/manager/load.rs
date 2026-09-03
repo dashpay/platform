@@ -10,7 +10,7 @@ use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
-use super::{wallet_lifecycle::retry_transient, PlatformWalletManager};
+use super::{retry_transient_load, PlatformWalletManager};
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Load the full [`ClientStartState`] from the configured persister
@@ -30,7 +30,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WalletManager`]: key_wallet_manager::WalletManager
     pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
-        let start_state = match retry_transient(|| self.persister.load()).await {
+        let persister = Arc::clone(&self.persister);
+        let start_state = match retry_transient_load(move || persister.load()).await {
             Ok(state) => state,
             Err(e) => {
                 // Preserve the typed source chain (Debug carries the real

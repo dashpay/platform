@@ -990,24 +990,15 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             identity_scan_state: Some(recorded),
             ..Default::default()
         };
-        // Transient failures are ridden out on the registration path's bounded
-        // policy; the buffer preserves the changeset, so the retries re-drive
-        // it through `flush`. The final outcome is still swallowed — an
-        // abandoned scan must not turn a shutdown into an error.
-        let mut changeset_slot = Some(changeset);
-        let outcome = crate::manager::retry_transient(|| match changeset_slot.take() {
-            Some(cs) => self.persister.store(*wallet_id, cs),
-            None => self.persister.flush(*wallet_id),
-        })
-        .await;
-        if let Err(e) = outcome {
-            tracing::error!(
+        // Single attempt, not retried — the outcome is logged and swallowed
+        // either way: an abandoned scan must not turn a shutdown into an error.
+        if let Err(e) = self.persister.store(*wallet_id, changeset) {
+            tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 transient = e.is_transient(),
                 error = %e,
-                "abandoned scan's verdict could not be persisted after retries; the next \
-                 launch will take the warm shortcut over an identity set nothing proved \
-                 complete"
+                "abandoned scan's verdict could not be persisted; the next launch will take \
+                 the warm shortcut over an identity set nothing proved complete"
             );
         }
     }

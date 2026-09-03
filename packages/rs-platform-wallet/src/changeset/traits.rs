@@ -40,20 +40,19 @@ pub struct ListedCoreTxid {
 /// kind MUST force every consumer match to update explicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PersistenceErrorKind {
-    /// The persister reports the write was not committed and the
-    /// buffered state is preserved (e.g. `SQLITE_BUSY`, `SQLITE_FULL`,
-    /// `SQLITE_IOERR`, `SQLITE_NOMEM`). Callers MAY retry with
-    /// exponential backoff.
+    /// The backend reports a retryable condition (e.g. `SQLITE_BUSY`,
+    /// `SQLITE_FULL`, `SQLITE_IOERR`, `SQLITE_NOMEM`). Whether and how
+    /// to retry is the caller's decision — this kind imposes no
+    /// obligation on the implementor beyond honest classification.
     Transient,
     /// The persister reports an unrecoverable failure (schema
     /// corruption, logic bug, I/O error not covered by the transient
-    /// class). Callers MUST NOT retry — the buffered changeset is
-    /// gone and the same call will keep failing.
+    /// class). Not retryable — the same call will keep failing.
     Fatal,
     /// SQL constraint / foreign-key / integrity violation. Distinct
     /// from `Fatal` so callers can distinguish "your data is wrong"
     /// (caller bug) from "the storage engine is unhappy" (operator /
-    /// infrastructure problem). Treated as fatal for retry purposes.
+    /// infrastructure problem). Not retryable.
     Constraint,
 }
 
@@ -266,19 +265,6 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// wallet accessor (readers and writers) for its duration. Keep the
     /// per-call work bounded; if the backend does inline I/O (see the type
     /// doc), size it accordingly.
-    ///
-    /// # Transient-failure retry contract
-    ///
-    /// An implementation that returns a [`PersistenceError`] classified
-    /// [`PersistenceErrorKind::Transient`] from `store` **MUST** have already
-    /// buffered/preserved the changeset so that a subsequent bare
-    /// [`flush`](Self::flush) — with no re-supplied changeset — completes the
-    /// write (mirroring `flush`'s own transient contract). This is what lets a
-    /// caller retry a transient `store` failure via `flush` alone; re-calling
-    /// `store` with the same changeset would double-merge it. An
-    /// implementation that cannot preserve the changeset on failure MUST
-    /// classify that failure [`PersistenceErrorKind::Fatal`] (or
-    /// [`Constraint`](PersistenceErrorKind::Constraint)), never `Transient`.
     fn store(
         &self,
         wallet_id: WalletId,
