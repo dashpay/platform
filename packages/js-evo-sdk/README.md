@@ -17,6 +17,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Ranked queries](#ranked-queries)
 - [Document references (`refersTo`)](#document-references-refersto)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
+- [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -222,6 +223,54 @@ const next = await sdk.documents.chained({
 ```
 
 The inner query must target an indexOnly document type and resolve to an index carrying `joinProperty`, and `joinProperty` must declare a same-contract `refersTo: permanentDocument` targeting `outerDocumentType`. `innerLimit` is required — it bounds the derived outer fetch, so there is no server-default fallback. There are no outer-side clauses by design; filter `outerDocuments` locally. `sdk.documents.chainedWithProof(...)` returns the same result with the metadata and proof envelope attached.
+
+## Composite queries (a page plus its sub-queries)
+
+A **composite query** answers a page and everything a UI needs to render it in ONE verified round trip: the page documents, plus up to ten sub-queries whose `IN` clause the node derives from the proven page (or from an earlier `documents` sub-query). The request never names the derived values. Four sub-query shapes exist:
+
+- a **by-id join** (`bind.field: '$id'`): the documents a page property refers to (the property must declare `refersTo: permanentDocument` targeting the sub-query's type, so a missing document fails verification);
+- an **indexed lookup** (`bind.field` an indexed property or `$ownerId`): documents keyed by a page value, in this or any other contract, with a `limit` on the rows it returns in total unless the index already bounds them (a unique index, or an indexOnly terminal with every prefix fixed);
+- a **count** (`kind: 'counts'`): one count per page value from a `countable` index covering the fixed clauses plus the bound field;
+- a **sibling** (no `bind`): an independent documents query proven under the same root.
+
+The node returns everything under ONE merged proof, a single quorum-signed state root by construction, and the SDK bootstraps the page from the proof, re-derives every sub-query itself and verifies the whole composition: the node cannot substitute, omit, or inject a sub-result.
+
+```ts
+// A feed page: the dash posts, their like counts, the posts they quote,
+// their authors' profiles, and which of them I liked.
+const page = await sdk.documents.composite({
+  dataContractId: YAPPR,
+  documentType: 'post',
+  where: [['hashtag', '==', 'dash']],
+  orderBy: [['$createdAt', 'desc']],
+  limit: 20,
+  subQueries: [
+    { documentType: 'like', kind: 'counts', where: [['hashtag', '==', 'dash']], bind: { sourceProperty: '$id', field: 'postId' } },
+    { documentType: 'post', bind: { sourceProperty: 'quotedPostId', field: '$id' } },
+    { dataContractId: DASHPAY, documentType: 'profile', bind: { sourceProperty: '$ownerId', field: '$ownerId' } },
+    { documentType: 'like', where: [['$ownerId', '==', me]], bind: { sourceProperty: '$id', field: 'postId' } },
+  ],
+});
+
+const [likeCounts, quotedPosts, profiles, myLikes] = page.subResults;
+for (const post of page.pageDocuments) {
+  const likes = likeCounts.kind === 'counts' ? likeCounts.counts.get(post.id.toBase58()) ?? 0n : 0n;
+  console.log(post.properties.message, likes);
+}
+
+// Next page: continue past the last proven page document.
+const cursor = page.pageDocuments.at(-1)?.createdAt;
+const next = await sdk.documents.composite({
+  dataContractId: YAPPR,
+  documentType: 'post',
+  where: [['hashtag', '==', 'dash'], ['$createdAt', '<', cursor]],
+  orderBy: [['$createdAt', 'desc']],
+  limit: 20,
+  subQueries: [/* the same */],
+});
+```
+
+`limit` on the page is required and bounds every derived clause (at most 100 values reach a sub-query). A sub-query may bind the page (`bind.source: 'page'`, the default) or an earlier `documents` sub-query by index (`bind.source: 1`), so quoted posts can in turn pull their authors' profiles. Every sub-query walks in the page's direction: leave a lookup's ordering out and it inherits that direction, while an ordering that disagrees with the page is refused. Sub-results come back in request order as `{ kind: 'documents', documents }` (a join in first-appearance order of the page's ids, a lookup or sibling in query order) or `{ kind: 'counts', counts }` (a `Map` keyed by the bound value's base58 identifier; a value with no entry counts zero). There is no cursor on this surface; paginate with a range clause on the page's ordering property. `sdk.documents.compositeWithProof(...)` returns the same result with the metadata and proof envelope attached.
 
 ## Contributing
 
