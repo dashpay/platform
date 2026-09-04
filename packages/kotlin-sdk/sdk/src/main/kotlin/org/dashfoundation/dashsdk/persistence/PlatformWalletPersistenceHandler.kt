@@ -96,6 +96,15 @@ import java.util.concurrent.Executors
  * `if !inChangeset { save() }` writers) commit immediately in their own
  * transaction when no round is open.
  *
+ * ## Load failure policy (mirrors the Swift `errored` return)
+ *
+ * A failed load FAILS the native load: the Room exception crosses into
+ * the trampoline, which returns a non-zero FFI code that reaches the host
+ * as [DashSdkError.PlatformWallet.PersisterLoadFatal]. Degrading to an
+ * empty result would report a successful restore of nothing, which Rust
+ * reads as a fresh device — a store fault would masquerade as data loss.
+ * [onGetCoreTxRecord] is the sole exception, by FFI contract; see its doc.
+ *
  * @param database the Room database to persist into.
  * @param dispatcher single-thread dispatcher confining all callback work;
  *   `null` (the production default) creates a dedicated owned executor
@@ -304,7 +313,7 @@ class PlatformWalletPersistenceHandler(
     /**
      * Serializes every persistence callback against compound external
      * sequences (wallet deletion's snapshot → secret delete → cascade).
-     * Each [guarded]/[guardedLoad] callback acquires it AT ENTRY on the
+     * Each [guarded]/[loadOrThrow] callback acquires it AT ENTRY on the
      * JNI caller thread — before any hop onto [dispatcher] — so a parked
      * callback never holds the persistence thread, and an exclusion
      * holder may safely run dispatcher-confined work. Callbacks fire
@@ -1952,7 +1961,7 @@ class PlatformWalletPersistenceHandler(
         }
     }
 
-    override fun onLoadWalletList(): Array<WalletRestoreData> = guardedLoad(emptyArray()) {
+    override fun onLoadWalletList(): Array<WalletRestoreData> = loadOrThrow {
         runBlockingResult {
             healIdentityIsLocalFlags()
             // Restorable = wallet with ≥1 account carrying an xpub,
@@ -2067,7 +2076,7 @@ class PlatformWalletPersistenceHandler(
         }
     }
 
-    override fun onLoadShieldedNotes(): Array<ShieldedNoteData> = guardedLoad(emptyArray()) {
+    override fun onLoadShieldedNotes(): Array<ShieldedNoteData> = loadOrThrow {
         runBlockingResult {
             // Shielded rows carry no wallet FK — read the whole table
             // directly (mirror of the Swift loader's fetch-all).
@@ -2088,7 +2097,7 @@ class PlatformWalletPersistenceHandler(
     }
 
     override fun onLoadShieldedOutgoingNotes(): Array<ShieldedOutgoingNoteData> =
-        guardedLoad(emptyArray()) {
+        loadOrThrow {
             runBlockingResult {
                 database.shieldedDao().getAllOutgoingNotes()
                     .filter { it.recipient.size == 43 }
@@ -2107,7 +2116,7 @@ class PlatformWalletPersistenceHandler(
         }
 
     override fun onLoadShieldedSyncStates(): Array<ShieldedSyncStateData> =
-        guardedLoad(emptyArray()) {
+        loadOrThrow {
             runBlockingResult {
                 database.shieldedDao().getAllSyncStates().map { s ->
                     ShieldedSyncStateData(
@@ -2119,7 +2128,7 @@ class PlatformWalletPersistenceHandler(
             }
         }
 
-    override fun onLoadShieldedActivity(): Array<ShieldedActivityData> = guardedLoad(emptyArray()) {
+    override fun onLoadShieldedActivity(): Array<ShieldedActivityData> = loadOrThrow {
         runBlockingResult {
             database.shieldedDao().getAllActivity().map { a ->
                 ShieldedActivityData(
@@ -2147,34 +2156,38 @@ class PlatformWalletPersistenceHandler(
     }
 
     /**
-     * Unlike best-effort cache loaders, a malformed persisted viewing key
-     * must fail the native load. Returning an empty array would masquerade as
-     * "no persisted key" and silently fall back to mnemonic resolution.
-     * Therefore validation/Room exceptions deliberately cross this virtual
-     * method into the JNI trampoline, which returns a non-zero FFI load code.
-     * The trampoline owns and frees its copied native restore array.
+     * A malformed persisted viewing key must fail the native load: an
+     * empty array would masquerade as "no persisted key" and silently
+     * fall back to mnemonic resolution. The trampoline owns and frees
+     * its copied native restore array.
      */
     override fun onLoadShieldedViewingKeys(): Array<ShieldedViewingKeyData> =
-        runBlocking {
-            callbackExclusion.withLock {
-                runBlockingResult {
-                    val keys = network?.let { lockedNetwork ->
-                        database.walletDao().getByNetwork(lockedNetwork.ffiValue)
-                            .flatMap { wallet ->
-                                database.shieldedDao().getViewingKeysByWallet(wallet.walletId)
-                            }
-                    } ?: database.shieldedDao().getAllViewingKeys()
-                    keys.map { key ->
-                        ShieldedViewingKeyData(
-                            walletId = key.walletId,
-                            accountIndex = key.accountIndex,
-                            fvkBytes = key.fvkBytes,
-                        )
-                    }.toTypedArray()
-                }
+        loadOrThrow {
+            runBlockingResult {
+                val keys = network?.let { lockedNetwork ->
+                    database.walletDao().getByNetwork(lockedNetwork.ffiValue)
+                        .flatMap { wallet ->
+                            database.shieldedDao().getViewingKeysByWallet(wallet.walletId)
+                        }
+                } ?: database.shieldedDao().getAllViewingKeys()
+                keys.map { key ->
+                    ShieldedViewingKeyData(
+                        walletId = key.walletId,
+                        accountIndex = key.accountIndex,
+                        fvkBytes = key.fvkBytes,
+                    )
+                }.toTypedArray()
             }
         }
 
+    /**
+     * The one load slot allowed to contain its own failure: the FFI
+     * defines a non-zero return here as a transient miss surfaced to the
+     * asset-lock proof flow as `None`, which is exactly what a `null`
+     * answer produces. Both paths fall through to the SPV-event wait, so
+     * reporting a miss hides nothing (see `on_get_core_tx_record_fn` in
+     * `rs-platform-wallet-ffi/src/persistence.rs`).
+     */
     override fun onGetCoreTxRecord(walletId: ByteArray, txid: ByteArray): CoreTxRecordData? =
         guardedLoad(null) {
             runBlockingResult {
@@ -2431,8 +2444,7 @@ class PlatformWalletPersistenceHandler(
 
     /**
      * Whether the transaction [spendingTxid] funds an asset lock the
-     * network has already locked (`InstantSendLocked` or beyond), or
-     * `null` when the asset-lock table could not be read.
+     * network has already locked (`InstantSendLocked` or beyond).
      *
      * Keyed on the funding TXID alone, never on a single outpoint:
      * DIP-0027 lets one funding transaction carry several credit
@@ -2441,23 +2453,17 @@ class PlatformWalletPersistenceHandler(
      * any vout. Finality belongs to the transaction, so any of its locks
      * reaching InstantSendLocked means the inputs are gone.
      *
-     * `null` is a deliberate third answer, not a swallowed error. This
-     * runs inside `guardedLoad(emptyArray())` and the Android load
-     * surface carries no error channel, so an escaping read failure would
-     * hand Rust a SUCCESSFUL EMPTY restore for every wallet — the
-     * strongest possible "this device has no coins". The fault is
-     * therefore contained to the single candidate it concerns and every
-     * unrelated wallet, account and TXO still restores.
+     * An unreadable asset-lock table fails the whole load rather than
+     * dropping the candidate: silently withholding an output the guard
+     * could not judge under-reports the wallet's funds, which is the
+     * apparent-data-loss this load path must never produce. Mirror of
+     * the Swift loader's `finalizedAssetLockFundingTxids` bail.
      */
-    private suspend fun spendByFinalizedAssetLock(spendingTxid: ByteArray): Boolean? =
-        try {
-            val status = database.assetLockDao()
-                .maxStatusForTxid(spendingTxid.reversedArray().toHex())
-            status != null && status >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED
-        } catch (t: Throwable) {
-            Log.w(TAG, "load: asset-lock finality lookup failed; dropping the candidate UTXO", t)
-            null
-        }
+    private suspend fun spendByFinalizedAssetLock(spendingTxid: ByteArray): Boolean {
+        val status = database.assetLockDao()
+            .maxStatusForTxid(spendingTxid.reversedArray().toHex())
+        return status != null && status >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED
+    }
 
     /**
      * Assemble the [UtxoRestoreData] rows for one wallet: every unspent
@@ -2513,30 +2519,18 @@ class PlatformWalletPersistenceHandler(
                 // finality signal that provably arrives; from
                 // InstantSendLocked on this output is gone. Skip it, and
                 // heal the flag so isSpent-based readers stop counting it.
-                when (spendByFinalizedAssetLock(spendingTxid)) {
-                    // Provably final. Heal opportunistically: excluding
-                    // the row from THIS restore does not depend on the
-                    // repair becoming durable, and the whole body of
-                    // `onLoadWalletList` runs under
-                    // `guardedLoad(emptyArray())` — an escaping write
-                    // failure would discard every wallet's restore set
+                if (spendByFinalizedAssetLock(spendingTxid)) {
+                    // Heal opportunistically: excluding the row from THIS
+                    // restore does not depend on the repair becoming
+                    // durable, so a failed write must not fail the load
                     // over one unhealed row. Log and carry on instead,
                     // the way `scrubAliases` treats its cleanup.
-                    true -> {
-                        try {
-                            database.txoDao().markSpentByOutpoint(txo.outpoint, now())
-                        } catch (t: Throwable) {
-                            Log.w(TAG, "load: failed to heal asset-lock-consumed TXO", t)
-                        }
-                        continue
+                    try {
+                        database.txoDao().markSpentByOutpoint(txo.outpoint, now())
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "load: failed to heal asset-lock-consumed TXO", t)
                     }
-                    // Unreadable (see the helper): drop this one candidate
-                    // and never heal it. Under-reporting one output for a
-                    // launch is recoverable; handing a consumed output back
-                    // as spendable is what this guard exists to stop.
-                    null -> continue
-                    // Demonstrably not final — keep it in the restore set.
-                    false -> Unit
+                    continue
                 }
             }
             val account = txo.accountId?.let { database.accountDao().getById(it) }
@@ -3327,15 +3321,41 @@ class PlatformWalletPersistenceHandler(
         }
 
     /**
-     * Load-callback variant: on failure log and return [fallback]. Takes
-     * [callbackExclusion] like [guarded] — loads read the same state the
-     * deletion sequence mutates.
+     * Load-callback variant: log the failure and let it cross the JNI
+     * boundary, where the trampoline turns it into a non-zero FFI load
+     * code (surfacing as [DashSdkError.PlatformWallet.PersisterLoadFatal]).
+     * Takes [callbackExclusion] like [guarded] — loads read the same state
+     * the deletion sequence mutates.
+     *
+     * The log happens here because the trampoline only clears the pending
+     * exception; nothing downstream can still read its message or stack.
+     *
+     * Degrading to an empty result instead would report a successful
+     * restore of nothing, which Rust reads as a fresh device — a store
+     * fault would masquerade as data loss. Mirror of the Swift handler's
+     * `errored` return.
+     */
+    private fun <T> loadOrThrow(body: () -> T): T =
+        try {
+            runBlocking { callbackExclusion.withLock { body() } }
+        } catch (t: Throwable) {
+            Log.e(TAG, "persistence load callback failed; failing the native load", t)
+            throw t
+        }
+
+    /**
+     * Load-callback variant for the ONE slot whose failure and whose
+     * empty answer are equivalent by contract: [onGetCoreTxRecord]. The
+     * FFI documents a non-zero return there as a transient backend miss
+     * surfaced to the proof flow as `None` — the same outcome [fallback]
+     * produces — so containing the fault here hides nothing. Every other
+     * load uses [loadOrThrow].
      */
     private fun <T> guardedLoad(fallback: T, body: () -> T): T =
         try {
             runBlocking { callbackExclusion.withLock { body() } }
         } catch (t: Throwable) {
-            Log.e(TAG, "persistence load callback failed", t)
+            Log.e(TAG, "persistence record lookup failed; reporting a miss", t)
             fallback
         }
 

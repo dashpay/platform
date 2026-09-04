@@ -50,6 +50,9 @@ package org.dashfoundation.dashsdk.ffi
  *   `Int` to put one in, so every load failure — a thrown exception
  *   included — reaches Rust as a fatal, unclassified error, and no load
  *   on this binding can report itself as transient or constraint-class.
+ *   A subclass must therefore let a failed load THROW: returning an empty
+ *   array reports a successful restore of nothing, which Rust reads as a
+ *   fresh device, turning a store fault into apparent data loss.
  *
  * ## Threading
  *

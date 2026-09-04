@@ -217,10 +217,6 @@ class DashSdkErrorTest {
         )
     }
 
-    // TODO: not compiled or run locally — no Kotlin/Gradle toolchain in the
-    // authoring environment. CI is the first execution of the two persister
-    // tests below and of the `DashSdkError.PlatformWallet.Persister*` types
-    // they cover.
     @Test
     fun persisterCodes49Through54MapTypedWithCorrectRetryability() {
         // The whole point of the persister block: a host must be able to tell
