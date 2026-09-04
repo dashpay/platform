@@ -817,6 +817,11 @@ fn build_fresh_vault(
 /// the default ever lowered — permanently unopenable. Do not narrow this to
 /// the target; the ceiling is the DoS control, the target is only what NEW
 /// vaults get.
+///
+/// The Tier-2 envelope DOES clamp its own reads
+/// (`KdfParams::enforce_read_ceiling`); do not unify the two. A vault header
+/// is a local artefact its owner may harden at will, whereas an envelope's
+/// cost is paid on every read by whoever holds the object password.
 fn derive_and_verify(
     vault: &Vault,
     passphrase: &SecretString,

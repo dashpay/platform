@@ -31,6 +31,35 @@ pub(crate) const ARGON2_MAX_T: u32 = 16;
 pub(crate) const ARGON2_DEFAULT_M_KIB: u32 = 65_536;
 pub(crate) const ARGON2_DEFAULT_T: u32 = 3;
 
+/// Tier-2 envelope per-read ceiling — the strongest header
+/// [`KdfParams::enforce_read_ceiling`] will derive under. **Wire-format
+/// constants, not tunables**: a protected secret whose header this build
+/// refuses is unrecoverable, so these may only ever be RAISED. The
+/// `ARGON2_DEFAULT_*` write target is an ordinary tunable and must stay
+/// at or below them.
+pub(crate) const ARGON2_READ_MAX_M_KIB: u32 = 65_536;
+pub(crate) const ARGON2_READ_MAX_T: u32 = 3;
+
+/// The read ceiling must contain the write target, and both must sit
+/// inside the [`KdfParams::enforce_bounds`] band. Violating the first
+/// bricks reads in one of two directions, so it breaks the BUILD: unlike
+/// a runtime guard there is no legitimate configuration in which it
+/// fails. If this fires, RAISE the read ceiling — never delete it.
+const _: () = {
+    assert!(
+        ARGON2_DEFAULT_M_KIB <= ARGON2_READ_MAX_M_KIB && ARGON2_DEFAULT_T <= ARGON2_READ_MAX_T,
+        "Argon2 write target exceeds the Tier-2 read ceiling: raise ARGON2_READ_MAX_* to match, \
+         or every freshly written envelope is refused by the build that wrote it"
+    );
+    assert!(
+        ARGON2_READ_MAX_M_KIB >= ARGON2_MIN_M_KIB
+            && ARGON2_READ_MAX_M_KIB <= ARGON2_MAX_M_KIB
+            && ARGON2_READ_MAX_T >= ARGON2_MIN_T
+            && ARGON2_READ_MAX_T <= ARGON2_MAX_T,
+        "the Tier-2 read ceiling must sit inside the enforce_bounds band"
+    );
+};
+
 /// CSPRNG salt width (≥16 required; we use 32).
 pub(crate) const SALT_LEN: usize = 32;
 /// XChaCha20-Poly1305 nonce width.
@@ -126,6 +155,25 @@ impl KdfParams {
             || self.m_kib > ARGON2_MAX_M_KIB
             || self.t > ARGON2_MAX_T
         {
+            return Err(SecretStoreError::KdfFailure);
+        }
+        Ok(())
+    }
+
+    /// Tier-2 envelope read gate, tighter than [`enforce_bounds`]: bounds a
+    /// forged header at the shipped cost instead of the 1 GiB / 16-pass DoS
+    /// band. Deliberately asymmetric with the FILE VAULT header, which
+    /// `file::derive_and_verify` accepts across the whole band — a vault is a
+    /// local artefact its owner may harden at will, whereas an envelope's
+    /// cost is paid on every read by whoever holds the object password.
+    ///
+    /// Gated on the wire-stable `ARGON2_READ_MAX_*` rather than
+    /// `default_target()` so lowering the shipped write target can never
+    /// orphan an already-enrolled secret.
+    ///
+    /// [`enforce_bounds`]: KdfParams::enforce_bounds
+    pub(crate) fn enforce_read_ceiling(&self) -> Result<(), SecretStoreError> {
+        if self.m_kib > ARGON2_READ_MAX_M_KIB || self.t > ARGON2_READ_MAX_T {
             return Err(SecretStoreError::KdfFailure);
         }
         Ok(())
@@ -315,6 +363,39 @@ mod tests {
             "caller-owned Argon2 memory changed the derived key"
         );
         reference.zeroize();
+    }
+
+    /// The Tier-2 read ceiling is its own wire-format bound, not a mirror
+    /// of the shipped write target: exactly-at-ceiling derives, one step
+    /// over on either axis is refused.
+    #[test]
+    fn read_ceiling_accepts_its_bound_and_refuses_above_it() {
+        let at_ceiling = KdfParams {
+            m_kib: ARGON2_READ_MAX_M_KIB,
+            t: ARGON2_READ_MAX_T,
+            ..KdfParams::default_target()
+        };
+        assert!(at_ceiling.enforce_read_ceiling().is_ok());
+        assert!(matches!(
+            KdfParams {
+                m_kib: ARGON2_READ_MAX_M_KIB + 1,
+                ..at_ceiling
+            }
+            .enforce_read_ceiling(),
+            Err(SecretStoreError::KdfFailure)
+        ));
+        assert!(matches!(
+            KdfParams {
+                t: ARGON2_READ_MAX_T + 1,
+                ..at_ceiling
+            }
+            .enforce_read_ceiling(),
+            Err(SecretStoreError::KdfFailure)
+        ));
+        // No build may ship a write target its own read path refuses; the
+        // const assert enforces it, this pins the behaviour.
+        assert!(KdfParams::default_target().enforce_read_ceiling().is_ok());
+        assert!(KdfParams::floor_target().enforce_read_ceiling().is_ok());
     }
 
     /// The block matrix is key-equivalent state, so `ScopedBlocks` must
