@@ -293,6 +293,12 @@ pub(crate) mod index_only_synthesis;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_chained_document_query;
 
+/// Composite document queries — a page plus sub-queries derived from its
+/// proven results (joins, lookups, counts), proven as one merged proof
+/// against one state root. See the module docs.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod drive_composite_document_query;
+
 /// Joint count-and-sum no-prove executor surface — backs the AVG
 /// no-prove path's unified single-walk dispatch. See its module
 /// docstring for the perf / atomicity contract. Server-only because
