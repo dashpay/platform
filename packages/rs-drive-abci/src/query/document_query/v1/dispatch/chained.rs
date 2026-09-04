@@ -348,6 +348,7 @@ mod tests {
             group_by: Vec::new(),
             having: Vec::new(),
             offset: None,
+            sub_queries: Vec::new(),
             chained: Some(ChainedJoin {
                 join_property: "postId".to_string(),
                 outer_document_type: "post".to_string(),

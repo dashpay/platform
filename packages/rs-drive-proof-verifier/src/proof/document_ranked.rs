@@ -227,6 +227,7 @@ pub(crate) fn result_variant_name(
             Some(result_data::Variant::Averages(_)) => "a ResultData.averages payload",
             Some(result_data::Variant::Ranked(_)) => "a ResultData.ranked payload",
             Some(result_data::Variant::Chained(_)) => "a ResultData.chained payload",
+            Some(result_data::Variant::Composite(_)) => "a ResultData.composite payload",
         },
     }
 }

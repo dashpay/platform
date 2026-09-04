@@ -341,6 +341,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         // absent (same pattern DocumentQuery's own serde defaults follow
         // for pre-SQL-surface fixtures).
         .field_attribute("GetDocumentsRequestV1.chained", SERDE_DEFAULT)
+        .field_attribute("GetDocumentsRequestV1.sub_queries", SERDE_DEFAULT)
         // Same compat rule for the typed IN_TIME_RANGE operand: mock
         // vectors captured while the operand still rode `value` carry no
         // `time_range` key.
