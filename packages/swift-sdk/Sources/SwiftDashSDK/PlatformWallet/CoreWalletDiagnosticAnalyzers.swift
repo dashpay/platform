@@ -192,13 +192,13 @@ enum CoreWalletDiagnosticAnalyzer {
             case invalidAccountType = "invalid_account_type"
         }
 
-        let txo: CoreWalletDatabaseDiagnosticSnapshot.Txo
+        /// Only the fields required by the restore summary. Keeping this
+        /// intentionally small prevents the launch-time callback from doing
+        /// any diagnostic outpoint/script materialization or fingerprinting.
+        let amount: UInt64
         let accountType: UInt32?
         let standardTag: UInt8?
         let rejectionReason: RejectionReason?
-        let isCoinbase: Bool
-        let isConfirmed: Bool
-        let isInstantLocked: Bool
     }
 
     struct RestoreBufferSummary: Sendable {
@@ -237,23 +237,23 @@ enum CoreWalletDiagnosticAnalyzer {
         let emittedCoinJoin = emittedCandidates.filter { $0.accountType == 1 }
         return RestoreBufferSummary(
             candidateCount: candidates.count,
-            candidateValueDuffs: diagnosticSaturatingSum(candidates.map(\.txo.amount)),
+            candidateValueDuffs: diagnosticSaturatingSum(candidates.map(\.amount)),
             candidateBip44Count: candidateBip44.count,
             candidateBip44ValueDuffs: diagnosticSaturatingSum(
-                candidateBip44.map(\.txo.amount)
+                candidateBip44.map(\.amount)
             ),
             candidateCoinJoinCount: candidateCoinJoin.count,
             candidateCoinJoinValueDuffs: diagnosticSaturatingSum(
-                candidateCoinJoin.map(\.txo.amount)
+                candidateCoinJoin.map(\.amount)
             ),
             builtCount: emittedCount,
             emittedCandidates: emittedCandidates,
-            emittedValueDuffs: diagnosticSaturatingSum(emittedCandidates.map(\.txo.amount)),
+            emittedValueDuffs: diagnosticSaturatingSum(emittedCandidates.map(\.amount)),
             emittedBip44Count: emittedBip44.count,
-            emittedBip44ValueDuffs: diagnosticSaturatingSum(emittedBip44.map(\.txo.amount)),
+            emittedBip44ValueDuffs: diagnosticSaturatingSum(emittedBip44.map(\.amount)),
             emittedCoinJoinCount: emittedCoinJoin.count,
             emittedCoinJoinValueDuffs: diagnosticSaturatingSum(
-                emittedCoinJoin.map(\.txo.amount)
+                emittedCoinJoin.map(\.amount)
             ),
             missingAccountCount: candidates.filter {
                 $0.rejectionReason == .missingAccount

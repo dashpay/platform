@@ -204,23 +204,17 @@ final class CoreWalletDiagnosticAnalyzerTests: XCTestCase {
         XCTAssertEqual(anomalies.count(reason: "missing_account"), 1)
 
         let rejected = CoreWalletDiagnosticAnalyzer.RestoreCandidate(
-            txo: missingAccountTxo,
+            amount: missingAccountTxo.amount,
             accountType: nil,
             standardTag: nil,
-            rejectionReason: .missingAccount,
-            isCoinbase: false,
-            isConfirmed: true,
-            isInstantLocked: false
+            rejectionReason: .missingAccount
         )
         let acceptedTxo = txo(0x31, amount: 800)
         let accepted = CoreWalletDiagnosticAnalyzer.RestoreCandidate(
-            txo: acceptedTxo,
+            amount: acceptedTxo.amount,
             accountType: 0,
             standardTag: 0,
-            rejectionReason: nil,
-            isCoinbase: false,
-            isConfirmed: true,
-            isInstantLocked: false
+            rejectionReason: nil
         )
         let summary = CoreWalletDiagnosticAnalyzer.summarizeRestoreBuffer(
             candidates: [rejected, accepted],
@@ -232,7 +226,7 @@ final class CoreWalletDiagnosticAnalyzerTests: XCTestCase {
         XCTAssertEqual(summary.candidateValueDuffs, 1_500)
         XCTAssertEqual(summary.missingAccountCount, 1)
         XCTAssertEqual(summary.emittedCandidates.count, 1)
-        XCTAssertEqual(summary.emittedCandidates.first?.txo.outpoint, acceptedTxo.outpoint)
+        XCTAssertEqual(summary.emittedCandidates.first?.amount, acceptedTxo.amount)
         XCTAssertEqual(summary.emittedValueDuffs, 800)
     }
 
@@ -281,58 +275,6 @@ final class CoreWalletDiagnosticAnalyzerTests: XCTestCase {
         XCTAssertNotEqual(
             firstMaterial,
             fingerprintMaterial(txo(0x40, account: account(type: 1)))
-        )
-    }
-
-    func testRestoreFingerprintIncludesEveryRestoreOnlyFlag() {
-        let base = CoreWalletDiagnosticAnalyzer.RestoreCandidate(
-            txo: txo(0x50),
-            accountType: 0,
-            standardTag: 0,
-            rejectionReason: nil,
-            isCoinbase: false,
-            isConfirmed: false,
-            isInstantLocked: false
-        )
-        let coinbase = CoreWalletDiagnosticAnalyzer.RestoreCandidate(
-            txo: base.txo,
-            accountType: base.accountType,
-            standardTag: base.standardTag,
-            rejectionReason: nil,
-            isCoinbase: true,
-            isConfirmed: false,
-            isInstantLocked: false
-        )
-        let confirmed = CoreWalletDiagnosticAnalyzer.RestoreCandidate(
-            txo: base.txo,
-            accountType: base.accountType,
-            standardTag: base.standardTag,
-            rejectionReason: nil,
-            isCoinbase: false,
-            isConfirmed: true,
-            isInstantLocked: false
-        )
-        let instantLocked = CoreWalletDiagnosticAnalyzer.RestoreCandidate(
-            txo: base.txo,
-            accountType: base.accountType,
-            standardTag: base.standardTag,
-            rejectionReason: nil,
-            isCoinbase: false,
-            isConfirmed: false,
-            isInstantLocked: true
-        )
-
-        XCTAssertNotEqual(
-            diagnosticRestoreTxoFingerprint(base),
-            diagnosticRestoreTxoFingerprint(coinbase)
-        )
-        XCTAssertNotEqual(
-            diagnosticRestoreTxoFingerprint(base),
-            diagnosticRestoreTxoFingerprint(confirmed)
-        )
-        XCTAssertNotEqual(
-            diagnosticRestoreTxoFingerprint(base),
-            diagnosticRestoreTxoFingerprint(instantLocked)
         )
     }
 

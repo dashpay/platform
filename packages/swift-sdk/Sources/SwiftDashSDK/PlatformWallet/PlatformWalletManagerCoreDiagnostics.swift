@@ -3,11 +3,8 @@ import DashSDKFFI
 import Foundation
 import SwiftData
 
-/// Named checkpoints make two exports from the same device directly
-/// comparable without putting any user-controlled text in the log.
+/// Deep Core diagnostics are emitted only on explicit log export.
 enum CoreWalletDiagnosticCheckpoint: String, Sendable {
-    case startupPreRestore = "startup_pre_restore"
-    case startupPostRestore = "startup_post_restore"
     case preExport = "pre_export"
 }
 
@@ -154,26 +151,6 @@ func diagnosticTxoFingerprint(
     return data
 }
 
-/// Canonical material for one exact `UtxoRestoreEntryFFI` row. The general
-/// DB↔memory UTXO query cannot observe these three flags, so they live only in
-/// this restore-specific fingerprint instead of creating false memory diffs.
-func diagnosticRestoreTxoFingerprint(
-    _ candidate: CoreWalletDiagnosticAnalyzer.RestoreCandidate
-) -> Data {
-    var data = diagnosticTxoFingerprint(
-        outpoint: candidate.txo.outpoint,
-        amount: candidate.txo.amount,
-        height: candidate.txo.height,
-        scriptPubKey: candidate.txo.scriptPubKey,
-        isLocked: candidate.txo.isLocked,
-        account: candidate.txo.account
-    )
-    data.append(candidate.isCoinbase ? 1 : 0)
-    data.append(candidate.isConfirmed ? 1 : 0)
-    data.append(candidate.isInstantLocked ? 1 : 0)
-    return data
-}
-
 extension PlatformWalletPersistenceHandler {
     /// Main-actor-friendly entry point used by manual log export. The handler's
     /// serial queue owns the ModelContext; only a Sendable value snapshot is
@@ -185,18 +162,6 @@ extension PlatformWalletPersistenceHandler {
         await withCheckedContinuation { continuation in
             serialQueue.async { [self] in
                 let snapshot = autoreleasepool { () -> CoreWalletDatabaseDiagnosticSnapshot? in
-                    if checkpoint == .startupPostRestore,
-                       let cached = startupCoreDiagnosticSnapshots.removeValue(forKey: walletId) {
-                        SDKLogger.event(
-                            "core_db_startup_snapshot_reused",
-                            category: .persistence,
-                            fields: [
-                                "checkpoint": .publicText(checkpoint.rawValue),
-                                "wallet_reference": .reference(walletId),
-                            ]
-                        )
-                        return cached
-                    }
                     return emitCoreWalletDatabaseDiagnosticsOnQueue(
                         walletId: walletId,
                         checkpoint: checkpoint
@@ -207,24 +172,12 @@ extension PlatformWalletPersistenceHandler {
         }
     }
 
-    /// Synchronous companion for the legacy synchronous restore overload.
+    /// Synchronous companion used by focused persistence tests.
     func emitCoreWalletDatabaseDiagnostics(
         walletId: Data,
         checkpoint: CoreWalletDiagnosticCheckpoint
     ) -> CoreWalletDatabaseDiagnosticSnapshot? {
         onQueue {
-            if checkpoint == .startupPostRestore,
-               let cached = startupCoreDiagnosticSnapshots.removeValue(forKey: walletId) {
-                SDKLogger.event(
-                    "core_db_startup_snapshot_reused",
-                    category: .persistence,
-                    fields: [
-                        "checkpoint": .publicText(checkpoint.rawValue),
-                        "wallet_reference": .reference(walletId),
-                    ]
-                )
-                return cached
-            }
             return emitCoreWalletDatabaseDiagnosticsOnQueue(
                 walletId: walletId,
                 checkpoint: checkpoint
@@ -232,19 +185,12 @@ extension PlatformWalletPersistenceHandler {
         }
     }
 
-    /// Must be called while `serialQueue` is held. `loadWalletList` uses this
-    /// directly, avoiding a recursive `serialQueue.sync` deadlock.
+    /// Must be called while `serialQueue` is held.
     @discardableResult
     func emitCoreWalletDatabaseDiagnosticsOnQueue(
         walletId: Data,
         checkpoint: CoreWalletDiagnosticCheckpoint
     ) -> CoreWalletDatabaseDiagnosticSnapshot? {
-        // A previous restore can fail after the pre-snapshot was cached but
-        // before post-restore consumes it. Never let a later attempt compare
-        // Rust against that stale value.
-        if checkpoint == .startupPreRestore {
-            startupCoreDiagnosticSnapshots.removeValue(forKey: walletId)
-        }
         do {
             let walletDescriptor = FetchDescriptor<PersistentWallet>(
                 predicate: PersistentWallet.predicate(walletId: walletId)
@@ -530,9 +476,6 @@ extension PlatformWalletPersistenceHandler {
                 assetLocks: assetLocks,
                 assetLocksAvailable: assetLocksAvailable
             )
-            if checkpoint == .startupPreRestore {
-                startupCoreDiagnosticSnapshots[walletId] = snapshot
-            }
             return snapshot
         } catch {
             SDKLogger.event(
@@ -571,20 +514,10 @@ extension PlatformWalletPersistenceHandler {
                 rejection = nil
             }
             return CoreWalletDiagnosticAnalyzer.RestoreCandidate(
-                txo: CoreWalletDatabaseDiagnosticSnapshot.Txo(
-                    outpoint: PersistentTxo.makeOutpoint(txid: row.txid, vout: row.vout),
-                    amount: row.amount,
-                    height: row.height,
-                    scriptPubKey: row.scriptPubKey,
-                    isLocked: row.isLocked,
-                    account: Self.diagnosticAccountKey(row.account)
-                ),
+                amount: row.amount,
                 accountType: row.account?.accountType,
                 standardTag: row.account?.standardTag,
-                rejectionReason: rejection,
-                isCoinbase: row.isCoinbase,
-                isConfirmed: row.isConfirmed,
-                isInstantLocked: row.isInstantLocked
+                rejectionReason: rejection
             )
         }
         // A validation error deallocates the compact buffer and aborts the
@@ -595,7 +528,6 @@ extension PlatformWalletPersistenceHandler {
             emittedCount: emittedCount,
             errored: errored
         )
-        let emittedMaterials = summary.emittedCandidates.map(diagnosticRestoreTxoFingerprint)
         let hasRejectedRows = summary.missingAccountCount > 0
             || summary.invalidTxidCount > 0
             || summary.invalidAccountTypeCount > 0
@@ -616,7 +548,7 @@ extension PlatformWalletPersistenceHandler {
                 ),
                 "candidate_value_duffs": .unsignedInteger(summary.candidateValueDuffs),
                 "built_count": .integer(Int64(summary.builtCount)),
-                "checkpoint": .publicText(CoreWalletDiagnosticCheckpoint.startupPreRestore.rawValue),
+                "checkpoint": .publicText("restore_buffer"),
                 "emitted_count": .integer(Int64(summary.emittedCandidates.count)),
                 "emitted_bip44_count": .integer(Int64(summary.emittedBip44Count)),
                 "emitted_bip44_value_duffs": .unsignedInteger(
@@ -626,7 +558,6 @@ extension PlatformWalletPersistenceHandler {
                 "emitted_coinjoin_value_duffs": .unsignedInteger(
                     summary.emittedCoinJoinValueDuffs
                 ),
-                "emitted_fingerprint": .reference(diagnosticFingerprint(emittedMaterials)),
                 "emitted_value_duffs": .unsignedInteger(summary.emittedValueDuffs),
                 "errored": .boolean(errored),
                 "skipped_invalid_account_type_count": .integer(
@@ -1026,7 +957,7 @@ extension PlatformWalletManager {
         await emitCoreWalletDiagnostics(for: walletId, checkpoint: .preExport)
     }
 
-    func emitCoreWalletDiagnostics(
+    private func emitCoreWalletDiagnostics(
         for walletId: Data,
         checkpoint: CoreWalletDiagnosticCheckpoint
     ) async {
@@ -1094,29 +1025,6 @@ extension PlatformWalletManager {
                 continuation.resume()
             }
         }
-    }
-
-    /// Blocking variant used only by the already-blocking synchronous restore
-    /// API. New application code should use the async public entry point.
-    func emitCoreWalletDiagnosticsSynchronously(
-        for walletId: Data,
-        checkpoint: CoreWalletDiagnosticCheckpoint
-    ) {
-        guard walletId.count == 32,
-              let handler = persistence,
-              let database = handler.emitCoreWalletDatabaseDiagnostics(
-                walletId: walletId,
-                checkpoint: checkpoint
-              ),
-              isConfigured,
-              handle != NULL_HANDLE
-        else { return }
-        Self.emitCoreMemoryDiagnostics(
-            managerHandle: handle,
-            managedWallet: wallets[walletId],
-            database: database,
-            checkpoint: checkpoint
-        )
     }
 
     private nonisolated static func emitCoreMemoryDiagnostics(

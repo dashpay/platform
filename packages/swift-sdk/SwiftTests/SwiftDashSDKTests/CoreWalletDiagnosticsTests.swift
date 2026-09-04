@@ -241,60 +241,93 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
         XCTAssertTrue(try logLines(in: session, event: "core_owned_output_anomaly").isEmpty)
     }
 
-    func testStartupPreRestoreClearsStaleSnapshotBeforeAFailedRefresh() throws {
-        let container = try DashModelContainer.createInMemory()
-        let handler = PlatformWalletPersistenceHandler(
-            modelContainer: container,
-            network: .testnet
-        )
-        let stale = CoreWalletDatabaseDiagnosticSnapshot(
-            walletId: walletId,
-            accounts: [],
-            unspentTxos: [],
-            assetLocks: [],
-            assetLocksAvailable: true
-        )
+    func testRestoreOnlyLogsLightweightBufferSnapshotAndNoDeepStartupEvents() throws {
+        let fixture = try makeMissingOwnedOutputFixture()
+        fixture.bip44Account.accountExtendedPubKeyBytes = Data(repeating: 0x02, count: 78)
 
-        handler.onQueue {
-            handler.startupCoreDiagnosticSnapshots[walletId] = stale
-            XCTAssertNil(handler.emitCoreWalletDatabaseDiagnosticsOnQueue(
-                walletId: walletId,
-                checkpoint: .startupPreRestore
-            ))
-            XCTAssertNil(handler.startupCoreDiagnosticSnapshots[walletId])
-        }
-    }
-
-    func testStartupCacheClearDropsEveryUnconsumedSnapshot() throws {
-        let container = try DashModelContainer.createInMemory()
-        let handler = PlatformWalletPersistenceHandler(
-            modelContainer: container,
-            network: .testnet
+        let validTransaction = PersistentTransaction(
+            txid: Data(repeating: 0x22, count: 32),
+            transactionData: Data(),
+            context: 2,
+            blockHeight: 102,
+            netAmount: 100
         )
-        let first = CoreWalletDatabaseDiagnosticSnapshot(
-            walletId: walletId,
-            accounts: [],
-            unspentTxos: [],
-            assetLocks: [],
-            assetLocksAvailable: true
+        fixture.context.insert(validTransaction)
+        let validTxo = PersistentTxo(
+            transaction: validTransaction,
+            vout: 0,
+            amount: 100,
+            address: "valid-restore-address",
+            scriptPubKey: Data([0x51]),
+            height: 102
         )
-        let secondId = Data(repeating: 0xb2, count: 32)
-        let second = CoreWalletDatabaseDiagnosticSnapshot(
-            walletId: secondId,
-            accounts: [],
-            unspentTxos: [],
-            assetLocks: [],
-            assetLocksAvailable: true
+        validTxo.account = fixture.bip44Account
+        validTxo.walletId = walletId
+        validTxo.isConfirmed = true
+        fixture.context.insert(validTxo)
+
+        let missingAccountTransaction = PersistentTransaction(
+            txid: Data(repeating: 0x33, count: 32),
+            transactionData: Data(),
+            context: 2,
+            blockHeight: 103,
+            netAmount: 200
         )
-        handler.onQueue {
-            handler.startupCoreDiagnosticSnapshots[walletId] = first
-            handler.startupCoreDiagnosticSnapshots[secondId] = second
-        }
+        fixture.context.insert(missingAccountTransaction)
+        let missingAccountTxo = PersistentTxo(
+            transaction: missingAccountTransaction,
+            vout: 0,
+            amount: 200,
+            address: "missing-account-restore-address",
+            scriptPubKey: Data([0x52]),
+            height: 103
+        )
+        missingAccountTxo.walletId = walletId
+        missingAccountTxo.isConfirmed = true
+        fixture.context.insert(missingAccountTxo)
+        try fixture.context.save()
 
-        handler.clearStartupCoreDiagnosticSnapshots()
+        let session = try temporaryDirectory()
+        XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
 
-        handler.onQueue {
-            XCTAssertTrue(handler.startupCoreDiagnosticSnapshots.isEmpty)
+        let result = fixture.handler.loadWalletList()
+        XCTAssertFalse(result.errored)
+        XCTAssertEqual(result.count, 1)
+        let entries = try XCTUnwrap(result.entries)
+        defer { fixture.handler.loadWalletListFree(entries: UnsafeRawPointer(entries)) }
+
+        let snapshots = try logLines(in: session, event: "core_restore_buffer_snapshot")
+        let snapshot = try XCTUnwrap(snapshots.last)
+        XCTAssertTrue(snapshot.contains("candidate_count=2"), snapshot)
+        XCTAssertTrue(snapshot.contains("candidate_value_duffs=300"), snapshot)
+        XCTAssertTrue(snapshot.contains("emitted_count=1"), snapshot)
+        XCTAssertTrue(snapshot.contains("emitted_value_duffs=100"), snapshot)
+        XCTAssertTrue(snapshot.contains("skipped_missing_account_count=1"), snapshot)
+        XCTAssertTrue(snapshot.contains(#"checkpoint="restore_buffer""#), snapshot)
+        XCTAssertFalse(snapshot.contains("fingerprint"), snapshot)
+
+        SDKLogger.flush()
+        let completeLog = try String(
+            contentsOf: session.appendingPathComponent("swift/run.log"),
+            encoding: .utf8
+        )
+        let deepStartupEvents = [
+            "core_db_wallet_snapshot",
+            "core_db_account_snapshot",
+            "core_db_anomaly_summary",
+            "core_db_txo_anomaly",
+            "core_owned_output_audit_summary",
+            "core_owned_output_anomaly",
+            "asset_lock_db_snapshot",
+            "shielded_store_snapshot",
+            "core_memory_account_snapshot",
+            "core_db_memory_diff_summary",
+            "core_db_memory_diff",
+            "asset_lock_memory_snapshot",
+            "asset_lock_db_memory_diff_summary",
+        ]
+        for event in deepStartupEvents {
+            XCTAssertFalse(completeLog.contains("event=\(event) "), event)
         }
     }
 }
