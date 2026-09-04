@@ -222,14 +222,17 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///
 /// # Reconstructed when the persister supplies it
 ///
-/// - **`last_applied_chain_lock`**: restored from `core` when the
-///   supplied [`CoreChangeSet`](platform_wallet::changeset::CoreChangeSet) carries
-///   it (the FFI/iOS persister round-trips the value Swift held), so the
-///   asset-lock-resume CL-from-metadata fallback (`proof.rs`) fires at
-///   launch instead of waiting for SPV. The SQLite storage path has no
-///   V001 column for it yet (dashpay/platform#3968), so there it is
-///   absent from `core` and stays `None` until SPV re-applies a fresh
-///   chainlock on the first post-restart sync.
+/// - **`last_applied_chain_lock`**: restored from `core` on both backends
+///   when the supplied [`CoreChangeSet`](platform_wallet::changeset::CoreChangeSet)
+///   carries it, so the asset-lock-resume CL-from-metadata fallback
+///   (`proof.rs`) fires at launch instead of waiting for SPV. The FFI/iOS
+///   persister round-trips the value Swift held; the SQLite persister
+///   reads it from `core_sync_state.last_applied_chain_lock` (present
+///   since V001) via a monotonic height-max merge on write and
+///   `decode_chain_lock` under the load policy on read. It stays `None`
+///   only when the column is NULL or, under
+///   [`LoadPolicy::Recovery`](crate::LoadPolicy), when the blob failed to
+///   decode and was tolerated as [`LoadSite::ChainLockBlob`].
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
