@@ -865,10 +865,15 @@ pub(crate) mod tracing_capture {
         pub(crate) fn install(recorder: RecordedEvents) -> Self {
             GLOBAL_ROUTER_INIT.get_or_init(|| {
                 let subscriber = tracing_subscriber::registry().with(RecorderRouter);
-                // Another thread may have won this race; either way the
-                // routing subscriber is the process-wide default by the time
-                // `get_or_init` returns to any caller.
-                let _ = tracing::subscriber::set_global_default(subscriber);
+                // `get_or_init` runs this exactly once, so the only way to
+                // fail is something outside it having installed a process-wide
+                // default first. Discarding that would leave the router
+                // uninstalled while this latch still reports success, and every
+                // guard below would capture nothing at all.
+                tracing::subscriber::set_global_default(subscriber).expect(
+                    "the event-recording subscriber must become the process-wide default: \
+                     another global subscriber is already installed, so no test can capture",
+                );
             });
             ACTIVE_RECORDER.with(|slot| *slot.borrow_mut() = Some(recorder));
             Self

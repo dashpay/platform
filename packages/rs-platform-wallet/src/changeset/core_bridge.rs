@@ -212,8 +212,15 @@ impl std::fmt::Display for BatchDiagnostics {
 /// The `receiver` is the manager's lossless persistence receiver, taken once
 /// via `take_persistence_receiver()` before the manager is published to
 /// producers, and handed to this function. Exits when `cancel` fires or the
-/// persistence channel's sender (the manager) is dropped — in both cases after
-/// committing the events already buffered, never mid-batch.
+/// persistence channel's sender (the manager) is dropped, in both cases after
+/// committing what the exiting drain had consumed — never mid-batch.
+///
+/// A drain commits the whole backlog only while the persister outlives it,
+/// which is what [`PlatformWalletManager::shutdown`](crate::PlatformWalletManager::shutdown)
+/// guarantees and a dirty drop does not: the task claims the persister when it
+/// wakes, so a claim that finds it already released exits with the backlog
+/// uncommitted (re-derived by the next SPV pass — the watermark rides the same
+/// `store()` as the rows it implies).
 ///
 /// `sync_fault` is the host-visible hard-fault latch: the task sets it
 /// (and never clears it) the first time it freezes a durable watermark, so
@@ -225,9 +232,10 @@ impl std::fmt::Display for BatchDiagnostics {
 /// `Arc<P>` (not to the `Arc<dyn PlatformWalletPersistence>` coercion) to
 /// actually realize the static-dispatch win.
 ///
-/// The reference is **weak**: the task upgrades it for each batch commit and
-/// holds nothing while idle, so the persister is released when its owner drops
-/// rather than when this task next polls.
+/// The reference is **weak**: the task holds nothing while parked for the next
+/// event, so the persister is released when its owner drops rather than when
+/// this task next polls. It upgrades once per drain — before consuming
+/// anything — and keeps that claim until the drain's backlog is committed.
 pub fn spawn_wallet_event_adapter<P>(
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     persister: Weak<P>,
@@ -319,6 +327,11 @@ async fn run_wallet_event_adapter<P>(
     // One-shot latch so the hard "watermark frozen" line hits logcat exactly
     // once per session rather than once per faulted batch.
     let freeze_logged = Arc::new(AtomicBool::new(false));
+    // The claim carried between the chunks of one cancellation drain. Empty
+    // while a commit is in flight — the claim rides into the blocking task and
+    // back out — and released before the task parks for the next event, since
+    // an idle adapter must hold nothing (issue #4133).
+    let mut drain_persister: Option<Arc<P>> = None;
 
     loop {
         // Block for the first event of a batch. Everything already sitting in
@@ -328,12 +341,17 @@ async fn run_wallet_event_adapter<P>(
         let first = if cancel.is_cancelled() {
             // Shutting down: commit the backlog, never wait for more. The
             // `select!` below would race the fired token against `recv` and
-            // drop it.
+            // drop it. The claim carries across these chunks, so a backlog
+            // larger than one batch cannot lose its tail to a chunk boundary.
             match receiver.try_recv() {
                 Ok(event) => Some(event),
                 Err(_) => break,
             }
         } else {
+            // About to park with nothing consumed: hold no strong reference,
+            // or a dropped manager's store stays open until this task next
+            // polls (issue #4133).
+            drain_persister = None;
             tokio::select! {
                 recv = receiver.recv() => recv,
                 // Re-enter above to drain the backlog before exiting.
@@ -348,6 +366,35 @@ async fn run_wallet_event_adapter<P>(
                 tracing::error!("WalletEvent persistence channel closed unexpectedly");
             }
             break;
+        };
+
+        // Claim the persister before folding anything else off the channel, so
+        // everything this drain consumes is guaranteed a commit: an owner
+        // releasing its `Arc` mid-drain can no longer strand events this task
+        // has already taken. Claiming after the fold left a window as wide as
+        // the fold itself in which a whole batch became uncommittable.
+        //
+        // The one event already in hand is the irreducible remainder: an
+        // adapter that holds nothing while parked cannot claim before it wakes,
+        // and by then the persister may be gone. Nothing durable breaks — the
+        // watermark rides the same `store()` as the rows it implies, so the
+        // next SPV pass re-derives both.
+        //
+        // Taken, never cloned: the claim MOVES into the commit below and comes
+        // back out with the diagnostics, so a commit in flight is still the one
+        // and only strong reference a dropped manager has to wait on (#4133).
+        let persister_for_commit = match drain_persister.take() {
+            Some(claimed) => claimed,
+            None => match persister.upgrade() {
+                Some(claimed) => claimed,
+                None => {
+                    tracing::warn!(
+                        "persister already released when the wallet-event adapter woke; \
+                         exiting with the backlog uncommitted — the next scan re-derives it"
+                    );
+                    break;
+                }
+            },
         };
 
         let mut batch: BTreeMap<WalletId, WalletBatch> = BTreeMap::new();
@@ -443,21 +490,6 @@ async fn run_wallet_event_adapter<P>(
         // accounted for" and "nobody knows".
         let settled: Arc<Mutex<Vec<WalletId>>> = Arc::new(Mutex::new(Vec::new()));
         let settled_for_commit = Arc::clone(&settled);
-        // Held only for the commit: an idle adapter keeping the persister
-        // open leaves a dropped manager's store "open" until the next poll
-        // (issue #4133).
-        let Some(persister_for_commit) = persister.upgrade() else {
-            // The watermark rides the same `store()`, so these events are
-            // re-derived on the next SPV pass — but a discarded batch is not
-            // something an operator should have to infer from a debug line.
-            tracing::warn!(
-                discarded_events = folded,
-                wallets = batch.len(),
-                "persister released mid-drain; wallet-event adapter exiting and \
-                 discarding the batch it had built"
-            );
-            break;
-        };
         let sync_fault_for_commit = Arc::clone(&sync_fault);
         let fault_for_commit = Arc::clone(&fault);
         let freeze_for_commit = Arc::clone(&freeze_logged);
@@ -475,7 +507,7 @@ async fn run_wallet_event_adapter<P>(
             // `commit_batch` returns is lost when a later store in the same
             // batch panics, and the panic branch would then emit the one-shot
             // marker a second time for a freeze already announced.
-            commit_batch(
+            let diag = commit_batch(
                 &*persister_for_commit,
                 batch,
                 folded,
@@ -483,12 +515,20 @@ async fn run_wallet_event_adapter<P>(
                 &sync_fault_for_commit,
                 &freeze_for_commit,
                 &mut settled,
-            )
+            );
+            // Hand the claim back out: the next chunk of a cancellation drain
+            // inherits it instead of racing a fresh upgrade against the owner's
+            // release. A panicking `commit_batch` drops it instead, and the
+            // next chunk re-claims.
+            (persister_for_commit, diag)
         })
         .await;
 
         let diag = match committed {
-            Ok(diag) => diag,
+            Ok((claimed, diag)) => {
+                drain_persister = Some(claimed);
+                diag
+            }
             // The commit thread panicked, so `commit_batch` never reached the
             // `store()` rejection arm that would have frozen the affected
             // wallets. Freeze them here instead.
@@ -2866,7 +2906,7 @@ mod tests {
     // lossless burst, a rejected `store()`, the per-wallet freeze, and
     // per-wallet batch folding.
 
-    use super::{run_wallet_event_adapter, AdapterFaultState};
+    use super::{run_wallet_event_adapter, AdapterFaultState, ADAPTER_STORE_BATCH_LIMIT};
     use crate::changeset::changeset::PlatformWalletChangeSet;
     use crate::changeset::client_start_state::ClientStartState;
     use crate::changeset::traits::{PersistenceError, PlatformWalletPersistence};
@@ -3072,11 +3112,14 @@ mod tests {
         );
     }
 
-    /// Cancellation commits the backlog already in the channel before exiting.
+    /// A cancelled adapter commits the backlog already in the channel before
+    /// exiting, instead of racing the token against `recv` and discarding
+    /// whatever the producer had already handed to the lossless channel.
     ///
-    /// This is the drain a dropped manager depends on: its `Drop` fires this
-    /// token, and racing the token against `recv` would discard whatever the
-    /// producer had already handed to the lossless channel.
+    /// The persister outlives the drain here, which is the `shutdown()` shape:
+    /// a joined shutdown holds the manager — and therefore the persister —
+    /// alive for as long as the drain it triggered. A dirty `Drop` gives no
+    /// such guarantee; see the `Drop` rustdoc on `PlatformWalletManager`.
     #[tokio::test]
     async fn cancellation_commits_the_events_already_buffered() {
         let wallet_id = [11u8; 32];
@@ -3087,8 +3130,8 @@ mod tests {
         let (obs_tx, mut obs_rx) = unbounded_channel();
         let persister = Arc::new(ProbePersister::new(obs_tx));
         let cancel = CancellationToken::new();
-        // Already cancelled when the loop starts: the shape a manager dropped
-        // mid-burst leaves behind.
+        // Already cancelled when the loop starts: the shape a cancelled
+        // manager leaves behind.
         cancel.cancel();
 
         run_wallet_event_adapter(
@@ -3112,6 +3155,84 @@ mod tests {
         assert!(
             obs_rx.try_recv().is_err(),
             "the drain stops at the backlog it found, and never waits for more"
+        );
+        // Held to the end so the exit is the cancel path, not a closed channel.
+        drop(tx);
+    }
+
+    /// A drain owns the persister until its whole backlog is committed, so a
+    /// chunk boundary is not a loss boundary.
+    ///
+    /// A backlog larger than [`ADAPTER_STORE_BATCH_LIMIT`] is committed in
+    /// several chunks. Claiming the persister only after a chunk has folded
+    /// its events makes the first chunk's commit release the last strong
+    /// reference, and the next chunk then finds nothing to commit to — after
+    /// it has already taken its events off the lossless channel. The owner
+    /// releasing its `Arc` mid-drain (what `Drop` does) is exactly the
+    /// interleaving that exposes it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_cancelled_drain_holds_the_persister_until_its_backlog_is_committed() {
+        use std::time::{Duration, Instant};
+
+        let wallet_id = [0x55u8; 32];
+        // One past the limit: the tail event cannot ride the first chunk.
+        let backlog = ADAPTER_STORE_BATCH_LIMIT as u32 + 1;
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        for height in 1..=backlog {
+            tx.send(sync_height_event(wallet_id, height)).unwrap();
+        }
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let (release, blocked) = persister.block_next();
+        let probe = Arc::downgrade(&persister);
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel,
+        ));
+
+        // Park inside the first chunk's `store()`, then release the only
+        // strong reference outside the adapter — the manager's own drop,
+        // landing while the drain is under way.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !blocked.load(Ordering::Relaxed) {
+            assert!(
+                Instant::now() < deadline,
+                "the first chunk's store must park before the drop below means anything"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        drop(persister);
+        drop(release);
+
+        let first = obs_rx
+            .recv()
+            .await
+            .expect("the first chunk of the backlog must commit");
+        assert_eq!(
+            first.synced_height,
+            Some(ADAPTER_STORE_BATCH_LIMIT as u32),
+            "the first chunk folds up to the batch limit"
+        );
+        let second = obs_rx.recv().await.expect(
+            "the chunk after the first must still commit: a drain owns the \
+             persister until its backlog is on disk",
+        );
+        assert_eq!(
+            second.synced_height,
+            Some(backlog),
+            "the tail of the backlog must reach the store, not the warn log"
+        );
+
+        handle.await.unwrap();
+        assert!(
+            probe.upgrade().is_none(),
+            "a finished drain must release the persister it claimed"
         );
         // Held to the end so the exit is the cancel path, not a closed channel.
         drop(tx);
