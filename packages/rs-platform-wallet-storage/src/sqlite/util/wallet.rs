@@ -762,31 +762,14 @@ fn extend_pools_for_restored_addresses(
                 break;
             }
 
-            // NOTE(recovery-mode): the `Err(e)` branch below has no *known*
-            // seed from a persisted row — the `key_source` here already derived
-            // this pool, so a refill failure needs a key source that derives
-            // some indices and not others. Phrased as unknown rather than
-            // unreachable on purpose: `ensure_derived_failure_fixture` in
-            // tests/sqlite_recovery_mode.rs has since shown this class of
-            // fixture is buildable, which weakens the old flat claim that
-            // nothing could reach it.
-            //
-            // TODO(maintain-gap-limit-coverage): one untried lead — set
-            // `highest_used`/`highest_generated` near 2^31 with a small
-            // `gap_limit`, so `implied` stays under MAX_REHYDRATION_GAP_REFILL
-            // (the pre-flight guard above must not `break` first) while
-            // `target` crosses the non-hardened child-index boundary and makes
-            // `maintain_gap_limit` fail. Not attempted: a planted high
-            // `address_index` also has to survive the discovery-walk cap and
-            // address resolution, either of which fires a different site
-            // first. If it turns out unreachable, record that here WITH the
-            // evidence — do not restore a bare "unreachable" claim on
-            // assumption.
+            // Reachable and tested: `maintain_gap_limit_boundary_fixture` in
+            // this module's own tests plants a pool whose refill target
+            // crosses the non-hardened child-index boundary (2^31) while the
+            // pre-flight `implied` cost stays under MAX_REHYDRATION_GAP_REFILL,
+            // so this call reaches `maintain_gap_limit` and it fails.
             //
             // Kept fail-closed like `ensure_derived` above: a short window
-            // means a previously-used address can be re-issued as fresh. (The
-            // size cap above it is a live, tested guard — see
-            // MAX_REHYDRATION_GAP_REFILL.)
+            // means a previously-used address can be re-issued as fresh.
             if let Err(e) = pool.maintain_gap_limit(key_source) {
                 ctx.tolerate_at(
                     LoadSite::RehydrationMaintainGapLimit,
@@ -2617,6 +2600,17 @@ mod tests {
         }
     }
 
+    /// A pool poised at the non-hardened child-index boundary
+    /// (`2^31`): the pre-flight `implied` cost stays tiny (a handful of
+    /// addresses), so the cap in `extend_pools_for_restored_addresses`
+    /// lets the call through, but upstream `maintain_gap_limit` then
+    /// walks its target past `2^31 - 1` and `ChildNumber::from_normal_idx`
+    /// rejects the out-of-range index.
+    fn maintain_gap_limit_boundary_fixture(seed: u8) -> GapRefillFixture {
+        const MAX_NORMAL_INDEX: u32 = (1u32 << 31) - 1;
+        gap_refill_fixture(seed, MAX_NORMAL_INDEX - 5, Some(MAX_NORMAL_INDEX - 10))
+    }
+
     /// The first funds account's external pool.
     fn external_pool_state(
         wallet_info: &key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
@@ -2719,6 +2713,42 @@ mod tests {
         assert_eq!(
             external_pool_state(&recovery_fixture.wallet_info),
             generated_before
+        );
+    }
+
+    /// A pool whose refill target crosses the `2^31` non-hardened
+    /// child-index boundary passes the size-cap pre-flight (the implied
+    /// span is a handful of addresses) but fails inside
+    /// `maintain_gap_limit` itself once it reaches an out-of-range index.
+    #[test]
+    fn maintain_gap_limit_failure_is_fatal_under_strict() {
+        let mut fixture = maintain_gap_limit_boundary_fixture(26);
+        let err = rehydrate_fixture(&mut fixture, &LoadCtx::strict())
+            .expect_err("an out-of-range refill target must fail a strict load");
+
+        assert!(
+            matches!(err, WalletStorageError::RehydrationGapLimitFailed { .. }),
+            "must surface as the typed gap-limit-failed variant: {err:?}"
+        );
+    }
+
+    /// Recovery defers the same pool instead of failing, and derives
+    /// nothing beyond what upstream managed before hitting the boundary.
+    #[test]
+    fn maintain_gap_limit_failure_is_deferred_under_recovery() {
+        let mut fixture = maintain_gap_limit_boundary_fixture(27);
+        let ctx = LoadCtx::recovery();
+        rehydrate_fixture(&mut fixture, &ctx).expect("recovery must defer, not fail");
+
+        let degradation = ctx.degradation();
+        assert!(degradation.degraded);
+        assert_eq!(
+            degradation
+                .by_site
+                .get(&LoadSite::RehydrationMaintainGapLimit),
+            Some(&1),
+            "the deferred refill failure must be counted at its own site: {:?}",
+            degradation.by_site
         );
     }
 
