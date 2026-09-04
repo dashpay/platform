@@ -427,6 +427,51 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .insert(wallet_id, fences);
         }
 
+        // Read the persisted state BEFORE the registration write below, and
+        // keep only this wallet's slice of it.
+        //
+        // The ordering is load-bearing: an exhausted transient read reports
+        // `PersisterLoad(Transient)`, which tells the caller nothing was
+        // mutated and the operation is safe to re-issue — and the only
+        // operation it can re-issue is this registration. Placed after the
+        // append-only registration write, that invitation buys a second copy
+        // of it. The read consumes nothing the write produces (it is consulted
+        // only for platform-address state, which no registration changeset
+        // carries), so reading first costs nothing but the ordering.
+        //
+        // `load` is an idempotent read, so a transient blip is retried
+        // in-crate — unlike the `store` below.
+        //
+        // A bare `?` here would leave the wallet half-registered (present in
+        // `wallet_manager` from the earlier `insert_wallet`, absent from
+        // `self.wallets`), poisoning every retry on `WalletAlreadyExists`.
+        // Roll back before bailing — same shape as `manager::load`.
+        let load_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
+        let load_result = super::retry_transient_load(move || load_persister.load()).await;
+        let persisted_platform_addresses = match load_result {
+            Ok(crate::changeset::ClientStartState {
+                mut platform_addresses,
+                ..
+            }) => platform_addresses.remove(&wallet_id),
+            Err(e) => {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    transient = e.is_transient(),
+                    error = %e,
+                    "failed to load persisted wallet state after retries"
+                );
+                let mut wm = self.wallet_manager.write().await;
+                if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %remove_err,
+                        "rollback: remove_wallet failed while unwinding a failed wallet setup"
+                    );
+                }
+                return Err(PlatformWalletError::from_load_failure(e));
+            }
+        };
+
         // Emit metadata + per-account xpubs + per-pool address
         // snapshots to the persister so the watch-only restore path
         // has everything it needs on next launch. The whole
@@ -519,49 +564,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             broadcaster,
         );
 
-        // Load persisted state. The only area wired up today is the
-        // platform-address provider — `from_persisted` skips the live
-        // `AddressPool` scan `initialize` would otherwise do.
-        // Per-wallet UTXOs / unused asset locks ship in the snapshot
-        // but don't have an active restore path yet.
+        // Restore the platform-address provider from the slice read above —
+        // the only area wired up today. `from_persisted` skips the live
+        // `AddressPool` scan `initialize` would otherwise do. Per-wallet
+        // UTXOs / unused asset locks ship in the snapshot but don't have an
+        // active restore path yet.
         //
-        // The two `?` returns below would otherwise leave the wallet
-        // half-registered (present in `wallet_manager` from the
-        // earlier `insert_wallet`, absent from `self.wallets`),
-        // poisoning every retry on `WalletAlreadyExists`. Roll back
-        // before bailing — same shape as `manager::load`.
-        // `load` is an idempotent read, so a transient blip is retried
-        // in-crate — unlike `store` above. Clone the persister handle rather
-        // than moving `platform_wallet`, still needed below.
-        let load_persister = platform_wallet.persister().clone();
-        let load_result = super::retry_transient_load(move || load_persister.load()).await;
-        let crate::changeset::ClientStartState {
-            mut platform_addresses,
-            wallets: _,
-            #[cfg(feature = "shielded")]
-                shielded: _,
-        } = match load_result {
-            Ok(state) => state,
-            Err(e) => {
-                tracing::error!(
-                    wallet_id = %hex::encode(wallet_id),
-                    transient = e.is_transient(),
-                    error = %e,
-                    "failed to load persisted wallet state after retries"
-                );
-                let mut wm = self.wallet_manager.write().await;
-                if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %remove_err,
-                        "rollback: remove_wallet failed while unwinding a failed wallet setup"
-                    );
-                }
-                return Err(PlatformWalletError::from_load_failure(e));
-            }
-        };
-
-        if let Some(persisted) = platform_addresses.remove(&wallet_id) {
+        // A bare `?` here would leave the wallet half-registered exactly as on
+        // the read path above, so this too rolls the insert back before
+        // bailing. Unlike that path, the registration write has already
+        // landed: `PersisterRestore` says so, and promises no re-issue.
+        if let Some(persisted) = persisted_platform_addresses {
             if let Err(e) = platform_wallet
                 .platform()
                 .initialize_from_persisted(persisted)
@@ -1634,6 +1647,56 @@ mod persist_retry_tests {
             other => panic!("expected PersisterLoad, got {other:?}"),
         }
         assert_eq!(persister.load_calls.load(Ordering::SeqCst), 2);
+    }
+
+    /// An exhausted transient `load` retry must leave nothing on disk to
+    /// double-write.
+    ///
+    /// `PersisterLoad(Transient)` crosses the C ABI as code 49, which tells the
+    /// host nothing was mutated and a later retry is safe. The only
+    /// caller-visible operation to retry is the registration itself, so with
+    /// the read ordered after the registration write that retry appends the
+    /// append-only changeset a second time.
+    #[tokio::test]
+    async fn an_exhausted_load_retry_leaves_the_registration_unwritten() {
+        // The whole schedule — the initial attempt plus one per backoff entry
+        // — so the first registration exhausts it and the retry's read
+        // succeeds.
+        let attempts = 1 + super::super::persist_retry::LOAD_RETRY_BACKOFF.len();
+        let persister = Arc::new(FaultyPersister {
+            load_transient_failures: attempts,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        let err = register(&manager)
+            .await
+            .expect_err("an exhausted transient load must abort registration");
+        match err {
+            PlatformWalletError::PersisterLoad(pe) => assert!(
+                pe.is_transient(),
+                "an exhausted transient load keeps its transient classification"
+            ),
+            other => panic!("expected PersisterLoad, got {other:?}"),
+        }
+        assert_eq!(persister.load_calls.load(Ordering::SeqCst), attempts);
+        assert_eq!(
+            persister.registration_store_calls.load(Ordering::SeqCst),
+            0,
+            "a read that can exhaust must run before the registration write: \
+             its error promises the caller nothing was mutated, and the retry \
+             it invites is the registration"
+        );
+
+        // The caller takes that invitation.
+        register(&manager)
+            .await
+            .expect("the retry a transient load failure invites must succeed");
+        assert_eq!(
+            persister.registration_store_calls.load(Ordering::SeqCst),
+            1,
+            "the retried registration must be the FIRST write of the changeset"
+        );
     }
 
     /// Virtual time, so the test itself doesn't wait the schedule's 140 ms.
