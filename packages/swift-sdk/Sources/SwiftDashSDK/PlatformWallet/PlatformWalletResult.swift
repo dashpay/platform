@@ -628,9 +628,13 @@ public enum PlatformWalletError: LocalizedError {
     case notFound(String)
     case unknown(String)
 
-    /// Diagnostic detail Rust attached to the originating
-    /// `PlatformWalletFFIResult`, or the context string a Swift-side
-    /// guard chose when constructing the error inline.
+    /// What to show a person. For most cases this is still the diagnostic
+    /// detail Rust attached to the originating `PlatformWalletFFIResult` (or
+    /// the context string a Swift-side guard chose when constructing the
+    /// error inline); the persister cases and the value-carrying marketplace
+    /// rejections compose their own text instead, because theirs is an error
+    /// chain or a JSON payload that reads as gibberish in an alert. The
+    /// persister chain stays available on `failureReason`.
     public var errorDescription: String? {
         switch self {
         case .nullPointer(let m), .invalidHandle(let m), .invalidParameter(let m),
@@ -656,11 +660,22 @@ public enum PlatformWalletError: LocalizedError {
              .notForSale(let m),
              .assetLockInputConflict(let m),
              .assetLockInputContested(let m),
-             .persisterLoadTransient(let m), .persisterLoadFatal(let m),
-             .persisterStoreTransient(let m), .persisterStoreFatal(let m),
-             .persisterStoreConstraint(let m), .persisterRestore(let m),
              .notFound(let m), .unknown(let m):
             return m
+        // The persister messages are a nested Rust error chain naming the
+        // operation, the backend classification and the store's own phrasing
+        // ("… changeset: persistence backend error (Transient): database is
+        // locked"). That is log material, not alert material, so these six
+        // state what the person can do and leave the chain on
+        // `failureReason`. Which text applies is the CASE's meaning: a
+        // transient is worth retrying, a read failure and a write failure
+        // must not be described to a user as each other.
+        case .persisterLoadTransient, .persisterStoreTransient:
+            return "The wallet database is busy. Try again in a moment."
+        case .persisterLoadFatal, .persisterRestore:
+            return "The wallet data could not be read and may need to be restored."
+        case .persisterStoreFatal, .persisterStoreConstraint:
+            return "The wallet data could not be saved and may need to be restored."
         // The three value-carrying marketplace rejections compose their
         // description from the typed values, because their FFI message is
         // the machine-readable JSON detail — showing that raw would be
@@ -677,6 +692,20 @@ public enum PlatformWalletError: LocalizedError {
             }
             return "\"\(label)\" is in an active contested-name vote (ends at \(endsAtMs) ms) "
                 + "and cannot be traded until the contest resolves."
+        }
+    }
+
+    /// The raw diagnostic chain behind a case whose `errorDescription` is
+    /// user-facing text — log it, do not display it. `nil` for every case
+    /// that already passes its detail through as the description.
+    public var failureReason: String? {
+        switch self {
+        case .persisterLoadTransient(let m), .persisterLoadFatal(let m),
+             .persisterStoreTransient(let m), .persisterStoreFatal(let m),
+             .persisterStoreConstraint(let m), .persisterRestore(let m):
+            return m
+        default:
+            return nil
         }
     }
 
@@ -788,7 +817,8 @@ public enum PlatformWalletError: LocalizedError {
         // The persister codes carry the wallet's typed `Display` as the
         // message. Which operation failed and whether a retry can help is
         // the CODE's meaning, not the string's — branch on the case, never
-        // on the text.
+        // on the text, and log the string rather than displaying it
+        // (`errorDescription` holds the user-facing wording).
         case .errorPersisterLoadTransient:
             self = .persisterLoadTransient(detail)
         case .errorPersisterLoadFatal:

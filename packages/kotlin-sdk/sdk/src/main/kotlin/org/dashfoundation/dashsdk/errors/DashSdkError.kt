@@ -3,6 +3,17 @@ package org.dashfoundation.dashsdk.errors
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.json.JSONObject
 
+// Display text for the persister failures, whose native message is a nested
+// Rust error chain (operation, backend classification, the store's own
+// phrasing) that no user can act on. One string per outcome a person can
+// distinguish; a failed read and a failed write must not describe each other.
+private const val PERSISTER_BUSY_USER_MESSAGE =
+    "The wallet database is busy. Try again in a moment."
+private const val PERSISTER_UNREADABLE_USER_MESSAGE =
+    "The wallet data could not be read and may need to be restored."
+private const val PERSISTER_UNSAVED_USER_MESSAGE =
+    "The wallet data could not be saved and may need to be restored."
+
 /**
  * Public error hierarchy of the Kotlin SDK — the Android analog of the
  * Swift SDK's `UserFacingError`/`SDKError` split, keyed off the native
@@ -18,6 +29,14 @@ sealed class DashSdkError(
 
     /** Whether retrying the same operation can plausibly succeed. */
     open val isRetryable: Boolean get() = false
+
+    /**
+     * Text fit to show a person. Defaults to [message] — most native
+     * messages read as a sentence — but types whose message is a nested
+     * error chain override it, so a UI can display this unconditionally
+     * while logs keep [message].
+     */
+    open val userMessage: String get() = message.orEmpty()
 
     class InvalidParameter(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
@@ -483,11 +502,13 @@ sealed class DashSdkError(
          * wallet state failed on a store that reported the failure as
          * retryable (`SQLITE_BUSY` and friends). Nothing was mutated — a
          * load is a read — so this is retryable. The Android analog of
-         * Swift's `PlatformWalletError.persisterLoadTransient`.
+         * Swift's `PlatformWalletError.persisterLoadTransient`. [message] is
+         * the diagnostic chain; display [userMessage].
          */
         class PersisterLoadTransient(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
+            override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
         }
 
         /**
@@ -496,10 +517,13 @@ sealed class DashSdkError(
          * or a decode that will fail identically next time. Do NOT retry;
          * the store needs repair or re-provisioning. Constraint-class read
          * failures fold in here: a read cannot violate one, and neither is
-         * retryable.
+         * retryable. [message] is the diagnostic chain; display
+         * [userMessage].
          */
         class PersisterLoadFatal(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause)
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = PERSISTER_UNREADABLE_USER_MESSAGE
+        }
 
         /**
          * `ErrorPersisterStoreTransient` (native code 51). Writing wallet
@@ -511,11 +535,13 @@ sealed class DashSdkError(
          * of it — which is why this, uniquely among the store failures, is
          * retryable. A wallet registration against a locked database
          * produces it (dashpay/platform#4365); the retry decision is the
-         * host's, not the wallet's.
+         * host's, not the wallet's. [message] is the diagnostic chain;
+         * display [userMessage].
          */
         class PersisterStoreTransient(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
+            override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
         }
 
         /**
@@ -523,10 +549,13 @@ sealed class DashSdkError(
          * failed permanently — a full disk, a corrupt schema, an I/O error
          * outside the retryable class. Do NOT retry; the wallet rolled its
          * in-memory state back, so the operation may be re-attempted once
-         * the underlying fault is fixed.
+         * the underlying fault is fixed. [message] is the diagnostic chain;
+         * display [userMessage].
          */
         class PersisterStoreFatal(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause)
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = PERSISTER_UNSAVED_USER_MESSAGE
+        }
 
         /**
          * `ErrorPersisterStoreConstraint` (native code 53). A write violated
@@ -534,20 +563,26 @@ sealed class DashSdkError(
          * from [PersisterStoreFatal]: this is "the data is wrong" (a caller
          * or schema-mapping bug) rather than "the storage engine is unhappy"
          * (an operator problem), and the two route to different people. Do
-         * NOT retry unchanged.
+         * NOT retry unchanged. [message] is the diagnostic chain; display
+         * [userMessage].
          */
         class PersisterStoreConstraint(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause)
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = PERSISTER_UNSAVED_USER_MESSAGE
+        }
 
         /**
          * `ErrorPersisterRestore` (native code 54). Rehydrating persisted
          * platform-address state into a freshly registered wallet failed.
          * One code rather than three: it wraps a wallet error, not a store
          * error, so it carries no retry classification. The wrapped error's
-         * rendering is in [message].
+         * rendering is in [message], which is diagnostic — display
+         * [userMessage].
          */
         class PersisterRestore(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause)
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = PERSISTER_UNREADABLE_USER_MESSAGE
+        }
 
         /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
