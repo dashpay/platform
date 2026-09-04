@@ -74,8 +74,9 @@ final class ErrorHandlingTests: XCTestCase {
     }
 
     // TODO: not compiled or run locally — no Swift toolchain in the
-    // authoring environment. CI is the first execution of these two tests
-    // and of the `PlatformWalletResult.swift` cases they cover.
+    // authoring environment. CI is the first execution of the three
+    // persister tests below and of the `PlatformWalletResult.swift` cases
+    // they cover.
     /// The persister block (49-54). Each code must decode from its
     /// generated C constant, keep its own raw value, and reach a typed
     /// `PlatformWalletError` case — the three edits a new code needs on
@@ -124,13 +125,17 @@ final class ErrorHandlingTests: XCTestCase {
     func testPersisterTypedErrorCases() {
         let busy = "failed to persist wallet registration changeset: "
             + "persistence backend error (Transient): database is locked"
-        guard case .persisterStoreTransient(let storeMessage) = PlatformWalletError(
+        let storeTransient = PlatformWalletError(
             code: .errorPersisterStoreTransient,
             message: busy
-        ) else {
+        )
+        guard case .persisterStoreTransient(let storeMessage) = storeTransient else {
             return XCTFail("expected typed persisterStoreTransient error")
         }
         XCTAssertEqual(storeMessage, busy)
+        // The chain stays reachable for logs — on the associated value and
+        // on failureReason — but must never be the alert text.
+        XCTAssertEqual(storeTransient.failureReason, busy)
 
         guard case .persisterStoreConstraint = PlatformWalletError(
             code: .errorPersisterStoreConstraint,
@@ -156,6 +161,41 @@ final class ErrorHandlingTests: XCTestCase {
             restoreMessage,
             "failed to restore persisted platform-address state: wallet is locked"
         )
+    }
+
+    /// `errorDescription` is what a default SwiftUI alert renders, so the
+    /// persister cases must answer it with an instruction rather than the
+    /// Rust error chain — and must not describe a failed write as a failed
+    /// read. The chain belongs on `failureReason`.
+    func testPersisterErrorsSplitUserTextFromDiagnostics() {
+        let busy = "failed to persist wallet registration changeset: "
+            + "persistence backend error (Transient): database is locked"
+        let expected: [(PlatformWalletResultCode, String)] = [
+            (.errorPersisterLoadTransient, "The wallet database is busy. Try again in a moment."),
+            (.errorPersisterStoreTransient, "The wallet database is busy. Try again in a moment."),
+            (
+                .errorPersisterLoadFatal,
+                "The wallet data could not be read and may need to be restored."
+            ),
+            (
+                .errorPersisterRestore,
+                "The wallet data could not be read and may need to be restored."
+            ),
+            (
+                .errorPersisterStoreFatal,
+                "The wallet data could not be saved and may need to be restored."
+            ),
+            (
+                .errorPersisterStoreConstraint,
+                "The wallet data could not be saved and may need to be restored."
+            ),
+        ]
+
+        for (code, userText) in expected {
+            let error = PlatformWalletError(code: code, message: busy)
+            XCTAssertEqual(error.errorDescription, userText, "code \(code)")
+            XCTAssertEqual(error.failureReason, busy, "code \(code) must keep the chain for logs")
+        }
     }
 
     func testPlatformWalletNotFoundFFIResultMapping() {

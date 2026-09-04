@@ -218,8 +218,9 @@ class DashSdkErrorTest {
     }
 
     // TODO: not compiled or run locally — no Kotlin/Gradle toolchain in the
-    // authoring environment. CI is the first execution of this test and of
-    // the `DashSdkError.PlatformWallet.Persister*` types it covers.
+    // authoring environment. CI is the first execution of the two persister
+    // tests below and of the `DashSdkError.PlatformWallet.Persister*` types
+    // they cover.
     @Test
     fun persisterCodes49Through54MapTypedWithCorrectRetryability() {
         // The whole point of the persister block: a host must be able to tell
@@ -251,6 +252,37 @@ class DashSdkErrorTest {
                 retryable,
                 mapped.isRetryable,
             )
+        }
+    }
+
+    @Test
+    fun persisterCodesSplitUserMessageFromDiagnosticMessage() {
+        // The native message is a nested Rust error chain naming the
+        // operation, the backend classification and the store's phrasing. It
+        // must stay on `message` for logs and must never be what a UI shows;
+        // `userMessage` is the displayable half, and a failed write must not
+        // be described to a person as a failed read.
+        val chain = "failed to persist wallet registration changeset: " +
+            "persistence backend error (Transient): database is locked"
+        val busy = "The wallet database is busy. Try again in a moment."
+        val unreadable = "The wallet data could not be read and may need to be restored."
+        val unsaved = "The wallet data could not be saved and may need to be restored."
+        val expected = mapOf(
+            49 to busy,
+            50 to unreadable,
+            51 to busy,
+            52 to unsaved,
+            53 to unsaved,
+            54 to unreadable,
+        )
+
+        expected.forEach { (code, userMessage) ->
+            val mapped = DashSdkError.fromNative(
+                DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + code, chain),
+            )
+
+            assertEquals("code $code user text", userMessage, mapped.userMessage)
+            assertEquals("code $code must keep the chain for logs", chain, mapped.message)
         }
     }
 
