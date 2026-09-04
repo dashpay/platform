@@ -13,12 +13,11 @@
 //! key-wallet lives in dedicated sub-changesets: identities, contacts,
 //! platform addresses, asset locks, and token balances.
 //!
-//! Earlier revisions of this file used `key_wallet::changeset::WalletChangeSet`
-//! verbatim in the `core` field. That upstream type was deleted in favour
-//! of an event-bus model (see PR #696 in rust-dashcore). Platform-wallet
-//! subscribes to the event bus, projects each event into a `CoreChangeSet`,
-//! and routes it through this changeset's `core` slot — keeping the
-//! per-domain merge / apply shape downstream consumers already know.
+//! key-wallet exposes core wallet changes as an event bus rather than a
+//! changeset type of its own. Platform-wallet subscribes to that bus,
+//! projects each event into a `CoreChangeSet`, and routes it through this
+//! changeset's `core` slot — so every domain, core included, shares one
+//! merge / apply shape downstream consumers can rely on.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -87,7 +86,7 @@ use crate::wallet::identity::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CoreChangeSet {
     /// Transaction records produced by this batch — one WALLET-LEVEL
-    /// record per txid (dashpay/platform#4387).
+    /// record per txid.
     ///
     /// Includes records first stored (`TransactionDetected`,
     /// `BlockProcessed.inserted`), records whose context advanced
@@ -265,8 +264,8 @@ impl HighestUsedIndexes {
     }
 }
 
-/// Fold same-txid [`TransactionRecord`]s into ONE wallet-level record —
-/// the dashpay/platform#4387 fix at the batch seam.
+/// Fold same-txid [`TransactionRecord`]s into ONE wallet-level record
+/// at the batch seam.
 ///
 /// Upstream `check_core_transaction` emits one record PER MATCHED ACCOUNT
 /// for a single transaction, each carrying only its account's slice
@@ -447,7 +446,7 @@ pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
 ///
 /// One linear pass over each side per merge — the adapter's drain calls
 /// merge once per buffered event, so this deliberately avoids the
-/// full-vec re-fold a `fold_same_txid_records` call here used to cost.
+/// full-vec re-fold a `fold_same_txid_records` call here would cost.
 fn coalesce_newest_wins<K: std::hash::Hash + Eq>(
     existing: &mut Vec<TransactionRecord>,
     incoming: Vec<TransactionRecord>,
@@ -495,7 +494,7 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
 
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
-        // Records: coalesce by txid, NEWEST-WINS (dashpay/platform#4387).
+        // Records: coalesce by txid, NEWEST-WINS.
         //
         // The event bridge already folded each event's per-account
         // slices into one wallet-level record per txid (see
@@ -1468,7 +1467,7 @@ impl Merge for DpnsNameStateChangeSet {
 /// Per-(identity, token) balance changes emitted by
 /// [`crate::manager::identity_sync::IdentitySyncManager::sync_now`].
 ///
-/// The watch list itself is no longer changeset-replicated — it lives
+/// The watch list itself is not changeset-replicated — it lives
 /// purely in the manager's in-memory cache. Persistence carries only
 /// the post-sync balance updates and tombstones.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1956,8 +1955,8 @@ pub struct PlatformWalletChangeSet {
     /// carries: no persister vtable has a slot for this field yet, so on
     /// hosts that have not adopted it the verdict is process-lifetime only.
     /// Within a process it still redirects a second bring-up, and a partial
-    /// scan is now retried inside its own launch — but closing
-    /// dashpay/platform#4365 across launches needs the host slot.
+    /// scan is retried inside its own launch — but honouring the verdict
+    /// across launches needs the host slot.
     pub identity_scan_state: Option<IdentityScanStateEntry>,
     /// Per-account registration entries emitted at registration / on
     /// later `add_account` calls. See [`AccountRegistrationEntry`] for

@@ -1110,7 +1110,18 @@ impl Drive {
             path.push(entry_key.clone());
 
             let mut parent_value_tree_type = top_value_tree_type;
-            for (i, (_level, sub_level_tree_types)) in levels.iter().enumerate() {
+            // A prefix-ranking chain level (`rankedCountable: { at }`)
+            // inverts the zero-contribution choice below, exactly as in the
+            // non-bucketed branch above and the v2 insert walker: a chain
+            // level's value trees count their single continuation, so the
+            // continuation is inserted unwrapped and contributes its
+            // subtree count. The bucketed level itself can never be a
+            // grouping level (validation rejects `at` naming the transform
+            // source), but the stamps are read rather than assumed so the
+            // three walkers share one rule.
+            let mut parent_counts_continuations =
+                top_index_level.ranked_count_grouping() || top_index_level.count_propagating();
+            for (i, (level, sub_level_tree_types)) in levels.iter().enumerate() {
                 let property_name = &new_suffix[i * 2];
                 let value = &new_suffix[i * 2 + 1];
 
@@ -1119,10 +1130,16 @@ impl Drive {
                 if !batch_insertion_cache.contains(&qualified_path) {
                     // Continuation property-name tree: contributes zero on
                     // every axis its aggregating parent maintains, exactly
-                    // as on the insert path.
+                    // as on the insert path — except inside a ranking
+                    // chain, whose continuation stays unwrapped, unless
+                    // this child is a count-exempt sibling branch
+                    // (re-inversion per child; see the non-bucketed
+                    // dispatch above).
                     let property_name_tree_type = sub_level_tree_types.property_name_tree_type;
                     let ranked_axes = sub_level_tree_types.ranked_axes.as_slice();
-                    let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree) {
+                    let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree)
+                        || (parent_counts_continuations && !level.count_exempt_branch())
+                    {
                         self.batch_insert_empty_index_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((path.clone(), property_name.as_slice())),
                             property_name_tree_type,
@@ -1174,6 +1191,8 @@ impl Drive {
                 path.push(value.clone());
 
                 parent_value_tree_type = sub_level_tree_types.value_tree_type;
+                parent_counts_continuations =
+                    level.ranked_count_grouping() || level.count_propagating();
             }
 
             if new_terminator_is_unique {

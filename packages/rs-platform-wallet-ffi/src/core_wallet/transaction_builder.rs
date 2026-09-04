@@ -31,6 +31,10 @@ use std::str::FromStr;
 pub struct FFITransactionBuilder {
     inner: *mut c_void,
     network: FFINetwork,
+    /// Set by `core_wallet_tx_builder_use_only_added_inputs`. key-wallet takes
+    /// this per funding call, which the finalizers make internally, so the
+    /// intent has to be carried here and read when they run.
+    reservation_only: bool,
 }
 
 /// Owned signed-transaction bytes handed across the C ABI as the `out_tx`
@@ -142,11 +146,13 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
 
     let signer =
         MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
-    let finalized = runtime().block_on(wallet.core().finalize_transaction(
+    let reservation_only = ffi.reservation_only;
+    let finalized = runtime().block_on(wallet.core().finalize_transaction_with_options(
         inner,
         account_type.funding_sources(),
         account_index,
         &signer,
+        reservation_only,
     ));
     let finalized = unwrap_result_or_return!(finalized);
 
@@ -277,11 +283,19 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
         MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
 
     // Atomic select + reserve + sign in one wallet-manager critical section.
-    let finalized = runtime().block_on(wallet.core().finalize_transaction(
+    // `reservation_only` is read off the reclaimed box (never through `builder`,
+    // whose provenance ends at `Box::from_raw`) and threaded through here for the
+    // same reason as in the immediate sibling: a host that called
+    // `core_wallet_tx_builder_use_only_added_inputs` and then finalized a
+    // DEFERRED payment would otherwise have the restriction silently discarded,
+    // and the account's UTXOs would be offered to selection after all.
+    let reservation_only = ffi.reservation_only;
+    let finalized = runtime().block_on(wallet.core().finalize_transaction_with_options(
         inner,
         account_type.funding_sources(),
         account_index,
         &signer,
+        reservation_only,
     ));
     let finalized = unwrap_result_or_return!(finalized);
 
@@ -451,7 +465,11 @@ pub unsafe extern "C" fn core_wallet_tx_builder_new(
     network: FFINetwork,
 ) -> *mut FFITransactionBuilder {
     let inner = Box::into_raw(Box::new(TransactionBuilder::new())) as *mut c_void;
-    Box::into_raw(Box::new(FFITransactionBuilder { inner, network }))
+    Box::into_raw(Box::new(FFITransactionBuilder {
+        inner,
+        network,
+        reservation_only: false,
+    }))
 }
 
 /// # Safety
@@ -613,6 +631,32 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_fee_rate(
     let b = b.set_fee_rate(FeeRate::new(sat_per_kb));
     (*builder).store_builder(b);
 
+    PlatformWalletFFIResult::ok()
+}
+
+/// Fund the build from the inputs `core_wallet_tx_builder_add_inputs_from_outpoints`
+/// supplied, and nothing else.
+///
+/// Without this, the wallet-aware finalizers offer every unreserved UTXO of the
+/// funding account alongside the seeded ones, so seeding a subset does not
+/// restrict what gets selected. A caller draining an account in batches that
+/// each stay under the standard-transaction input limit needs this, or every
+/// batch sees the whole account and fails with a too-many-inputs error.
+///
+/// Honoured by BOTH finalizers — `core_wallet_tx_builder_finalize` and the
+/// deferred `core_wallet_signed_payment_finalize` — so the restriction cannot
+/// be lost by picking one submission path over the other. It only removes
+/// candidates: the account still takes on the build's reservation bookkeeping
+/// and still supplies its change address.
+///
+/// # Safety
+/// `builder` must be a valid, non-destroyed pointer.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_tx_builder_use_only_added_inputs(
+    builder: *mut FFITransactionBuilder,
+) -> PlatformWalletFFIResult {
+    check_ptr!(builder);
+    (*builder).reservation_only = true;
     PlatformWalletFFIResult::ok()
 }
 

@@ -1003,9 +1003,9 @@ mod tests {
     // The gate in front of the drain.
     //
     // `verify_seed_binds` above proves the check itself is right. These prove
-    // the drain cannot run without it — the property that matters, because the
-    // FFI entry point every JNI client binds to used to call the drains
-    // directly and skip the check entirely.
+    // the drain cannot run without it — the property that matters for the FFI
+    // entry point every JNI client binds to, which must not reach the drains
+    // directly and skip the check.
     // -----------------------------------------------------------------------
 
     /// A different valid BIP-39 vector: the mis-mapped Keychain slot.
@@ -1261,8 +1261,8 @@ mod tests {
         }
     }
 
-    /// The defect: a payment made through a wrong-seed provider used to drain
-    /// first and fail second. The drain runs `RegisterReceiving` against
+    /// The failure mode: a payment made through a wrong-seed provider that
+    /// drains first and fails second. The drain runs `RegisterReceiving` against
     /// whatever seed the provider resolves, and `register_contact_account`
     /// keys its existence check on `(index, us, them)` rather than the xpub —
     /// so the wrong account is written once, never revisited, and the wallet
@@ -1679,11 +1679,11 @@ mod tests {
     //
     // Both gated passes take a deadline, and the startup sequence hands one
     // down precisely so no Platform-wallet step can hold Core SPV past its
-    // budget. The check itself used to sit outside it: the provider is the
-    // host's Keychain / Keystore, and a host that never answers held the whole
-    // launch. An already-spent deadline was worse than useless — it still paid
-    // for a Keychain derivation before the drain it guards would have stopped
-    // at its first entry.
+    // budget. The check itself must sit inside it: the provider is the host's
+    // Keychain / Keystore, and a host that never answers would hold the whole
+    // launch. An already-spent deadline must stop the check too, or it still
+    // pays for a Keychain derivation before the drain it guards would have
+    // stopped at its first entry.
     //
     // Bounding it is safe in a way bounding the drains is not: the check
     // derives a public key and compares it, committing nothing on the way, so

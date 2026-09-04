@@ -831,6 +831,7 @@ mod execution {
             case.document_type_name.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture declares the axis")
@@ -1449,6 +1450,7 @@ mod identifier_group_keys {
             DOCUMENT_TYPE.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture declares the avg axis")
@@ -1752,6 +1754,7 @@ mod pinned_prefix {
             DOCUMENT_TYPE.to_string(),
             indexes,
             &mode,
+            &[],
             platform_version(),
         )
         .expect("the fixture's compound index covers the pinned request")
@@ -2142,6 +2145,7 @@ mod pinned_prefix {
                 .expect("taggedGrade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             pv,
         )
         .expect("the compound index covers the null-pinned request");
@@ -2299,6 +2303,7 @@ mod pinned_prefix {
                 .expect("taggedGrade doctype exists")
                 .indexes(),
             &mode,
+            &[],
             pv,
         )
         .expect("the compound index covers the mixed-null request");

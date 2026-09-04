@@ -53,14 +53,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "4db5c36701b8f38c4aea704badb81e3103ed701d" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "393b612269c158925451235a5d9c0ffa5e2eeed2" }
 
 tokio-metrics = "0.5"
 
@@ -138,5 +138,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "4.2.0-dev.7"
+version = "4.2.0-dev.8"
 rust-version = "1.92"

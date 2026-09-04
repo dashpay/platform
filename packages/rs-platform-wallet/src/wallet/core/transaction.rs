@@ -100,7 +100,7 @@ pub struct SignedCoreTransaction {
     /// releases the reservation *owner-guarded*: after this build's inputs may
     /// have been swept by key-wallet's TTL and re-reserved by a concurrent build
     /// under a new token, releasing by outpoint alone would free that other
-    /// build's inputs (the `dashpay/platform#4185` double-spend window).
+    /// build's inputs (the release/re-reserve double-spend window).
     /// [`ManagedCoreFundsAccount::release_reservation_if_owner`] releases only
     /// inputs still owned by this token, closing that window.
     reservation_token: Option<ReservationToken>,
@@ -117,8 +117,7 @@ pub struct SignedCoreTransaction {
     /// so a caller cannot finalize through wallet A and then register/broadcast
     /// through an unrelated wallet B — the registry would otherwise treat B as
     /// the owner, submit A's transaction through B's broadcaster, and run B's
-    /// cleanup while A's real reservation leaked until its TTL
-    /// (`dashpay/platform#4185`).
+    /// cleanup while A's real reservation leaked until its TTL.
     origin_generation: Arc<WalletGeneration>,
 }
 
@@ -172,7 +171,7 @@ impl SignedCoreTransaction {
     /// ownership: `SignedCoreTransaction` is deliberately not `Clone`, so a
     /// finalize yields exactly one ownership object and the registry can be
     /// handed it exactly once — a caller cannot mint two live tokens that name
-    /// the same held reservation (`dashpay/platform#4185`). The transaction,
+    /// the same held reservation. The transaction,
     /// funding account, and reservation height are derived here, not supplied
     /// independently by the caller.
     pub(crate) fn into_registered_parts(self) -> RegisteredPaymentParts {
@@ -302,6 +301,26 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     pub async fn finalize_transaction<S: TransactionSigner + ?Sized + Sync>(
         &self,
         builder: TransactionBuilder,
+        sources: &[AccountTypePreference],
+        source_index: u32,
+        signer: &S,
+    ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+        self.finalize_transaction_with_options(builder, sources, source_index, signer, false)
+            .await
+    }
+
+    /// `reservation_only` funds through
+    /// [`TransactionBuilder::add_funding_reservation_only`]: the sources take on
+    /// their reservation bookkeeping but offer no candidates, so the build spends
+    /// only the inputs already seeded on the builder.
+    ///
+    /// A caller draining an account in batches under the standard-transaction
+    /// input limit needs it — ordinary funding offers the whole account on top of
+    /// the batch, so every batch trips the cap and an account above it can never
+    /// be drained.
+    pub async fn finalize_transaction_with_options<S: TransactionSigner + ?Sized + Sync>(
+        &self,
+        builder: TransactionBuilder,
         // The funding sources to POOL, in order — the first supplies the
         // change address. A plain send passes [`SEND_FUNDING_SOURCES`]
         // (BIP44 + BIP32 + every DashPay receiving account); a single-element
@@ -311,6 +330,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         sources: &[AccountTypePreference],
         source_index: u32,
         signer: &S,
+        reservation_only: bool,
     ) -> Result<SignedCoreTransaction, PlatformWalletError> {
         let primary = *sources.first().ok_or_else(|| {
             PlatformWalletError::TransactionBuild("no funding sources named".into())
@@ -342,13 +362,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // interleaving. The token rides in `SignedCoreTransaction` so a
             // later abandon or rejected broadcast releases *only* the inputs
             // this build still owns, even if a TTL sweep re-reserved them under
-            // a new token meanwhile (`dashpay/platform#4185`).
+            // a new token meanwhile.
             let mut builder = builder.set_current_height(height);
-            // Accounts whose UTXOs were OFFERED to selection, in funding order.
-            // Not the same as the accounts that end up contributing inputs —
-            // selection may take nothing from most of them — so this drives
-            // build-time cleanup only, and the contributor list stored on the
-            // transaction is derived from the selected inputs below.
+            // Accounts that took on this build's reservation bookkeeping, in
+            // funding order — i.e. the ones a failure path must release. Under
+            // `reservation_only` nothing is offered to selection at all; without
+            // it these are also the accounts whose UTXOs were offered. Either
+            // way this is NOT the list of accounts that end up contributing
+            // inputs — selection may take nothing from most of them — so it
+            // drives build-time cleanup only, and the contributor list stored on
+            // the transaction is derived from the selected inputs below.
             let mut offered_accounts: Vec<AccountType> = Vec::new();
             let mut offered_seen: HashSet<AccountType> = HashSet::new();
             let mut paths: HashMap<Address, DerivationPath> = HashMap::new();
@@ -375,7 +398,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                             paths.insert(utxo.address.clone(), path);
                         }
                     }
-                    builder = builder.add_funding(managed, account);
+                    builder = if reservation_only {
+                        builder.add_funding_reservation_only(managed, account)
+                    } else {
+                        builder.add_funding(managed, account)
+                    };
                     offered_accounts.push(at);
                 }
                 // A strict single-source SET selector (a DashPay preference
@@ -437,8 +464,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // request itself is sound and can be re-attempted once the fenced
             // dispatch's outcome is reconciled (see the variant docs for the
             // duplicate-payment hazard in "retry unchanged"), and callers
-            // should not have to substring-match prose to tell it apart
-            // (`dashpay/platform#4309`).
+            // should not have to substring-match prose to tell it apart.
             if let Some(outpoint) = info.generation.in_broadcast_conflict(&unsigned) {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(PlatformWalletError::InputMidBroadcast { outpoint });
@@ -560,7 +586,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             reservation_token,
             // Capture the finalizing wallet's generation identity so the
             // deferred registry can refuse to bind this payment to any other
-            // wallet (`dashpay/platform#4185`).
+            // wallet.
             origin_generation: Arc::clone(self.generation()),
         })
     }
@@ -620,7 +646,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// (`SignedCoreTransaction::reservation_token`). When present the release is
     /// *owner-guarded* — it frees only inputs still owned by that token, so a
     /// reservation key-wallet's TTL swept and a concurrent build re-took is left
-    /// untouched (`dashpay/platform#4185`). When `None` (the build reserved
+    /// untouched. When `None` (the build reserved
     /// nothing) it falls back to the unconditional by-outpoint release; that
     /// path is never reached for a funded finalize, which always reserves.
     pub(crate) async fn release_transaction_reservation(
@@ -888,6 +914,120 @@ mod tests {
             &DashAddress::dummy(Network::Testnet, usize::from(tag)),
             1_000_000,
         )
+    }
+
+    /// `reservation_only` end to end IN THIS WORKSPACE. key-wallet covers
+    /// `add_funding_reservation_only` on its own side, but only this proves
+    /// the flag survives the crossing: it travels an FFI struct field, a
+    /// finalizer bool, and a key-wallet call, and a refactor that drops it
+    /// anywhere along that path leaves every other test in this repo green
+    /// while silently readmitting the >500-input build the flag exists to
+    /// prevent.
+    ///
+    /// The account holds two UTXOs; the builder is seeded with exactly one.
+    /// Under the flag the build must spend that one and nothing else — and a
+    /// payment only the pair could cover must FAIL, which is the assertion that
+    /// actually proves the second UTXO was never offered to selection. The
+    /// unflagged control shows the same wallet funds it happily.
+    #[tokio::test]
+    async fn reservation_only_finalize_spends_only_the_seeded_inputs() {
+        let account_type = StandardAccountType::BIP44Account;
+        let (manager, wallet_id, generation, signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                account_type,
+                &[900_000, 900_000],
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        // One of the account's two spendable UTXOs, chosen by outpoint so the
+        // pick is deterministic across runs.
+        let seeded = {
+            use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+            let wm = core.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&core.wallet_id())
+                .expect("wallet present in manager");
+            let height = info.core_wallet.last_processed_height();
+            let account = info
+                .core_wallet
+                .first_bip44_managed_account()
+                .expect("bip44 managed account");
+            let mut utxos: Vec<key_wallet::Utxo> = account
+                .spendable_utxos(height)
+                .into_iter()
+                .cloned()
+                .collect();
+            assert_eq!(utxos.len(), 2, "fixture must fund two separate UTXOs");
+            utxos.sort_by_key(|u| u.outpoint);
+            utxos.remove(0)
+        };
+
+        // A payment neither UTXO covers alone. With the flag the unseeded one
+        // is not a candidate, so selection must come up short.
+        let err = core
+            .finalize_transaction_with_options(
+                payment_builder(60).add_inputs([seeded.clone()]),
+                &[preference(account_type)],
+                0,
+                &signer,
+                true,
+            )
+            .await
+            .expect_err("the account's other UTXO must not be reachable under the flag");
+        assert!(
+            matches!(err, PlatformWalletError::CoreInsufficientFunds { .. }),
+            "expected a funding shortfall, got {err:?}"
+        );
+
+        // Within what the seeded input alone covers: exactly that input, and
+        // the account's own change address still comes from its bookkeeping.
+        let finalized = core
+            .finalize_transaction_with_options(
+                TransactionBuilder::new()
+                    .add_output(&DashAddress::dummy(Network::Testnet, 61), 500_000)
+                    .add_inputs([seeded.clone()]),
+                &[preference(account_type)],
+                0,
+                &signer,
+                true,
+            )
+            .await
+            .expect("the seeded input alone covers this payment");
+        let inputs = &finalized.transaction().input;
+        assert_eq!(inputs.len(), 1, "only the seeded input may be spent");
+        assert_eq!(
+            inputs[0].previous_output, seeded.outpoint,
+            "the spent input must be the seeded one"
+        );
+        core.abandon_transaction(&finalized).await;
+
+        // Control: the same wallet, the same payment, no flag — proof the
+        // shortfall above came from the restriction and not from the fixture.
+        let pooled = core
+            .finalize_transaction_with_options(
+                payment_builder(62),
+                &[preference(account_type)],
+                0,
+                &signer,
+                false,
+            )
+            .await
+            .expect("without the flag both UTXOs fund the payment");
+        assert_eq!(
+            pooled.transaction().input.len(),
+            2,
+            "the unflagged build must reach for both UTXOs"
+        );
+        core.abandon_transaction(&pooled).await;
     }
 
     #[tokio::test]

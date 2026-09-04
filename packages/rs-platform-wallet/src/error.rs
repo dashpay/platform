@@ -60,8 +60,8 @@ pub enum PlatformWalletError {
     /// A gap-limit scan ended empty with at least one index left unanswered.
     /// Distinct from an empty success: it means "we do not know", so the
     /// caller must retry rather than record that the seed owns no identity.
-    /// Both outcomes used to arrive as `Ok(vec![])`, which is how a transient
-    /// DAPI failure right after restore-from-seed became a whole session
+    /// Collapsing both outcomes into `Ok(vec![])` would let a transient
+    /// DAPI failure right after restore-from-seed become a whole session
     /// without an identity.
     ///
     /// "Retry" is the contract, not a promise that the cause is transient — a
@@ -127,16 +127,14 @@ pub enum PlatformWalletError {
     /// still provably unswept. The generation's pending-spend fence
     /// ([`WalletGeneration`](crate::wallet::core::WalletGeneration)) is NOT
     /// swept with either: it has no bound of its own and is released by the
-    /// wallet OBSERVING the outpoint spent, and by nothing else
-    /// (`dashpay/platform#4309`).
+    /// wallet OBSERVING the outpoint spent, and by nothing else.
     ///
-    /// So an earlier promise made here — that the reservation TTL reconciles an
-    /// ambiguous outcome — no longer holds and was never sound: elapsed time is
-    /// not evidence about the transaction, which stays valid and relayable no
-    /// matter how long the wait. The build refusal that follows a `MaybeSent`
-    /// is [`Self::InputMidBroadcast`], and it stands until a spend is observed
-    /// — this wallet's own transaction landing, or a conflicting one taking the
-    /// outpoint.
+    /// The reservation TTL does NOT reconcile an ambiguous outcome: elapsed
+    /// time is not evidence about the transaction, which stays valid and
+    /// relayable no matter how long the wait. The build refusal that follows
+    /// a `MaybeSent` is [`Self::InputMidBroadcast`], and it stands until a
+    /// spend is observed — this wallet's own transaction landing, or a
+    /// conflicting one taking the outpoint.
     ///
     /// Removing the wallet and re-creating it under the same id does NOT end
     /// the refusal: the fence map is keyed by wallet id and handed to the
@@ -208,11 +206,11 @@ pub enum PlatformWalletError {
     /// [`Self::AssetLockTransaction`] string: the refusal says nothing wrong
     /// about the request itself — the same intent can be re-attempted once
     /// the conflict resolves (see below for what "resolves" requires) — and
-    /// telling it apart from a genuine build failure previously meant
-    /// substring-matching prose (`message.contains("mid-broadcast")`, which
-    /// the tests did too). All three selection choke points — the
+    /// telling it apart from a genuine build failure must not require
+    /// substring-matching prose (`message.contains("mid-broadcast")`).
+    /// All three selection choke points — the
     /// finalized-transaction build, the contact-payment build and the
-    /// asset-lock build — now return this one variant.
+    /// asset-lock build — return this one variant.
     ///
     /// # Retrying the INTENT requires reconciling the fenced transaction first
     ///
@@ -236,8 +234,7 @@ pub enum PlatformWalletError {
     /// Reaching a caller at all is the uncommon path: a fenced input is
     /// normally still reserved and never offered to selection. This fires only
     /// in the window after key-wallet's reservation TTL swept that dispatch's
-    /// reservation, which is exactly what the fence exists to cover
-    /// (`dashpay/platform#4309`).
+    /// reservation, which is exactly what the fence exists to cover.
     #[error(
         "selected input {outpoint} is mid-broadcast by an in-flight dispatch; \
          retry after it completes"
@@ -510,7 +507,7 @@ pub enum PlatformWalletError {
 
     /// Asset-lock coin selection came up short, so a host (and ultimately the
     /// wallet UI) can render a precise shortfall instead of a stringly-typed
-    /// "Insufficient funds" message (dashpay/platform#4073).
+    /// "Insufficient funds" message.
     ///
     /// What `available` covers depends on the build's funding form. An
     /// exact-amount build funds from a POOLED source list — the default
@@ -1182,7 +1179,7 @@ pub fn promote_document_trade_error_or(
 /// error, yet is deliberately kept free of any dependency on the FFI crate.
 /// The two definitions are pinned byte-identical by a compile-time assertion in
 /// `platform-wallet-ffi` (`src/error.rs`), so any drift is a build failure
-/// rather than a silent code-31 regression (dashpay/platform#4183 review).
+/// rather than a silent code-31 regression.
 pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: ";
 
 /// Preserve a structured `SigningKeyUnavailable` signer failure through an
@@ -1204,7 +1201,7 @@ pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: "
 /// The check is **structural and position-0 only** (the marker must start the
 /// nested `ProtocolError::Generic` payload); it is never a substring sniff of
 /// the rendered error, so a foreign signer that merely mentions the token is
-/// not misrouted into key repair (dashpay/platform#4183 review). This mirrors
+/// not misrouted into key repair. This mirrors
 /// the guarded restore already performed by the FFI conversion.
 pub fn preserve_signer_key_unavailable_or(
     error: dash_sdk::Error,
@@ -1263,7 +1260,7 @@ mod signer_key_unavailable_tests {
 
     /// The marker only counts at position 0: a generic error that merely
     /// mentions it mid-message is wrapped, never preserved as the typed
-    /// key-unavailable shape (dashpay/platform#4183 review).
+    /// key-unavailable shape.
     #[test]
     fn substring_marker_is_not_preserved() {
         let error = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(

@@ -38,11 +38,13 @@ use serde::{Deserialize, Serialize};
 /// window of history (see [`Self::oldest_active_start`]).
 ///
 /// Note that the *server-ordered* form (`ORDER BY COUNT(*)` — the ranked
-/// query surface) cannot yet be combined with a time-range selection: ranked
-/// queries accept no where clauses in this protocol version (their routing
-/// deliberately has no equality-prefix support yet), so "top K by count
-/// within the bucket" is served as the grouped count above with client-side
-/// ordering until ranked prefix routing lands at a future protocol version.
+/// query surface) cannot yet be combined with a time-range selection:
+/// contract validation rejects the ranked keywords on a `timeRange` index
+/// (with overlapping windows a document would be ranked into
+/// `overlap_factor` groups at once) and the ranked dispatcher rejects
+/// time-range selections, so "top K by count within the bucket" is served
+/// as the grouped count above with client-side ordering until bucket-aware
+/// ranked semantics are deliberately designed.
 ///
 /// At the GroveDB storage layer, a transformed first property gets its own
 /// index level keyed by [`Self::storage_key`] — the property name qualified
@@ -220,6 +222,29 @@ impl TimeRangeTransform {
             })
             .filter(|start| *start >= phase_ms)
             .collect()
+    }
+
+    /// Whether the millisecond timestamp `start_ms` is one of this grid's
+    /// range starts — i.e. `phase + k * step` for some `k = 0, 1, 2, …` on
+    /// the millisecond timeline.
+    ///
+    /// This is the validity check for an absolutely-named window (the
+    /// `BY_START` selector of an `IN_TIME_RANGE` query): a start off the
+    /// grid names no window, and the resolver rejects it rather than
+    /// snapping — a snapped start would silently answer a different window
+    /// than the one the caller spelled. Whether the window has begun, or
+    /// holds any documents, is deliberately NOT checked here: an empty
+    /// window is a provable empty answer, not an invalid question.
+    ///
+    /// Returns `false` for a malformed zero-step transform, which a
+    /// validated contract can never carry — same defensive posture as
+    /// [`Self::most_recent_start`].
+    pub fn is_bucket_start(&self, start_ms: u64) -> bool {
+        let (step_ms, phase_ms) = (self.step_ms(), self.phase_ms());
+        if step_ms == 0 || start_ms < phase_ms {
+            return false;
+        }
+        (start_ms - phase_ms).is_multiple_of(step_ms)
     }
 
     /// The start of the newest range that is active at the millisecond
@@ -436,6 +461,41 @@ mod tests {
         };
         let raw = DocumentPropertyType::encode_date_timestamp(4_999);
         assert_eq!(t_phased.entry_keys_for_raw(&raw), Vec::<Vec<u8>>::new());
+    }
+
+    #[test]
+    fn bucket_starts_are_exactly_the_phased_step_multiples() {
+        let t = transform(); // range 6h, step 2h, phase 0
+        let h = HOUR_MS;
+        assert!(t.is_bucket_start(0));
+        assert!(t.is_bucket_start(2 * h));
+        assert!(t.is_bucket_start(6 * h));
+        // off-grid: not a step multiple, and a range end is not a start
+        assert!(!t.is_bucket_start(h));
+        assert!(!t.is_bucket_start(2 * h + 1));
+        // a phased grid shifts the valid starts and voids the epoch sliver
+        let phased = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 60,
+            step_seconds: 20,
+            phase_seconds: 5,
+        };
+        assert!(phased.is_bucket_start(5_000));
+        assert!(phased.is_bucket_start(45_000));
+        assert!(!phased.is_bucket_start(0));
+        assert!(!phased.is_bucket_start(20_000));
+        // future starts are valid grid points — emptiness is the query's
+        // provable answer, not this predicate's concern
+        assert!(t.is_bucket_start(1_000_000 * h * 2));
+        // malformed zero-step transform answers false instead of dividing
+        // by zero
+        let malformed = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 60,
+            step_seconds: 0,
+            phase_seconds: 0,
+        };
+        assert!(!malformed.is_bucket_start(0));
     }
 
     #[test]

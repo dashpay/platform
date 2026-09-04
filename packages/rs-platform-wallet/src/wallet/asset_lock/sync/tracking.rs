@@ -91,9 +91,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     // or zero connected peers), never the ORIGINAL broadcast that moved the
     // row to `Broadcast` in an earlier process — so it is not evidence that
     // the transaction is absent from the network, and removing the row on it
-    // deleted tracking for possibly-mined asset locks during ordinary offline
-    // relaunches. `resume_asset_lock` now surfaces the typed error and leaves
-    // the row untouched.
+    // would delete tracking for possibly-mined asset locks during ordinary
+    // offline relaunches. `resume_asset_lock` surfaces the typed error and
+    // leaves the row untouched.
 
     /// Mark a tracked asset lock as
     /// [`Consumed`](AssetLockStatus::Consumed) after a successful

@@ -48,10 +48,10 @@ fn dashpay_account_registration_changeset(
 ///   retry on a poisoned channel).
 /// - **Transient** leaves the channel intact so the next sync sweep retries.
 ///
-/// (In the seedless model this method no longer derives the ECDH scalar — the
-/// caller passes a signer-derived `shared_key` — so a "key material
-/// unavailable" classification no longer arises here; that DEFER decision now
-/// lives at the drain's provider call.)
+/// (This method does not derive the ECDH scalar — the caller passes a
+/// signer-derived `shared_key` — so a "key material unavailable"
+/// classification cannot arise here; that DEFER decision lives at the drain's
+/// provider call.)
 ///
 /// [`register_external_contact_account`]: IdentityWallet::register_external_contact_account
 #[derive(Debug)]
@@ -269,9 +269,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Used by the SPV / backend task layer to classify observed
     /// transaction outputs as DashPay incoming payments from a
-    /// specific contact — replaces the redundant
-    /// `dashpay_address_mappings` reverse-lookup table the UI
-    /// layer used to maintain. The authoritative state is already
+    /// specific contact. No separate reverse-lookup table is needed
+    /// in the UI layer: the authoritative state is already
     /// tracked by `register_contact_account`, which inserts the
     /// account into the wallet's `ManagedAccountCollection` so
     /// key-wallet manages the address pool (derivation + gap limit

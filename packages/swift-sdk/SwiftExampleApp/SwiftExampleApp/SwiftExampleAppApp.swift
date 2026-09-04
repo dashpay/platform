@@ -155,9 +155,7 @@ struct SwiftExampleAppApp: App {
                     appUIState.pendingInviteURL = url.absoluteString
                 }
                 .task {
-                    SDKLogger.log("🚀 SwiftExampleApp: Starting initialization...", minimumLevel: .medium)
                     await bootstrap()
-                    SDKLogger.log("🚀 SwiftExampleApp: Initialization complete", minimumLevel: .medium)
                 }
                 // Rebind wallet-scoped services whenever the set of
                 // managed wallets changes — wallet creation, restore
@@ -206,18 +204,31 @@ struct SwiftExampleAppApp: App {
     @MainActor
     private func activateManager(for network: Network) {
         guard let sdk = platformState.sdk else {
-            SDKLogger.error(
-                "Cannot activate wallet manager for \(network.displayName): "
-                    + "no SDK available (still bootstrapping?)"
+            SDKLogger.event(
+                "manager_activation_skipped",
+                category: .lifecycle,
+                severity: .warning,
+                fields: [
+                    "network": .publicText(network.displayName),
+                    "reason": .publicText("sdk_unavailable"),
+                ]
             )
             return
         }
         do {
             try walletManagerStore.activate(network: network, sdk: sdk)
+            SDKLogger.event(
+                "manager_activated",
+                category: .lifecycle,
+                fields: ["network": .publicText(network.displayName)]
+            )
         } catch {
-            SDKLogger.error(
-                "Failed to activate wallet manager for "
-                    + "\(network.displayName): \(error.localizedDescription)"
+            SDKLogger.event(
+                "manager_activation_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["network": .publicText(network.displayName)],
+                error: error
             )
         }
     }
@@ -413,6 +424,11 @@ struct SwiftExampleAppApp: App {
     private func bootstrap() async {
         do {
             LoggingPreferences.configure()
+            SDKLogger.event(
+                "app_initialization_started",
+                category: .lifecycle,
+                fields: ["network": .publicText(platformState.currentNetwork.displayName)]
+            )
 
             // Kick off Halo 2 proving-key build on a background
             // thread so the first shielded send doesn't pay the
@@ -477,8 +493,23 @@ struct SwiftExampleAppApp: App {
             // bumps last wins and the other bails (never a double-start).
             isInitialized = true
             await autoStartCoreSpvIfNeeded()
+            SDKLogger.event(
+                "app_initialization_completed",
+                category: .lifecycle,
+                fields: [
+                    "network": .publicText(platformState.currentNetwork.displayName),
+                    "wallet_count": .integer(Int64(walletManager.wallets.count)),
+                ]
+            )
         } catch {
             bootstrapError = error
+            SDKLogger.event(
+                "app_initialization_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["network": .publicText(platformState.currentNetwork.displayName)],
+                error: error
+            )
         }
     }
 
