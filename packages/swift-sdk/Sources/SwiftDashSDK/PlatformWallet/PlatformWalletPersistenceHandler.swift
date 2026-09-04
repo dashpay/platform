@@ -146,6 +146,46 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// atomically.
     private var inChangeset = false
 
+    /// Sync-height watermarks staged during the round and applied only in
+    /// `endChangeset`, immediately before the final `save()`. The watermark
+    /// certifies "every row at or below this height is durably persisted",
+    /// so with intermediate saves (below) it must be the LAST thing a round
+    /// commits: a crash mid-round then leaves idempotent rows without an
+    /// advanced watermark, and the durable re-walk redelivers the remainder.
+    /// Keyed by walletId; cleared on rollback without applying.
+    private var deferredSyncedHeights: [Data: (wallet: PersistentWallet, height: UInt32)] = [:]
+
+    /// Rows applied since the last intermediate `save()`. A changeset round
+    /// used to accumulate every row unsaved until `endChangeset`, which made
+    /// each per-row `fetch()` re-scan the whole pending set — O(rows²) per
+    /// round. A mixing-heavy wallet's catch-up round (thousands of TXO/tx
+    /// upserts) turned that into hours of compute on the persistence queue
+    /// (verified by sampling: all samples inside upsertUtxo → SwiftData
+    /// pending-merge hashing). Saving every `intermediateSaveEvery` rows
+    /// bounds the pending set and makes the round linear. Atomicity note:
+    /// see `deferredSyncedHeights` for why this stays crash-safe.
+    private var rowsSinceIntermediateSave = 0
+    private let intermediateSaveEvery = 500
+
+    /// Count one applied row; flush the context when the pending set
+    /// reaches the bound. A failing intermediate save is logged and left
+    /// for the round's final save to retry/report.
+    private func noteRowApplied() {
+        rowsSinceIntermediateSave += 1
+        guard rowsSinceIntermediateSave >= intermediateSaveEvery else { return }
+        rowsSinceIntermediateSave = 0
+        do {
+            try backgroundContext.save()
+        } catch {
+            SDKLogger.event(
+                "persistence_intermediate_save_failed",
+                category: .persistence,
+                severity: .warning,
+                error: error
+            )
+        }
+    }
+
     /// Breadcrumb backfills that arrived on the serial queue while a
     /// changeset round was open. The backfill both mutates
     /// `backgroundContext` and saves it, so running it mid-round would
@@ -997,10 +1037,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             guard let wallet = findWalletRecord(walletId: walletId) else { return }
             let cs = changeset.pointee
 
-            // Chain update.
+            // Chain update. The synced-height watermark is NOT applied here:
+            // it certifies the round's rows, so with intermediate saves it
+            // must land only in the round's final save (see
+            // `deferredSyncedHeights`). Outside a round (defensive; store()
+            // always opens one) it applies immediately as before.
             if cs.has_chain {
                 if cs.chain.has_synced_height {
-                    wallet.syncedHeight = cs.chain.synced_height
+                    if inChangeset {
+                        deferredSyncedHeights[walletId] =
+                            (wallet: wallet, height: cs.chain.synced_height)
+                    } else {
+                        wallet.syncedHeight = cs.chain.synced_height
+                    }
                 }
                 wallet.lastUpdated = Date()
             }
@@ -1214,6 +1263,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     }
 
     private func upsertTransaction(account: PersistentAccount, tx: TransactionRecordFFI) {
+        // Bound the pending set before the row's fetches — see noteRowApplied.
+        noteRowApplied()
         // The `account` parameter scopes the wallet-id used for the
         // input-reconciliation pass at the bottom of this method, and
         // records this account's participation in the tx via the
@@ -1466,6 +1517,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     }
 
     private func upsertUtxo(account: PersistentAccount, utxo: UtxoEntryFFI) {
+        // Bound the pending set before the row's fetches — see noteRowApplied.
+        noteRowApplied()
         // Pull the per-account wallet id once. Used both for the new
         // `PersistentTxo.walletId` denorm (so per-wallet predicates
         // can hit a single column) and for stub-tx routing below.
@@ -1860,6 +1913,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     func beginChangeset(walletId: Data) {
         onQueue {
             self.inChangeset = true
+            self.rowsSinceIntermediateSave = 0
+            self.deferredSyncedHeights.removeAll()
             SDKLogger.event(
                 "persistence_changeset_started",
                 category: .persistence,
@@ -1926,6 +1981,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     backgroundContext.rollback()
                     return false
                 }
+                // Watermarks last: every row of the round is either already
+                // flushed by an intermediate save or staged for this final
+                // one, so certifying the height here keeps the "watermark
+                // never precedes its rows" ordering that crash recovery
+                // (the durable re-walk) depends on.
+                for (_, entry) in deferredSyncedHeights {
+                    entry.wallet.syncedHeight = entry.height
+                }
+                deferredSyncedHeights.removeAll()
                 do {
                     try backgroundContext.save()
                     SDKLogger.event(
@@ -1958,8 +2022,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 backgroundContext.rollback()
                 // Parked rows from the failed round die with it: the Rust
                 // side rolled its in-memory entries back too, so persisting
-                // them later would fabricate history.
+                // them later would fabricate history. Staged watermarks die
+                // unapplied for the same reason — certifying heights whose
+                // rows were rolled back would create silent holes.
                 deferredPaymentUpserts.removeAll()
+                deferredSyncedHeights.removeAll()
                 SDKLogger.event(
                     "persistence_changeset_rolled_back",
                     category: .persistence,
