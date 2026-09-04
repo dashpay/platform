@@ -862,7 +862,7 @@ impl From<dashcore::address::Error> for WalletStorageError {
 mod tests {
     use super::*;
 
-    /// RUST-018: `MissingAccount` must hex-encode `wallet_id` like every
+    /// Invariant: `MissingAccount` must hex-encode `wallet_id` like every
     /// other wallet-id-bearing variant, not `Debug`-print it as thirty-two
     /// bracketed decimal integers.
     #[test]
@@ -876,7 +876,7 @@ mod tests {
         );
     }
 
-    /// RUST-019: the message must not assert that something was tolerated
+    /// Invariant: the message must not assert that something was tolerated
     /// — `ensure_writable` gates on policy alone, so a clean Recovery load
     /// hits this same text. It should point at `last_load_degradation`/
     /// `is_degraded` instead of instructing a repair that may not be needed.

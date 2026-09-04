@@ -368,7 +368,7 @@ mod tests {
     use super::*;
 
     /// `chain_message` must not stop at the head of the chain — that is
-    /// the whole point of RUST-004: `WalletStorageError`'s `Display` is
+    /// the whole point of rendering it: `WalletStorageError`'s `Display` is
     /// terse by design, so nothing this CLI prints can rely on `to_string`.
     #[test]
     fn chain_message_joins_the_whole_source_chain() {

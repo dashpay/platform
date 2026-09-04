@@ -420,7 +420,7 @@ mod tests {
         assert_eq!(snapshot.by_site.get(&LoadSite::ChainLockBlob), Some(&2));
     }
 
-    /// RUST-003: `tolerate_many` (public-in-name-only, its only non-test
+    /// Invariant: `tolerate_many` (public-in-name-only, its only non-test
     /// caller passed a constant 1) is gone — `tolerate_at` is the one path
     /// for a walk that counts several occurrences under one log record.
     #[test]
@@ -445,7 +445,7 @@ mod tests {
         );
     }
 
-    /// RUST-003: `tolerate` must log the site's bespoke
+    /// Invariant: `tolerate` must log the site's bespoke
     /// [`LoadSite::explanation`], not the old hard-coded generic literal —
     /// `TombstonedIdentityOrphan` has bespoke prose that the previous
     /// literal could never surface.
@@ -463,7 +463,7 @@ mod tests {
         ));
     }
 
-    /// RUST-003: `tolerate` and `tolerate_at` must both log via
+    /// Invariant: `tolerate` and `tolerate_at` must both log via
     /// `site.explanation()` — the same per-site text, computed the same
     /// way — instead of `tolerate`'s old hard-coded literal that was
     /// identical for every site regardless of which one fired.
@@ -587,7 +587,7 @@ mod tests {
         assert_eq!(snapshot.unimplemented_rows, 7);
     }
 
-    /// RUST-002/RUST-003: `note_degraded` must log the same `message`
+    /// Invariant: `note_degraded` must log the same `message`
     /// field shape as `tolerate`/`tolerate_at`, carrying the site's
     /// bespoke [`LoadSite::explanation`].
     #[tracing_test::traced_test]
@@ -609,7 +609,7 @@ mod tests {
         ));
     }
 
-    /// RUST-002: `Display`/`as_str` stay the snake_case log tag —
+    /// Invariant: `Display`/`as_str` stay the snake_case log tag —
     /// `explanation` is the separate, human-readable rendering. A caller
     /// must not get jargon from one and prose from the other by accident.
     #[test]
@@ -631,7 +631,7 @@ mod tests {
             .contains("identity_index_collision"));
     }
 
-    /// RUST-002: `LoadDegradation`'s `Display` is the public rendering a
+    /// Invariant: `LoadDegradation`'s `Display` is the public rendering a
     /// host app reaches for instead of re-deriving prose from `by_site`'s
     /// tags — it must name the site's log tag, its count, and its prose.
     #[test]
