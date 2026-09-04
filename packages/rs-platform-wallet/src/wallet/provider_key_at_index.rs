@@ -406,10 +406,10 @@ impl PlatformWallet {
     /// `include_private` additionally requests the raw private scalar.
     ///
     /// The derivation delegates to key-wallet's gate-free provider-key
-    /// entry points (rust-dashcore #881) so every per-index key is
-    /// byte-identical to what `Wallet::from_mnemonic` account creation
-    /// produces; it never feeds a secp256k1 child scalar into a
-    /// BLS/Ed25519 master (the pre-#879 hybrid).
+    /// entry points so every per-index key is byte-identical to what
+    /// `Wallet::from_mnemonic` account creation produces; it never feeds a
+    /// secp256k1 child scalar into a BLS/Ed25519 master, which would yield
+    /// keys that differ from the ones the wallet's own accounts hold.
     ///
     /// # Errors
     /// - [`PlatformWalletError::AddressNotFound`] if this wallet has no

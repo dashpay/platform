@@ -1681,7 +1681,7 @@ impl NetworkShieldedCoordinator {
                 // match the height-less gate below and stamp the
                 // discovering batch's proof-anchor (scan-tip) height
                 // back onto the row — reintroducing the exact artifact
-                // the deriver stopped writing. Live rows keep both
+                // the deriver deliberately does not write. Live rows keep both
                 // arms: the Pending flip and the height backfill (their
                 // sighting arrives near-tip, so the bound is within a
                 // few blocks of inclusion).

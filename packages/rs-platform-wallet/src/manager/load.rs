@@ -91,10 +91,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // (below) and key this generation's in-broadcast fence map by it.
             let wallet_id = wallet.compute_wallet_id();
 
-            // The fence map is per WALLET, not per generation
-            // (`dashpay/platform#4309`, review round 8). On a first load the
-            // registry is empty and this is a fresh map; a re-load — or a load
-            // that follows a removal — inherits whatever pending spends the
+            // The fence map is per WALLET, not per generation. On a first load
+            // the registry is empty and this is a fresh map; a re-load — or a
+            // load that follows a removal — inherits whatever pending spends the
             // previous generation under this id left standing, rather than
             // handing the restored UTXOs back unprotected.
             //
@@ -478,8 +477,8 @@ mod idempotent_load_tests {
     /// The app re-activates its per-network manager on every SDK emission,
     /// which re-runs `load_from_persistor` against a manager that already
     /// holds the persisted wallet. The second (and every later) call must
-    /// be a no-op `Ok(())` — NOT the `WalletExists`-wrapped
-    /// `WalletCreation` error that used to crash the app on the main
+    /// be a no-op `Ok(())` — NOT a `WalletExists`-wrapped
+    /// `WalletCreation` error, which crashes the app on the main
     /// thread. Exactly one wallet stays registered across the calls.
     #[tokio::test]
     async fn repeated_load_from_persistor_is_idempotent() {
@@ -500,9 +499,9 @@ mod idempotent_load_tests {
             "first load must register exactly the persisted wallet"
         );
 
-        // Re-hydrating with the wallet already present used to surface
-        // `Failed to register persisted wallet in WalletManager: Wallet
-        // already exists`. It must now be a silent no-op.
+        // Re-hydrating with the wallet already present must be a silent
+        // no-op, not `Failed to register persisted wallet in WalletManager:
+        // Wallet already exists`.
         manager
             .load_from_persistor()
             .await
@@ -519,8 +518,8 @@ mod idempotent_load_tests {
         );
     }
 
-    /// `dashpay/platform#4309`-adjacent lifecycle hazard: a rollback must not
-    /// remove a registration it did not make.
+    /// Lifecycle hazard: a rollback must not remove a registration it did not
+    /// make.
     ///
     /// The interleaving: this load publishes generation G1 under an id, a
     /// concurrent `remove_wallet` frees that id, a registration publishes G2
