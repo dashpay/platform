@@ -16,6 +16,11 @@ pub enum PlatformWalletError {
 
     /// The persister failed to load the client start state during rehydration.
     ///
+    /// Scope: emitted by manager rehydration (`load_from_persistor` and the
+    /// post-registration rehydration) and by the DashPay sent-payment
+    /// reconcile reads. The shielded-build reads still flatten their failure
+    /// into `ShieldedBuildError(String)`.
+    ///
     /// This and the sibling `Persister*` variants carry their typed
     /// [`PersistenceError`](crate::changeset::PersistenceError) rather than a
     /// flattened string, so its retry classification survives — a transient
@@ -28,6 +33,13 @@ pub enum PlatformWalletError {
 
     /// The persister failed to store the wallet-registration changeset.
     /// See [`Self::PersisterLoad`] for why the typed cause is carried.
+    ///
+    /// Scope: wallet registration is the only write that reports this today.
+    /// A contact un-ignore flattens its failure into `Persistence(String)`,
+    /// the asset-lock pool write returns the raw `PersistenceError` on its own
+    /// signature, and the fire-and-forget writes (DPNS marketplace, platform
+    /// addresses, asset-lock tracking) log and swallow it. A host branching on
+    /// the classification gets it for registration and nowhere else yet.
     #[error("failed to persist wallet registration changeset: {0}")]
     PersisterStore(#[source] crate::changeset::PersistenceError),
 
@@ -947,7 +959,25 @@ impl PlatformWalletError {
 
     /// A persister `store` failed. See [`Self::from_load_failure`] for why no
     /// blanket conversion exists.
-    pub fn from_store_failure(source: crate::changeset::PersistenceError) -> Self {
+    ///
+    /// `persister` is the one that failed: this is where the "transient means
+    /// nothing was committed, so re-issue it" promise is MADE — to the caller,
+    /// and across the C ABI as `ErrorPersisterStoreTransient` — so this is
+    /// where it is enforced. A `Transient` classification is narrowed to
+    /// `Fatal` unless the persister attests
+    /// [`store_transient_is_reissuable`](crate::changeset::PlatformWalletPersistence::store_transient_is_reissuable),
+    /// which is fail-closed. The `#[source]` chain survives the narrowing.
+    pub fn from_store_failure<P>(persister: &P, source: crate::changeset::PersistenceError) -> Self
+    where
+        P: crate::changeset::PlatformWalletPersistence + ?Sized,
+    {
+        use crate::changeset::PersistenceErrorKind;
+        let source = match source.kind() {
+            Some(PersistenceErrorKind::Transient) if !persister.store_transient_is_reissuable() => {
+                source.with_kind(PersistenceErrorKind::Fatal)
+            }
+            _ => source,
+        };
         Self::PersisterStore(source)
     }
 
