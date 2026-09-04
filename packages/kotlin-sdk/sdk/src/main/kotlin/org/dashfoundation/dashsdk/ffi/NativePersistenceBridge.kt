@@ -74,6 +74,14 @@ abstract class NativePersistenceBridge {
          * A retryable failure after which nothing was applied. Returning it
          * from a callback inside a changeset round also asserts that the
          * failed round was rolled back whole.
+         *
+         * The round-end callback is the exception: failing it when the round
+         * had already failed means the rollback itself did not complete, so
+         * what reached the store is unknown. Rust classifies that as fatal and
+         * withholds the retry regardless of this value — re-issuing a
+         * changeset the store could neither apply nor undo risks merging it
+         * twice. This sentinel is honoured at round end only on a clean
+         * round, where the commit failed but the rollback succeeded.
          */
         const val PERSIST_RC_TRANSIENT: Int = -2
 

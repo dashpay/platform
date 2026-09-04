@@ -1914,6 +1914,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// the C shim so `store()` reports a persistence failure instead of
     /// silently advancing its in-memory state (pending queues, cleared drain
     /// entries, ignored-sender deltas) against writes that never reached disk.
+    ///
+    /// Failing this call when `success` is already `false` means the rollback
+    /// itself did not complete, so the round's disposition is unknown. Rust
+    /// classifies that as fatal and will not invite a re-send, regardless of
+    /// any retry sentinel returned here — re-issuing a changeset the store
+    /// could neither apply nor undo risks merging it twice. A retry sentinel
+    /// is only honoured on a *clean* round, where the commit failed but the
+    /// rollback succeeded and nothing was left behind.
     @discardableResult
     func endChangeset(walletId: Data, success: Bool) -> Bool {
         onQueue {
