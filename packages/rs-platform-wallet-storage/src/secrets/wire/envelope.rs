@@ -9,6 +9,7 @@
 //! multi-GiB length prefix is rejected before any allocation.
 
 use bincode::config::{BigEndian, Configuration, Limit, Varint};
+use zeroize::Zeroize;
 
 use crate::secrets::error::SecretStoreError;
 use crate::secrets::file::crypto::{self, KdfParams, NONCE_LEN, SALT_LEN};
@@ -50,6 +51,25 @@ pub(crate) enum Payload {
         /// Ciphertext + 16-byte Poly1305 tag.
         ciphertext: Vec<u8>,
     },
+}
+
+impl Payload {
+    /// Zeroize the heap buffer this payload carries.
+    ///
+    /// `bincode` decodes `Unprotected` into an ordinary unguarded `Vec` —
+    /// the raw secret, outside every control `secrets::guarded` provides.
+    /// The success path launders it through `SecretBytes::new`; every early
+    /// return in [`unwrap`] wipes instead — through this method before the
+    /// payload is destructured, directly on the moved buffer after — or the
+    /// secret is left on the heap for a later re-read, a core dump, or swap.
+    fn wipe(&mut self) {
+        // In place rather than `Vec::zeroize`, which clears to length 0 and
+        // would hide the wipe from `payload_wipe_clears_both_variants`.
+        match self {
+            Payload::Unprotected(plaintext) => plaintext.as_mut_slice().zeroize(),
+            Payload::Password { ciphertext, .. } => ciphertext.as_mut_slice().zeroize(),
+        }
+    }
 }
 
 /// Upper bound on the bincode-encoded envelope overhead over its
@@ -121,7 +141,6 @@ pub(crate) fn wrap_with_params(
     }
 
     let Some(pw) = password else {
-        use zeroize::Zeroize;
         // The scheme-0 plaintext copy rides the envelope in the clear. Encode,
         // then wipe that copy before it drops — the returned SecretBytes is the
         // only retained copy and zeroizes itself.
@@ -220,37 +239,46 @@ pub(crate) fn unwrap(
     password: Option<&SecretString>,
     blob: &[u8],
 ) -> Result<SecretBytes, SecretStoreError> {
-    let (envelope, consumed) = bincode::decode_from_slice::<Envelope, _>(blob, DECODE_CONFIG)
+    let (mut envelope, consumed) = bincode::decode_from_slice::<Envelope, _>(blob, DECODE_CONFIG)
         .map_err(|_| SecretStoreError::Corruption)?;
     // Trailing bytes after a valid decode are a truncation/extension
-    // probe — fail closed.
+    // probe — fail closed. Both pre-dispatch refusals wipe first: the
+    // decoded payload may already hold a scheme-0 plaintext.
     if consumed != blob.len() {
+        envelope.payload.wipe();
         return Err(SecretStoreError::Corruption);
     }
 
     if envelope.version != ENVELOPE_VERSION {
+        envelope.payload.wipe();
         return Err(SecretStoreError::UnsupportedEnvelopeVersion {
             found: envelope.version,
         });
     }
 
     match (envelope.payload, password) {
-        (Payload::Unprotected(plaintext), None) => {
+        (Payload::Unprotected(mut plaintext), None) => {
             // Enforce the same cap the wrap side applies.  DECODE_BUDGET is
             // larger than MAX_PLAINTEXT_LEN (by MAX_ENVELOPE_OVERHEAD), so a
             // tampered blob can pass the bincode budget check yet exceed the
             // application-level plaintext ceiling; reject it here.
             if plaintext.len() > MAX_PLAINTEXT_LEN {
+                let found = plaintext.len();
+                plaintext.as_mut_slice().zeroize();
                 return Err(SecretStoreError::SecretTooLarge {
-                    found: plaintext.len(),
+                    found,
                     max: MAX_PLAINTEXT_LEN,
                 });
             }
             Ok(SecretBytes::new(plaintext))
         }
         // Caller asserted protection but blob is unprotected: strip /
-        // downgrade — fail closed, never return the bytes.
-        (Payload::Unprotected(_), Some(_)) => Err(SecretStoreError::ExpectedProtectedButUnsealed),
+        // downgrade — fail closed, never return the bytes, and never leave
+        // them on the heap either.
+        (Payload::Unprotected(mut plaintext), Some(_)) => {
+            plaintext.as_mut_slice().zeroize();
+            Err(SecretStoreError::ExpectedProtectedButUnsealed)
+        }
         (Payload::Password { .. }, None) => Err(SecretStoreError::NeedsPassword),
         (
             Payload::Password {
@@ -265,9 +293,9 @@ pub(crate) fn unwrap(
 }
 
 /// Decrypt a `Payload::Password` body. The KDF params, salt and nonce
-/// come from the (attacker-controllable) envelope; `enforce_bounds`
-/// AND a stricter per-read `default_target` ceiling gate the params
-/// BEFORE `derive_key` allocates.
+/// come from the (attacker-controllable) envelope; `enforce_bounds` AND
+/// the stricter wire-stable per-read ceiling gate the params BEFORE
+/// `derive_key` allocates.
 fn unwrap_password_payload(
     wallet_id: &WalletId,
     label: &str,
@@ -297,16 +325,13 @@ fn unwrap_password_payload(
     // before any allocation.
     let kdf = KdfParams::try_from(kdf_encoded)?;
     // (b) Per-read ceiling tighter than `enforce_bounds`: a header
-    // declaring more memory OR more time than this build's shipped
-    // target is refused before `derive_key` allocates. Closes the gaps
-    // between `ARGON2_MAX_M_KIB` (1 GiB) / `ARGON2_MAX_T` (16) and the
-    // shipped 64 MiB / t=3 default — bounds the worst-case forged read
-    // at the shipped target on both axes (no headroom for an attacker
-    // to inflate memory by 16× or CPU by 5.3×).
-    let target = KdfParams::default_target();
-    if kdf.m_kib > target.m_kib || kdf.t > target.t {
-        return Err(SecretStoreError::KdfFailure);
-    }
+    // declaring more memory OR more time than `ARGON2_READ_MAX_*` is
+    // refused before `derive_key` allocates, closing the gap between the
+    // 1 GiB / 16-pass DoS band and the shipped cost. Gated on wire-stable
+    // constants, NOT `default_target()`: a read ceiling tied to a tunable
+    // would orphan every enrolled secret the day the shipped default is
+    // lowered for a low-RAM host, with no recovery path.
+    kdf.enforce_read_ceiling()?;
     // (c) AAD binds identity + header — the same bytes the encoder
     // produced, by construction.
     let aad = encode_tier2_aad(wallet_id, label, kdf_encoded, &salt);
@@ -611,7 +636,9 @@ mod tests {
 
     // ===== Decoder: dispatch / wire-flip / fuzz / property =====
 
-    use crate::secrets::file::crypto::{ARGON2_MAX_M_KIB, ARGON2_MAX_T};
+    use crate::secrets::file::crypto::{
+        ARGON2_MAX_M_KIB, ARGON2_MAX_T, ARGON2_READ_MAX_M_KIB, ARGON2_READ_MAX_T,
+    };
     use crate::secrets::wire::config::WIRE_CONFIG;
     use subtle::ConstantTimeEq;
 
@@ -980,14 +1007,14 @@ mod tests {
         assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
     }
 
-    /// TC-024 — per-read `default_target` ceiling rejects an envelope
-    /// whose `m_kib` exceeds the shipped target even when still inside
+    /// TC-024 — the per-read ceiling rejects an envelope whose `m_kib`
+    /// exceeds `ARGON2_READ_MAX_M_KIB` even when still inside
     /// `enforce_bounds`. Catches inflated headers BEFORE `derive_key`.
     #[test]
-    fn per_read_default_target_ceiling_rejects_inflated_header() {
+    fn per_read_ceiling_rejects_inflated_header() {
         let p = pw("pw");
         let blob = scheme1_blob(&p);
-        let bumped = KdfParams::default_target().m_kib * 2;
+        let bumped = ARGON2_READ_MAX_M_KIB * 2;
         // Sanity: the bumped value stays inside the wider enforce_bounds
         // ceiling, so only the per-read gate can refuse it.
         assert!(bumped <= ARGON2_MAX_M_KIB);
@@ -998,28 +1025,60 @@ mod tests {
         assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
     }
 
-    /// Sibling to TC-024 on the `t` axis — per-read `default_target`
-    /// ceiling rejects an envelope whose `t` exceeds the shipped target
-    /// even when still inside `enforce_bounds` (`ARGON2_MAX_T = 16`).
-    /// Closes the CPU-axis gap that would otherwise let a forged header
-    /// run Argon2 at 5.3× the shipped iteration count.
+    /// Sibling to TC-024 on the `t` axis — the per-read ceiling rejects
+    /// an envelope whose `t` exceeds `ARGON2_READ_MAX_T` even when still
+    /// inside `enforce_bounds` (`ARGON2_MAX_T = 16`). Closes the CPU-axis
+    /// gap that would otherwise let a forged header run Argon2 at 5.3×
+    /// the shipped iteration count.
     #[test]
     fn kdf_t_ceiling_fires_before_derive() {
         let p = pw("pw");
         let blob = scheme1_blob(&p);
-        let target = KdfParams::default_target();
-        let bumped_t = target.t + 1;
+        let bumped_t = ARGON2_READ_MAX_T + 1;
         // Sanity: the bumped t stays inside the wider enforce_bounds
         // ceiling, so only the per-read gate can refuse it.
         assert!(bumped_t <= ARGON2_MAX_T);
         let tampered = mutate_scheme1(&blob, |kdf, _, _| {
-            // Keep m_kib at the shipped default so the m_kib gate
-            // cannot fire — t must be the sole reason this rejects.
-            kdf.m_kib = target.m_kib;
+            // Keep m_kib at the ceiling so the m_kib gate cannot fire —
+            // t must be the sole reason this rejects.
+            kdf.m_kib = ARGON2_READ_MAX_M_KIB;
             kdf.t = bumped_t;
         });
         let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
         assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+    }
+
+    /// Every early return in `unwrap` routes through `Payload::wipe`, so
+    /// the wipe itself is the thing worth pinning: a decoded scheme-0
+    /// payload is the raw secret on an unguarded heap `Vec`.
+    #[test]
+    fn payload_wipe_clears_both_variants() {
+        let mut unprotected = Payload::Unprotected(b"seed material".to_vec());
+        unprotected.wipe();
+        match &unprotected {
+            Payload::Unprotected(bytes) => {
+                assert_eq!(bytes.len(), b"seed material".len(), "length must survive");
+                assert!(bytes.iter().all(|b| *b == 0), "plaintext survived the wipe");
+            }
+            Payload::Password { .. } => unreachable!("variant must not change"),
+        }
+
+        let mut protected = Payload::Password {
+            kdf: KdfParamsEncoded::from(KdfParams::floor_target()),
+            salt: [1u8; SALT_LEN],
+            nonce: [2u8; NONCE_LEN],
+            ciphertext: vec![0xAB; 32],
+        };
+        protected.wipe();
+        match &protected {
+            Payload::Password { ciphertext, .. } => {
+                assert!(
+                    ciphertext.iter().all(|b| *b == 0),
+                    "ciphertext survived the wipe"
+                );
+            }
+            Payload::Unprotected(_) => unreachable!("variant must not change"),
+        }
     }
 
     /// Trailing bytes appended after a valid envelope are rejected as

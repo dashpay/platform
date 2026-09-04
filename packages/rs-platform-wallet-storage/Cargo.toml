@@ -222,10 +222,11 @@ cli = [
 secrets = [
     "dep:argon2",
     # Enable argon2's `zeroize` feature so the KDF wipes its sensitive
-    # intermediate state (`initial_hash`/`blockhash`) on drop. In argon2
-    # 0.5.3 this does NOT cover the bulk `Block` matrix — that residual is
-    # documented at `derive_key` in `secrets/file/crypto.rs`. Keep it in
-    # the feature list (not a `default-features = false` rewrite) so
+    # intermediate state (`initial_hash`/`blockhash`) on drop, and so
+    # `impl Zeroize for Block` is compiled in — `derive_key` in
+    # `secrets/file/crypto.rs` owns the block matrix itself and relies on
+    # it, because argon2 0.5.3 does NOT wipe that matrix on its own. Keep
+    # it in the feature list (not a `default-features = false` rewrite) so
     # argon2's own default features stay intact.
     "argon2/zeroize",
     # bincode is the producer for the Tier-2 envelope wire format and the

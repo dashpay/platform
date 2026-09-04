@@ -2,11 +2,12 @@
 //!
 //! `pub(crate)` only — no crypto primitive escapes the `secrets` tree.
 
-use argon2::{Algorithm, Argon2, Params, Version};
+use argon2::{Algorithm, Argon2, Block, Params, Version};
 use chacha20poly1305::aead::Aead;
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use super::super::secret::{SecretBytes, SecretString};
 use super::format::KDF_ID_ARGON2ID;
@@ -29,6 +30,35 @@ pub(crate) const ARGON2_MAX_T: u32 = 16;
 /// Shipped defaults for new vaults (64 MiB, t≥3).
 pub(crate) const ARGON2_DEFAULT_M_KIB: u32 = 65_536;
 pub(crate) const ARGON2_DEFAULT_T: u32 = 3;
+
+/// Tier-2 envelope per-read ceiling — the strongest header
+/// [`KdfParams::enforce_read_ceiling`] will derive under. **Wire-format
+/// constants, not tunables**: a protected secret whose header this build
+/// refuses is unrecoverable, so these may only ever be RAISED. The
+/// `ARGON2_DEFAULT_*` write target is an ordinary tunable and must stay
+/// at or below them.
+pub(crate) const ARGON2_READ_MAX_M_KIB: u32 = 65_536;
+pub(crate) const ARGON2_READ_MAX_T: u32 = 3;
+
+/// The read ceiling must contain the write target, and both must sit
+/// inside the [`KdfParams::enforce_bounds`] band. Violating the first
+/// bricks reads in one of two directions, so it breaks the BUILD: unlike
+/// a runtime guard there is no legitimate configuration in which it
+/// fails. If this fires, RAISE the read ceiling — never delete it.
+const _: () = {
+    assert!(
+        ARGON2_DEFAULT_M_KIB <= ARGON2_READ_MAX_M_KIB && ARGON2_DEFAULT_T <= ARGON2_READ_MAX_T,
+        "Argon2 write target exceeds the Tier-2 read ceiling: raise ARGON2_READ_MAX_* to match, \
+         or every freshly written envelope is refused by the build that wrote it"
+    );
+    assert!(
+        ARGON2_READ_MAX_M_KIB >= ARGON2_MIN_M_KIB
+            && ARGON2_READ_MAX_M_KIB <= ARGON2_MAX_M_KIB
+            && ARGON2_READ_MAX_T >= ARGON2_MIN_T
+            && ARGON2_READ_MAX_T <= ARGON2_MAX_T,
+        "the Tier-2 read ceiling must sit inside the enforce_bounds band"
+    );
+};
 
 /// CSPRNG salt width (≥16 required; we use 32).
 pub(crate) const SALT_LEN: usize = 32;
@@ -129,16 +159,86 @@ impl KdfParams {
         }
         Ok(())
     }
+
+    /// Tier-2 envelope read gate, tighter than [`enforce_bounds`]: bounds a
+    /// forged header at the shipped cost instead of the 1 GiB / 16-pass DoS
+    /// band. Deliberately asymmetric with the FILE VAULT header, which
+    /// `file::derive_and_verify` accepts across the whole band — a vault is a
+    /// local artefact its owner may harden at will, whereas an envelope's
+    /// cost is paid on every read by whoever holds the object password.
+    ///
+    /// Gated on the wire-stable `ARGON2_READ_MAX_*` rather than
+    /// `default_target()` so lowering the shipped write target can never
+    /// orphan an already-enrolled secret.
+    ///
+    /// [`enforce_bounds`]: KdfParams::enforce_bounds
+    pub(crate) fn enforce_read_ceiling(&self) -> Result<(), SecretStoreError> {
+        if self.m_kib > ARGON2_READ_MAX_M_KIB || self.t > ARGON2_READ_MAX_T {
+            return Err(SecretStoreError::KdfFailure);
+        }
+        Ok(())
+    }
+
+    /// The componentwise-stronger of two parameter sets; `id`/`p` are fixed
+    /// crate-wide, so only `m_kib`/`t` vary. Lets a rekey carry a hardened
+    /// vault header forward instead of overwriting it with the handle's own
+    /// target, while a raised default still upgrades an old vault.
+    pub(crate) fn max_strength(self, other: Self) -> Self {
+        Self {
+            m_kib: self.m_kib.max(other.m_kib),
+            t: self.t.max(other.t),
+            ..self
+        }
+    }
+}
+
+/// Caller-owned Argon2 working memory, wiped before it is released.
+///
+/// The block matrix is key-equivalent — its seed blocks derive from
+/// `H0` and the last pass's final block is hashed straight into the
+/// output tag — but argon2 0.5.3's `zeroize` feature covers only
+/// `initial_hash`/`blockhash`. [`Argon2::hash_password_into`] allocates
+/// the matrix internally and drops it intact, so this crate owns it
+/// instead and passes it to `hash_password_into_with_memory`.
+struct ScopedBlocks(Vec<Block>);
+
+impl ScopedBlocks {
+    fn new(block_count: usize) -> Self {
+        Self(vec![Block::default(); block_count])
+    }
+
+    /// Zeroize every block IN PLACE, keeping the vector's length — a
+    /// length-clearing `Vec::zeroize` would make the wipe unobservable to
+    /// `argon2_block_matrix_is_wiped_before_release`, and an unverifiable
+    /// security fix is not one.
+    fn wipe(&mut self) {
+        for block in &mut self.0 {
+            block.zeroize();
+        }
+    }
+}
+
+impl AsMut<[Block]> for ScopedBlocks {
+    fn as_mut(&mut self) -> &mut [Block] {
+        &mut self.0
+    }
+}
+
+impl Drop for ScopedBlocks {
+    fn drop(&mut self) {
+        self.wipe();
+    }
 }
 
 /// Derive a 32-byte AEAD key from `passphrase` + `salt` with Argon2id,
 /// landing directly in a [`SecretBytes`]. Takes `&SecretString` so the
 /// bare-byte passphrase view lives only inside this function.
 ///
-/// Zeroization residual: argon2 0.5.3's `zeroize` feature wipes
-/// `initial_hash` / `blockhash` but NOT the bulk `Block` matrix (up to
-/// `m_kib` of derived state). Accepted residual against A5 (swap /
-/// core-dump while unlocked); closing it needs an upstream fix.
+/// The Argon2 block matrix is caller-owned ([`ScopedBlocks`]), so it is
+/// wiped on every exit including the error path. Residual against A5
+/// (swap / core-dump while unlocked): that matrix is ordinary heap, not
+/// `mlock`ed — a guarded allocation of up to `m_kib` does not fit the
+/// locked-memory budget in `secrets/file/mod.rs`. Accepted deliberately.
 pub(crate) fn derive_key(
     passphrase: &SecretString,
     salt: &[u8; SALT_LEN],
@@ -148,13 +248,16 @@ pub(crate) fn derive_key(
     params.enforce_bounds()?;
     let argon_params = Params::new(params.m_kib, params.t, params.p, Some(KEY_LEN))
         .map_err(|_| SecretStoreError::KdfFailure)?;
+    let block_count = argon_params.block_count();
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
     let mut key = SecretBytes::zeroed(KEY_LEN);
+    let mut blocks = ScopedBlocks::new(block_count);
     argon
-        .hash_password_into(
+        .hash_password_into_with_memory(
             passphrase.expose_secret().as_bytes(),
             salt,
             key.expose_secret_mut(),
+            &mut blocks,
         )
         .map_err(|_| SecretStoreError::KdfFailure)?;
     Ok(key)
@@ -245,6 +348,133 @@ mod tests {
     // Compile-time guard: argon2's `impl Zeroize for Block` is feature-
     // gated, so this fails to build if `argon2/zeroize` is ever dropped.
     static_assertions::assert_impl_all!(argon2::Block: zeroize::Zeroize);
+
+    /// **Vault-opening invariant — do not "fix" by updating an expected
+    /// value.** Caller-owned working memory changed only WHERE the Argon2
+    /// matrix lives, never what it derives. Should this ever diverge from
+    /// argon2's own `hash_password_into`, every existing vault and every
+    /// enrolled Tier-2 secret stops opening, reported as a wrong
+    /// passphrase, with no recovery path.
+    #[test]
+    fn derive_key_matches_upstream_reference_derivation() {
+        const PW: &str = "correct horse battery";
+        let salt = [0x5Au8; SALT_LEN];
+        let params = KdfParams::floor_target();
+        let derived = derive_key(&SecretString::new(PW), &salt, params).unwrap();
+
+        let argon_params = Params::new(params.m_kib, params.t, params.p, Some(KEY_LEN)).unwrap();
+        let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
+        let mut reference = [0u8; KEY_LEN];
+        argon
+            .hash_password_into(PW.as_bytes(), &salt, &mut reference)
+            .unwrap();
+
+        assert_eq!(
+            derived.expose_secret(),
+            &reference[..],
+            "caller-owned Argon2 memory changed the derived key"
+        );
+        reference.zeroize();
+    }
+
+    /// `max_strength` ratchets each axis independently: a handle's target
+    /// can raise a weak header, never lower a hardened one.
+    #[test]
+    fn max_strength_ratchets_each_axis_independently() {
+        let floor = KdfParams::floor_target();
+        let target = KdfParams::default_target();
+        assert_eq!(floor.max_strength(target), target);
+        assert_eq!(target.max_strength(floor), target);
+
+        let wide = KdfParams {
+            m_kib: ARGON2_MAX_M_KIB,
+            ..floor
+        };
+        let slow = KdfParams {
+            t: ARGON2_MAX_T,
+            ..floor
+        };
+        assert_eq!(
+            wide.max_strength(slow),
+            KdfParams {
+                m_kib: ARGON2_MAX_M_KIB,
+                t: ARGON2_MAX_T,
+                ..floor
+            }
+        );
+    }
+
+    /// The Tier-2 read ceiling is its own wire-format bound, not a mirror
+    /// of the shipped write target: exactly-at-ceiling derives, one step
+    /// over on either axis is refused.
+    #[test]
+    fn read_ceiling_accepts_its_bound_and_refuses_above_it() {
+        let at_ceiling = KdfParams {
+            m_kib: ARGON2_READ_MAX_M_KIB,
+            t: ARGON2_READ_MAX_T,
+            ..KdfParams::default_target()
+        };
+        assert!(at_ceiling.enforce_read_ceiling().is_ok());
+        assert!(matches!(
+            KdfParams {
+                m_kib: ARGON2_READ_MAX_M_KIB + 1,
+                ..at_ceiling
+            }
+            .enforce_read_ceiling(),
+            Err(SecretStoreError::KdfFailure)
+        ));
+        assert!(matches!(
+            KdfParams {
+                t: ARGON2_READ_MAX_T + 1,
+                ..at_ceiling
+            }
+            .enforce_read_ceiling(),
+            Err(SecretStoreError::KdfFailure)
+        ));
+        // No build may ship a write target its own read path refuses; the
+        // const assert enforces it, this pins the behaviour.
+        assert!(KdfParams::default_target().enforce_read_ceiling().is_ok());
+        assert!(KdfParams::floor_target().enforce_read_ceiling().is_ok());
+    }
+
+    /// The block matrix is key-equivalent state, so `ScopedBlocks` must
+    /// leave none of it behind. Filled through argon2's public
+    /// `fill_memory`, so the wipe is proven against REAL derived material
+    /// rather than a synthetic pattern.
+    #[test]
+    fn argon2_block_matrix_is_wiped_before_release() {
+        // Deliberately tiny (8 KiB): this exercises ScopedBlocks, not the
+        // production cost parameters.
+        let params = Params::new(8, 1, 1, Some(KEY_LEN)).unwrap();
+        let block_count = params.block_count();
+        let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+        let mut blocks = ScopedBlocks::new(block_count);
+        argon
+            .fill_memory(b"passphrase", &[7u8; SALT_LEN], &mut blocks)
+            .unwrap();
+
+        let nonzero_words = |b: &[Block]| {
+            b.iter()
+                .flat_map(|block| {
+                    let words: &[u64] = block.as_ref();
+                    words.iter()
+                })
+                .filter(|w| **w != 0)
+                .count()
+        };
+        assert!(
+            nonzero_words(blocks.as_mut()) > 0,
+            "fixture must hold real derived state before the wipe"
+        );
+
+        blocks.wipe();
+
+        assert_eq!(
+            nonzero_words(blocks.as_mut()),
+            0,
+            "Argon2 working memory survived the wipe"
+        );
+    }
 
     #[test]
     fn floors_reject_weak_params() {
