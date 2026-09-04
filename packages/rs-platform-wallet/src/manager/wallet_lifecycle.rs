@@ -712,11 +712,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// The `Arc<PlatformWallet>` validated under the gate is therefore retained,
     /// and the public-map entry is removed only while it still names that same
     /// generation. Both maps, the returned handle and the `tear_down` argument
-    /// are then all that one generation. The one
-    /// remaining id-keyed step is the shielded coordinator detach below, which
-    /// has no generation concept at all; a generation that has just been
-    /// registered has not run `bind_shielded` yet, so it holds no coordinator
-    /// entry to detach.
+    /// then all name that one generation. The one remaining id-keyed step is
+    /// the shielded coordinator detach below, which has no generation concept
+    /// at all; a generation that has just been registered has not run
+    /// `bind_shielded` yet, so it holds no coordinator entry to detach.
     ///
     /// The inner-manager removal needs no such check: G1 can only leave
     /// `wallet_manager` through this method (which requires G1's gate, held here)
