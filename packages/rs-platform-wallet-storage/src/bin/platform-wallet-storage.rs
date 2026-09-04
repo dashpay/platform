@@ -323,7 +323,7 @@ fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
         keep_last_n: args.keep_last,
         max_age: args.max_age,
     };
-    let report = platform_wallet_storage::sqlite::backup::prune(&args.in_dir, policy)
+    let report = platform_wallet_storage::prune_backups_in(&args.in_dir, policy)
         .map_err(|e| CliError::runtime(e.to_string()))?;
     for p in &report.removed {
         println!("{}", p.display());

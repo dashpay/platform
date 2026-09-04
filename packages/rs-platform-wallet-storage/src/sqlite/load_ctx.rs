@@ -66,6 +66,10 @@ pub enum LoadSite {
     /// indices sit beside it. Clamped toward incomplete, which costs one
     /// extra scan instead of an identity that never reappears.
     IdentityScanStateContradiction,
+    /// A `tracked_masternodes` row's `pro_tx_hash` is not 32 bytes. The
+    /// column is CHECK-constrained to 32, so a mismatch means the row
+    /// reached the file with the constraint bypassed.
+    TrackedMasternodeIdLength,
 }
 
 impl LoadSite {
@@ -90,6 +94,7 @@ impl LoadSite {
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
             Self::IdentityScanStateContradiction => "identity_scan_state_contradiction",
+            Self::TrackedMasternodeIdLength => "tracked_masternode_id_length",
         }
     }
 
@@ -128,7 +133,8 @@ impl LoadSite {
             | Self::UsedAddressOwnerConflict
             | Self::UnownedIdentityHasRegistrationIndex
             | Self::IdentityIndexCollision
-            | Self::IdentityScanStateContradiction => {
+            | Self::IdentityScanStateContradiction
+            | Self::TrackedMasternodeIdLength => {
                 "recovery mode: tolerating a persisted inconsistency instead of failing the load"
             }
         }
@@ -165,7 +171,8 @@ impl LoadSite {
             | Self::TombstonedIdentityOrphan
             | Self::UnownedIdentityHasRegistrationIndex
             | Self::IdentityIndexCollision
-            | Self::IdentityScanStateContradiction => {
+            | Self::IdentityScanStateContradiction
+            | Self::TrackedMasternodeIdLength => {
                 "load degraded: an ambiguous persisted inconsistency was accepted as-is"
             }
         }

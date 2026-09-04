@@ -210,12 +210,24 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         spent = excluded.spent";
 
 /// Upsert one `core_utxos` row; `spent` marks spent-only synthetic rows.
+///
+/// # Errors
+///
+/// [`WalletStorageError::EmptyUtxoScript`] when the script is empty. This
+/// is the only writer of `core_utxos.script`, so refusing here is what
+/// keeps the reader's `Address::from_script` reachable only for scripts
+/// that can exist — a stored empty one fails the load of the whole file.
 fn execute_upsert_utxo(
     stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
 ) -> Result<(), WalletStorageError> {
+    if utxo.txout.script_pubkey.as_bytes().is_empty() {
+        return Err(WalletStorageError::EmptyUtxoScript {
+            outpoint: utxo.outpoint,
+        });
+    }
     let op = blob::encode_outpoint(&utxo.outpoint)?;
     stmt.execute(params![
         wallet_id.as_slice(),
@@ -404,6 +416,17 @@ pub fn load_state(
             if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
                 utxo_accounts.insert(outpoint, owner);
             }
+            // TODO(unspent-script-recovery-tolerance): Recovery tolerance
+            // for an undecodable unspent script is deliberately deferred.
+            // This stays fail-hard because it is the balance source —
+            // tolerating a failed decode drops a UTXO and silently
+            // under-reports the balance. The cost of deferring is severe
+            // and measured: `load()` builds every healthy wallet in the
+            // file, then discards all of it when a later wallet hits this
+            // line, because the per-wallet loop returns `Ok(state)` only
+            // after it completes. Under Recovery — the mode whose purpose
+            // is to hand back whatever it can — one bad row still costs
+            // the user every wallet in the file.
             let address = dashcore::Address::from_script(&script, network)?;
             let utxo = Utxo {
                 outpoint,
@@ -1446,6 +1469,114 @@ mod tests {
             matches!(err, WalletStorageError::AddressDecode { .. }),
             "expected AddressDecode carrying the upstream error, got {err:?}"
         );
+    }
+
+    /// An empty `script` must be refused by the WRITER, not discovered by
+    /// the reader. `load()` turns every stored script back into an address,
+    /// so one such row rejects the load of the entire database file — the
+    /// shape migration V012 had to purge. `execute_upsert_utxo` is the only
+    /// writer of `core_utxos.script`, so guarding it closes the producer.
+    #[test]
+    fn apply_refuses_an_empty_script_on_a_new_utxo() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x5Bu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let mut utxo = sample_utxo(Txid::from_byte_array([0x5Bu8; 32]), 10, true);
+        utxo.txout.script_pubkey = dashcore::ScriptBuf::from_bytes(Vec::new());
+        let outpoint = utxo.outpoint;
+        let cs = CoreChangeSet {
+            new_utxos: vec![utxo],
+            ..Default::default()
+        };
+
+        let tx = conn.transaction().unwrap();
+        let err = apply(&tx, &wallet_id, &cs).expect_err("an empty script must be refused");
+        match err {
+            WalletStorageError::EmptyUtxoScript { outpoint: got } => {
+                assert_eq!(got, outpoint, "the error must name the offending outpoint");
+            }
+            other => panic!("expected EmptyUtxoScript, got {other:?}"),
+        }
+        let rows: i64 = tx
+            .query_row("SELECT COUNT(*) FROM core_utxos", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "the guard must refuse before binding the row");
+    }
+
+    /// The spend path synthesises a `spent = 1` row when the UTXO has no
+    /// existing row, which is exactly the shape V012 had to delete. It runs
+    /// through the same writer, so it must be refused on the same terms.
+    #[test]
+    fn apply_refuses_an_empty_script_on_a_synthetic_spent_row() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x5Cu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let mut utxo = sample_utxo(Txid::from_byte_array([0x5Cu8; 32]), 10, true);
+        utxo.txout.script_pubkey = dashcore::ScriptBuf::from_bytes(Vec::new());
+        let cs = CoreChangeSet {
+            spent_utxos: vec![utxo],
+            ..Default::default()
+        };
+
+        let tx = conn.transaction().unwrap();
+        let err = apply(&tx, &wallet_id, &cs).expect_err("an empty script must be refused");
+        assert!(
+            matches!(err, WalletStorageError::EmptyUtxoScript { .. }),
+            "the synthetic spent-row insert must be guarded too, got {err:?}"
+        );
+        let rows: i64 = tx
+            .query_row("SELECT COUNT(*) FROM core_utxos", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "the guard must refuse before binding the row");
+    }
+
+    /// Marking an EXISTING row spent never rewrites `script`, so a healthy
+    /// row must still be spendable — the guard must not turn a legitimate
+    /// spend into a write failure.
+    #[test]
+    fn apply_still_marks_an_existing_utxo_spent() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x5Du8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let utxo = sample_utxo(Txid::from_byte_array([0x5Du8; 32]), 10, true);
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![utxo.clone()],
+                ..Default::default()
+            },
+        )
+        .expect("a well-formed script must still be accepted");
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                spent_utxos: vec![utxo],
+                ..Default::default()
+            },
+        )
+        .expect("spending an existing row must still be accepted");
+        let spent: bool = tx
+            .query_row("SELECT spent FROM core_utxos", [], |row| row.get(0))
+            .unwrap();
+        assert!(spent, "the existing row must be marked spent");
     }
 
     #[test]

@@ -572,6 +572,24 @@ pub enum WalletStorageError {
         identity_id: [u8; 32],
         identity_index: u32,
     },
+
+    /// A `core_utxos` write carried an empty `script`.
+    ///
+    /// `load()` turns every stored script back into an address, so an empty
+    /// one leaves a row that rejects the load of the entire database file —
+    /// the shape migration V012 had to purge. Refused at the producer, where
+    /// the write can still be reported, rather than at the reader, where the
+    /// wallet is already un-loadable.
+    #[error("refusing to persist a core_utxos row for {outpoint} with an empty script")]
+    EmptyUtxoScript { outpoint: dashcore::OutPoint },
+
+    /// The configured database path is a symbolic link.
+    ///
+    /// Opening it would follow the link, sending both the SQLite writes and
+    /// the owner-only chmod to the link's target. The path must name the
+    /// database file itself.
+    #[error("database path is a symlink: {}", path.display())]
+    DatabasePathIsSymlink { path: PathBuf },
 }
 
 impl From<WalletStorageError> for PersistenceError {
@@ -673,7 +691,9 @@ impl WalletStorageError {
             | Self::RehydrationGapLimitRefillTooLarge { .. }
             | Self::RehydrationGapLimitFailed { .. }
             | Self::UsedAddressOwnerConflict { .. }
-            | Self::UnownedIdentityHasRegistrationIndex { .. } => false,
+            | Self::UnownedIdentityHasRegistrationIndex { .. }
+            | Self::EmptyUtxoScript { .. }
+            | Self::DatabasePathIsSymlink { .. } => false,
         }
     }
 
@@ -789,6 +809,8 @@ impl WalletStorageError {
             Self::UnownedIdentityHasRegistrationIndex { .. } => {
                 "unowned_identity_has_registration_index"
             }
+            Self::EmptyUtxoScript { .. } => "empty_utxo_script",
+            Self::DatabasePathIsSymlink { .. } => "database_path_is_symlink",
         }
     }
 }

@@ -40,5 +40,5 @@ pub use config::{
 };
 pub use error::{AutoBackupOperation, WalletStorageError};
 pub use load_ctx::{LoadCtx, LoadDegradation, LoadSite};
-pub use persister::{PruneReport, RetentionPolicy, SqlitePersister};
+pub use persister::{prune_backups_in, PruneReport, RetentionPolicy, SqlitePersister};
 pub use reports::{CommitReport, DeleteWalletReport};

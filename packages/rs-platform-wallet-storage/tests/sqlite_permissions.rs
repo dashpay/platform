@@ -135,10 +135,80 @@ fn open_accepts_sticky_writable_parent() {
     std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o1777)).unwrap();
     let db_path = parent.join("wallet.db");
 
+    // The sticky bit protects EXISTING entries only: another uid cannot
+    // unlink or rename what it does not own, but it can still create a new
+    // name that does not yet exist. The create case is covered by the
+    // DB-path symlink refusal, not by this acceptance.
     let persister = SqlitePersister::open(SqlitePersisterConfig::new(&db_path))
-        .expect("the sticky bit prevents unrelated users from replacing entries");
+        .expect("a sticky world-writable parent stays acceptable");
     drop(persister);
     assert!(db_path.exists());
+}
+
+/// `O_CREAT|O_EXCL` reports EEXIST for a planted symlink exactly as it does
+/// for a legitimate database, so EEXIST cannot be treated as "re-open".
+/// Both the SQLite open and the `0o600` chmod would otherwise resolve the
+/// link and land on its target.
+#[test]
+fn open_rejects_a_symlinked_database_path() {
+    let tmp = common::secure_tempdir().unwrap();
+    let victim = tmp.path().join("victim.txt");
+    std::fs::write(&victim, b"victim contents").unwrap();
+    std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let db_path = tmp.path().join("wallet.db");
+    symlink(&victim, &db_path).unwrap();
+
+    let result = SqlitePersister::open(SqlitePersisterConfig::new(&db_path));
+
+    assert!(
+        matches!(
+            result,
+            Err(WalletStorageError::DatabasePathIsSymlink { .. })
+        ),
+        "open must refuse a symlinked database path with the typed error"
+    );
+    assert_eq!(
+        std::fs::read(&victim).unwrap(),
+        b"victim contents",
+        "the link target's contents must be untouched"
+    );
+    assert_eq!(
+        std::fs::metadata(&victim).unwrap().mode() & 0o777,
+        0o644,
+        "the owner-only chmod must not have followed the link"
+    );
+}
+
+/// The same redirect on the restore destination. `exists()` follows a link
+/// to a live target, so the placeholder block cannot be the thing that
+/// catches it.
+#[test]
+fn restore_rejects_a_symlinked_destination() {
+    let tmp = common::secure_tempdir().unwrap();
+    let source_path = tmp.path().join("source.db");
+    let source = SqlitePersister::open(SqlitePersisterConfig::new(&source_path)).unwrap();
+    let backup = source.backup_to(tmp.path()).unwrap();
+    drop(source);
+
+    let victim = tmp.path().join("victim.txt");
+    std::fs::write(&victim, b"victim contents").unwrap();
+    let destination = tmp.path().join("restored.db");
+    symlink(&victim, &destination).unwrap();
+
+    let result = SqlitePersister::restore_from_skip_backup(&destination, &backup);
+
+    assert!(
+        matches!(
+            result,
+            Err(WalletStorageError::DatabasePathIsSymlink { .. })
+        ),
+        "restore must refuse a symlinked destination with the typed error"
+    );
+    assert_eq!(
+        std::fs::read(&victim).unwrap(),
+        b"victim contents",
+        "the link target must not be restored over"
+    );
 }
 
 #[test]

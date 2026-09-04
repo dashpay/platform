@@ -9,15 +9,45 @@ use std::path::Path;
 
 use crate::sqlite::error::WalletStorageError;
 
+/// Refuse `path` when it is a symbolic link.
+///
+/// `O_CREAT|O_EXCL` returns `EEXIST` for a symlink whether or not its
+/// target exists, so `EEXIST` alone cannot tell a legitimate existing
+/// database from a planted link — and every operation that follows (the
+/// SQLite open, the `0o600` chmod) resolves the link. A missing path is
+/// accepted: the caller creates it with `O_EXCL`, which cannot be
+/// redirected.
+///
+/// # Errors
+///
+/// [`WalletStorageError::DatabasePathIsSymlink`] when `path` is a link;
+/// [`WalletStorageError::Io`] when its metadata cannot be read.
+pub fn reject_symlink(path: &Path) -> Result<(), WalletStorageError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            Err(WalletStorageError::DatabasePathIsSymlink {
+                path: path.to_path_buf(),
+            })
+        }
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(WalletStorageError::Io(e)),
+    }
+}
+
 /// Pre-create the DB file at `path` with mode `0o600` before rusqlite
 /// opens it, closing the umask window (the file is born owner-only, not
 /// created at the umask default then chmod'd) and the final-component
-/// symlink redirect (`create_new` uses `O_EXCL`, so an attacker-planted
-/// symlink at `path` makes the create fail rather than redirect).
+/// symlink redirect.
 ///
 /// A no-op when the file already exists (re-open of an existing DB) — the
 /// live mode is then re-tightened by [`apply_secure_permissions`] after
 /// open. No-op on non-Unix.
+///
+/// # Errors
+///
+/// [`WalletStorageError::DatabasePathIsSymlink`] when `path` is a symlink
+/// rather than the database itself.
 #[allow(unused_variables)]
 pub fn precreate_secure(path: &Path) -> Result<(), WalletStorageError> {
     #[cfg(unix)]
@@ -31,8 +61,10 @@ pub fn precreate_secure(path: &Path) -> Result<(), WalletStorageError> {
         {
             Ok(_file) => {}
             // Already present — re-open path; the real open + the
-            // post-open chmod handle it.
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            // post-open chmod handle it. `O_EXCL` reports EEXIST for a
+            // planted symlink too, so the redirect is ruled out here
+            // rather than followed by the open and the chmod below.
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => reject_symlink(path)?,
             Err(e) => return Err(WalletStorageError::Io(e)),
         }
     }
