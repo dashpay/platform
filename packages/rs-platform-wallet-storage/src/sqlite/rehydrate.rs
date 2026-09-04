@@ -484,6 +484,11 @@ const REHYDRATION_DEEP_SCAN_WARN_INDEX: u32 = 1_000;
 /// against a future upstream invariant break, not a currently reachable path.
 const MAX_REHYDRATION_GAP_REFILL: u32 = 250_000;
 
+/// Highest BIP-32 non-hardened child index. A derivation target at or past
+/// `2^31` names a hardened child, which no address pool can derive from a
+/// public xpub — such a target is corruption, not a legitimately deep wallet.
+const MAX_NORMAL_CHILD_INDEX: u32 = (1u32 << 31) - 1;
+
 /// Extend `account`'s address pools so every resolved address (a
 /// still-unspent UTXO address or a persisted pool used-address) is derived
 /// at its exact `(chain, index)` slot and marked used, then refill the gap
@@ -740,9 +745,29 @@ fn extend_pools_for_restored_addresses(
                 break;
             };
             // Bound the refill before it runs, so nothing is allocated on
-            // the way out.
-            let refill =
-                ImpliedRefill::of(pool.highest_used, pool.highest_generated, pool.gap_limit);
+            // the way out. Validity first: an unrepresentable target has no
+            // meaningful cost to weigh against the cap, and upstream panics
+            // computing it (debug) or wraps it into a bogus one (release).
+            let refill = match ImpliedRefill::of(
+                pool.highest_used,
+                pool.highest_generated,
+                pool.gap_limit,
+            ) {
+                Ok(refill) => refill,
+                Err(error) => {
+                    ctx.tolerate_at(
+                        LoadSite::RehydrationMaintainGapLimit,
+                        SiteCoords {
+                            wallet_id: Some(wallet_id),
+                            account_type: &account_type,
+                            affected: 1,
+                            detail: Some(&pool.pool_type),
+                        },
+                        error,
+                    )?;
+                    break;
+                }
+            };
             if refill.implied > MAX_REHYDRATION_GAP_REFILL {
                 ctx.tolerate_at(
                     LoadSite::RehydrationGapLimit,
@@ -762,11 +787,9 @@ fn extend_pools_for_restored_addresses(
                 break;
             }
 
-            // Reachable and tested: `maintain_gap_limit_boundary_fixture` in
-            // this module's own tests plants a pool whose refill target
-            // crosses the non-hardened child-index boundary (2^31) while the
-            // pre-flight `implied` cost stays under MAX_REHYDRATION_GAP_REFILL,
-            // so this call reaches `maintain_gap_limit` and it fails.
+            // Defense in depth against an upstream derivation failure. The
+            // pre-flight above rejects every target this crate can compute as
+            // out of range, so no fixture currently reaches this branch.
             //
             // Kept fail-closed like `ensure_derived` above: a short window
             // means a previously-used address can be re-issued as fresh.
@@ -792,10 +815,13 @@ fn extend_pools_for_restored_addresses(
 /// runs.
 ///
 /// Mirrors the target upstream computes internally (key-wallet rev
-/// 173ffac) — a private formula, so an upstream change would silently
+/// 393b612) — a private formula, so an upstream change would silently
 /// mis-estimate here until `AddressPool` exposes a read-only
-/// `refill_target()` (upstream work, out of scope). Saturating where
-/// upstream adds raw: over-estimating fails closed.
+/// `refill_target()` (upstream work, out of scope). Upstream computes that
+/// target with raw arithmetic — a panic with debug assertions on, a wrapped
+/// target without — so the same formula is applied checked here; the cost
+/// derived from it still saturates, because over-estimating fails closed.
+#[derive(Debug)]
 struct ImpliedRefill {
     /// Highest derivation index the refill would have to reach.
     target: u32,
@@ -806,21 +832,34 @@ struct ImpliedRefill {
 }
 
 impl ImpliedRefill {
-    fn of(highest_used: Option<u32>, highest_generated: Option<u32>, gap_limit: u32) -> Self {
+    /// # Errors
+    ///
+    /// [`WalletStorageError::RehydrationGapLimitTargetOutOfRange`] when the
+    /// target over- or underflows `u32`, or names a hardened child index.
+    fn of(
+        highest_used: Option<u32>,
+        highest_generated: Option<u32>,
+        gap_limit: u32,
+    ) -> Result<Self, WalletStorageError> {
         let target = match highest_used {
-            None => gap_limit.saturating_sub(1),
-            Some(highest) => highest.saturating_add(gap_limit),
-        };
+            None => gap_limit.checked_sub(1),
+            Some(highest) => highest.checked_add(gap_limit),
+        }
+        .filter(|target| *target <= MAX_NORMAL_CHILD_INDEX)
+        .ok_or(WalletStorageError::RehydrationGapLimitTargetOutOfRange {
+            highest_used,
+            gap_limit,
+        })?;
         // Both fields are INDICES: a pool with nothing generated holds no
         // addresses, and one generated through index 0 holds one. Counting
         // `None` as index 0 would under-count the work by one and report a
         // generated address that does not exist.
         let already_generated = highest_generated.map_or(0, |highest| highest.saturating_add(1));
-        Self {
+        Ok(Self {
             target,
             already_generated,
             implied: target.saturating_add(1).saturating_sub(already_generated),
-        }
+        })
     }
 }
 
@@ -2600,15 +2639,16 @@ mod tests {
         }
     }
 
-    /// A pool poised at the non-hardened child-index boundary
-    /// (`2^31`): the pre-flight `implied` cost stays tiny (a handful of
-    /// addresses), so the cap in `extend_pools_for_restored_addresses`
-    /// lets the call through, but upstream `maintain_gap_limit` then
-    /// walks its target past `2^31 - 1` and `ChildNumber::from_normal_idx`
-    /// rejects the out-of-range index.
-    fn maintain_gap_limit_boundary_fixture(seed: u8) -> GapRefillFixture {
-        const MAX_NORMAL_INDEX: u32 = (1u32 << 31) - 1;
-        gap_refill_fixture(seed, MAX_NORMAL_INDEX - 5, Some(MAX_NORMAL_INDEX - 10))
+    /// A pool poised at the non-hardened child-index boundary (`2^31`): the
+    /// implied cost stays tiny (a handful of addresses), so the size cap
+    /// would wave it through, but the target it implies is deeper than any
+    /// index derivable from a public xpub.
+    fn gap_limit_boundary_fixture(seed: u8) -> GapRefillFixture {
+        gap_refill_fixture(
+            seed,
+            MAX_NORMAL_CHILD_INDEX - 5,
+            Some(MAX_NORMAL_CHILD_INDEX - 10),
+        )
     }
 
     /// The first funds account's external pool.
@@ -2717,26 +2757,33 @@ mod tests {
     }
 
     /// A pool whose refill target crosses the `2^31` non-hardened
-    /// child-index boundary passes the size-cap pre-flight (the implied
-    /// span is a handful of addresses) but fails inside
-    /// `maintain_gap_limit` itself once it reaches an out-of-range index.
+    /// child-index boundary clears the size cap — the implied span is a
+    /// handful of addresses — so only the validity pre-flight refuses it.
     #[test]
-    fn maintain_gap_limit_failure_is_fatal_under_strict() {
-        let mut fixture = maintain_gap_limit_boundary_fixture(26);
+    fn gap_refill_target_past_normal_child_boundary_is_fatal_under_strict() {
+        let mut fixture = gap_limit_boundary_fixture(26);
         let err = rehydrate_fixture(&mut fixture, &LoadCtx::strict())
             .expect_err("an out-of-range refill target must fail a strict load");
 
         assert!(
-            matches!(err, WalletStorageError::RehydrationGapLimitFailed { .. }),
-            "must surface as the typed gap-limit-failed variant: {err:?}"
+            matches!(
+                err,
+                WalletStorageError::RehydrationGapLimitTargetOutOfRange {
+                    highest_used: Some(highest),
+                    ..
+                } if highest == MAX_NORMAL_CHILD_INDEX - 5
+            ),
+            "the guard must name the pool state it refused: {err:?}"
         );
     }
 
-    /// Recovery defers the same pool instead of failing, and derives
-    /// nothing beyond what upstream managed before hitting the boundary.
+    /// Recovery defers the same pool instead of failing, and — the point of
+    /// refusing before the call rather than after it — derives nothing on
+    /// the way out instead of walking up to the boundary first.
     #[test]
-    fn maintain_gap_limit_failure_is_deferred_under_recovery() {
-        let mut fixture = maintain_gap_limit_boundary_fixture(27);
+    fn gap_refill_target_past_normal_child_boundary_is_deferred_under_recovery() {
+        let mut fixture = gap_limit_boundary_fixture(27);
+        let generated_before = fixture.generated_before;
         let ctx = LoadCtx::recovery();
         rehydrate_fixture(&mut fixture, &ctx).expect("recovery must defer, not fail");
 
@@ -2750,6 +2797,60 @@ mod tests {
             "the deferred refill failure must be counted at its own site: {:?}",
             degradation.by_site
         );
+        assert_eq!(
+            external_pool_state(&fixture.wallet_info),
+            generated_before,
+            "a refused refill must derive nothing"
+        );
+    }
+
+    /// A pool whose `highest_used` sits within one gap window of `u32::MAX`
+    /// drives upstream's raw `highest + gap_limit` over the end of the type.
+    /// The implied span is a handful of addresses, so the size cap passes it
+    /// through; only a checked pre-flight stops it, and it must stop it as an
+    /// error rather than the panic no load policy can catch.
+    #[test]
+    fn gap_refill_target_overflow_is_fatal_under_strict() {
+        let mut fixture = gap_refill_fixture(28, u32::MAX - 5, Some(u32::MAX - 10));
+        let err = rehydrate_fixture(&mut fixture, &LoadCtx::strict())
+            .expect_err("an unrepresentable refill target must fail a strict load");
+
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::RehydrationGapLimitTargetOutOfRange {
+                    highest_used: Some(highest),
+                    ..
+                } if highest == u32::MAX - 5
+            ),
+            "the guard must name the pool state it refused: {err:?}"
+        );
+    }
+
+    /// Recovery defers the same pool instead of failing — the contract that
+    /// an upstream panic would have broken outright — and derives nothing.
+    #[test]
+    fn gap_refill_target_overflow_is_deferred_under_recovery() {
+        let mut fixture = gap_refill_fixture(29, u32::MAX - 5, Some(u32::MAX - 10));
+        let generated_before = fixture.generated_before;
+        let ctx = LoadCtx::recovery();
+        rehydrate_fixture(&mut fixture, &ctx).expect("recovery must defer, not fail");
+
+        let degradation = ctx.degradation();
+        assert!(degradation.degraded);
+        assert_eq!(
+            degradation
+                .by_site
+                .get(&LoadSite::RehydrationMaintainGapLimit),
+            Some(&1),
+            "the refused refill must be counted at the gap-maintenance site: {:?}",
+            degradation.by_site
+        );
+        assert_eq!(
+            external_pool_state(&fixture.wallet_info),
+            generated_before,
+            "a refused refill must derive nothing"
+        );
     }
 
     /// `highest_generated` is an index, so `None` means the pool holds no
@@ -2758,7 +2859,7 @@ mod tests {
     /// not exist, in a guard whose own contract is to over-estimate.
     #[test]
     fn nothing_generated_costs_the_whole_window() {
-        let refill = ImpliedRefill::of(None, None, 20);
+        let refill = ImpliedRefill::of(None, None, 20).expect("a representable target");
         assert_eq!(refill.target, 19, "indices 0..=19 must exist");
         assert_eq!(refill.already_generated, 0);
         assert_eq!(refill.implied, 20, "twenty addresses, not nineteen");
@@ -2769,8 +2870,8 @@ mod tests {
     /// one, and the two must cost differently.
     #[test]
     fn a_pool_generated_through_index_zero_holds_one_address() {
-        let empty = ImpliedRefill::of(None, None, 20);
-        let one = ImpliedRefill::of(None, Some(0), 20);
+        let empty = ImpliedRefill::of(None, None, 20).expect("a representable target");
+        let one = ImpliedRefill::of(None, Some(0), 20).expect("a representable target");
         assert_eq!(one.already_generated, 1);
         assert_eq!(one.implied, 19);
         assert_eq!(
@@ -2784,10 +2885,45 @@ mod tests {
     /// window, whatever its absolute depth.
     #[test]
     fn a_deep_pool_owes_only_its_gap_window() {
-        let refill = ImpliedRefill::of(Some(50_000), Some(49_990), 20);
+        let refill =
+            ImpliedRefill::of(Some(50_000), Some(49_990), 20).expect("a representable target");
         assert_eq!(refill.target, 50_020);
         assert_eq!(refill.already_generated, 49_991);
         assert_eq!(refill.implied, 30);
+    }
+
+    /// Every refill target upstream would compute with raw arithmetic, at the
+    /// four boundaries where the raw form breaks: an empty pool with no gap
+    /// window (upstream's `gap_limit - 1` underflow), a used index one gap
+    /// window from the end of the type (its `highest + gap_limit` overflow),
+    /// a target landing exactly on the first hardened index, and the deepest
+    /// target that is still legal.
+    #[test]
+    fn unrepresentable_refill_targets_are_rejected() {
+        let rejected = [
+            (None, 0),
+            (Some(u32::MAX), 1),
+            (Some(MAX_NORMAL_CHILD_INDEX), 1),
+        ];
+        for (highest_used, gap_limit) in rejected {
+            let err = ImpliedRefill::of(highest_used, None, gap_limit).expect_err(
+                "a target that does not fit a non-hardened child index must be refused",
+            );
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::RehydrationGapLimitTargetOutOfRange {
+                        highest_used: got_used,
+                        gap_limit: got_gap,
+                    } if got_used == highest_used && got_gap == gap_limit
+                ),
+                "the refusal must carry the inputs it refused: {err:?}"
+            );
+        }
+
+        let deepest_legal = ImpliedRefill::of(Some(MAX_NORMAL_CHILD_INDEX - 1), None, 1)
+            .expect("the last non-hardened index is a legal target");
+        assert_eq!(deepest_legal.target, MAX_NORMAL_CHILD_INDEX);
     }
 
     /// The cap bounds the refill's *span*, not the depth it starts from: a

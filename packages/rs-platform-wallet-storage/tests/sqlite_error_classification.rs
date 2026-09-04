@@ -334,6 +334,14 @@ fn samples() -> Vec<WalletStorageError> {
                 vout: 1,
             },
         },
+        WalletStorageError::EmptyPoolAddressScript {
+            account_type: "standard_bip44",
+            address_index: 7,
+        },
+        WalletStorageError::RehydrationGapLimitTargetOutOfRange {
+            highest_used: Some(u32::MAX - 5),
+            gap_limit: 20,
+        },
         WalletStorageError::DatabasePathIsSymlink {
             path: PathBuf::from("/tmp/wallet.db"),
         },
@@ -454,6 +462,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::RehydrationGapLimitRefillTooLarge { .. } => {
                 (false, "rehydration_gap_limit_refill_too_large")
             }
+            WalletStorageError::RehydrationGapLimitTargetOutOfRange { .. } => {
+                (false, "rehydration_gap_limit_target_out_of_range")
+            }
             WalletStorageError::RehydrationGapLimitFailed { .. } => {
                 (false, "rehydration_gap_limit_failed")
             }
@@ -464,6 +475,9 @@ fn tc_p2_005_is_transient_table() {
                 (false, "unowned_identity_has_registration_index")
             }
             WalletStorageError::EmptyUtxoScript { .. } => (false, "empty_utxo_script"),
+            WalletStorageError::EmptyPoolAddressScript { .. } => {
+                (false, "empty_pool_address_script")
+            }
             WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
         }
     }

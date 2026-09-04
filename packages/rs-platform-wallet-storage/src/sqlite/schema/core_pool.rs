@@ -82,6 +82,23 @@ const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
 /// `used` is monotonic (`MAX`), so re-applying the same snapshot is a no-op
 /// and a used address can never revert to unused (the reuse-guard invariant).
 /// Writes reject any change or erasure of typed key material already stored.
+///
+/// # Errors
+///
+/// [`WalletStorageError::TypedPoolKeyConflict`] when incoming key material
+/// contradicts what is already stored, and
+/// [`WalletStorageError::EmptyPoolAddressScript`] when a row carries a
+/// zero-length `script`: `load()` turns every stored script back into an
+/// address, so an empty one degrades the load of the owning wallet and fails
+/// it outright under a strict policy. This is the only writer of
+/// `core_address_pool.script`, so refusing here closes the producer.
+///
+/// The script guard binds new writes only. Empty scripts already present in
+/// an existing database file remain fatal to a strict load, and are
+/// deliberately left in place rather than purged — the same posture V012
+/// took for the sibling `core_utxos.script` column, where it purged only
+/// legacy empty-script *spent* rows and left the surviving balance-bearing
+/// ones alone.
 pub fn apply_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -110,6 +127,12 @@ pub fn apply_pools(
             accounts::account_dashpay_ids(&entry.account_type);
         let pool_type = pool_type_to_i64(entry.pool_type);
         for info in &entry.addresses {
+            if info.script_pubkey.as_bytes().is_empty() {
+                return Err(WalletStorageError::EmptyPoolAddressScript {
+                    account_type,
+                    address_index: info.index,
+                });
+            }
             let key_type = info.public_key.as_ref().map(key_type_to_i64);
             let (public_key, expected_key_len): (Option<&[u8]>, Option<usize>) =
                 match info.public_key.as_ref() {
@@ -549,6 +572,75 @@ mod tests {
             matches!(err, WalletStorageError::AddressDecode { .. }),
             "expected AddressDecode carrying the upstream error, got {err:?}"
         );
+    }
+
+    /// An empty `script` must be refused by the WRITER, not discovered by
+    /// the reader: `load()` turns every stored pool script back into an
+    /// address, so such a row degrades the load of the owning wallet and
+    /// fails it under a strict policy. `apply_pools` is the only writer of
+    /// `core_address_pool.script`, so guarding it closes the producer.
+    #[test]
+    fn apply_pools_refuses_an_empty_script() {
+        use dashcore::address::Payload;
+        use dashcore::hashes::Hash;
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::managed_account::address_pool::AddressState;
+        use key_wallet::AddressInfo;
+        use platform_wallet::changeset::AccountAddressPoolEntry;
+
+        let mut conn = migrated_conn();
+        let w = [0x99u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array([0xCD; 20])),
+        );
+        let entry = AccountAddressPoolEntry {
+            account_type: AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            pool_type: AddressPoolType::External,
+            addresses: vec![AddressInfo {
+                address,
+                script_pubkey: dashcore::ScriptBuf::from_bytes(Vec::new()),
+                public_key: None,
+                index: 7,
+                path: DerivationPath::master(),
+                state: AddressState::Available,
+                tx_count: 0,
+                total_received: 0,
+                total_sent: 0,
+                balance: 0,
+                label: None,
+                metadata: Default::default(),
+            }],
+        };
+
+        let tx = conn.transaction().unwrap();
+        let err = apply_pools(&tx, &w, std::slice::from_ref(&entry))
+            .expect_err("an empty script must be refused");
+        match err {
+            WalletStorageError::EmptyPoolAddressScript {
+                account_type,
+                address_index,
+            } => {
+                assert_eq!(account_type, "standard_bip44");
+                assert_eq!(address_index, 7, "the error must name the offending row");
+            }
+            other => panic!("expected EmptyPoolAddressScript, got {other:?}"),
+        }
+        let rows: i64 = tx
+            .query_row("SELECT COUNT(*) FROM core_address_pool", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, 0, "the guard must refuse before binding the row");
     }
 
     #[test]

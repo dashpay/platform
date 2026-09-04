@@ -547,6 +547,22 @@ pub enum WalletStorageError {
         cap: u32,
     },
 
+    /// A pool's persisted state implies a gap-limit refill target that is
+    /// not a derivable non-hardened child index — either the target
+    /// over/underflows `u32`, or it lands at or past the BIP-32
+    /// normal-child ceiling of `2^31`. Refused before the refill runs:
+    /// upstream computes the same target with raw arithmetic and would
+    /// panic on it, which no load policy can tolerate.
+    #[error(
+        "an address pool with highest used index {highest_used:?} and gap limit {gap_limit} \
+         implies a refill target that is not a derivable address index; the pool's window \
+         stays short, so a previously-used address in it may be handed out again as fresh"
+    )]
+    RehydrationGapLimitTargetOutOfRange {
+        highest_used: Option<u32>,
+        gap_limit: u32,
+    },
+
     /// The upstream gap-limit refill itself failed, leaving the pool's
     /// window short — a previously-used address inside it can be re-issued
     /// as fresh.
@@ -595,6 +611,22 @@ pub enum WalletStorageError {
     /// wallet is already un-loadable.
     #[error("refusing to persist a core_utxos row for {outpoint} with an empty script")]
     EmptyUtxoScript { outpoint: dashcore::OutPoint },
+
+    /// A `core_address_pool` write carried an empty `script`.
+    ///
+    /// `load()` turns every stored pool script back into an address, so an
+    /// empty one degrades — and under a strict policy fails — the load of
+    /// the wallet that owns it. Refused at the producer, where the write can
+    /// still be reported, rather than at the reader, where the row is
+    /// already persisted.
+    #[error(
+        "refusing to persist a core_address_pool row for {account_type} at address index \
+         {address_index} with an empty script"
+    )]
+    EmptyPoolAddressScript {
+        account_type: &'static str,
+        address_index: u32,
+    },
 
     /// The configured database path is a symbolic link.
     ///
@@ -702,10 +734,12 @@ impl WalletStorageError {
             | Self::ReadOnlyRecoveryMode { .. }
             | Self::RehydrationEnsureDerivedFailed { .. }
             | Self::RehydrationGapLimitRefillTooLarge { .. }
+            | Self::RehydrationGapLimitTargetOutOfRange { .. }
             | Self::RehydrationGapLimitFailed { .. }
             | Self::UsedAddressOwnerConflict { .. }
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
+            | Self::EmptyPoolAddressScript { .. }
             | Self::DatabasePathIsSymlink { .. } => false,
         }
     }
@@ -817,12 +851,16 @@ impl WalletStorageError {
             Self::RehydrationGapLimitRefillTooLarge { .. } => {
                 "rehydration_gap_limit_refill_too_large"
             }
+            Self::RehydrationGapLimitTargetOutOfRange { .. } => {
+                "rehydration_gap_limit_target_out_of_range"
+            }
             Self::RehydrationGapLimitFailed { .. } => "rehydration_gap_limit_failed",
             Self::UsedAddressOwnerConflict { .. } => "used_address_owner_conflict",
             Self::UnownedIdentityHasRegistrationIndex { .. } => {
                 "unowned_identity_has_registration_index"
             }
             Self::EmptyUtxoScript { .. } => "empty_utxo_script",
+            Self::EmptyPoolAddressScript { .. } => "empty_pool_address_script",
             Self::DatabasePathIsSymlink { .. } => "database_path_is_symlink",
         }
     }
