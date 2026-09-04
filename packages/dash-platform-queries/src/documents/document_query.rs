@@ -1173,7 +1173,7 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
 /// produced by the SDK's typical WhereClause builders, so a
 /// rejection here flags an unsupported caller construction at the
 /// wire boundary rather than silently dropping the value.
-fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error> {
+pub(crate) fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error> {
     Ok(ProtoWhereClause {
         field: clause.field,
         operator: where_operator_to_proto(clause.operator) as i32,
@@ -1185,7 +1185,7 @@ fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error>
     })
 }
 
-fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
+pub(crate) fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
     // Drive's `OrderClause` carries a plain `field: String` —
     // emit the field-target variant of the wire's `target` oneof.
     // The aggregate-target variant (`ORDER BY COUNT(*)`) is
