@@ -27,6 +27,21 @@ struct LiveModelFetcher: ModelFetching {
     }
 }
 
+/// Return values by which a persistence callback classifies its own failure.
+///
+/// The ABI is defined by `PLATFORM_WALLET_PERSIST_RC_*` in
+/// `packages/rs-platform-wallet-ffi/src/persistence.rs` and must change only
+/// together with it. Named here so no callback ever spells the literal — the
+/// same integers mean unrelated things in other native callback families.
+public enum PlatformWalletPersistRC {
+    /// A retryable failure after which **nothing was applied**. Returning it
+    /// from a callback inside a changeset round also asserts that the failed
+    /// round was rolled back whole.
+    public static let transient: Int32 = -2
+    /// A constraint / integrity violation — the data is wrong, not the store.
+    public static let constraint: Int32 = -3
+}
+
 /// Bridges FFI persistence callbacks to SwiftData storage.
 ///
 /// Allocated as a class so its pointer can be passed as the opaque `context`
@@ -36,9 +51,9 @@ struct LiveModelFetcher: ModelFetching {
 /// Callback return values: `0` succeeds and any non-zero value fails. A
 /// plain non-zero failure means "do not retry". A callback that can
 /// classify its own failure may instead return
-/// `PLATFORM_WALLET_PERSIST_RC_TRANSIENT` (-2) for a retryable failure
+/// `PlatformWalletPersistRC.transient` for a retryable failure
 /// after which nothing was applied, or
-/// `PLATFORM_WALLET_PERSIST_RC_CONSTRAINT` (-3) for an integrity
+/// `PlatformWalletPersistRC.constraint` for an integrity
 /// violation; Rust forwards the classification to its caller (as
 /// `PlatformWalletError.persisterStoreTransient` and friends) and never
 /// retries on this handler's behalf. Returning the transient sentinel from

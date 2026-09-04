@@ -500,7 +500,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     "rollback: remove_wallet failed while unwinding a failed wallet registration"
                 );
             }
-            return Err(PlatformWalletError::from_store_failure(e));
+            return Err(PlatformWalletError::from_store_failure(&*self.persister, e));
         }
 
         // Build the PlatformWallet handle.
@@ -1375,9 +1375,16 @@ mod persist_retry_tests {
         load_fatal: bool,
         /// Fail fatally after `load_transient_failures`, instead of succeeding.
         load_then_fatal: bool,
+        /// Model a buffering backend that keeps the failed changeset for its
+        /// own later retry, so re-issuing it would merge it twice.
+        retains_failed_changeset: bool,
     }
 
     impl PlatformWalletPersistence for FaultyPersister {
+        fn store_transient_is_reissuable(&self) -> bool {
+            !self.retains_failed_changeset
+        }
+
         fn store(
             &self,
             _wallet_id: WalletId,
@@ -1497,6 +1504,32 @@ mod persist_retry_tests {
             manager.wallet_ids().await.is_empty(),
             "a failed store must roll back the in-memory wallet insert"
         );
+    }
+
+    /// A persister that keeps the failed changeset buffered for its own retry
+    /// (the canonical SQLite backend does exactly this) must never reach the
+    /// caller as retryable: re-issuing the changeset would merge it into the
+    /// retained copy, and changeset vectors merge by appending.
+    #[tokio::test]
+    async fn transient_store_failure_is_downgraded_without_a_reissue_attestation() {
+        let persister = Arc::new(FaultyPersister {
+            store_transient: true,
+            retains_failed_changeset: true,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        let err = register(&manager)
+            .await
+            .expect_err("a transient store failure must abort registration");
+
+        match err {
+            PlatformWalletError::PersisterStore(pe) => assert!(
+                !pe.is_transient(),
+                "a persister that retains the failed changeset must not invite a re-issue"
+            ),
+            other => panic!("expected PersisterStore, got {other:?}"),
+        }
     }
 
     /// A fatal `store` failure fails fast, keeping its classification.
@@ -1693,7 +1726,11 @@ mod persist_retry_tests {
     fn typed_variants_preserve_classification_matching_and_source() {
         use std::error::Error;
 
-        let store_err = PlatformWalletError::from_store_failure(transient());
+        let attesting = FaultyPersister {
+            retains_failed_changeset: false,
+            ..Default::default()
+        };
+        let store_err = PlatformWalletError::from_store_failure(&attesting, transient());
         match &store_err {
             PlatformWalletError::PersisterStore(pe) => assert!(pe.is_transient()),
             other => panic!("expected PersisterStore, got {other:?}"),
@@ -1702,6 +1739,19 @@ mod persist_retry_tests {
             store_err.source().is_some(),
             "PersisterStore must expose its PersistenceError source"
         );
+
+        // The narrowing keeps the chain: a caller that downcasts for detail
+        // still gets it, it is only told not to re-issue.
+        let retaining = FaultyPersister {
+            retains_failed_changeset: true,
+            ..Default::default()
+        };
+        let narrowed = PlatformWalletError::from_store_failure(&retaining, transient());
+        match &narrowed {
+            PlatformWalletError::PersisterStore(pe) => assert!(!pe.is_transient()),
+            other => panic!("expected PersisterStore, got {other:?}"),
+        }
+        assert!(narrowed.source().is_some());
 
         let load_err = PlatformWalletError::from_load_failure(fatal());
         match &load_err {
@@ -1725,7 +1775,7 @@ mod persist_retry_tests {
         // them and a mix-up is silent.
         assert!(
             matches!(
-                PlatformWalletError::from_store_failure(fatal()),
+                PlatformWalletError::from_store_failure(&attesting, fatal()),
                 PlatformWalletError::PersisterStore(_)
             ),
             "a failed store must never be reported as a failed load"

@@ -2118,6 +2118,30 @@ mod tests {
         }
     }
 
+    /// A persister attesting the atomic round contract, so the mapping tests
+    /// below exercise the code table rather than the re-issue gate.
+    fn atomic_persister() -> crate::persistence::FFIPersister {
+        extern "C" fn ok_begin(_ctx: *mut std::ffi::c_void, _wallet_id: *const u8) -> i32 {
+            0
+        }
+        extern "C" fn ok_end(
+            _ctx: *mut std::ffi::c_void,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            0
+        }
+
+        crate::persistence::FFIPersister::new_with_persistence_capabilities(
+            crate::persistence::PersistenceCallbacks {
+                on_changeset_begin_fn: Some(ok_begin),
+                on_changeset_end_fn: Some(ok_end),
+                ..Default::default()
+            },
+            platform_wallet::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS,
+        )
+    }
+
     /// The busy-database registration case (`dashpay/platform#4365`): the
     /// wallet does not retry the write, the host learns it may.
     #[test]
@@ -2128,12 +2152,29 @@ mod tests {
         );
 
         let result: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            &atomic_persister(),
             persistence_error(PersistenceErrorKind::Transient),
         )
         .into();
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorPersisterStoreTransient
+        );
+
+        // Code 51 promises the host nothing was committed and the changeset
+        // may be re-sent. A persister that does not attest that never reaches
+        // it — the promise is enforced before the code is chosen, not after.
+        let unattested: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            &crate::persistence::FFIPersister::new(
+                crate::persistence::PersistenceCallbacks::default(),
+            ),
+            persistence_error(PersistenceErrorKind::Transient),
+        )
+        .into();
+        assert_eq!(
+            unattested.code,
+            PlatformWalletFFIResultCode::ErrorPersisterStoreFatal,
+            "an unattested persister must not produce the re-issue invitation"
         );
     }
 
@@ -2150,7 +2191,7 @@ mod tests {
             platform_wallet::changeset::PersistenceError::LockPoisoned,
         ] {
             let result: PlatformWalletFFIResult =
-                PlatformWalletError::from_store_failure(error).into();
+                PlatformWalletError::from_store_failure(&atomic_persister(), error).into();
             assert_eq!(
                 result.code,
                 PlatformWalletFFIResultCode::ErrorPersisterStoreFatal
@@ -2167,6 +2208,7 @@ mod tests {
         );
 
         let result: PlatformWalletFFIResult = PlatformWalletError::from_store_failure(
+            &atomic_persister(),
             persistence_error(PersistenceErrorKind::Constraint),
         )
         .into();
