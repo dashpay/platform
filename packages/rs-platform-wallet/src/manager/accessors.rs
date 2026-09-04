@@ -161,11 +161,10 @@ pub struct TrackedAssetLockSnapshot {
 
 /// Snapshot of the per-account metadata for a single account.
 ///
-/// `is_watch_only` and `custom_name` were dropped after upstream
-/// removed both from `ManagedCoreFundsAccount` / `ManagedCoreKeysAccount`.
-/// Watch-only is now a wallet-level property (read off `Wallet.wallet_type`)
-/// and `AccountMetadata` no longer exists. Re-add fields here only if
-/// the upstream variants gain them again.
+/// Carries no `is_watch_only` or `custom_name`: upstream's
+/// `ManagedCoreFundsAccount` / `ManagedCoreKeysAccount` have neither, and
+/// watch-only is a wallet-level property (read off `Wallet.wallet_type`).
+/// Add such fields here only if the upstream variants gain them.
 #[derive(Debug, Clone, Copy)]
 pub struct AccountMetadataSnapshot {
     pub total_transactions: u64,

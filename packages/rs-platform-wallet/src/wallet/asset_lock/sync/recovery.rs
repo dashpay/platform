@@ -77,7 +77,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // Phase 2 (no lock held): resolve status. The persister
         // fallback's I/O (synchronous lookup, possibly an FFI
-        // callback into a SwiftData query) is no longer serialized
+        // callback into a SwiftData query) is not serialized
         // behind the wallet-manager write lock.
         let (status, proof) = match proof {
             Some(ref p) => {
@@ -777,8 +777,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // SPV broadcaster only reaches `Rejected` on `NotConnected`.
                 // So the advance above cannot be read as evidence the tx is
                 // live, and the expiry of the bounded wait that follows it is
-                // translated back into the `TransactionBroadcastUnconfirmed`
-                // the caller used to get immediately.
+                // translated back into the same `TransactionBroadcastUnconfirmed`
+                // an immediate failure reports.
                 //
                 // A DEFINITE `Rejected` is scoped to the attempt that
                 // produced it, exactly as on the `Broadcast` arm below: with
@@ -1290,11 +1290,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// `key_wallet::signer::Signer` when later consuming the credit
     /// output on Platform.
     ///
-    /// Previously this method derived the actual private key from the
-    /// wallet's root xpriv; that path is no longer reachable for
-    /// `ExternalSignable` wallets (the root key isn't in-process) and
-    /// the signer-based architecture doesn't need it — the signer
-    /// owns derivation end-to-end.
+    /// The private key itself is never derived here: the wallet's root
+    /// xpriv is not in-process for `ExternalSignable` wallets, and the
+    /// signer-based architecture doesn't need it — the signer owns
+    /// derivation end-to-end.
     async fn rederive_credit_output_path(
         &self,
         lock: &TrackedAssetLock,
@@ -2620,9 +2619,9 @@ mod tests {
     /// Promotion is EVICTION under the default
     /// `keep-finalized-transactions = OFF` build: `apply_chain_lock` drops
     /// the record it has just promoted and keeps only its txid in the
-    /// account's finalized set. A snapshot that asked the record alone
-    /// therefore questioned the one place finality no longer lives, and
-    /// condemned a locally final lock on the strength of a sibling the same
+    /// account's finalized set. A snapshot that asks the record alone
+    /// therefore questions the one place finality no longer lives, and
+    /// condemns a locally final lock on the strength of a sibling the same
     /// chainlock never buried. The chainlock here is applied for real —
     /// the funding transaction is filed in a block below the lock height and
     /// promoted by the wallet's own pass — so the eviction is the wallet's,
@@ -3531,12 +3530,12 @@ mod tests {
     /// classifies every failure that way, and the SPV broadcaster reaches
     /// `Rejected` only on `NotConnected`. So advancing to `Broadcast` and
     /// then waiting with `wait_for_proof(None)` — which is what the three
-    /// `resume_asset_lock(.., None)` production call sites do — turned a
-    /// broadcast failure that used to surface in ~30s into a wait that never
-    /// ends, because no proof can arrive for a tx that was never accepted.
+    /// `resume_asset_lock(.., None)` production call sites do — would turn a
+    /// broadcast failure into a wait that never ends, because no proof can
+    /// arrive for a tx that was never accepted.
     ///
     /// `start_paused` auto-advances the substituted bound, so this asserts
-    /// termination *and* that the caller gets the pre-#4367 typed error back.
+    /// termination *and* that the caller gets the typed error back.
     #[tokio::test(start_paused = true)]
     async fn unbounded_resume_of_an_ambiguous_rebroadcast_terminates() {
         let (error, status) = resume_lock_at(

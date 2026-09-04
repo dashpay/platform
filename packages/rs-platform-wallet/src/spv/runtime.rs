@@ -765,7 +765,7 @@ mod shutdown_tests {
     /// host callbacks) and report SPV non-clean.
     ///
     /// Without the post-abort deadline this test hangs: that is exactly the
-    /// hang that reached the FFI's `destroy` before this fix.
+    /// hang that would reach the FFI's `destroy`.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn spv_task_surviving_abort_is_returned_for_reparking() {
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();

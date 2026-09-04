@@ -1500,9 +1500,8 @@ where
         //     `ShieldedBroadcastFailed`).
         //   - any other error (DriveProofError / Proof / InvalidProvedResponse / TimeoutReached /
         //     DapiClientError / …) = AMBIGUOUS: the broadcast was accepted and the transition may
-        //     have executed even though we couldn't fetch/verify its result proof (this is exactly
-        //     the #3859 result-proof incident). That includes cause-less
-        //     `StateTransitionBroadcastError`s — DAPI encodes its own wait-side failures
+        //     have executed even though we couldn't fetch/verify its result proof. That includes
+        //     cause-less `StateTransitionBroadcastError`s — DAPI encodes its own wait-side failures
         //     (timeouts, internal errors) that way, with empty consensus data. Fall back to
         //     fetching the identity by its pre-derived id before deciding it doesn't exist.
         // An identity-create-from-shielded-pool proof authenticates the spent

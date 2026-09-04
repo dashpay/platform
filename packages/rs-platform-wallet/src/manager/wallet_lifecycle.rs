@@ -173,7 +173,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // downstream `walletId`-keyed structure network-correct by
         // construction — no per-network disambiguation needed in the
         // persistence layer, and network-blind child tables (UTXOs,
-        // asset locks, platform addresses) can no longer cross-feed
+        // asset locks, platform addresses) cannot cross-feed
         // between a mnemonic's per-network wallets. The watch-only
         // restore path (`Wallet::new_external_signable`) reuses the
         // persisted id verbatim, so it stays self-consistent across
@@ -217,9 +217,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // A registration under an id a previous generation held is exactly the
         // remove-and-recreate case: that generation's pending-spend fences
         // protect signed transactions that are still valid and still relayable,
-        // so the replacement inherits them rather than starting clean
-        // (`dashpay/platform#4309`, review round 8). A first registration finds
-        // no entry and gets an empty map, as before.
+        // so the replacement inherits them rather than starting clean. A first
+        // registration finds no entry and gets an empty map.
         let registration_wallet_id = wallet.compute_wallet_id();
         let generation = Arc::new(WalletGeneration::with_fences(
             self.in_broadcast_fences_for(&registration_wallet_id),
@@ -668,8 +667,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// inside it, `CoreWallet::is_same_generation` passes for a removed
     /// generation (a removed generation matches itself), and the reservation age
     /// guard is disabled once `last_processed_height` returns `None`. So a
-    /// payment for a wallet the host already deleted reaches the network
-    /// (`dashpay/platform#4185`).
+    /// payment for a wallet the host already deleted reaches the network.
     ///
     /// Taking the gate *inside* this method rather than leaving it to the caller
     /// is deliberate: `PlatformWalletManager` is public and `SignedPaymentRegistry`
@@ -714,11 +712,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// The `Arc<PlatformWallet>` validated under the gate is therefore retained,
     /// and the public-map entry is removed only while it still names that same
     /// generation. Both maps, the returned handle and the `tear_down` argument
-    /// are then all that one generation (`dashpay/platform#4185`). The one
-    /// remaining id-keyed step is the shielded coordinator detach below, which
-    /// has no generation concept at all; a generation that has just been
-    /// registered has not run `bind_shielded` yet, so it holds no coordinator
-    /// entry to detach.
+    /// then all name that one generation. The one remaining id-keyed step is
+    /// the shielded coordinator detach below, which has no generation concept
+    /// at all; a generation that has just been registered has not run
+    /// `bind_shielded` yet, so it holds no coordinator entry to detach.
     ///
     /// The inner-manager removal needs no such check: G1 can only leave
     /// `wallet_manager` through this method (which requires G1's gate, held here)
@@ -1138,25 +1135,25 @@ mod register_wallet_duplicate_tests {
         );
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 8 — PENDING-SPEND PROTECTION MUST
-    /// SURVIVE WALLET RECREATION.
+    /// PENDING-SPEND PROTECTION MUST SURVIVE WALLET RECREATION.
     ///
-    /// The in-broadcast fence used to live in the `WalletGeneration` itself, so
-    /// it was not merely process-local but *generation*-local. Removing a wallet
-    /// and re-creating it under the same id mints a fresh generation, and the
-    /// fence map went with the old one — while the signed transaction it was
-    /// protecting stays perfectly valid and can still be relayed by a DAPI
-    /// endpoint or a peer that retained it. The re-created wallet restored the
-    /// persisted UTXO with neither the fence nor key-wallet's memory-only
-    /// reservation holding it, and could sign a conflicting spend of the very
-    /// same outpoint.
+    /// If the in-broadcast fence lived in the `WalletGeneration` itself, it
+    /// would be not merely process-local but *generation*-local. Removing a
+    /// wallet and re-creating it under the same id mints a fresh generation,
+    /// and the fence map would go with the old one — while the signed
+    /// transaction it protects stays perfectly valid and can still be relayed
+    /// by a DAPI endpoint or a peer that retained it. The re-created wallet
+    /// would restore the persisted UTXO with neither the fence nor key-wallet's
+    /// memory-only reservation holding it, and could sign a conflicting spend
+    /// of the very same outpoint.
     ///
     /// Fences are therefore keyed by WALLET, not by generation: a generation
     /// that replaces another under the same id inherits its predecessor's
     /// pending-spend fences, and they are retired by the same evidence as ever —
     /// an observed spend — not by the replacement.
     ///
-    /// Red before the fix: the re-created wallet reported no conflict at all.
+    /// Without wallet-keyed fences the re-created wallet reports no conflict
+    /// at all.
     #[tokio::test]
     async fn a_recreated_wallet_inherits_the_pending_fences_of_the_generation_it_replaces() {
         use dashcore::hashes::Hash;
@@ -1297,8 +1294,7 @@ mod register_wallet_duplicate_tests {
     }
 }
 
-/// Removal versus a same-id re-registration that lands *during* the removal
-/// (`dashpay/platform#4185` review).
+/// Removal versus a same-id re-registration that lands *during* the removal.
 ///
 /// The invariant: `remove_wallet_with_teardown` removes, returns and tears down
 /// exactly the wallet generation it validated under that generation's lifecycle

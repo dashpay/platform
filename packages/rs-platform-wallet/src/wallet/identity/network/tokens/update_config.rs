@@ -89,8 +89,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         .map_err(|e| {
             // Preserve a structured key-unavailable signer failure so the FFI
             // boundary can still restore code 31; only genuine operation
-            // failures get stringified into `TokenError`
-            // (dashpay/platform#4183 review).
+            // failures get stringified into `TokenError`.
             crate::error::preserve_signer_key_unavailable_or(e, |e| {
                 PlatformWalletError::TokenError(format!("Token config update failed: {}", e))
             })

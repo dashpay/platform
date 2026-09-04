@@ -165,7 +165,7 @@ impl IdentityManager {
     ///
     /// Layers the public-key record into the DPP `Identity`'s
     /// `public_keys` map (overwriting any existing slot with the same
-    /// `KeyID`). Private-key data is no longer kept on
+    /// `KeyID`). Private-key data is not kept on
     /// `ManagedIdentity` (it lives in the iOS Keychain on the client
     /// side); the `(wallet_id, derivation_indices)` breadcrumb on the
     /// entry tells the client how to re-derive the scalar.

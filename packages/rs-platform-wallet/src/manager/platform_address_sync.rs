@@ -1,9 +1,8 @@
 //! Periodic platform-address balance sync coordinator.
 //!
-//! Mirrors what iOS used to do in `PlatformBalanceSyncService`: run
-//! [`PlatformAddressWallet::sync_balances`] for every registered wallet
-//! on a fixed cadence, and emit a summary event so UI and persistence
-//! layers can react.
+//! Runs [`PlatformAddressWallet::sync_balances`] for every registered
+//! wallet on a fixed cadence, and emits a summary event so UI and
+//! persistence layers can react.
 //!
 //! Not auto-started. Call [`PlatformAddressSyncManager::start`] once the
 //! wallets are registered and the SPV runtime is up.
@@ -32,7 +31,7 @@ use crate::manager::{
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
-/// Default cadence — matches the 15s BLAST loop we previously ran in Swift.
+/// Default cadence.
 pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 15;
 
 /// Outcome of syncing a single wallet in a pass.
@@ -718,10 +717,10 @@ mod tests {
     }
 
     /// `sync_wallet` is a second entry point into the same per-wallet
-    /// state, so it must observe the same admission as `sync_now` — it
-    /// used to bypass both the `is_syncing` slot and the gate entirely,
-    /// which let a per-wallet sync take a wallet's provider lock and
-    /// persist a fresh watermark right after a reset cleared it.
+    /// state, so it must observe the same admission as `sync_now` —
+    /// bypassing the `is_syncing` slot or the gate would let a per-wallet
+    /// sync take a wallet's provider lock and persist a fresh watermark
+    /// right after a reset cleared it.
     #[tokio::test]
     async fn sync_wallet_is_refused_while_admission_is_shut() {
         let (mgr, _counter) = make_manager();

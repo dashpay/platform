@@ -100,7 +100,7 @@ pub struct SignedCoreTransaction {
     /// releases the reservation *owner-guarded*: after this build's inputs may
     /// have been swept by key-wallet's TTL and re-reserved by a concurrent build
     /// under a new token, releasing by outpoint alone would free that other
-    /// build's inputs (the `dashpay/platform#4185` double-spend window).
+    /// build's inputs (the release/re-reserve double-spend window).
     /// [`ManagedCoreFundsAccount::release_reservation_if_owner`] releases only
     /// inputs still owned by this token, closing that window.
     reservation_token: Option<ReservationToken>,
@@ -117,8 +117,7 @@ pub struct SignedCoreTransaction {
     /// so a caller cannot finalize through wallet A and then register/broadcast
     /// through an unrelated wallet B — the registry would otherwise treat B as
     /// the owner, submit A's transaction through B's broadcaster, and run B's
-    /// cleanup while A's real reservation leaked until its TTL
-    /// (`dashpay/platform#4185`).
+    /// cleanup while A's real reservation leaked until its TTL.
     origin_generation: Arc<WalletGeneration>,
 }
 
@@ -172,7 +171,7 @@ impl SignedCoreTransaction {
     /// ownership: `SignedCoreTransaction` is deliberately not `Clone`, so a
     /// finalize yields exactly one ownership object and the registry can be
     /// handed it exactly once — a caller cannot mint two live tokens that name
-    /// the same held reservation (`dashpay/platform#4185`). The transaction,
+    /// the same held reservation. The transaction,
     /// funding account, and reservation height are derived here, not supplied
     /// independently by the caller.
     pub(crate) fn into_registered_parts(self) -> RegisteredPaymentParts {
@@ -363,7 +362,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // interleaving. The token rides in `SignedCoreTransaction` so a
             // later abandon or rejected broadcast releases *only* the inputs
             // this build still owns, even if a TTL sweep re-reserved them under
-            // a new token meanwhile (`dashpay/platform#4185`).
+            // a new token meanwhile.
             let mut builder = builder.set_current_height(height);
             // Accounts that took on this build's reservation bookkeeping, in
             // funding order — i.e. the ones a failure path must release. Under
@@ -465,8 +464,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // request itself is sound and can be re-attempted once the fenced
             // dispatch's outcome is reconciled (see the variant docs for the
             // duplicate-payment hazard in "retry unchanged"), and callers
-            // should not have to substring-match prose to tell it apart
-            // (`dashpay/platform#4309`).
+            // should not have to substring-match prose to tell it apart.
             if let Some(outpoint) = info.generation.in_broadcast_conflict(&unsigned) {
                 release_all!(offered_accounts, info.core_wallet.accounts, &unsigned);
                 return Err(PlatformWalletError::InputMidBroadcast { outpoint });
@@ -588,7 +586,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             reservation_token,
             // Capture the finalizing wallet's generation identity so the
             // deferred registry can refuse to bind this payment to any other
-            // wallet (`dashpay/platform#4185`).
+            // wallet.
             origin_generation: Arc::clone(self.generation()),
         })
     }
@@ -648,7 +646,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// (`SignedCoreTransaction::reservation_token`). When present the release is
     /// *owner-guarded* — it frees only inputs still owned by that token, so a
     /// reservation key-wallet's TTL swept and a concurrent build re-took is left
-    /// untouched (`dashpay/platform#4185`). When `None` (the build reserved
+    /// untouched. When `None` (the build reserved
     /// nothing) it falls back to the unconditional by-outpoint release; that
     /// path is never reached for a funded finalize, which always reserves.
     pub(crate) async fn release_transaction_reservation(
@@ -918,12 +916,13 @@ mod tests {
         )
     }
 
-    /// `reservation_only` end to end IN THIS WORKSPACE. key-wallet #994 covers
-    /// `add_funding_reservation_only` on its own side, but nothing here proved
+    /// `reservation_only` end to end IN THIS WORKSPACE. key-wallet covers
+    /// `add_funding_reservation_only` on its own side, but only this proves
     /// the flag survives the crossing: it travels an FFI struct field, a
     /// finalizer bool, and a key-wallet call, and a refactor that drops it
-    /// anywhere along that path leaves every test in this repo green while
-    /// silently reintroducing the >500-input build this branch exists to fix.
+    /// anywhere along that path leaves every other test in this repo green
+    /// while silently readmitting the >500-input build the flag exists to
+    /// prevent.
     ///
     /// The account holds two UTXOs; the builder is seeded with exactly one.
     /// Under the flag the build must spend that one and nothing else — and a

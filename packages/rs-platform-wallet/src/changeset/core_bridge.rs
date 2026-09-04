@@ -15,7 +15,7 @@
 //! consumer deliberately does NOT use that broadcast: under a heavy SPV
 //! catch-up the broadcast ring overflows (`RecvError::Lagged`) and drops the
 //! record/watermark events, which let the durable sync height outrun the
-//! rows it implies and freeze forever (dashpay/platform#4069). The unbounded
+//! rows it implies and freeze forever. The unbounded
 //! persistence channel can never `Lagged`, so that freeze cannot occur.
 //!
 //! # Why a single consumer, not per-wallet
@@ -61,18 +61,16 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// Maximum number of `WalletEvent`s folded into a single
 /// `persister.store(..)` round-trip by [`run_wallet_event_adapter`].
 ///
-/// # Why batch at all (dashpay/platform#4069 follow-up)
+/// # Why batch at all
 ///
 /// This adapter's per-event cost is overwhelmingly the persister call: on
 /// Android that is a JNI hop into a Room transaction (milliseconds), while
 /// projecting a `WalletEvent` into a [`CoreChangeSet`] is microseconds.
-/// Storing one event per `store()` therefore pinned the drain rate at
+/// Storing one event per `store()` would therefore pin the drain rate at
 /// roughly the *store* rate — low hundreds per second — which is far below
 /// what a historical SPV catch-up emits. Draining the lossless persistence
-/// channel one store at a time let its backlog grow without bound during a
-/// catch-up (and, on the old bounded broadcast this consumer used to read,
-/// overflowed the ring and froze the watermark — the root cause the
-/// dedicated unbounded channel removes).
+/// channel one store at a time would let its backlog grow without bound
+/// during a catch-up.
 ///
 /// Folding every event *already buffered* in the channel into one changeset
 /// per wallet collapses a burst of N events into a single store, so the
@@ -87,10 +85,9 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// starving the cancellation branch of the select below.
 const ADAPTER_STORE_BATCH_LIMIT: usize = 512;
 
-/// Session fault state for the durable-watermark guard
-/// (dashpay/platform#4069).
+/// Session fault state for the durable-watermark guard.
 ///
-/// Now that the persistence channel is a lossless unbounded `mpsc`, two things
+/// Because the persistence channel is a lossless unbounded `mpsc`, two things
 /// fault a wallet, and both name the wallets they hit, so a sibling whose rows
 /// are still landing atomically keeps advancing — freezing it too would force a
 /// redundant rescan of a wallet that never lost a row.
@@ -248,7 +245,7 @@ where
 /// [`freeze_synced_height_if_faulted`] helper — is directly testable
 /// (drive a real `mpsc::UnboundedSender`, inject a probe persister).
 ///
-/// # Lossless persistence channel (dashpay/platform#4069)
+/// # Lossless persistence channel
 ///
 /// The upstream `WalletManager` publishes `WalletEvent`s to this consumer
 /// over a dedicated, **unbounded** `mpsc` persistence channel (taken once
@@ -260,16 +257,15 @@ where
 /// subscribe-before-publish race: an `mpsc::UnboundedReceiver` buffers events
 /// sent before the task's first poll rather than dropping them.
 ///
-/// This closes the historical freeze: previously this consumer read the
-/// manager's *bounded* broadcast ring, and during a historical SPV catch-up
-/// the manager processed blocks far faster than this single-threaded adapter
-/// could drain them through the (slow, JNI + Room) persister, so the ring
-/// overflowed and `recv()` returned `Lagged` — the dropped events being
-/// exactly the record/UTXO/spent-marker events, while the bare
-/// `SyncHeightAdvanced` watermark kept flowing and advanced the persisted
-/// `syncedHeight` past blocks whose rows never reached disk. The durable
-/// watermark then outran its rows and the guard below latched it frozen
-/// forever. With the lossless channel that path no longer exists.
+/// The manager's *bounded* broadcast ring is the wrong transport here: during
+/// a historical SPV catch-up the manager processes blocks far faster than
+/// this single-threaded adapter can drain them through the (slow, JNI + Room)
+/// persister, so the ring overflows and `recv()` returns `Lagged` — the
+/// dropped events being exactly the record/UTXO/spent-marker events, while
+/// the bare `SyncHeightAdvanced` watermark keeps flowing and advances the
+/// persisted `syncedHeight` past blocks whose rows never reach disk. The
+/// durable watermark then outruns its rows and the guard below latches it
+/// frozen forever. With the lossless channel that path cannot occur.
 ///
 /// # Durable-watermark guard (fail-closed backstop)
 ///
@@ -567,7 +563,7 @@ async fn run_wallet_event_adapter<P>(
 /// 1. Apply [`freeze_synced_height_if_faulted`] *after* the fold, so a
 ///    `synced_height` that entered via `Merge` is stripped just like a
 ///    standalone one (otherwise folding would smuggle a watermark past the
-///    guard and reintroduce dashpay/platform#4069).
+///    guard and let the durable watermark outrun its rows).
 /// 2. Record `frozen` from the height the batch *proposed*, captured before the
 ///    guard strips it.
 /// 3. Record `persisted` only from the `Ok` arm of `store()`. A rejected store
@@ -680,7 +676,7 @@ where
     diag
 }
 
-/// Durable-watermark guard for dashpay/platform#4069.
+/// Durable-watermark guard.
 ///
 /// When a wallet has faulted this session — its `store()` was rejected, or a
 /// commit panic left the batch's outcome unknown — its persisted
@@ -793,11 +789,11 @@ async fn build_core_changeset(
             // Live mempool matching emits ONE event per matched
             // account, each carrying only that account's slice — and
             // nothing marks a transaction's last slice. Folding
-            // whatever slices happened to share an adapter drain made
-            // the persisted row depend on scheduling: a drain that
-            // caught one slice stored that slice as the wallet's row
-            // (the dashpay/platform#4387 bug, reintroduced
-            // nondeterministically). The MANAGER, not the drain, is
+            // whatever slices happen to share an adapter drain would
+            // make the persisted row depend on scheduling: a drain
+            // that catches one slice would store that slice as the
+            // wallet's row, nondeterministically. The MANAGER, not
+            // the drain, is
             // the boundary where a transaction's slices are complete:
             // by the time this event is projected the manager already
             // holds every so-far-matched account's record for the
@@ -905,8 +901,7 @@ async fn build_core_changeset(
             // wallet-level `records` copy: one block can insert
             // SEVERAL per-account records for one transaction (a
             // multi-account spend), and the txid-keyed row needs the
-            // one wallet-level record (dashpay/platform#4387 — see
-            // fold_same_txid_records).
+            // one wallet-level record (see fold_same_txid_records).
             cs.account_records.extend(
                 inserted
                     .iter()
@@ -963,10 +958,10 @@ async fn build_core_changeset(
             // `ChainLockProcessed` fires every time the wallet's
             // `last_applied_chain_lock` advances,
             // even when no record was promoted — so a quiescent wallet's
-            // boundary advance is no longer invisible to this bridge.
-            // The earlier `TransactionsChainlocked`-only signal had a
+            // boundary advance is never invisible to this bridge.
+            // A `TransactionsChainlocked`-only signal would leave a
             // gap on the "metadata advanced but per-account empty"
-            // path; the new event closes it deterministically.
+            // path; this event closes it deterministically.
             CoreChangeSet {
                 last_applied_chain_lock: Some(chain_lock.clone()),
                 ..CoreChangeSet::default()
@@ -1372,8 +1367,7 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
 /// [`spent_outpoints`], which drives the in-broadcast fence's release. The two
 /// consumers must not be able to disagree about which inputs count: the fence
 /// releases an outpoint precisely when the wallet treats it as spent, so a
-/// divergence would either strand a fence forever or drop one early
-/// (`dashpay/platform#4309`).
+/// divergence would either strand a fence forever or drop one early.
 ///
 /// [`InputDetail`]: key_wallet::managed_account::transaction_record::InputDetail
 fn spent_outpoint(
@@ -1656,7 +1650,7 @@ mod contact_watch_only_projection_tests {
         }
     }
 
-    /// dashpay/platform#4387: a multi-account spend's per-account records
+    /// A multi-account spend's per-account records
     /// must fold into ONE wallet-level row. Models the S22 field sweep in
     /// miniature: the BIP44 slice spends 2.0, the receival slice spends
     /// 0.62 with 0.005 change — the persisted row must carry the summed
@@ -2767,7 +2761,7 @@ mod tests {
         }
     }
 
-    /// dashpay/platform#4069: while persistence is healthy the sync
+    /// While persistence is healthy the sync
     /// watermark flows through untouched.
     #[test]
     fn healthy_persistence_keeps_synced_height() {
@@ -2781,7 +2775,7 @@ mod tests {
         assert_eq!(core.last_processed_height, Some(300));
     }
 
-    /// dashpay/platform#4069: once persistence has faulted, the durable
+    /// Once persistence has faulted, the durable
     /// watermark is frozen (`synced_height` stripped) so it can't outrun
     /// the rows — but ONLY `synced_height` is dropped; every other field
     /// (here `last_processed_height`, standing in for records/UTXO
@@ -2805,9 +2799,9 @@ mod tests {
         );
     }
 
-    /// dashpay/platform#4069 (per-wallet fault scoping): a `store()`
+    /// Per-wallet fault scoping: a `store()`
     /// rejection freezes ONLY the named wallet; a sibling keeps advancing.
-    /// (The old global `broadcast::Lagged` latch is gone — the lossless
+    /// (There is no global `Lagged` latch — the lossless
     /// unbounded persistence channel can never lag.)
     #[test]
     fn fault_state_scopes_store_rejection_per_wallet() {
@@ -2828,7 +2822,7 @@ mod tests {
         );
     }
 
-    // ── Adapter-loop integration tests (dashpay/platform#4069) ──
+    // ── Adapter-loop integration tests ──
     //
     // These drive `run_wallet_event_adapter` with a real lossless
     // `mpsc::UnboundedSender` and a probe persister so the LOOP — not just
@@ -2870,8 +2864,8 @@ mod tests {
         obs: UnboundedSender<StoreObserved>,
         fail_once: Mutex<HashSet<WalletId>>,
         /// Wallets whose NEXT `store()` panics instead of returning. Models a
-        /// backend that dies mid-write — the case that used to unwind the whole
-        /// adapter task and now surfaces as a `JoinError`.
+        /// backend that dies mid-write — which surfaces as a `JoinError`
+        /// instead of unwinding the whole adapter task.
         panic_once: Mutex<HashSet<WalletId>>,
         /// Held closed to keep a `store()` call parked. The SQLite backend
         /// commits a real transaction per call, so a slow disk parks the caller
@@ -2988,8 +2982,8 @@ mod tests {
     /// (`DEFAULT_WALLET_EVENT_CAPACITY` == 1000) is delivered losslessly over
     /// the unbounded persistence channel, so the fault latch never trips and
     /// the durable watermark advances all the way to the tip of the
-    /// catch-up. On the old broadcast this burst would `Lagged` and freeze the
-    /// watermark forever (dashpay/platform#4069).
+    /// catch-up. On a bounded broadcast this burst would `Lagged` and freeze
+    /// the watermark forever.
     #[tokio::test]
     async fn lossless_burst_never_freezes_and_watermark_reaches_tip() {
         const BURST: u32 = 3000; // >> the old broadcast ring (1000)
@@ -3286,8 +3280,8 @@ mod tests {
     /// watermark advance by killing the writer outright. `spawn_blocking`
     /// turns that into a recoverable `JoinError` — and merely logging it would
     /// let the NEXT batch persist a higher `synced_height` for a wallet whose
-    /// earlier rows may never have landed, which is exactly the hole
-    /// dashpay/platform#4069 closed.
+    /// earlier rows may never have landed, which is exactly the hole the
+    /// durable-watermark guard exists to close.
     #[tokio::test]
     async fn a_panicking_commit_freezes_the_batch_wallets() {
         let wallet_id = [0xEEu8; 32];
@@ -3551,8 +3545,8 @@ mod tests {
     /// standalone or folded together with a record. The freeze is applied
     /// after the fold, so a `synced_height` that entered via `Merge` is
     /// stripped just like a standalone one; otherwise folding would smuggle
-    /// the watermark past the guard and reintroduce dashpay/platform#4069
-    /// (durable watermark outrunning the rows it implies).
+    /// the watermark past the guard (durable watermark outrunning the rows
+    /// it implies).
     #[tokio::test]
     async fn watermark_is_still_stripped_after_a_fault() {
         let wallet_id = [9u8; 32];
@@ -3974,15 +3968,15 @@ mod tests {
         assert!(!observed.rejected);
     }
 
-    // ── Batch-diagnostic reporting (dashpay/platform#4290 review) ──
+    // ── Batch-diagnostic reporting ──
     //
     // The per-drain `wallet-event batch: ...` line is read off a mainnet
     // tester's logcat to answer "is the durable watermark advancing?", so what
     // it reports is a tested property, not a comment.
     //
-    // The regression these lock down: the diagnostic used to fold
-    // `core.synced_height` into `synced_height_persisted` BEFORE calling
-    // `persister.store(...)`. A rejected store therefore logged
+    // The invariant these lock down: `core.synced_height` folds into
+    // `synced_height_persisted` only AFTER `persister.store(...)` accepts.
+    // Folding it before the call would make a rejected store log
     // `synced_height_persisted=Some(h)` in the very same drain that faulted the
     // wallet *because* height `h`'s rows were not accepted — an internally
     // contradictory trace that points a diagnosis at the wrong subsystem.
@@ -4050,7 +4044,7 @@ mod tests {
             .contains("synced_height_persisted=Some(500)"));
     }
 
-    /// REGRESSION (PR #4290 review): a REJECTED `store()` must never be
+    /// Invariant: a REJECTED `store()` must never be
     /// reported as persisted.
     #[test]
     fn rejected_store_is_not_reported_as_persisted() {
@@ -4248,7 +4242,7 @@ mod tests {
 
     /// A wallet that entered the drain already faulted and whose store is
     /// rejected AGAIN counts once, not twice: `faulted` is a wallet count and
-    /// must never exceed `wallets` (#4315 review finding 30c2e8e95003).
+    /// must never exceed `wallets`.
     #[test]
     fn repeat_rejection_of_a_faulted_wallet_counts_once() {
         let wallet_id = [9u8; 32];

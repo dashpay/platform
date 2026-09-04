@@ -427,7 +427,7 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// cancellation token; [`shutdown`](Self::shutdown) cancels, joins, and
     /// reports per-worker terminal status.
     pub(super) registry: Arc<ThreadRegistry<WalletWorker>>,
-    /// Host-visible hard sync-fault latch (dashpay/platform#4069). Set
+    /// Host-visible hard sync-fault latch. Set
     /// (and never cleared for this manager instance's lifetime) by the
     /// wallet-event adapter the first time it freezes a durable watermark
     /// after a persistence `store()` rejection — the one remaining fault
@@ -438,21 +438,21 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
     /// Per-WALLET in-broadcast fence maps, handed to every
     /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) registered
-    /// under each id (`dashpay/platform#4309`, review round 8).
+    /// under each id.
     ///
     /// A fence describes a signed transaction that may be live on the network.
-    /// That fact outlives the wallet *instance* that dispatched it: removing a
-    /// wallet and re-creating it under the same id used to mint a generation
-    /// with an empty map, so the re-created wallet restored the persisted UTXO
+    /// That fact outlives the wallet *instance* that dispatched it: if removing
+    /// a wallet and re-creating it under the same id minted a generation with
+    /// an empty map, the re-created wallet would restore the persisted UTXO
     /// with nothing holding it — not the fence, not key-wallet's memory-only
     /// reservation — and could sign a conflicting spend of an outpoint the
-    /// original transaction still spends. Keying the map here instead makes the
+    /// original transaction still spends. Keying the map here makes the
     /// replacement inherit it.
     ///
     /// **Deliberately never pruned.** A removed wallet's entry stays, because a
     /// removal is exactly when the protection must survive; dropping it on
-    /// removal would restore the bug for the recreate-after-remove path this
-    /// exists to close. Growth is bounded by the number of distinct wallet ids
+    /// removal would reopen the recreate-after-remove hazard this exists to
+    /// close. Growth is bounded by the number of distinct wallet ids
     /// this process has registered, and each entry reaps its own cleared rows
     /// on read.
     ///
@@ -476,12 +476,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ) -> Self {
         // Take the manager's lossless, unbounded persistence receiver BEFORE
         // the manager is wrapped in the shared `Arc<RwLock>` and handed to any
-        // producer. Unlike the old broadcast subscription, an
-        // `mpsc::UnboundedReceiver` buffers events emitted during startup
-        // rather than dropping them, so there is no subscribe-before-publish
-        // race and — being unbounded — it can never `Lagged` and freeze the
-        // durable sync watermark (dashpay/platform#4069). The receiver is
-        // taken here, once, and moved into the adapter task below.
+        // producer. A broadcast subscription would drop events emitted during
+        // startup; an `mpsc::UnboundedReceiver` buffers them instead, so
+        // there is no subscribe-before-publish race and — being unbounded —
+        // it can never `Lagged` and freeze the durable sync watermark. The
+        // receiver is taken here, once, and moved into the adapter task below.
         let mut wallet_manager_inner = WalletManager::new(sdk.network);
         let event_receiver = wallet_manager_inner
             .take_persistence_receiver()
@@ -495,7 +494,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // handles for a clean, panic-aware shutdown join.
         let registry = ThreadRegistry::<WalletWorker>::new();
 
-        // Host-visible hard sync-fault latch (dashpay/platform#4069). The
+        // Host-visible hard sync-fault latch. The
         // adapter raises it the first time it freezes a durable watermark.
         let sync_fault = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -522,7 +521,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
         // SpendObservationHandler releases in-broadcast input fences when the
         // wallet observes the fenced outpoints spent — the evidence that ends
-        // the fence a dispatch installs (`dashpay/platform#4309`). It takes the
+        // the fence a dispatch installs. It takes the
         // same `wallets` map, and for the same lock reason as the balance
         // handler: the event fires inside SPV's block-processing write section,
         // so the generation cannot be resolved through the wallet-manager lock.
@@ -615,7 +614,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// manager mints for a wallet is built from this, so a generation that
     /// replaces another under the same id inherits its pending-spend fences —
     /// see the [`in_broadcast_fences`](Self#structfield.in_broadcast_fences)
-    /// field docs (`dashpay/platform#4309`).
+    /// field docs.
     pub(super) fn in_broadcast_fences_for(
         &self,
         wallet_id: &WalletId,
@@ -630,13 +629,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync
-    /// watermark this manager's lifetime (dashpay/platform#4069).
+    /// watermark this manager's lifetime.
     ///
     /// Returns `true` once — and stays `true` for THIS manager instance's
     /// lifetime (a destroyed-and-recreated manager starts unlatched) —
-    /// after a persistence `store()` was rejected, the one remaining fault
-    /// trigger: the lossless persistence channel cannot drop or lag events,
-    /// so the old broadcast-lag trigger no longer exists. A latch means the
+    /// after a persistence `store()` was rejected, the only fault trigger:
+    /// the lossless persistence channel cannot drop or lag events. A latch
+    /// means the
     /// persisted `syncedHeight` is deliberately held behind the chain tip
     /// for the affected wallet and a rescan is pending on the next launch.
     /// Integrators poll this to
@@ -760,18 +759,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// # The missing-coordinator case is an ERROR, not a silent no-op
     ///
-    /// This used to `Ok(())` when `shielded_coordinator()` was `None`,
-    /// treating "no coordinator" as "nothing to clear". That masked the exact
-    /// on-device failure this fix targets: the host taps Clear on a manager
-    /// whose coordinator is **not installed on this instance** — e.g. an SDK
-    /// rebuild handed the host a fresh `PlatformWalletManager` whose
-    /// `configure_shielded` never ran (or ran on a different instance than the
-    /// one currently syncing). The quiesce runs (sync loop stops), the call
-    /// returns `Ok`, and the host then wipes its own Room/SwiftData rows —
-    /// while the **on-disk commitment tree is never touched** (file mtime
-    /// unchanged on device, no `reset_commitment_tree` call). The next bind
-    /// reloads the still-full tree + its persisted watermark and re-freezes
-    /// everything.
+    /// Returning `Ok(())` when `shielded_coordinator()` is `None` — treating
+    /// "no coordinator" as "nothing to clear" — masks a real on-device
+    /// failure: the host taps Clear on a manager whose coordinator is **not
+    /// installed on this instance** — e.g. an SDK rebuild handed the host a
+    /// fresh `PlatformWalletManager` whose `configure_shielded` never ran (or
+    /// ran on a different instance than the one currently syncing). The
+    /// quiesce runs (sync loop stops), the call returns `Ok`, and the host
+    /// then wipes its own Room/SwiftData rows — while the **on-disk
+    /// commitment tree is never touched** (file mtime unchanged on device, no
+    /// `reset_commitment_tree` call). The next bind reloads the still-full
+    /// tree + its persisted watermark and re-freezes everything.
     ///
     /// The FFI only exposes this call behind a bound, shielded-enabled host
     /// surface (the "Clear" button), so reaching it with no coordinator is a
@@ -1095,8 +1093,8 @@ mod tests {
     }
 
     /// The constructor must register [`SpendObservationHandler`] on the event
-    /// fan-out, over the LIVE wallets map (`dashpay/platform#4309`, review
-    /// round 6): a spend-bearing wallet event dispatched through the manager's
+    /// fan-out, over the LIVE wallets map: a spend-bearing wallet event
+    /// dispatched through the manager's
     /// own `event_manager` must release a registered wallet's in-broadcast
     /// fence. Dropping the handler from the constructor's handler list — the
     /// accidental-omission regression this pins — fails the final assertion,

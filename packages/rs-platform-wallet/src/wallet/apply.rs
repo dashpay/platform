@@ -141,7 +141,7 @@ impl PlatformWalletInfo {
         //    not through changeset replay. The core field on `cs` is
         //    therefore informational here and intentionally not
         //    applied; we drop it explicitly so future readers don't
-        //    expect a re-application path that no longer exists.
+        //    expect a re-application path that does not exist.
         drop(core);
 
         // 2. Identities.
@@ -774,7 +774,7 @@ mod tests {
 
     /// Token-balance changesets are accepted by `apply_changeset` for
     /// shape compatibility but are not replayed onto
-    /// `PlatformWalletInfo` (which no longer has token_balances /
+    /// `PlatformWalletInfo` (which has no token_balances /
     /// token_watched fields). The canonical balance cache lives on
     /// `IdentitySyncManager` and is rebuilt by the next sync pass; the
     /// FFI persister surfaces the upserts/tombstones to the Swift side
@@ -1396,9 +1396,8 @@ mod tests {
         assert_eq!(restored.identity.revision(), 5);
     }
 
-    /// Reviewer #6d: contact tombstone for a present (non-orphan) owner
-    /// must drop the matching pending request — happy-path coverage
-    /// previously only existed via the orphan-skip test.
+    /// A contact tombstone for a present (non-orphan) owner
+    /// must drop the matching pending request.
     #[test]
     fn apply_contact_tombstone_drops_pending_for_present_owner() {
         let mut wallet = build_test_wallet();
@@ -1855,10 +1854,9 @@ mod tests {
         });
 
         // Token balance changesets are accepted for shape compat but
-        // no longer drive `PlatformWalletInfo` state — the manager
+        // do not drive `PlatformWalletInfo` state — the manager
         // owns the balance cache. Include one anyway to confirm the
-        // double-apply still works once the field has been replaced
-        // with a `drop`.
+        // double-apply still works while the field is simply dropped.
         let mut tok_cs = TokenBalanceChangeSet::default();
         let token = Identifier::from([8u8; 32]);
         tok_cs.balances.insert((identity, token), 42);

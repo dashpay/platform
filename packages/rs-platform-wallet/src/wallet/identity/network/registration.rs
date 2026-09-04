@@ -572,12 +572,11 @@ impl IdentityWallet {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// `find_tracked_unproven_lock` was removed when
-// `PlatformWalletError::FinalityTimeout` was widened to carry the full
-// `OutPoint` (previously only the `Txid`). The IS→CL fallback now reads
-// the outpoint directly off the error payload — no BTreeMap walk by
-// `(funding_type, identity_index)` is needed, which also closes the
-// non-determinism gap when multiple unproven locks shared that key.
+// `PlatformWalletError::FinalityTimeout` carries the full `OutPoint`, so
+// the IS→CL fallback reads the outpoint directly off the error payload —
+// no BTreeMap walk by `(funding_type, identity_index)` is needed, which
+// also closes the non-determinism gap when multiple unproven locks share
+// that key.
 
 // ---------------------------------------------------------------------------
 // Tests
