@@ -8856,6 +8856,7 @@ dependencies = [
  "dpp-json-convertible-derive",
  "drive",
  "drive-proof-verifier",
+ "futures",
  "getrandom 0.2.17",
  "hex",
  "hmac",
