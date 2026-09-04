@@ -346,7 +346,10 @@ pub enum WalletStorageError {
     AccountRejected { cause: String },
 
     /// An `account_registrations` row is missing for a given `(account_type, account_index)`.
-    #[error("required account information is missing for wallet_id {wallet_id:?}")]
+    #[error(
+        "required account information is missing for wallet {}",
+        hex::encode(wallet_id)
+    )]
     MissingAccount { wallet_id: [u8; 32] },
 
     /// Account record is invalid
@@ -495,14 +498,24 @@ pub enum WalletStorageError {
     },
 
     /// A write was attempted on a persister opened with
-    /// [`LoadPolicy::Recovery`](crate::LoadPolicy). Recovery mode serves a
-    /// degraded projection of the rows, so writing it back would overwrite
-    /// good data with the tolerated view of it. Reopen with
-    /// [`LoadPolicy::Strict`](crate::LoadPolicy) once the database is
-    /// repaired. `operation` names the blocked entry point.
+    /// [`LoadPolicy::Recovery`](crate::LoadPolicy). Recovery is read-only
+    /// **unconditionally, by policy** — `ensure_writable` gates on the
+    /// configured policy, not on whether the load actually tolerated
+    /// anything, because writing back a load that turned out clean would
+    /// be safe but writing back one that degraded would overwrite good
+    /// rows with the tolerated view of them, and nothing at the write
+    /// call site can tell the two apart. Use
+    /// [`SqlitePersister::last_load_degradation`](crate::SqlitePersister::last_load_degradation)
+    /// or
+    /// [`SqlitePersister::is_degraded`](crate::SqlitePersister::is_degraded)
+    /// to find out whether this persister's last load actually needs
+    /// repair before assuming so. `operation` names the blocked entry
+    /// point.
     #[error(
-        "`{operation}` is blocked: the persister is open in recovery mode (read-only) — \
-         repair the database, then reopen it under the strict load policy to write again"
+        "`{operation}` is blocked: the persister is open in recovery mode, which is read-only by \
+         policy regardless of whether the last load tolerated anything — check \
+         `last_load_degradation()` (or `is_degraded()`) to see whether a repair is actually \
+         needed, then reopen under the strict load policy to write again"
     )]
     ReadOnlyRecoveryMode { operation: &'static str },
 
@@ -820,5 +833,42 @@ impl From<dashcore::consensus::encode::Error> for WalletStorageError {
 impl From<dashcore::address::Error> for WalletStorageError {
     fn from(source: dashcore::address::Error) -> Self {
         Self::AddressDecode { source }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// RUST-018: `MissingAccount` must hex-encode `wallet_id` like every
+    /// other wallet-id-bearing variant, not `Debug`-print it as thirty-two
+    /// bracketed decimal integers.
+    #[test]
+    fn missing_account_hex_encodes_the_wallet_id() {
+        let err = WalletStorageError::MissingAccount {
+            wallet_id: [0xa1; 32],
+        };
+        assert_eq!(
+            err.to_string(),
+            "required account information is missing for wallet a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+        );
+    }
+
+    /// RUST-019: the message must not assert that something was tolerated
+    /// — `ensure_writable` gates on policy alone, so a clean Recovery load
+    /// hits this same text. It should point at `last_load_degradation`/
+    /// `is_degraded` instead of instructing a repair that may not be needed.
+    #[test]
+    fn read_only_recovery_mode_points_at_the_degradation_query_instead_of_asserting_repair() {
+        let err = WalletStorageError::ReadOnlyRecoveryMode { operation: "flush" };
+        let message = err.to_string();
+        assert!(message.contains("`flush` is blocked"));
+        assert!(message.contains("read-only by policy"));
+        assert!(message.contains("last_load_degradation()"));
+        assert!(message.contains("is_degraded()"));
+        assert!(
+            !message.contains("repair the database"),
+            "message must not tell the operator to repair a database that may be healthy: {message}"
+        );
     }
 }

@@ -16,7 +16,11 @@ use crate::sqlite::error::WalletStorageError;
 /// A persisted inconsistency `load()` can meet, one variant per site.
 ///
 /// Used as the key of [`LoadDegradation::by_site`]; [`as_str`](Self::as_str)
-/// gives the snake_case tag that appears in logs.
+/// (and this type's `Display`) give the snake_case tag that appears in
+/// logs. [`explanation`](Self::explanation) gives the human-readable prose
+/// for the same site — the two are deliberately separate: a UI layer wants
+/// the prose, a log consumer wants the tag, and neither should have to
+/// derive one from the other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LoadSite {
     /// `core_sync_state.last_applied_chain_lock` failed to decode.
@@ -93,7 +97,17 @@ impl LoadSite {
         }
     }
 
-    fn recovery_message(self) -> &'static str {
+    /// Human-readable prose for this site — public so a host application
+    /// can render *what* degraded without re-deriving eighteen strings
+    /// this crate already holds, or falling back to showing the user
+    /// [`as_str`](Self::as_str)'s log tag. This is the text every
+    /// `tracing::warn!` emitted for `self` also carries as its `message`
+    /// field, so a log reader and an API caller see the same wording.
+    ///
+    /// One entry per site, no `_` catch-all: adding a `LoadSite` must fail
+    /// to compile here and force a decision about its explanatory text,
+    /// instead of silently inheriting wording that describes it wrongly.
+    pub fn explanation(self) -> &'static str {
         match self {
             Self::ShieldedViewingKeyRow => {
                 "recovery mode: skipping an unreadable shielded viewing-key row"
@@ -110,63 +124,30 @@ impl LoadSite {
             Self::TombstonedIdentityOrphan => {
                 "recovery mode: skipping rows owned by a tombstoned identity"
             }
-            // Sites whose site tag plus the logged error already say
-            // everything a reader needs, so they share the generic line.
-            // Listed explicitly rather than behind a `_` arm: a new
-            // `LoadSite` must fail to compile here and force a decision,
-            // instead of silently inheriting a message that describes it
-            // wrongly.
-            Self::ChainLockBlob
-            | Self::CoreTransactionColumnDrift
-            | Self::AccountRegistrationDrift
-            | Self::ProviderKeyRegistrationDrift
-            | Self::ProviderKeyCurveMismatch
-            | Self::AssetLockStatusDrift
-            | Self::OrphanedUtxoOwner
-            | Self::UnresolvedUtxoAddress
-            | Self::UndecodableAddressScript
-            | Self::UsedAddressOwnerConflict
-            | Self::UnownedIdentityHasRegistrationIndex
-            | Self::IdentityIndexCollision
-            | Self::IdentityScanStateContradiction => {
-                "recovery mode: tolerating a persisted inconsistency instead of failing the load"
-            }
-        }
-    }
-
-    fn degradation_message(self) -> &'static str {
-        match self {
+            // The only two sites `note_degraded` ever reaches (see its
+            // callers) — never-fatal in either policy, so their prose
+            // describes an accepted-as-is degradation rather than a
+            // tolerated inconsistency.
             Self::OrphanedUtxoOwner => {
                 "load degraded: routing addresses from an unavailable owner to the first funds account"
             }
             Self::UnresolvedUtxoAddress => {
                 "load degraded: deferring addresses that did not resolve against the account xpub"
             }
-            // Only the two sites above are never-fatal, so only they reach
-            // this function through `note_degraded`. The rest are listed —
-            // not hidden behind a `_` arm — so that adding a `LoadSite`
-            // fails to compile here and forces the author to say whether it
-            // is never-fatal. That decision is precisely what the Strict
-            // invariant of `LoadDegradation::by_site` rests on, and a
-            // wildcard would let a Strict-fatal site acquire a
-            // "accepted as-is" message silently.
+            // Sites whose site tag plus the logged error already say
+            // everything a reader needs, so they share the generic line.
             Self::ChainLockBlob
-            | Self::ShieldedViewingKeyRow
             | Self::CoreTransactionColumnDrift
             | Self::AccountRegistrationDrift
             | Self::ProviderKeyRegistrationDrift
             | Self::ProviderKeyCurveMismatch
             | Self::AssetLockStatusDrift
-            | Self::RehydrationEnsureDerived
-            | Self::RehydrationGapLimit
-            | Self::RehydrationMaintainGapLimit
             | Self::UndecodableAddressScript
             | Self::UsedAddressOwnerConflict
-            | Self::TombstonedIdentityOrphan
             | Self::UnownedIdentityHasRegistrationIndex
             | Self::IdentityIndexCollision
             | Self::IdentityScanStateContradiction => {
-                "load degraded: an ambiguous persisted inconsistency was accepted as-is"
+                "recovery mode: tolerating a persisted inconsistency instead of failing the load"
             }
         }
     }
@@ -229,6 +210,29 @@ impl LoadDegradation {
     }
 }
 
+impl Display for LoadDegradation {
+    /// A short, human-readable summary: one line naming the total and site
+    /// count when clean or degraded, then one line per site pairing its
+    /// log tag with [`LoadSite::explanation`] and its tolerated count.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.degraded {
+            return write!(f, "load not degraded");
+        }
+        write!(
+            f,
+            "load degraded: {} inconsistenc{} tolerated across {} site{}",
+            self.total,
+            if self.total == 1 { "y" } else { "ies" },
+            self.by_site.len(),
+            if self.by_site.len() == 1 { "" } else { "s" },
+        )?;
+        for (site, count) in &self.by_site {
+            write!(f, "\n  - {site} (x{count}): {}", site.explanation())?;
+        }
+        Ok(())
+    }
+}
+
 /// Where a degraded site fired, as structured log fields.
 ///
 /// `account_type` and optional `detail` are `dyn Debug` so this stays free of
@@ -278,38 +282,25 @@ impl LoadCtx {
     /// Fatal-or-tolerated dispatch for a recoverable inconsistency.
     ///
     /// Returns `Err(err)` under [`LoadPolicy::Strict`]. Under
-    /// [`LoadPolicy::Recovery`] it warns, counts `site`, and returns
+    /// [`LoadPolicy::Recovery`] it warns, counts `site` once, and returns
     /// `Ok(())` so the caller continues with its documented degraded
-    /// projection.
+    /// projection. For a walk that counts several occurrences under one
+    /// log record, use [`tolerate_at`](Self::tolerate_at) with
+    /// `coords.affected` set to the count.
     pub(crate) fn tolerate(
         &self,
         site: LoadSite,
         err: WalletStorageError,
     ) -> Result<(), WalletStorageError> {
-        self.tolerate_many(site, 1, err)
-    }
-
-    /// [`tolerate`](Self::tolerate) for `occurrences` incidents at once.
-    ///
-    /// For the walks that count as they go and decide afterwards, so one
-    /// log record covers a whole collection while `by_site` still counts
-    /// occurrences like every other site.
-    pub(crate) fn tolerate_many(
-        &self,
-        site: LoadSite,
-        occurrences: u32,
-        err: WalletStorageError,
-    ) -> Result<(), WalletStorageError> {
         if self.policy == LoadPolicy::Strict {
             return Err(err);
         }
-        self.count(site, occurrences);
+        self.count(site, 1);
         tracing::warn!(
             site = site.as_str(),
-            occurrences,
             error_kind = err.error_kind_str(),
             error = %err,
-            "recovery mode: tolerating a persisted inconsistency instead of failing the load"
+            message = site.explanation(),
         );
         Ok(())
     }
@@ -338,7 +329,7 @@ impl LoadCtx {
             detail = ?coords.detail,
             error_kind = err.error_kind_str(),
             error = %err,
-            message = site.recovery_message(),
+            message = site.explanation(),
         );
         Ok(())
     }
@@ -364,7 +355,7 @@ impl LoadCtx {
             affected = coords.affected,
             detail = ?coords.detail,
             cause,
-            message = site.degradation_message(),
+            message = site.explanation(),
         );
     }
 
@@ -423,12 +414,20 @@ mod tests {
         assert_eq!(snapshot.by_site.get(&LoadSite::ChainLockBlob), Some(&2));
     }
 
+    /// RUST-003: `tolerate_many` (public-in-name-only, its only non-test
+    /// caller passed a constant 1) is gone — `tolerate_at` is the one path
+    /// for a walk that counts several occurrences under one log record.
     #[test]
-    fn tolerate_many_counts_every_occurrence_from_one_record() {
+    fn tolerate_at_counts_every_occurrence_from_one_record() {
         let ctx = LoadCtx::recovery();
-        ctx.tolerate_many(
+        ctx.tolerate_at(
             LoadSite::TombstonedIdentityOrphan,
-            5,
+            SiteCoords {
+                wallet_id: Some([9u8; 32]),
+                account_type: &"n/a",
+                affected: 5,
+                detail: None,
+            },
             WalletStorageError::blob_decode("five leftover rows"),
         )
         .expect("recovery must tolerate");
@@ -438,6 +437,52 @@ mod tests {
             snapshot.by_site.get(&LoadSite::TombstonedIdentityOrphan),
             Some(&5)
         );
+    }
+
+    /// RUST-003: `tolerate` must log the site's bespoke
+    /// [`LoadSite::explanation`], not the old hard-coded generic literal —
+    /// `TombstonedIdentityOrphan` has bespoke prose that the previous
+    /// literal could never surface.
+    #[tracing_test::traced_test]
+    #[test]
+    fn tolerate_logs_the_site_explanation_as_the_message_field() {
+        let ctx = LoadCtx::recovery();
+        ctx.tolerate(
+            LoadSite::TombstonedIdentityOrphan,
+            WalletStorageError::blob_decode("orphaned row"),
+        )
+        .expect("recovery must tolerate");
+        assert!(logs_contain(
+            "recovery mode: skipping rows owned by a tombstoned identity"
+        ));
+    }
+
+    /// RUST-003: `tolerate` and `tolerate_at` must both log via
+    /// `site.explanation()` — the same per-site text, computed the same
+    /// way — instead of `tolerate`'s old hard-coded literal that was
+    /// identical for every site regardless of which one fired.
+    #[tracing_test::traced_test]
+    #[test]
+    fn tolerate_and_tolerate_at_both_log_the_site_explanation() {
+        let ctx = LoadCtx::recovery();
+        ctx.tolerate(
+            LoadSite::ChainLockBlob,
+            WalletStorageError::blob_decode("test"),
+        )
+        .expect("recovery must tolerate");
+        ctx.tolerate_at(
+            LoadSite::ShieldedViewingKeyRow,
+            SiteCoords {
+                wallet_id: None,
+                account_type: &"n/a",
+                affected: 1,
+                detail: None,
+            },
+            WalletStorageError::blob_decode("test"),
+        )
+        .expect("recovery must tolerate");
+        assert!(logs_contain(LoadSite::ChainLockBlob.explanation()));
+        assert!(logs_contain(LoadSite::ShieldedViewingKeyRow.explanation()));
     }
 
     #[test]
@@ -534,5 +579,74 @@ mod tests {
         assert!(!snapshot.degraded);
         assert_eq!(snapshot.total, 0);
         assert_eq!(snapshot.unimplemented_rows, 7);
+    }
+
+    /// RUST-002/RUST-003: `note_degraded` must log the same `message`
+    /// field shape as `tolerate`/`tolerate_at`, carrying the site's
+    /// bespoke [`LoadSite::explanation`].
+    #[tracing_test::traced_test]
+    #[test]
+    fn note_degraded_logs_the_site_explanation_as_the_message_field() {
+        let ctx = LoadCtx::strict();
+        ctx.note_degraded(
+            LoadSite::OrphanedUtxoOwner,
+            SiteCoords {
+                wallet_id: Some([7u8; 32]),
+                account_type: &"Standard[0]",
+                affected: 1,
+                detail: None,
+            },
+            "ambiguous owner",
+        );
+        assert!(logs_contain(
+            "load degraded: routing addresses from an unavailable owner to the first funds account"
+        ));
+    }
+
+    /// RUST-002: `Display`/`as_str` stay the snake_case log tag —
+    /// `explanation` is the separate, human-readable rendering. A caller
+    /// must not get jargon from one and prose from the other by accident.
+    #[test]
+    fn display_is_the_tag_and_explanation_is_the_prose() {
+        assert_eq!(
+            LoadSite::IdentityIndexCollision.to_string(),
+            "identity_index_collision"
+        );
+        assert_eq!(
+            LoadSite::IdentityIndexCollision.as_str(),
+            LoadSite::IdentityIndexCollision.to_string()
+        );
+        assert_ne!(
+            LoadSite::IdentityIndexCollision.explanation(),
+            LoadSite::IdentityIndexCollision.as_str()
+        );
+        assert!(!LoadSite::IdentityIndexCollision
+            .explanation()
+            .contains("identity_index_collision"));
+    }
+
+    /// RUST-002: `LoadDegradation`'s `Display` is the public rendering a
+    /// host app reaches for instead of re-deriving prose from `by_site`'s
+    /// tags — it must name the site's log tag, its count, and its prose.
+    #[test]
+    fn load_degradation_display_summarizes_by_site() {
+        assert_eq!(LoadDegradation::default().to_string(), "load not degraded");
+
+        let ctx = LoadCtx::recovery();
+        ctx.tolerate(
+            LoadSite::ChainLockBlob,
+            WalletStorageError::blob_decode("one"),
+        )
+        .expect("recovery must tolerate");
+        ctx.tolerate(
+            LoadSite::ChainLockBlob,
+            WalletStorageError::blob_decode("two"),
+        )
+        .expect("recovery must tolerate");
+        let rendered = ctx.degradation().to_string();
+        assert!(rendered.starts_with("load degraded: 2 inconsistencies tolerated across 1 site"));
+        assert!(rendered.contains("chain_lock_blob"));
+        assert!(rendered.contains("(x2)"));
+        assert!(rendered.contains(LoadSite::ChainLockBlob.explanation()));
     }
 }
