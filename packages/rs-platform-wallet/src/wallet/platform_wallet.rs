@@ -1860,6 +1860,13 @@ impl PlatformWallet {
     }
 
     /// Load persisted state for this wallet.
+    ///
+    /// Calls the backend inline, with neither the transient retry nor the
+    /// `spawn_blocking` offload that
+    /// [`PlatformWalletManager::load_from_persistor`](crate::manager::PlatformWalletManager::load_from_persistor)
+    /// and wallet registration wrap their loads in: a transient failure
+    /// surfaces immediately instead of being retried, and a slow backend
+    /// blocks the calling thread — an async caller's runtime worker included.
     pub fn load_persisted(&self) -> Result<ClientStartState, PersistenceError> {
         self.persister.load()
     }
@@ -1929,6 +1936,10 @@ impl PlatformWallet {
     /// accounts that exist at that point; a second call after
     /// account bootstrap picks up the rest without regressing
     /// anything.
+    ///
+    /// Inherits [`load_persisted`](Self::load_persisted)'s inline read: no
+    /// transient retry, no offload. A host that wants either must wrap this
+    /// call itself.
     pub async fn load_and_apply_persisted(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

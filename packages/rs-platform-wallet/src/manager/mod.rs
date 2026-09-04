@@ -887,6 +887,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// threads through the shared [`ThreadRegistry`] and finally drains the
     /// wallet-event adapter task. Idempotent.
     ///
+    /// Takes `&self`, so it cannot release the manager's own `Arc<P>`
+    /// persister — reopening the same store additionally needs the manager
+    /// dropped (see the [`Drop`] impl).
+    ///
     /// Ordering matters and is fourfold:
     /// 1. SPV is stopped and joined FIRST so it cannot dispatch more wallet
     ///    events, then payment-task admission is closed and all admitted
@@ -1056,22 +1060,28 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 }
 
-/// Drop backstop for the wallet-event adapter task, which a dirty drop would
-/// otherwise merely detach.
+/// Stops the wallet-event adapter task, which a dirty drop would otherwise
+/// leave running against a torn-down manager.
 ///
 /// The persister is released here with the manager's own `Arc<P>` — the adapter
 /// holds only a `Weak<P>` — so a reconstruct on the same path cannot hit a
-/// spurious `WalletStorageError::AlreadyOpen` (issue #4133), bounded only by a
-/// batch commit in flight holding its upgrade until `store()` returns. Use
-/// [`shutdown`](PlatformWalletManager::shutdown) to join rather than abort.
+/// spurious `WalletStorageError::AlreadyOpen` (issue #4133). Release is
+/// synchronous whenever the adapter is idle; a drain in flight holds its
+/// upgrade until the batch's `store()` returns, and a drain still folding
+/// events runs to that same commit rather than losing what it took off the
+/// channel. Use [`shutdown`](PlatformWalletManager::shutdown) to join the task
+/// and get a status back.
+///
+/// Having a `Drop` at all changes teardown for every holder of this public
+/// type: a plain drop stops the adapter instead of detaching it, and the type's
+/// fields can no longer be moved out.
 impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
     fn drop(&mut self) {
+        // Cancel and detach, never `abort`: the task observes the token at its
+        // next `recv` and exits after committing the batch it already took off
+        // the channel. Aborting stops it at whatever await it is parked on,
+        // discarding those events — the lossless channel's whole point.
         self.event_adapter_cancel.cancel();
-        // `get_mut` needs no runtime (we hold `&mut self`); `abort` is
-        // non-blocking. `None` when `shutdown` already took the handle.
-        if let Some(handle) = self.event_adapter_join.get_mut().take() {
-            handle.abort();
-        }
     }
 }
 
@@ -1483,5 +1493,36 @@ mod tests {
 
         release_tx.send(()).expect("writer still parked");
         writer.join().expect("writer thread completes");
+    }
+
+    /// A dirty drop CANCELS the wallet-event adapter; it must never `abort` it.
+    /// An aborted task dies at whatever await it is parked on, taking with it
+    /// the events it had already pulled off the lossless channel — the loss the
+    /// channel exists to rule out. The parked sentinel below stands in for an
+    /// adapter mid-batch: it can only finish if the drop left it running.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dropping_the_manager_does_not_abort_the_adapter_task() {
+        let manager = make_manager();
+
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
+        let sentinel = tokio::spawn(async move {
+            let _ = release_rx.await;
+            let _ = done_tx.send(());
+        });
+        // Park the sentinel where the real adapter's handle lives, so the drop
+        // path acts on it. The displaced adapter has its own cancel token and
+        // exits on its own.
+        manager.event_adapter_join.lock().await.replace(sentinel);
+
+        drop(manager);
+
+        release_tx
+            .send(())
+            .expect("the adapter task was aborted on drop: its receiver is already gone");
+        tokio::time::timeout(std::time::Duration::from_secs(5), done_rx)
+            .await
+            .expect("the parked adapter task never resumed after the manager was dropped")
+            .expect("the adapter task was aborted on drop: it never finished");
     }
 }

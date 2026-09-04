@@ -31,14 +31,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// # Errors
     ///
     /// Returns [`PersisterLoad`](PlatformWalletError::PersisterLoad) when the
-    /// persister cannot produce the snapshot, or the per-wallet restore error
-    /// when a wallet in it cannot be rebuilt.
+    /// persister cannot produce the snapshot, and
+    /// [`PersisterRestore`](PlatformWalletError::PersisterRestore) when a
+    /// wallet in the snapshot cannot have its platform-address state rebuilt.
+    /// A persisted wallet whose id disagrees with its own key material, or one
+    /// the inner [`WalletManager`] refuses, is neither a read nor a restore
+    /// failure and stays
+    /// [`WalletCreation`](PlatformWalletError::WalletCreation).
+    ///
+    /// A transient read is retried in-crate, so a contended backend can block
+    /// this call for up to four times its busy timeout plus 140 ms of backoff
+    /// (≈20 s at SQLite's 5 s default). Call it off any UI thread.
     ///
     /// Any `Err` rolls back partial inserts and leaves the manager usable: fix
     /// the store and call again, or reconstruct. Reconstructing over the same
-    /// path needs the persister released first — [`shutdown`](Self::shutdown)
-    /// does so before returning, a plain drop once the last strong reference
-    /// goes (only a batch commit in flight holds one).
+    /// path needs the persister released first, which happens when the last
+    /// strong reference to the manager goes: [`shutdown`](Self::shutdown)
+    /// takes `&self` and stops the background workers, but cannot release the
+    /// manager's own `Arc<P>` — only dropping the manager does.
     ///
     /// [`WalletManager`]: key_wallet_manager::WalletManager
     pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
@@ -217,10 +227,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .initialize_from_persisted(persisted)
                     .await
                 {
-                    load_error = Some(PlatformWalletError::WalletCreation(format!(
-                        "Failed to restore platform address state: {}",
-                        e
-                    )));
+                    // Wrap the already-typed error rather than stringify it, so
+                    // its concrete variant and source chain survive — the same
+                    // shape `register_wallet` returns for this same failure.
+                    load_error = Some(PlatformWalletError::from_restore_failure(e));
                     break 'load;
                 }
             } else {

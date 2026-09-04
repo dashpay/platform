@@ -227,10 +227,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// # Errors
     ///
+    /// Every persister read here — the txid enumeration and each record —
+    /// reports as [`PlatformWalletError::PersisterLoad`], carrying the
+    /// backend's own retry classification.
+    ///
     /// Transient tx-record read failures leave the scan incomplete, so the
-    /// guard stays unstamped and the next sweep retries. Permanent ones return
-    /// [`PlatformWalletError::PersisterLoad`] rather than deferring: retrying
-    /// them every sweep would never succeed and never be reported.
+    /// guard stays unstamped and the next sweep retries. A permanent one is
+    /// reported rather than deferred — retrying it every sweep would never
+    /// succeed and never be reported — but only after the pass finishes: the
+    /// records that ARE readable are still reconstructed, and the first
+    /// permanent failure surfaces on the way out. A failed enumeration has no
+    /// pass to finish and returns immediately.
     pub async fn reconcile_sent_payments_from_tx_history(
         &self,
     ) -> Result<usize, PlatformWalletError> {
@@ -302,9 +309,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Ok(0);
         }
 
-        let Some(listed) = self.persister.list_wallet_core_txids().map_err(|e| {
-            PlatformWalletError::Persistence(format!("failed to enumerate wallet txids: {e}"))
-        })?
+        let Some(listed) = self
+            .persister
+            .list_wallet_core_txids()
+            .map_err(PlatformWalletError::from_load_failure)?
         else {
             // The backend does not index wallet-scoped transaction history
             // (e.g. the Android vtable leaves the enumeration callbacks
@@ -409,12 +417,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let mut incomplete_scan = false;
         let txid_count = listed.len();
         let mut funded: Vec<FundedTx> = Vec::new();
+        // Reported once when this sweep ends, however it ends.
+        let mut transient_misses = crate::wallet::persister::TransientMissTally::default();
+        // The first permanent read failure, surfaced only once the pass has
+        // finished. Aborting here would throw away every record already read.
+        let mut permanent_read_failure: Option<crate::changeset::PersistenceError> = None;
         for entry in listed {
             if !entry.spends_wallet_input {
                 continue;
             }
             let txid = entry.txid;
-            match self.persister.get_core_tx_record_or_transient_miss(&txid) {
+            // TODO(host-transient-read-classification): every shipping host
+            // classifies all failures as Fatal, so the permanent arm below
+            // fires on an ordinary `SQLITE_BUSY`.
+            match self
+                .persister
+                .get_core_tx_record_or_transient_miss(&txid, &mut transient_misses)
+            {
                 Ok(Some(record)) => {
                     // Walk the decoded transaction's outputs, NOT
                     // `record.output_details`. Records handed back by
@@ -444,8 +463,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     );
                 }
                 // A permanent failure will not fix itself, so deferring it
-                // re-runs the whole sweep on every sync forever, silently.
-                Err(e) => return Err(PlatformWalletError::from_load_failure(e)),
+                // re-runs the whole sweep on every sync forever. Keep the first
+                // one and report it after the pass: one unreadable row must not
+                // void the reconstruction of every readable one.
+                Err(e) => {
+                    incomplete_scan = true;
+                    permanent_read_failure.get_or_insert(e);
+                }
             }
         }
 
@@ -651,6 +675,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     .insert(window.contact, table_digest);
             }
         }
+        if let Some(e) = permanent_read_failure {
+            return Err(PlatformWalletError::from_load_failure(e));
+        }
         Ok(recorded)
     }
 
@@ -678,7 +705,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// # Errors
     ///
     /// Transient persistence read failures are deferred to the next sweep;
-    /// permanent failures return [`PlatformWalletError::PersisterLoad`].
+    /// permanent ones return [`PlatformWalletError::PersisterLoad`] once the
+    /// sweep has finished, so an unreadable record costs only its own
+    /// confirmation and not every other pending payment's.
     pub async fn reconcile_sent_payments(&self) -> Result<usize, PlatformWalletError> {
         use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
 
@@ -706,16 +735,30 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         let mut confirmed = 0usize;
+        // Reported once when this sweep ends, however it ends.
+        let mut transient_misses = crate::wallet::persister::TransientMissTally::default();
+        // The first permanent read failure, surfaced after the sweep so the
+        // other pending payments still get their chance to confirm.
+        let mut permanent_read_failure: Option<crate::changeset::PersistenceError> = None;
         for (_owner, txid_str) in pending {
             let Ok(txid) = txid_str.parse::<dashcore::Txid>() else {
                 continue;
             };
             // A transient failure reads as a miss, so both are the same
             // "not final yet, look again next sweep" outcome.
-            let record = match self.persister.get_core_tx_record_or_transient_miss(&txid) {
+            // TODO(host-transient-read-classification): every shipping host
+            // classifies all failures as Fatal, so the permanent arm below
+            // fires on an ordinary `SQLITE_BUSY`.
+            let record = match self
+                .persister
+                .get_core_tx_record_or_transient_miss(&txid, &mut transient_misses)
+            {
                 Ok(Some(record)) => record,
                 Ok(None) => continue,
-                Err(e) => return Err(PlatformWalletError::from_load_failure(e)),
+                Err(e) => {
+                    permanent_read_failure.get_or_insert(e);
+                    continue;
+                }
             };
             // An InstantSend lock is final for DashPay display, same as a
             // mined block — one definition of "final", shared with the
@@ -734,6 +777,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
             .await;
             confirmed += 1;
+        }
+        if let Some(e) = permanent_read_failure {
+            return Err(PlatformWalletError::from_load_failure(e));
         }
         Ok(confirmed)
     }
@@ -1705,6 +1751,9 @@ mod tests {
         >,
         /// `Some(kind)` fails every `get_core_tx_record` with that class.
         read_error_kind: Mutex<Option<PersistenceErrorKind>>,
+        /// Txids whose `get_core_tx_record` fails permanently while the rest
+        /// of the table stays readable — a single corrupt row.
+        permanently_unreadable: Mutex<std::collections::BTreeSet<dashcore::Txid>>,
         /// Txids the enumeration lists but `get_core_tx_record` answers
         /// `Ok(None)` for — the FFI shape for "row exists, record not
         /// available yet" (missing bytes, undecodable, pending InstantSend).
@@ -1757,6 +1806,12 @@ mod tests {
                 return Err(PersistenceError::backend_with_kind(
                     kind,
                     "simulated tx-record read failure",
+                ));
+            }
+            if self.permanently_unreadable.lock().unwrap().contains(txid) {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Fatal,
+                    "simulated permanently unreadable tx record",
                 ));
             }
             if self.listed_but_unavailable.lock().unwrap().contains(txid) {
@@ -3760,6 +3815,96 @@ mod tests {
                 PlatformWalletError::PersisterLoad(ref source) if !source.is_transient()
             ),
             "expected a permanent PersisterLoad, got {err:?}"
+        );
+    }
+
+    /// One permanently unreadable row costs only its own reconstruction.
+    ///
+    /// Returning from inside the collection loop threw away every record read
+    /// before it AND the whole matching phase, so a single corrupt row
+    /// suppressed the wallet's entire `Sent` history — on every sweep, forever.
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_reconstructs_around_an_unreadable_record() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+        let contact_addresses = install_external_account(&manager, wallet_id, owner, contact).await;
+        let change_address = first_standard_wallet_address(&manager, wallet_id).await;
+
+        let readable = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(123, BlockHash::all_zeros(), 0)),
+            vec![
+                (contact_addresses[0].clone(), 25_000, OutputRole::Sent),
+                (change_address.clone(), 90_000, OutputRole::Change),
+            ],
+        );
+        let corrupt = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(124, BlockHash::all_zeros(), 0)),
+            vec![
+                (contact_addresses[1].clone(), 30_000, OutputRole::Sent),
+                (change_address, 80_000, OutputRole::Change),
+            ],
+        );
+        let readable_txid = readable.txid;
+        let corrupt_txid = corrupt.txid;
+        assert_ne!(readable_txid, corrupt_txid, "the rows must be distinct");
+        {
+            let mut records = persister.records.lock().unwrap();
+            records.insert(readable_txid, readable);
+            records.insert(corrupt_txid, corrupt);
+        }
+        persister
+            .permanently_unreadable
+            .lock()
+            .unwrap()
+            .insert(corrupt_txid);
+
+        let err = iw
+            .dashpay()
+            .reconcile_sent_payments_from_tx_history()
+            .await
+            .expect_err("a permanent read failure must still be reported");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::PersisterLoad(ref source) if !source.is_transient()
+            ),
+            "expected a permanent PersisterLoad, got {err:?}"
+        );
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        let payments = &info
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("managed")
+            .dashpay()
+            .payments;
+        assert!(
+            payments.contains_key(&readable_txid.to_string()),
+            "the readable record must still be reconstructed: one unreadable row \
+             may not void the rest of the sweep"
+        );
+        assert!(
+            !payments.contains_key(&corrupt_txid.to_string()),
+            "the unreadable record has nothing to reconstruct from"
         );
     }
 
