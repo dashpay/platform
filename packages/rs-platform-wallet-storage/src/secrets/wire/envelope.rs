@@ -9,6 +9,7 @@
 //! multi-GiB length prefix is rejected before any allocation.
 
 use bincode::config::{BigEndian, Configuration, Limit, Varint};
+use zeroize::Zeroize;
 
 use crate::secrets::error::SecretStoreError;
 use crate::secrets::file::crypto::{self, KdfParams, NONCE_LEN, SALT_LEN};
@@ -50,6 +51,25 @@ pub(crate) enum Payload {
         /// Ciphertext + 16-byte Poly1305 tag.
         ciphertext: Vec<u8>,
     },
+}
+
+impl Payload {
+    /// Zeroize the heap buffer this payload carries.
+    ///
+    /// `bincode` decodes `Unprotected` into an ordinary unguarded `Vec` —
+    /// the raw secret, outside every control `secrets::guarded` provides.
+    /// The success path launders it through `SecretBytes::new`; every early
+    /// return in [`unwrap`] wipes instead — through this method before the
+    /// payload is destructured, directly on the moved buffer after — or the
+    /// secret is left on the heap for a later re-read, a core dump, or swap.
+    fn wipe(&mut self) {
+        // In place rather than `Vec::zeroize`, which clears to length 0 and
+        // would hide the wipe from `payload_wipe_clears_both_variants`.
+        match self {
+            Payload::Unprotected(plaintext) => plaintext.as_mut_slice().zeroize(),
+            Payload::Password { ciphertext, .. } => ciphertext.as_mut_slice().zeroize(),
+        }
+    }
 }
 
 /// Upper bound on the bincode-encoded envelope overhead over its
@@ -121,7 +141,6 @@ pub(crate) fn wrap_with_params(
     }
 
     let Some(pw) = password else {
-        use zeroize::Zeroize;
         // The scheme-0 plaintext copy rides the envelope in the clear. Encode,
         // then wipe that copy before it drops — the returned SecretBytes is the
         // only retained copy and zeroizes itself.
@@ -220,37 +239,46 @@ pub(crate) fn unwrap(
     password: Option<&SecretString>,
     blob: &[u8],
 ) -> Result<SecretBytes, SecretStoreError> {
-    let (envelope, consumed) = bincode::decode_from_slice::<Envelope, _>(blob, DECODE_CONFIG)
+    let (mut envelope, consumed) = bincode::decode_from_slice::<Envelope, _>(blob, DECODE_CONFIG)
         .map_err(|_| SecretStoreError::Corruption)?;
     // Trailing bytes after a valid decode are a truncation/extension
-    // probe — fail closed.
+    // probe — fail closed. Both pre-dispatch refusals wipe first: the
+    // decoded payload may already hold a scheme-0 plaintext.
     if consumed != blob.len() {
+        envelope.payload.wipe();
         return Err(SecretStoreError::Corruption);
     }
 
     if envelope.version != ENVELOPE_VERSION {
+        envelope.payload.wipe();
         return Err(SecretStoreError::UnsupportedEnvelopeVersion {
             found: envelope.version,
         });
     }
 
     match (envelope.payload, password) {
-        (Payload::Unprotected(plaintext), None) => {
+        (Payload::Unprotected(mut plaintext), None) => {
             // Enforce the same cap the wrap side applies.  DECODE_BUDGET is
             // larger than MAX_PLAINTEXT_LEN (by MAX_ENVELOPE_OVERHEAD), so a
             // tampered blob can pass the bincode budget check yet exceed the
             // application-level plaintext ceiling; reject it here.
             if plaintext.len() > MAX_PLAINTEXT_LEN {
+                let found = plaintext.len();
+                plaintext.as_mut_slice().zeroize();
                 return Err(SecretStoreError::SecretTooLarge {
-                    found: plaintext.len(),
+                    found,
                     max: MAX_PLAINTEXT_LEN,
                 });
             }
             Ok(SecretBytes::new(plaintext))
         }
         // Caller asserted protection but blob is unprotected: strip /
-        // downgrade — fail closed, never return the bytes.
-        (Payload::Unprotected(_), Some(_)) => Err(SecretStoreError::ExpectedProtectedButUnsealed),
+        // downgrade — fail closed, never return the bytes, and never leave
+        // them on the heap either.
+        (Payload::Unprotected(mut plaintext), Some(_)) => {
+            plaintext.as_mut_slice().zeroize();
+            Err(SecretStoreError::ExpectedProtectedButUnsealed)
+        }
         (Payload::Password { .. }, None) => Err(SecretStoreError::NeedsPassword),
         (
             Payload::Password {
@@ -1018,6 +1046,39 @@ mod tests {
         });
         let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
         assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+    }
+
+    /// Every early return in `unwrap` routes through `Payload::wipe`, so
+    /// the wipe itself is the thing worth pinning: a decoded scheme-0
+    /// payload is the raw secret on an unguarded heap `Vec`.
+    #[test]
+    fn payload_wipe_clears_both_variants() {
+        let mut unprotected = Payload::Unprotected(b"seed material".to_vec());
+        unprotected.wipe();
+        match &unprotected {
+            Payload::Unprotected(bytes) => {
+                assert_eq!(bytes.len(), b"seed material".len(), "length must survive");
+                assert!(bytes.iter().all(|b| *b == 0), "plaintext survived the wipe");
+            }
+            Payload::Password { .. } => unreachable!("variant must not change"),
+        }
+
+        let mut protected = Payload::Password {
+            kdf: KdfParamsEncoded::from(KdfParams::floor_target()),
+            salt: [1u8; SALT_LEN],
+            nonce: [2u8; NONCE_LEN],
+            ciphertext: vec![0xAB; 32],
+        };
+        protected.wipe();
+        match &protected {
+            Payload::Password { ciphertext, .. } => {
+                assert!(
+                    ciphertext.iter().all(|b| *b == 0),
+                    "ciphertext survived the wipe"
+                );
+            }
+            Payload::Unprotected(_) => unreachable!("variant must not change"),
+        }
     }
 
     /// Trailing bytes appended after a valid envelope are rejected as
