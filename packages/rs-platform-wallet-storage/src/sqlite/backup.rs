@@ -10,7 +10,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
-use crate::sqlite::util::permissions::apply_secure_permissions;
+use crate::sqlite::util::permissions::{apply_secure_permissions, reject_symlink};
 
 struct CreatedDestinationGuard {
     path: PathBuf,
@@ -255,7 +255,10 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// Integrity, wallet application identity, and schema compatibility do not
 /// authenticate provenance. Restore trusts a valid source as much as the live
 /// database; protect the backup directory from replacement or modification.
-pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
+pub(crate) fn restore_from(
+    dest_db_path: &Path,
+    src_backup: &Path,
+) -> Result<(), WalletStorageError> {
     let parent = dest_db_path
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -268,6 +271,10 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
             WalletStorageError::InsecureParentDir { mode }
         }
     })?;
+    // Ahead of the placeholder block below: `exists()` follows a link to a
+    // live target, so a planted symlink would skip that block entirely and
+    // be opened — and restored over — directly.
+    reject_symlink(dest_db_path)?;
 
     // 1. Cheap early-out: sniff integrity + schema-history + version +
     //    wallet-identity against the source so an incompatible input fails
@@ -453,12 +460,23 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     Ok(())
 }
 
+/// Diagnostic lines retained per integrity probe, matching SQLite's own
+/// default `PRAGMA integrity_check` cap.
+///
+/// `integrity_check` self-limits; `foreign_key_check` does not — it emits
+/// one row per violating child row across every table, so a file whose
+/// `wallets` pages were lost yields one per row in the entire database.
+/// Both walks are capped here so neither the retained report, the log
+/// record built from it, nor the CLI's stderr can grow with the damage.
+const MAX_INTEGRITY_REPORT_LINES: usize = 100;
+
 /// Run `PRAGMA integrity_check` and return `Ok(())` only on the single
 /// row `"ok"`. Any other result becomes a typed `IntegrityCheckFailed` via
 /// the caller-supplied builder; an underlying rusqlite error surfaces as
-/// `IntegrityCheckRunFailed`. SQLite returns one row per detected problem
-/// (default cap 100); all rows are `\n`-joined so the report carries every
-/// diagnostic, not just the first.
+/// `IntegrityCheckRunFailed`. Rows are `\n`-joined so the report carries
+/// every diagnostic, not just the first, up to
+/// [`MAX_INTEGRITY_REPORT_LINES`]; beyond that a trailing line states how
+/// many were suppressed.
 pub(crate) fn run_integrity_check<F>(
     conn: &Connection,
     on_failure: F,
@@ -470,13 +488,17 @@ where
         .prepare("PRAGMA integrity_check")
         .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
     let mut rows: Vec<String> = Vec::new();
+    let mut suppressed = 0usize;
     let mut trailing_err: Option<rusqlite::Error> = None;
     let iter = stmt
         .query_map([], |row| row.get::<_, String>(0))
         .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
     for item in iter {
         match item {
-            Ok(s) => rows.push(s),
+            Ok(s) if rows.len() < MAX_INTEGRITY_REPORT_LINES => rows.push(s),
+            // Past the cap the stream is still drained so the suppressed
+            // count is exact, but nothing further is retained.
+            Ok(_) => suppressed += 1,
             Err(e) => {
                 // SQLite can surface a `DatabaseCorrupt` partway through
                 // the stream; treat it as end-of-stream when we already
@@ -508,6 +530,11 @@ where
         }
     } else {
         let mut report = rows.join("\n");
+        if suppressed > 0 {
+            report.push_str(&format!(
+                "\n... and {suppressed} further integrity_check rows"
+            ));
+        }
         if let Some(e) = trailing_err {
             // Preserve the cut-off marker so operators see the stream
             // was truncated, not just under-reported.
@@ -522,6 +549,10 @@ where
 ///
 /// Each row is `(child table, child rowid, parent table, fk index)`; the
 /// rowid is NULL for a WITHOUT ROWID child, so it renders as `-`.
+///
+/// Capped at [`MAX_INTEGRITY_REPORT_LINES`] retained lines plus a trailing
+/// count. The pragma has no cap of its own, so a broken parent table
+/// yields one row per child row in the file.
 fn foreign_key_violations(conn: &Connection) -> Result<Vec<String>, WalletStorageError> {
     let mut stmt = conn
         .prepare("PRAGMA foreign_key_check")
@@ -539,8 +570,19 @@ fn foreign_key_violations(conn: &Connection) -> Result<Vec<String>, WalletStorag
         })
         .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
     let mut out = Vec::new();
+    let mut suppressed = 0usize;
     for item in rows {
-        out.push(item.map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?);
+        let line = item.map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
+        if out.len() < MAX_INTEGRITY_REPORT_LINES {
+            out.push(line);
+        } else {
+            suppressed += 1;
+        }
+    }
+    if suppressed > 0 {
+        out.push(format!(
+            "... and {suppressed} further foreign-key violations"
+        ));
     }
     Ok(out)
 }
@@ -556,7 +598,10 @@ fn foreign_key_violations(conn: &Connection) -> Result<Vec<String>, WalletStorag
 /// errors (`read_dir` itself fails, an `entry?` returns Err) surface
 /// as `Err(_)` — those affect every subsequent iteration too, so
 /// continuing would just compound the failure.
-pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletStorageError> {
+pub(crate) fn prune(
+    dir: &Path,
+    policy: RetentionPolicy,
+) -> Result<PruneReport, WalletStorageError> {
     let entries = std::fs::read_dir(dir)?;
     let mut files: Vec<(SystemTime, PathBuf)> = Vec::new();
     for entry in entries {
@@ -701,6 +746,57 @@ mod tests {
                 assert!(
                     report.contains("foreign_key_check") && report.contains("identities"),
                     "report must name the check and the offending table, got: {report}"
+                );
+            }
+            other => panic!("expected IntegrityCheckFailed, got {other:?}"),
+        }
+    }
+
+    /// `foreign_key_check` has no cap of its own — a missing parent makes
+    /// EVERY child row a violation at once. The report is allocated whole,
+    /// logged whole, and printed to an operator's terminal, so it must stay
+    /// bounded by the cap rather than by the extent of the damage.
+    #[test]
+    fn integrity_report_is_capped_on_a_flood_of_foreign_key_violations() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        let overflow = 37usize;
+        let planted = MAX_INTEGRITY_REPORT_LINES + overflow;
+        {
+            let tx = conn.transaction().unwrap();
+            for i in 0..planted {
+                let mut identity_id = [0u8; 32];
+                identity_id[..8].copy_from_slice(&(i as u64).to_le_bytes());
+                tx.execute(
+                    "INSERT INTO identities \
+                     (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+                     VALUES (?1, ?2, NULL, ?3, 0)",
+                    rusqlite::params![&identity_id[..], &[0x2Bu8; 32][..], vec![0u8; 4]],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+
+        let err = run_integrity_check(&conn, |report| WalletStorageError::IntegrityCheckFailed {
+            report,
+        })
+        .expect_err("a flood of dangling foreign keys must still fail verification");
+        match err {
+            WalletStorageError::IntegrityCheckFailed { report } => {
+                let lines: Vec<&str> = report.lines().collect();
+                assert_eq!(
+                    lines.len(),
+                    MAX_INTEGRITY_REPORT_LINES + 1,
+                    "report must be the cap plus one summary line, not one line per damaged row"
+                );
+                assert!(
+                    lines[MAX_INTEGRITY_REPORT_LINES]
+                        .contains(&format!("and {overflow} further foreign-key violations")),
+                    "the suppressed count must be exact, got: {}",
+                    lines[MAX_INTEGRITY_REPORT_LINES]
                 );
             }
             other => panic!("expected IntegrityCheckFailed, got {other:?}"),

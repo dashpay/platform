@@ -96,6 +96,27 @@ impl RetentionPolicy {
     }
 }
 
+/// Apply retention to a directory of backup files without opening a
+/// database.
+///
+/// For tooling that holds no persister — the maintenance CLI's `prune`
+/// subcommand is the intended caller. **This carries no recovery-mode
+/// gate.** Whenever a [`SqlitePersister`] is open, call
+/// [`SqlitePersister::prune_backups`] instead: it refuses in
+/// [`LoadPolicy::Recovery`](crate::LoadPolicy), so a user rescuing a
+/// damaged database cannot shrink their own rollback set.
+///
+/// # Errors
+///
+/// [`WalletStorageError::Io`] when `dir` cannot be read. Per-file removal
+/// failures are collected into [`PruneReport::failed_removals`] instead.
+pub fn prune_backups_in(
+    dir: &Path,
+    policy: RetentionPolicy,
+) -> Result<PruneReport, WalletStorageError> {
+    backup::prune(dir, policy)
+}
+
 /// Canonicalized paths held by a live [`SqlitePersister`] in this process.
 /// Refusing a second in-process open ([`WalletStorageError::AlreadyOpen`])
 /// prevents two handles with independent buffers diverging; cross-process
@@ -545,7 +566,7 @@ impl SqlitePersister {
         policy: RetentionPolicy,
     ) -> Result<PruneReport, WalletStorageError> {
         self.ensure_writable("prune_backups")?;
-        backup::prune(dir, policy)
+        prune_backups_in(dir, policy)
     }
 
     /// Read every identity that belongs to NO wallet, each already
@@ -1212,6 +1233,11 @@ impl PlatformWalletPersistence for SqlitePersister {
         network: dashcore::Network,
         records: &[platform_wallet::masternode::TrackedMasternode],
     ) -> Result<(), PersistenceError> {
+        // Whole-set semantics: `replace_all` DELETEs the network's rows
+        // before re-inserting, so an ungated call from a degraded
+        // in-memory view zeroes the set on the database being rescued.
+        self.ensure_writable("persist_tracked_masternodes")
+            .map_err(PersistenceError::from)?;
         let mut conn = self.conn().map_err(PersistenceError::from)?;
         let tx = conn
             .transaction()
@@ -1227,7 +1253,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         network: dashcore::Network,
     ) -> Result<Vec<platform_wallet::masternode::TrackedMasternode>, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
-        schema::tracked_masternodes::load_all(&conn, network).map_err(PersistenceError::from)
+        let ctx = LoadCtx::new(self.config.load_policy);
+        schema::tracked_masternodes::load_all(&conn, network, &ctx).map_err(PersistenceError::from)
     }
 
     /// Merge `changeset` into the per-wallet buffer.

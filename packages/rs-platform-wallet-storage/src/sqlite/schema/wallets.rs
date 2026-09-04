@@ -82,7 +82,7 @@ pub fn delete(tx: &Transaction<'_>, wallet_id: &WalletId) -> Result<usize, Walle
 /// sync with [`network_to_str`].
 pub(crate) const NETWORK_LABELS: &[&str] = &["mainnet", "testnet", "devnet", "regtest"];
 
-fn network_to_str(net: key_wallet::Network) -> &'static str {
+pub(crate) fn network_to_str(net: key_wallet::Network) -> &'static str {
     match net {
         key_wallet::Network::Mainnet => "mainnet",
         key_wallet::Network::Testnet => "testnet",

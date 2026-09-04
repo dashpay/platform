@@ -3,11 +3,11 @@
 //! A spend recorded before the producer reconstructed the previous
 //! output's script from its typed address left a `spent = 1` row with
 //! `script = X''`. `core_state::load_used_addresses` decodes EVERY stored
-//! script — spent and unspent — through a bare `Address::from_script`
-//! with no load-policy escape hatch, so one such row rejects the load of
-//! the entire database file, every wallet in it included. Nothing
-//! overwrites it either: the spend path only ever flips `spent` on a row
-//! that already exists.
+//! script — spent and unspent — so under the default `LoadPolicy::Strict`
+//! one such row rejects the load of the entire database file, every
+//! wallet in it included; only `LoadPolicy::Recovery` tolerates it.
+//! Nothing overwrites the row either: the spend path only ever flips
+//! `spent` on a row that already exists.
 //!
 //! Deleting these rows is balance-neutral — the balance readers
 //! (`load_state`, `list_unspent_utxos`) select `spent = 0` only — and

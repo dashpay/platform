@@ -11,6 +11,7 @@
 
 use std::path::PathBuf;
 
+use dashcore::hashes::Hash;
 use platform_wallet::changeset::PersistenceError;
 use platform_wallet_storage::sqlite::error::AutoBackupOperation;
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
@@ -327,6 +328,15 @@ fn samples() -> Vec<WalletStorageError> {
             wallet_id: [0xFA; 32],
             failed_indices: 2,
         },
+        WalletStorageError::EmptyUtxoScript {
+            outpoint: dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([0xAB; 32]),
+                vout: 1,
+            },
+        },
+        WalletStorageError::DatabasePathIsSymlink {
+            path: PathBuf::from("/tmp/wallet.db"),
+        },
     ]
 }
 
@@ -453,6 +463,8 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::UnownedIdentityHasRegistrationIndex { .. } => {
                 (false, "unowned_identity_has_registration_index")
             }
+            WalletStorageError::EmptyUtxoScript { .. } => (false, "empty_utxo_script"),
+            WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
         }
     }
 

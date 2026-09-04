@@ -470,3 +470,40 @@ fn tc_code_019_a_failed_removal_counts_in_kept() {
         "kept + removed must equal total eligible (5)"
     );
 }
+
+/// The persister's gated `prune_backups` and the crate-root
+/// `prune_backups_in` must be one implementation, not two: the wrapper
+/// adds the recovery gate and nothing else. The raw `sqlite::backup::prune`
+/// is `pub(crate)` so this pair is the whole public surface.
+#[test]
+fn prune_backups_in_matches_the_gated_wrapper() {
+    let (persister, tmp, _path) = fresh_persister();
+
+    // Retention selects by backup file NAME, so the fixtures are written
+    // directly — driving `backup_to` would need a sleep per file to clear
+    // the whole-second timestamp granularity.
+    let via_free_fn = tmp.path().join("free-fn");
+    let via_wrapper = tmp.path().join("wrapper");
+    for dir in [&via_free_fn, &via_wrapper] {
+        fs::create_dir_all(dir).unwrap();
+        for stamp in ["20260101T000001Z", "20260101T000002Z", "20260101T000003Z"] {
+            fs::write(dir.join(format!("wallet-{stamp}.db")), b"backup").unwrap();
+        }
+    }
+
+    let policy = RetentionPolicy::keep_last(1);
+    let free_fn_report =
+        platform_wallet_storage::prune_backups_in(&via_free_fn, policy).expect("free-fn prune");
+    let wrapper_report = persister
+        .prune_backups(&via_wrapper, policy)
+        .expect("wrapper prune in strict mode");
+
+    assert_eq!(free_fn_report.kept, wrapper_report.kept);
+    assert_eq!(
+        free_fn_report.removed.len(),
+        wrapper_report.removed.len(),
+        "both doors must apply the same retention policy"
+    );
+    assert_eq!(free_fn_report.kept, 1, "keep_last(1) must keep exactly one");
+    assert_eq!(free_fn_report.removed.len(), 2);
+}
