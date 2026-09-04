@@ -3,14 +3,19 @@ import DashSDKFFI
 import Foundation
 import SwiftData
 
-/// Deep Core diagnostics are emitted only on explicit log export.
+/// Labels the two Core diagnostic paths without accepting free-form strings.
+/// Only ``preExport`` performs database and Rust-memory inspection;
+/// ``restoreBuffer`` labels the lightweight summary built from rows that the
+/// restore callback had to fetch and marshal anyway.
 enum CoreWalletDiagnosticCheckpoint: String, Sendable {
+    case restoreBuffer = "restore_buffer"
     case preExport = "pre_export"
 }
 
 /// Value-only copy of the SwiftData state used after the handler has released
 /// its serial queue. No SwiftData model object crosses the queue boundary.
 struct CoreWalletDatabaseDiagnosticSnapshot: Sendable {
+    /// Canonical account tuple shared by SwiftData and Rust FFI snapshots.
     struct AccountKey: Hashable, Sendable {
         let typeTag: UInt32
         let standardTag: UInt8
@@ -59,6 +64,7 @@ struct CoreWalletDatabaseDiagnosticSnapshot: Sendable {
         }
     }
 
+    /// Minimal owned-output representation required for deterministic diffing.
     struct Txo: Sendable {
         let outpoint: Data
         let amount: UInt64
@@ -68,6 +74,8 @@ struct CoreWalletDatabaseDiagnosticSnapshot: Sendable {
         let account: AccountKey?
     }
 
+    /// Comparable subset of one tracked AssetLock; no transaction or proof
+    /// bytes cross the SwiftData queue boundary.
     struct AssetLock: Sendable {
         let outpointDisplay: String
         let fundingType: Int
@@ -98,6 +106,7 @@ private extension Data {
     }
 }
 
+/// Adds diagnostic values without allowing corrupt data to trap the exporter.
 func diagnosticSaturatingSum<S: Sequence>(_ values: S) -> UInt64
 where S.Element == UInt64 {
     values.reduce(0) { partial, value in
@@ -115,6 +124,8 @@ where S.Element == Int64 {
     }
 }
 
+/// Hashes length-delimited canonical records after sorting, making the result
+/// stable across SwiftData/Rust iteration order without logging raw records.
 func diagnosticFingerprint(_ records: [Data]) -> Data {
     var hasher = SHA256()
     for record in records.sorted(by: { $0.lexicographicallyPrecedes($1) }) {
@@ -125,6 +136,8 @@ func diagnosticFingerprint(_ records: [Data]) -> Data {
     return Data(hasher.finalize())
 }
 
+/// Canonical binary representation of every TXO field compared by the
+/// database↔memory analyzer. The caller hashes this value before logging it.
 func diagnosticTxoFingerprint(
     outpoint: Data,
     amount: UInt64,
@@ -172,20 +185,9 @@ extension PlatformWalletPersistenceHandler {
         }
     }
 
-    /// Synchronous companion used by focused persistence tests.
-    func emitCoreWalletDatabaseDiagnostics(
-        walletId: Data,
-        checkpoint: CoreWalletDiagnosticCheckpoint
-    ) -> CoreWalletDatabaseDiagnosticSnapshot? {
-        onQueue {
-            return emitCoreWalletDatabaseDiagnosticsOnQueue(
-                walletId: walletId,
-                checkpoint: checkpoint
-            )
-        }
-    }
-
-    /// Must be called while `serialQueue` is held.
+    /// Queue-confined implementation behind the async export API. Callers must
+    /// already own `serialQueue`; it intentionally performs the full exact
+    /// audit and returns only Sendable value copies.
     @discardableResult
     func emitCoreWalletDatabaseDiagnosticsOnQueue(
         walletId: Data,
@@ -209,6 +211,11 @@ extension PlatformWalletPersistenceHandler {
                 return nil
             }
 
+            // Exact #4438 classification needs a complete cross-wallet pass:
+            // an output absent from this wallet may be `wrong_wallet`, not
+            // `missing_txo`. This first export-only implementation materializes
+            // that pass. A future bounded version must stream every row rather
+            // than apply a fetch limit, so it preserves the distinction.
             let allTxos = try backgroundContext.fetch(FetchDescriptor<PersistentTxo>())
             let walletTxos = allTxos.filter {
                 $0.walletId == walletId || Self.relationshipWalletId(of: $0) == walletId
@@ -548,7 +555,7 @@ extension PlatformWalletPersistenceHandler {
                 ),
                 "candidate_value_duffs": .unsignedInteger(summary.candidateValueDuffs),
                 "built_count": .integer(Int64(summary.builtCount)),
-                "checkpoint": .publicText("restore_buffer"),
+                "checkpoint": .publicText(CoreWalletDiagnosticCheckpoint.restoreBuffer.rawValue),
                 "emitted_count": .integer(Int64(summary.emittedCandidates.count)),
                 "emitted_bip44_count": .integer(Int64(summary.emittedBip44Count)),
                 "emitted_bip44_value_duffs": .unsignedInteger(
@@ -957,6 +964,9 @@ extension PlatformWalletManager {
         await emitCoreWalletDiagnostics(for: walletId, checkpoint: .preExport)
     }
 
+    /// Coordinates the queue-owned SwiftData snapshot with read-only Rust FFI
+    /// queries. Admission happens after the database await, then keeps the
+    /// native handle alive until the off-main worker finishes.
     private func emitCoreWalletDiagnostics(
         for walletId: Data,
         checkpoint: CoreWalletDiagnosticCheckpoint
@@ -1027,6 +1037,8 @@ extension PlatformWalletManager {
         }
     }
 
+    /// Runs all Rust-memory reads on `destroyQueue`. Each subsystem reports its
+    /// own unavailable state so one failed query does not hide the others.
     private nonisolated static func emitCoreMemoryDiagnostics(
         managerHandle: Handle,
         managedWallet: ManagedPlatformWallet?,
@@ -1132,6 +1144,8 @@ extension PlatformWalletManager {
         )
     }
 
+    /// Logs the deterministic DB↔Rust UTXO diff, excluding accounts whose Rust
+    /// UTXO query failed instead of falsely reporting all their rows DB-only.
     private nonisolated static func compareDatabase(
         _ database: CoreWalletDatabaseDiagnosticSnapshot,
         memoryTxos: [CoreWalletDatabaseDiagnosticSnapshot.Txo],
@@ -1208,6 +1222,8 @@ extension PlatformWalletManager {
         )
     }
 
+    /// Captures the managed wallet's tracked locks and compares them with the
+    /// queue-safe SwiftData snapshot. Raw outpoints are only reference-hashed.
     private nonisolated static func compareAssetLocks(
         _ database: CoreWalletDatabaseDiagnosticSnapshot,
         managedWallet: ManagedPlatformWallet?,
@@ -1331,6 +1347,8 @@ extension PlatformWalletManager {
         }
     }
 
+    /// Copies the Rust-owned account-balance array into Swift values and frees
+    /// the FFI allocation on every successful non-empty path.
     private nonisolated static func diagnosticAccountBalances(
         managerHandle: Handle,
         walletId: Data
@@ -1375,6 +1393,8 @@ extension PlatformWalletManager {
         })
     }
 
+    /// Marshals one account selector, copies its Rust-owned UTXO slice, and
+    /// releases the native allocation after all pointed-to scripts are copied.
     private nonisolated static func diagnosticAccountUtxos(
         managerHandle: Handle,
         walletId: Data,

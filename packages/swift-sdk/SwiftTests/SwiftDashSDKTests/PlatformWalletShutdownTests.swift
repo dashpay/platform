@@ -177,6 +177,29 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertEqual(recorder.names, Self.expectedOrder)
     }
 
+    func testUnbalancedDiagnosticsFinishCannotUnderflowShutdownCounter() async throws {
+        let recorder = TeardownRecorder()
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 20,
+            calls: Self.makeCalls(recorder: recorder)
+        )
+
+        // A stray release at zero must be ignored. Without the guard this
+        // makes the next admission look idle and lets shutdown take its handle.
+        manager.finishCoreDiagnosticsNativeOp()
+        try manager.admitCoreDiagnosticsNativeOp()
+
+        let shutdownTask = Task { await manager.shutdown() }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.handle, 20)
+        XCTAssertTrue(recorder.names.isEmpty)
+
+        manager.finishCoreDiagnosticsNativeOp()
+        let metrics = await shutdownTask.value
+        XCTAssertEqual(metrics.steps.map(\.name), Self.expectedOrder)
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
+    }
+
     /// A completed real shutdown makes this manager terminal. Reconfiguration
     /// must fail before another native handle or callback context is installed.
     func testConfigurationAfterRealShutdownIsRejected() async {

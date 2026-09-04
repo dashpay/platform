@@ -152,15 +152,16 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
         )
     }
 
-    func testCoinJoinSpendWithMissingBip44ChangeDetects4438AndLogIsPrivate() throws {
+    func testCoinJoinSpendWithMissingBip44ChangeDetects4438AndLogIsPrivate() async throws {
         let fixture = try makeMissingOwnedOutputFixture()
         let session = try temporaryDirectory()
         XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
 
-        XCTAssertNotNil(fixture.handler.emitCoreWalletDatabaseDiagnostics(
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
             walletId: walletId,
             checkpoint: .preExport
-        ))
+        )
+        XCTAssertNotNil(databaseSnapshot)
 
         let summaries = try logLines(in: session, event: "core_owned_output_audit_summary")
         let summary = try XCTUnwrap(summaries.last)
@@ -207,7 +208,7 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
         }.joined()))
     }
 
-    func testPersistedBip44ChangeClears4438Alarm() throws {
+    func testPersistedBip44ChangeClears4438Alarm() async throws {
         let fixture = try makeMissingOwnedOutputFixture()
         let output = fixture.decoded.outputs[0]
         let change = PersistentTxo(
@@ -227,10 +228,11 @@ final class CoreWalletDiagnosticsTests: XCTestCase {
 
         let session = try temporaryDirectory()
         XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
-        XCTAssertNotNil(fixture.handler.emitCoreWalletDatabaseDiagnostics(
+        let databaseSnapshot = await fixture.handler.emitCoreWalletDatabaseDiagnostics(
             walletId: walletId,
             checkpoint: .preExport
-        ))
+        )
+        XCTAssertNotNil(databaseSnapshot)
 
         let summaries = try logLines(in: session, event: "core_owned_output_audit_summary")
         let summary = try XCTUnwrap(summaries.last)

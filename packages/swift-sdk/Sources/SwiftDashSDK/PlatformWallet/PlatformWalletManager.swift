@@ -492,8 +492,11 @@ public class PlatformWalletManager: ObservableObject {
         resumeNativeOpDrainIfIdle()
     }
 
-    /// Diagnostics have independent admission bookkeeping: shutdown drains
-    /// them, while synchronous wallet operations ignore them.
+    /// Reserves the native manager handle for one read-only diagnostic pass.
+    /// Shutdown drains this counter, while synchronous wallet operations
+    /// intentionally ignore it because Rust serializes its own wallet state.
+    /// Every successful admission must be balanced by
+    /// ``finishCoreDiagnosticsNativeOp()``.
     func admitCoreDiagnosticsNativeOp() throws {
         guard !shutdownRequested else {
             throw PlatformWalletError.invalidHandle(
@@ -502,7 +505,18 @@ public class PlatformWalletManager: ObservableObject {
         activeCoreDiagnosticsNativeOpCount += 1
     }
 
+    /// Releases a successful diagnostic admission. The guard keeps a future
+    /// shutdown from observing a negative counter if an internal caller ever
+    /// violates the admission/defer contract.
     func finishCoreDiagnosticsNativeOp() {
+        guard activeCoreDiagnosticsNativeOpCount > 0 else {
+            SDKLogger.event(
+                "core_diagnostics_native_op_counter_underflow",
+                category: .lifecycle,
+                severity: .error
+            )
+            return
+        }
         activeCoreDiagnosticsNativeOpCount -= 1
         resumeNativeOpDrainIfIdle()
     }

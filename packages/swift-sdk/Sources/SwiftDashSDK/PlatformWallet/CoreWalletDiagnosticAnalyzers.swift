@@ -5,12 +5,15 @@ import Foundation
 /// decisions that produce `swift/run.log`, without requiring a live Rust
 /// wallet handle.
 enum CoreWalletDiagnosticAnalyzer {
+    /// One deterministic mismatch record. `outpoint` is hashed by the logger
+    /// and is never rendered directly.
     struct TxoDiffDetail: Sendable {
         let outpoint: Data
         let reason: String
         let row: CoreWalletDatabaseDiagnosticSnapshot.Txo
     }
 
+    /// Aggregate DB↔Rust account/UTXO comparison plus bounded log details.
     struct TxoDiff: Sendable {
         let commonCount: Int
         let databaseAccountOnlyCount: Int
@@ -23,6 +26,8 @@ enum CoreWalletDiagnosticAnalyzer {
         let truncatedCount: Int
     }
 
+    /// Compares UTXOs by outpoint and reports each differing field separately.
+    /// Duplicate outpoints are resolved deterministically before comparison.
     static func compareTxos(
         database: [CoreWalletDatabaseDiagnosticSnapshot.Txo],
         memory: [CoreWalletDatabaseDiagnosticSnapshot.Txo],
@@ -114,17 +119,22 @@ enum CoreWalletDiagnosticAnalyzer {
         )
     }
 
+    /// One AssetLock mismatch, retaining the display outpoint only so the
+    /// logger can derive a stable reference from it.
     struct AssetLockDiffDetail: Sendable {
         let outpointDisplay: String
         let reason: String
     }
 
+    /// Complete AssetLock mismatch set and its per-reason bounded projection.
     struct AssetLockDiff: Sendable {
         let details: [AssetLockDiffDetail]
         let emittedDetails: [AssetLockDiffDetail]
         let truncatedCount: Int
     }
 
+    /// Compares persisted and Rust-tracked locks without exposing transaction
+    /// or proof bytes.
     static func compareAssetLocks(
         database: [CoreWalletDatabaseDiagnosticSnapshot.AssetLock],
         memory: [CoreWalletDatabaseDiagnosticSnapshot.AssetLock]
@@ -185,6 +195,7 @@ enum CoreWalletDiagnosticAnalyzer {
         )
     }
 
+    /// Lightweight description of a row considered by startup restore.
     struct RestoreCandidate: Sendable {
         enum RejectionReason: String, Sendable {
             case missingAccount = "missing_account"
@@ -201,6 +212,8 @@ enum CoreWalletDiagnosticAnalyzer {
         let rejectionReason: RejectionReason?
     }
 
+    /// Counts and values for candidates, rows actually emitted, and each
+    /// validation rejection reason.
     struct RestoreBufferSummary: Sendable {
         let candidateCount: Int
         let candidateValueDuffs: UInt64
@@ -220,6 +233,8 @@ enum CoreWalletDiagnosticAnalyzer {
         let invalidAccountTypeCount: Int
     }
 
+    /// Reconciles the candidate list with the compact FFI buffer length. An
+    /// errored build reports zero emitted rows even if validation failed late.
     static func summarizeRestoreBuffer(
         candidates: [RestoreCandidate],
         emittedCount: Int,
@@ -267,6 +282,7 @@ enum CoreWalletDiagnosticAnalyzer {
         )
     }
 
+    /// Persistent facts used to detect malformed or contradictory TXO rows.
     struct DatabaseTxoAuditRow: Sendable {
         let txo: CoreWalletDatabaseDiagnosticSnapshot.Txo
         let hasParentTransaction: Bool
@@ -275,11 +291,13 @@ enum CoreWalletDiagnosticAnalyzer {
         let hasSpendingTransaction: Bool
     }
 
+    /// A database anomaly whose raw TXO identity is later hashed by the logger.
     struct DatabaseTxoAnomaly: Sendable {
         let txo: CoreWalletDatabaseDiagnosticSnapshot.Txo
         let reason: String
     }
 
+    /// Complete database anomaly set and its per-reason bounded projection.
     struct DatabaseTxoAnomalyResult: Sendable {
         let details: [DatabaseTxoAnomaly]
         let emittedDetails: [DatabaseTxoAnomaly]
@@ -290,6 +308,7 @@ enum CoreWalletDiagnosticAnalyzer {
         }
     }
 
+    /// Derives all applicable anomaly reasons for every supplied row.
     static func databaseTxoAnomalies(
         _ rows: [DatabaseTxoAuditRow]
     ) -> DatabaseTxoAnomalyResult {
@@ -338,11 +357,14 @@ enum CoreWalletDiagnosticAnalyzer {
         return .init(details: details, emittedDetails: emitted, truncatedCount: truncated)
     }
 
+    /// Value and spent state of a shielded note; identifiers are unnecessary
+    /// for the aggregate store diagnostic.
     struct ShieldedNote: Sendable {
         let value: UInt64
         let isSpent: Bool
     }
 
+    /// Aggregate shielded persistence state used by the exported snapshot.
     struct ShieldedStoreSummary: Sendable {
         let noteCount: Int
         let spentNoteCount: Int
@@ -358,6 +380,8 @@ enum CoreWalletDiagnosticAnalyzer {
         let maximumSyncWatermark: UInt64
     }
 
+    /// Aggregates shielded note values, activity state, keys, and watermarks
+    /// without retaining any note or viewing-key identifiers.
     static func summarizeShieldedStore(
         notes: [ShieldedNote],
         outgoingNoteCount: Int,

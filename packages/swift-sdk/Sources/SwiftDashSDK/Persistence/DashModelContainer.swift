@@ -16,6 +16,56 @@ public enum DashModelContainer {
         }
     }
 
+    /// Builds the common payload for both sides of the container open. The
+    /// outcome deliberately describes only what SwiftData tells us: opening an
+    /// existing store may have included a migration, but this API does not
+    /// expose whether one actually ran.
+    private static func storeOpenFields(
+        succeeded: Bool,
+        existedBefore: Bool,
+        startedAt: CFAbsoluteTime,
+        sizeBefore: StoreFileSizes,
+        sizeAfter: StoreFileSizes
+    ) -> [String: SDKLogValue] {
+        let elapsed = max(0, (CFAbsoluteTimeGetCurrent() - startedAt) * 1_000)
+        let duration: UInt64
+        if !elapsed.isFinite {
+            duration = 0
+        } else if elapsed >= Double(UInt64.max) {
+            duration = UInt64.max
+        } else {
+            duration = UInt64(elapsed)
+        }
+        let openOutcome: String
+        switch (succeeded, existedBefore) {
+        case (true, true):
+            openOutcome = "existing_store_opened"
+        case (true, false):
+            openOutcome = "new_store_created"
+        case (false, true):
+            openOutcome = "existing_store_open_or_migration_failed"
+        case (false, false):
+            openOutcome = "new_store_creation_failed"
+        }
+
+        return [
+            "container_result": .publicText(succeeded ? "opened" : "open_failed"),
+            "container_reused": .boolean(false),
+            "duration_ms": .unsignedInteger(duration),
+            "result": .publicText(succeeded ? "success" : "failure"),
+            "store_existed_before_open": .boolean(existedBefore),
+            "store_main_size_bytes_after": .unsignedInteger(sizeAfter.main),
+            "store_main_size_bytes_before": .unsignedInteger(sizeBefore.main),
+            "store_open_outcome": .publicText(openOutcome),
+            "store_shm_size_bytes_after": .unsignedInteger(sizeAfter.shm),
+            "store_shm_size_bytes_before": .unsignedInteger(sizeBefore.shm),
+            "store_size_bytes_after": .unsignedInteger(sizeAfter.total),
+            "store_size_bytes_before": .unsignedInteger(sizeBefore.total),
+            "store_wal_size_bytes_after": .unsignedInteger(sizeAfter.wal),
+            "store_wal_size_bytes_before": .unsignedInteger(sizeBefore.wal),
+        ]
+    }
+
     /// SQLite's durable state can be mostly in the WAL immediately after an
     /// app kill, so the main file alone is not a useful corruption signal.
     /// Read only sizes and never include any component of the device path.
@@ -144,27 +194,13 @@ public enum DashModelContainer {
             SDKLogger.event(
                 "core_store_open_result",
                 category: .persistence,
-                fields: [
-                    "container_result": .publicText("opened"),
-                    "container_reused": .boolean(false),
-                    "duration_ms": .unsignedInteger(UInt64(max(
-                        0,
-                        Int((CFAbsoluteTimeGetCurrent() - started) * 1_000)
-                    ))),
-                    "migration_result": .publicText(
-                        existedBefore ? "store_open_succeeded" : "not_required_new_store"
-                    ),
-                    "result": .publicText("success"),
-                    "store_existed_before_open": .boolean(existedBefore),
-                    "store_main_size_bytes_after": .unsignedInteger(sizeAfter.main),
-                    "store_main_size_bytes_before": .unsignedInteger(sizeBefore.main),
-                    "store_shm_size_bytes_after": .unsignedInteger(sizeAfter.shm),
-                    "store_shm_size_bytes_before": .unsignedInteger(sizeBefore.shm),
-                    "store_size_bytes_after": .unsignedInteger(sizeAfter.total),
-                    "store_size_bytes_before": .unsignedInteger(sizeBefore.total),
-                    "store_wal_size_bytes_after": .unsignedInteger(sizeAfter.wal),
-                    "store_wal_size_bytes_before": .unsignedInteger(sizeBefore.wal),
-                ]
+                fields: storeOpenFields(
+                    succeeded: true,
+                    existedBefore: existedBefore,
+                    startedAt: started,
+                    sizeBefore: sizeBefore,
+                    sizeAfter: sizeAfter
+                )
             )
             return container
         } catch {
@@ -173,29 +209,13 @@ public enum DashModelContainer {
                 "core_store_open_result",
                 category: .persistence,
                 severity: .error,
-                fields: [
-                    "container_result": .publicText("open_failed"),
-                    "container_reused": .boolean(false),
-                    "duration_ms": .unsignedInteger(UInt64(max(
-                        0,
-                        Int((CFAbsoluteTimeGetCurrent() - started) * 1_000)
-                    ))),
-                    "migration_result": .publicText(
-                        existedBefore
-                            ? "store_open_or_migration_failed"
-                            : "not_attempted_new_store_create_failed"
-                    ),
-                    "result": .publicText("failure"),
-                    "store_existed_before_open": .boolean(existedBefore),
-                    "store_main_size_bytes_after": .unsignedInteger(sizeAfter.main),
-                    "store_main_size_bytes_before": .unsignedInteger(sizeBefore.main),
-                    "store_shm_size_bytes_after": .unsignedInteger(sizeAfter.shm),
-                    "store_shm_size_bytes_before": .unsignedInteger(sizeBefore.shm),
-                    "store_size_bytes_after": .unsignedInteger(sizeAfter.total),
-                    "store_size_bytes_before": .unsignedInteger(sizeBefore.total),
-                    "store_wal_size_bytes_after": .unsignedInteger(sizeAfter.wal),
-                    "store_wal_size_bytes_before": .unsignedInteger(sizeBefore.wal),
-                ],
+                fields: storeOpenFields(
+                    succeeded: false,
+                    existedBefore: existedBefore,
+                    startedAt: started,
+                    sizeBefore: sizeBefore,
+                    sizeAfter: sizeAfter
+                ),
                 error: error,
                 redacting: [storeURL.path]
             )

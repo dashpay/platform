@@ -453,7 +453,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                             txo.lastUpdated = Date()
                         }
                     } catch {
-                        print("⚠️ persistAssetLocks: stale-TXO fetch failed for \(entry.outPointHex) — failing the round so the lock status does not commit ahead of its spend flags: \(error)")
+                        SDKLogger.event(
+                            "persistence_asset_lock_stale_txo_fetch_failed",
+                            category: .persistence,
+                            severity: .error,
+                            fields: [
+                                "outpoint_reference": .referenceString(entry.outPointHex),
+                                "status": .integer(Int64(entry.statusRaw)),
+                                "wallet_reference": .reference(walletId),
+                            ],
+                            error: error,
+                            redacting: [entry.outPointHex, wireTxid.hexString]
+                        )
                         allPersisted = false
                     }
                 }
