@@ -1081,6 +1081,9 @@ class PlatformWalletManager(
      * per restorable id to obtain a [ManagedPlatformWallet] handle.
      *
      * Idempotent: with no persisted state, leaves [wallets] untouched.
+     *
+     * On failure the manager is unchanged and still usable — fix the store
+     * and call again, or destroy the manager and rebuild it.
      */
     suspend fun loadPersistedWallets(): List<ManagedPlatformWallet> = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.loadFromPersistor(managerHandle) }

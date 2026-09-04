@@ -34,7 +34,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
 use key_wallet::account::AccountType;
@@ -212,7 +212,8 @@ impl std::fmt::Display for BatchDiagnostics {
 /// The `receiver` is the manager's lossless persistence receiver, taken once
 /// via `take_persistence_receiver()` before the manager is published to
 /// producers, and handed to this function. Exits when `cancel` fires or the
-/// persistence channel's sender (the manager) is dropped.
+/// persistence channel's sender (the manager) is dropped — in both cases after
+/// committing the events already buffered, never mid-batch.
 ///
 /// `sync_fault` is the host-visible hard-fault latch: the task sets it
 /// (and never clears it) the first time it freezes a durable watermark, so
@@ -220,12 +221,16 @@ impl std::fmt::Display for BatchDiagnostics {
 /// than silently re-freezing on the next launch.
 ///
 /// Generic over `P` so the spawned task gets static-dispatch on
-/// every `persister.store(...)` call. Pass the manager's own
-/// `Arc<P>` (not the `Arc<dyn PlatformWalletPersistence>`
-/// coercion) to actually realize the static-dispatch win.
+/// every `persister.store(...)` call. Pass a `Weak` to the manager's own
+/// `Arc<P>` (not to the `Arc<dyn PlatformWalletPersistence>` coercion) to
+/// actually realize the static-dispatch win.
+///
+/// The reference is **weak**: the task upgrades it for each batch commit and
+/// holds nothing while idle, so the persister is released when its owner drops
+/// rather than when this task next polls.
 pub fn spawn_wallet_event_adapter<P>(
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    persister: Arc<P>,
+    persister: Weak<P>,
     receiver: mpsc::UnboundedReceiver<WalletEvent>,
     sync_fault: Arc<AtomicBool>,
     cancel: CancellationToken,
@@ -296,7 +301,7 @@ where
 /// show a hard "verification failed / rescan pending" state.
 async fn run_wallet_event_adapter<P>(
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    persister: Arc<P>,
+    persister: Weak<P>,
     mut receiver: mpsc::UnboundedReceiver<WalletEvent>,
     sync_fault: Arc<AtomicBool>,
     cancel: CancellationToken,
@@ -320,9 +325,20 @@ async fn run_wallet_event_adapter<P>(
         // the channel behind it is folded in below without another await, so a
         // burst costs one `store()` per wallet instead of one per event (see
         // [`ADAPTER_STORE_BATCH_LIMIT`]).
-        let first = tokio::select! {
-            recv = receiver.recv() => recv,
-            _ = cancel.cancelled() => break,
+        let first = if cancel.is_cancelled() {
+            // Shutting down: commit the backlog, never wait for more. The
+            // `select!` below would race the fired token against `recv` and
+            // drop it.
+            match receiver.try_recv() {
+                Ok(event) => Some(event),
+                Err(_) => break,
+            }
+        } else {
+            tokio::select! {
+                recv = receiver.recv() => recv,
+                // Re-enter above to drain the backlog before exiting.
+                _ = cancel.cancelled() => continue,
+            }
         };
 
         // `recv()` on an mpsc returns `None` only when every sender (the
@@ -427,7 +443,21 @@ async fn run_wallet_event_adapter<P>(
         // accounted for" and "nobody knows".
         let settled: Arc<Mutex<Vec<WalletId>>> = Arc::new(Mutex::new(Vec::new()));
         let settled_for_commit = Arc::clone(&settled);
-        let persister_for_commit = Arc::clone(&persister);
+        // Held only for the commit: an idle adapter keeping the persister
+        // open leaves a dropped manager's store "open" until the next poll
+        // (issue #4133).
+        let Some(persister_for_commit) = persister.upgrade() else {
+            // The watermark rides the same `store()`, so these events are
+            // re-derived on the next SPV pass — but a discarded batch is not
+            // something an operator should have to infer from a debug line.
+            tracing::warn!(
+                discarded_events = folded,
+                wallets = batch.len(),
+                "persister released mid-drain; wallet-event adapter exiting and \
+                 discarding the batch it had built"
+            );
+            break;
+        };
         let sync_fault_for_commit = Arc::clone(&sync_fault);
         let fault_for_commit = Arc::clone(&fault);
         let freeze_for_commit = Arc::clone(&freeze_logged);
@@ -3006,7 +3036,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3042,6 +3072,51 @@ mod tests {
         );
     }
 
+    /// Cancellation commits the backlog already in the channel before exiting.
+    ///
+    /// This is the drain a dropped manager depends on: its `Drop` fires this
+    /// token, and racing the token against `recv` would discard whatever the
+    /// producer had already handed to the lossless channel.
+    #[tokio::test]
+    async fn cancellation_commits_the_events_already_buffered() {
+        let wallet_id = [11u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        tx.send(sync_height_event(wallet_id, 41)).unwrap();
+        tx.send(sync_height_event(wallet_id, 42)).unwrap();
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let cancel = CancellationToken::new();
+        // Already cancelled when the loop starts: the shape a manager dropped
+        // mid-burst leaves behind.
+        cancel.cancel();
+
+        run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel,
+        )
+        .await;
+
+        let observed = obs_rx
+            .try_recv()
+            .expect("a cancelled adapter must still commit the buffered backlog");
+        assert_eq!(observed.wallet_id, wallet_id);
+        assert_eq!(
+            observed.synced_height,
+            Some(42),
+            "both buffered events belong to the same drain"
+        );
+        assert!(
+            obs_rx.try_recv().is_err(),
+            "the drain stops at the backlog it found, and never waits for more"
+        );
+        // Held to the end so the exit is the cancel path, not a closed channel.
+        drop(tx);
+    }
+
     /// (c) A rejected `store()` faults the wallet, and the very next
     /// watermark-only event is stripped and dropped (not delivered).
     #[tokio::test]
@@ -3055,7 +3130,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3106,7 +3181,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3154,7 +3229,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3201,7 +3276,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3253,7 +3328,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3300,7 +3375,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3387,7 +3462,7 @@ mod tests {
 
         let handle = runtime.spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3431,6 +3506,70 @@ mod tests {
         });
     }
 
+    /// The adapter upgrades its weak persister reference for exactly the span
+    /// of a batch commit — the sole bound on the manager's synchronous release,
+    /// since a drop racing a commit reclaims the persister only when the parked
+    /// `store()` returns (issue #4133).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_in_flight_commit_holds_a_strong_persister_reference() {
+        use std::time::{Duration, Instant};
+
+        let wallet_id = [0x44u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let (release, blocked) = persister.block_next();
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        assert_eq!(
+            Arc::strong_count(&persister),
+            1,
+            "an idle adapter must hold the persister weakly — only this test's \
+             own reference may be strong"
+        );
+
+        // Park the commit inside `store()`, and wait until the park is in
+        // effect so the count below is read during the commit, not before it.
+        tx.send(block_processed_event(wallet_id, 10)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !blocked.load(Ordering::Relaxed) {
+            assert!(
+                Instant::now() < deadline,
+                "the store must actually park before the assertion below means anything"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            Arc::strong_count(&persister),
+            2,
+            "a commit in flight must hold the upgraded reference for the whole \
+             of its store()"
+        );
+
+        drop(release);
+        obs_rx
+            .recv()
+            .await
+            .expect("the released store must complete");
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+
+        assert_eq!(
+            Arc::strong_count(&persister),
+            1,
+            "the upgraded reference must be released with the finished commit"
+        );
+    }
+
     /// (i) A commit panic must punish exactly the wallets whose outcome it
     /// left unknown — no more, no less.
     ///
@@ -3467,7 +3606,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3568,7 +3707,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let handle = tokio::spawn(run_wallet_event_adapter(
             test_manager(),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3702,7 +3841,7 @@ mod tests {
         let sync_fault = Arc::new(AtomicBool::new(false));
         let handle = spawn_wallet_event_adapter(
             Arc::clone(&wallet_manager),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             event_rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
@@ -3831,7 +3970,7 @@ mod tests {
         let sync_fault = Arc::new(AtomicBool::new(false));
         let handle = spawn_wallet_event_adapter(
             Arc::clone(&wallet_manager),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             event_rx,
             Arc::clone(&sync_fault),
             cancel.clone(),

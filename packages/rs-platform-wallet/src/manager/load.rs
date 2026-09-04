@@ -10,7 +10,7 @@ use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
-use super::PlatformWalletManager;
+use super::{retry_transient_load, PlatformWalletManager};
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Load the full [`ClientStartState`] from the configured persister
@@ -28,8 +28,40 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// wallets missing from that slice get a fresh
     /// [`PlatformAddressWallet::initialize`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize).
     ///
+    /// # Errors
+    ///
+    /// Returns [`PersisterLoad`](PlatformWalletError::PersisterLoad) when the
+    /// persister cannot produce the snapshot, and
+    /// [`PersisterRestore`](PlatformWalletError::PersisterRestore) when a
+    /// wallet in the snapshot cannot have its platform-address state rebuilt.
+    /// A persisted wallet whose id disagrees with its own key material, or one
+    /// the inner [`WalletManager`] refuses, is neither a read nor a restore
+    /// failure and stays
+    /// [`WalletCreation`](PlatformWalletError::WalletCreation).
+    ///
+    /// A transient read is retried in-crate, so a contended backend can block
+    /// this call for up to four times its busy timeout plus 140 ms of backoff
+    /// (≈20 s at SQLite's 5 s default). Call it off any UI thread.
+    ///
+    /// Any `Err` rolls back partial inserts and leaves the manager usable: fix
+    /// the store and call again, or reconstruct. Reconstructing over the same
+    /// path needs the persister released first, which happens when the last
+    /// strong reference to the manager goes: [`shutdown`](Self::shutdown)
+    /// takes `&self` and stops the background workers, but cannot release the
+    /// manager's own `Arc<P>` — only dropping the manager does.
+    ///
     /// [`WalletManager`]: key_wallet_manager::WalletManager
     pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
+        let persister = Arc::clone(&self.persister);
+        let start_state = match retry_transient_load(move || persister.load()).await {
+            Ok(state) => state,
+            Err(e) => {
+                // Debug, not Display: it carries the real cause (e.g. a
+                // bincode decode failure) rather than flattening the chain.
+                tracing::debug!(error = ?e, "persister load failed during rehydration");
+                return Err(PlatformWalletError::from_load_failure(e));
+            }
+        };
         let ClientStartState {
             mut platform_addresses,
             wallets,
@@ -37,12 +69,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // not here — drop the snapshot at this entry point.
             #[cfg(feature = "shielded")]
                 shielded: _,
-        } = self.persister.load().map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to load persisted client state: {}",
-                e
-            ))
-        })?;
+        } = start_state;
 
         // Tracked (wallet-independent) masternodes ride the same startup
         // hydration; a failure logs and starts empty rather than failing
@@ -200,10 +227,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .initialize_from_persisted(persisted)
                     .await
                 {
-                    load_error = Some(PlatformWalletError::WalletCreation(format!(
-                        "Failed to restore platform address state: {}",
-                        e
-                    )));
+                    // Wrap the already-typed error rather than stringify it, so
+                    // its concrete variant and source chain survive — the same
+                    // shape `register_wallet` returns for this same failure.
+                    load_error = Some(PlatformWalletError::from_restore_failure(e));
                     break 'load;
                 }
             } else {
@@ -372,7 +399,8 @@ mod idempotent_load_tests {
         ClientStartState, ClientWalletStartState, IdentityManagerStartState, PersistenceError,
         PlatformWalletChangeSet, PlatformWalletPersistence,
     };
-    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::events::PlatformEventHandler;
+    use crate::test_support::NoopTestEventHandler;
     use crate::wallet::platform_wallet::WalletId;
     use crate::PlatformWalletManager;
 
@@ -459,15 +487,11 @@ mod idempotent_load_tests {
         }
     }
 
-    struct NoopEventHandler;
-    impl EventHandler for NoopEventHandler {}
-    impl PlatformEventHandler for NoopEventHandler {}
-
     fn make_manager(
         persister: SingleWalletPersister,
     ) -> Arc<PlatformWalletManager<SingleWalletPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
         Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(persister),
@@ -584,7 +608,7 @@ mod idempotent_load_tests {
         let ctx = TestWalletContext::new_random();
         let expected_id = ctx.wallet.compute_wallet_id();
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(MismatchedSecondWalletPersister {
@@ -612,6 +636,252 @@ mod idempotent_load_tests {
                 .get_wallet(&expected_id)
                 .is_none(),
             "and out of the inner manager, so a retry can re-insert it"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use dash_async::WorkerStatus;
+
+    use super::*;
+    use crate::changeset::{PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet};
+    use crate::events::PlatformEventHandler;
+    use crate::manager::WalletWorker;
+    use crate::test_support::NoopTestEventHandler;
+
+    /// Strong `Arc<P>` clones a freshly built [`PlatformWalletManager`] holds:
+    /// its `persister` field, the `DashPayPaymentHandler`, and the
+    /// `IdentitySyncManager` — the wallet-event adapter deliberately excluded.
+    const MANAGER_PERSISTER_HOLDERS: usize = 3;
+
+    /// Persister whose `load()` always fails.
+    struct FailingLoadPersister;
+
+    impl PlatformWalletPersistence for FailingLoadPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Err(PersistenceError::backend("simulated load failure"))
+        }
+    }
+
+    struct TransientOnceLoadPersister {
+        load_calls: AtomicUsize,
+    }
+
+    impl PlatformWalletPersistence for TransientOnceLoadPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            if self.load_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    "simulated transient load failure",
+                ));
+            }
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Fails `load()` permanently once, then succeeds.
+    #[derive(Default)]
+    struct FatalOnceLoadPersister {
+        load_calls: AtomicUsize,
+    }
+
+    impl PlatformWalletPersistence for FatalOnceLoadPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            if self.load_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(PersistenceError::backend("simulated fatal load failure"));
+            }
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn make_manager<P: PlatformWalletPersistence + 'static>(
+        persister: Arc<P>,
+    ) -> PlatformWalletManager<P> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        PlatformWalletManager::new(sdk, persister, handler)
+    }
+
+    #[tokio::test]
+    async fn transient_load_failure_during_startup_rehydration_is_retried() {
+        let persister = Arc::new(TransientOnceLoadPersister {
+            load_calls: AtomicUsize::new(0),
+        });
+        let probe = Arc::clone(&persister);
+        let manager = make_manager(persister);
+
+        manager
+            .load_from_persistor()
+            .await
+            .expect("transient startup load failure must be retried");
+
+        assert_eq!(probe.load_calls.load(Ordering::SeqCst), 2);
+    }
+
+    /// Isolating by construction: the count is read on a live, idle manager
+    /// with nothing dropped or aborted, so no teardown path can stand in for
+    /// the weak-reference property.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn adapter_holds_no_strong_persister_reference() {
+        let persister = Arc::new(FailingLoadPersister);
+        let probe = Arc::clone(&persister);
+        let _manager = make_manager(persister);
+
+        assert_eq!(
+            Arc::strong_count(&probe),
+            MANAGER_PERSISTER_HOLDERS + 1,
+            "expected exactly {} strong persister references — the manager's \
+             own `persister` field, the DashPayPaymentHandler on the event \
+             fan-out, the IdentitySyncManager, and this test's probe. The idle \
+             wallet-event adapter must not be among them: it holds a Weak<P> \
+             and upgrades it per batch",
+            MANAGER_PERSISTER_HOLDERS + 1
+        );
+    }
+
+    /// Running the manager-wide, one-way `shutdown()` on this failure path
+    /// seals every coordinator's admission gate and joins the wallet-event
+    /// adapter, so the retry returns `Ok(())` onto a manager that can never
+    /// sync or persist again (#4133).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn manager_stays_usable_after_a_failed_load() {
+        let manager = make_manager(Arc::new(FatalOnceLoadPersister::default()));
+
+        let err = manager
+            .load_from_persistor()
+            .await
+            .expect_err("the first load must fail");
+        assert!(
+            matches!(err, PlatformWalletError::PersisterLoad(_)),
+            "load failure must surface as the typed PersisterLoad variant, got {err:?}"
+        );
+
+        manager
+            .load_from_persistor()
+            .await
+            .expect("a load retried after a failed one must succeed");
+
+        assert!(
+            !manager.identity_sync_manager.sync_admission_closed(),
+            "a failed load must leave sync admission open — a sealed gate \
+             makes every later `Ok(())` a lie"
+        );
+
+        // The adapter's receiver is taken exactly once, so a joined adapter
+        // cannot be respawned: `Ok` means the reused manager still persists.
+        let report = manager.shutdown().await;
+        assert_eq!(
+            report.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::Ok),
+            "the wallet-event adapter must still have been running for \
+             shutdown to join it: {report:?}"
+        );
+    }
+
+    /// Dropping the manager after a failed load releases the persister — the
+    /// precondition for reconstructing on the same path without a spurious
+    /// `WalletStorageError::AlreadyOpen` masking the real error (#4133).
+    ///
+    /// Isolates nothing: the count is the product of the whole teardown, so one
+    /// participant may regress while another still releases.
+    /// `adapter_holds_no_strong_persister_reference` pins the weak reference.
+    // TODO: cover the composed open -> failed load -> reopen from
+    // platform-wallet-storage; neither side asserts it today.
+    // Multi-thread: dropping the manager runs upstream's `Drop`, whose
+    // `ThreadRegistry::shutdown()` asserts a multi-thread runtime.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failed_load_releases_persister_for_reconstruct() {
+        let persister = Arc::new(FailingLoadPersister);
+        let probe = Arc::clone(&persister);
+        let manager = make_manager(persister);
+
+        let err = manager
+            .load_from_persistor()
+            .await
+            .expect_err("load must fail");
+        assert!(
+            matches!(err, PlatformWalletError::PersisterLoad(_)),
+            "load failure must surface as the typed PersisterLoad variant, got {err:?}"
+        );
+        assert_eq!(
+            Arc::strong_count(&probe),
+            MANAGER_PERSISTER_HOLDERS + 1,
+            "a failed load tears nothing down, so the manager's own references \
+             must be exactly as they were before the call"
+        );
+
+        drop(manager);
+        assert_eq!(
+            Arc::strong_count(&probe),
+            1,
+            "after a failed load and a drop nothing may still hold the persister"
+        );
+    }
+
+    /// A dirty drop releases the persister **synchronously**, bounded only by a
+    /// batch commit in flight (see
+    /// `an_in_flight_commit_holds_a_strong_persister_reference` in
+    /// `changeset::core_bridge`); the adapter is idle here.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dropping_manager_releases_persister_synchronously_when_adapter_idle() {
+        let persister = Arc::new(FailingLoadPersister);
+        let probe = Arc::clone(&persister);
+        let manager = make_manager(persister);
+        assert_eq!(
+            Arc::strong_count(&probe),
+            MANAGER_PERSISTER_HOLDERS + 1,
+            "the manager must hold its persister before the drop for this to \
+             mean anything"
+        );
+
+        // Dirty drop: `shutdown` is never called, so nothing joins the adapter.
+        drop(manager);
+
+        assert_eq!(
+            Arc::strong_count(&probe),
+            1,
+            "dropping the manager must release the persister immediately — an \
+             idle adapter holds no strong reference to await"
         );
     }
 }

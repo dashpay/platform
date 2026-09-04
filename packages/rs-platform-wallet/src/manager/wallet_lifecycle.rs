@@ -483,24 +483,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         }
 
+        // `store` is not retried here: the caller receives the typed,
+        // kind-classified `PersistenceError` and decides.
         if let Err(e) = self.persister.store(wallet_id, registration_changeset) {
             tracing::error!(
                 wallet_id = %hex::encode(wallet_id),
+                transient = e.is_transient(),
                 error = %e,
                 "failed to persist wallet registration changeset"
             );
             let mut wm = self.wallet_manager.write().await;
-            if let Err(e) = wm.remove_wallet(&wallet_id) {
+            if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
-                    error = %e,
+                    error = %remove_err,
                     "rollback: remove_wallet failed while unwinding a failed wallet registration"
                 );
             }
-            return Err(PlatformWalletError::WalletCreation(format!(
-                "Failed to persist wallet registration changeset: {}",
-                e
-            )));
+            return Err(PlatformWalletError::from_store_failure(&*self.persister, e));
         }
 
         // Build the PlatformWallet handle.
@@ -530,26 +530,34 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // earlier `insert_wallet`, absent from `self.wallets`),
         // poisoning every retry on `WalletAlreadyExists`. Roll back
         // before bailing — same shape as `manager::load`.
+        // `load` is an idempotent read, so a transient blip is retried
+        // in-crate — unlike `store` above. Clone the persister handle rather
+        // than moving `platform_wallet`, still needed below.
+        let load_persister = platform_wallet.persister().clone();
+        let load_result = super::retry_transient_load(move || load_persister.load()).await;
         let crate::changeset::ClientStartState {
             mut platform_addresses,
             wallets: _,
             #[cfg(feature = "shielded")]
                 shielded: _,
-        } = match platform_wallet.load_persisted() {
+        } = match load_result {
             Ok(state) => state,
             Err(e) => {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    transient = e.is_transient(),
+                    error = %e,
+                    "failed to load persisted wallet state after retries"
+                );
                 let mut wm = self.wallet_manager.write().await;
-                if let Err(e) = wm.remove_wallet(&wallet_id) {
+                if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
-                        error = %e,
+                        error = %remove_err,
                         "rollback: remove_wallet failed while unwinding a failed wallet setup"
                     );
                 }
-                return Err(PlatformWalletError::WalletCreation(format!(
-                    "Failed to load persisted wallet state: {}",
-                    e
-                )));
+                return Err(PlatformWalletError::from_load_failure(e));
             }
         };
 
@@ -559,18 +567,22 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .initialize_from_persisted(persisted)
                 .await
             {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "failed to restore persisted platform-address state"
+                );
                 let mut wm = self.wallet_manager.write().await;
-                if let Err(e) = wm.remove_wallet(&wallet_id) {
+                if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
-                        error = %e,
+                        error = %remove_err,
                         "rollback: remove_wallet failed while unwinding a failed wallet setup"
                     );
                 }
-                return Err(PlatformWalletError::WalletCreation(format!(
-                    "Failed to restore persisted platform address state: {}",
-                    e
-                )));
+                // Wrap the already-typed error rather than stringify it, so
+                // its concrete variant and source chain survive.
+                return Err(PlatformWalletError::from_restore_failure(e));
             }
         } else {
             platform_wallet.platform().initialize().await;
@@ -1293,6 +1305,487 @@ mod register_wallet_duplicate_tests {
             second.generation().in_broadcast_conflict(&tx),
             None,
             "a different wallet's fence must not block this one's builds"
+        );
+    }
+}
+
+#[cfg(test)]
+mod persist_retry_tests {
+    //! Registration-path persistence: single-attempt `store`, bounded `load`
+    //! retry, typed error propagation, log-level policy.
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+    use tracing::Level;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
+    };
+    use crate::error::PlatformWalletError;
+    use crate::events::PlatformEventHandler;
+    use crate::test_support::NoopTestEventHandler;
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    // Canonical all-`abandon` BIP-39 test vector.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    fn transient() -> PersistenceError {
+        PersistenceError::backend_with_kind(
+            PersistenceErrorKind::Transient,
+            "simulated SQLITE_BUSY",
+        )
+    }
+
+    fn fatal() -> PersistenceError {
+        PersistenceError::backend_with_kind(PersistenceErrorKind::Fatal, "simulated corruption")
+    }
+
+    use crate::test_support::tracing_capture::{RecordedEvents, RecordingGuard};
+
+    /// Persister with scripted `store` / `flush` / `load` outcomes.
+    ///
+    /// `store` counts registration and scan-verdict writes separately,
+    /// discriminated by the changeset: registration ends with a best-effort
+    /// `identity().sync()` that issues a SECOND `store`, and a single counter
+    /// would couple every registration-write assertion to discovery.
+    #[derive(Default)]
+    struct FaultyPersister {
+        /// Stores of the registration changeset.
+        registration_store_calls: AtomicUsize,
+        /// Stores of the identity-scan verdict published by `identity().sync()`.
+        scan_verdict_store_calls: AtomicUsize,
+        /// Never scripted to fail: a `store` failure is never retried through
+        /// it, so every assertion expects 0.
+        flush_calls: AtomicUsize,
+        load_calls: AtomicUsize,
+        store_transient: bool,
+        store_fatal: bool,
+        /// Leading scan-verdict `store` calls that fail transiently.
+        scan_verdict_store_transient_failures: usize,
+        /// Leading `load` calls that fail transiently.
+        load_transient_failures: usize,
+        load_fatal: bool,
+        /// Fail fatally after `load_transient_failures`, instead of succeeding.
+        load_then_fatal: bool,
+        /// Model a buffering backend that keeps the failed changeset for its
+        /// own later retry, so re-issuing it would merge it twice.
+        retains_failed_changeset: bool,
+    }
+
+    impl PlatformWalletPersistence for FaultyPersister {
+        fn store_transient_is_reissuable(&self) -> bool {
+            !self.retains_failed_changeset
+        }
+
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            // `merge` can fold a registration write and a scan verdict into
+            // one round, so both counters increment; letting the first match
+            // win would reintroduce the batching dependency.
+            let registration = changeset
+                .wallet_metadata
+                .is_some()
+                .then(|| self.registration_store_calls.fetch_add(1, Ordering::SeqCst));
+            let verdict = changeset
+                .identity_scan_state
+                .is_some()
+                .then(|| self.scan_verdict_store_calls.fetch_add(1, Ordering::SeqCst));
+
+            // The registration half decides a combined round: its failure
+            // aborts registration, a verdict's is swallowed.
+            if registration.is_some() {
+                if self.store_fatal {
+                    return Err(fatal());
+                }
+                if self.store_transient {
+                    return Err(transient());
+                }
+            }
+            if let Some(n) = verdict {
+                if n < self.scan_verdict_store_transient_failures {
+                    return Err(transient());
+                }
+            }
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            self.flush_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let n = self.load_calls.fetch_add(1, Ordering::SeqCst);
+            if self.load_fatal {
+                return Err(fatal());
+            }
+            if n < self.load_transient_failures {
+                return Err(transient());
+            }
+            if self.load_then_fatal {
+                return Err(fatal());
+            }
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn make_manager(
+        persister: Arc<FaultyPersister>,
+    ) -> Arc<PlatformWalletManager<FaultyPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        Arc::new(PlatformWalletManager::new(sdk, persister, event_handler))
+    }
+
+    fn seed_bytes() -> [u8; 64] {
+        Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid test mnemonic")
+            .to_seed("")
+    }
+
+    /// `Some(0)` skips the SPV-tip birth-height lookup.
+    async fn register(
+        manager: &PlatformWalletManager<FaultyPersister>,
+    ) -> Result<(), PlatformWalletError> {
+        manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed_bytes(),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    /// Surfaces on the first attempt, and rolls the in-memory insert back.
+    #[tokio::test]
+    async fn transient_store_failure_surfaces_as_persister_store_without_retry() {
+        let persister = Arc::new(FaultyPersister {
+            store_transient: true,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        let err = register(&manager)
+            .await
+            .expect_err("a transient store failure must abort registration, not retry it");
+
+        match err {
+            PlatformWalletError::PersisterStore(pe) => assert!(
+                pe.is_transient(),
+                "a transient store failure must keep its transient classification"
+            ),
+            other => panic!("expected PersisterStore, got {other:?}"),
+        }
+        assert_eq!(persister.registration_store_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            persister.flush_calls.load(Ordering::SeqCst),
+            0,
+            "store is never retried via flush"
+        );
+        assert_eq!(
+            persister.scan_verdict_store_calls.load(Ordering::SeqCst),
+            0,
+            "an aborted registration never reaches the discovery scan"
+        );
+        assert!(
+            manager.wallet_ids().await.is_empty(),
+            "a failed store must roll back the in-memory wallet insert"
+        );
+    }
+
+    /// A persister that keeps the failed changeset buffered for its own retry
+    /// (the canonical SQLite backend does exactly this) must never reach the
+    /// caller as retryable: re-issuing the changeset would merge it into the
+    /// retained copy, and changeset vectors merge by appending.
+    #[tokio::test]
+    async fn transient_store_failure_is_downgraded_without_a_reissue_attestation() {
+        let persister = Arc::new(FaultyPersister {
+            store_transient: true,
+            retains_failed_changeset: true,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        let err = register(&manager)
+            .await
+            .expect_err("a transient store failure must abort registration");
+
+        match err {
+            PlatformWalletError::PersisterStore(pe) => assert!(
+                !pe.is_transient(),
+                "a persister that retains the failed changeset must not invite a re-issue"
+            ),
+            other => panic!("expected PersisterStore, got {other:?}"),
+        }
+    }
+
+    /// A fatal `store` failure fails fast, keeping its classification.
+    #[tokio::test]
+    async fn fatal_store_failure_fails_fast_without_retry() {
+        let persister = Arc::new(FaultyPersister {
+            store_fatal: true,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        let err = register(&manager)
+            .await
+            .expect_err("a fatal store must abort registration");
+
+        match err {
+            PlatformWalletError::PersisterStore(pe) => assert!(
+                !pe.is_transient(),
+                "a fatal store must carry non-transient classification"
+            ),
+            other => panic!("expected PersisterStore, got {other:?}"),
+        }
+        assert_eq!(persister.registration_store_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            persister.flush_calls.load(Ordering::SeqCst),
+            0,
+            "a fatal store must not be retried via flush"
+        );
+        assert_eq!(
+            persister.scan_verdict_store_calls.load(Ordering::SeqCst),
+            0,
+            "an aborted registration never reaches the discovery scan"
+        );
+    }
+
+    /// A transient `load` blip is retried — it is an idempotent read.
+    #[tokio::test]
+    async fn transient_load_failure_is_retried_and_succeeds() {
+        let persister = Arc::new(FaultyPersister {
+            load_transient_failures: 1,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        register(&manager)
+            .await
+            .expect("registration must succeed after retrying the transient load");
+
+        assert_eq!(persister.registration_store_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(persister.load_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            persister.scan_verdict_store_calls.load(Ordering::SeqCst),
+            1,
+            "a completed registration must publish the identity-scan verdict"
+        );
+    }
+
+    #[tokio::test]
+    async fn fatal_load_failure_surfaces_as_persister_load() {
+        let persister = Arc::new(FaultyPersister {
+            load_fatal: true,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        let err = register(&manager)
+            .await
+            .expect_err("a fatal load must abort registration");
+
+        match err {
+            PlatformWalletError::PersisterLoad(pe) => assert!(!pe.is_transient()),
+            other => panic!("expected PersisterLoad, got {other:?}"),
+        }
+        assert_eq!(
+            persister.load_calls.load(Ordering::SeqCst),
+            1,
+            "a fatal load must not be retried"
+        );
+    }
+
+    #[tokio::test]
+    async fn transient_then_fatal_load_surfaces_as_persister_load_fatal() {
+        let persister = Arc::new(FaultyPersister {
+            load_transient_failures: 1,
+            load_then_fatal: true,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        let err = register(&manager)
+            .await
+            .expect_err("a load that turns fatal must abort registration");
+
+        match err {
+            PlatformWalletError::PersisterLoad(pe) => {
+                assert!(
+                    !pe.is_transient(),
+                    "the fatal outcome must win, not the earlier transient one"
+                )
+            }
+            other => panic!("expected PersisterLoad, got {other:?}"),
+        }
+        assert_eq!(persister.load_calls.load(Ordering::SeqCst), 2);
+    }
+
+    /// Virtual time, so the test itself doesn't wait the schedule's 140 ms.
+    #[tokio::test(start_paused = true)]
+    async fn transient_load_retry_follows_the_backoff_schedule() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let op_calls = Arc::clone(&calls);
+        let start = tokio::time::Instant::now();
+
+        let result: Result<(), PersistenceError> = super::super::retry_transient_load(move || {
+            op_calls.fetch_add(1, Ordering::SeqCst);
+            Err(transient())
+        })
+        .await;
+
+        assert!(
+            result.is_err(),
+            "an always-transient op exhausts the schedule"
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1 + super::super::persist_retry::LOAD_RETRY_BACKOFF.len(),
+            "one initial attempt plus one per scheduled backoff"
+        );
+        let expected: Duration = super::super::persist_retry::LOAD_RETRY_BACKOFF.iter().sum();
+        assert_eq!(tokio::time::Instant::now() - start, expected);
+    }
+
+    /// A busy backend costs the scan verdict its durability this launch
+    /// (dashpay/platform#4365) rather than failing the registration that just
+    /// succeeded: logged and swallowed, never retried.
+    #[tokio::test]
+    async fn transient_scan_verdict_store_failure_is_logged_not_retried() {
+        let persister = Arc::new(FaultyPersister {
+            scan_verdict_store_transient_failures: 1,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        let recorder = RecordedEvents::default();
+        let _guard = RecordingGuard::install(recorder.clone());
+
+        register(&manager)
+            .await
+            .expect("a scan-verdict store failure must not disturb registration");
+
+        assert_eq!(
+            persister.scan_verdict_store_calls.load(Ordering::SeqCst),
+            1,
+            "the verdict store is attempted once, never retried"
+        );
+        let events = recorder.entries();
+        assert!(
+            events.iter().any(|(level, msg)| *level == Level::WARN
+                && msg.contains("identity-scan verdict could not be persisted")),
+            "an unpersisted scan verdict must be logged at warn: {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|(level, msg)| *level == Level::ERROR && msg.contains("identity-scan verdict")),
+            "a scan-verdict store failure must not log at error: {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn unpersistable_scan_verdict_does_not_fail_registration() {
+        let persister = Arc::new(FaultyPersister {
+            scan_verdict_store_transient_failures: usize::MAX,
+            ..Default::default()
+        });
+        let manager = make_manager(Arc::clone(&persister));
+
+        register(&manager)
+            .await
+            .expect("an unpersistable verdict must never fail wallet registration");
+
+        assert_eq!(persister.scan_verdict_store_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(persister.flush_calls.load(Ordering::SeqCst), 0);
+    }
+
+    /// The typed variants preserve retry classification, allow structural
+    /// matching, and keep the `#[source]` chain.
+    ///
+    /// Also pins each constructor to the operation it names — the reason no
+    /// blanket `From<PersistenceError>` exists: only the call site knows
+    /// whether a load, a store or a flush produced the value, so an inferred
+    /// conversion would report failed writes as failed reads.
+    #[test]
+    fn typed_variants_preserve_classification_matching_and_source() {
+        use std::error::Error;
+
+        let attesting = FaultyPersister {
+            retains_failed_changeset: false,
+            ..Default::default()
+        };
+        let store_err = PlatformWalletError::from_store_failure(&attesting, transient());
+        match &store_err {
+            PlatformWalletError::PersisterStore(pe) => assert!(pe.is_transient()),
+            other => panic!("expected PersisterStore, got {other:?}"),
+        }
+        assert!(
+            store_err.source().is_some(),
+            "PersisterStore must expose its PersistenceError source"
+        );
+
+        // The narrowing keeps the chain: a caller that downcasts for detail
+        // still gets it, it is only told not to re-issue.
+        let retaining = FaultyPersister {
+            retains_failed_changeset: true,
+            ..Default::default()
+        };
+        let narrowed = PlatformWalletError::from_store_failure(&retaining, transient());
+        match &narrowed {
+            PlatformWalletError::PersisterStore(pe) => assert!(!pe.is_transient()),
+            other => panic!("expected PersisterStore, got {other:?}"),
+        }
+        assert!(narrowed.source().is_some());
+
+        let load_err = PlatformWalletError::from_load_failure(fatal());
+        match &load_err {
+            PlatformWalletError::PersisterLoad(pe) => assert!(!pe.is_transient()),
+            other => panic!("expected PersisterLoad, got {other:?}"),
+        }
+        assert!(load_err.source().is_some());
+
+        // Structural matching must recover the concrete inner variant.
+        let restore_err =
+            PlatformWalletError::from_restore_failure(PlatformWalletError::WalletLocked);
+        assert!(restore_err.source().is_some());
+        match restore_err {
+            PlatformWalletError::PersisterRestore(inner) => {
+                assert!(matches!(*inner, PlatformWalletError::WalletLocked));
+            }
+            other => panic!("expected PersisterRestore, got {other:?}"),
+        }
+
+        // Both take the SAME input type, so only the call site distinguishes
+        // them and a mix-up is silent.
+        assert!(
+            matches!(
+                PlatformWalletError::from_store_failure(&attesting, fatal()),
+                PlatformWalletError::PersisterStore(_)
+            ),
+            "a failed store must never be reported as a failed load"
+        );
+        assert!(
+            matches!(
+                PlatformWalletError::from_load_failure(fatal()),
+                PlatformWalletError::PersisterLoad(_)
+            ),
+            "a failed load must never be reported as a failed store"
         );
     }
 }

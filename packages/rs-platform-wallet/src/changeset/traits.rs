@@ -38,23 +38,35 @@ pub struct ListedCoreTxid {
 ///
 /// The enum is intentionally NOT `#[non_exhaustive]`: adding a new
 /// kind MUST force every consumer match to update explicitly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// **Variants are declared in ascending severity, and the derived [`Ord`] IS
+/// that severity order.** Aggregators that reduce several failures to the one
+/// they report (the FFI round accumulator) compare kinds directly, so a new
+/// kind must be inserted at its severity position, not appended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PersistenceErrorKind {
-    /// The persister reports the write was not committed and the
-    /// buffered state is preserved (e.g. `SQLITE_BUSY`, `SQLITE_FULL`,
-    /// `SQLITE_IOERR`, `SQLITE_NOMEM`). Callers MAY retry with
-    /// exponential backoff.
+    /// The backend reports a retryable condition (e.g. `SQLITE_BUSY`,
+    /// `SQLITE_FULL`, `SQLITE_IOERR`, `SQLITE_NOMEM`).
+    ///
+    /// Whether and how to retry is the caller's decision, but what a retry
+    /// may safely be depends on the operation. From
+    /// [`flush`](PlatformWalletPersistence::flush) the implementation may
+    /// keep the buffered changeset, and the retry is another `flush`. From
+    /// [`store`](PlatformWalletPersistence::store) it invites re-issuing the
+    /// whole changeset, which is only safe under
+    /// [`store_transient_is_reissuable`](PlatformWalletPersistence::store_transient_is_reissuable)
+    /// — an implementation that keeps the failed changeset must leave that
+    /// attestation `false` rather than soften its classification here.
     Transient,
-    /// The persister reports an unrecoverable failure (schema
-    /// corruption, logic bug, I/O error not covered by the transient
-    /// class). Callers MUST NOT retry — the buffered changeset is
-    /// gone and the same call will keep failing.
-    Fatal,
     /// SQL constraint / foreign-key / integrity violation. Distinct
     /// from `Fatal` so callers can distinguish "your data is wrong"
     /// (caller bug) from "the storage engine is unhappy" (operator /
-    /// infrastructure problem). Treated as fatal for retry purposes.
+    /// infrastructure problem). Not retryable.
     Constraint,
+    /// The persister reports an unrecoverable failure (schema
+    /// corruption, logic bug, I/O error not covered by the transient
+    /// class). Not retryable — the same call will keep failing.
+    Fatal,
 }
 
 /// Errors returned by a [`PlatformWalletPersistence`] backend.
@@ -118,6 +130,18 @@ impl PersistenceError {
         Self::Backend {
             kind,
             source: source.into(),
+        }
+    }
+
+    /// The same error reclassified, preserving the `source` chain.
+    ///
+    /// For narrowing a backend's honest classification to what a caller may
+    /// safely act on. [`Self::LockPoisoned`] carries no kind and is returned
+    /// unchanged.
+    pub fn with_kind(self, kind: PersistenceErrorKind) -> Self {
+        match self {
+            Self::LockPoisoned => Self::LockPoisoned,
+            Self::Backend { source, .. } => Self::Backend { kind, source },
         }
     }
 
@@ -226,6 +250,27 @@ pub trait PlatformWalletPersistence: Send + Sync {
         PersistenceCapabilities::NONE
     }
 
+    /// Whether a [`store`](Self::store) that failed with
+    /// [`PersistenceErrorKind::Transient`] leaves the caller free to re-issue
+    /// the identical changeset.
+    ///
+    /// Two things must both hold: the failed round applied nothing, AND the
+    /// implementation retained nothing of it. Atomicity alone is not enough —
+    /// a backend that buffers the changeset, fails the write transactionally
+    /// and then restores the buffer for its own later `flush` satisfies
+    /// "nothing was applied" while still holding a copy. Re-issuing into that
+    /// copy merges the changeset twice, and changeset vectors merge by
+    /// appending. Such a backend leaves this `false` and expects its retry
+    /// through [`flush`](Self::flush) instead.
+    ///
+    /// **Fail-closed:** the default is `false`, so an implementation that has
+    /// not considered the question reports its transient `store` failures as
+    /// non-retryable. Withholding a retry costs one lost opportunity; granting
+    /// it wrongly costs duplicated rows.
+    fn store_transient_is_reissuable(&self) -> bool {
+        false
+    }
+
     /// Compatibility summary for older invitation callers. It is true when the
     /// backend attests atomic changesets plus durably persisted invitation rows
     /// and asset-lock funding indices. This does not attest restart hydration;
@@ -282,13 +327,17 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// [`PersistenceError::Backend`] so callers can drive retry policy
     /// off [`PersistenceError::is_transient`]:
     ///
-    /// - **[`PersistenceErrorKind::Transient`]** — for the canonical
-    ///   SQLite backend that's `SQLITE_BUSY` / `SQLITE_LOCKED` plus the
-    ///   I/O-class codes `SQLITE_FULL` / `SQLITE_IOERR` /
-    ///   `SQLITE_NOMEM`: the buffered changeset is
-    ///   preserved (re-merged via the buffer's `restore` path so any
-    ///   `store` that landed during the failed flush wins on LWW
-    ///   fields), and the caller MAY retry with exponential backoff.
+    /// - **[`PersistenceErrorKind::Transient`]** — a retryable condition;
+    ///   for the canonical SQLite backend `SQLITE_BUSY` / `SQLITE_LOCKED`
+    ///   plus the I/O-class codes `SQLITE_FULL` / `SQLITE_IOERR` /
+    ///   `SQLITE_NOMEM`, where the buffered changeset is preserved
+    ///   (re-merged via the buffer's `restore` path so any `store` that
+    ///   landed during the failed flush wins on LWW fields). The retry is
+    ///   another `flush`: an implementation that keeps the buffer must NOT
+    ///   also attest
+    ///   [`store_transient_is_reissuable`](Self::store_transient_is_reissuable),
+    ///   or a caller re-issuing the changeset merges it into the copy the
+    ///   implementation kept.
     /// - **[`PersistenceErrorKind::Constraint`]** — SQL
     ///   constraint / FK / integrity violation. Caller bug; the data
     ///   is rejected by the schema. MUST NOT retry without changing
@@ -541,4 +590,58 @@ pub trait PlatformWalletPersistence: Send + Sync {
     // today; they may return to this trait once a cross-backend contract
     // (consistent error/report semantics across SQLite, file, and FFI
     // backends) is agreed.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The severity ranking is the enum's declaration order, and the FFI round
+    /// accumulator reduces a round's failures by comparing kinds directly. A
+    /// re-sort would silently let a transient verdict mask a fatal sibling.
+    #[test]
+    fn kind_ordering_is_ascending_severity() {
+        assert!(PersistenceErrorKind::Transient < PersistenceErrorKind::Constraint);
+        assert!(PersistenceErrorKind::Constraint < PersistenceErrorKind::Fatal);
+    }
+
+    /// Fail-closed: an implementation that never considered re-issuability
+    /// must not have its transient `store` failures read as retryable.
+    #[test]
+    fn reissue_attestation_defaults_to_fail_closed() {
+        struct BareMinimum;
+        impl PlatformWalletPersistence for BareMinimum {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+        assert!(!BareMinimum.store_transient_is_reissuable());
+    }
+
+    /// Narrowing a verdict must not cost the caller the detail it needs to
+    /// report or downcast.
+    #[test]
+    fn with_kind_reclassifies_and_keeps_the_source() {
+        let narrowed = PersistenceError::backend_with_kind(
+            PersistenceErrorKind::Transient,
+            "simulated SQLITE_BUSY",
+        )
+        .with_kind(PersistenceErrorKind::Fatal);
+        assert_eq!(narrowed.kind(), Some(PersistenceErrorKind::Fatal));
+        assert!(narrowed.to_string().contains("simulated SQLITE_BUSY"));
+        assert!(PersistenceError::LockPoisoned
+            .with_kind(PersistenceErrorKind::Fatal)
+            .kind()
+            .is_none());
+    }
 }

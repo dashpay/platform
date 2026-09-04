@@ -650,7 +650,8 @@ impl crate::changeset::PlatformWalletPersistence for NoopTestPersister {
     }
 }
 
-struct NoopTestEventHandler;
+/// Event handler that ignores every event.
+pub(crate) struct NoopTestEventHandler;
 impl crate::events::EventHandler for NoopTestEventHandler {}
 impl crate::events::PlatformEventHandler for NoopTestEventHandler {}
 
@@ -781,4 +782,102 @@ pub(crate) async fn mnemonic_wallet_manager(
         signer,
         receive_address,
     )
+}
+
+/// Thread-scoped `tracing` event capture for tests that assert on log output.
+///
+/// Every capturing test must route through the one globally-installed
+/// subscriber here rather than installing its own — see [`RecorderRouter`].
+#[cfg(test)]
+pub(crate) mod tracing_capture {
+    use std::cell::RefCell;
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    use tracing::field::{Field, Visit};
+    use tracing::Level;
+    use tracing_subscriber::layer::{Context, SubscriberExt};
+    use tracing_subscriber::Layer;
+
+    /// Level and message of every event recorded while registered as the
+    /// current thread's active recorder (see [`RecordingGuard`]).
+    #[derive(Clone, Default)]
+    pub(crate) struct RecordedEvents(Arc<Mutex<Vec<(Level, String)>>>);
+
+    impl RecordedEvents {
+        pub(crate) fn entries(&self) -> Vec<(Level, String)> {
+            self.0.lock().expect("recorded events mutex").clone()
+        }
+
+        fn record(&self, event: &tracing::Event<'_>) {
+            struct MessageVisitor(String);
+            impl Visit for MessageVisitor {
+                fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+                    if field.name() == "message" {
+                        self.0 = format!("{value:?}");
+                    }
+                }
+            }
+            let mut visitor = MessageVisitor(String::new());
+            event.record(&mut visitor);
+            self.0
+                .lock()
+                .expect("recorded events mutex")
+                .push((*event.metadata().level(), visitor.0));
+        }
+    }
+
+    thread_local! {
+        /// Where events from THIS thread go. Set only by [`RecordingGuard`].
+        static ACTIVE_RECORDER: RefCell<Option<RecordedEvents>> = const { RefCell::new(None) };
+    }
+
+    /// Routes every event to whichever [`RecordedEvents`] the emitting thread
+    /// registered in [`ACTIVE_RECORDER`]. Installed as the process-wide
+    /// default exactly once — never per-test.
+    ///
+    /// A per-test `tracing::subscriber::set_default` swap is flaky under
+    /// `cargo test`'s parallel harness: tracing's per-callsite `Interest` cache
+    /// is process-global, so a concurrent test's swap/drop can race the
+    /// interest rebuild yours triggers and the event silently never reaches
+    /// your subscriber — even though dispatch stays correctly on your own
+    /// thread (confirmed: emitting and installing thread IDs matched on a
+    /// captured failure). Installing once, before any callsite is hit,
+    /// sidesteps the race: routing then goes through a thread-local this code
+    /// owns rather than tracing's default-swap machinery.
+    struct RecorderRouter;
+
+    impl<S: tracing::Subscriber> Layer<S> for RecorderRouter {
+        fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+            ACTIVE_RECORDER.with(|slot| {
+                if let Some(recorder) = slot.borrow().as_ref() {
+                    recorder.record(event);
+                }
+            });
+        }
+    }
+
+    static GLOBAL_ROUTER_INIT: OnceLock<()> = OnceLock::new();
+
+    /// Scopes [`ACTIVE_RECORDER`] to `recorder` for this thread and lifetime.
+    pub(crate) struct RecordingGuard;
+
+    impl RecordingGuard {
+        pub(crate) fn install(recorder: RecordedEvents) -> Self {
+            GLOBAL_ROUTER_INIT.get_or_init(|| {
+                let subscriber = tracing_subscriber::registry().with(RecorderRouter);
+                // Another thread may have won this race; either way the
+                // routing subscriber is the process-wide default by the time
+                // `get_or_init` returns to any caller.
+                let _ = tracing::subscriber::set_global_default(subscriber);
+            });
+            ACTIVE_RECORDER.with(|slot| *slot.borrow_mut() = Some(recorder));
+            Self
+        }
+    }
+
+    impl Drop for RecordingGuard {
+        fn drop(&mut self) {
+            ACTIVE_RECORDER.with(|slot| *slot.borrow_mut() = None);
+        }
+    }
 }

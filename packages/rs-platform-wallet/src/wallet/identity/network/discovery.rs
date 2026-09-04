@@ -640,9 +640,12 @@ impl IdentityWallet {
     /// Best-effort by design, and on the persist half only: the in-memory
     /// record always lands, so a second bring-up in this process already sees
     /// an incomplete scan and rescans. A failed persist costs the verdict its
-    /// survival across a restart, which is the same exposure a host that has
-    /// no slot for the field already has — it must not be allowed to fail the
-    /// scan that just succeeded.
+    /// survival across a restart, and it must not be allowed to fail the scan
+    /// that just succeeded.
+    ///
+    /// `store` is a single attempt, per the caller-decides persister-error
+    /// policy, so a merely busy backend (dashpay/platform#4365) costs the
+    /// verdict its durability this launch. Logged and swallowed either way.
     async fn publish_scan_verdict(
         &self,
         wallet_id: crate::wallet::platform_wallet::WalletId,
@@ -675,9 +678,11 @@ impl IdentityWallet {
         if let Err(e) = self.persister.store(changeset) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
+                transient = e.is_transient(),
                 error = %e,
-                "failed to persist the identity-scan verdict; a partial scan may not be \
-                 retried after a restart"
+                "identity-scan verdict could not be persisted; a partial scan will not be \
+                 retried after a restart, so an identity at an unanswered index stays hidden \
+                 until a later scan publishes a verdict that lands"
             );
         }
     }

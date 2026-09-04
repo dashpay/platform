@@ -27,11 +27,41 @@ struct LiveModelFetcher: ModelFetching {
     }
 }
 
+/// Return values by which a persistence callback classifies its own failure.
+///
+/// The ABI is defined by `PLATFORM_WALLET_PERSIST_RC_*` in
+/// `packages/rs-platform-wallet-ffi/src/persistence.rs` and must change only
+/// together with it. Named here so no callback ever spells the literal — the
+/// same integers mean unrelated things in other native callback families.
+public enum PlatformWalletPersistRC {
+    /// A retryable failure after which **nothing was applied**. Returning it
+    /// from a callback inside a changeset round also asserts that the failed
+    /// round was rolled back whole.
+    public static let transient: Int32 = -2
+    /// A constraint / integrity violation — the data is wrong, not the store.
+    public static let constraint: Int32 = -3
+}
+
 /// Bridges FFI persistence callbacks to SwiftData storage.
 ///
 /// Allocated as a class so its pointer can be passed as the opaque `context`
 /// to the Rust persistence callbacks. Must be retained for the lifetime of
 /// the `PlatformWalletManager`.
+///
+/// Callback return values: `0` succeeds and any non-zero value fails. A
+/// plain non-zero failure means "do not retry". A callback that can
+/// classify its own failure may instead return
+/// `PlatformWalletPersistRC.transient` for a retryable failure
+/// after which nothing was applied, or
+/// `PlatformWalletPersistRC.constraint` for an integrity
+/// violation; Rust forwards the classification to its caller (as
+/// `PlatformWalletError.persisterStoreTransient` and friends) and never
+/// retries on this handler's behalf. Returning the transient sentinel from
+/// a callback inside a changeset round additionally asserts that a failed
+/// round is rolled back whole — which this handler does, via
+/// `endChangeset(success: false)`. The handlers below currently return
+/// only `0` / `1` / `-1`, so they always read as fatal; opting in is a
+/// per-callback change.
 // All mutable state (`backgroundContext`, caches) is confined to `serialQueue`
 // — the handler's de-facto actor — so it is safe to hand to a `@Sendable`
 // closure (e.g. the off-main `serialQueue.async` backfill dispatch).
@@ -1884,6 +1914,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// the C shim so `store()` reports a persistence failure instead of
     /// silently advancing its in-memory state (pending queues, cleared drain
     /// entries, ignored-sender deltas) against writes that never reached disk.
+    ///
+    /// Failing this call when `success` is already `false` means the rollback
+    /// itself did not complete, so the round's disposition is unknown. Rust
+    /// classifies that as fatal and will not invite a re-send, regardless of
+    /// any retry sentinel returned here — re-issuing a changeset the store
+    /// could neither apply nor undo risks merging it twice. A retry sentinel
+    /// is only honoured on a *clean* round, where the commit failed but the
+    /// rollback succeeded and nothing was left behind.
     @discardableResult
     func endChangeset(walletId: Data, success: Bool) -> Bool {
         onQueue {

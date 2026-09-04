@@ -27,9 +27,9 @@ use super::super::manager::AssetLockManager;
 /// Persister errors are surfaced as `Err(PersistenceError)` so call
 /// sites can choose their own policy:
 ///
-/// - **Poll loops** (`wait_for_chain_lock`, `wait_for_proof`) typically
-///   downgrade to `None` for the current iteration so the next tick
-///   retries — see [`record_or_persister_or_log`] for that policy.
+/// - **Poll loops** (`wait_for_chain_lock`, `wait_for_proof`) read every
+///   failure as a miss and keep waiting on the live sync stream — see
+///   [`record_or_persister_for_poll`].
 /// - **One-shot recovery / fast-fail call sites** want the error
 ///   visible so a transient backend failure isn't silently classified
 ///   as "tx not found" — they handle the `Err` arm explicitly.
@@ -143,27 +143,50 @@ pub(in crate::wallet::asset_lock) fn record_holds_local_finality(
     }
 }
 
-/// Variant of [`record_or_persister`] that swallows persister errors
-/// as `None` after a `warn`-level log. Use this from poll loops where
-/// the next iteration retries — a hard error from a single tick would
-/// abort the whole poll prematurely.
-pub(super) fn record_or_persister_or_log(
+/// Variant of [`record_or_persister`] for poll loops: never aborts the wait,
+/// whatever the persister does.
+///
+/// This read is a FALLBACK for records the in-memory map evicted — the live
+/// SPV stream can still deliver one — so any failure reads as a miss and the
+/// loop keeps waiting, bounded by its own finality timeout.
+///
+/// Both failure classes report once per wait, via `state`: per-iteration
+/// logging would let a broken backend flood the log from inside an unbounded
+/// poll loop, saying the same thing every time.
+pub(super) fn record_or_persister_for_poll(
     in_memory: Option<TransactionRecord>,
     persister: &crate::wallet::persister::WalletPersister,
     txid: &Txid,
+    state: &mut PollReadState,
 ) -> Option<TransactionRecord> {
-    match record_or_persister(in_memory, persister, txid) {
-        Ok(opt) => opt,
+    if let Some(record) = in_memory {
+        return Some(record);
+    }
+    match persister.get_core_tx_record_or_transient_miss(txid, &mut state.transient_misses) {
+        Ok(found) => found,
         Err(e) => {
-            tracing::warn!(
-                txid = %txid,
-                error = %e,
-                "Persister fallback for core tx record failed; \
-                 treating as miss for this poll iteration"
-            );
+            if !state.permanent_reported {
+                state.permanent_reported = true;
+                tracing::error!(
+                    txid = %txid,
+                    error = %e,
+                    "Core tx-record fallback read is permanently failing; waiting on the \
+                     live sync stream instead until this wait's timeout"
+                );
+            }
             None
         }
     }
+}
+
+/// Read diagnostics for ONE wait, owned by the polling loop.
+///
+/// The permanent-failure latch fires on the first `Err`; the transient tally
+/// summarises itself when the wait ends, whichever way it ends.
+#[derive(Debug, Default)]
+pub(super) struct PollReadState {
+    permanent_reported: bool,
+    transient_misses: crate::wallet::persister::TransientMissTally,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -365,6 +388,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         use key_wallet::transaction_checking::TransactionContext;
 
         let deadline = timeout.map(|t| tokio::time::Instant::now() + t);
+        // Once-per-wait read diagnostics; see `record_or_persister_for_poll`.
+        let mut read_state = PollReadState::default();
 
         loop {
             // Arm the `Notify` future BEFORE the state check, closing
@@ -392,9 +417,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     funding_tx_record(&info.core_wallet.accounts, account_index, &out_point.txid)
                 })
             };
-            if let Some(record) =
-                record_or_persister_or_log(in_memory, &self.persister, &out_point.txid)
-            {
+            if let Some(record) = record_or_persister_for_poll(
+                in_memory,
+                &self.persister,
+                &out_point.txid,
+                &mut read_state,
+            ) {
                 if matches!(record.context, TransactionContext::InChainLockedBlock(_)) {
                     if let Some(h) = record.height() {
                         return Ok(h);
@@ -454,6 +482,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         tracing::info!(outpoint = %out_point, ?timeout, "wait_for_proof: entered");
         let deadline = timeout.map(|t| tokio::time::Instant::now() + t);
         let mut iter: u32 = 0;
+        // Once-per-wait read diagnostics; see `record_or_persister_for_poll`.
+        let mut read_state = PollReadState::default();
 
         // Read account_index and transaction from the tracked lock.
         let (account_index, tracked_tx) = {
@@ -519,9 +549,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     funding_tx_record(&info.core_wallet.accounts, account_index, &out_point.txid)
                 })
             };
-            if let Some(record) =
-                record_or_persister_or_log(in_memory, &self.persister, &out_point.txid)
-            {
+            if let Some(record) = record_or_persister_for_poll(
+                in_memory,
+                &self.persister,
+                &out_point.txid,
+                &mut read_state,
+            ) {
                 match &record.context {
                     TransactionContext::InstantSend(instant_lock) => {
                         return Ok(dpp::prelude::AssetLockProof::Instant(
@@ -969,8 +1002,7 @@ mod tests {
         }
     }
 
-    /// Test persister that always errors out on `get_core_tx_record`,
-    /// to exercise the error-swallowing branch in `record_or_persister`.
+    /// Persister with a permanent `get_core_tx_record` failure.
     struct ErroringStore;
 
     impl PlatformWalletPersistence for ErroringStore {
@@ -993,6 +1025,34 @@ mod tests {
             _txid: &Txid,
         ) -> Result<Option<TransactionRecord>, PersistenceError> {
             Err(PersistenceError::backend("simulated backend failure"))
+        }
+    }
+
+    struct TransientErroringStore;
+
+    impl PlatformWalletPersistence for TransientErroringStore {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            _txid: &Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            Err(PersistenceError::backend_with_kind(
+                crate::changeset::PersistenceErrorKind::Transient,
+                "simulated transient backend failure",
+            ))
         }
     }
 
@@ -1060,9 +1120,7 @@ mod tests {
     #[test]
     fn record_or_persister_propagates_backend_errors() {
         // Backend errors surface as `Err` so call sites can choose
-        // their own policy (one-shot recovery logs at error and
-        // degrades; poll loops downgrade to None for one tick via
-        // `record_or_persister_or_log`).
+        // their own policy; poll loops only downgrade transient errors.
         let unknown_txid = Txid::from([0xFF; 32]);
         let persister = wallet_persister(Arc::new(ErroringStore));
 
@@ -1070,15 +1128,109 @@ mod tests {
         assert!(resolved.is_err());
     }
 
+    /// A poll loop degrades on a permanent read failure rather than aborting:
+    /// the live SPV stream can still end the wait.
     #[test]
-    fn record_or_persister_or_log_swallows_backend_errors_as_none() {
-        // The poll-loop variant downgrades errors to `None` (after a
-        // `warn` log) so a transient backend failure on one tick
-        // doesn't abort the whole poll.
+    fn poll_read_degrades_to_a_miss_on_permanent_backend_errors() {
         let unknown_txid = Txid::from([0xFF; 32]);
         let persister = wallet_persister(Arc::new(ErroringStore));
+        let mut state = PollReadState::default();
 
-        let resolved = record_or_persister_or_log(None, &persister, &unknown_txid);
+        let resolved = record_or_persister_for_poll(None, &persister, &unknown_txid, &mut state);
+        assert!(
+            resolved.is_none(),
+            "a permanent read failure must read as a miss, not abort the wait"
+        );
+        assert!(
+            state.permanent_reported,
+            "the first permanent failure must be reported"
+        );
+
+        // Subsequent iterations of the SAME wait stay silent.
+        let resolved = record_or_persister_for_poll(None, &persister, &unknown_txid, &mut state);
         assert!(resolved.is_none());
+        assert!(state.permanent_reported);
+    }
+
+    /// The report fires ONCE per wait: a poll loop spins many times against the
+    /// same broken backend, and per-iteration reporting buries the log.
+    ///
+    /// Counting is the point — an assertion that merely finds a report present
+    /// passes just as happily when every iteration emits one.
+    #[test]
+    fn poll_read_reports_a_permanent_failure_once_per_wait_not_once_per_iteration() {
+        use crate::test_support::tracing_capture::{RecordedEvents, RecordingGuard};
+        use tracing::Level;
+
+        let unknown_txid = Txid::from([0xFF; 32]);
+        let persister = wallet_persister(Arc::new(ErroringStore));
+        let mut state = PollReadState::default();
+
+        let recorder = RecordedEvents::default();
+        let _guard = RecordingGuard::install(recorder.clone());
+
+        // Three iterations of ONE wait, as a poll loop would.
+        for _ in 0..3 {
+            assert!(
+                record_or_persister_for_poll(None, &persister, &unknown_txid, &mut state).is_none()
+            );
+        }
+
+        let reports = recorder
+            .entries()
+            .into_iter()
+            .filter(|(level, msg)| {
+                *level == Level::ERROR && msg.contains("Core tx-record fallback read")
+            })
+            .count();
+        assert_eq!(
+            reports, 1,
+            "three iterations of one wait must produce exactly one report, got {reports}"
+        );
+    }
+
+    /// A transient failure must not consume the once-per-wait report.
+    #[test]
+    fn poll_read_treats_transient_backend_errors_as_a_silent_miss() {
+        let unknown_txid = Txid::from([0xFF; 32]);
+        let persister = wallet_persister(Arc::new(TransientErroringStore));
+        let mut state = PollReadState::default();
+
+        let resolved = record_or_persister_for_poll(None, &persister, &unknown_txid, &mut state);
+        assert!(resolved.is_none());
+        assert!(
+            !state.permanent_reported,
+            "a transient failure must not consume the permanent-failure report"
+        );
+    }
+
+    /// The shared helper collapses transient failures, not permanent ones, and
+    /// only the collapsed ones are counted for the end-of-pass summary.
+    #[test]
+    fn transient_miss_read_helper_separates_transient_from_permanent() {
+        use crate::wallet::persister::TransientMissTally;
+
+        let unknown_txid = Txid::from([0xFF; 32]);
+        let mut tally = TransientMissTally::default();
+
+        let transient = wallet_persister(Arc::new(TransientErroringStore));
+        assert!(transient
+            .get_core_tx_record_or_transient_miss(&unknown_txid, &mut tally)
+            .expect("a transient failure must read as a miss")
+            .is_none());
+        assert_eq!(tally.misses(), 1, "a collapsed failure must be counted");
+
+        let permanent = wallet_persister(Arc::new(ErroringStore));
+        assert!(
+            permanent
+                .get_core_tx_record_or_transient_miss(&unknown_txid, &mut tally)
+                .is_err(),
+            "a permanent failure must stay visible to the caller"
+        );
+        assert_eq!(
+            tally.misses(),
+            1,
+            "a permanent failure is reported on its own, never counted as a miss"
+        );
     }
 }
