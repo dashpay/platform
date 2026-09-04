@@ -19,13 +19,13 @@ use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
+use crate::sqlite::rehydrate::{
+    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+};
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
 use crate::sqlite::util::safe_cast;
-use crate::sqlite::util::wallet::{
-    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
-};
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
 /// `tracing::info!` summary on every `load()`.

@@ -118,7 +118,7 @@ fn rt2_nonzero_balance_survives_reopen() {
     // End-to-end: apply the loaded state onto a freshly minted skeleton and
     // assert the wallet balance is the persisted amount — NOT a silent zero.
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+    platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
         &mut info,
         &manifest_for(&wallet),
         &core,
@@ -287,7 +287,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
 
     // Apply leg: reconstruct onto a fresh skeleton and check the total.
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+    platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
         &mut info,
         &manifest_for(&wallet),
         &core,
@@ -583,7 +583,7 @@ fn rehydration_routes_via_real_sql_resolver() {
     );
 
     let mut managed = ManagedWalletInfo::from_wallet(&wallet, 1);
-    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+    platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
         &mut managed,
         &manifest_for(&wallet),
         &core,
@@ -743,7 +743,7 @@ fn rehydration_routes_used_addresses_to_owning_account() {
     );
 
     let mut managed = ManagedWalletInfo::from_wallet(&wallet, 1);
-    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+    platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
         &mut managed,
         &manifest_for(&wallet),
         &core,
