@@ -14,6 +14,7 @@ pub mod error;
 #[cfg(feature = "kv")]
 pub mod kv;
 pub mod persister;
+pub mod rehydrate;
 pub mod reports;
 pub mod util;
 
@@ -31,7 +32,7 @@ pub mod schema;
 pub(crate) mod schema;
 
 // `LoadCtx` is the policy input every core-state reader takes, and
-// `util::apply_persisted_core_state` — the crate's public rehydration
+// `rehydrate::apply_persisted_core_state` — the crate's public rehydration
 // entry point — takes one too, so it is public unconditionally.
 pub mod load_ctx;
 

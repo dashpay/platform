@@ -311,7 +311,7 @@ fn upsert_sync_state(
 /// [`CoreChangeSet::new_utxos`] cannot carry each UTXO's owning account (it is a
 /// bare `Vec<Utxo>`), so the returned map surfaces, per unspent outpoint, the
 /// funds account that owns it — resolved by matching the UTXO's script against
-/// `core_address_pool`. [`apply_persisted_core_state`](crate::sqlite::util::apply_persisted_core_state)
+/// `core_address_pool`. [`apply_persisted_core_state`](crate::sqlite::rehydrate::apply_persisted_core_state)
 /// consumes it to route each UTXO to its true account. An outpoint whose script
 /// matches no pool row is absent from the map and falls back to the first funds
 /// account (the one-way historical-attribution default; re-warms on next sync).
