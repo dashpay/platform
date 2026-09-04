@@ -875,6 +875,7 @@ fn encode_v1(
             // a second copy of that rule in the SDK.
             offset,
             chained: None,
+            sub_queries: Vec::new(),
         })),
     })
 }
