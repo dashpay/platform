@@ -2347,7 +2347,11 @@ mod tests {
         {
             let store = EncryptedFileStore::open_mock(&path, SecretString::new("pw-correct"))
                 .expect("open hardened vault with a floor handle");
-            assert_eq!(store.kdf_params(), floor, "mock handle derives at the floor");
+            assert_eq!(
+                store.kdf_params(),
+                floor,
+                "mock handle derives at the floor"
+            );
             store.rekey(SecretString::new("pw-rotated")).expect("rekey");
         }
 
