@@ -343,6 +343,53 @@ describe('Platform', () => {
         .to.equal(post.getId().toString());
     });
 
+    it('should fetch a feed page with its like counts and my likes through a composite query', async () => {
+      // A page plus the sub-queries derived from it, ONE merged proof:
+      // the dash posts, one like count per post (from the countable
+      // [hashtag, postId] index with hashtag fixed), and which of them
+      // I liked (the byLiker index with $ownerId fixed, its postId
+      // terminal bound to the page ids: value-bounded, so no limit).
+      // The WASM SDK bootstraps the page from the proof, re-derives
+      // every sub-query, and verifies the composition against the
+      // quorum-signed root.
+      const { sdk: evoSdk } = await createPlatformProofVerifier
+        .getEvoSdkForNetwork(process.env.NETWORK);
+
+      const page = await evoSdk.documents.composite({
+        dataContractId: dataContract.getId().toString(),
+        documentType: 'post',
+        where: [['hashtag', '==', POST_HASHTAG]],
+        limit: 10,
+        subQueries: [
+          {
+            documentType: 'like',
+            kind: 'counts',
+            where: [['hashtag', '==', POST_HASHTAG]],
+            bind: { sourceProperty: '$id', field: 'postId' },
+          },
+          {
+            documentType: 'like',
+            where: [['$ownerId', '==', identity.getId().toString()]],
+            bind: { sourceProperty: '$id', field: 'postId' },
+          },
+        ],
+      });
+
+      expect(page.pageDocuments).to.have.lengthOf(1);
+      expect(page.subResults).to.have.lengthOf(2);
+
+      const [pagePost] = page.pageDocuments;
+      expect(pagePost.id.toBase58()).to.equal(post.getId().toString());
+
+      const [likeCounts, myLikes] = page.subResults;
+      expect(likeCounts.kind).to.equal('counts');
+      expect(likeCounts.counts.get(post.getId().toString())).to.equal(1n);
+
+      expect(myLikes.kind).to.equal('documents');
+      expect(myLikes.documents).to.have.lengthOf(1);
+      expect(myLikes.documents[0].ownerId.toBase58()).to.equal(identity.getId().toString());
+    });
+
     it('should fail to query a subset-index projection without proofs', async () => {
       // The subset index [postId] synthesizes a projection without the
       // hashtag — and with hashtag optional, serializing it would assert
