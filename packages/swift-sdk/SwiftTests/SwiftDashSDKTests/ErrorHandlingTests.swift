@@ -73,10 +73,6 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(error.errorDescription, rendered)
     }
 
-    // TODO: not compiled or run locally — no Swift toolchain in the
-    // authoring environment. CI is the first execution of the three
-    // persister tests below and of the `PlatformWalletResult.swift` cases
-    // they cover.
     /// The persister block (49-54). Each code must decode from its
     /// generated C constant, keep its own raw value, and reach a typed
     /// `PlatformWalletError` case — the three edits a new code needs on
