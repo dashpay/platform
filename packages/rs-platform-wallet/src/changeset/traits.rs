@@ -281,13 +281,14 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// [`PersistenceError::Backend`] so callers can drive retry policy
     /// off [`PersistenceError::is_transient`]:
     ///
-    /// - **[`PersistenceErrorKind::Transient`]** — for the canonical
-    ///   SQLite backend that's `SQLITE_BUSY` / `SQLITE_LOCKED` plus the
-    ///   I/O-class codes `SQLITE_FULL` / `SQLITE_IOERR` /
-    ///   `SQLITE_NOMEM`: the buffered changeset is
-    ///   preserved (re-merged via the buffer's `restore` path so any
-    ///   `store` that landed during the failed flush wins on LWW
-    ///   fields), and the caller MAY retry with exponential backoff.
+    /// - **[`PersistenceErrorKind::Transient`]** — a retryable condition;
+    ///   for the canonical SQLite backend `SQLITE_BUSY` / `SQLITE_LOCKED`
+    ///   plus the I/O-class codes `SQLITE_FULL` / `SQLITE_IOERR` /
+    ///   `SQLITE_NOMEM`, where the buffered changeset is preserved
+    ///   (re-merged via the buffer's `restore` path so any `store` that
+    ///   landed during the failed flush wins on LWW fields). Whether and
+    ///   how to retry is the caller's decision — this kind imposes no
+    ///   obligation on the implementor beyond honest classification.
     /// - **[`PersistenceErrorKind::Constraint`]** — SQL
     ///   constraint / FK / integrity violation. Caller bug; the data
     ///   is rejected by the schema. MUST NOT retry without changing

@@ -212,7 +212,8 @@ impl std::fmt::Display for BatchDiagnostics {
 /// The `receiver` is the manager's lossless persistence receiver, taken once
 /// via `take_persistence_receiver()` before the manager is published to
 /// producers, and handed to this function. Exits when `cancel` fires or the
-/// persistence channel's sender (the manager) is dropped.
+/// persistence channel's sender (the manager) is dropped — in both cases after
+/// committing the events already buffered, never mid-batch.
 ///
 /// `sync_fault` is the host-visible hard-fault latch: the task sets it
 /// (and never clears it) the first time it freezes a durable watermark, so
@@ -324,9 +325,20 @@ async fn run_wallet_event_adapter<P>(
         // the channel behind it is folded in below without another await, so a
         // burst costs one `store()` per wallet instead of one per event (see
         // [`ADAPTER_STORE_BATCH_LIMIT`]).
-        let first = tokio::select! {
-            recv = receiver.recv() => recv,
-            _ = cancel.cancelled() => break,
+        let first = if cancel.is_cancelled() {
+            // Shutting down: commit the backlog, never wait for more. The
+            // `select!` below would race the fired token against `recv` and
+            // drop it.
+            match receiver.try_recv() {
+                Ok(event) => Some(event),
+                Err(_) => break,
+            }
+        } else {
+            tokio::select! {
+                recv = receiver.recv() => recv,
+                // Re-enter above to drain the backlog before exiting.
+                _ = cancel.cancelled() => continue,
+            }
         };
 
         // `recv()` on an mpsc returns `None` only when every sender (the
@@ -435,7 +447,15 @@ async fn run_wallet_event_adapter<P>(
         // open leaves a dropped manager's store "open" until the next poll
         // (issue #4133).
         let Some(persister_for_commit) = persister.upgrade() else {
-            tracing::debug!("persister released; wallet-event adapter exiting");
+            // The watermark rides the same `store()`, so these events are
+            // re-derived on the next SPV pass — but a discarded batch is not
+            // something an operator should have to infer from a debug line.
+            tracing::warn!(
+                discarded_events = folded,
+                wallets = batch.len(),
+                "persister released mid-drain; wallet-event adapter exiting and \
+                 discarding the batch it had built"
+            );
             break;
         };
         let sync_fault_for_commit = Arc::clone(&sync_fault);
@@ -3050,6 +3070,51 @@ mod tests {
             max_synced, BURST,
             "the durable watermark must advance to the tip across the whole catch-up"
         );
+    }
+
+    /// Cancellation commits the backlog already in the channel before exiting.
+    ///
+    /// This is the drain a dropped manager depends on: its `Drop` fires this
+    /// token, and racing the token against `recv` would discard whatever the
+    /// producer had already handed to the lossless channel.
+    #[tokio::test]
+    async fn cancellation_commits_the_events_already_buffered() {
+        let wallet_id = [11u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        tx.send(sync_height_event(wallet_id, 41)).unwrap();
+        tx.send(sync_height_event(wallet_id, 42)).unwrap();
+
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let cancel = CancellationToken::new();
+        // Already cancelled when the loop starts: the shape a manager dropped
+        // mid-burst leaves behind.
+        cancel.cancel();
+
+        run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel,
+        )
+        .await;
+
+        let observed = obs_rx
+            .try_recv()
+            .expect("a cancelled adapter must still commit the buffered backlog");
+        assert_eq!(observed.wallet_id, wallet_id);
+        assert_eq!(
+            observed.synced_height,
+            Some(42),
+            "both buffered events belong to the same drain"
+        );
+        assert!(
+            obs_rx.try_recv().is_err(),
+            "the drain stops at the backlog it found, and never waits for more"
+        );
+        // Held to the end so the exit is the cancel path, not a closed channel.
+        drop(tx);
     }
 
     /// (c) A rejected `store()` faults the wallet, and the very next

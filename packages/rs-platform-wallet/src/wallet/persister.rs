@@ -16,6 +16,36 @@ use crate::changeset::{
 use crate::wallet::platform_wallet::WalletId;
 use dpp::prelude::Identifier;
 
+/// Transient tx-record misses collapsed during one wait or sweep, reported as
+/// a single line when it ends.
+///
+/// Owned by the caller and dropped at its exit, so every path out — success,
+/// timeout, early return — reports exactly once, and a backend that is merely
+/// busy cannot flood the log from inside an unbounded poll loop.
+#[derive(Debug, Default)]
+pub(crate) struct TransientMissTally {
+    misses: usize,
+}
+
+impl TransientMissTally {
+    #[cfg(test)]
+    pub(crate) fn misses(&self) -> usize {
+        self.misses
+    }
+}
+
+impl Drop for TransientMissTally {
+    fn drop(&mut self) {
+        if self.misses > 0 {
+            tracing::debug!(
+                transient_misses = self.misses,
+                "Core tx-record reads hit transient backend failures during this pass; \
+                 each was read as a miss and will be retried"
+            );
+        }
+    }
+}
+
 /// Per-wallet persistence handle.
 ///
 /// Thin wrapper around the shared [`PlatformWalletPersistence`] that binds
@@ -72,13 +102,19 @@ impl WalletPersister {
     /// one stays an `Err`: it will not fix itself, so swallowing it would
     /// repeat the same doomed work forever with no signal. Use
     /// [`Self::get_core_tx_record`] directly to tell the two apart.
+    ///
+    /// Every caller is a poll loop or a per-txid sweep, so the collapse is
+    /// counted into `tally` and reported once when that wait or sweep ends,
+    /// rather than logged per call.
     pub(crate) fn get_core_tx_record_or_transient_miss(
         &self,
         txid: &Txid,
+        tally: &mut TransientMissTally,
     ) -> Result<Option<TransactionRecord>, PersistenceError> {
         match self.get_core_tx_record(txid) {
             Err(e) if e.is_transient() => {
-                tracing::debug!(
+                tally.misses += 1;
+                tracing::trace!(
                     %txid,
                     error = %e,
                     "Core tx-record read hit a transient backend failure; reading as a miss"

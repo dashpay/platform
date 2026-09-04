@@ -32,41 +32,48 @@ where
     F: Fn() -> Result<T, PersistenceError> + Send + Sync + 'static,
     T: Send + 'static,
 {
+    // The initial call, then one retry per backoff entry: the loop runs the
+    // schedule and the last attempt's result falls out of it, so there is no
+    // terminating sentinel and no escape hatch to panic through.
     let op = Arc::new(op);
-    for (attempt, backoff) in LOAD_RETRY_BACKOFF
-        .iter()
-        .map(Some)
-        .chain([None])
-        .enumerate()
-    {
-        let call = Arc::clone(&op);
-        let result = match tokio::task::spawn_blocking(move || call()).await {
-            Ok(result) => result,
-            Err(join_err) if join_err.is_panic() => {
-                std::panic::resume_unwind(join_err.into_panic())
-            }
-            Err(_cancelled) => {
-                return Err(PersistenceError::backend(
-                    "runtime shutting down before load retry",
-                ))
-            }
-        };
-        match result {
+    let mut outcome = load_attempt(&op).await;
+    for (retries_done, backoff) in LOAD_RETRY_BACKOFF.iter().enumerate() {
+        match outcome {
             Ok(value) => return Ok(value),
             Err(e) if e.is_transient() => {
-                let Some(backoff) = backoff else {
-                    return Err(e);
-                };
                 tracing::debug!(
-                    attempt,
+                    // 1-based, matching the schedule this module documents.
+                    attempt = retries_done + 1,
                     backoff_ms = backoff.as_millis() as u64,
                     error = %e,
                     "transient persister load failure — retrying"
                 );
                 tokio::time::sleep(*backoff).await;
+                outcome = load_attempt(&op).await;
             }
             Err(e) => return Err(e),
         }
     }
-    unreachable!("the None-terminated schedule always returns on its final iteration")
+    outcome
+}
+
+/// Run one `load` attempt on the blocking pool.
+// TODO(load-retry-holds-persister-strong-ref): an in-flight load retry holds a
+// strong persister reference the caller cannot reclaim, contradicting the
+// documented "only a batch commit holds one" relationship — `spawn_blocking` is
+// uncancellable, so an abandoned caller's `Arc<P>` stays alive until the
+// backend call returns.
+async fn load_attempt<T, F>(op: &Arc<F>) -> Result<T, PersistenceError>
+where
+    F: Fn() -> Result<T, PersistenceError> + Send + Sync + 'static,
+    T: Send + 'static,
+{
+    let call = Arc::clone(op);
+    match tokio::task::spawn_blocking(move || call()).await {
+        Ok(result) => result,
+        Err(join_err) if join_err.is_panic() => std::panic::resume_unwind(join_err.into_panic()),
+        Err(_cancelled) => Err(PersistenceError::backend(
+            "runtime shutting down before load retry",
+        )),
+    }
 }
