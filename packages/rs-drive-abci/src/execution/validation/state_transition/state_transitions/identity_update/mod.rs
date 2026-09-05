@@ -68,11 +68,16 @@ impl StateTransitionBasicStructureValidationV0 for IdentityUpdateTransition {
         _network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        // The version source for this dispatcher lives in DPP, not in
+        // `drive_abci.validation_and_processing.state_transitions...`. DPP
+        // exposes the same versioned basic-structure check on
+        // `IdentityUpdateTransitionV0::validate_basic_structure`, which reads
+        // the same field — keeping both paths in lockstep.
         match platform_version
-            .drive_abci
-            .validation_and_processing
+            .dpp
             .state_transitions
-            .identity_update_state_transition
+            .identities
+            .identity_update
             .basic_structure
         {
             Some(0) => self.validate_basic_structure_v0(platform_version),

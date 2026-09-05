@@ -114,13 +114,18 @@ mod tests {
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::core_script::CoreScript;
     use dpp::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
+    use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_credit_withdrawal_transition::methods::{
         IdentityCreditWithdrawalTransitionMethodsV0, PreferredKeyPurposeForSigningWithdrawal,
     };
+    use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
     use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+    use dpp::state_transition::GetDataContractSecurityLevelRequirementFn;
+    use dpp::state_transition::StateTransition;
     use dpp::withdrawal::Pooling;
     use platform_version::version::v1::PROTOCOL_VERSION_1;
     use platform_version::version::PlatformVersion;
@@ -160,22 +165,28 @@ mod tests {
 
         let withdrawal_amount = dash_to_credits!(0.1);
 
-        let credit_withdrawal_transition = IdentityCreditWithdrawalTransition::try_from_identity(
-            &identity,
-            Some(CoreScript::random_p2pkh(&mut rng)),
-            withdrawal_amount,
-            Pooling::Never,
-            1,
-            0,
-            signer,
-            Some(&withdrawal_key),
-            PreferredKeyPurposeForSigningWithdrawal::Any,
-            2,
-            platform_version,
-            Some(1),
-        )
-        .await
-        .expect("expected a credit withdrawal transition");
+        let credit_withdrawal_transition_v1 = IdentityCreditWithdrawalTransitionV1 {
+            identity_id: identity.id(),
+            amount: withdrawal_amount,
+            core_fee_per_byte: 1,
+            pooling: Pooling::Never,
+            output_script: Some(CoreScript::random_p2pkh(&mut rng)),
+            nonce: 2,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        };
+        let mut credit_withdrawal_transition: StateTransition =
+            credit_withdrawal_transition_v1.into();
+
+        credit_withdrawal_transition
+            .sign_external(
+                &withdrawal_key,
+                &signer,
+                None::<GetDataContractSecurityLevelRequirementFn>,
+            )
+            .await
+            .expect("expected to sign credit withdrawal transition");
 
         let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
             .serialize_to_bytes()

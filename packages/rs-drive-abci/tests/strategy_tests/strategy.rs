@@ -1508,15 +1508,40 @@ impl NetworkStrategy {
                                         "Expected to find sender identity in hardcoded start identities",
                                     );
 
-                                // Use the pre-specified outputs from transfer_info
-                                let state_transition = create_identity_credit_transfer_to_addresses_transition_with_outputs(
+                                // Use the pre-specified outputs from transfer_info.
+                                // The helper returns `None` if any output is below the
+                                // per-output minimum; skip in that case rather than
+                                // panicking on a sub-minimum output.
+                                if let Some(state_transition) = create_identity_credit_transfer_to_addresses_transition_with_outputs(
                                     sender,
                                     identity_nonce_counter,
                                     signer,
                                     transfer_info.outputs.clone(),
                                     platform_version,
-                                ).await;
-                                operations.push(state_transition);
+                                ).await
+                                {
+                                    // Stage recipient balances now that the transition
+                                    // was constructed successfully. Mirrors the
+                                    // random-output branch and the shared crate's
+                                    // explicit branch: existing addresses get their
+                                    // balance increased, new ones registered. Skipping
+                                    // this leaves the recipient balances out of the
+                                    // local view and breaks downstream operations.
+                                    for (recipient_address, amount) in &transfer_info.outputs {
+                                        if let Some((nonce, balance)) = current_addresses_with_balance
+                                            .get_effective(recipient_address)
+                                        {
+                                            let new_entry = (*nonce, balance + amount);
+                                            current_addresses_with_balance
+                                                .addresses_in_block_with_new_balance
+                                                .insert(*recipient_address, new_entry);
+                                        } else {
+                                            current_addresses_with_balance
+                                                .register_new_address(*recipient_address, *amount);
+                                        }
+                                    }
+                                    operations.push(state_transition);
+                                }
                             } else {
                                 // Handle the case where no sender/outputs are provided - generate random ones
                                 let identities_count = current_identities.len();
@@ -1533,7 +1558,7 @@ impl NetworkStrategy {
                                     rng.gen_range(output_count_range.clone()) as usize;
                                 let total_amount = rng.gen_range(amount_range.clone());
 
-                                let (state_transition, _recipient_addresses) =
+                                if let Some((state_transition, _recipient_addresses)) =
                                     create_identity_credit_transfer_to_addresses_transition(
                                         sender,
                                         identity_nonce_counter,
@@ -1544,8 +1569,10 @@ impl NetworkStrategy {
                                         rng,
                                         platform_version,
                                     )
-                                    .await;
-                                operations.push(state_transition);
+                                    .await
+                                {
+                                    operations.push(state_transition);
+                                }
                             }
                         }
                     }
@@ -2308,8 +2335,13 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Option<StateTransition> {
-        let inputs =
-            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        let min_per_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let inputs = current_addresses_with_balance
+            .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
         tracing::trace!(
             ?inputs,
             "Preparing identity top-up transition with addresses"
@@ -2347,8 +2379,20 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Option<(Identity, StateTransition)> {
-        let inputs =
-            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        let min_per_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        // Snapshot the staged map BEFORE picking inputs so any rollback
+        // restores the exact pre-staging state. Removing only `inputs.keys()`
+        // would be unsafe if the picker ever reuses same-block addresses or
+        // if other paths stage entries we shouldn't drop.
+        let staged_snapshot_before_inputs = current_addresses_with_balance
+            .addresses_in_block_with_new_balance
+            .clone();
+        let inputs = current_addresses_with_balance
+            .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
         tracing::debug!(
             ?inputs,
             "Preparing identity create from addresses transition"
@@ -2388,14 +2432,104 @@ impl NetworkStrategy {
             .clone()
             .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
 
+        // Calculate estimated fee for local balance tracking.
+        // Fee = identity_create_base_cost + identity_key_in_creation_cost * num_keys
+        //     + address_funds_transfer_input_cost * num_inputs
+        //     + address_funds_transfer_output_cost * num_outputs
+        let total_key_count = identity.public_keys().len() as u64;
+        let num_inputs = inputs.len() as u64;
+        let has_output = maybe_output_amount.is_some();
+        let num_outputs: u64 = if has_output { 1 } else { 0 };
+
+        let min_fees = &platform_version.fee_version.state_transition_min_fees;
+        let estimated_fee = min_fees
+            .identity_create_base_cost
+            .saturating_add(
+                min_fees
+                    .identity_key_in_creation_cost
+                    .saturating_mul(total_key_count),
+            )
+            .saturating_add(
+                min_fees
+                    .address_funds_transfer_input_cost
+                    .saturating_mul(num_inputs),
+            )
+            .saturating_add(
+                min_fees
+                    .address_funds_transfer_output_cost
+                    .saturating_mul(num_outputs),
+            );
+
+        // Track fee deductions for balance tracking
+        let mut output_fee_deduction: Credits = 0;
+        let mut input_fee_deductions: BTreeMap<usize, Credits> = BTreeMap::new();
+
+        let input_addresses_in_order: Vec<PlatformAddress> = inputs.keys().cloned().collect();
+
+        let mut remaining_fee = estimated_fee;
+        for step in &fee_strategy {
+            if remaining_fee == 0 {
+                break;
+            }
+            match step {
+                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                    if *index == 0 && has_output {
+                        output_fee_deduction = output_fee_deduction.saturating_add(remaining_fee);
+                        remaining_fee = 0;
+                    }
+                }
+                AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                    if (*index as usize) < inputs.len() {
+                        let entry = input_fee_deductions.entry(*index as usize).or_insert(0);
+                        *entry = entry.saturating_add(remaining_fee);
+                        remaining_fee = 0;
+                    }
+                }
+            }
+        }
+
+        // Apply fee deductions to input balances (beyond the amount already staged)
+        for (idx, fee_deduction) in input_fee_deductions {
+            if let Some(address) = input_addresses_in_order.get(idx) {
+                if let Some((_, staged_balance)) = current_addresses_with_balance
+                    .addresses_in_block_with_new_balance
+                    .get_mut(address)
+                {
+                    *staged_balance = staged_balance.saturating_sub(fee_deduction);
+                }
+            }
+        }
+
+        // Sample the optional output amount and validate it against
+        // min_output_amount before registering any output address. The
+        // constructor rejects optional outputs below this minimum, so
+        // skip the candidate (rolling back staged input balances) instead
+        // of panicking on the expect below.
+        let sampled_output_amount = if let Some(output_range) = maybe_output_amount.as_ref() {
+            let amount = rng.gen_range(output_range.clone());
+            let min_per_output = platform_version
+                .dpp
+                .state_transitions
+                .address_funds
+                .min_output_amount;
+            if amount < min_per_output {
+                current_addresses_with_balance.addresses_in_block_with_new_balance =
+                    staged_snapshot_before_inputs;
+                return None;
+            }
+            Some(amount)
+        } else {
+            None
+        };
+
         // Create output if maybe_output_amount is provided
-        let output = maybe_output_amount.as_ref().map(|output_range| {
-            let output_amount = rng.gen_range(output_range.clone());
+        let output = sampled_output_amount.map(|output_amount| {
             let output_address = signer.add_random_address_key(rng);
-            // Register the output address with balance
+            // Register the output address with balance minus fee deduction
+            let actual_output_amount = output_amount.saturating_sub(output_fee_deduction);
             current_addresses_with_balance.register_new_address_keep_only_highest(
                 output_address.clone(),
-                output_amount,
+                actual_output_amount,
                 self.max_addresses_to_choose_from_in_cache,
             );
             (output_address, output_amount)
@@ -2433,16 +2567,44 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Option<StateTransition> {
-        let inputs =
-            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        let min_per_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let min_per_output = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
+        // Snapshot the staged map BEFORE picking inputs so any rollback
+        // restores the exact pre-staging state. Removing only `inputs.keys()`
+        // would be unsafe if the picker ever reuses same-block addresses or
+        // if other paths stage entries we shouldn't drop.
+        let staged_snapshot_before_inputs = current_addresses_with_balance
+            .addresses_in_block_with_new_balance
+            .clone();
+        let inputs = current_addresses_with_balance
+            .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
 
         tracing::debug!(?inputs, "Preparing address funds transfer transition");
 
         // Calculate total input amount (we'll distribute this among outputs)
         let total_input: Credits = inputs.values().map(|(_, credits)| credits).sum();
 
-        // Generate random number of outputs within the specified range
-        let output_count = rng.gen_range(output_count_range.clone()).max(1) as usize;
+        // If total_input is below min_output_amount, we cannot create even a single
+        // valid output. Roll back the staged input balances and skip this transition.
+        if total_input < min_per_output {
+            current_addresses_with_balance.addresses_in_block_with_new_balance =
+                staged_snapshot_before_inputs;
+            return None;
+        }
+
+        // Generate random number of outputs within the specified range,
+        // but cap so each output gets at least min_output_amount
+        let max_outputs_by_amount = (total_input / min_per_output) as usize;
+        let output_count =
+            (rng.gen_range(output_count_range.clone()).max(1) as usize).min(max_outputs_by_amount);
 
         // Generate fee strategy: if not provided, reduce from outputs sequentially
         // Limited to 4 steps due to max_address_fee_strategies platform constraint
@@ -2453,8 +2615,85 @@ impl NetworkStrategy {
                 .collect()
         });
 
-        // Create output addresses and distribute funds evenly
+        // Calculate estimated fee for local balance tracking.
+        // The transition must have inputs == outputs (balanced), but the chain
+        // will deduct fees according to fee_strategy. We need to track the
+        // actual credited amounts locally.
+        let min_fees = &platform_version.fee_version.state_transition_min_fees;
+        let estimated_fee = min_fees
+            .address_funds_transfer_input_cost
+            .saturating_mul(inputs.len() as u64)
+            .saturating_add(
+                min_fees
+                    .address_funds_transfer_output_cost
+                    .saturating_mul(output_count as u64),
+            );
+
         let amount_per_output = total_input / output_count as Credits;
+        let remainder = total_input - (amount_per_output * output_count as Credits);
+
+        // Verify the configured fee_strategy can cover the fee given staged
+        // input/output amounts. If it can't, roll back staged input balances
+        // and skip this candidate.
+        let input_addresses_for_check: Vec<PlatformAddress> = inputs.keys().cloned().collect();
+        let mut fee_can_be_covered = false;
+        let mut remaining_fee_to_check = estimated_fee;
+        for step in &fee_strategy {
+            if remaining_fee_to_check == 0 {
+                fee_can_be_covered = true;
+                break;
+            }
+            match step {
+                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                    // Output 0 receives the remainder so the transition balances;
+                    // other outputs get exactly amount_per_output. Use the actual
+                    // gross amount for the targeted index when checking whether
+                    // the fee can be absorbed.
+                    let output_amount = if *index == 0 {
+                        amount_per_output + remainder
+                    } else {
+                        amount_per_output
+                    };
+                    if output_amount >= remaining_fee_to_check {
+                        remaining_fee_to_check = 0;
+                        fee_can_be_covered = true;
+                    } else {
+                        remaining_fee_to_check -= output_amount;
+                    }
+                }
+                AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                    if let Some(input_addr) = input_addresses_for_check.get(*index as usize) {
+                        if let Some((_, remaining_balance)) = current_addresses_with_balance
+                            .addresses_in_block_with_new_balance
+                            .get(input_addr)
+                        {
+                            if *remaining_balance >= remaining_fee_to_check {
+                                remaining_fee_to_check = 0;
+                                fee_can_be_covered = true;
+                            } else {
+                                remaining_fee_to_check -= *remaining_balance;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !fee_can_be_covered {
+            tracing::warn!(
+                total_input = total_input,
+                estimated_fee = estimated_fee,
+                "AddressTransfer: insufficient remaining balance for fees, skipping"
+            );
+            current_addresses_with_balance.addresses_in_block_with_new_balance =
+                staged_snapshot_before_inputs;
+            return None;
+        }
+
+        // Create output addresses and distribute funds evenly. We defer
+        // staging recipient balances until fee deductions are computed so
+        // that staged balances reflect net post-fee credited amounts rather
+        // than gross transition outputs.
         let mut outputs = BTreeMap::new();
 
         // Collect existing addresses that are not used as inputs (for potential reuse as outputs)
@@ -2466,39 +2705,110 @@ impl NetworkStrategy {
             .cloned()
             .collect();
 
-        for _ in 0..output_count {
-            // Check if we should use an existing address as output
+        let mut output_addresses_in_order: Vec<PlatformAddress> = Vec::new();
+        let mut existing_output_addresses: std::collections::HashSet<PlatformAddress> =
+            std::collections::HashSet::new();
+
+        for outputs_created in 0..output_count {
+            // First output gets the remainder so input_sum == output_sum
+            let this_output_amount = if outputs_created == 0 {
+                amount_per_output + remainder
+            } else {
+                amount_per_output
+            };
+
             let use_existing = use_existing_outputs_chance
                 .map(|chance| rng.gen::<f64>() < chance && !available_existing_addresses.is_empty())
                 .unwrap_or(false);
 
             let address = if use_existing {
-                // Pick a random existing address and remove it from available pool
                 let idx = rng.gen_range(0..available_existing_addresses.len());
                 let existing_address = available_existing_addresses.swap_remove(idx);
-                // Update the balance for this existing address
-                if let Some((nonce, balance)) = current_addresses_with_balance
-                    .addresses_with_balance
-                    .get(&existing_address)
-                {
-                    current_addresses_with_balance
-                        .addresses_in_block_with_new_balance
-                        .insert(
-                            existing_address.clone(),
-                            (*nonce, balance + amount_per_output),
-                        );
-                }
+                existing_output_addresses.insert(existing_address);
                 existing_address
             } else {
-                // Create a new address
-                let new_address = signer.add_random_address_key(rng);
-                current_addresses_with_balance
-                    .addresses_in_block_with_new_balance
-                    .insert(new_address.clone(), (0, amount_per_output));
-                new_address
+                signer.add_random_address_key(rng)
             };
 
-            outputs.insert(address, amount_per_output);
+            outputs.insert(address, this_output_amount);
+            output_addresses_in_order.push(address);
+        }
+
+        // Calculate fee deductions based on fee_strategy.
+        // Track deductions for both outputs (ReduceOutput) and inputs (DeductFromInput)
+        let mut output_fee_deductions: BTreeMap<usize, Credits> = BTreeMap::new();
+        let mut input_fee_deductions: BTreeMap<usize, Credits> = BTreeMap::new();
+        let mut remaining_fee = estimated_fee;
+
+        let input_addresses_in_order: Vec<PlatformAddress> = inputs.keys().cloned().collect();
+
+        for step in &fee_strategy {
+            if remaining_fee == 0 {
+                break;
+            }
+            match step {
+                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                    let idx = *index as usize;
+                    if idx < output_addresses_in_order.len() {
+                        let output_addr = &output_addresses_in_order[idx];
+                        let output_amount = outputs.get(output_addr).copied().unwrap_or(0);
+                        let deduction = remaining_fee.min(output_amount);
+                        *output_fee_deductions.entry(idx).or_insert(0) += deduction;
+                        remaining_fee = remaining_fee.saturating_sub(deduction);
+                    }
+                }
+                AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                    let idx = *index as usize;
+                    if idx < input_addresses_in_order.len() {
+                        let deduction = remaining_fee;
+                        *input_fee_deductions.entry(idx).or_insert(0) += deduction;
+                        remaining_fee = 0;
+                    }
+                }
+            }
+        }
+
+        // Apply fee deductions to INPUT balance tracking.
+        // The transfer amount was already deducted by take_random_amounts_with_range,
+        // but the fee is ALSO deducted from inputs when using DeductFromInput.
+        for (idx, fee_deduction) in input_fee_deductions {
+            if let Some(input_addr) = input_addresses_in_order.get(idx) {
+                if let Some((nonce, current_balance)) = current_addresses_with_balance
+                    .addresses_in_block_with_new_balance
+                    .get(input_addr)
+                {
+                    let adjusted_balance = current_balance.saturating_sub(fee_deduction);
+                    let nonce = *nonce;
+                    current_addresses_with_balance
+                        .addresses_in_block_with_new_balance
+                        .insert(*input_addr, (nonce, adjusted_balance));
+                }
+            }
+        }
+
+        // Apply fee deductions to OUTPUT balance tracking and stage net
+        // post-fee credited amounts for recipients.
+        for (idx, address) in output_addresses_in_order.iter().enumerate() {
+            let transition_amount = outputs.get(address).copied().unwrap_or(0);
+            let fee_deduction = output_fee_deductions.get(&idx).copied().unwrap_or(0);
+            let actual_credited_amount = transition_amount.saturating_sub(fee_deduction);
+
+            if existing_output_addresses.contains(address) {
+                // Use the effective state so any prior same-block delta
+                // (staged balance) is preserved before crediting.
+                if let Some((nonce, balance)) =
+                    current_addresses_with_balance.get_effective(address)
+                {
+                    let new_entry = (*nonce, balance + actual_credited_amount);
+                    current_addresses_with_balance
+                        .addresses_in_block_with_new_balance
+                        .insert(*address, new_entry);
+                }
+            } else {
+                current_addresses_with_balance
+                    .addresses_in_block_with_new_balance
+                    .insert(*address, (0, actual_credited_amount));
+            }
         }
 
         let transfer_transition = AddressFundsTransferTransition::try_from_inputs_with_signer(
@@ -2530,21 +2840,109 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Option<StateTransition> {
-        let inputs =
-            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        let min_per_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+
+        // Sample the optional change-output amount up front so we can reject
+        // sub-`min_output_amount` outputs before mutating any staged state.
+        // Mirror the shared crate: returning `None` here is the skip path, and
+        // we must avoid leaving phantom staged balances behind on that path.
+        let sampled_output_amount = if let Some(output_amount_range) = maybe_output_amount {
+            let output_amount = rng.gen_range(output_amount_range.clone());
+            let min_output_amount = platform_version
+                .dpp
+                .state_transitions
+                .address_funds
+                .min_output_amount;
+            if output_amount < min_output_amount {
+                return None;
+            }
+            Some(output_amount)
+        } else {
+            None
+        };
+
+        let inputs = current_addresses_with_balance
+            .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
 
         let fee_strategy = fee_strategy
             .clone()
             .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
         tracing::debug!(?inputs, "Preparing address credit withdrawal transition");
 
-        // Determine if we have an output (change address) and its amount
-        let output = if let Some(output_amount_range) = maybe_output_amount {
-            let output_amount = rng.gen_range(output_amount_range.clone());
+        // Calculate estimated fee for local balance tracking.
+        // Fee = address_credit_withdrawal + input_cost * num_inputs + output_cost * num_outputs
+        let num_inputs = inputs.len() as u64;
+        let has_output = sampled_output_amount.is_some();
+        let num_outputs: u64 = if has_output { 1 } else { 0 };
+
+        let min_fees = &platform_version.fee_version.state_transition_min_fees;
+        let estimated_fee = min_fees
+            .address_credit_withdrawal
+            .saturating_add(
+                min_fees
+                    .address_funds_transfer_input_cost
+                    .saturating_mul(num_inputs),
+            )
+            .saturating_add(
+                min_fees
+                    .address_funds_transfer_output_cost
+                    .saturating_mul(num_outputs),
+            );
+
+        // Track fee deductions so the change output is staged at its
+        // post-fee credited amount and inputs absorb their share of the fee.
+        let mut output_fee_deduction: Credits = 0;
+        let mut input_fee_deductions: BTreeMap<usize, Credits> = BTreeMap::new();
+
+        let input_addresses_in_order: Vec<PlatformAddress> = inputs.keys().cloned().collect();
+
+        let mut remaining_fee = estimated_fee;
+        for step in &fee_strategy {
+            if remaining_fee == 0 {
+                break;
+            }
+            match step {
+                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                    if *index == 0 && has_output {
+                        output_fee_deduction = output_fee_deduction.saturating_add(remaining_fee);
+                        remaining_fee = 0;
+                    }
+                }
+                AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                    if (*index as usize) < inputs.len() {
+                        let entry = input_fee_deductions.entry(*index as usize).or_insert(0);
+                        *entry = entry.saturating_add(remaining_fee);
+                        remaining_fee = 0;
+                    }
+                }
+            }
+        }
+
+        // Apply fee deductions to input balances (beyond the amount already staged)
+        for (idx, fee_deduction) in input_fee_deductions {
+            if let Some(address) = input_addresses_in_order.get(idx) {
+                if let Some((_, staged_balance)) = current_addresses_with_balance
+                    .addresses_in_block_with_new_balance
+                    .get_mut(address)
+                {
+                    *staged_balance = staged_balance.saturating_sub(fee_deduction);
+                }
+            }
+        }
+
+        // Stage the change-output address with its post-fee credited amount
+        // now that inputs were taken successfully. Validation already
+        // happened up front.
+        let output = if let Some(output_amount) = sampled_output_amount {
             let output_address = signer.add_random_address_key(rng);
+            let actual_output_amount = output_amount.saturating_sub(output_fee_deduction);
             current_addresses_with_balance
                 .addresses_in_block_with_new_balance
-                .insert(output_address.clone(), (0, output_amount));
+                .insert(output_address.clone(), (0, actual_output_amount));
             Some((output_address, output_amount))
         } else {
             None
@@ -2598,10 +2996,34 @@ impl NetworkStrategy {
                 platform_version,
             );
 
+        // With a single output and `ReduceOutput(0)`, the fee is taken from the
+        // output, so the address ends up with `funded_amount - fee` credits.
+        let min_fees = &platform_version.fee_version.state_transition_min_fees;
+        let estimated_fee = min_fees.address_funds_transfer_output_cost; // 1 output
+
+        if funded_amount <= estimated_fee {
+            tracing::warn!(
+                "Asset lock amount {} is too small to cover fee {}",
+                funded_amount,
+                estimated_fee
+            );
+            return None;
+        }
+
+        let actual_funded_amount = funded_amount.saturating_sub(estimated_fee);
+
         let address = signer.add_random_address_key(rng);
+        // Snapshot staged balances so we can fully restore them if the
+        // constructor fails. `register_new_address_keep_only_highest` may prune
+        // other staged entries when `max_addresses_to_choose_from_in_cache` is
+        // set, so removing only the new address would not be sufficient to
+        // reverse those side effects.
+        let staged_snapshot = current_addresses_with_balance
+            .addresses_in_block_with_new_balance
+            .clone();
         current_addresses_with_balance.register_new_address_keep_only_highest(
             address,
-            funded_amount,
+            actual_funded_amount,
             self.max_addresses_to_choose_from_in_cache,
         );
         let mut outputs = BTreeMap::new();
@@ -2609,7 +3031,7 @@ impl NetworkStrategy {
 
         tracing::debug!(?outputs, "Preparing funding transition");
         let funding_transition =
-            AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
+            match AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                 asset_lock_proof,
                 asset_lock_private_key.as_slice(),
                 BTreeMap::new(),
@@ -2620,7 +3042,19 @@ impl NetworkStrategy {
                 platform_version,
             )
             .await
-            .ok()?;
+            {
+                Ok(transition) => transition,
+                Err(e) => {
+                    // Constructor failed: restore the staged map exactly as it
+                    // was before registration so the tracker isn't left
+                    // holding a phantom entry or missing a previously-pruned
+                    // address.
+                    current_addresses_with_balance.addresses_in_block_with_new_balance =
+                        staged_snapshot;
+                    tracing::error!("Error creating address funding transition: {:?}", e);
+                    return None;
+                }
+            };
 
         Some(funding_transition)
     }

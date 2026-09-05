@@ -51,7 +51,13 @@ mod tests {
     use crate::address_funds::AddressFundsFeeStrategyStep;
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
+    use crate::identity::signer::Signer;
+    use crate::identity::v0::IdentityV0;
+    use crate::identity::{Identity, IdentityPublicKey};
+    use crate::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
     use crate::state_transition::StateTransitionStructureValidation;
+    use async_trait::async_trait;
+    use platform_value::BinaryData;
     use platform_value::Identifier;
     use platform_version::version::PlatformVersion;
 
@@ -352,5 +358,74 @@ mod tests {
         assert!(t.output().is_none());
         t.set_output(Some((PlatformAddress::P2pkh([9u8; 20]), 1)));
         assert!(t.output().is_some());
+    }
+
+    #[derive(Debug)]
+    struct UnreachableAddressSigner;
+
+    #[async_trait]
+    impl Signer<PlatformAddress> for UnreachableAddressSigner {
+        async fn sign(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            panic!("sign should not run when protocol gating rejects the constructor")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            panic!(
+                "sign_create_witness should not run when protocol gating rejects the constructor"
+            )
+        }
+
+        fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn try_from_inputs_with_signer_returns_not_active_before_structure_validation() {
+        let mut low_version = PlatformVersion::get(1)
+            .expect("platform version 1 exists")
+            .clone();
+        low_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .identity_top_up_from_addresses_state_transition
+            .basic_structure = None;
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random(),
+            public_keys: BTreeMap::<u32, IdentityPublicKey>::new(),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (1u32, 1));
+
+        let result = IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
+            &identity,
+            inputs,
+            &UnreachableAddressSigner,
+            0,
+            &low_version,
+            None,
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ConsensusError(boxed))
+                if matches!(
+                    *boxed,
+                    ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
+                )
+        ));
     }
 }

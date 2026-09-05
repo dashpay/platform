@@ -1807,7 +1807,6 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            let signer = TestAddressSigner::new();
             let mut rng = StdRng::seed_from_u64(567);
             let (asset_lock_proof, _) = create_asset_lock_proof_with_key(&mut rng);
 
@@ -1819,15 +1818,14 @@ mod tests {
             outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.5)));
             outputs.insert(create_platform_address(2), None); // Remainder
 
-            let transition = create_signed_address_funding_from_asset_lock_transition(
+            let transition = create_transition_with_custom_witnesses(
                 asset_lock_proof,
                 &wrong_private_key,
-                &signer,
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            )
-            .await;
+                vec![],
+            );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1882,19 +1880,6 @@ mod tests {
             // Create a different signer with a different key
             let mut wrong_signer = TestAddressSigner::new();
             let wrong_address = wrong_signer.add_p2pkh([2u8; 32]);
-            // Add the real address hash to the wrong signer so it can "try" to sign for it
-            // but with the wrong key
-            wrong_signer.p2pkh_keys.insert(
-                match real_address {
-                    PlatformAddress::P2pkh(h) => h,
-                    _ => panic!("expected p2pkh"),
-                },
-                wrong_signer.p2pkh_keys[&match wrong_address {
-                    PlatformAddress::P2pkh(h) => h,
-                    _ => panic!("expected p2pkh"),
-                }]
-                    .clone(),
-            );
 
             let mut rng = StdRng::seed_from_u64(567);
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
@@ -1906,16 +1891,22 @@ mod tests {
             outputs.insert(create_platform_address(3), Some(dash_to_credits!(0.5)));
             outputs.insert(create_platform_address(4), None); // Remainder
 
-            // Sign with wrong signer
-            let transition = create_signed_address_funding_from_asset_lock_transition(
+            // Sign input witness bytes with the wrong key while keeping the asset lock signature valid.
+            let signable_bytes =
+                get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
+            let witness = wrong_signer
+                .sign_p2pkh(wrong_address, &signable_bytes)
+                .await
+                .expect("should sign");
+
+            let transition = create_transition_with_custom_witnesses(
                 asset_lock_proof,
                 &asset_lock_pk,
-                &wrong_signer,
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            )
-            .await;
+                vec![witness],
+            );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -5218,6 +5209,8 @@ mod tests {
 
         #[tokio::test]
         async fn test_self_transfer_same_input_output_address() {
+            use dpp::identity::signer::Signer;
+
             // Input and output have the same address (though this should be blocked by structure validation)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5247,15 +5240,21 @@ mod tests {
             let mut outputs = BTreeMap::new();
             outputs.insert(address, None); // Same address as input (remainder recipient)
 
-            let state_transition = create_signed_address_funding_from_asset_lock_transition(
+            let signable_bytes =
+                get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
+            let witness = signer
+                .sign_create_witness(&address, &signable_bytes)
+                .await
+                .expect("should create witness");
+
+            let state_transition = create_transition_with_custom_witnesses(
                 asset_lock_proof,
                 &asset_lock_pk,
-                &signer,
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            )
-            .await;
+                vec![witness],
+            );
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -9505,15 +9504,14 @@ mod tests {
             // Fee strategy targets ReduceOutput(2) — originally the remainder position.
             // After remainder is removed (outputs shrink from 3 to 2), index 2 is OOB.
             // Fee deduction may silently skip, giving a free transaction.
-            let transition = create_signed_address_funding_from_asset_lock_transition(
+            let transition = create_transition_with_custom_witnesses(
                 asset_lock_proof,
                 &asset_lock_pk,
-                &signer,
                 BTreeMap::new(), // No address inputs
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(2)],
-            )
-            .await;
+                vec![],
+            );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 

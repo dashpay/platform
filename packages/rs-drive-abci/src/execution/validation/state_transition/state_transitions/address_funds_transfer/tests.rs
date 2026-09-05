@@ -19,19 +19,38 @@ mod tests {
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
+    use dpp::identity::signer::Signer;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::AddressNonce;
-    use dpp::serialization::PlatformSerializable;
+    use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
     use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
     use dpp::state_transition::StateTransition;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
+    use std::future::Future;
+    use std::sync::Arc;
+    use std::task::{Context, Poll, Wake, Waker};
 
     // ==========================================
     // Helper Functions
     // ==========================================
+
+    fn run_immediate<F: Future>(future: F) -> F::Output {
+        struct NoopWake;
+
+        impl Wake for NoopWake {
+            fn wake(self: Arc<Self>) {}
+        }
+
+        let waker = Waker::from(Arc::new(NoopWake));
+        let mut future = std::pin::pin!(future);
+        match future.as_mut().poll(&mut Context::from_waker(&waker)) {
+            Poll::Ready(output) => output,
+            Poll::Pending => panic!("expected signer future to complete immediately"),
+        }
+    }
 
     /// Perform check_tx on a raw transaction and return whether it's valid
     /// - valid transactions should return true (accepted to mempool)
@@ -99,17 +118,47 @@ mod tests {
         fee_strategy: AddressFundsFeeStrategy,
         input_witnesses_count: usize,
     ) -> StateTransition {
-        let witnesses: Vec<AddressWitness> = (0..input_witnesses_count)
-            .map(|_| create_dummy_witness())
-            .collect();
-        AddressFundsTransferTransition::V0(AddressFundsTransferTransitionV0 {
+        let mut transition = AddressFundsTransferTransitionV0 {
             inputs,
             outputs,
             fee_strategy,
             user_fee_increase: 0,
-            input_witnesses: witnesses,
-        })
-        .into()
+            input_witnesses: vec![],
+        };
+
+        let signable_bytes = StateTransition::AddressFundsTransfer(
+            AddressFundsTransferTransition::V0(transition.clone()),
+        )
+        .signable_bytes()
+        .expect("should create signable bytes");
+
+        // Recover deterministic test keys (seeded as [i; 32]) and sign any matching inputs.
+        let mut deterministic_signer = TestAddressSigner::new();
+        for i in 0u8..=255u8 {
+            deterministic_signer.add_p2pkh([i; 32]);
+        }
+
+        let input_addresses: Vec<PlatformAddress> = transition.inputs.keys().cloned().collect();
+        let witnesses: Vec<AddressWitness> = (0..input_witnesses_count)
+            .map(|idx| {
+                input_addresses
+                    .get(idx)
+                    .and_then(|address| {
+                        if deterministic_signer.can_sign_with(address) {
+                            run_immediate(
+                                deterministic_signer.sign_create_witness(address, &signable_bytes),
+                            )
+                            .ok()
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(create_dummy_witness)
+            })
+            .collect();
+
+        transition.input_witnesses = witnesses;
+        AddressFundsTransferTransition::V0(transition).into()
     }
 
     /// Create a signed transition with custom inputs/outputs and fee strategy
@@ -222,10 +271,13 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.1)));
             let outputs = BTreeMap::new(); // Empty outputs
 
-            // Create transition with proper signature but empty outputs
-            let transition =
-                create_signed_transition_with_custom_outputs(&signer, inputs, outputs, vec![])
-                    .await;
+            // Create raw transition with empty outputs
+            let transition = create_raw_transition_with_dummy_witnesses(
+                inputs,
+                outputs,
+                AddressFundsFeeStrategy::from(vec![]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -285,13 +337,14 @@ mod tests {
             let mut outputs = BTreeMap::new();
             outputs.insert(create_platform_address(100), dash_to_credits!(0.17));
 
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
+            let transition = create_raw_transition_with_dummy_witnesses(
                 inputs,
                 outputs,
-                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            )
-            .await;
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                17,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -423,13 +476,14 @@ mod tests {
             let mut outputs = BTreeMap::new();
             outputs.insert(same_address, dash_to_credits!(0.1)); // Same address as input
 
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
+            let transition = create_raw_transition_with_dummy_witnesses(
                 inputs,
                 outputs,
-                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            )
-            .await;
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -486,9 +540,12 @@ mod tests {
             outputs.insert(create_platform_address(2), dash_to_credits!(0.1));
 
             // Empty fee strategy
-            let transition =
-                create_signed_transition_with_custom_outputs(&signer, inputs, outputs, vec![])
-                    .await;
+            let transition = create_raw_transition_with_dummy_witnesses(
+                inputs,
+                outputs,
+                AddressFundsFeeStrategy::from(vec![]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -545,19 +602,18 @@ mod tests {
             outputs.insert(create_platform_address(2), dash_to_credits!(0.1));
 
             // 5 fee strategy steps (max is 4)
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
+            let transition = create_raw_transition_with_dummy_witnesses(
                 inputs,
                 outputs,
-                vec![
+                AddressFundsFeeStrategy::from(vec![
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ],
-            )
-            .await;
+                ]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -614,16 +670,15 @@ mod tests {
             outputs.insert(create_platform_address(2), dash_to_credits!(0.1));
 
             // Duplicate fee strategy steps
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
+            let transition = create_raw_transition_with_dummy_witnesses(
                 inputs,
                 outputs,
-                vec![
+                AddressFundsFeeStrategy::from(vec![
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(0), // Duplicate
-                ],
-            )
-            .await;
+                ]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -680,13 +735,14 @@ mod tests {
             outputs.insert(create_platform_address(2), dash_to_credits!(0.1));
 
             // Fee strategy references input index 5, but we only have 1 input
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
+            let transition = create_raw_transition_with_dummy_witnesses(
                 inputs,
                 outputs,
-                vec![AddressFundsFeeStrategyStep::DeductFromInput(5)],
-            )
-            .await;
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    5,
+                )]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -743,13 +799,12 @@ mod tests {
             outputs.insert(create_platform_address(2), dash_to_credits!(0.1));
 
             // Fee strategy references output index 5, but we only have 1 output
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
+            let transition = create_raw_transition_with_dummy_witnesses(
                 inputs,
                 outputs,
-                vec![AddressFundsFeeStrategyStep::ReduceOutput(5)],
-            )
-            .await;
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(5)]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -806,13 +861,14 @@ mod tests {
             let mut outputs = BTreeMap::new();
             outputs.insert(create_platform_address(2), 50_000);
 
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
+            let transition = create_raw_transition_with_dummy_witnesses(
                 inputs,
                 outputs,
-                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            )
-            .await;
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -869,13 +925,14 @@ mod tests {
             let mut outputs = BTreeMap::new();
             outputs.insert(create_platform_address(2), 100_000); // Below minimum (500,000)
 
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
+            let transition = create_raw_transition_with_dummy_witnesses(
                 inputs,
                 outputs,
-                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            )
-            .await;
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());
@@ -931,13 +988,14 @@ mod tests {
             let mut outputs = BTreeMap::new();
             outputs.insert(create_platform_address(2), dash_to_credits!(0.5)); // Doesn't match input
 
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
+            let transition = create_raw_transition_with_dummy_witnesses(
                 inputs,
                 outputs,
-                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            )
-            .await;
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                1,
+            );
 
             let result = transition.serialize_to_bytes();
             assert!(result.is_ok());

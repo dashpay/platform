@@ -15,8 +15,24 @@ use crate::validation::SimpleConsensusValidationResult;
 use platform_version::version::PlatformVersion;
 use std::collections::HashSet;
 
-impl StateTransitionStructureValidation for IdentityCreateFromAddressesTransitionV0 {
-    fn validate_structure(
+impl IdentityCreateFromAddressesTransitionV0 {
+    /// Narrow basic-structure check: validates all structural properties of
+    /// the transition except for the `input_witnesses` count, and **does NOT**
+    /// validate the public-key structure of `public_keys`.
+    ///
+    /// This is the same surface the server's basic-structure pipeline
+    /// exercises. Public-key structure validation is intentionally skipped
+    /// here so that submitting an invalid set of public keys reaches
+    /// drive-abci's `advanced_structure_v0`, where it attaches a
+    /// `BumpAddressInputNoncesAction` (penalty + processing fee) instead of
+    /// failing for free at basic-structure. See the NOTE at the bottom of this
+    /// function for the full rationale.
+    ///
+    /// SDK constructors that want to give callers pre-broadcast feedback on
+    /// public-key structure problems must call
+    /// `IdentityPublicKeyInCreation::validate_identity_public_keys_structure`
+    /// directly *in addition to* this method.
+    pub fn validate_structure_without_input_witnesses(
         &self,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
@@ -66,17 +82,6 @@ impl StateTransitionStructureValidation for IdentityCreateFromAddressesTransitio
                             .max_public_keys_in_creation as usize,
                     ),
                 )
-                .into(),
-            );
-        }
-
-        // Validate input witnesses count matches inputs count
-        if self.inputs.len() != self.input_witnesses.len() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::InputWitnessCountMismatchError(InputWitnessCountMismatchError::new(
-                    self.inputs.len().min(u16::MAX as usize) as u16,
-                    self.input_witnesses.len().min(u16::MAX as usize) as u16,
-                ))
                 .into(),
             );
         }
@@ -243,6 +248,52 @@ impl StateTransitionStructureValidation for IdentityCreateFromAddressesTransitio
             );
         }
 
+        // NOTE: Public-key structure validation (counts, duplicates,
+        // purpose/security level constraints) is intentionally NOT performed
+        // here. On the server, that validation lives in drive-abci's
+        // `advanced_structure_v0`, where invalid public keys attach a
+        // `BumpAddressInputNoncesAction` with a penalty + processing fee.
+        // Running it here on the basic-structure / trait surface would create
+        // a free failure mode, because basic-structure failures return only
+        // errors with no penalty action. Client-side constructors invoke
+        // `IdentityPublicKeyInCreation::validate_identity_public_keys_structure`
+        // directly for pre-broadcast feedback.
         SimpleConsensusValidationResult::new()
+    }
+
+    /// Validates that the number of `input_witnesses` matches the number of
+    /// inputs. Intended to be invoked after signing, once witnesses have been
+    /// produced by the signer.
+    pub fn validate_input_witnesses_count(&self) -> SimpleConsensusValidationResult {
+        if self.inputs.len() != self.input_witnesses.len() {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::InputWitnessCountMismatchError(InputWitnessCountMismatchError::new(
+                    self.inputs.len().min(u16::MAX as usize) as u16,
+                    self.input_witnesses.len().min(u16::MAX as usize) as u16,
+                ))
+                .into(),
+            );
+        }
+        SimpleConsensusValidationResult::new()
+    }
+}
+
+impl StateTransitionStructureValidation for IdentityCreateFromAddressesTransitionV0 {
+    /// Narrow basic-structure validation that mirrors what the server runs at
+    /// the basic-structure stage. As documented on
+    /// [`IdentityCreateFromAddressesTransitionV0::validate_structure_without_input_witnesses`],
+    /// this **does NOT** validate `public_keys` structure: that check is run
+    /// later in drive-abci's `advanced_structure_v0` so it can attach a
+    /// `BumpAddressInputNoncesAction` penalty. SDK constructors are expected
+    /// to call public-key validation separately for pre-broadcast UX.
+    fn validate_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> SimpleConsensusValidationResult {
+        let result = self.validate_structure_without_input_witnesses(platform_version);
+        if !result.is_valid() {
+            return result;
+        }
+        self.validate_input_witnesses_count()
     }
 }

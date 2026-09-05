@@ -751,9 +751,27 @@ impl Strategy {
                     AssetLockProof::Chain(_) => self.start_addresses.starting_balance,
                 };
 
-                // Create a new address for the funding
+                // Calculate estimated fee for local balance tracking. With a single
+                // output and `ReduceOutput(0)`, the fee is deducted from the output,
+                // so the address ends up with `funded_amount - fee` credits.
+                let min_fees = &platform_version.fee_version.state_transition_min_fees;
+                let estimated_fee = min_fees.address_funds_transfer_output_cost; // 1 output
+
+                if funded_amount <= estimated_fee {
+                    tracing::warn!(
+                        "Asset lock amount {} is too small to cover fee {} for start_address",
+                        funded_amount,
+                        estimated_fee
+                    );
+                    continue;
+                }
+
+                let actual_funded_amount = funded_amount.saturating_sub(estimated_fee);
+
+                // Create a new address for the funding. We only register it after the
+                // transition is successfully constructed, so a constructor failure does
+                // not leave a staged address with an over-credited balance.
                 let address = signer.add_random_address_key(rng);
-                current_addresses_with_balance.register_new_address(address, funded_amount);
 
                 let mut outputs = BTreeMap::new();
                 outputs.insert(address, None);
@@ -772,7 +790,11 @@ impl Strategy {
                     .await;
 
                 match funding_transition {
-                    Ok(transition) => state_transitions.push(transition),
+                    Ok(transition) => {
+                        current_addresses_with_balance
+                            .register_new_address(address, actual_funded_amount);
+                        state_transitions.push(transition);
+                    }
                     Err(e) => {
                         tracing::error!(
                             "Error creating address funding transition for start_address: {:?}",
@@ -1478,8 +1500,17 @@ impl Strategy {
                             .collect();
 
                         for random_identity in random_identities {
+                            let min_per_input = platform_version
+                                .dpp
+                                .state_transitions
+                                .address_funds
+                                .min_input_amount;
                             let Some(inputs) = current_addresses_with_balance
-                                .take_random_amounts_with_range(amount_range, rng)
+                                .take_random_amounts_with_range_and_min_per_input(
+                                    amount_range,
+                                    min_per_input,
+                                    rng,
+                                )
                             else {
                                 // no funds left
                                 break;
@@ -1878,18 +1909,40 @@ impl Strategy {
                                         "Expected to find sender identity in hardcoded start identities",
                                     );
 
-                                let (state_transition, _recipient_addresses) =
-                                    crate::transitions::create_identity_credit_transfer_to_addresses_transition(
+                                // Use the pre-specified outputs from transfer_info so
+                                // the caller's recipient addresses/amounts are honored
+                                // instead of being replaced with random ones.
+                                // The helper returns `None` if any output is below the
+                                // per-output minimum; in that case skip without staging
+                                // any balances to avoid phantom in-block state.
+                                if let Some(state_transition) =
+                                    crate::transitions::create_identity_credit_transfer_to_addresses_transition_with_outputs(
                                         sender,
                                         identity_nonce_counter,
-                                        current_addresses_with_balance,
                                         signer,
-                                        transfer_info.amount,
-                                        transfer_info.outputs.len(),
-                                        rng,
+                                        transfer_info.outputs.clone(),
                                         platform_version,
-                                    ).await;
-                                operations.push(state_transition);
+                                    ).await
+                                {
+                                    // Stage recipient balances now that the transition
+                                    // was constructed successfully. Mirrors the
+                                    // random-output branch below: existing addresses
+                                    // get their balance increased, new ones registered.
+                                    for (recipient_address, amount) in &transfer_info.outputs {
+                                        if let Some((nonce, balance)) = current_addresses_with_balance
+                                            .get_effective(recipient_address)
+                                        {
+                                            let new_entry = (*nonce, balance + amount);
+                                            current_addresses_with_balance
+                                                .addresses_in_block_with_new_balance
+                                                .insert(*recipient_address, new_entry);
+                                        } else {
+                                            current_addresses_with_balance
+                                                .register_new_address(*recipient_address, *amount);
+                                        }
+                                    }
+                                    operations.push(state_transition);
+                                }
                             } else {
                                 // Handle the case where no specific sender is provided
                                 let identities_count = current_identities.len();
@@ -1904,9 +1957,24 @@ impl Strategy {
                                 // Get random amount within range
                                 let amount = rng.gen_range(amount_range.clone());
 
-                                // Get random output count within range
+                                let min_per_output = platform_version
+                                    .dpp
+                                    .state_transitions
+                                    .address_funds
+                                    .min_output_amount;
+
+                                // Skip if the chosen amount cannot fund even a single
+                                // valid output (constructor would otherwise reject it).
+                                if amount < min_per_output {
+                                    continue;
+                                }
+
+                                // Get random output count within range, capped so each
+                                // output is at least min_output_amount.
+                                let max_outputs_by_amount = (amount / min_per_output) as usize;
                                 let output_count =
-                                    rng.gen_range(output_count_range.clone()).max(1) as usize;
+                                    (rng.gen_range(output_count_range.clone()).max(1) as usize)
+                                        .min(max_outputs_by_amount);
 
                                 // Calculate amount per output
                                 let amount_per_output = amount / output_count as u64;
@@ -1935,18 +2003,20 @@ impl Strategy {
                                             rng.gen_range(0..available_existing_addresses.len());
                                         let existing_address =
                                             available_existing_addresses.swap_remove(idx);
-                                        // Update the balance for this existing address
+                                        // Update the balance for this existing address.
+                                        // Use the effective (committed + same-block staged)
+                                        // balance so subsequent recipients within the same
+                                        // block accumulate on top of prior deltas instead
+                                        // of overwriting them. Mirrors the explicit-output
+                                        // branch above.
                                         if let Some((nonce, balance)) =
                                             current_addresses_with_balance
-                                                .addresses_with_balance
-                                                .get(&existing_address)
+                                                .get_effective(&existing_address)
                                         {
+                                            let new_entry = (*nonce, balance + amount_per_output);
                                             current_addresses_with_balance
                                                 .addresses_in_block_with_new_balance
-                                                .insert(
-                                                    existing_address,
-                                                    (*nonce, balance + amount_per_output),
-                                                );
+                                                .insert(existing_address, new_entry);
                                         }
                                         existing_address
                                     } else {
@@ -1960,15 +2030,17 @@ impl Strategy {
                                     recipient_addresses.insert(address, amount_per_output);
                                 }
 
-                                let state_transition =
+                                if let Some(state_transition) =
                                     crate::transitions::create_identity_credit_transfer_to_addresses_transition_with_outputs(
                                         sender,
                                         identity_nonce_counter,
                                         signer,
                                         recipient_addresses,
                                         platform_version,
-                                    ).await;
-                                operations.push(state_transition);
+                                    ).await
+                                {
+                                    operations.push(state_transition);
+                                }
                             }
                         }
                     }
@@ -1982,8 +2054,25 @@ impl Strategy {
                         extra_keys,
                     ) => {
                         for _i in 0..count {
+                            let min_per_input = platform_version
+                                .dpp
+                                .state_transitions
+                                .address_funds
+                                .min_input_amount;
+                            // Snapshot the staged map BEFORE picking inputs so any
+                            // rollback restores the exact pre-staging state. Removing
+                            // only `inputs.keys()` would be unsafe if the picker ever
+                            // reuses same-block addresses or if other paths stage
+                            // entries we shouldn't drop.
+                            let staged_snapshot_before_inputs = current_addresses_with_balance
+                                .addresses_in_block_with_new_balance
+                                .clone();
                             let Some(inputs) = current_addresses_with_balance
-                                .take_random_amounts_with_range(amount_range, rng)
+                                .take_random_amounts_with_range_and_min_per_input(
+                                    amount_range,
+                                    min_per_input,
+                                    rng,
+                                )
                             else {
                                 // no funds left
                                 break;
@@ -2100,9 +2189,32 @@ impl Strategy {
                                 }
                             }
 
+                            // Sample the optional output amount and validate it against
+                            // min_output_amount before registering any output address. The
+                            // constructor rejects optional outputs below this minimum, so
+                            // skip the candidate (rolling back staged input balances) instead
+                            // of panicking on the expect below.
+                            let sampled_output_amount =
+                                if let Some(output_range) = maybe_output_amount.as_ref() {
+                                    let amount = rng.gen_range(output_range.clone());
+                                    let min_per_output = platform_version
+                                        .dpp
+                                        .state_transitions
+                                        .address_funds
+                                        .min_output_amount;
+                                    if amount < min_per_output {
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance =
+                                            staged_snapshot_before_inputs;
+                                        continue;
+                                    }
+                                    Some(amount)
+                                } else {
+                                    None
+                                };
+
                             // Create output if maybe_output_amount is provided
-                            let output = maybe_output_amount.as_ref().map(|output_range| {
-                                let output_amount = rng.gen_range(output_range.clone());
+                            let output = sampled_output_amount.map(|output_amount| {
                                 let output_address = signer.add_random_address_key(rng);
                                 // Register the output address with balance minus fee deduction
                                 let actual_output_amount =
@@ -2179,6 +2291,13 @@ impl Strategy {
                             // Register with the actual amount after fee deduction (ReduceOutput(0))
                             let address = signer.add_random_address_key(rng);
                             let actual_funded_amount = funded_amount.saturating_sub(estimated_fee);
+                            // Snapshot staged balances so we can roll back if the
+                            // constructor rejects the transition. Otherwise the
+                            // freshly registered address would persist as a phantom
+                            // staged balance that no on-chain state will ever match.
+                            let staged_snapshot = current_addresses_with_balance
+                                .addresses_in_block_with_new_balance
+                                .clone();
                             current_addresses_with_balance
                                 .register_new_address(address, actual_funded_amount);
 
@@ -2204,6 +2323,10 @@ impl Strategy {
                                         "Error creating address funding transition: {:?}",
                                         e
                                     );
+                                    // Restore staged balances so the failed attempt
+                                    // does not leave a phantom entry behind.
+                                    current_addresses_with_balance
+                                        .addresses_in_block_with_new_balance = staged_snapshot;
                                     continue;
                                 }
                             }
@@ -2218,8 +2341,25 @@ impl Strategy {
                         fee_strategy,
                     ) => {
                         for _i in 0..count {
+                            let min_per_input = platform_version
+                                .dpp
+                                .state_transitions
+                                .address_funds
+                                .min_input_amount;
+                            // Snapshot the staged map BEFORE picking inputs so any
+                            // rollback restores the exact pre-staging state. Removing
+                            // only `inputs.keys()` would be unsafe if the picker ever
+                            // reuses same-block addresses or if other paths stage
+                            // entries we shouldn't drop.
+                            let staged_snapshot_before_inputs = current_addresses_with_balance
+                                .addresses_in_block_with_new_balance
+                                .clone();
                             let Some(inputs) = current_addresses_with_balance
-                                .take_random_amounts_with_range(amount_range, rng)
+                                .take_random_amounts_with_range_and_min_per_input(
+                                    amount_range,
+                                    min_per_input,
+                                    rng,
+                                )
                             else {
                                 eprintln!("no funds left on block {}", block_info.height);
                                 // no funds left
@@ -2234,9 +2374,28 @@ impl Strategy {
                             let total_input: Credits =
                                 inputs.values().map(|(_, credits)| credits).sum();
 
-                            // Generate random number of outputs within the specified range
-                            let output_count =
-                                rng.gen_range(output_count_range.clone()).max(1) as usize;
+                            let min_per_output = platform_version
+                                .dpp
+                                .state_transitions
+                                .address_funds
+                                .min_output_amount;
+
+                            // If total_input is below min_output_amount, we cannot build
+                            // even a single valid output. Roll back staged input balances
+                            // and skip this candidate instead of producing an invalid one.
+                            if total_input < min_per_output {
+                                current_addresses_with_balance
+                                    .addresses_in_block_with_new_balance =
+                                    staged_snapshot_before_inputs;
+                                continue;
+                            }
+
+                            // Generate random number of outputs within the specified range,
+                            // capped so each output is >= min_output_amount.
+                            let max_outputs_by_amount = (total_input / min_per_output) as usize;
+                            let output_count = (rng.gen_range(output_count_range.clone()).max(1)
+                                as usize)
+                                .min(max_outputs_by_amount);
 
                             // Calculate estimated fee for local balance tracking
                             // The transition must have inputs == outputs (balanced), but the chain
@@ -2272,12 +2431,20 @@ impl Strategy {
                                     break;
                                 }
                                 match step {
-                                    AddressFundsFeeStrategyStep::ReduceOutput(_index) => {
-                                        // For ReduceOutput, the output amount must cover the fee
-                                        // Since we're distributing total_input evenly, check if
-                                        // the output amount is enough
-                                        let output_amount =
-                                            total_input / output_count.max(1) as Credits;
+                                    AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                                        // For ReduceOutput, the output amount at the targeted
+                                        // index must cover the fee. Outputs are distributed
+                                        // evenly with the remainder going to output 0, so the
+                                        // gross amount at index 0 differs from the rest when
+                                        // total_input is not evenly divisible.
+                                        let output_count_credits = output_count.max(1) as Credits;
+                                        let amount_per_output = total_input / output_count_credits;
+                                        let remainder = total_input % output_count_credits;
+                                        let output_amount = if *index == 0 {
+                                            amount_per_output + remainder
+                                        } else {
+                                            amount_per_output
+                                        };
                                         if output_amount >= remaining_fee_to_check {
                                             remaining_fee_to_check = 0;
                                             fee_can_be_covered = true;
@@ -2450,17 +2617,16 @@ impl Strategy {
                                     transition_amount.saturating_sub(fee_deduction);
 
                                 if existing_output_addresses.contains(address) {
-                                    // Update balance for existing address
-                                    if let Some((nonce, balance)) = current_addresses_with_balance
-                                        .addresses_with_balance
-                                        .get(address)
+                                    // Update balance for existing address using the
+                                    // effective state so any prior same-block delta
+                                    // (staged balance) is preserved before crediting.
+                                    if let Some((nonce, balance)) =
+                                        current_addresses_with_balance.get_effective(address)
                                     {
+                                        let new_entry = (*nonce, balance + actual_credited_amount);
                                         current_addresses_with_balance
                                             .addresses_in_block_with_new_balance
-                                            .insert(
-                                                *address,
-                                                (*nonce, balance + actual_credited_amount),
-                                            );
+                                            .insert(*address, new_entry);
                                     }
                                 } else {
                                     // New address - track with fee-adjusted amount
@@ -2517,8 +2683,25 @@ impl Strategy {
                         fee_strategy,
                     ) => {
                         for _i in 0..count {
+                            let min_per_input = platform_version
+                                .dpp
+                                .state_transitions
+                                .address_funds
+                                .min_input_amount;
+                            // Snapshot the staged map BEFORE picking inputs so any
+                            // rollback restores the exact pre-staging state. Removing
+                            // only `inputs.keys()` would be unsafe if the picker ever
+                            // reuses same-block addresses or if other paths stage
+                            // entries we shouldn't drop.
+                            let staged_snapshot_before_inputs = current_addresses_with_balance
+                                .addresses_in_block_with_new_balance
+                                .clone();
                             let Some(inputs) = current_addresses_with_balance
-                                .take_random_amounts_with_range(amount_range, rng)
+                                .take_random_amounts_with_range_and_min_per_input(
+                                    amount_range,
+                                    min_per_input,
+                                    rng,
+                                )
                             else {
                                 // no funds left
                                 break;
@@ -2596,9 +2779,32 @@ impl Strategy {
                                 }
                             }
 
+                            // Sample the optional change output amount and validate it
+                            // against min_output_amount before staging an output address.
+                            // The constructor rejects optional outputs below this minimum,
+                            // so skip the candidate (rolling back staged input balances)
+                            // instead of panicking on the expect below.
+                            let sampled_output_amount =
+                                if let Some(output_amount_range) = maybe_output_range {
+                                    let amount = rng.gen_range(output_amount_range.clone());
+                                    let min_per_output = platform_version
+                                        .dpp
+                                        .state_transitions
+                                        .address_funds
+                                        .min_output_amount;
+                                    if amount < min_per_output {
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance =
+                                            staged_snapshot_before_inputs;
+                                        continue;
+                                    }
+                                    Some(amount)
+                                } else {
+                                    None
+                                };
+
                             // Determine if we have an output (change address) and its amount
-                            let output = if let Some(output_amount_range) = maybe_output_range {
-                                let output_amount = rng.gen_range(output_amount_range.clone());
+                            let output = sampled_output_amount.map(|output_amount| {
                                 let output_address = signer.add_random_address_key(rng);
                                 // Register with actual amount after fee deduction
                                 let actual_output_amount =
@@ -2606,10 +2812,8 @@ impl Strategy {
                                 current_addresses_with_balance
                                     .addresses_in_block_with_new_balance
                                     .insert(output_address, (0, actual_output_amount));
-                                Some((output_address, output_amount))
-                            } else {
-                                None
-                            };
+                                (output_address, output_amount)
+                            });
 
                             // Generate a random output script for the withdrawal
                             let output_script = if rng.gen_bool(0.5) {

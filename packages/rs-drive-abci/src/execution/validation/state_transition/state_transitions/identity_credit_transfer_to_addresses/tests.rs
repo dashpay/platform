@@ -14,10 +14,11 @@ mod tests {
     use dpp::dash_to_credits;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::signer::Signer;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
     use dpp::prelude::IdentityNonce;
-    use dpp::serialization::PlatformSerializable;
+    use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::identity_credit_transfer_to_addresses_transition::methods::IdentityCreditTransferToAddressesTransitionMethodsV0;
     use dpp::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
     use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
@@ -4980,8 +4981,31 @@ mod tests {
             recipient_addresses.insert(create_platform_address(1), min_output);
 
             // Create the transition once - we'll reuse it for both runs
-            let transition =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1).await;
+            let mut transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
+                identity_id: identity.id(),
+                recipient_addresses: recipient_addresses.clone(),
+                nonce: 1,
+                user_fee_increase: 0,
+                signature_public_key_id: 1,
+                signature: BinaryData::new(vec![]),
+            };
+            let signable_bytes: Vec<u8> = StateTransition::from(
+                IdentityCreditTransferToAddressesTransition::V0(transition_v0.clone()),
+            )
+            .signable_bytes()
+            .expect("should get signable bytes");
+            let transfer_key = identity
+                .public_keys()
+                .get(&1)
+                .expect("transfer key should exist");
+            transition_v0.signature = signer
+                .sign(transfer_key, &signable_bytes)
+                .await
+                .expect("should sign");
+
+            let transition = StateTransition::from(
+                IdentityCreditTransferToAddressesTransition::V0(transition_v0),
+            );
             let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
 
             // First run in a transaction to measure actual fee (then rollback)
@@ -5124,9 +5148,33 @@ mod tests {
             let total_outputs: u64 = recipient_addresses.values().sum();
 
             // Create the transition once - we'll reuse it for both runs
-            let transition =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1).await;
-            let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
+            let mut transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
+                identity_id: identity.id(),
+                recipient_addresses: recipient_addresses.clone(),
+                nonce: 1,
+                user_fee_increase: 0,
+                signature_public_key_id: 1,
+                signature: BinaryData::new(vec![]),
+            };
+            let signable_bytes = StateTransition::from(
+                IdentityCreditTransferToAddressesTransition::V0(transition_v0.clone()),
+            )
+            .signable_bytes()
+            .expect("should get signable bytes");
+            let transfer_key = identity
+                .public_keys()
+                .get(&1)
+                .expect("transfer key should exist");
+            transition_v0.signature = signer
+                .sign(transfer_key, &signable_bytes)
+                .await
+                .expect("should sign");
+
+            let transition_bytes = StateTransition::from(
+                IdentityCreditTransferToAddressesTransition::V0(transition_v0),
+            )
+            .serialize_to_bytes()
+            .expect("should serialize");
 
             // First run in a transaction to measure actual fee (then rollback)
             let platform_state = platform.state.load();
@@ -5251,9 +5299,32 @@ mod tests {
                 recipient_addresses.insert(PlatformAddress::P2pkh(hash), min_output);
             }
 
-            let transition =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1).await;
-            let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
+            let mut transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
+                identity_id: identity.id(),
+                recipient_addresses: recipient_addresses.clone(),
+                nonce: 1,
+                user_fee_increase: 0,
+                signature_public_key_id: 1,
+                signature: BinaryData::new(vec![]),
+            };
+            let signable_bytes = StateTransition::from(
+                IdentityCreditTransferToAddressesTransition::V0(transition_v0.clone()),
+            )
+            .signable_bytes()
+            .expect("should get signable bytes");
+            let transfer_key = identity
+                .public_keys()
+                .get(&1)
+                .expect("transfer key should exist");
+            transition_v0.signature = signer
+                .sign(transfer_key, &signable_bytes)
+                .await
+                .expect("should sign");
+            let transition_bytes = StateTransition::from(
+                IdentityCreditTransferToAddressesTransition::V0(transition_v0),
+            )
+            .serialize_to_bytes()
+            .expect("should serialize");
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
