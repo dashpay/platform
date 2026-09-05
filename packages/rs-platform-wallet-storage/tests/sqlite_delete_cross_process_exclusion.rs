@@ -8,7 +8,7 @@
 mod common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
-use rusqlite::TransactionBehavior;
+use rusqlite::{OptionalExtension as _, TransactionBehavior};
 
 /// When a peer holds EXCLUSIVE on the destination, `delete_wallet`
 /// must block / fail on busy rather than proceeding through an
@@ -19,10 +19,9 @@ fn delete_wallet_blocks_when_peer_holds_exclusive() {
     let w = wid(0x77);
     ensure_wallet_meta(&persister, &w);
 
-    let backup_dir = tempfile::tempdir().expect("backup dir");
-    // Wire the persister with auto-backup so delete_wallet exercises
-    // the backup + cascade path (the canonical path under test).
-    // Re-open persister using a config that knows about the dir.
+    let backup_dir = common::secure_tempdir().expect("backup dir");
+    // Re-open with auto-backup wired so delete_wallet exercises the
+    // backup + cascade path (the canonical path under test).
     drop(persister);
     let cfg = platform_wallet_storage::SqlitePersisterConfig::new(&db_path)
         .with_auto_backup_dir(Some(backup_dir.path().to_path_buf()));
@@ -78,7 +77,7 @@ fn delete_wallet_blocks_when_peer_holds_exclusive() {
 #[test]
 fn delete_wallet_single_process_still_works() {
     let (persister, _tmp, db_path) = fresh_persister();
-    let backup_dir = tempfile::tempdir().expect("backup dir");
+    let backup_dir = common::secure_tempdir().expect("backup dir");
     drop(persister);
     let cfg = platform_wallet_storage::SqlitePersisterConfig::new(&db_path)
         .with_auto_backup_dir(Some(backup_dir.path().to_path_buf()));
@@ -89,14 +88,15 @@ fn delete_wallet_single_process_still_works() {
 
     let report = persister.delete_wallet(w).expect("delete succeeds");
     assert!(report.backup_path.is_some(), "auto-backup should fire");
-    // wallet_metadata row should be gone.
+    // wallets row should be gone.
     let conn = persister.lock_conn_for_test();
     let row: Option<i64> = conn
         .query_row(
-            "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT 1 FROM wallets WHERE wallet_id = ?1",
             rusqlite::params![w.as_slice()],
             |r| r.get(0),
         )
-        .ok();
-    assert!(row.is_none(), "wallet_metadata row must be gone");
+        .optional()
+        .expect("wallets query must not fail — only absence is expected");
+    assert!(row.is_none(), "wallets row must be gone");
 }

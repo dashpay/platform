@@ -66,7 +66,7 @@ pub fn apply(
 }
 
 /// Single source of truth for the `invitations.status` TEXT-column domain.
-/// The `CHECK (status IN …)` in `migrations/V003__invitations.rs` must list
+/// The `CHECK (status IN …)` in `migrations/V004__invitations.rs` must list
 /// exactly these values.
 pub(crate) fn status_str(s: &InvitationStatus) -> &'static str {
     match s {
@@ -153,9 +153,9 @@ mod tests {
         let wallet_id: WalletId = [0x11; 32];
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
-        // The FK requires the wallet_metadata row to exist.
+        // The FK requires the wallets row to exist.
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
             params![&wallet_id[..]],
         )
         .unwrap();

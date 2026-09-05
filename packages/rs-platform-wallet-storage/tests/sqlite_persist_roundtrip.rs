@@ -1,17 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Per-sub-changeset round-trip tests.
-//!
-//! Now that `platform-wallet`'s `serde` feature is active, every
-//! changeset blob is a single bincode-serde payload — these tests
-//! store a non-trivial entry, reopen the persister, decode the blob,
-//! and assert structural equality (where the type allows) or
-//! field-level equality (where it doesn't, e.g. `TransactionRecord`
-//! which is `Debug + Clone` only upstream).
-//!
-//! TC-001 (CoreChangeSet records) is exercised through the trait
-//! method in `sqlite_buffer_semantics.rs::tc001_get_core_tx_record_roundtrip`.
-//! TC-015 (multi-wallet coexistence) lives there too.
+//! Per-sub-changeset round-trip tests: store a non-trivial entry, reopen
+//! the persister, decode the bincode-serde blob, and assert structural
+//! equality (or field-level equality where the type isn't `PartialEq`).
+//! CoreChangeSet records and multi-wallet coexistence are covered in
+//! `sqlite_buffer_semantics.rs`.
 
 mod common;
 
@@ -74,7 +67,7 @@ fn tc013_wallet_metadata_roundtrip() {
     let conn = persister.lock_conn_for_test();
     let (network, birth_height): (String, i64) = conn
         .query_row(
-            "SELECT network, birth_height FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT network, birth_height FROM wallets WHERE wallet_id = ?1",
             rusqlite::params![w.as_slice()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -87,7 +80,7 @@ fn tc013_wallet_metadata_roundtrip() {
 /// `ConfigInvalid` error and the DB is not created.
 #[test]
 fn tc_code_029_1_journal_mode_memory_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.journal_mode = JournalMode::Memory;
@@ -108,7 +101,7 @@ fn tc_code_029_1_journal_mode_memory_rejected() {
 /// error and the DB is not created.
 #[test]
 fn tc_code_029_2_journal_mode_off_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.journal_mode = JournalMode::Off;
@@ -130,7 +123,7 @@ fn tc_code_029_2_journal_mode_off_rejected() {
 #[test]
 #[tracing_test::traced_test]
 fn tc_code_029_3_busy_timeout_zero_warns() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.busy_timeout = std::time::Duration::ZERO;
@@ -145,7 +138,7 @@ fn tc_code_029_3_busy_timeout_zero_warns() {
 /// TC-079: synchronous=Off is rejected at open with a typed error.
 #[test]
 fn tc079_synchronous_off_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.synchronous = Synchronous::Off;
@@ -248,8 +241,8 @@ fn tc007_identity_key_entry_roundtrip() {
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let conn = p2.lock_conn_for_test();
-    // identity_keys is keyed by (identity_id, key_id); the wallet_id
-    // column is not part of the schema.
+    // `(identity_id, key_id)` IS the primary key, so this selects the
+    // one row outright.
     let blob_bytes: Vec<u8> = conn
         .query_row(
             "SELECT public_key_blob FROM identity_keys WHERE identity_id = ?1 AND key_id = ?2",
@@ -260,12 +253,9 @@ fn tc007_identity_key_entry_roundtrip() {
     let decoded =
         platform_wallet_storage::sqlite::schema::identity_keys::decode_entry(&blob_bytes).unwrap();
     assert_eq!(decoded, entry);
-    // The load-bearing NFR-10 check is `tests/secrets_scan.rs`,
-    // which greps every file under `src/sqlite/schema/` and
-    // `migrations/` for forbidden secret-material substrings —
-    // bincode wire bytes carry no field names, so any runtime
-    // substring scan against the blob would be a false-confidence
-    // smoke test.
+    // No runtime substring scan on the blob: bincode wire bytes carry no
+    // field names, so it would be false confidence. The real secret-leak
+    // guard is the source grep in `tests/secrets_scan.rs`.
     drop(tmp);
 }
 
@@ -441,6 +431,7 @@ fn tc010_asset_lock_roundtrip() {
     let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
         &p2.lock_conn_for_test(),
         &w,
+        &platform_wallet_storage::LoadCtx::strict(),
     )
     .unwrap();
     let by_outpoint = &bucketed[&5];
@@ -509,6 +500,7 @@ fn tc010b_recovered_from_chain_lock_roundtrip() {
     let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
         &p2.lock_conn_for_test(),
         &w,
+        &platform_wallet_storage::LoadCtx::strict(),
     )
     .unwrap();
     let tracked = &bucketed[&0][&outpoint];
@@ -633,6 +625,7 @@ fn tc010c_stale_recovery_snapshot_cannot_regress_consumed_row() {
     let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
         &p2.lock_conn_for_test(),
         &w,
+        &platform_wallet_storage::LoadCtx::strict(),
     )
     .unwrap();
     assert_eq!(

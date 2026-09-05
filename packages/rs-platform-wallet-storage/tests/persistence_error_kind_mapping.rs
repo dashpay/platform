@@ -116,6 +116,39 @@ fn tc_code_004_b_constraint_variants_map_to_constraint_kind() {
     }
 }
 
+/// Identity-slot uniqueness is enforced in Rust rather than by a SQL
+/// constraint, so its variants have to claim the `Constraint` kind
+/// explicitly — they are caller-data violations like any FK breach.
+#[test]
+fn tc_code_004_b_identity_index_variants_map_to_constraint_kind() {
+    let cases: Vec<(&str, WalletStorageError)> = vec![
+        (
+            "IdentityIndexConflict",
+            WalletStorageError::IdentityIndexConflict {
+                wallet_id: [0xAA; 32],
+                identity_index: 1,
+                existing: [0xBB; 32],
+                incoming: [0xCC; 32],
+            },
+        ),
+        (
+            "WalletlessIdentityIndex",
+            WalletStorageError::WalletlessIdentityIndex {
+                identity_id: [0xDD; 32],
+                identity_index: 2,
+            },
+        ),
+    ];
+    for (label, err) in cases {
+        assert!(!err.is_transient(), "{label}: must not be transient");
+        assert_eq!(
+            kind_of(err),
+            PersistenceErrorKind::Constraint,
+            "{label}: trait-boundary kind must be Constraint"
+        );
+    }
+}
+
 /// Every remaining fatal-but-not-constraint variant maps to `Fatal`.
 /// Spot-check enough variants to lock the table; the
 /// exhaustiveness is guarded by the wildcard-free invariant test.
@@ -158,6 +191,10 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             },
         ),
         (
+            "InsecureParentDir",
+            WalletStorageError::InsecureParentDir { mode: 0o777 },
+        ),
+        (
             "WalletNotFound",
             WalletStorageError::WalletNotFound {
                 wallet_id: [0xCD; 32],
@@ -176,7 +213,10 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
         ),
         (
             "InvalidWalletIdLength",
-            WalletStorageError::InvalidWalletIdLength { actual: 12 },
+            WalletStorageError::InvalidWalletIdLength {
+                column: "wallets.wallet_id",
+                actual: 12,
+            },
         ),
         (
             "ConfigInvalid",
@@ -204,6 +244,14 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             },
         ),
         (
+            "AssetLockStatusMismatch",
+            WalletStorageError::AssetLockStatusMismatch {
+                outpoint: "txid:0".into(),
+                typed_status: "built".into(),
+                blob_status: "consumed".into(),
+            },
+        ),
+        (
             "IntegerOverflow",
             WalletStorageError::IntegerOverflow {
                 field: "x",
@@ -215,6 +263,44 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             "BackupDestinationExists",
             WalletStorageError::BackupDestinationExists {
                 path: PathBuf::from("/tmp/x"),
+            },
+        ),
+        (
+            "ReadOnlyRecoveryMode",
+            WalletStorageError::ReadOnlyRecoveryMode { operation: "store" },
+        ),
+        (
+            "RehydrationEnsureDerivedFailed",
+            WalletStorageError::RehydrationEnsureDerivedFailed { index: 42 },
+        ),
+        (
+            "RehydrationGapLimitRefillTooLarge",
+            WalletStorageError::RehydrationGapLimitRefillTooLarge {
+                refill_target: 300_000,
+                already_generated: 20,
+                implied: 299_980,
+                cap: 250_000,
+            },
+        ),
+        (
+            "RehydrationGapLimitFailed",
+            WalletStorageError::RehydrationGapLimitFailed {
+                source: key_wallet::error::Error::WatchOnly,
+            },
+        ),
+        (
+            "UsedAddressOwnerConflict",
+            WalletStorageError::UsedAddressOwnerConflict {
+                address: "yaddr".into(),
+                pool_owner: "Standard[0]".into(),
+                utxo_owner: "CoinJoin[0]".into(),
+            },
+        ),
+        (
+            "UnownedIdentityHasRegistrationIndex",
+            WalletStorageError::UnownedIdentityHasRegistrationIndex {
+                identity_id: [0xEF; 32],
+                identity_index: 3,
             },
         ),
     ];

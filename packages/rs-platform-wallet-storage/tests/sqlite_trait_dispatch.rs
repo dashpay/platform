@@ -1,9 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `delete_wallet` and `commit_writes` are inherent `SqlitePersister`
-//! methods (not trait methods), returning the storage crate's
-//! `DeleteWalletReport` / `CommitReport`. The persister is still usable
-//! behind `Arc<dyn PlatformWalletPersistence>` for `store`/`flush`/`load`.
+//! Trait dispatch for the SQLite persister and default-safe backend methods.
 
 mod common;
 

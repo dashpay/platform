@@ -14,6 +14,7 @@ pub mod error;
 #[cfg(feature = "kv")]
 pub mod kv;
 pub mod persister;
+pub mod rehydrate;
 pub mod reports;
 pub mod util;
 
@@ -30,9 +31,15 @@ pub mod schema;
 #[cfg(not(any(test, feature = "__test-helpers")))]
 pub(crate) mod schema;
 
+// `LoadCtx` is the policy input every core-state reader takes, and
+// `rehydrate::apply_persisted_core_state` — the crate's public rehydration
+// entry point — takes one too, so it is public unconditionally.
+pub mod load_ctx;
+
 pub use config::{
-    default_auto_backup_dir, FlushMode, JournalMode, SqlitePersisterConfig, Synchronous,
+    default_auto_backup_dir, FlushMode, JournalMode, LoadPolicy, SqlitePersisterConfig, Synchronous,
 };
 pub use error::{AutoBackupOperation, WalletStorageError};
-pub use persister::{PruneReport, RetentionPolicy, SqlitePersister};
+pub use load_ctx::{LoadCtx, LoadDegradation, LoadSite};
+pub use persister::{prune_backups_in, PruneReport, RetentionPolicy, SqlitePersister};
 pub use reports::{CommitReport, DeleteWalletReport};

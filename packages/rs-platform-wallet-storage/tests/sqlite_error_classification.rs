@@ -1,20 +1,17 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `WalletStorageError::is_transient` + `error_kind_str` exhaustiveness
-//! check via a wildcard-free `match`, plus the boundary mapping of
-//! `FlushRetryable` into `PersistenceError::Backend`.
+//! `WalletStorageError::is_transient` + `error_kind_str` exhaustiveness,
+//! plus the boundary mapping of `FlushRetryable` into
+//! `PersistenceError::Backend`.
 //!
-//! The check is structured as a `match` over `&WalletStorageError`
-//! that covers every variant explicitly. There is NO `_` arm — when a
-//! future variant lands on `WalletStorageError`, this file refuses to
-//! compile until the author adds a classification + tag here too.
-//! Combined with the wildcard-free matches in
-//! `error::is_transient` / `error::error_kind_str` and the workspace
-//! ban on `#[non_exhaustive]` for this enum, the policy is enforced
-//! at the type system level end-to-end.
+//! The check is a wildcard-free `match` with one arm per variant (no
+//! `_`), so a new `WalletStorageError` variant fails to compile here
+//! until it is classified — mirroring the matches in `error::is_transient`
+//! / `error::error_kind_str`.
 
 use std::path::PathBuf;
 
+use dashcore::hashes::Hash;
 use platform_wallet::changeset::PersistenceError;
 use platform_wallet_storage::sqlite::error::AutoBackupOperation;
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
@@ -81,6 +78,62 @@ fn sqlite_oom() -> WalletStorageError {
     ))
 }
 
+/// A blocked write is only actionable if the message names the way out of
+/// recovery mode; both stores refuse writes and both must say it.
+#[test]
+fn read_only_recovery_display_names_the_way_out() {
+    let persister = WalletStorageError::ReadOnlyRecoveryMode { operation: "store" }.to_string();
+    assert!(persister.contains("`store`"), "{persister}");
+    assert!(persister.contains("strict load policy"), "{persister}");
+
+    let kv =
+        platform_wallet_storage::KvError::ReadOnlyRecoveryMode { operation: "put" }.to_string();
+    assert!(kv.contains("`put`"), "{kv}");
+    assert!(kv.contains("strict load policy"), "{kv}");
+}
+
+/// A derivation failure is read by whoever has to rescue the wallet, so
+/// each variant's `Display` must state the consequence — an address that
+/// can be handed out again — and not just the step that failed.
+#[test]
+fn rehydration_derivation_display_states_the_consequence() {
+    let targeted = WalletStorageError::RehydrationEnsureDerivedFailed { index: 45 }.to_string();
+    assert!(targeted.contains("index 45"), "{targeted}");
+    assert!(targeted.contains("fresh receive address"), "{targeted}");
+
+    let over_cap = WalletStorageError::RehydrationGapLimitRefillTooLarge {
+        refill_target: 300_000,
+        already_generated: 21,
+        implied: 299_980,
+        cap: 250_000,
+    }
+    .to_string();
+    assert!(over_cap.contains("299980"), "{over_cap}");
+    assert!(over_cap.contains("250000"), "{over_cap}");
+    assert!(over_cap.contains("handed out again as fresh"), "{over_cap}");
+
+    let refused = WalletStorageError::RehydrationGapLimitFailed {
+        source: key_wallet::error::Error::WatchOnly,
+    }
+    .to_string();
+    assert!(refused.contains("fresh receive address"), "{refused}");
+}
+
+#[test]
+fn core_transaction_mismatch_display_uses_domain_height_labels() {
+    let confirmed = WalletStorageError::CoreTransactionEntryMismatch {
+        typed_txid: "11".repeat(32),
+        blob_txid: "22".repeat(32),
+        typed_height: Some(200),
+        blob_height: None,
+    }
+    .to_string();
+    assert!(confirmed.contains("typed height=200"));
+    assert!(confirmed.contains("blob height=unconfirmed"));
+    assert!(!confirmed.contains("Some("));
+    assert!(!confirmed.contains("None"));
+}
+
 /// One representative sample per `WalletStorageError` variant.
 ///
 /// The samples are passed through a wildcard-free `match` below; the
@@ -96,15 +149,9 @@ fn samples() -> Vec<WalletStorageError> {
         sqlite_disk_full(),
         sqlite_io_failure(),
         sqlite_oom(),
-        // Migration uses an internal refinery error — we cannot easily
-        // synthesise one without a full runner. The `Migration(_)` arm
-        // in the match below uses a lazily-generated value via
-        // `unimplemented_variant_marker` since the test body never
-        // reads the inner error. We construct a different concrete
-        // variant whose match arm is `Migration` — see comment in arm.
-        // Skipped from samples because refinery::Error has no public
-        // `From` we can lean on; the arm is still exhaustively
-        // covered by the match itself.
+        // Migration wraps a refinery error with no public constructor, so
+        // it can't be synthesised here. It's omitted from the samples but
+        // the `Migration(_)` arm below still keeps the match exhaustive.
         WalletStorageError::IntegrityCheckFailed {
             report: "rows missing".into(),
         },
@@ -126,6 +173,7 @@ fn samples() -> Vec<WalletStorageError> {
             dir: PathBuf::from("/nope"),
             source: std::io::Error::other("nope"),
         },
+        WalletStorageError::InsecureParentDir { mode: 0o777 },
         WalletStorageError::WalletNotFound {
             wallet_id: [0u8; 32],
         },
@@ -134,31 +182,89 @@ fn samples() -> Vec<WalletStorageError> {
             found: [2u8; 32],
         },
         WalletStorageError::IdentityKeyEntryMismatch,
+        WalletStorageError::IdentityKeyWalletMismatch {
+            wallet_id: [3u8; 32],
+            identity_id: [4u8; 32],
+            source: Box::new(SqlErr::SqliteFailure(
+                rusqlite::ffi::Error {
+                    code: ErrorCode::ConstraintViolation,
+                    extended_code: 787,
+                },
+                Some("FOREIGN KEY constraint failed".into()),
+            )),
+        },
         WalletStorageError::AssetLockEntryMismatch {
             typed_outpoint: "txid:0".into(),
             blob_outpoint: "txid:1".into(),
             typed_account_index: 5,
             blob_account_index: 9,
         },
+        WalletStorageError::AssetLockStatusMismatch {
+            outpoint: "txid:0".into(),
+            typed_status: "built".into(),
+            blob_status: "consumed".into(),
+        },
+        WalletStorageError::CoreTransactionEntryMismatch {
+            typed_txid: "11".repeat(32),
+            blob_txid: "22".repeat(32),
+            typed_height: Some(100),
+            blob_height: Some(101),
+        },
         WalletStorageError::BlobTooLarge {
             len_bytes: 32 * 1024 * 1024,
             limit_bytes: 16 * 1024 * 1024,
         },
         WalletStorageError::ForeignKeysNotEnforced,
+        WalletStorageError::JournalModeNotApplied {
+            requested: "WAL",
+            actual: "delete".into(),
+        },
+        WalletStorageError::SchemaHistoryMalformed {
+            reason: "bad applied_on",
+        },
+        WalletStorageError::NotAWalletDb {
+            expected: 0x504C_5754,
+            found: 0,
+        },
+        WalletStorageError::AlreadyOpen {
+            path: PathBuf::from("/x/w.db"),
+        },
         WalletStorageError::LockPoisoned,
         WalletStorageError::RestoreDestinationLocked,
         WalletStorageError::InvalidWalletIdHex {
             source: hex::FromHexError::OddLength,
         },
-        WalletStorageError::InvalidWalletIdLength { actual: 10 },
+        WalletStorageError::InvalidWalletIdLength {
+            column: "wallets.wallet_id",
+            actual: 10,
+        },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
         WalletStorageError::IdentityEntryIdMismatch,
-        WalletStorageError::UtxoAddressNotDerived {
-            address: "yMockAddress".into(),
+        WalletStorageError::IdentityIndexConflict {
+            wallet_id: [3u8; 32],
+            identity_index: 1,
+            existing: [4u8; 32],
+            incoming: [5u8; 32],
+        },
+        WalletStorageError::WalletlessIdentityIndex {
+            identity_id: [6u8; 32],
+            identity_index: 2,
+        },
+        WalletStorageError::OrphanedIdentityEntry { owner: [0x0E; 32] },
+        WalletStorageError::AddressDecode {
+            source: dashcore::address::Error::UnrecognizedScript,
+        },
+        WalletStorageError::AccountRegistrationEntryMismatch,
+        WalletStorageError::ProviderKeyAccountEntryMismatch,
+        WalletStorageError::ProviderKeyAccountConflict {
+            account_type: "provider_platform",
+        },
+        WalletStorageError::TypedPoolKeyConflict {
+            account_type: "provider_platform",
+            address_index: 0,
         },
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
-        // need real upstream errors — synthesise minimal ones via the
-        // public constructors / `From` impls.
+        // need real upstream errors; omitted but covered by their arms.
         WalletStorageError::BlobDecode {
             reason: "bad shape",
         },
@@ -170,6 +276,24 @@ fn samples() -> Vec<WalletStorageError> {
             value: u64::MAX,
             target: SafeCastTarget::U64,
         },
+        WalletStorageError::MissingAccount {
+            wallet_id: [3u8; 32],
+        },
+        WalletStorageError::AccountRecordInvalid {
+            e: key_wallet::error::Error::WatchOnly,
+        },
+        WalletStorageError::AccountRejected {
+            cause: "unknown account_type".into(),
+        },
+        WalletStorageError::RehydrationPoolMismatch {
+            expected: 2,
+            found: 1,
+        },
+        WalletStorageError::RehydrationPoolTypeMismatch {
+            position: 0,
+            expected: key_wallet::managed_account::address_pool::AddressPoolType::External,
+            found: key_wallet::managed_account::address_pool::AddressPoolType::Internal,
+        },
         WalletStorageError::FlushRetryable {
             wallet_id: [0xAB; 32],
             source: SqlErr::SqliteFailure(
@@ -180,16 +304,53 @@ fn samples() -> Vec<WalletStorageError> {
                 Some("busy".into()),
             ),
         },
+        WalletStorageError::ReadOnlyRecoveryMode { operation: "store" },
+        WalletStorageError::RehydrationEnsureDerivedFailed { index: 45 },
+        WalletStorageError::RehydrationGapLimitRefillTooLarge {
+            refill_target: 300_000,
+            already_generated: 20,
+            implied: 299_980,
+            cap: 250_000,
+        },
+        WalletStorageError::RehydrationGapLimitFailed {
+            source: key_wallet::error::Error::WatchOnly,
+        },
+        WalletStorageError::UsedAddressOwnerConflict {
+            address: "yaddr".into(),
+            pool_owner: "Standard[0]".into(),
+            utxo_owner: "CoinJoin[0]".into(),
+        },
+        WalletStorageError::UnownedIdentityHasRegistrationIndex {
+            identity_id: [0xEF; 32],
+            identity_index: 3,
+        },
+        WalletStorageError::IdentityScanStateContradiction {
+            wallet_id: [0xFA; 32],
+            failed_indices: 2,
+        },
+        WalletStorageError::EmptyUtxoScript {
+            outpoint: dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([0xAB; 32]),
+                vout: 1,
+            },
+        },
+        WalletStorageError::EmptyPoolAddressScript {
+            account_type: "standard_bip44",
+            address_index: 7,
+        },
+        WalletStorageError::RehydrationGapLimitTargetOutOfRange {
+            highest_used: Some(u32::MAX - 5),
+            gap_limit: 20,
+        },
+        WalletStorageError::DatabasePathIsSymlink {
+            path: PathBuf::from("/tmp/wallet.db"),
+        },
     ]
 }
 
-/// wildcard-free exhaustiveness gate.
-///
-/// The body is a `match` over `&WalletStorageError` with one arm per
-/// variant — NO `_` arm, NO `..` rest patterns over enum variants.
-/// Adding a new variant to `WalletStorageError` triggers a compile
-/// error here AND in `error::is_transient`; the two failures together
-/// keep the classification policy honest.
+/// Wildcard-free exhaustiveness gate: each variant's expected
+/// `(is_transient, error_kind_str)` pair is asserted via a `match` with
+/// no `_` arm.
 #[test]
 fn tc_p2_005_is_transient_table() {
     fn classify(err: &WalletStorageError) -> (bool, &'static str) {
@@ -225,6 +386,7 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::AutoBackupDirUnwritable { .. } => {
                 (false, "auto_backup_dir_unwritable")
             }
+            WalletStorageError::InsecureParentDir { .. } => (false, "insecure_parent_dir"),
             WalletStorageError::WalletNotFound { .. } => (false, "wallet_not_found"),
             WalletStorageError::WalletIdMismatch { .. } => (false, "wallet_id_mismatch"),
             WalletStorageError::LockPoisoned => (false, "lock_poisoned"),
@@ -237,18 +399,86 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobDecode { .. } => (false, "blob_decode"),
             WalletStorageError::HashDecode { .. } => (false, "hash_decode"),
             WalletStorageError::ConsensusCodec { .. } => (false, "consensus_codec"),
+            WalletStorageError::AddressDecode { .. } => (false, "address_decode"),
             WalletStorageError::BackupDestinationExists { .. } => {
                 (false, "backup_destination_exists")
             }
             WalletStorageError::IdentityKeyEntryMismatch => (false, "identity_key_entry_mismatch"),
+            WalletStorageError::IdentityKeyWalletMismatch { .. } => {
+                (false, "identity_key_wallet_mismatch")
+            }
             WalletStorageError::IdentityEntryIdMismatch => (false, "identity_entry_id_mismatch"),
+            WalletStorageError::IdentityScanStateContradiction { .. } => {
+                (false, "identity_scan_state_contradiction")
+            }
+            WalletStorageError::IdentityIndexConflict { .. } => (false, "identity_index_conflict"),
+            WalletStorageError::WalletlessIdentityIndex { .. } => {
+                (false, "walletless_identity_index")
+            }
+            WalletStorageError::OrphanedIdentityEntry { .. } => (false, "orphaned_identity_entry"),
             WalletStorageError::AssetLockEntryMismatch { .. } => {
                 (false, "asset_lock_entry_mismatch")
             }
+            WalletStorageError::AssetLockStatusMismatch { .. } => {
+                (false, "asset_lock_status_mismatch")
+            }
+            WalletStorageError::CoreTransactionEntryMismatch { .. } => {
+                (false, "core_transaction_entry_mismatch")
+            }
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
-            WalletStorageError::UtxoAddressNotDerived { .. } => (false, "utxo_address_not_derived"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
+            WalletStorageError::JournalModeNotApplied { .. } => (false, "journal_mode_not_applied"),
+            WalletStorageError::SchemaHistoryMalformed { .. } => {
+                (false, "schema_history_malformed")
+            }
+            WalletStorageError::NotAWalletDb { .. } => (false, "not_a_wallet_db"),
+            WalletStorageError::AlreadyOpen { .. } => (false, "already_open"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
+            WalletStorageError::AccountRegistrationEntryMismatch => {
+                (false, "account_registration_entry_mismatch")
+            }
+            WalletStorageError::ProviderKeyAccountEntryMismatch => {
+                (false, "provider_key_account_entry_mismatch")
+            }
+            WalletStorageError::ProviderKeyAccountConflict { .. } => {
+                (false, "provider_key_account_conflict")
+            }
+            WalletStorageError::TypedPoolKeyConflict { .. } => (false, "typed_pool_key_conflict"),
+            WalletStorageError::MissingAccount { .. } => {
+                (false, "missing_account_registration_entry")
+            }
+            WalletStorageError::AccountRecordInvalid { .. } => (false, "account_record_invalid"),
+            WalletStorageError::AccountRejected { .. } => (false, "account_rejected"),
+            WalletStorageError::RehydrationPoolMismatch { .. } => {
+                (false, "rehydration_pool_mismatch")
+            }
+            WalletStorageError::RehydrationPoolTypeMismatch { .. } => {
+                (false, "rehydration_pool_type_mismatch")
+            }
+            WalletStorageError::ReadOnlyRecoveryMode { .. } => (false, "read_only_recovery_mode"),
+            WalletStorageError::RehydrationEnsureDerivedFailed { .. } => {
+                (false, "rehydration_ensure_derived_failed")
+            }
+            WalletStorageError::RehydrationGapLimitRefillTooLarge { .. } => {
+                (false, "rehydration_gap_limit_refill_too_large")
+            }
+            WalletStorageError::RehydrationGapLimitTargetOutOfRange { .. } => {
+                (false, "rehydration_gap_limit_target_out_of_range")
+            }
+            WalletStorageError::RehydrationGapLimitFailed { .. } => {
+                (false, "rehydration_gap_limit_failed")
+            }
+            WalletStorageError::UsedAddressOwnerConflict { .. } => {
+                (false, "used_address_owner_conflict")
+            }
+            WalletStorageError::UnownedIdentityHasRegistrationIndex { .. } => {
+                (false, "unowned_identity_has_registration_index")
+            }
+            WalletStorageError::EmptyUtxoScript { .. } => (false, "empty_utxo_script"),
+            WalletStorageError::EmptyPoolAddressScript { .. } => {
+                (false, "empty_pool_address_script")
+            }
+            WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
         }
     }
 
@@ -305,9 +535,9 @@ fn tc_p2_010_boundary_error_mapping() {
         "missing wallet_id hex prefix: {outer}"
     );
 
-    // Walk the typed source chain to the inner rusqlite payload —
-    // post- the source is `Box<dyn Error + Send + Sync>` so
-    // the chain is preserved structurally, not just stringified.
+    // Walk the typed source chain to the inner rusqlite payload: the
+    // source is `Box<dyn Error + Send + Sync>`, so the chain is preserved
+    // structurally, not just stringified.
     let mut chain = String::new();
     let mut cur: Option<&(dyn std::error::Error + 'static)> = source.source();
     while let Some(e) = cur {

@@ -122,8 +122,8 @@ impl PersistenceError {
     }
 
     /// `true` if the error is a `Backend` whose kind is
-    /// [`PersistenceErrorKind::Transient`]. `LockPoisoned`, `Fatal`,
-    /// and `Constraint` all read as non-transient.
+    /// [`PersistenceErrorKind::Transient`]. `LockPoisoned`, `Fatal`, and
+    /// `Constraint` all read as non-transient.
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
@@ -137,7 +137,7 @@ impl PersistenceError {
     /// Retry-policy classification for the error.
     ///
     /// Returns `None` for [`Self::LockPoisoned`] (which is its own
-    /// trait-level variant) and `Some(kind)` for [`Self::Backend`].
+    /// trait-level variant) and the stored kind for [`Self::Backend`].
     /// Callers that always need a kind should treat `None` as
     /// [`PersistenceErrorKind::Fatal`].
     pub fn kind(&self) -> Option<PersistenceErrorKind> {
@@ -534,10 +534,4 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ) -> Result<Option<DpnsNameStateEntry>, PersistenceError> {
         Ok(None)
     }
-
-    // TODO: `list_wallets` and `delete_wallet` are deferred contract
-    // candidates. They live as inherent methods on the SQLite backend
-    // today; they may return to this trait once a cross-backend contract
-    // (consistent error/report semantics across SQLite, file, and FFI
-    // backends) is agreed.
 }
