@@ -1,3 +1,4 @@
+import CommonCrypto
 import Foundation
 import DashSDKFFI
 
@@ -115,7 +116,20 @@ public class Mnemonic {
         }
 
         guard success else {
-            throw KeyWalletError(ffiError: error)
+            let ffiFailure = KeyWalletError(ffiError: error)
+            // `mnemonic_to_seed` parses with a hardcoded English wordlist, so
+            // a phrase in any other supported language fails with
+            // `invalidMnemonic` even though `validate` (which tries every
+            // wordlist) accepts it. BIP-39 seed derivation itself is
+            // wordlist-independent — PBKDF2-HMAC-SHA512 over the NFKD
+            // sentence — so derive it directly for phrases that validate.
+            if case .invalidMnemonic = ffiFailure,
+               let fallbackSeed = multiLanguageSeed(
+                   mnemonicUTF8Bytes: mnemonicUTF8Bytes,
+                   passphrase: passphrase) {
+                return fallbackSeed
+            }
+            throw ffiFailure
         }
 
         // Resize if necessary
@@ -124,6 +138,52 @@ public class Mnemonic {
         }
 
         return seed
+    }
+
+    /// BIP-39 seed for a phrase in any supported wordlist: PBKDF2-HMAC-SHA512
+    /// over the NFKD-canonicalized sentence, salt `"mnemonic" + NFKD(passphrase)`,
+    /// 2048 rounds, 64 bytes — the derivation every BIP-39 wallet (including
+    /// DashSync and Electrum) uses, which never needs the wordlist itself.
+    /// Returns nil when the phrase does not validate against any supported
+    /// language (callers surface the original FFI error).
+    private static func multiLanguageSeed(mnemonicUTF8Bytes: Data, passphrase: String?) -> Data? {
+        let phrase = String(decoding: mnemonicUTF8Bytes, as: UTF8.self)
+        guard validate(phrase) else { return nil }
+
+        // `normalizePhrase` (NFKD + lowercase + single-space separators)
+        // reconstructs the canonical BIP-39 sentence for a validated phrase:
+        // wordlists ship lowercase NFKD, and NFKD maps the ideographic space
+        // to ASCII space, so this matches the seed the FFI derives for
+        // English phrases and the seed other wallets derive for this phrase.
+        var password = [UInt8](normalizePhrase(phrase).utf8)
+        defer { scrubMnemonicBytes(&password) }
+        // The passphrase is only NFKD-normalized — case and punctuation are
+        // significant in BIP-39 passphrases. It is scrubbed like the phrase:
+        // a passphrase can be as sensitive as the mnemonic itself.
+        var salt = [UInt8](
+            ("mnemonic" + (passphrase ?? "")).decomposedStringWithCompatibilityMapping.utf8)
+        defer { scrubMnemonicBytes(&salt) }
+
+        var derived = [UInt8](repeating: 0, count: 64)
+        let status = password.withUnsafeBufferPointer { passwordBuf in
+            salt.withUnsafeBufferPointer { saltBuf in
+                derived.withUnsafeMutableBufferPointer { derivedBuf in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        UnsafeRawPointer(passwordBuf.baseAddress)?
+                            .assumingMemoryBound(to: Int8.self),
+                        passwordBuf.count,
+                        saltBuf.baseAddress,
+                        saltBuf.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512),
+                        2048,
+                        derivedBuf.baseAddress,
+                        derivedBuf.count)
+                }
+            }
+        }
+        guard status == kCCSuccess else { return nil }
+        return Data(derived)
     }
 
     /// Get word count from a mnemonic phrase
