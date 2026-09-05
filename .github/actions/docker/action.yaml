@@ -8,6 +8,7 @@ description: |
   It also provides sccache settings to the docker builder for caching Rust compilation.
 
   Layers cache and sccache will use the same credentials and S3 bucket, but different prefixes.
+  Both are disabled when either cache credential is missing.
 inputs:
   image_name:
     description: Name of image in Docker Hub, like `drive`
@@ -37,19 +38,19 @@ inputs:
     default: ""
   cache_bucket:
     description: S3 bucket to use for caching (both sccache and layer cache)
-    required: true
+    required: false
   cache_region:
     description: S3 bucket region
-    required: true
+    required: false
   cache_endpoint:
     description: S3 endpoint to use for caching
-    required: true
+    required: false
   cache_access_key_id:
     description: Access key ID for s3 cache
-    required: true
+    required: false
   cache_secret_access_key:
     description: Secret access key for s3 cache
-    required: true
+    required: false
   cache_to_name:
     description: "Save cache to name manifest (should be used only on default branch)"
     default: "false"
@@ -111,6 +112,7 @@ runs:
           type=sha,format=long,enable=${{ inputs.image_version == '' }}
 
     - name: Configure docker layer cache
+      if: ${{ inputs.cache_access_key_id != '' && inputs.cache_secret_access_key != '' }}
       uses: ./.github/actions/s3-layer-cache-settings
       id: layer_cache_settings
       with:
@@ -188,6 +190,7 @@ runs:
         skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
 
     - name: Configure sccache settings
+      if: ${{ inputs.cache_access_key_id != '' && inputs.cache_secret_access_key != '' }}
       uses: ./.github/actions/sccache
       id: sccache
       with:
@@ -213,8 +216,7 @@ runs:
         push: ${{ inputs.push_tags }}
         tags: ${{ inputs.push_tags == 'true' && (steps.docker_meta.outcome == 'success' && steps.docker_meta.outputs.tags || steps.docker_meta_retry.outputs.tags) || '' }}
         platforms: ${{ inputs.platform }}
-        secret-files: |
-          AWS=${{ env.HOME }}/.aws/credentials
+        secret-files: ${{ steps.layer_cache_settings.outcome == 'success' && format('AWS={0}/.aws/credentials', env.HOME) || '' }}
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
           ADDITIONAL_FEATURES=${{ inputs.additional_features }}
