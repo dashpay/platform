@@ -218,4 +218,8 @@ pub enum DriveError {
     /// Checkpoint not found for specified block height
     #[error("checkpoint not found for block height: {0}")]
     CheckpointNotFound(u64),
+
+    /// Snapshot error
+    #[error("snapshot error: {0}")]
+    Snapshot(String),
 }

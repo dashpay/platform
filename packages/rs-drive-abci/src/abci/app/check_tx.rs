@@ -2,6 +2,7 @@ use crate::abci::app::PlatformApplication;
 use crate::abci::handler;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::snapshot::SnapshotManager;
 use crate::rpc::core::CoreRPCLike;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
@@ -22,6 +23,12 @@ where
     /// Platform
     platform: Arc<Platform<C>>,
     core_rpc: Arc<C>,
+    /// The snapshot manager, pinning checkpoints that are being served to peers.
+    ///
+    /// Shared (`Arc`) rather than owned: this application never sees blocks, so it
+    /// cannot expire the pins of abandoned transfers itself — `server::start` keeps a
+    /// clone and sweeps expired pins on a timer.
+    snapshot_manager: Arc<SnapshotManager>,
 }
 
 impl<C> PlatformApplication<C> for CheckTxAbciApplication<C>
@@ -38,8 +45,16 @@ where
     C: CoreRPCLike + Send + Sync + 'static,
 {
     /// Create new ABCI app
-    pub fn new(platform: Arc<Platform<C>>, core_rpc: Arc<C>) -> Self {
-        Self { platform, core_rpc }
+    pub fn new(
+        platform: Arc<Platform<C>>,
+        core_rpc: Arc<C>,
+        snapshot_manager: Arc<SnapshotManager>,
+    ) -> Self {
+        Self {
+            platform,
+            core_rpc,
+            snapshot_manager,
+        }
     }
 }
 
@@ -91,6 +106,47 @@ where
         })?
         .await
         .map_err(|error| tonic::Status::internal(format!("check tx panics: {}", error)))?
+    }
+
+    async fn list_snapshots(
+        &self,
+        request: tonic::Request<proto::RequestListSnapshots>,
+    ) -> Result<tonic::Response<proto::ResponseListSnapshots>, tonic::Status> {
+        // Checkpoint metadata reads are synchronous rocksdb work; requests are
+        // peer-controlled, so keep them off the async workers (same pattern as check_tx)
+        let platform = Arc::clone(&self.platform);
+        let proto_request = request.into_inner();
+
+        spawn_blocking_task_with_name_if_supported("list_snapshots", move || {
+            handler::list_snapshots(platform.as_ref(), proto_request)
+                .map(tonic::Response::new)
+                .map_err(error_into_status)
+        })?
+        .await
+        .map_err(|error| tonic::Status::internal(format!("list snapshots panics: {}", error)))?
+    }
+
+    async fn load_snapshot_chunk(
+        &self,
+        request: tonic::Request<proto::RequestLoadSnapshotChunk>,
+    ) -> Result<tonic::Response<proto::ResponseLoadSnapshotChunk>, tonic::Status> {
+        // Chunk generation traverses the checkpoint's grovedb and encodes a replication
+        // chunk — synchronous, potentially large, and peer-controlled. Run it on the
+        // blocking pool so concurrent snapshot consumers cannot occupy the async workers
+        // and delay unrelated gRPC traffic (same pattern as check_tx).
+        let platform = Arc::clone(&self.platform);
+        let snapshot_manager = Arc::clone(&self.snapshot_manager);
+        let proto_request = request.into_inner();
+
+        spawn_blocking_task_with_name_if_supported("load_snapshot_chunk", move || {
+            handler::load_snapshot_chunk(platform.as_ref(), &snapshot_manager, proto_request)
+                .map(tonic::Response::new)
+                .map_err(error_into_status)
+        })?
+        .await
+        .map_err(|error| {
+            tonic::Status::internal(format!("load snapshot chunk panics: {}", error))
+        })?
     }
 }
 
@@ -146,7 +202,11 @@ mod tests {
 
         let core_rpc = MockCoreRPCLike::new();
 
-        let app = CheckTxAbciApplication::new(Arc::new(platform.platform), Arc::new(core_rpc));
+        let app = CheckTxAbciApplication::new(
+            Arc::new(platform.platform),
+            Arc::new(core_rpc),
+            Arc::new(SnapshotManager::new()),
+        );
 
         let debug_str = format!("{:?}", app);
         assert_eq!(debug_str, "<CheckTxAbciApplication>");
@@ -159,7 +219,11 @@ mod tests {
 
         let core_rpc = MockCoreRPCLike::new();
 
-        let app = CheckTxAbciApplication::new(Arc::new(platform.platform), Arc::new(core_rpc));
+        let app = CheckTxAbciApplication::new(
+            Arc::new(platform.platform),
+            Arc::new(core_rpc),
+            Arc::new(SnapshotManager::new()),
+        );
 
         // Just verify we can call platform() without panicking
         let _platform_ref = app.platform();

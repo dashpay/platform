@@ -11,17 +11,24 @@ use crate::error::Error;
 
 /// Loads existing checkpoints from the checkpoints directory.
 ///
-/// This function scans the `<db_path>/checkpoints/` directory for existing checkpoint
+/// This function scans the given checkpoints directory for existing checkpoint
 /// subdirectories (named by block height), opens each one as a GroveDb, and returns
 /// an ArcSwap containing the loaded checkpoints.
 ///
+/// The directory is passed in rather than derived, because checkpoints may be configured
+/// to live outside the database directory (`CHECKPOINTS_PATH`). Deriving it here would
+/// leave a node restarted with a custom path holding an empty registry: it would stop
+/// advertising its retained snapshots and could never prune the directories it wrote.
+///
 /// # Arguments
-/// * `db_path` - The path to the database directory (parent of the checkpoints directory)
+/// * `checkpoints_dir` - The directory checkpoints are written to
 ///
 /// # Returns
 /// * An `ArcSwap` containing a `BTreeMap` of checkpoints keyed by block height
-pub fn load_current_checkpoints<P: AsRef<Path>>(db_path: P) -> Result<CheckpointsMap, Error> {
-    let checkpoints_dir = db_path.as_ref().join("checkpoints");
+pub fn load_current_checkpoints<P: AsRef<Path>>(
+    checkpoints_dir: P,
+) -> Result<CheckpointsMap, Error> {
+    let checkpoints_dir = checkpoints_dir.as_ref();
 
     let mut checkpoints = BTreeMap::new();
 
@@ -31,7 +38,7 @@ pub fn load_current_checkpoints<P: AsRef<Path>>(db_path: P) -> Result<Checkpoint
     }
 
     // Read the checkpoints directory
-    let entries = match std::fs::read_dir(&checkpoints_dir) {
+    let entries = match std::fs::read_dir(checkpoints_dir) {
         Ok(entries) => entries,
         Err(_) => return Ok(ArcSwap::from_pointee(checkpoints)),
     };

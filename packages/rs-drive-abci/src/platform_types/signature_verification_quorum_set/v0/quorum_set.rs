@@ -23,6 +23,18 @@ pub(super) struct PreviousPastQuorumsV0 {
     pub(super) previous_change_height: Option<u32>,
 }
 
+/// A borrowed view of the superseded quorums of a set, for callers outside this module.
+pub struct PreviousPastQuorums<'q> {
+    /// The superseded quorums
+    pub quorums: &'q Quorums<VerificationQuorum>,
+    /// The core height at which these quorums were last active
+    pub last_active_core_height: u32,
+    /// The core height at which the quorums were changed
+    pub updated_at_core_height: u32,
+    /// The core height at which the set before these became active
+    pub previous_change_height: Option<u32>,
+}
+
 /// Quorums with keys for signature verification
 #[derive(Debug, Clone)]
 pub struct SignatureVerificationQuorumSetV0 {
@@ -54,6 +66,27 @@ pub trait SignatureVerificationQuorumSetV0Methods {
 
     /// Has previous quorums?
     fn has_previous_past_quorums(&self) -> bool;
+
+    /// The superseded quorums and the core heights that bound their validity, if any.
+    ///
+    /// This history exists only in the platform state — it cannot be re-derived from Core
+    /// — so it has to be readable to travel with a state sync snapshot.
+    fn previous_past_quorums(&self) -> Option<PreviousPastQuorums<'_>>;
+
+    /// Restores the superseded quorums verbatim, including the change height of the set
+    /// before them.
+    ///
+    /// Unlike [`SignatureVerificationQuorumSetV0Methods::set_previous_past_quorums`], this
+    /// does NOT derive `previous_change_height` from whatever this set currently holds: it
+    /// is for reinstating a history that was captured elsewhere (state sync reconstruction),
+    /// where deriving would silently produce a different one.
+    fn restore_previous_past_quorums(
+        &mut self,
+        previous_quorums: Quorums<VerificationQuorum>,
+        last_active_core_height: u32,
+        updated_at_core_height: u32,
+        previous_change_height: Option<u32>,
+    );
 
     /// Set last quorums keys and update previous quorums
     fn replace_quorums(
@@ -170,6 +203,30 @@ impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSetV
 
     fn has_previous_past_quorums(&self) -> bool {
         self.previous.is_some()
+    }
+
+    fn previous_past_quorums(&self) -> Option<PreviousPastQuorums<'_>> {
+        self.previous.as_ref().map(|previous| PreviousPastQuorums {
+            quorums: &previous.quorums,
+            last_active_core_height: previous.last_active_core_height,
+            updated_at_core_height: previous.updated_at_core_height,
+            previous_change_height: previous.previous_change_height,
+        })
+    }
+
+    fn restore_previous_past_quorums(
+        &mut self,
+        previous_quorums: Quorums<VerificationQuorum>,
+        last_active_core_height: u32,
+        updated_at_core_height: u32,
+        previous_change_height: Option<u32>,
+    ) {
+        self.previous = Some(PreviousPastQuorumsV0 {
+            quorums: previous_quorums,
+            last_active_core_height,
+            updated_at_core_height,
+            previous_change_height,
+        });
     }
 
     fn replace_quorums(

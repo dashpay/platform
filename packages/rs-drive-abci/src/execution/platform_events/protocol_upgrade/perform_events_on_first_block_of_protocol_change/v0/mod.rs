@@ -4,10 +4,12 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::dashcore::hashes::Hash;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
+use dpp::reduced_platform_state::v0::ReducedBlockInfoV0;
 use dpp::serialization::PlatformDeserializable;
 use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
@@ -117,6 +119,10 @@ impl<C> Platform<C> {
 
         if previous_protocol_version < 14 && platform_version.protocol_version >= 14 {
             self.transition_to_version_14(block_info, transaction, platform_version)?;
+        }
+
+        if previous_protocol_version < 15 && platform_version.protocol_version >= 15 {
+            self.transition_to_version_15(platform_state, transaction, platform_version)?;
         }
 
         Ok(())
@@ -737,6 +743,44 @@ impl<C> Platform<C> {
         )?;
 
         Ok(())
+    }
+
+    /// When transitioning to version 15 we write the initial reduced platform state (built
+    /// from the last committed platform state) under `Misc/reduced_saved_state`, so the key
+    /// exists in the replicated state from the fork block onward. `run_block_proposal` v1
+    /// overwrites it later in this same block with the state of the block being processed;
+    /// this initial write guarantees no v15 block ever commits without the key, which is
+    /// what makes every snapshot taken at or after activation restorable via state sync.
+    fn transition_to_version_15(
+        &self,
+        platform_state: &PlatformState,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let last_committed_block_info =
+            platform_state
+                .last_committed_block_info()
+                .as_ref()
+                .map(|extended_block_info| ReducedBlockInfoV0 {
+                    basic_info: *extended_block_info.basic_info(),
+                    app_hash: Some((*extended_block_info.app_hash()).into()),
+                    quorum_hash: (*extended_block_info.quorum_hash()).into(),
+                    block_id_hash: Some((*extended_block_info.block_id_hash()).into()),
+                    proposer_pro_tx_hash: (*extended_block_info.proposer_pro_tx_hash()).into(),
+                    signature: Some(*extended_block_info.signature()),
+                    round: extended_block_info.round(),
+                });
+
+        let reduced_platform_state = platform_state.to_reduced_platform_state(
+            last_committed_block_info,
+            platform_state.last_committed_core_height(),
+        );
+
+        self.store_reduced_platform_state(
+            &reduced_platform_state,
+            Some(transaction),
+            platform_version,
+        )
     }
 }
 
@@ -2640,6 +2684,57 @@ mod tests {
              node (sequential path). v11 is ALREADY ACTIVATED on the live network — do NOT change \
              v11 construction to make this pass; surface and analyze the discrepancy.\n{}",
             diffs.join("\n"),
+        );
+    }
+
+    #[test]
+    fn test_transition_to_version_15_writes_initial_reduced_platform_state() {
+        use dpp::reduced_platform_state::ReducedPlatformState;
+
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_version = PlatformVersion::latest();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let platform_state = platform.state.load();
+
+        // Before the transition, the replicated state must not carry the reduced state key.
+        let pre_transition = platform
+            .fetch_reduced_platform_state(Some(&transaction), platform_version)
+            .expect("fetching an absent reduced platform state should not error");
+        assert!(
+            pre_transition.is_none(),
+            "reduced platform state must not exist before transition_to_version_15"
+        );
+
+        let result =
+            platform.transition_to_version_15(&platform_state, &transaction, platform_version);
+        assert!(result.is_ok(), "transition failed: {:?}", result.err());
+
+        let reduced = platform
+            .fetch_reduced_platform_state(Some(&transaction), platform_version)
+            .expect("expected to fetch reduced platform state")
+            .expect("reduced platform state must exist after transition_to_version_15");
+
+        let ReducedPlatformState::V0(reduced) = reduced;
+        assert_eq!(
+            reduced.current_protocol_version_in_consensus,
+            platform_state.current_protocol_version_in_consensus()
+        );
+        assert_eq!(
+            reduced.next_epoch_protocol_version,
+            platform_state.next_epoch_protocol_version()
+        );
+        assert_eq!(
+            reduced.quorum_positions.len(),
+            platform_state.validator_sets().len(),
+            "quorum positions must mirror the validator set order"
+        );
+        assert_eq!(
+            reduced.proposed_core_chain_locked_height,
+            platform_state.last_committed_core_height()
         );
     }
 }
