@@ -152,6 +152,18 @@
             }
           ],
           "unique": true
+        },
+        {
+          "name": "postAndOwner",
+          "properties": [
+            {
+              "postId": "asc"
+            },
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "countable": true
         }
       ],
       "properties": {

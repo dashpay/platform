@@ -137,8 +137,10 @@ pub struct DriveSubQuery<'a> {
     /// Documents or counts.
     pub kind: SubQueryKind,
     /// The fixed clauses (everything but the derived `IN`), typed.
+    /// Must be empty for a by-id join, which resolves every derived id.
     pub where_clauses: Vec<WhereClause>,
-    /// Ordering; documents only.
+    /// Ordering; documents only. The outer query direction must agree
+    /// with the page's direction so merging preserves the requested rows.
     pub order_by: Vec<OrderClause>,
     /// Required for a documents lookup on a non-unique index (it bounds
     /// the walk under each value); forbidden for a value-bounded lookup,
@@ -683,11 +685,10 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         self.page.construct_path_query(None, platform_version)
     }
 
-    /// Every component lands its proved entries under its path query's
-    /// base path; entries are routed back to components by the longest
-    /// matching base path, and within one base path by what they are
-    /// (count trees go to count sub-queries, items to documents ones)
-    /// and by bound-value membership. That routing needs two things the
+    /// Document entries are routed back to components by the longest
+    /// matching base path and then by bound-value membership; counts use
+    /// their exact terminal positions. Document routing and merging need
+    /// two things the
     /// shapes must guarantee up front: no limited component may land at
     /// the merged root (grovedb has no branch to lift its limit into),
     /// and documents components sharing a base path must be tellable
@@ -698,10 +699,15 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         let representative = [Identifier::default()];
         let mut components: Vec<(Vec<Vec<u8>>, Component, bool)> = Vec::new();
         let page = self.page_path_query(platform_version)?;
+        let direction = page.query.query.left_to_right;
         components.push((page.path, Component::Page, page.query.limit.is_some()));
         for (index, sub_query) in self.sub_queries.iter().enumerate() {
-            let path_query =
-                self.sub_query_path_query(sub_query, &representative, platform_version)?;
+            let path_query = self.sub_query_proof_path_query(
+                sub_query,
+                &representative,
+                direction,
+                platform_version,
+            )?;
             components.push((
                 path_query.path,
                 Component::Sub(index),
@@ -836,6 +842,12 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         };
 
         if sub_query.is_by_id_join() {
+            if !sub_query.where_clauses.is_empty() {
+                return Err(unsupported(
+                    "a by-id join takes no fixed clauses: every derived id must resolve"
+                        .to_string(),
+                ));
+            }
             return Ok(DriveDocumentQuery {
                 contract: sub_query.contract,
                 document_type: sub_query.document_type,
@@ -962,12 +974,40 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         }
     }
 
+    /// Aligns set-based components for merging without changing a
+    /// documents query's ordering or the rows selected by its limit.
+    /// Validation, proof generation and bootstrap use the same check,
+    /// including when a binding will derive no values at execution time.
+    pub(crate) fn sub_query_proof_path_query(
+        &self,
+        sub_query: &DriveSubQuery<'a>,
+        values: &[Identifier],
+        direction: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        let mut path_query = self.sub_query_path_query(sub_query, values, platform_version)?;
+        if sub_query.kind == SubQueryKind::Documents
+            && !sub_query.is_by_id_join()
+            && path_query.query.query.left_to_right != direction
+        {
+            return Err(unsupported(
+                "a documents sub-query's outer ordering must match the page's direction; \
+                 changing it for the merged proof would change its result"
+                    .to_string(),
+            ));
+        }
+        // Joins restore first-appearance order after decoding. Counts
+        // restore key order. Their selected sets do not depend on direction.
+        path_query.query.query.left_to_right = direction;
+        Ok(path_query)
+    }
+
     /// The component path queries the merged proof covers, in component
     /// order: the page, then one entry per sub-query — `None` for a
     /// bound sub-query whose binding derived nothing (it has no branch).
-    /// Every sub-query walks in the page's direction: grovedb's merge
-    /// requires all inputs to agree, and a key-addressed sub-query means
-    /// the same set either way. ONE builder both the prover
+    /// Every sub-query walks in the page's direction: documents must
+    /// already agree, while counts and by-id joins may be aligned without
+    /// changing their selected sets. ONE builder both the prover
     /// (`prove_query_many`) and the verifier (`PathQuery::merge`) call,
     /// so the merged query is byte-identical on both sides.
     pub fn proof_path_queries(
@@ -988,11 +1028,65 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 sub_path_queries.push(None);
                 continue;
             }
-            let mut path_query = self.sub_query_path_query(sub_query, values, platform_version)?;
-            path_query.query.query.left_to_right = direction;
+            let path_query =
+                self.sub_query_proof_path_query(sub_query, values, direction, platform_version)?;
             sub_path_queries.push(Some(path_query));
         }
+        // GroveDB cannot return a count tree and descend through that
+        // same tree for another component in one merged selection. Check
+        // concrete values so disjoint selections on the same index remain
+        // usable, including documents whose base path is below the count's.
+        let mut count_terminal_paths = BTreeSet::new();
+        for (sub_query, path_query) in self.sub_queries.iter().zip(&sub_path_queries) {
+            if sub_query.kind != SubQueryKind::Count {
+                continue;
+            }
+            if let Some(path_query) = path_query {
+                for (mut path, key) in path_query
+                    .terminal_keys(MAX_BOUND_VALUES, &platform_version.drive.grove_version)?
+                {
+                    path.push(key);
+                    count_terminal_paths.insert(path);
+                }
+            }
+        }
+        for terminal_path in count_terminal_paths {
+            for component in std::iter::once(&page).chain(sub_path_queries.iter().flatten()) {
+                if Self::path_query_descends_through(component, &terminal_path, platform_version)? {
+                    return Err(unsupported(
+                        "a count sub-query selects a tree another component descends through; \
+                         split them into separate requests"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
         Ok((page, sub_path_queries))
+    }
+
+    /// Whether a component walks through this count terminal to a deeper
+    /// result. Check membership at every level: a default subquery alone
+    /// does not mean its parent key was selected by this component.
+    fn path_query_descends_through(
+        query: &PathQuery,
+        terminal_path: &[Vec<u8>],
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let mut prefix = Vec::with_capacity(terminal_path.len());
+        for key in terminal_path {
+            let Some(selection) =
+                query.query_items_at_path(&prefix, &platform_version.drive.grove_version)?
+            else {
+                return Ok(false);
+            };
+            if !selection.items.iter().any(|item| item.contains(key))
+                || !selection.has_subquery_or_matching_in_path_on_key(key)
+            {
+                return Ok(false);
+            }
+            prefix.push(key.as_slice());
+        }
+        Ok(true)
     }
 
     /// Merges the component path queries into the one query the proof
@@ -1043,13 +1137,33 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             .collect()
     }
 
+    /// Decodes a documents sub-query and applies the same result assembly
+    /// as execution, particularly a join's first-appearance ordering,
+    /// before its documents can supply values to a later binding.
+    pub(crate) fn decode_sub_query_document_trios(
+        &self,
+        sub_query: &DriveSubQuery<'a>,
+        values: &[Identifier],
+        trios: Vec<PresentTrio>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Document>, Error> {
+        let query = self.sub_query_document_query(sub_query, values, platform_version)?;
+        let documents = Self::decode_document_trios(&query, trios, platform_version)?;
+        match self.assemble_sub_result(sub_query, values, &DecodedItems::Documents(documents))? {
+            SubQueryResult::Documents(documents) => Ok(documents),
+            SubQueryResult::Counts(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a documents sub-query must assemble documents",
+            ))),
+        }
+    }
+
     /// Decodes the proved entries of a count component: one entry per
     /// count tree, keyed by the `IN` value — which sits one segment
     /// past the base path when the walk descended through trailing
     /// equalities, and IS the key otherwise (the same layout
     /// `verify_point_lookup_count_proof` reads).
     fn decode_count_trios(base_path_len: usize, trios: Vec<PresentTrio>) -> Vec<SplitCountEntry> {
-        trios
+        let mut entries: Vec<_> = trios
             .into_iter()
             .map(|(path, key, element)| {
                 let key = if path.len() > base_path_len {
@@ -1063,7 +1177,11 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                     count: Some(element.count_value_or_default()),
                 }
             })
-            .collect()
+            .collect();
+        // Proof merging may align the count walk with a descending page;
+        // count results retain the ordinary point-lookup's key order.
+        entries.sort_by(|a, b| a.key.cmp(&b.key));
+        entries
     }
 
     /// Assembles one sub-query's result from the decoded items routed to
@@ -1157,8 +1275,12 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         trios: Vec<ProvedTrio>,
         platform_version: &PlatformVersion,
     ) -> Result<CompositeDocumentsResult, Error> {
-        // Group components by base path.
+        // Group documents by base path. Counts instead route by their
+        // complete terminal positions: a shared base and bound value can
+        // still select different trailing equality values. A terminal may
+        // belong to several counts, including counts with nested base paths.
         let mut groups: Vec<(Vec<Vec<u8>>, Vec<Component>)> = Vec::new();
+        let mut count_members_by_position: BTreeMap<_, Vec<usize>> = BTreeMap::new();
         let mut register = |path: &Vec<Vec<u8>>, component: Component| {
             if let Some((_, members)) = groups.iter_mut().find(|(p, _)| p == path) {
                 members.push(component);
@@ -1169,16 +1291,48 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         register(&page_path_query.path, Component::Page);
         for (index, path_query) in sub_path_queries.iter().enumerate() {
             if let Some(path_query) = path_query {
-                register(&path_query.path, Component::Sub(index));
+                if self.sub_queries[index].kind == SubQueryKind::Count {
+                    for position in path_query
+                        .terminal_keys(MAX_BOUND_VALUES, &platform_version.drive.grove_version)?
+                    {
+                        count_members_by_position
+                            .entry(position)
+                            .or_default()
+                            .push(index);
+                    }
+                } else {
+                    register(&path_query.path, Component::Sub(index));
+                }
             }
         }
 
-        // Distribute trios to the group with the longest matching base path.
+        // Distribute counts before their positional information is lost
+        // during decoding, and documents by the longest matching base path.
         let mut trios_by_group: Vec<Vec<PresentTrio>> = vec![Vec::new(); groups.len()];
+        let mut count_trios_by_sub: Vec<Vec<PresentTrio>> =
+            vec![Vec::new(); self.sub_queries.len()];
         for (path, key, element) in trios {
             let Some(element) = element else {
                 continue;
             };
+            if !matches!(element, Element::Item(..)) {
+                let position = (path, key);
+                let members = count_members_by_position.get(&position).ok_or_else(|| {
+                    corrupted_proof(
+                        "the composite proof carries a count at a position no component \
+                         selected"
+                            .to_string(),
+                    )
+                })?;
+                for index in members {
+                    count_trios_by_sub[*index].push((
+                        position.0.clone(),
+                        position.1.clone(),
+                        element.clone(),
+                    ));
+                }
+                continue;
+            }
             let best = groups
                 .iter()
                 .enumerate()
@@ -1195,140 +1349,89 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             trios_by_group[best].push((path, key, element));
         }
 
-        // Decode each group once — items are documents, everything else
-        // is a count tree — then let every member claim its share.
+        // Decode each documents group once, then let every member claim
+        // its share.
         let mut page_documents: Option<Vec<Document>> = None;
         let mut sub_results: Vec<Option<SubQueryResult>> = vec![None; self.sub_queries.len()];
-        for ((base_path, members), group_trios) in groups.iter().zip(trios_by_group) {
-            let (document_trios, count_trios): (Vec<_>, Vec<_>) = group_trios
-                .into_iter()
-                .partition(|(_, _, element)| matches!(element, Element::Item(..)));
-            let documents_members: Vec<Component> = members
-                .iter()
-                .copied()
-                .filter(|component| match component {
-                    Component::Page => true,
-                    Component::Sub(index) => {
-                        self.sub_queries[*index].kind == SubQueryKind::Documents
-                    }
-                })
-                .collect();
-            let count_members: Vec<usize> = members
-                .iter()
-                .filter_map(|component| match component {
-                    Component::Sub(index)
-                        if self.sub_queries[*index].kind == SubQueryKind::Count =>
-                    {
-                        Some(*index)
-                    }
-                    _ => None,
-                })
-                .collect();
-            if !document_trios.is_empty() && documents_members.is_empty() {
-                return Err(corrupted_proof(
-                    "the composite proof proved documents under a path only counts were \
-                     asked of"
-                        .to_string(),
-                ));
-            }
-            if !count_trios.is_empty() && count_members.is_empty() {
-                return Err(corrupted_proof(
-                    "the composite proof proved count trees under a path only documents \
-                     were asked of"
-                        .to_string(),
-                ));
-            }
-
-            if !documents_members.is_empty() {
-                // Every documents member of a group addresses the same
-                // type, so any member's query decodes the group.
-                let documents = match documents_members[0] {
+        for ((_, documents_members), document_trios) in groups.iter().zip(trios_by_group) {
+            // Every documents member of a group addresses the same
+            // type, so any member's query decodes the group.
+            let documents = match documents_members[0] {
+                Component::Page => {
+                    Self::decode_document_trios(&self.page, document_trios, platform_version)?
+                }
+                Component::Sub(index) => {
+                    let query = self.sub_query_document_query(
+                        &self.sub_queries[index],
+                        &derived[index],
+                        platform_version,
+                    )?;
+                    Self::decode_document_trios(&query, document_trios, platform_version)?
+                }
+            };
+            let decoded = DecodedItems::Documents(documents.clone());
+            let mut claimed: BTreeSet<usize> = BTreeSet::new();
+            for member in documents_members {
+                match member {
                     Component::Page => {
-                        Self::decode_document_trios(&self.page, document_trios, platform_version)?
+                        let page_ids: Option<BTreeSet<Identifier>> = if documents_members.len() > 1
+                        {
+                            Some(self.page_ids()?)
+                        } else {
+                            None
+                        };
+                        let mut mine = Vec::new();
+                        for (position, document) in documents.iter().enumerate() {
+                            let is_mine = page_ids
+                                .as_ref()
+                                .is_none_or(|ids| ids.contains(&document.id()));
+                            if is_mine {
+                                claimed.insert(position);
+                                mine.push(document.clone());
+                            }
+                        }
+                        page_documents = Some(mine);
                     }
                     Component::Sub(index) => {
-                        let query = self.sub_query_document_query(
-                            &self.sub_queries[index],
-                            &derived[index],
-                            platform_version,
-                        )?;
-                        Self::decode_document_trios(&query, document_trios, platform_version)?
-                    }
-                };
-                let decoded = DecodedItems::Documents(documents.clone());
-                let mut claimed: BTreeSet<usize> = BTreeSet::new();
-                for member in &documents_members {
-                    match member {
-                        Component::Page => {
-                            let page_ids: Option<BTreeSet<Identifier>> =
-                                if documents_members.len() > 1 {
-                                    Some(self.page_ids()?)
-                                } else {
-                                    None
-                                };
-                            let mut mine = Vec::new();
-                            for (position, document) in documents.iter().enumerate() {
-                                let is_mine = page_ids
-                                    .as_ref()
-                                    .is_none_or(|ids| ids.contains(&document.id()));
-                                if is_mine {
-                                    claimed.insert(position);
-                                    mine.push(document.clone());
-                                }
+                        let sub_query = &self.sub_queries[*index];
+                        let result =
+                            self.assemble_sub_result(sub_query, &derived[*index], &decoded)?;
+                        let mine_ids: BTreeSet<Identifier> = result
+                            .documents()
+                            .iter()
+                            .map(|document| document.id())
+                            .collect();
+                        for (position, document) in documents.iter().enumerate() {
+                            if mine_ids.contains(&document.id()) {
+                                claimed.insert(position);
                             }
-                            page_documents = Some(mine);
                         }
-                        Component::Sub(index) => {
-                            let sub_query = &self.sub_queries[*index];
-                            let result =
-                                self.assemble_sub_result(sub_query, &derived[*index], &decoded)?;
-                            let mine_ids: BTreeSet<Identifier> = result
-                                .documents()
-                                .iter()
-                                .map(|document| document.id())
-                                .collect();
-                            for (position, document) in documents.iter().enumerate() {
-                                if mine_ids.contains(&document.id()) {
-                                    claimed.insert(position);
-                                }
-                            }
-                            sub_results[*index] = Some(result);
-                        }
+                        sub_results[*index] = Some(result);
                     }
                 }
-                if claimed.len() != documents.len() {
-                    return Err(corrupted_proof(
-                        "the composite proof carries a document that no component's \
+            }
+            if claimed.len() != documents.len() {
+                return Err(corrupted_proof(
+                    "the composite proof carries a document that no component's \
                          derivation asked for"
-                            .to_string(),
-                    ));
-                }
+                        .to_string(),
+                ));
             }
+        }
 
-            if !count_members.is_empty() {
-                let entries = Self::decode_count_trios(base_path.len(), count_trios);
-                let decoded = DecodedItems::Counts(entries.clone());
-                let mut claimed: BTreeSet<usize> = BTreeSet::new();
-                for index in count_members {
-                    let sub_query = &self.sub_queries[index];
-                    let result = self.assemble_sub_result(sub_query, &derived[index], &decoded)?;
-                    let mine_keys: BTreeSet<&Vec<u8>> =
-                        result.counts().iter().map(|entry| &entry.key).collect();
-                    for (position, entry) in entries.iter().enumerate() {
-                        if mine_keys.contains(&entry.key) {
-                            claimed.insert(position);
-                        }
-                    }
-                    sub_results[index] = Some(result);
-                }
-                if claimed.len() != entries.len() {
-                    return Err(corrupted_proof(
-                        "the composite proof carries a count that no component's derivation \
-                         asked for"
-                            .to_string(),
-                    ));
-                }
+        for (index, count_trios) in count_trios_by_sub.into_iter().enumerate() {
+            if self.sub_queries[index].kind != SubQueryKind::Count {
+                continue;
             }
+            let Some(path_query) = &sub_path_queries[index] else {
+                continue;
+            };
+            let entries = Self::decode_count_trios(path_query.path.len(), count_trios);
+            sub_results[index] = Some(self.assemble_sub_result(
+                &self.sub_queries[index],
+                &derived[index],
+                &DecodedItems::Counts(entries),
+            )?);
         }
 
         Ok(CompositeDocumentsResult {
@@ -1556,6 +1659,7 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
         let page_documents =
             self.materialize_page(drive, transaction, drive_operations, platform_version)?;
         let mut sub_results: Vec<SubQueryResult> = Vec::with_capacity(self.sub_queries.len());
+        let mut derived = Vec::with_capacity(self.sub_queries.len());
         for sub_query in &self.sub_queries {
             let values = match &sub_query.binding {
                 None => Vec::new(),
@@ -1574,7 +1678,12 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 drive_operations,
                 platform_version,
             )?);
+            derived.push(values);
         }
+        // Count-tree conflicts depend on the actual derived values, not
+        // just the representative shapes checked by validate(). Reject
+        // them on the materialized entry point as on the proof entry point.
+        self.proof_path_queries(&derived, platform_version)?;
         Ok(CompositeDocumentsResult {
             page_documents,
             sub_results,

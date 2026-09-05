@@ -66,14 +66,20 @@ impl DriveCompositeDocumentQuery<'_> {
                 let documents = if sub_query.binding.is_some() && values.is_empty() {
                     Vec::new()
                 } else {
-                    let mut path_query =
-                        self.sub_query_path_query(sub_query, &values, platform_version)?;
-                    path_query.query.query.left_to_right = direction;
+                    let path_query = self.sub_query_proof_path_query(
+                        sub_query,
+                        &values,
+                        direction,
+                        platform_version,
+                    )?;
                     let (_, trios) =
                         GroveDb::verify_subset_query(proof, &path_query, grove_version)?;
-                    let query =
-                        self.sub_query_document_query(sub_query, &values, platform_version)?;
-                    Self::decode_document_trios(&query, present(trios), platform_version)?
+                    self.decode_sub_query_document_trios(
+                        sub_query,
+                        &values,
+                        present(trios),
+                        platform_version,
+                    )?
                 };
                 bootstrap_sub_documents[index] = Some(documents);
             }

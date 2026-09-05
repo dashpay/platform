@@ -384,6 +384,331 @@ fn owner_ids(documents: &[Document]) -> Vec<[u8; 32]> {
     documents.iter().map(|d| d.owner_id().to_buffer()).collect()
 }
 
+#[test]
+fn should_preserve_join_order_before_deriving_later_bindings() {
+    let (drive, feed, dashpay) = setup();
+    insert_post(&drive, &feed, POST_C, OWNER_1, "btc", None, 3);
+    insert_post(&drive, &feed, POST_D, OWNER_3, "btc", None, 4);
+    insert_post(&drive, &feed, POST_A, OWNER_1, "dash", Some(POST_D), 1);
+    insert_post(&drive, &feed, POST_B, OWNER_2, "dash", Some(POST_C), 2);
+    insert_profile(&drive, &dashpay, OWNER_1, "one", 30);
+    insert_profile(&drive, &dashpay, OWNER_3, "three", 31);
+    let query = feed_query(&feed, &dashpay, None);
+    let pv = platform_version();
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(
+        ids(materialized.sub_results[QUOTED_POSTS].documents()),
+        vec![POST_D, POST_C],
+        "the page references quoted posts in the opposite order to their ids"
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("a feed with two quoted authors verifies");
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+#[test]
+fn should_route_counts_by_complete_positions_including_overlapping_queries() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut sub_queries: Vec<_> = [OWNER_1, OWNER_2, OWNER_3]
+        .into_iter()
+        .map(|owner| {
+            let mut count = bound(
+                &feed,
+                "repost",
+                SubQueryKind::Count,
+                BindingSource::Page,
+                "$id",
+                "postId",
+                None,
+            );
+            count.where_clauses.push(WhereClause {
+                field: "$ownerId".into(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(owner),
+            });
+            count
+        })
+        .collect();
+    // This count has a deeper base path, but shares terminals with the
+    // first and third counts. Both shallower selections still own them.
+    let mut owners_of_b = bound(
+        &feed,
+        "repost",
+        SubQueryKind::Count,
+        BindingSource::Page,
+        "$ownerId",
+        "$ownerId",
+        None,
+    );
+    owners_of_b.where_clauses.push(WhereClause {
+        field: "postId".into(),
+        operator: WhereOperator::Equal,
+        value: Value::Identifier(POST_B),
+    });
+    sub_queries.push(owners_of_b);
+    let query = DriveCompositeDocumentQuery {
+        page: page_by_hashtag(&feed, "dash", Some(10)),
+        sub_queries,
+    };
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    for result in [&materialized, &verified] {
+        for (index, post) in [POST_B, POST_A, POST_B].into_iter().enumerate() {
+            assert_eq!(result.sub_results[index].counts().len(), 1);
+            assert_eq!(
+                counts(&result.sub_results[index]),
+                BTreeMap::from([(post, 1)])
+            );
+        }
+        assert_eq!(result.sub_results[3].counts().len(), 2);
+        assert_eq!(
+            counts(&result.sub_results[3]),
+            BTreeMap::from([(OWNER_1, 1), (OWNER_3, 1)])
+        );
+    }
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+#[test]
+fn should_reject_conflicting_document_directions_even_when_the_page_is_empty() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut lookup = bound(
+        &feed,
+        "repost",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$id",
+        "postId",
+        Some(1),
+    );
+    lookup.order_by.push(OrderClause {
+        field: "postId".into(),
+        ascending: false,
+    });
+    let mut profiles = bound(
+        &dashpay,
+        "profile",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$ownerId",
+        "$ownerId",
+        None,
+    );
+    profiles.order_by.push(OrderClause {
+        field: "$ownerId".into(),
+        ascending: false,
+    });
+    let sibling = DriveSubQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("post").expect("post"),
+        kind: SubQueryKind::Documents,
+        where_clauses: vec![],
+        order_by: vec![OrderClause {
+            field: "$id".into(),
+            ascending: false,
+        }],
+        limit: Some(1),
+        binding: None,
+    };
+    for sub_query in [lookup, profiles, sibling] {
+        for hashtag in ["dash", "empty"] {
+            let query = DriveCompositeDocumentQuery {
+                page: page_by_hashtag(&feed, hashtag, Some(10)),
+                sub_queries: vec![sub_query.clone()],
+            };
+            for result in [
+                drive
+                    .query_composite_documents(&query, None, None, pv)
+                    .map(|_| ()),
+                drive
+                    .query_composite_documents_with_proof(&query, pv)
+                    .map(|_| ()),
+                query.verify_composite_documents_proof(&[], pv).map(|_| ()),
+            ] {
+                assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+                assert!(result.unwrap_err().to_string().contains("outer ordering"));
+            }
+        }
+    }
+}
+
+#[test]
+fn should_reject_count_tree_descents_but_allow_disjoint_count_selections() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    insert_repost(&drive, &feed, OWNER_3, POST_D, 23);
+    let pv = platform_version();
+    let total = bound(
+        &feed,
+        "repost",
+        SubQueryKind::Count,
+        BindingSource::Page,
+        "$id",
+        "postId",
+        None,
+    );
+    let mut per_owner = total.clone();
+    per_owner.where_clauses.push(WhereClause {
+        field: "$ownerId".into(),
+        operator: WhereOperator::Equal,
+        value: Value::Identifier(OWNER_1),
+    });
+    let mut query = DriveCompositeDocumentQuery {
+        page: page_by_hashtag(&feed, "dash", Some(10)),
+        sub_queries: vec![total, per_owner],
+    };
+    for result in [
+        drive
+            .query_composite_documents(&query, None, None, pv)
+            .map(|_| ()),
+        drive
+            .query_composite_documents_with_proof(&query, pv)
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("another component descends"), "{error}");
+    }
+
+    // The total now selects D's count tree, while the per-owner query
+    // descends through A/B/C. Their actual selections do not overlap.
+    query.sub_queries[0]
+        .binding
+        .as_mut()
+        .expect("bound")
+        .source_property = "quotedPostId".into();
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("disjoint counts materialize")
+        .result;
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("disjoint counts prove");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("disjoint counts verify");
+    assert_eq!(
+        counts(&verified.sub_results[0]),
+        BTreeMap::from([(POST_D, 1)])
+    );
+    assert_eq!(
+        counts(&verified.sub_results[1]),
+        BTreeMap::from([(POST_B, 1)])
+    );
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+#[test]
+fn should_preserve_descending_documents_and_key_ordered_counts() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut page = page_by_hashtag(&feed, "dash", Some(3));
+    page.internal_clauses = InternalClauses::extract_from_clauses(
+        vec![WhereClause {
+            field: "$id".into(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Identifier(POST_A),
+                Value::Identifier(POST_B),
+                Value::Identifier(POST_C),
+            ]),
+        }],
+        pv,
+    )
+    .expect("by-id page");
+    page.order_by.insert(
+        "$id".into(),
+        OrderClause {
+            field: "$id".into(),
+            ascending: false,
+        },
+    );
+    // Keep the sibling on another type's primary tree so its limited
+    // branch cannot overlap the page or the by-id join.
+    let sibling = DriveSubQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("repost").expect("repost"),
+        kind: SubQueryKind::Documents,
+        where_clauses: vec![],
+        order_by: vec![OrderClause {
+            field: "$id".into(),
+            ascending: false,
+        }],
+        limit: Some(1),
+        binding: None,
+    };
+    let mut sub_queries = vec![
+        bound(
+            &feed,
+            "post",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "quotedPostId",
+            "$id",
+            None,
+        ),
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        ),
+        sibling,
+    ];
+    // A later count also verifies that a descending sibling is a valid
+    // binding source and its limit is applied before deriving values.
+    sub_queries.push(bound(
+        &feed,
+        "like",
+        SubQueryKind::Count,
+        BindingSource::SubQuery(2),
+        "postId",
+        "postId",
+        None,
+    ));
+    let query = DriveCompositeDocumentQuery { page, sub_queries };
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_C, POST_B, POST_A]
+    );
+    assert_eq!(materialized.sub_results[2].documents().len(), 1);
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
 /// The full round trip: the server's materialized result and the
 /// verifier's composed result agree component for component.
 #[test]
@@ -691,6 +1016,36 @@ fn should_reject_invalid_composite_shapes() {
     join_with_limit.sub_queries[QUOTED_POSTS].limit = Some(5);
     expect_unsupported(join_with_limit, "by-id join with a limit");
 
+    let mut filtered_join = base.clone();
+    filtered_join.sub_queries[QUOTED_POSTS]
+        .where_clauses
+        .push(WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("dash".to_string()),
+        });
+    for result in [
+        filtered_join
+            .sub_query_document_query(
+                &filtered_join.sub_queries[QUOTED_POSTS],
+                &[Identifier::from(POST_D)],
+                pv,
+            )
+            .map(|_| ()),
+        drive
+            .query_composite_documents(&filtered_join, None, None, pv)
+            .map(|_| ()),
+        drive
+            .query_composite_documents_with_proof(&filtered_join, pv)
+            .map(|_| ()),
+        filtered_join
+            .verify_composite_documents_proof(&[], pv)
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+        assert!(result.unwrap_err().to_string().contains("no fixed clauses"));
+    }
+
     let mut lookup_without_limit = base.clone();
     lookup_without_limit.sub_queries[REPOSTS].limit = None;
     expect_unsupported(lookup_without_limit, "non-unique lookup without a limit");
@@ -765,4 +1120,78 @@ fn should_reject_invalid_composite_shapes() {
         count_on_a_looked_up_index,
         "count on the index a documents lookup reads through",
     );
+}
+
+#[test]
+fn should_check_count_and_document_descents_against_the_actual_bound_values() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    insert_repost(&drive, &feed, OWNER_3, POST_D, 23);
+    let pv = platform_version();
+    let mut query = DriveCompositeDocumentQuery {
+        page: page_by_hashtag(&feed, "dash", Some(10)),
+        sub_queries: vec![
+            bound(
+                &feed,
+                "repost",
+                SubQueryKind::Count,
+                BindingSource::Page,
+                "$id",
+                "postId",
+                None,
+            ),
+            DriveSubQuery {
+                contract: &feed,
+                document_type: feed.document_type_for_name("repost").expect("repost"),
+                kind: SubQueryKind::Documents,
+                where_clauses: vec![WhereClause {
+                    field: "postId".into(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(POST_B),
+                }],
+                order_by: vec![],
+                limit: None,
+                binding: Some(SubQueryBinding {
+                    source: BindingSource::Page,
+                    source_property: "$ownerId".into(),
+                    field: "$ownerId".into(),
+                }),
+            },
+        ],
+    };
+    for result in [
+        drive
+            .query_composite_documents(&query, None, None, pv)
+            .map(|_| ()),
+        drive
+            .query_composite_documents_with_proof(&query, pv)
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("another component descends"), "{error}");
+    }
+
+    // Moving the document selection to D leaves the A/B/C count trees
+    // untouched, although the base paths still nest on the same index.
+    query.sub_queries[1].where_clauses[0].value = Value::Identifier(POST_D);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("disjoint counts and documents materialize")
+        .result;
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("disjoint counts and documents prove");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("disjoint counts and documents verify");
+    assert_eq!(
+        counts(&verified.sub_results[0]),
+        BTreeMap::from([(POST_A, 1), (POST_B, 2)])
+    );
+    assert_eq!(
+        post_ids_of(&verified.sub_results[1], "postId"),
+        vec![POST_D]
+    );
+    assert_eq!(verified.sub_results, materialized.sub_results);
 }
