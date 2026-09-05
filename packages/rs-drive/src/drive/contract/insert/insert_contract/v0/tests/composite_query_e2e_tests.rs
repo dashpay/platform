@@ -707,6 +707,16 @@ fn should_preserve_descending_documents_and_key_ordered_counts() {
         .expect("verifies");
     assert_eq!(verified.page_documents, materialized.page_documents);
     assert_eq!(verified.sub_results, materialized.sub_results);
+    // The count bound to the sibling derived exactly the one post the
+    // sibling's limit left it: A carries two likes, B one.
+    let sibling_posts = post_ids_of(&verified.sub_results[2], "postId");
+    assert_eq!(sibling_posts.len(), 1);
+    let expected_likes = if sibling_posts[0] == POST_A { 2 } else { 1 };
+    assert_eq!(
+        counts(&verified.sub_results[3]),
+        BTreeMap::from([(sibling_posts[0], expected_likes)]),
+        "the sibling-bound count covers the sibling's single derived post"
+    );
 }
 
 /// The full round trip: the server's materialized result and the
