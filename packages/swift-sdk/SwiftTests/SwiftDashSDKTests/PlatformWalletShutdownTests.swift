@@ -141,6 +141,65 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertEqual(metrics.steps.map(\.name), Self.expectedOrder)
     }
 
+    func testDiagnosticsDoNotBlockSyncAdmissionButShutdownWaitsForThem() async throws {
+        let recorder = TeardownRecorder()
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 19,
+            calls: Self.makeCalls(recorder: recorder)
+        )
+
+        try manager.admitCoreDiagnosticsNativeOp()
+
+        // Diagnostics only perform read-only FFI work. A synchronous wallet
+        // operation must therefore pass native-op admission while diagnostics
+        // are active. The empty seed then fails at its own validation seam,
+        // proving admission did not reject it as an overlapping native op.
+        XCTAssertThrowsError(
+            try manager.createWallet(seed: Data(), network: .testnet)
+        ) { error in
+            guard let walletError = error as? PlatformWalletError,
+                  case .invalidParameter = walletError
+            else {
+                return XCTFail("expected invalidParameter, got \(error)")
+            }
+        }
+
+        let shutdownTask = Task { await manager.shutdown() }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.handle, 19, "shutdown must not take the handle early")
+        XCTAssertTrue(recorder.names.isEmpty, "native teardown must wait for diagnostics")
+
+        manager.finishCoreDiagnosticsNativeOp()
+        let metrics = await shutdownTask.value
+
+        XCTAssertEqual(manager.handle, NULL_HANDLE)
+        XCTAssertEqual(metrics.steps.map(\.name), Self.expectedOrder)
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
+    }
+
+    func testUnbalancedDiagnosticsFinishCannotUnderflowShutdownCounter() async throws {
+        let recorder = TeardownRecorder()
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 20,
+            calls: Self.makeCalls(recorder: recorder)
+        )
+
+        // A stray release at zero must be ignored. Without the guard this
+        // makes the next admission look idle and lets shutdown take its handle.
+        manager.finishCoreDiagnosticsNativeOp()
+        try manager.admitCoreDiagnosticsNativeOp()
+
+        let shutdownTask = Task { await manager.shutdown() }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(manager.handle, 20)
+        XCTAssertTrue(recorder.names.isEmpty)
+
+        manager.finishCoreDiagnosticsNativeOp()
+        let metrics = await shutdownTask.value
+        XCTAssertEqual(metrics.steps.map(\.name), Self.expectedOrder)
+        XCTAssertEqual(recorder.names, Self.expectedOrder)
+    }
+
     /// A completed real shutdown makes this manager terminal. Reconfiguration
     /// must fail before another native handle or callback context is installed.
     func testConfigurationAfterRealShutdownIsRejected() async {

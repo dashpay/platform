@@ -31,15 +31,23 @@ import DashSDKFFI
 /// Serves every read live except the one model type it is told to fault,
 /// and records the reads it saw so a test can prove which fetch failed.
 private final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
-    struct ReadFault: Error {}
+    struct ReadFault: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
 
     private let live = LiveModelFetcher()
     private let faulted: ObjectIdentifier
+    private let faultMessage: String
     private let lock = NSLock()
     private var reads: [String] = []
 
-    init(faulting model: any PersistentModel.Type) {
+    init(
+        faulting model: any PersistentModel.Type,
+        faultMessage: String = "injected SwiftData read failure"
+    ) {
         faulted = ObjectIdentifier(model)
+        self.faultMessage = faultMessage
     }
 
     /// Model names in the order they were read, the faulted one included.
@@ -56,7 +64,9 @@ private final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
         lock.lock()
         reads.append(String(describing: T.self))
         lock.unlock()
-        guard ObjectIdentifier(T.self) != faulted else { throw ReadFault() }
+        guard ObjectIdentifier(T.self) != faulted else {
+            throw ReadFault(message: faultMessage)
+        }
         return try live.fetch(descriptor, in: context)
     }
 }
@@ -83,6 +93,16 @@ final class AssetLockSpendVisibilityTests: XCTestCase {
         handler = nil
         container = nil
         super.tearDown()
+    }
+
+    private func temporaryLogDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "AssetLockSpendVisibilityTests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return directory
     }
 
     // MARK: Fixtures
@@ -269,19 +289,26 @@ final class AssetLockSpendVisibilityTests: XCTestCase {
     /// which rolls the status back and lets Rust re-emit it.
     func testPersistAssetLocksFailsTheRoundWhenTheStaleTxoFetchThrows() throws {
         let outpoint = try seedFundingTxoSpentByAMempoolAssetLock(into: container)
-        let injector = FetchFaultInjector(faulting: PersistentTxo.self)
+        let privacyTxid = Data((0..<32).map { UInt8($0) })
+        let outPointRaw = PersistentTxo.makeOutpoint(txid: privacyTxid, vout: 0)
+        let outPointHex = PersistentAssetLock.encodeOutPoint(rawBytes: outPointRaw)
+        let injector = FetchFaultInjector(
+            faulting: PersistentTxo.self,
+            faultMessage: "failed for \(outPointHex), wire \(privacyTxid.hexString), at /private/user/wallet.sqlite"
+        )
         let handler = PlatformWalletPersistenceHandler(
             modelContainer: container,
             network: .testnet,
             modelFetcher: injector
         )
-        let outPointRaw = PersistentTxo.makeOutpoint(txid: lockTxid, vout: 0)
+        let session = try temporaryLogDirectory()
+        XCTAssertTrue(SDKLogger.installFileSink(at: session, includeDebug: false))
 
         handler.beginChangeset(walletId: walletId)
         let staged = handler.persistAssetLocks(
             walletId: walletId,
             upserts: [.init(
-                outPointHex: PersistentAssetLock.encodeOutPoint(rawBytes: outPointRaw),
+                outPointHex: outPointHex,
                 transactionBytes: Data(repeating: 0x05, count: 10),
                 fundingTypeRaw: 0,
                 identityIndexRaw: 0,
@@ -312,6 +339,25 @@ final class AssetLockSpendVisibilityTests: XCTestCase {
             try txoIsSpent(outpoint: outpoint),
             "and nothing may be left half-applied by the rolled-back round"
         )
+
+        SDKLogger.flush()
+        let log = try String(
+            contentsOf: session.appendingPathComponent("swift/run.log"),
+            encoding: .utf8
+        )
+        let event = try XCTUnwrap(log.split(separator: "\n").first {
+            $0.contains("event=persistence_asset_lock_stale_txo_fetch_failed ")
+        })
+        XCTAssertTrue(event.contains(
+            "outpoint_reference=\(SDKLogFormatter.reference(outPointHex))"
+        ))
+        XCTAssertTrue(event.contains("<redacted>"))
+        XCTAssertFalse(event.contains(outPointHex))
+        XCTAssertFalse(event.contains(privacyTxid.hexString))
+        XCTAssertFalse(event.contains(Data(privacyTxid.reversed()).hexString))
+        XCTAssertFalse(event.contains(outPointRaw.hexString))
+        XCTAssertFalse(event.contains(walletId.hexString))
+        XCTAssertFalse(event.contains("wallet.sqlite"))
     }
 
     /// An unreadable lock table must not be read as the positive claim

@@ -467,6 +467,11 @@ public class PlatformWalletManager: ObservableObject {
     /// data (for create, the caller would roll back its mnemonic and
     /// orphan the persisted rows).
     private var activeNativeOpCount = 0
+    /// Read-only Core diagnostics have their own admission count. They must
+    /// keep the manager handle alive until their FFI reads finish, but they do
+    /// not make synchronous create/load/delete operations unsafe and therefore
+    /// must not participate in `ensureSyncNativeOpAllowed`.
+    private var activeCoreDiagnosticsNativeOpCount = 0
     private var nativeOpDrainContinuations: [CheckedContinuation<Void, Never>] = []
 
     /// Admission + bookkeeping shared by the async native entrypoints:
@@ -484,11 +489,46 @@ public class PlatformWalletManager: ObservableObject {
 
     private func finishNativeOp() {
         activeNativeOpCount -= 1
-        if activeNativeOpCount == 0, !nativeOpDrainContinuations.isEmpty {
-            let waiters = nativeOpDrainContinuations
-            nativeOpDrainContinuations.removeAll()
-            waiters.forEach { $0.resume() }
+        resumeNativeOpDrainIfIdle()
+    }
+
+    /// Reserves the native manager handle for one read-only diagnostic pass.
+    /// Shutdown drains this counter, while synchronous wallet operations
+    /// intentionally ignore it because Rust serializes its own wallet state.
+    /// Every successful admission must be balanced by
+    /// ``finishCoreDiagnosticsNativeOp()``.
+    func admitCoreDiagnosticsNativeOp() throws {
+        guard !shutdownRequested else {
+            throw PlatformWalletError.invalidHandle(
+                "manager shutdown is in progress; coreWalletDiagnostics rejected")
         }
+        activeCoreDiagnosticsNativeOpCount += 1
+    }
+
+    /// Releases a successful diagnostic admission. The guard keeps a future
+    /// shutdown from observing a negative counter if an internal caller ever
+    /// violates the admission/defer contract.
+    func finishCoreDiagnosticsNativeOp() {
+        guard activeCoreDiagnosticsNativeOpCount > 0 else {
+            SDKLogger.event(
+                "core_diagnostics_native_op_counter_underflow",
+                category: .lifecycle,
+                severity: .error
+            )
+            return
+        }
+        activeCoreDiagnosticsNativeOpCount -= 1
+        resumeNativeOpDrainIfIdle()
+    }
+
+    private func resumeNativeOpDrainIfIdle() {
+        guard activeNativeOpCount == 0,
+              activeCoreDiagnosticsNativeOpCount == 0,
+              !nativeOpDrainContinuations.isEmpty
+        else { return }
+        let waiters = nativeOpDrainContinuations
+        nativeOpDrainContinuations.removeAll()
+        waiters.forEach { $0.resume() }
     }
 
     /// Test seam for the individual native calls. Production keeps `.live`;
@@ -624,7 +664,7 @@ public class PlatformWalletManager: ObservableObject {
                     ranOffMainThread: false)
             }
             shutdownRequested = true
-            if activeNativeOpCount == 0 { break }
+            if activeNativeOpCount == 0, activeCoreDiagnosticsNativeOpCount == 0 { break }
             await withCheckedContinuation { continuation in
                 nativeOpDrainContinuations.append(continuation)
             }

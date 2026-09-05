@@ -91,6 +91,24 @@ public struct PlatformSpvSyncProgress: Sendable, Equatable {
     }
 }
 
+enum CoreRescanDiagnosticResult: String, Sendable, Equatable {
+    case armed
+    case acceptedNoRewind = "accepted_no_rewind"
+    case noOp = "no_op"
+}
+
+/// Classifies only what can be proven from the checkpoint visible before the
+/// accepted FFI call. A missing checkpoint is not evidence of a rewind.
+func coreRescanDiagnosticResult(
+    previousSyncedHeight: UInt32?,
+    requestedStartHeight: UInt32
+) -> CoreRescanDiagnosticResult {
+    guard let previousSyncedHeight else { return .acceptedNoRewind }
+    if requestedStartHeight < previousSyncedHeight { return .armed }
+    if requestedStartHeight == previousSyncedHeight { return .noOp }
+    return .acceptedNoRewind
+}
+
 /// Node type of a connected SPV peer, classified against the masternode
 /// list. Mirrors Rust's `SpvPeerNodeType` / the `SPV_PEER_NODE_TYPE_*`
 /// FFI constants.
@@ -316,12 +334,48 @@ extension PlatformWalletManager {
                 "walletId must be exactly 32 bytes"
             )
         }
-        try walletId.withUnsafeBytes { widRaw in
-            guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            else {
-                throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+        let previousHeight = coreWalletState(for: walletId)?.syncedHeight
+        do {
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                try platform_wallet_manager_spv_rescan_filters(handle, widPtr, fromHeight).check()
             }
-            try platform_wallet_manager_spv_rescan_filters(handle, widPtr, fromHeight).check()
+            let diagnosticResult = coreRescanDiagnosticResult(
+                previousSyncedHeight: previousHeight,
+                requestedStartHeight: fromHeight
+            )
+            var fields: [String: SDKLogValue] = [
+                "from_height": .unsignedInteger(UInt64(fromHeight)),
+                "result": .publicText(diagnosticResult.rawValue),
+                "wallet_reference": .reference(walletId),
+            ]
+            if let previousHeight {
+                fields["previous_synced_height"] = .unsignedInteger(UInt64(previousHeight))
+            }
+            SDKLogger.event(
+                "core_rescan_armed",
+                category: .persistence,
+                fields: fields
+            )
+        } catch {
+            var fields: [String: SDKLogValue] = [
+                "from_height": .unsignedInteger(UInt64(fromHeight)),
+                "result": .publicText("failed"),
+                "wallet_reference": .reference(walletId),
+            ]
+            if let previousHeight {
+                fields["previous_synced_height"] = .unsignedInteger(UInt64(previousHeight))
+            }
+            SDKLogger.event(
+                "core_rescan_armed",
+                category: .persistence,
+                severity: .error,
+                fields: fields
+            )
+            throw error
         }
     }
 }
