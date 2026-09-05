@@ -1,21 +1,61 @@
-* @QuantumExplorer
+# Code owners for dashpay/platform.
+#
+# Rules are last-match-wins: the final matching line decides ownership.
+# Only ONE owner's approval is needed per changed path (branch protection
+# requires 1 approving review from a code owner).
+#
+# Team membership is the knob to turn when review load shifts — prefer
+# adding someone to a team over editing this file.
 
-# SDK packages
-/packages/rs-sdk/ @QuantumExplorer @shumkov @lklimek
-/packages/rs-sdk-ffi/ @QuantumExplorer @shumkov @lklimek
-/packages/rs-sdk-trusted-context-provider/ @QuantumExplorer @shumkov
-/packages/js-dash-sdk/ @QuantumExplorer @shumkov
-/packages/js-evo-sdk/ @QuantumExplorer @shumkov
-/packages/wasm-sdk/ @QuantumExplorer @shumkov
-/packages/swift-sdk/ @QuantumExplorer @shumkov @llbartekll @ZocoLini
+# Fallback for anything not matched below.
+* @shumkov @lklimek
 
-# Platform wallet stack
-/packages/rs-platform-wallet/ @QuantumExplorer @shumkov @lklimek @llbartekll @ZocoLini
-/packages/rs-platform-wallet-ffi/ @QuantumExplorer @shumkov @lklimek @llbartekll @ZocoLini
-/packages/rs-platform-wallet-storage/ @QuantumExplorer @shumkov @lklimek @llbartekll @ZocoLini
+# ---------- Consensus core ----------
+/packages/rs-drive-abci/                    @dashpay/drive-owners
+/packages/rs-drive/                         @dashpay/drive-owners
+/packages/rs-dpp/                           @dashpay/drive-owners
+/packages/rs-platform-version/              @dashpay/drive-owners
+/packages/rs-platform-value/                @QuantumExplorer
+/packages/rs-drive-proof-verifier/          @dashpay/drive-owners @lklimek
 
-# Proof verification
-/packages/rs-drive-proof-verifier/ @QuantumExplorer @shumkov @lklimek
+# ---------- DAPI / wire ----------
+/packages/rs-dapi/                          @dashpay/sdk-owners
+/packages/rs-dapi-client/                   @dashpay/sdk-owners
+/packages/dapi-grpc/protos/                 @dashpay/sdk-owners
 
-# WASM DPP v2
-/packages/wasm-dpp2/ @QuantumExplorer @shumkov
+# ---------- Rust SDK / WASM ----------
+/packages/rs-sdk/                           @dashpay/sdk-owners
+/packages/rs-sdk-ffi/                       @dashpay/sdk-owners @ZocoLini
+/packages/rs-sdk-trusted-context-provider/  @dashpay/sdk-owners
+/packages/dash-platform-queries/            @dashpay/sdk-owners
+/packages/wasm-sdk/                         @dashpay/sdk-owners
+/packages/wasm-dpp/                         @dashpay/sdk-owners
+/packages/wasm-dpp2/                        @dashpay/sdk-owners
+/packages/wasm-drive-verify/                @dashpay/sdk-owners
+
+# ---------- Wallet stack ----------
+/packages/rs-platform-wallet/               @dashpay/wallet-owners
+/packages/rs-platform-wallet-ffi/           @dashpay/wallet-owners
+/packages/rs-platform-wallet-storage/       @dashpay/wallet-owners
+
+# ---------- Mobile ----------
+/packages/swift-sdk/                        @dashpay/mobile-team
+/packages/kotlin-sdk/                       @dashpay/mobile-team
+/packages/rs-unified-sdk-jni/               @dashpay/mobile-team
+
+# ---------- JavaScript / Node ----------
+/packages/dashmate/                         @dashpay/js-owners
+/packages/dapi/                             @dashpay/js-owners
+/packages/js-dapi-client/                   @dashpay/js-owners
+/packages/js-evo-sdk/                       @dashpay/js-owners
+/packages/js-dash-sdk/                      @dashpay/js-owners
+/packages/wallet-lib/                       @dashpay/js-owners
+/packages/dash-spv/                         @dashpay/js-owners
+/packages/platform-test-suite/              @dashpay/js-owners
+/packages/js-grpc-common/                   @dashpay/js-owners
+/packages/bench-suite/                      @dashpay/js-owners
+
+# ---------- Build & CI ----------
+/.github/workflows/                         @dashpay/infra-team @shumkov
+/Cargo.toml                                 @dashpay/drive-owners
+/CODEOWNERS                                 @QuantumExplorer @shumkov
