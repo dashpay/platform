@@ -380,10 +380,9 @@ impl PlatformWallet {
 
     /// Access the identity wallet.
     ///
-    /// Covers both identity-lifecycle and DashPay-contract operations —
-    /// these used to be split across `identity()` / `dashpay()`, but the
-    /// two facades were merged (the underlying `ManagedIdentity` state
-    /// was already shared between them). Keeps the single `SpvBroadcaster`
+    /// Covers both identity-lifecycle and DashPay-contract operations in
+    /// one facade, since the underlying `ManagedIdentity` state is shared
+    /// between them. Keeps the single `SpvBroadcaster`
     /// specialization the rest of this wallet uses.
     pub fn identity(&self) -> &IdentityWallet<SpvBroadcaster> {
         &self.identity
@@ -1001,10 +1000,10 @@ impl PlatformWallet {
         // and per-subwallet store state is purged only for accounts
         // this registration DROPS or re-keys — accounts that remain
         // bound with the same viewing key keep their in-memory notes
-        // and watermark. A re-bind racing an in-flight sync pass can
-        // therefore no longer wipe the pass's results (the former
-        // unregister-then-register cycle here purged the whole
-        // wallet behind the pass's store lock and then restored a
+        // and watermark. A re-bind racing an in-flight sync pass
+        // therefore cannot wipe the pass's results (an
+        // unregister-then-register cycle here would purge the whole
+        // wallet behind the pass's store lock and then restore a
         // pre-pass snapshot — the "note discovered by sync is
         // unspendable until app restart" / "every pass rescans from
         // 0" failure). Registration also runs BEFORE the restore so
@@ -1394,7 +1393,7 @@ impl PlatformWallet {
     /// address (`"dash1…"` / `"tdash1…"`). Parsed via
     /// `PlatformAddress::from_bech32m_string`; the recipient's HRP is
     /// verified against the wallet's network HRP class here, since the
-    /// network-agnostic decoder no longer enforces it. `seed` supplies
+    /// network-agnostic decoder does not enforce it. `seed` supplies
     /// the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
     #[cfg(feature = "shielded")]
@@ -2084,8 +2083,8 @@ mod check_recipient_hrp_tests {
 
     #[test]
     fn devnet_address_into_devnet_wallet_is_accepted() {
-        // The paloma regression: a devnet `tdash1…` recipient must be
-        // accepted by a devnet wallet (it was previously mis-rejected as
+        // A devnet `tdash1…` recipient must be
+        // accepted by a devnet wallet (not mis-rejected as
         // Testnet).
         let addr = recipient(dashcore::Network::Devnet);
         assert!(addr.starts_with("tdash1"));

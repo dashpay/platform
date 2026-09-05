@@ -1217,7 +1217,7 @@ fn count_account_build_ops(queue: &[crate::changeset::PendingContactCrypto]) -> 
 /// on the wallet. That is right for a recurring background sweep and wrong for
 /// anything that treats the pass as a precondition, because the two endings it
 /// collapses are opposites — "Platform answered, and there is nothing new" and
-/// "Platform answered nobody, so we do not know". Both used to arrive as
+/// "Platform answered nobody, so we do not know". Both arrive as
 /// `Ok(vec![])`.
 ///
 /// The distinction matters most at startup, where a completed pass is the
@@ -2318,11 +2318,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     //
                     // Deciding here means a MIXED failure — our key
                     // purpose-rejected and the contact's key hard-faulted —
-                    // now leaves the entry queued where the composed validator
-                    // would have marked the channel broken. Deliberate: see
+                    // leaves the entry queued where a composed validator would
+                    // mark the channel broken. Deliberate: see
                     // `validate_recipient_key`. Marking broken is unappealable
-                    // by the user, and the retry it avoids no longer costs a
-                    // fetch.
+                    // by the user, and the retry it avoids costs no fetch.
                     let our_identity = {
                         let wm = self.wallet_manager.read().await;
                         wm.get_wallet_info(&self.wallet_id)
@@ -5469,7 +5468,7 @@ mod contact_info_provider_tests {
     const PHRASE: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
-    /// MUST-FIX (security review): the contactInfo seal/open the signer produces
+    /// Invariant: the contactInfo seal/open the signer produces
     /// must be byte-identical to the resident `derive_contact_info_keys` AT THE
     /// REAL identity-auth root path — not an arbitrary path. contactInfo is
     /// self-encrypted (no counterparty round-trip), so a wrong root silently

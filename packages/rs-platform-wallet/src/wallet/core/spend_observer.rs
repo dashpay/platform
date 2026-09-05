@@ -7,12 +7,12 @@
 //! network; this side takes it down when the wallet can actually see that the
 //! outpoints are spent.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use arc_swap::ArcSwap;
 use dash_spv::EventHandler;
 use dashcore::OutPoint;
-use tokio::sync::RwLock;
 
 use crate::changeset::core_bridge::spent_outpoints;
 use crate::events::{PlatformEventHandler, WalletEvent};
@@ -28,12 +28,11 @@ use crate::wallet::PlatformWallet;
 /// its inputs fenced, because the broadcaster's return says "this may be on the
 /// network", not "this wallet has seen the spend" — and on the
 /// `DapiBroadcaster` path the two are far apart, since `sdk.execute` injects
-/// nothing into local wallet state. Something has to end that fence, and three
-/// earlier revisions tried to end it on elapsed `last_processed_height`. That
-/// cannot work: catch-up advances the chain clock over blocks mined *before*
-/// the transaction was submitted, so an ordinary historical sync retires a
-/// fence without a shred of evidence about the transaction it was protecting
-/// (`dashpay/platform#4309`).
+/// nothing into local wallet state. Something has to end that fence, and
+/// elapsed `last_processed_height` cannot be it: catch-up advances the chain
+/// clock over blocks mined *before* the transaction was submitted, so an
+/// ordinary historical sync would retire a fence without a shred of evidence
+/// about the transaction it was protecting.
 ///
 /// So the fence ends on the observation instead, and this handler is where the
 /// observation arrives.
@@ -70,158 +69,60 @@ use crate::wallet::PlatformWallet;
 /// processing, which holds the wallet-manager WRITE lock for the whole batch.
 /// Resolving the generation through *that* lock would deadlock or silently drop
 /// every event during initial sync, so this handler holds an `Arc` clone of the
-/// manager's `wallets` map instead — a separate lock, written only by manager
-/// lifecycle methods, so `try_read` essentially never contends. Releasing the
-/// fence then takes only the generation's `in_broadcast` `std::sync::Mutex` for
-/// a few hash operations and never awaits.
+/// manager's `wallets` map instead. That map is an [`ArcSwap`], so the lookup
+/// is wait-free and INFALLIBLE: a manager lifecycle write (wallet insert /
+/// remove / load) publishes a new map without ever making a reader fail or
+/// block. Releasing the fence then takes only the generation's `in_broadcast`
+/// `std::sync::Mutex` for a few hash operations and never awaits.
 ///
-/// # A contended map DEFERS the observation; it never discards it
-///
-/// `try_read` can still fail — wallet registration/removal holds the map's
-/// write lock for a moment — and this handler used to drop the observation on
-/// that failure and call the drop fail-safe. The *direction* was fail-safe (a
-/// dropped observation can only delay a release, never cause one), but the
-/// cost was not a wait: `TransactionDetected` can be the ONLY spend-bearing
+/// The infallibility is what makes a deferral queue unnecessary here. Over a
+/// `tokio::sync::RwLock` map, a `try_read` losing to a lifecycle writer would
+/// have to queue the observation for the next delivered event — dropping it
+/// is unacceptable, since `TransactionDetected` can be the ONLY spend-bearing
 /// event a dispatch ever produces (InstantLock promotions carry no record
 /// here by design, and an evicted or never-confirmed transaction inserts no
-/// `BlockProcessed` record), and the pending-spend fence has no deadline
-/// behind it. One moment of lock contention could therefore fence an input
-/// for the manager's lifetime even though the wallet HAD observed it spent
-/// (`dashpay/platform#4309`).
+/// `BlockProcessed` record) and the pending-spend fence has no deadline
+/// behind it, so one lost observation would fence an input for the manager's
+/// lifetime. With a read that cannot fail there is no such window and nothing
+/// to queue: every observation is applied at delivery.
 ///
-/// So a failed `try_read` now queues the observation in [`pending`]
-/// (per-wallet outpoint sets under a `std::sync::Mutex`), and EVERY delivered
-/// event — spend-bearing or not — first retries the queue. The evidence
-/// survives the contention and is applied at the next delivery, which during
-/// any sync activity is moments away. Draining on a spend-free event (a bare
-/// `SyncHeightAdvanced`, say) does not retire a fence by chain progress: it
-/// applies an observation that already arrived and was queued.
+/// One outcome stays terminal, deliberately: a wallet id that resolves to no
+/// entry in the map is unregistered — a resolution, not contention, with
+/// nothing to retry against.
 ///
-/// Two outcomes remain terminal, deliberately:
-///
-/// * a wallet id that resolves to NO entry in a successfully read map — the
-///   wallet is unregistered; that is a resolution, not contention, and it
-///   matches the pre-queue behaviour;
-/// * a queue already holding [`MAX_QUEUED_SPEND_OBSERVATIONS`] outpoints — a
-///   pathology no real contention window reaches (entries are deduplicated
-///   per wallet and drain on the next event), shed with a warning rather
-///   than allowed to grow without bound.
-///
-/// # Why the queue cannot deadlock
-///
-/// The handler's lock order is strictly nested and acyclic: the private
-/// `pending` mutex, then `wallets.try_read()`, then each resolved
-/// generation's `in_broadcast` mutex (inside
-/// [`observe_spent`](super::WalletGeneration::observe_spent)). Nothing else
-/// in the crate takes the `pending` mutex at all; the `in_broadcast` critical
-/// sections are pure hash operations that acquire no further lock; and the
-/// one lock another thread can hold long — the `wallets` map, on the
-/// registration/removal write path — is only ever PROBED here (`try_read`),
-/// never awaited, so this handler can never be the blocked edge in a cycle
-/// with those writers.
-///
-/// [`pending`]: Self::pending
 pub struct SpendObservationHandler {
-    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
-    /// Observations whose wallets-map probe was contended, awaiting the next
-    /// delivered event — see the type docs. Keyed per wallet with the
-    /// outpoints deduplicated: observations are idempotent set-unions
-    /// ([`observe_spent`](super::WalletGeneration::observe_spent)), so
-    /// neither ordering nor multiplicity needs preserving.
-    pending: Mutex<BTreeMap<WalletId, BTreeSet<OutPoint>>>,
+    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
 
-/// Upper bound on the total outpoints [`SpendObservationHandler`] will hold
-/// queued across all wallets. Queued entries drain on the very next delivered
-/// event and are deduplicated, so reaching this bound takes a wallets-map
-/// writer stalled across thousands of distinct own-spend observations — a
-/// pathology, and one worth a warning rather than unbounded growth.
-const MAX_QUEUED_SPEND_OBSERVATIONS: usize = 4096;
-
 impl SpendObservationHandler {
-    pub fn new(wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
-        Self {
-            wallets,
-            pending: Mutex::new(BTreeMap::new()),
-        }
+    pub fn new(wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
+        Self { wallets }
     }
 
-    /// Recovers from a poisoned mutex rather than panicking — the guarded
-    /// data is a plain outpoint-set map with no invariant a partial write
-    /// could break, and panicking here would take down SPV's event fan-out.
-    /// (Same policy as the fence map itself.)
-    fn pending_lock(&self) -> MutexGuard<'_, BTreeMap<WalletId, BTreeSet<OutPoint>>> {
-        self.pending.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Queue `observation` (if any), then apply everything queued if the
-    /// wallets map can be read right now.
+    /// Apply `observation` to its wallet's generation.
     ///
-    /// The pending mutex is held across the whole attempt; see the type docs
-    /// for why that nesting cannot deadlock. On a contended map everything —
-    /// this observation included — simply stays queued for the next event.
-    fn observe(&self, observation: Option<(WalletId, Vec<OutPoint>)>) {
-        let mut pending = self.pending_lock();
-        if let Some((wallet_id, outpoints)) = observation {
-            Self::enqueue(&mut pending, wallet_id, outpoints);
-        }
-        if pending.is_empty() {
-            return;
-        }
-        // try_read on the wallets map, NOT the SPV-contended wallet_manager
-        // lock — see the type docs.
-        let Ok(wallets) = self.wallets.try_read() else {
-            tracing::debug!(
-                wallets = pending.len(),
-                "in-broadcast fence release deferred: wallets-map lock \
-                 contended; observation queued for the next event"
-            );
-            return;
-        };
-        for (wallet_id, outpoints) in std::mem::take(&mut *pending) {
-            if let Some(wallet) = wallets.get(&wallet_id) {
-                wallet.generation().observe_spent(outpoints);
-            }
-            // A wallet absent from a successfully read map is unregistered:
-            // resolved, not deferred — nothing to retry against.
-        }
-    }
-
-    /// Add one observation to the queue, shedding (with a warning) only past
-    /// [`MAX_QUEUED_SPEND_OBSERVATIONS`] total queued outpoints.
-    fn enqueue(
-        pending: &mut BTreeMap<WalletId, BTreeSet<OutPoint>>,
-        wallet_id: WalletId,
-        outpoints: Vec<OutPoint>,
-    ) {
-        let mut total: usize = pending.values().map(BTreeSet::len).sum();
-        let entry = pending.entry(wallet_id).or_default();
-        for outpoint in outpoints {
-            if total >= MAX_QUEUED_SPEND_OBSERVATIONS {
-                tracing::warn!(
-                    wallet = %hex::encode(wallet_id),
-                    %outpoint,
-                    "spend-observation queue full: shedding an observation; \
-                     any fence on this outpoint waits for its next spend event"
-                );
-                continue;
-            }
-            if entry.insert(outpoint) {
-                total += 1;
-            }
+    /// The wallets-map read is a wait-free `ArcSwap` load — it cannot fail or
+    /// block, so the observation is never deferred and never dropped. A wallet
+    /// absent from the loaded map is unregistered: resolved, not contended.
+    fn observe(&self, wallet_id: WalletId, outpoints: Vec<OutPoint>) {
+        // The wallets map, NOT the SPV-contended wallet_manager lock — see
+        // the type docs.
+        if let Some(wallet) = self.wallets.load().get(&wallet_id) {
+            wallet.generation().observe_spent(outpoints);
         }
     }
 }
 
 impl EventHandler for SpendObservationHandler {
     fn on_wallet_event(&self, event: &WalletEvent) {
-        // Every delivery retries the queue, so an observation deferred by a
-        // contended wallets map is applied at the next event of ANY variant —
-        // including the spend-free ones this handler otherwise ignores.
-        let observation = observing_wallet(event)
-            .map(|wallet_id| (*wallet_id, observed_spends(event)))
-            .filter(|(_, outpoints)| !outpoints.is_empty());
-        self.observe(observation);
+        let Some(wallet_id) = observing_wallet(event) else {
+            return;
+        };
+        let outpoints = observed_spends(event);
+        if outpoints.is_empty() {
+            return;
+        }
+        self.observe(*wallet_id, outpoints);
     }
 }
 
@@ -266,7 +167,7 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
         // Finality promotions of records the wallet already holds, and a bare
         // watermark advance. No new spend in any of them — and note that the
         // watermark is precisely the "chain moved" signal that must NOT touch
-        // a fence (`dashpay/platform#4309`).
+        // a fence.
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::ChainLockProcessed { .. }
         | WalletEvent::SyncHeightAdvanced { .. } => Vec::new(),
@@ -277,8 +178,7 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
 mod tests {
     //! Cover the projection — which events count as observing a spend, and
     //! which outpoints they yield. That decision IS the fence's release
-    //! condition (`dashpay/platform#4309`), so it is pinned here rather than
-    //! only exercised end to end.
+    //! condition, so it is pinned here rather than only exercised end to end.
 
     use dashcore::hashes::Hash;
     use dashcore::{
@@ -432,10 +332,9 @@ mod tests {
     /// THE VARIANT THAT MUST NEVER TOUCH A FENCE.
     ///
     /// `SyncHeightAdvanced` is the bare "the chain moved" watermark, and it is
-    /// precisely the signal three earlier revisions of this fix let retire a
-    /// fence — via a `last_processed_height + N` bound rather than directly,
-    /// but with the same effect. It reports no spend and must stay that way
-    /// (`dashpay/platform#4309`).
+    /// precisely the signal a `last_processed_height + N` bound would let
+    /// retire a fence — indirectly, but with the same effect. It reports no
+    /// spend and must stay that way.
     #[test]
     fn chain_progress_alone_reports_no_spend() {
         let event = WalletEvent::SyncHeightAdvanced {

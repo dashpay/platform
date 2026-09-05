@@ -111,6 +111,34 @@ interface AssetLockDao {
     suspend fun getByOutPointHex(outPointHex: String): AssetLockEntity?
 
     /**
+     * Strongest lifecycle status any asset lock funded by [txidHex] has
+     * reached, or null when the transaction funds no tracked lock.
+     *
+     * [txidHex] is the explorer DISPLAY txid hex (64 chars, wire order
+     * reversed) — the prefix of the `outPointHex` PK
+     * (`<txidDisplayHex>:<vout>`). Deliberately keyed on the txid alone
+     * and NOT on a whole outpoint: DIP-0027 lets one funding transaction
+     * carry several credit outputs, and `sync/reconstruction.rs` persists
+     * each of them under its own credit-output index, so the lock a given
+     * funding transaction produced can live at any vout. Finality is a
+     * property of the transaction, so `MAX` over the whole prefix is the
+     * right reduction — any output of it reaching InstantSendLocked means
+     * the transaction's inputs are gone.
+     *
+     * Same 64-hex input contract as [fundingTypeForTxid], enforced in SQL
+     * and compared against the exact 65-char `<txid>:` prefix rather than
+     * a LIKE pattern, so `%`/`_` in malformed input can never match
+     * arbitrary rows.
+     */
+    @Query(
+        "SELECT MAX(statusRaw) FROM asset_locks " +
+            "WHERE length(:txidHex) = 64 " +
+            "AND lower(:txidHex) NOT GLOB '*[^0-9a-f]*' " +
+            "AND substr(outPointHex, 1, 65) = lower(:txidHex) || ':'"
+    )
+    suspend fun maxStatusForTxid(txidHex: String): Int?
+
+    /**
      * Transaction-label resolver probe: the `fundingTypeRaw` of the asset
      * lock whose outpoint belongs to [txidHex]. [txidHex] is the explorer
      * DISPLAY txid hex (64 chars, wire order reversed; uppercase input is

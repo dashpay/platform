@@ -1,12 +1,24 @@
 use crate::context_provider::{WasmContext, WasmTrustedContext};
 use crate::error::WasmSdkError;
 use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::platform::{DataContract, Identifier};
 use dash_sdk::sdk::Uri;
 use dash_sdk::{Sdk, SdkBuilder};
+use futures::future::{FutureExt, LocalBoxFuture, Shared};
 use rs_dapi_client::{Address, RequestSettings};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+/// One contract fetch in flight, shareable by every concurrent cache miss
+/// for the same id. The output is cloned into each waiter, so it must be
+/// `Clone` — which is why the error side is the (cloneable)
+/// [`WasmSdkError`] rather than the SDK's own error.
+type SharedContractFetch = Shared<LocalBoxFuture<'static, Result<DataContract, WasmSdkError>>>;
 
 fn parse_addresses(addresses: &'static [&str]) -> Vec<Address> {
     addresses
@@ -27,6 +39,27 @@ fn default_local_addresses() -> Vec<Address> {
 pub struct WasmSdk {
     sdk: Sdk,
     trusted_context: Option<WasmTrustedContext>,
+    /// Contract fetches currently on the wire, keyed by contract id.
+    ///
+    /// A cold cache is hit by a BURST, not a single call: an app's first
+    /// paint fires several document queries against the same contract
+    /// before any of them has cached it, and without this map every one
+    /// of them would issue its own `getDataContract`. A miss either joins
+    /// the fetch already in flight for its id or starts (and registers)
+    /// one; the entry is removed by the fetch itself when it settles.
+    /// `Rc<RefCell>` because the wasm target is single-threaded and the
+    /// map is only ever touched between `.await`s.
+    inflight_contract_fetches: Rc<RefCell<HashMap<Identifier, SharedContractFetch>>>,
+}
+
+impl WasmSdk {
+    fn new(sdk: Sdk, trusted_context: Option<WasmTrustedContext>) -> Self {
+        Self {
+            sdk,
+            trusted_context,
+            inflight_contract_fetches: Rc::new(RefCell::new(HashMap::new())),
+        }
+    }
 }
 
 // Dereference WasmSdk to Sdk so that we can use &WasmSdk everywhere where &Sdk is needed
@@ -103,18 +136,15 @@ impl WasmSdk {
         &self,
         contract_id: dash_sdk::platform::Identifier,
     ) -> Result<dash_sdk::platform::DataContract, crate::error::WasmSdkError> {
-        use dash_sdk::platform::Fetch;
-
-        let contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
-            .await?
-            .ok_or_else(|| crate::error::WasmSdkError::not_found("Data contract not found"))?;
-
-        self.cache_contract(contract.clone());
-
-        Ok(contract)
+        fetch_contract_into_cache(self.sdk.clone(), self.trusted_context.clone(), contract_id).await
     }
 
-    /// Fetch a contract, checking cache first
+    /// Fetch a contract, checking the cache first.
+    ///
+    /// A miss does not always fetch: when a fetch for the same id is
+    /// already in flight (another query missed the cold cache a moment
+    /// ago), this call joins it and every waiter receives that one
+    /// fetch's result — see [`Self::join_or_start_contract_fetch`].
     pub(crate) async fn get_or_fetch_contract(
         &self,
         contract_id: dash_sdk::platform::Identifier,
@@ -123,7 +153,50 @@ impl WasmSdk {
             return Ok((*cached).clone());
         }
 
-        self.refresh_contract(contract_id).await
+        let sdk = self.sdk.clone();
+        let trusted_context = self.trusted_context.clone();
+        self.join_or_start_contract_fetch(contract_id, move || {
+            fetch_contract_into_cache(sdk, trusted_context, contract_id)
+        })
+        .await
+    }
+
+    /// Single-flight over contract fetches: join the fetch already in
+    /// flight for `contract_id`, or start the one `make_fetch` builds and
+    /// register it for later arrivals. The registration is removed by the
+    /// fetch itself once it settles, AFTER the cache is seeded, so a call
+    /// arriving after removal finds the cache rather than fetching again.
+    ///
+    /// `make_fetch` is only invoked when no fetch is in flight — the whole
+    /// point — which is what the single-flight test pins.
+    pub(crate) async fn join_or_start_contract_fetch<F>(
+        &self,
+        contract_id: Identifier,
+        make_fetch: impl FnOnce() -> F,
+    ) -> Result<DataContract, WasmSdkError>
+    where
+        F: Future<Output = Result<DataContract, WasmSdkError>> + 'static,
+    {
+        let fetch = {
+            let mut inflight = self.inflight_contract_fetches.borrow_mut();
+            match inflight.get(&contract_id) {
+                Some(existing) => existing.clone(),
+                None => {
+                    let registry = Rc::clone(&self.inflight_contract_fetches);
+                    let fetch = make_fetch();
+                    let shared: SharedContractFetch = async move {
+                        let result = fetch.await;
+                        registry.borrow_mut().remove(&contract_id);
+                        result
+                    }
+                    .boxed_local()
+                    .shared();
+                    inflight.insert(contract_id, shared.clone());
+                    shared
+                }
+            }
+        };
+        fetch.await
     }
 
     /// Remove a contract from the cache
@@ -343,10 +416,7 @@ impl WasmSdkBuilder {
 
     pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
         let sdk = self.inner.build().map_err(WasmSdkError::from)?;
-        Ok(WasmSdk {
-            sdk,
-            trusted_context: self.trusted_context,
-        })
+        Ok(WasmSdk::new(sdk, self.trusted_context))
     }
 
     #[wasm_bindgen(js_name = "withContextProvider")]
@@ -478,11 +548,35 @@ impl WasmSdk {
     /// Pair a mock `Sdk` with a trusted context so tests in sibling modules can
     /// drive the paths that read the contract and quorum caches.
     pub(crate) fn new_for_testing(sdk: Sdk, trusted_context: Option<WasmTrustedContext>) -> Self {
-        Self {
-            sdk,
-            trusted_context,
-        }
+        Self::new(sdk, trusted_context)
     }
+
+    /// How many contract fetches are registered as in flight right now.
+    pub(crate) fn inflight_contract_fetch_count(&self) -> usize {
+        self.inflight_contract_fetches.borrow().len()
+    }
+}
+
+/// The one real contract fetch: a proved `DataContract::fetch`, whose
+/// result seeds the trusted-context cache before it is handed back. Takes
+/// the SDK and context by value so the returned future is `'static` and
+/// can be registered as a shared in-flight fetch.
+async fn fetch_contract_into_cache(
+    sdk: Sdk,
+    trusted_context: Option<WasmTrustedContext>,
+    contract_id: Identifier,
+) -> Result<DataContract, WasmSdkError> {
+    use dash_sdk::platform::Fetch;
+
+    let contract = DataContract::fetch(&sdk, contract_id)
+        .await?
+        .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+
+    if let Some(context) = trusted_context {
+        context.add_known_contract(contract.clone());
+    }
+
+    Ok(contract)
 }
 
 #[cfg(test)]
@@ -673,10 +767,8 @@ mod tests {
             .await
             .expect("mock contract response should be configured");
 
-        let sdk = WasmSdk {
-            sdk: inner_sdk,
-            trusted_context: Some(WasmTrustedContext::for_testing(vec![])),
-        };
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
         assert!(sdk.get_cached_contract(&contract_id).is_none());
 
         let refreshed = sdk
@@ -708,10 +800,7 @@ mod tests {
             .await
             .expect("mock contract response should be configured");
 
-        let sdk = WasmSdk {
-            sdk: inner_sdk,
-            trusted_context: Some(context),
-        };
+        let sdk = WasmSdk::new_for_testing(inner_sdk, Some(context));
         let refreshed = sdk
             .refresh_contract(contract_id)
             .await
@@ -736,10 +825,8 @@ mod tests {
             .await
             .expect("mock absence response should be configured");
 
-        let sdk = WasmSdk {
-            sdk: inner_sdk,
-            trusted_context: Some(WasmTrustedContext::for_testing(vec![])),
-        };
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
 
         assert!(sdk.refresh_contract(contract_id).await.is_err());
         assert!(sdk.get_cached_contract(&contract_id).is_none());
@@ -748,12 +835,101 @@ mod tests {
     #[tokio::test]
     async fn refresh_contract_propagates_fetch_errors() {
         let contract_id = dash_sdk::platform::Identifier::new([0x77; 32]);
-        let sdk = WasmSdk {
-            sdk: Sdk::new_mock(),
-            trusted_context: Some(WasmTrustedContext::for_testing(vec![])),
-        };
+        let sdk = WasmSdk::new_for_testing(
+            Sdk::new_mock(),
+            Some(WasmTrustedContext::for_testing(vec![])),
+        );
 
         assert!(sdk.refresh_contract(contract_id).await.is_err());
         assert!(sdk.get_cached_contract(&contract_id).is_none());
+    }
+
+    /// The single-flight contract: two misses for one id while nothing
+    /// is cached start ONE fetch, both receive its result, and the
+    /// registration is gone once it settles. The fetch is gated on a
+    /// channel the test holds, so both arrivals are observably in flight
+    /// together regardless of how fast a real fetch would resolve.
+    #[tokio::test]
+    async fn concurrent_cache_misses_share_one_in_flight_fetch() {
+        use std::cell::Cell;
+
+        let sdk = WasmSdk::new_for_testing(
+            Sdk::new_mock(),
+            Some(WasmTrustedContext::for_testing(vec![])),
+        );
+        let expected = custom_contract(0x88, 1, sdk.sdk.version());
+        let contract_id = expected.id();
+
+        let (release, gate) = futures::channel::oneshot::channel::<()>();
+        let gate = gate.shared();
+        let fetches_started = Rc::new(Cell::new(0usize));
+        let make_fetch = |contract: DataContract| {
+            let gate = gate.clone();
+            let fetches_started = Rc::clone(&fetches_started);
+            move || {
+                fetches_started.set(fetches_started.get() + 1);
+                async move {
+                    gate.await.expect("the test releases the gate");
+                    Ok(contract)
+                }
+            }
+        };
+
+        let mut first =
+            Box::pin(sdk.join_or_start_contract_fetch(contract_id, make_fetch(expected.clone())));
+        let mut second =
+            Box::pin(sdk.join_or_start_contract_fetch(contract_id, make_fetch(expected.clone())));
+
+        assert!(futures::poll!(first.as_mut()).is_pending());
+        assert!(futures::poll!(second.as_mut()).is_pending());
+        assert_eq!(
+            fetches_started.get(),
+            1,
+            "the second miss must join the in-flight fetch, not start its own"
+        );
+        assert_eq!(sdk.inflight_contract_fetch_count(), 1);
+
+        release.send(()).expect("both waiters are alive");
+        let (first, second) = futures::join!(first, second);
+        assert_eq!(first.expect("first waiter"), expected);
+        assert_eq!(second.expect("second waiter"), expected);
+        assert_eq!(
+            sdk.inflight_contract_fetch_count(),
+            0,
+            "a settled fetch deregisters itself"
+        );
+    }
+
+    /// A miss arriving AFTER the shared fetch settled must find the cache
+    /// the fetch seeded, not start a second fetch: `get_or_fetch_contract`
+    /// checks the cache before consulting the in-flight registry.
+    #[tokio::test]
+    async fn a_miss_after_the_shared_fetch_settles_is_served_from_the_cache() {
+        let mut inner_sdk = Sdk::new_mock();
+        let expected = custom_contract(0x99, 1, inner_sdk.version());
+        let contract_id = expected.id();
+        inner_sdk
+            .mock()
+            .expect_fetch(contract_id, Some(expected.clone()))
+            .await
+            .expect("mock contract response should be configured");
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
+
+        let fetched = sdk
+            .get_or_fetch_contract(contract_id)
+            .await
+            .expect("the first miss fetches");
+        assert_eq!(fetched, expected);
+        assert_eq!(sdk.inflight_contract_fetch_count(), 0);
+
+        // Nothing is registered, so a fetch here could only come from a
+        // cache miss — and the cache was seeded by the fetch above.
+        assert!(sdk.get_cached_contract(&contract_id).is_some());
+        let again = sdk
+            .get_or_fetch_contract(contract_id)
+            .await
+            .expect("served from the cache");
+        assert_eq!(again, expected);
     }
 }

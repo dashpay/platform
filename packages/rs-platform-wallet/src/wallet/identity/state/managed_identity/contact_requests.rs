@@ -2055,8 +2055,8 @@ mod tests {
     }
 
     /// Per-element `apply_ignored_sender` over a fresh identity reproduces a
-    /// wholesale set assign — the equivalence the replay/restore paths (which
-    /// previously assigned or extended the whole `BTreeSet`) rely on.
+    /// wholesale set assign — the equivalence the replay/restore paths rely
+    /// on.
     #[test]
     fn apply_ignored_sender_loop_equals_wholesale_assign() {
         let persisted: std::collections::BTreeSet<Identifier> = [
