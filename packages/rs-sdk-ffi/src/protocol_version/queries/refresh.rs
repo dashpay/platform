@@ -17,9 +17,20 @@ use std::ffi::CString;
 /// flows (shielded pool shield/unshield/transfer/withdraw) reserve against the
 /// network's actual protocol version instead of the SDK's seed version.
 ///
+/// As part of the refresh the SDK also best-effort probes a bounded random
+/// sample of the known DAPI peers (unproven `getStatus`, limited concurrency,
+/// hard overall time budget) and biases subsequent peer selection towards
+/// nodes whose software already supports this client's latest protocol
+/// version. Probe failures are ignored and no peer is ever excluded — when no
+/// peer matches, selection falls back to any live peer.
+///
+/// This call blocks the calling thread until the probe and the proven query
+/// complete (it drives the SDK runtime via `block_on`); bindings must invoke
+/// it from a background thread/executor, never from the UI thread.
+///
 /// For an SDK pinned to a fixed protocol version (version updating disabled)
-/// this is a no-op: no network request is made and the pinned version is
-/// returned unchanged.
+/// the proven version query is skipped and the pinned version is returned
+/// unchanged; the best-effort peer probe above still runs.
 ///
 /// # Parameters
 /// * `sdk_handle` - Handle to the SDK instance.

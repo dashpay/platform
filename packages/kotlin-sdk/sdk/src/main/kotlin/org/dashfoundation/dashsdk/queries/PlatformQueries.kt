@@ -373,6 +373,16 @@ class SystemQueries internal constructor(private val sdk: Sdk) {
      * `PlatformWalletManager`'s), so fee-sensitive flows pick it up. Call on
      * app start and after every network switch. Returns the version after the
      * (possible) ratchet, or null.
+     *
+     * The refresh also best-effort probes a bounded random sample of the
+     * known DAPI peers (unproven `getStatus`, limited concurrency, hard
+     * overall time budget on the Rust side) and biases subsequent peer
+     * selection towards nodes supporting this client's latest protocol
+     * version. The probe runs even for a version-pinned SDK, so this call
+     * performs network I/O in every mode. Like every entry point here, the
+     * blocking native call is marshalled onto [Dispatchers.IO] by
+     * `queryGate.op` — it occupies a worker thread (and the query gate) for
+     * the probe + query duration, never the caller's dispatcher.
      */
     suspend fun refreshProtocolVersion(): Int? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.refreshProtocolVersion(sdk.handle) }?.toIntOrNull()

@@ -7,6 +7,7 @@ use crate::mock::MockResponse;
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::fetch_current_no_parameters::FetchCurrent;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::types::evonode::EvoNode;
 use crate::platform::Identifier;
 use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
@@ -23,6 +24,7 @@ use dpp::dashcore::Network;
 use dpp::prelude::IdentityNonce;
 use dpp::version::PlatformVersion;
 use drive::grovedb::operations::proof::GroveDBProof;
+use drive_proof_verifier::types::evonode_status::EvoNodeStatus;
 use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
@@ -42,6 +44,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
+use std::time::Duration;
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
@@ -71,6 +74,26 @@ const fn min_protocol_version(network: Network) -> u32 {
 
 /// Default signed-metadata freshness window for network SDKs.
 const DEFAULT_METADATA_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
+
+/// Per-node timeout for the best-effort peer protocol-version probe
+/// ([`Sdk::prefer_peers_with_latest_protocol_version`]).
+const PEER_VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+
+/// Maximum number of peers sampled per protocol-version probe. Bootstrap
+/// address lists can hold hundreds of seeds (mainnet ships ~340 Evo nodes);
+/// probing a random sample is enough to find preferred peers without a
+/// connection storm, and unprobed peers stay usable via the best-effort
+/// fallback in peer selection.
+const MAX_PEER_VERSION_PROBES: usize = 16;
+
+/// Maximum number of protocol-version probe connections in flight at once.
+const PEER_VERSION_PROBE_CONCURRENCY: usize = 8;
+
+/// Overall wall-clock budget for one protocol-version probe pass. Results
+/// that arrived before the deadline are kept; outstanding probes are dropped
+/// (their nodes simply stay unranked). Keeps app-start latency bounded even
+/// when several sampled peers hang until [`PEER_VERSION_PROBE_TIMEOUT`].
+const PEER_VERSION_PROBE_TOTAL_BUDGET: Duration = Duration::from_secs(6);
 
 /// The default request settings for the SDK, used when the user does not provide any.
 ///
@@ -426,8 +449,16 @@ impl Sdk {
     /// succeeds. Refresh therefore inherits the exact cryptographic trust of
     /// ordinary traffic; it adds no second, weaker source of truth.
     ///
+    /// Before the proven queries, this best-effort probes the known DAPI peers and
+    /// biases future peer selection towards nodes supporting this client's latest
+    /// protocol version (see [`Self::prefer_peers_with_latest_protocol_version`]).
+    /// The probe is unproven and can never fail this call; it only reorders peer
+    /// preference, it does not feed the version ratchet.
+    ///
     /// On a pinned SDK ([`SdkBuilder::with_version`], `version_pinned`
-    /// on) this issues no request and returns the pinned version.
+    /// on) this issues no proven query and returns the pinned version (the
+    /// best-effort peer probe above still runs — peer preference is orthogonal
+    /// to version pinning).
     ///
     /// If the fetch fails the failure is **non-fatal**: whatever version was
     /// already learned is kept — we never fall back to an unverified one. Note
@@ -438,14 +469,24 @@ impl Sdk {
     /// ratchet step is proof-verified and upward-only, so a partial refresh can
     /// only ever leave the SDK closer to the network's real version.
     ///
-    /// On a proofs-disabled SDK ([`SdkBuilder::with_proofs`]`(false)`) this is a
-    /// no-op that returns the current version: refresh relies on a proven query,
-    /// so with proofs off there is no trusted source to ratchet from.
+    /// On a proofs-disabled SDK ([`SdkBuilder::with_proofs`]`(false)`) the
+    /// proven ratchet is skipped and the current version is returned: refresh
+    /// relies on a proven query, so with proofs off there is no trusted source
+    /// to ratchet from. The peer probe still runs.
     ///
     /// Returns the SDK's protocol version number after the (possible) ratchet.
     ///
     /// [`SdkBuilder::with_version`]: SdkBuilder::with_version
     pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
+        // Best-effort: bias peer selection towards nodes that already support
+        // this client's newest protocol version. Never fails, never ratchets.
+        // Deliberately sequenced before (not overlapped with) the proven query
+        // below so that query already picks a preferred, up-to-date peer —
+        // probes are sampled and run concurrently, so the added latency is
+        // typically one status round-trip and hard-capped by
+        // PEER_VERSION_PROBE_TOTAL_BUDGET.
+        self.prefer_peers_with_latest_protocol_version().await;
+
         if !self.prove() {
             return Ok(self.protocol_version_number());
         }
@@ -462,6 +503,175 @@ impl Sdk {
             }
         }
         Ok(self.protocol_version_number())
+    }
+
+    /// Best-effort: probe DAPI peers for the protocol version they support and
+    /// prefer peers supporting this client's latest protocol version.
+    ///
+    /// Issues an unproven `getStatus` to a random sample of up to
+    /// [`MAX_PEER_VERSION_PROBES`] live addresses from the SDK's address list —
+    /// at most [`PEER_VERSION_PROBE_CONCURRENCY`] connections in flight, each
+    /// with a [`PEER_VERSION_PROBE_TIMEOUT`] per-node timeout, no retries, no
+    /// banning, and an overall [`PEER_VERSION_PROBE_TOTAL_BUDGET`] wall-clock
+    /// cap — and records each node's reported
+    /// `version.protocol.drive.latest` — the highest protocol version that
+    /// node's software supports, i.e. the version it desires/votes for. It then
+    /// marks [`PlatformVersion::latest()`] (this client's newest supported
+    /// protocol version) as the preferred peer version, so subsequent requests
+    /// pick, when possible, peers whose reported version is at least ours.
+    ///
+    /// The preference is strictly best-effort:
+    /// - the rankings of all sampled peers are cleared at the start of each
+    ///   pass, so a probe that fails — or is dropped by the total budget —
+    ///   leaves its peer unranked rather than preserving a stale claim from
+    ///   an earlier pass;
+    /// - when no live peer is known to support the target version, selection
+    ///   falls back to any live peer — and even when preferred peers exist,
+    ///   selection is only *weighted* towards them, never exclusive (see
+    ///   `AddressList::get_live_address`), because the reported version is an
+    ///   unproved self-assertion;
+    /// - the probe is *unproven* and feeds only peer ordering, never the SDK's
+    ///   protocol-version ratchet, which stays proof-driven
+    ///   ([`Self::maybe_update_protocol_version`]);
+    /// - the pass also stops early on [`Self::shutdown`], so a shutdown during
+    ///   refresh is not delayed by the remaining probe budget.
+    ///
+    /// Probes execute their transport directly against the target address
+    /// instead of going through the `DapiClient` executor: the executor pairs
+    /// every response with an address *it* selected, so a targeted probe
+    /// routed through it would attribute one peer's success to an unrelated
+    /// peer and mutate that peer's ban state. Direct execution keeps probes
+    /// free of any health-state side effects.
+    ///
+    /// Called automatically by [`Self::refresh_protocol_version`] (i.e. on app
+    /// start and network switch in the mobile SDKs); callable directly for
+    /// custom startup flows. On a mock SDK this is a no-op.
+    ///
+    /// Returns the number of probed peers found to support the target version.
+    pub async fn prefer_peers_with_latest_protocol_version(&self) -> usize {
+        use drive_proof_verifier::unproved::FromUnproved;
+        use futures::StreamExt;
+        use rs_dapi_client::transport::{PlatformGrpcClient, TransportClient};
+        use rs_dapi_client::ConnectionPool;
+
+        let dapi = match &self.inner {
+            SdkInstance::Dapi { dapi, .. } => dapi,
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { .. } => return 0,
+        };
+
+        let target = PlatformVersion::latest().protocol_version;
+        let address_list = dapi.address_list();
+        let addresses = address_list.sample_live_addresses(MAX_PEER_VERSION_PROBES);
+
+        // A fresh pass owns the rankings of every sampled peer: clear them up
+        // front so an unanswered probe cannot leave a stale claim behind.
+        for address in &addresses {
+            address_list.set_supported_protocol_version(address, None);
+        }
+
+        let probe_settings = RequestSettings {
+            connect_timeout: Some(PEER_VERSION_PROBE_TIMEOUT),
+            timeout: Some(PEER_VERSION_PROBE_TIMEOUT),
+            retries: Some(0),
+            ban_failed_address: Some(false),
+            max_decoding_message_size: None,
+        };
+
+        // Bounded fan-out: sampled peers only, limited concurrency, and an
+        // overall deadline. `take_until` keeps results that completed before
+        // the budget elapsed and drops the rest (those nodes stay unranked).
+        let mut probes = std::pin::pin!(futures::stream::iter(addresses.into_iter().map(
+            |address| async move {
+                let applied = self
+                    .dapi_client_settings
+                    .override_by(probe_settings)
+                    .finalize();
+                #[cfg(not(target_arch = "wasm32"))]
+                let applied = applied.with_ca_certificate(dapi.ca_certificate.clone());
+
+                // Direct transport execution — deliberately NOT
+                // `self.execute(..)`: see the health-state note in the method
+                // docs. `EvoNode` connects to its own address; the client we
+                // pass only satisfies the transport signature.
+                let node = EvoNode::new(address.clone());
+                let pool = ConnectionPool::new(1);
+                let result = match PlatformGrpcClient::with_uri_and_settings(
+                    address.uri().clone(),
+                    &applied,
+                    &pool,
+                ) {
+                    Ok(mut client) => node.clone().execute_transport(&mut client, &applied).await,
+                    Err(error) => Err(error),
+                };
+
+                let supported = match result {
+                    Ok(response) => {
+                        match <EvoNodeStatus as FromUnproved<EvoNode>>::maybe_from_unproved_with_metadata(
+                            node,
+                            response,
+                            self.network,
+                            self.version(),
+                        ) {
+                            Ok((Some(status), _)) => status
+                                .version
+                                .protocol
+                                .and_then(|protocol| protocol.drive)
+                                .map(|drive| drive.latest),
+                            Ok((None, _)) => None,
+                            Err(error) => {
+                                tracing::debug!(
+                                    target: "dash_sdk::protocol_version",
+                                    %address,
+                                    %error,
+                                    "peer protocol-version probe response invalid; leaving peer unranked"
+                                );
+                                None
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        tracing::debug!(
+                            target: "dash_sdk::protocol_version",
+                            %address,
+                            %error,
+                            "peer protocol-version probe failed; leaving peer unranked"
+                        );
+                        None
+                    }
+                };
+
+                (address, supported)
+            }
+        ))
+        .buffer_unordered(PEER_VERSION_PROBE_CONCURRENCY)
+        // Stop on whichever comes first: the overall probe budget, or SDK
+        // shutdown. Without the cancellation arm a `Sdk::shutdown()` issued
+        // during a refresh would still wait out the full budget.
+        .take_until(futures::future::select(
+            Box::pin(rs_dapi_client::transport::sleep(
+                PEER_VERSION_PROBE_TOTAL_BUDGET,
+            )),
+            Box::pin(self.cancelled()),
+        )));
+
+        let mut preferred_count = 0;
+        while let Some((address, supported)) = probes.next().await {
+            address_list.set_supported_protocol_version(&address, supported);
+            if supported.is_some_and(|version| version >= target) {
+                preferred_count += 1;
+            }
+        }
+
+        address_list.set_preferred_protocol_version(Some(target));
+        tracing::debug!(
+            target: "dash_sdk::protocol_version",
+            target_protocol_version = target,
+            preferred_peers = preferred_count,
+            "peer protocol-version probe complete; preferring peers supporting our latest version"
+        );
+
+        preferred_count
     }
 
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.

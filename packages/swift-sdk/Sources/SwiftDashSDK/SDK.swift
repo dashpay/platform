@@ -513,10 +513,22 @@ public final class SDK: @unchecked Sendable {
   /// (including the clone held by a `PlatformWalletManager`), so fee-sensitive
   /// flows pick it up automatically.
   ///
+  /// The refresh also best-effort probes a bounded random sample of the known
+  /// DAPI peers (unproven `getStatus`, limited concurrency, hard overall time
+  /// budget) and biases subsequent peer selection towards nodes whose software
+  /// already supports this client's latest protocol version. Probe failures
+  /// are ignored and no peer is ever excluded — when no peer matches,
+  /// selection falls back to any live peer.
+  ///
   /// Call on app start and after every network switch. For an SDK pinned to a
-  /// fixed protocol version (version updating disabled) this is a no-op: no
-  /// network request is made and the pinned version is returned. Bridges
-  /// `dash_sdk_refresh_protocol_version`.
+  /// fixed protocol version (version updating disabled) the proven version
+  /// query is skipped and the pinned version is returned unchanged; the
+  /// best-effort peer probe above still runs, so this call performs network
+  /// I/O even when pinned. Bridges `dash_sdk_refresh_protocol_version`.
+  ///
+  /// This call blocks the calling thread until the probe and, when applicable,
+  /// the proven query complete — invoke it from a background queue/task, never
+  /// the main thread.
   ///
   /// - Returns: the SDK's protocol version number after the (possible) ratchet.
   @discardableResult

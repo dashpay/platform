@@ -55,6 +55,9 @@ http-serde = { version = "2.1", optional = true }
 rand = { version = "0.8.5", features = [
   "small_rng",
   "getrandom",
+  # IteratorRandom::choose_multiple (used by AddressList::sample_live_addresses)
+  # is gated behind rand's `alloc` feature.
+  "alloc",
 ], default-features = false }
 thiserror = "2.0.17"
 tracing = "0.1.41"
