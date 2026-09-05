@@ -9,6 +9,10 @@ on:
       tag:
         description: "Version (i.e. v0.22.3-pre.2)"
         required: true
+      minimal:
+        type: boolean
+        description: Release masternode images and Dashmate only (only_drive takes precedence)
+        default: false
       only_drive:
         type: boolean
         description: Only build Drive image
@@ -28,20 +32,22 @@ jobs:
     name: Release NPM packages
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    if: github.event_name != 'workflow_dispatch'
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.minimal && !inputs.only_drive) }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
 
       - name: Check package version matches tag
+        if: github.event_name != 'workflow_dispatch'
         uses: geritol/match-tag-to-package-version@0.2.0
         env:
           TAG_PREFIX: v
 
       - uses: softwareforgood/check-artifact-v4-existence@v0
+        if: ${{ !inputs.minimal }}
         id: check-artifact
         with:
-          name: js-build-${{ github.sha }}
+          name: js-build-${{ inputs.minimal && 'minimal-' || '' }}${{ github.sha }}
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -93,7 +99,7 @@ jobs:
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Build packages
-        run: yarn build
+        run: yarn build ${{ inputs.minimal && '--filter +dashmate' || '' }}
         env:
           CARGO_BUILD_PROFILE: release
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
@@ -129,7 +135,7 @@ jobs:
           echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
       - name: Publish NPM packages
-        run: yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
+        run: yarn workspaces foreach ${{ inputs.minimal && '--recursive --from dashmate' || '--all' }} --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
 
       - name: Ignore only already cached artifacts
         run: |
@@ -154,8 +160,11 @@ jobs:
       - name: Upload the archive of built files
         uses: actions/upload-artifact@v4
         with:
-          name: js-build-${{ github.sha }}
-          path: ${{ steps.diff.outputs.files }}
+          name: js-build-${{ inputs.minimal && 'minimal-' || '' }}${{ github.sha }}
+          # Anchor the common root at packages/ even if only wasm-dpp generated files.
+          path: |
+            ${{ steps.diff.outputs.files }}
+            packages/dashmate/package.json
           retention-days: 1
           if-no-files-found: error
           include-hidden-files: true
@@ -174,6 +183,7 @@ jobs:
 
   release-drive-image-debug:
     name: Release Drive debug image
+    if: ${{ !inputs.minimal || inputs.only_drive }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -199,7 +209,7 @@ jobs:
 
   release-test-suite-image:
     name: Release Test Suite image
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !inputs.minimal }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -250,7 +260,7 @@ jobs:
       - name: Download JS build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: js-build-${{ github.sha }}
+          name: js-build-${{ inputs.minimal && 'minimal-' || '' }}${{ github.sha }}
           path: packages
 
       - name: Install macOS build deps
@@ -301,7 +311,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: github.event_name != 'release'
         with:
-          name: dashmate
+          name: dashmate-${{ matrix.package_type }}
           path: packages/dashmate/dist/**
 
       - name: Notarize MacOS Release Build
