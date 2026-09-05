@@ -220,6 +220,12 @@ struct CreateIdentityView: View {
     /// processing fee is deducted.
     private static let defaultCoreFundingDuffs: UInt64 = 250_000
 
+    /// Decimal places the amount prefill is truncated to. Capping
+    /// the prefilled value at `floor(balance, 0.0001 DASH)` keeps
+    /// the parsed-back credits at or below the actual balance so
+    /// `canSubmit` doesn't trip on a `%g`-style rounding overflow.
+    private static let prefillDecimalPlaces: Int = 4
+
     /// All locally-persisted wallets. Drives the Source Wallet
     /// picker along with the synthetic "no wallet" sentinel.
     @Query(sort: \PersistentWallet.createdAt) private var wallets: [PersistentWallet]
@@ -318,10 +324,6 @@ struct CreateIdentityView: View {
 
     /// User-facing error surfaced via the `.alert` modifier.
     @State private var submitError: SubmitError? = nil
-
-    /// Success payload. Populated after the identity is persisted;
-    /// the submit section swaps to a success banner and auto-dismiss.
-    @State private var createdIdentityId: Data? = nil
 
     /// Active registration controller for the Core-funded path.
     /// Stored only so `submitCoreFunded` has a local reference
@@ -1394,8 +1396,8 @@ struct CreateIdentityView: View {
                         identityIndex: identityIndex
                     )
                     try modelContext.save()
-                    self.createdIdentityId = created.identityId
                     self.isCreating = false
+                    dismiss()
                 }
             } catch {
                 await MainActor.run {
@@ -1492,7 +1494,7 @@ struct CreateIdentityView: View {
     }
 
     /// Bridge a controller's phase transitions to this view's
-    /// `createdIdentityId` / `submitError` / `isCreating` state.
+    /// `submitError` / `isCreating` state.
     /// The observer task auto-cancels when this view deallocates
     /// (Swift task lifecycle on the captured `self`), but the
     /// controller itself outlives the view.
@@ -1516,7 +1518,6 @@ struct CreateIdentityView: View {
                             identityIndex: identityIndex
                         )
                         try modelContext.save()
-                        self.createdIdentityId = identityId
                     } catch {
                         self.submitError = .init(
                             message: error.localizedDescription
@@ -1985,21 +1986,26 @@ struct CreateIdentityView: View {
         else {
             return ""
         }
+        let dash: Double
         switch account.accountType {
         case 14:
             let balance = accountBalance(account)
             if balance == 0 { return "" }
-            let dash = Double(balance) / Double(Self.creditsPerDash)
-            return String(format: "%g", dash)
+            dash = Double(balance) / Double(Self.creditsPerDash)
         case 0, 1:
             let available = coreAccountBalanceDuffs(account)
             let defaultDuffs = min(available, Self.defaultCoreFundingDuffs)
             if defaultDuffs == 0 { return "" }
-            let dash = Double(defaultDuffs) / Double(Self.duffsPerDash)
-            return String(format: "%g", dash)
+            dash = Double(defaultDuffs) / Double(Self.duffsPerDash)
         default:
             return ""
         }
+        let scale = pow(10.0, Double(Self.prefillDecimalPlaces))
+        let truncated = (dash * scale).rounded(.down) / scale
+        var s = String(format: "%.\(Self.prefillDecimalPlaces)f", truncated)
+        while s.last == "0" { s.removeLast() }
+        if s.last == "." { s.removeLast() }
+        return s
     }
 
     /// Parse the amount text back into credits. Returns `nil` on
