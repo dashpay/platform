@@ -81,8 +81,26 @@ where
         && config.abci.chain_id == "evo1"
         && block_height < 33000
     {
-        // Old behavior on mainnet below block 33000
-        result?;
+        // Old behaviour on mainnet below block 33000.
+        //
+        // The commit fails here with RocksDB "transaction is busy", because
+        // remove_all_votes_given_by_identities deliberately reproduces the historical
+        // bug by committing its own grovedb transaction mid-block. At the time, the
+        // node kept going: tenderdash#966 meant validators ignored the ABCI error and
+        // moved to the next block with the state partially committed and caches
+        // updated. That tenderdash bug is fixed, so returning the error here aborts
+        // replay instead — which makes mainnet blocks 32326..33000 unreplayable.
+        //
+        // Reproduce the historical *outcome* rather than an error only a buggy
+        // tenderdash could survive.
+        if let Err(error) = result {
+            tracing::warn!(
+                ?error,
+                block_height,
+                "commit failed for a mainnet block below 33000; proceeding as the \
+                 network did at the time (see platform#2309, tenderdash#966)"
+            );
+        }
     } else {
         // In case if transaction commit failed we still have caches in memory that
         // corresponds to the data that we weren't able to commit.
