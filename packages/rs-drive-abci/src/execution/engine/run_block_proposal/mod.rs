@@ -53,6 +53,8 @@ where
         timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
+        let mut laps = crate::perf::Laps::new();
+
         // Epoch information is always calculated with the last committed platform version
         // even if we are switching to a new version in this block.
         let last_committed_platform_version = platform_state.current_platform_version()?;
@@ -66,6 +68,8 @@ where
             last_committed_platform_version,
         )?;
 
+        laps.lap("epoch_info");
+
         // Cleanup block cache before we execute a new proposal.
         //
         // This has to happen before `perform_events_on_first_block_of_protocol_change` below:
@@ -74,8 +78,12 @@ where
         // them, leaving those reads to fall back to pre-change global cache entries.
         self.clear_drive_block_cache(last_committed_platform_version)?;
 
+        laps.lap("clear_block_cache");
+
         // Create a bock state from previous committed state
         let mut block_platform_state = platform_state.clone();
+
+        laps.lap("state_clone");
 
         // Determine a platform version for this block
         let block_platform_version = if epoch_info.is_epoch_change_but_not_genesis()
