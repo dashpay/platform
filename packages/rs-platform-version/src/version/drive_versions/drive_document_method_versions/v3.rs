@@ -22,6 +22,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
         query: DriveDocumentQueryMethodVersions {
             query_documents: 0,
             query_chained_documents: 0,
+            query_composite_documents: 0,
             query_contested_documents: 0,
             query_contested_documents_vote_state: 0,
             query_documents_with_flags: 0,

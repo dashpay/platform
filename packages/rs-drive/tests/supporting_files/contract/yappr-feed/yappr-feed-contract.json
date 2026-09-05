@@ -1,0 +1,189 @@
+{
+  "$formatVersion": "0",
+  "id": "7RJ5bcEyBLDXFbmDSNzHeAKUC5z7z3Du5mKLY7FuyeeA",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byHashtag",
+          "properties": [
+            {
+              "hashtag": "asc"
+            }
+          ]
+        },
+        {
+          "name": "quotesOfPost",
+          "properties": [
+            {
+              "quotedPostId": "asc"
+            }
+          ],
+          "countable": true
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 1
+        },
+        "quotedPostId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post"
+          },
+          "position": 2
+        }
+      },
+      "required": [
+        "hashtag",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    "like": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byHashtagPost",
+          "properties": [
+            {
+              "hashtag": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": "countable",
+          "terminal": "$ownerId"
+        },
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": true
+        },
+        {
+          "name": "byLiker",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "terminal": "postId"
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "propertyAgreement": {
+              "hashtag": "hashtag"
+            }
+          },
+          "position": 1
+        }
+      },
+      "required": [
+        "hashtag",
+        "postId"
+      ],
+      "additionalProperties": false
+    },
+    "repost": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "countable": true
+        },
+        {
+          "name": "ownerAndPost",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "postAndOwner",
+          "properties": [
+            {
+              "postId": "asc"
+            },
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "countable": true
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post"
+          },
+          "position": 0
+        }
+      },
+      "required": [
+        "postId"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
