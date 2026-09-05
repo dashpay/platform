@@ -4,8 +4,10 @@
 //! waiting for proofs, and tracking lifecycle status. Shared across sub-wallets
 //! via `Arc<AssetLockManager>`.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use dashcore::OutPoint;
 use tokio::sync::{Notify, RwLock};
 
 use crate::broadcaster::TransactionBroadcaster;
@@ -71,6 +73,50 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// span. Deliberately NOT held across the broadcast/proof-wait — only the
     /// snapshot ordering needs serialization.
     pub(super) build_persist_serial: tokio::sync::Mutex<()>,
+    /// Outpoints whose `Built` row is excluded from rejected-build cleanup,
+    /// counted so concurrent resumes of the same lock each hold their own
+    /// claim. A live resume releases its claim on pre-dispatch exit. Once a
+    /// send may have had side effects or local finality has been observed,
+    /// cancellation leaves the claim sticky until the row advances beyond
+    /// `Built`.
+    ///
+    /// The claim is what keeps a parked resume from broadcasting a
+    /// transaction whose inputs the rejection cleanup has already released.
+    /// A resume snapshots the row, then waits for the broadcast transport,
+    /// sends, and only then records the send by advancing the row —
+    /// suspension points the whole way. The claim remains after an ambiguous
+    /// cancellation in that interval. The initial build's definite
+    /// pre-send rejection removes the still-`Built` row and releases both
+    /// the funding reservation and the in-broadcast fence, and its
+    /// removal-guard (row still `Built`) cannot see a resume that has not
+    /// reached its status advance yet. So without a claim the release can
+    /// land inside the resume's dispatch window, and the resume then puts
+    /// the original transaction on the wire from inputs a rebuild is free
+    /// to reselect. [`untrack_asset_lock`](Self::untrack_asset_lock)
+    /// therefore refuses the removal while a claim stands, which leaves the
+    /// reservation and fence held and downgrades the build's verdict to the
+    /// unknown outcome — exactly what it already reports when its guard
+    /// fires on an advanced row.
+    ///
+    /// Atomicity comes from the wallet lock, not from this mutex: the claim
+    /// is taken while the resume still holds the read guard it snapshotted
+    /// the row under, and read while the cleanup holds the write guard it
+    /// removes the row under. The two guards exclude each other, so either
+    /// the cleanup sees the claim and keeps the row, or it removed the row
+    /// before the resume could snapshot it and the resume finds nothing to
+    /// resume. This mutex is only ever held for map arithmetic — never
+    /// across an await.
+    ///
+    /// Per-manager rather than per-wallet state because a registered wallet
+    /// has exactly one `AssetLockManager`, shared as `Arc<AssetLockManager>`
+    /// across every sub-wallet, so a build and a resume of the same lock
+    /// always meet here — the same reasoning that puts
+    /// `build_persist_serial` above on the manager. A manager handle that
+    /// outlives its registration keeps its own map, which claims nothing
+    /// about outpoints: a re-registration allocates a fresh funding index
+    /// and therefore a different funding transaction, so no build and resume
+    /// of ONE outpoint can end up on two maps.
+    pub(super) resume_dispatch_claims: std::sync::Mutex<BTreeMap<OutPoint, usize>>,
     /// Test-only gauge of builds currently at or past the
     /// `build_persist_serial` gate within `broadcast_funded_asset_lock`
     /// (incremented before the `lock().await`, RAII-decremented on every
@@ -101,6 +147,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             broadcaster,
             persister,
             build_persist_serial: tokio::sync::Mutex::new(()),
+            resume_dispatch_claims: std::sync::Mutex::new(BTreeMap::new()),
             #[cfg(test)]
             build_serial_gate: std::sync::atomic::AtomicUsize::new(0),
         }

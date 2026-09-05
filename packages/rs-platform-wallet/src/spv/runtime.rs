@@ -50,6 +50,10 @@ const SPV_CLIENT_STOP_BUDGET: Duration = Duration::from_secs(15);
 /// graceful timeout above was meant to escape.
 const SPV_ABORT_GRACE: Duration = Duration::from_secs(2);
 
+/// How often [`SpvRuntime::wait_until_ready`] re-checks for a started client
+/// with connected peers.
+const SPV_READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
 /// Join a stopped SPV runner, escalating to cancellation after `timeout`.
 ///
 /// Returns `None` once Tokio has confirmed the task terminated. Returns
@@ -195,6 +199,47 @@ impl SpvRuntime {
     /// Check whether the SPV client has been started.
     pub fn is_started(&self) -> bool {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
+    }
+
+    /// Whether a broadcast issued right now could reach the network: the
+    /// client is started *and* at least one peer is connected.
+    ///
+    /// Both halves are required because both are pre-send rejections in
+    /// [`broadcast_transaction_and_wait`](Self::broadcast_transaction_and_wait)
+    /// — an unstarted client, and dash-spv's zero-connected-peers check
+    /// classified by [`classify_spv_send_error`].
+    async fn is_broadcast_ready(&self) -> bool {
+        self.client.read().await.is_some() && !self.peer_tracker.snapshot().is_empty()
+    }
+
+    /// Resolve once a broadcast could actually reach the network, or when
+    /// `timeout` elapses. Returns whether readiness was reached.
+    ///
+    /// This closes the launch race where work resumed at app start (the
+    /// asset-lock catch-up in particular) broadcasts into a client that has
+    /// not finished starting, takes the definitive `Rejected`
+    /// ("client not started") verdict, and — having no retry — stays
+    /// un-broadcast for the whole session.
+    ///
+    /// Readiness is polled rather than pushed: "started" is a `client`
+    /// transition and "has peers" arrives as a dash-spv `PeersUpdated`
+    /// event, with no combined signal to subscribe to. The poll interval is
+    /// irrelevant next to the network latency being waited on.
+    ///
+    /// The bound is a plain `Duration` and is applied with
+    /// [`tokio::time::timeout`], which saturates an unrepresentable deadline
+    /// instead of panicking the way `Instant::now() + timeout` does. That
+    /// matters because callers reach here through `extern "C"` entry points
+    /// whose timeout arrives as an unrestricted `u64`, and a panic in an
+    /// FFI frame aborts the host process.
+    pub async fn wait_until_ready(&self, timeout: Duration) -> bool {
+        tokio::time::timeout(timeout, async {
+            while !self.is_broadcast_ready().await {
+                tokio::time::sleep(SPV_READINESS_POLL_INTERVAL).await;
+            }
+        })
+        .await
+        .is_ok()
     }
 
     /// Broadcast a transaction through SPV peers and wait for dash-spv's
@@ -798,6 +843,7 @@ impl std::fmt::Debug for SpvRuntime {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
     use dash_spv::error::{NetworkError, SpvError};
     use dashcore::Network;
@@ -854,6 +900,121 @@ mod tests {
             matches!(result, BroadcastError::Rejected { .. }),
             "NotConnected must classify never-sent on the acceptance path, got {result:?}"
         );
+    }
+
+    /// The readiness predicate must fail closed on an unstarted client:
+    /// the acceptance path rejects that state before any send, so reporting
+    /// it ready hands the caller straight back into the never-sent verdict
+    /// the gate exists to avoid.
+    #[tokio::test(start_paused = true)]
+    async fn readiness_is_not_reached_while_the_client_is_unstarted() {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            Network::Testnet,
+        )));
+        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
+
+        assert!(
+            !runtime.wait_until_ready(Duration::from_secs(30)).await,
+            "an unstarted client must never report broadcast-ready"
+        );
+    }
+
+    /// An `extern "C"` caller supplies the readiness budget as an
+    /// unrestricted `u64` of seconds. Building the deadline with
+    /// `Instant::now() + timeout` panics once that instant is not
+    /// representable, and a panic inside an FFI frame aborts the host
+    /// process instead of returning a result code — so the wait has to
+    /// survive an extreme budget rather than take the host down with it.
+    #[tokio::test(start_paused = true)]
+    async fn an_extreme_readiness_budget_does_not_panic() {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            Network::Testnet,
+        )));
+        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
+
+        // Never resolves (the client is unstarted), so cut it short: the
+        // assertion here is that constructing the wait survives, not that
+        // it finishes.
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(1),
+            runtime.wait_until_ready(Duration::MAX),
+        )
+        .await;
+
+        assert!(outcome.is_err(), "an extreme budget must park, not resolve");
+    }
+
+    /// A started client with no peers is the OTHER pre-send rejection, and
+    /// readiness has to observe both halves and then actually resolve.
+    ///
+    /// The launch race this gate exists for ends the moment dash-spv reports
+    /// its first connection, so the predicate must go from false to true on
+    /// that event alone — with no restart, and without the caller polling
+    /// anything itself. A predicate that only ever reported false would keep
+    /// every recovery test green (they all assert around an expired wait)
+    /// while turning the gate into a fixed 15s delay before the same
+    /// never-sent broadcast, which is strictly worse than not waiting.
+    ///
+    /// This starts a real client — offline, restricted to a configured peer
+    /// list that is empty, so it opens its storage and connects to nothing —
+    /// because "started" is exactly the half a double cannot stand in for.
+    #[tokio::test(start_paused = true)]
+    async fn readiness_arrives_when_a_started_client_reports_its_first_peer() {
+        use dash_spv::network::NetworkEvent;
+        use dash_spv::{ClientConfig, EventHandler};
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+        // `DiskStorageManager` locks the directory it opens, so the client
+        // gets one of its own and the stop below releases it.
+        let storage = std::env::temp_dir().join(format!(
+            "platform-wallet-spv-readiness-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&storage).expect("private storage dir");
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            Network::Testnet,
+        )));
+        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
+        runtime
+            .start(
+                ClientConfig::testnet()
+                    .with_storage_path(&storage)
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .expect("an offline client with no configured peers still starts");
+        assert!(runtime.is_started(), "the client must be started");
+
+        assert!(
+            !runtime.wait_until_ready(Duration::from_secs(30)).await,
+            "a started client with no connected peers must not report ready — \
+             dash-spv's zero-peer check rejects the send before it dispatches, \
+             exactly like an unstarted client"
+        );
+
+        // The event dash-spv pushes to its handlers on the first connection.
+        runtime
+            .peer_tracker
+            .on_network_event(&NetworkEvent::PeersUpdated {
+                connected_count: 1,
+                addresses: vec![SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+                    19999,
+                )],
+                best_height: Some(1_100_000),
+            });
+
+        assert!(
+            runtime.wait_until_ready(Duration::from_secs(30)).await,
+            "a started client that has just reported its first peer must \
+             report ready — this transition is the whole point of the wait"
+        );
+
+        runtime
+            .stop()
+            .await
+            .expect("clean stop releases the data dir");
+        let _ = std::fs::remove_dir_all(&storage);
     }
 
     /// Every other error on the acceptance path may follow a partial send

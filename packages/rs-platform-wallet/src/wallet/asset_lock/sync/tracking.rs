@@ -2,6 +2,7 @@
 
 use crate::broadcaster::TransactionBroadcaster;
 use dashcore::OutPoint;
+use std::collections::BTreeMap;
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::changeset::changeset::PlatformWalletChangeSet;
@@ -11,7 +12,95 @@ use crate::error::PlatformWalletError;
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 
+/// One resume's hold on an outpoint's cleanup-exclusion window.
+///
+/// Held from the moment the resume snapshots the tracked row until it has
+/// sent the transaction and recorded that send by advancing the row — the
+/// span in which the resume is committed to broadcasting a transaction it
+/// has already read out of the map. While it stands,
+/// [`untrack_asset_lock`](AssetLockManager::untrack_asset_lock) refuses to
+/// remove the row, which is what keeps the initial build's rejection
+/// cleanup from releasing the funding reservation and the in-broadcast
+/// fence under a send that is still coming.
+///
+/// A claim releases on drop until the resume observes local finality or
+/// enters a broadcast that may have side effects. From that point it becomes
+/// sticky: cancellation cannot prove that releasing the inputs is safe, so
+/// the exclusion survives until a status transition makes the `Built`
+/// cleanup inapplicable. Exits proven to be pre-dispatch restore ordinary
+/// RAII release.
+pub(crate) struct ResumeDispatchClaim<'a> {
+    claims: &'a std::sync::Mutex<BTreeMap<OutPoint, usize>>,
+    out_point: OutPoint,
+    release_on_drop: bool,
+}
+
+impl ResumeDispatchClaim<'_> {
+    /// Preserve cleanup exclusion if this future is cancelled before it can
+    /// record the transaction's send or proof.
+    pub(crate) fn preserve_on_drop(&mut self) {
+        self.release_on_drop = false;
+    }
+
+    /// Restore ordinary RAII release after the current attempt is proven not
+    /// to have left the device and no local finality was observed.
+    pub(crate) fn release_on_drop(&mut self) {
+        self.release_on_drop = true;
+    }
+}
+
+impl Drop for ResumeDispatchClaim<'_> {
+    fn drop(&mut self) {
+        if !self.release_on_drop {
+            return;
+        }
+        // Recover from poisoning rather than skipping the release: a claim
+        // that outlived its resume would block the rejection cleanup — and
+        // with it the funding reservation's release — for the process's
+        // remaining lifetime.
+        let mut claims = self.claims.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(count) = claims.get_mut(&self.out_point) {
+            *count -= 1;
+            if *count == 0 {
+                claims.remove(&self.out_point);
+            }
+        }
+    }
+}
+
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Claim `out_point`'s dispatch window for a resume that is about to
+    /// broadcast.
+    ///
+    /// MUST be called while the resume still holds the wallet read guard it
+    /// snapshotted the tracked row under. That is where the serialization
+    /// against the rejection cleanup comes from: the cleanup reads the claim
+    /// under the wallet WRITE guard, so a claim taken under the read guard is
+    /// either already visible to it — and the row is kept — or the cleanup
+    /// went first, removed the row, and the snapshot the claim would have
+    /// protected never happened.
+    pub(crate) fn claim_resume_dispatch(&self, out_point: OutPoint) -> ResumeDispatchClaim<'_> {
+        *self
+            .resume_dispatch_claims
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(out_point)
+            .or_insert(0) += 1;
+        ResumeDispatchClaim {
+            claims: &self.resume_dispatch_claims,
+            out_point,
+            release_on_drop: true,
+        }
+    }
+
+    /// Whether active or sticky resume state excludes rejected-build cleanup.
+    fn resume_cleanup_excluded(&self, out_point: &OutPoint) -> bool {
+        self.resume_dispatch_claims
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(out_point)
+    }
+
     /// Snapshot the funding role, bound index and status used to authorize an
     /// existing-lock resume. Taking all three under one read lock avoids a
     /// role/status time-of-check/time-of-use split in the resolver.
@@ -59,17 +148,41 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// re-broadcast a transaction whose inputs may have been re-spent.
     ///
     /// Idempotent: returns an empty changeset if the outpoint is not
-    /// tracked. Guarded on the row still being
-    /// [`Built`](AssetLockStatus::Built): if a concurrent flow advanced it
-    /// (e.g. a `resume_asset_lock` that re-broadcast in the window between
-    /// the rejected broadcast and this cleanup), the progress is kept
-    /// rather than clobbered. The caller queues the changeset (call sites
-    /// live in `asset_lock/build.rs`, inside the module).
+    /// tracked. Guarded twice over, and both guards mean the same thing —
+    /// that the transaction may be live or committed to dispatch, so the row
+    /// and everything that pins its inputs must stay:
+    ///
+    /// 1. The row must still be [`Built`](AssetLockStatus::Built). A resume
+    ///    that already re-broadcast advanced it, and that advance is
+    ///    positive evidence the transaction reached the network.
+    /// 2. No active or sticky cleanup exclusion may remain
+    ///    ([`claim_resume_dispatch`](Self::claim_resume_dispatch)). A resume
+    ///    that has snapshotted the row but not yet sent is still `Built`, and
+    ///    cancellation after a possible send or observed proof can leave it
+    ///    there. Guard 1 alone cannot distinguish either case from a clean
+    ///    pre-dispatch exit.
+    ///
+    /// Refusing on either guard is what the caller reads back out of the
+    /// changeset: an empty `removed` set keeps the funding reservation and
+    /// the in-broadcast fence held and turns the definite-rejection verdict
+    /// into the unknown outcome, whose contract — row tracked, inputs
+    /// reserved, do not retry — is the one that actually holds. The caller
+    /// queues the changeset (call sites live in `asset_lock/build.rs`,
+    /// inside the module).
     pub(crate) async fn untrack_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
         let mut wm = self.wallet_manager.write().await;
+        // Read under the write guard, which is what makes this atomic
+        // against a resume claiming the window under its read guard.
+        let cleanup_excluded = self.resume_cleanup_excluded(out_point);
         let mut cs = AssetLockChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             match info.tracked_asset_locks.get(out_point) {
+                Some(_) if cleanup_excluded => tracing::warn!(
+                    outpoint = %out_point,
+                    "untrack_asset_lock: resume state excludes cleanup of this Built lock — \
+                     leaving it tracked, since its transaction may already be live or \
+                     committed to dispatch"
+                ),
                 Some(entry) if entry.status == AssetLockStatus::Built => {
                     info.tracked_asset_locks.remove(out_point);
                     cs.removed.insert(*out_point);
@@ -294,6 +407,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         let mut cs = AssetLockChangeSet::default();
         cs.asset_locks.insert(*out_point, (&*entry).into());
+        if entry.status != AssetLockStatus::Built {
+            // The status now excludes rejected-build cleanup on its own.
+            // Clear both active claims and sticky claims left by cancelled
+            // resumes; their eventual drops tolerate the absent entry.
+            self.resume_dispatch_claims
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(out_point);
+        }
         Ok(cs)
     }
 }

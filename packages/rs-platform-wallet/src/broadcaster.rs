@@ -70,6 +70,30 @@ pub trait TransactionBroadcaster: Send + Sync {
     /// transport ambiguity, or unverifiable response must be
     /// [`BroadcastError::MaybeSent`].
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError>;
+
+    /// Resolve once this broadcaster's transport can actually reach the
+    /// network, or when `timeout` elapses. Returns whether readiness was
+    /// reached.
+    ///
+    /// Callers that resume queued work at app start use this so they do not
+    /// race a transport that is still coming up. Losing that race is not a
+    /// retryable stumble: a transport that never dispatched reports
+    /// [`BroadcastError::Rejected`], the resume paths treat that verdict as
+    /// definitive, and nothing reschedules them — so the transaction stays
+    /// un-broadcast for the whole session.
+    ///
+    /// The bound is a plain `Duration` rather than an `Option`, so an
+    /// unbounded readiness wait is unrepresentable. These waits run under
+    /// the FFI's `runtime().block_on(...)`, on host threads the host also
+    /// needs in order to *start* the very transport being waited for; a wait
+    /// with no ceiling there is a deadlock, not a delay.
+    ///
+    /// The default is "always ready" — correct for any broadcaster with no
+    /// startup phase of its own, such as [`DapiBroadcaster`], whose gRPC
+    /// requests carry their own connection handling.
+    async fn wait_until_ready(&self, _timeout: Duration) -> bool {
+        true
+    }
 }
 
 /// Broadcasts transactions via Platform's DAPI gRPC endpoint.
@@ -141,6 +165,11 @@ trait SpvChannel: Send + Sync {
         transaction: &Transaction,
         timeout: Option<Duration>,
     ) -> Result<BroadcastResult, BroadcastError>;
+
+    /// Resolve once the SPV client is started and has at least one connected
+    /// peer — the two conditions whose absence makes `broadcast_and_wait`
+    /// fail before any send.
+    async fn wait_until_ready(&self, timeout: Duration) -> bool;
 }
 
 #[async_trait]
@@ -152,6 +181,10 @@ impl SpvChannel for SpvRuntime {
     ) -> Result<BroadcastResult, BroadcastError> {
         self.broadcast_transaction_and_wait(transaction, timeout)
             .await
+    }
+
+    async fn wait_until_ready(&self, timeout: Duration) -> bool {
+        SpvRuntime::wait_until_ready(self, timeout).await
     }
 }
 
@@ -208,6 +241,10 @@ impl TransactionBroadcaster for SpvBroadcaster {
             Err(other) => Err(other),
         }
     }
+
+    async fn wait_until_ready(&self, timeout: Duration) -> bool {
+        self.spv.wait_until_ready(timeout).await
+    }
 }
 
 #[cfg(test)]
@@ -220,6 +257,8 @@ mod tests {
     struct AcceptanceSpy {
         calls: AtomicUsize,
         verdict: Mutex<Option<Result<BroadcastResult, BroadcastError>>>,
+        /// Every readiness budget the channel was handed, in call order.
+        readiness_budgets: Mutex<Vec<Duration>>,
     }
 
     impl AcceptanceSpy {
@@ -227,6 +266,7 @@ mod tests {
             Self {
                 calls: AtomicUsize::new(0),
                 verdict: Mutex::new(Some(verdict)),
+                readiness_budgets: Mutex::new(Vec::new()),
             }
         }
     }
@@ -244,6 +284,14 @@ mod tests {
                 .expect("verdict mutex")
                 .take()
                 .expect("one acceptance check")
+        }
+
+        async fn wait_until_ready(&self, timeout: Duration) -> bool {
+            self.readiness_budgets
+                .lock()
+                .expect("readiness budget mutex")
+                .push(timeout);
+            true
         }
     }
 
@@ -298,5 +346,30 @@ mod tests {
                 ),
             }
         }
+    }
+
+    /// The readiness gate the resume paths depend on has to reach the SPV
+    /// channel, budget intact. Callers can only observe readiness through
+    /// `TransactionBroadcaster`, so a `SpvBroadcaster` that silently kept
+    /// the trait's "always ready" default would report a transport that has
+    /// not started as ready and hand the resume straight back into the
+    /// never-sent rejection this gate exists to avoid — with every
+    /// recovery-level test still green.
+    #[tokio::test]
+    async fn spv_broadcaster_delegates_readiness_to_the_spv_channel() {
+        let spv = Arc::new(AcceptanceSpy::with(Ok(BroadcastResult::Accepted {
+            relayed_by: 1,
+        })));
+        let broadcaster = SpvBroadcaster::from_channel(spv.clone());
+
+        assert!(broadcaster.wait_until_ready(Duration::from_secs(7)).await);
+
+        assert_eq!(
+            *spv.readiness_budgets
+                .lock()
+                .expect("readiness budget mutex"),
+            vec![Duration::from_secs(7)],
+            "readiness must reach the SPV channel with the caller's budget"
+        );
     }
 }
