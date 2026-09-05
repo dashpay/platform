@@ -12,13 +12,14 @@ describe('migrateConfigFileFactory', () => {
   let container;
   let createConfigFile;
   let migrateConfigFile;
+  let homeDir;
 
   beforeEach(async () => {
     container = await createDIContainer();
     migrateConfigFile = container.resolve('migrateConfigFile');
     createConfigFile = container.resolve('createConfigFile');
 
-    const homeDir = container.resolve('homeDir');
+    homeDir = container.resolve('homeDir');
     homeDir.change(new HomeDir('/Users/dashmate/.dashmate', true));
 
     mockConfigFileData = getConfigFileDataV0250();
@@ -397,5 +398,92 @@ describe('migrateConfigFileFactory', () => {
     );
 
     expect(again.configFormatVersion).to.equal(upgradedVersion);
+  });
+
+  describe('SSL private key', () => {
+    // The migrations copy the certificate files to their new location, and a copy
+    // keeps the permissions of the source. Keys created before dashmate restricted
+    // them are world-readable and must not be carried over that way.
+    let tempHomeDir;
+
+    beforeEach(() => {
+      tempHomeDir = HomeDir.createTemp();
+
+      homeDir.change(tempHomeDir);
+    });
+
+    afterEach(() => {
+      tempHomeDir.remove();
+    });
+
+    /**
+     * @param {string} filePath
+     */
+    function createWorldReadablePrivateKey(filePath) {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, 'PRIVATE KEY', 'utf8');
+      fs.chmodSync(filePath, 0o644);
+    }
+
+    /**
+     * @param {string} filePath
+     * @returns {number}
+     */
+    function getPermissions(filePath) {
+      // eslint-disable-next-line no-bitwise
+      return fs.statSync(filePath).mode & 0o777;
+    }
+
+    it('should restrict the private key moved out of the legacy ssl directory', () => {
+      createWorldReadablePrivateKey(tempHomeDir.joinPath('ssl', 'testnet', 'private.key'));
+
+      const getConfigFileMigrations = container.resolve('getConfigFileMigrations');
+
+      getConfigFileMigrations()['0.25.7']({
+        configs: {
+          testnet: { network: 'testnet' },
+        },
+      });
+
+      const newFilePath = tempHomeDir.joinPath(
+        'testnet',
+        'platform',
+        'dapi',
+        'envoy',
+        'ssl',
+        'private.key',
+      );
+
+      expect(getPermissions(newFilePath)).to.equal(0o600);
+    });
+
+    it('should restrict the private key moved from envoy to the gateway directory', () => {
+      createWorldReadablePrivateKey(tempHomeDir.joinPath(
+        'testnet',
+        'platform',
+        'dapi',
+        'envoy',
+        'ssl',
+        'private.key',
+      ));
+
+      const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+      migrateConfigFile(
+        mockConfigFileData,
+        mockConfigFileData.configFormatVersion,
+        version,
+      );
+
+      const newFilePath = tempHomeDir.joinPath(
+        'testnet',
+        'platform',
+        'gateway',
+        'ssl',
+        'private.key',
+      );
+
+      expect(getPermissions(newFilePath)).to.equal(0o600);
+    });
   });
 });
