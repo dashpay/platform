@@ -1345,6 +1345,42 @@ fn should_inherit_the_page_direction_for_unordered_lookups() {
         "the single repost row comes from the highest post id"
     );
 
+    // Both at once: the cross-contract lookup lifts the merged root to the
+    // tree root, so the page's contract becomes a synthesized split that
+    // the limited lookup descends into. grovedb #851 gives that split the
+    // inputs' direction; before it, this descending composition was
+    // refused while its ascending twin merged.
+    let combined = DriveCompositeDocumentQuery {
+        page: descending_page(),
+        sub_queries: vec![
+            bound(
+                &dashpay,
+                "profile",
+                SubQueryKind::Documents,
+                BindingSource::Page,
+                "$ownerId",
+                "$ownerId",
+                None,
+            ),
+            bound(
+                &feed,
+                "repost",
+                SubQueryKind::Documents,
+                BindingSource::Page,
+                "$id",
+                "postId",
+                Some(1),
+            ),
+            like_counts(),
+        ],
+    };
+    let result = round_trip(&combined, "the cross-contract shape with a limited lookup");
+    assert_eq!(
+        owner_ids(result.sub_results[0].documents()),
+        vec![OWNER_3, OWNER_1]
+    );
+    assert_eq!(post_ids_of(&result.sub_results[1], "postId"), vec![POST_B]);
+
     // An explicit ordering that disagrees with the page is still refused,
     // on every entry point.
     let mut conflicting = limited_lookup.clone();
