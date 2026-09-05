@@ -1,3 +1,18 @@
+### [4.1.2](https://github.com/dashpay/platform-internal/compare/v4.1.1...v4.1.2) (2026-09-05)
+
+
+### Bug Fixes
+
+* **ci:** skip Docker remote caches without credentials ([#4](https://github.com/dashpay/platform-internal/pull/4))
+* **dashmate:** handle nullable ZeroSSL expiry dates ([#4415](https://github.com/dashpay/platform/pull/4415))
+* **dashmate:** use header authentication for ZeroSSL ([#4419](https://github.com/dashpay/platform/pull/4419))
+* **drive-abci:** bind the instant lock to its transaction on the new asset lock funding routes ([#3](https://github.com/dashpay/platform-internal/pull/3)), closes [#1](https://github.com/dashpay/platform-internal/pull/1)
+
+
+### Continuous Integration
+
+* **release:** add minimal masternode release option ([#2](https://github.com/dashpay/platform-internal/pull/2))
+
 ### [4.1.1](https://github.com/dashpay/platform/compare/v4.1.0...v4.1.1) (2026-08-18)
 
 
