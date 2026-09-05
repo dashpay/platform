@@ -6346,3 +6346,424 @@ mod chained_trust_boundary {
         );
     }
 }
+
+mod composite_trust_boundary {
+    //! The client trust boundary for composite queries (a page plus
+    //! the sub-queries derived from it), exercised from the server
+    //! side — same split as [`super::having_trust_boundary`] and
+    //! [`super::chained_trust_boundary`]: rs-drive's e2e suite covers
+    //! the merk-level composition, and THIS suite runs the actual SDK
+    //! entry points — the dash-platform-queries wire encoding and the
+    //! `FromProof<CompositeDocumentQuery>` composition, including the
+    //! tenderdash binding of the merged proof's root — against a
+    //! server-generated proof. It lives here because generating proofs
+    //! needs drive's server feature, which the client crates must not
+    //! enable even as dev-dependencies.
+
+    use super::having_trust_boundary::{quorum_secret_key, signed_proof, TestQuorumProvider};
+    use crate::query::tests::{setup_platform, store_data_contract, store_document};
+    use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::sub_query;
+    use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
+    use dapi_grpc::platform::v0::get_documents_response::{
+        get_documents_response_v1, GetDocumentsResponseV1, Version as ResponseVersion,
+    };
+    use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse, ResponseMetadata};
+    use dash_platform_queries::documents::composite_document_query::{
+        CompositeDocumentQuery, CompositeSubQuery,
+    };
+    use dash_platform_queries::documents::document_query::DocumentQuery;
+    use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::Value;
+    use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
+    use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
+    use drive::query::drive_composite_document_query::DriveCompositeDocumentQuery;
+    use drive::query::{DriveDocumentQuery, WhereClause, WhereOperator};
+    use drive_proof_verifier::{CompositeDocuments, CompositeSubQueryResult, FromProof};
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    const FEED_CONTRACT_PATH: &str =
+        "../rs-drive/tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json";
+    const DASHPAY_CONTRACT_PATH: &str =
+        "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json";
+    const POST_A: [u8; 32] = [0xA1; 32];
+    const POST_B: [u8; 32] = [0xB2; 32];
+    const POST_D: [u8; 32] = [0xD4; 32];
+    const OWNER_1: [u8; 32] = [0x11; 32];
+    const OWNER_2: [u8; 32] = [0x22; 32];
+
+    const CHAIN_ID: &str = "test-composite-chain";
+    const HEIGHT: u64 = 778;
+    const CORE_LOCKED_HEIGHT: u32 = 1201;
+    const TIME_MS: u64 = 1_756_000_100_000;
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    fn metadata() -> ResponseMetadata {
+        ResponseMetadata {
+            height: HEIGHT,
+            core_chain_locked_height: CORE_LOCKED_HEIGHT,
+            epoch: 0,
+            time_ms: TIME_MS,
+            protocol_version: platform_version().protocol_version,
+            chain_id: CHAIN_ID.to_string(),
+        }
+    }
+
+    /// Two `dash` posts (A by owner 1 quoting D, B by owner 2), the
+    /// quoted `btc` post D, two likes on A and one on B, and a dashpay
+    /// profile for owner 1 only.
+    fn setup_feed_state() -> (
+        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        DataContract,
+        DataContract,
+    ) {
+        let (platform, _state, version) = setup_platform(None, Network::Testnet, None);
+        let feed = json_document_to_contract(FEED_CONTRACT_PATH, false, version)
+            .expect("expected to parse the feed contract");
+        let dashpay = json_document_to_contract(DASHPAY_CONTRACT_PATH, false, version)
+            .expect("expected to parse the dashpay contract");
+        store_data_contract(&platform.platform, &feed, version);
+        store_data_contract(&platform.platform, &dashpay, version);
+
+        let post_type = feed.document_type_for_name("post").expect("post doctype");
+        let like_type = feed.document_type_for_name("like").expect("like doctype");
+        let profile_type = dashpay
+            .document_type_for_name("profile")
+            .expect("profile doctype");
+
+        for (id, owner, hashtag, quoted, seed) in [
+            (POST_D, OWNER_2, "btc", None, 4u64),
+            (POST_A, OWNER_1, "dash", Some(POST_D), 1),
+            (POST_B, OWNER_2, "dash", None, 2),
+        ] {
+            let mut post = post_type
+                .random_document(Some(seed), version)
+                .expect("post");
+            let mut props = BTreeMap::new();
+            props.insert("hashtag".to_string(), Value::Text(hashtag.to_string()));
+            props.insert("message".to_string(), Value::Text(format!("post {seed}")));
+            if let Some(quoted) = quoted {
+                props.insert("quotedPostId".to_string(), Value::Identifier(quoted));
+            }
+            post.set_properties(props);
+            post.set_id(Identifier::from(id));
+            post.set_owner_id(Identifier::from(owner));
+            store_document(&platform.platform, &feed, post_type, &post, version);
+        }
+        for (owner, post, seed) in [
+            (OWNER_1, POST_A, 10u64),
+            (OWNER_2, POST_A, 11),
+            (OWNER_1, POST_B, 12),
+        ] {
+            let mut like = like_type
+                .random_document(Some(seed), version)
+                .expect("like");
+            let mut props = BTreeMap::new();
+            props.insert("hashtag".to_string(), Value::Text("dash".to_string()));
+            props.insert("postId".to_string(), Value::Identifier(post));
+            like.set_properties(props);
+            like.set_owner_id(Identifier::from(owner));
+            store_document(&platform.platform, &feed, like_type, &like, version);
+        }
+        let mut profile = profile_type
+            .random_document(Some(30), version)
+            .expect("profile");
+        let mut props = BTreeMap::new();
+        props.insert("displayName".to_string(), Value::Text("one".to_string()));
+        profile.set_properties(props);
+        profile.set_owner_id(Identifier::from(OWNER_1));
+        store_document(
+            &platform.platform,
+            &dashpay,
+            profile_type,
+            &profile,
+            version,
+        );
+
+        (platform, feed, dashpay)
+    }
+
+    /// The rich client-side query — the exact object an SDK caller
+    /// hands to `CompositeDocuments::fetch`: the `dash` page, its like
+    /// counts, the posts it quotes, and its authors' profiles.
+    fn client_query(feed: Arc<DataContract>, dashpay: Arc<DataContract>) -> CompositeDocumentQuery {
+        let page = DocumentQuery::new(feed.clone(), "post")
+            .expect("post doctype exists")
+            .with_where(WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            })
+            .with_limit(10);
+        CompositeDocumentQuery::new(page)
+            .with_sub_query(
+                CompositeSubQuery::count(feed.clone(), "like")
+                    .expect("like doctype exists")
+                    .bound_to_page("$id", "postId"),
+            )
+            .with_sub_query(
+                CompositeSubQuery::documents(feed, "post")
+                    .expect("post doctype exists")
+                    .bound_to_page("quotedPostId", "$id"),
+            )
+            .with_sub_query(
+                CompositeSubQuery::documents(dashpay, "profile")
+                    .expect("profile doctype exists")
+                    .bound_to_page("$ownerId", "$ownerId"),
+            )
+    }
+
+    /// Server-side proof of the same shape, built from the rich query
+    /// through the SDK's own conversion.
+    fn prove(
+        platform: &crate::platform_types::platform::Platform<crate::rpc::core::MockCoreRPCLike>,
+        query: &CompositeDocumentQuery,
+    ) -> (Vec<u8>, [u8; 32]) {
+        let composite: DriveCompositeDocumentQuery =
+            query.try_into().expect("the rich query converts");
+        let (proof, _page_documents) = platform
+            .drive
+            .query_composite_documents_with_proof(&composite, platform_version())
+            .expect("composite proof generates");
+        let root_hash = platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version().drive.grove_version)
+            .unwrap()
+            .expect("root hash");
+        (proof, root_hash)
+    }
+
+    fn response_with(
+        proof: dapi_grpc::platform::v0::Proof,
+        mtd: ResponseMetadata,
+    ) -> GetDocumentsResponse {
+        GetDocumentsResponse {
+            version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
+                metadata: Some(mtd),
+            })),
+        }
+    }
+
+    /// The rich query encodes onto the typed V1 wire with the
+    /// sub-queries riding along — the encode path an SDK request
+    /// takes.
+    #[test]
+    fn should_encode_the_rich_query_onto_the_v1_wire() {
+        let (_platform, feed, dashpay) = setup_feed_state();
+        let dashpay_id = dashpay.id().to_vec();
+        let request = GetDocumentsRequest::try_from_platform_versioned(
+            client_query(Arc::new(feed), Arc::new(dashpay)),
+            platform_version(),
+        )
+        .expect("encodes");
+        let Some(RequestVersion::V1(v1)) = request.version else {
+            panic!("expected a V1 request");
+        };
+        assert!(v1.prove);
+        assert_eq!(v1.limit, Some(10));
+        assert!(v1.chained.is_none());
+        assert_eq!(v1.sub_queries.len(), 3);
+        assert_eq!(v1.sub_queries[0].kind, sub_query::Kind::Count as i32);
+        assert_eq!(v1.sub_queries[1].bind.as_ref().expect("bound").field, "$id");
+        assert_eq!(v1.sub_queries[2].data_contract_id, dashpay_id);
+    }
+
+    /// The full SDK composition end to end: FromProof bootstraps the
+    /// page from the merged proof, re-derives every sub-query, verifies
+    /// the composition, and binds the root to the quorum-signed app
+    /// hash.
+    #[test]
+    fn should_verify_the_composite_composition_through_from_proof() {
+        let (platform, feed, dashpay) = setup_feed_state();
+        let query = client_query(Arc::new(feed), Arc::new(dashpay));
+        let (grovedb_proof, root_hash) = prove(&platform.platform, &query);
+        let secret_key = quorum_secret_key();
+        let quorum_hash = [6u8; 32];
+        let mtd = metadata();
+        let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+
+        let (verified, _mtd, _proof) =
+            <CompositeDocuments as FromProof<CompositeDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                response_with(proof, mtd),
+                Network::Testnet,
+                platform_version(),
+                &provider,
+            )
+            .expect("a correctly signed composite composition must verify");
+
+        let verified = verified.expect("a proven page is Some, even when empty");
+        let page_ids: Vec<[u8; 32]> = verified
+            .page_documents
+            .iter()
+            .map(|d| d.id().to_buffer())
+            .collect();
+        assert_eq!(page_ids.len(), 2, "both dash posts come back verified");
+        assert!(page_ids.contains(&POST_A) && page_ids.contains(&POST_B));
+        assert_eq!(verified.sub_results.len(), 3);
+
+        let CompositeSubQueryResult::Counts(counts) = &verified.sub_results[0] else {
+            panic!("the first sub-result is the like counts");
+        };
+        let counts: BTreeMap<[u8; 32], u64> = counts
+            .iter()
+            .map(|entry| {
+                let key: [u8; 32] = entry.key.as_slice().try_into().expect("identifier key");
+                (key, entry.count.expect("present count"))
+            })
+            .collect();
+        assert_eq!(counts.get(&POST_A), Some(&2), "post A has two likes");
+        assert_eq!(counts.get(&POST_B), Some(&1), "post B has one like");
+
+        let CompositeSubQueryResult::Documents(quoted) = &verified.sub_results[1] else {
+            panic!("the second sub-result is the quoted posts");
+        };
+        assert_eq!(
+            quoted
+                .iter()
+                .map(|d| d.id().to_buffer())
+                .collect::<Vec<_>>(),
+            vec![POST_D],
+            "the one quoted post comes back verified"
+        );
+
+        let CompositeSubQueryResult::Documents(profiles) = &verified.sub_results[2] else {
+            panic!("the third sub-result is the author profiles");
+        };
+        assert_eq!(
+            profiles
+                .iter()
+                .map(|d| d.owner_id().to_buffer())
+                .collect::<Vec<_>>(),
+            vec![OWNER_1],
+            "only owner 1 has a profile; owner 2's absence is proven"
+        );
+    }
+
+    /// A wrong quorum key fails the tenderdash binding — omitting or
+    /// miswiring `verify_tenderdash_proof` turns this red.
+    #[test]
+    fn should_reject_a_wrong_quorum_key() {
+        let (platform, feed, dashpay) = setup_feed_state();
+        let query = client_query(Arc::new(feed), Arc::new(dashpay));
+        let (grovedb_proof, root_hash) = prove(&platform.platform, &query);
+        let mtd = metadata();
+        let proof = signed_proof(
+            grovedb_proof,
+            &root_hash,
+            &mtd,
+            &quorum_secret_key(),
+            [6u8; 32],
+        );
+        let other_key = {
+            let mut bytes = [0u8; 32];
+            bytes[31] = 44;
+            dpp::bls_signatures::SecretKey::<dpp::bls_signatures::Bls12381G2Impl>::from_be_bytes(
+                &bytes,
+            )
+            .into_option()
+            .expect("valid scalar")
+        };
+        let provider = TestQuorumProvider {
+            pubkey: other_key.public_key().0.to_compressed(),
+        };
+
+        let refused =
+            <CompositeDocuments as FromProof<CompositeDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                response_with(proof, mtd),
+                Network::Testnet,
+                platform_version(),
+                &provider,
+            );
+        assert!(
+            refused.is_err(),
+            "a commit signed by a different quorum key must be refused"
+        );
+    }
+
+    /// Tampered response metadata breaks the canonical state id the
+    /// commit signed over.
+    #[test]
+    fn should_reject_tampered_metadata() {
+        let (platform, feed, dashpay) = setup_feed_state();
+        let query = client_query(Arc::new(feed), Arc::new(dashpay));
+        let (grovedb_proof, root_hash) = prove(&platform.platform, &query);
+        let secret_key = quorum_secret_key();
+        let mtd = metadata();
+        let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [6u8; 32]);
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+        let mut tampered = mtd;
+        tampered.height += 1;
+
+        let refused =
+            <CompositeDocuments as FromProof<CompositeDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                response_with(proof, tampered),
+                Network::Testnet,
+                platform_version(),
+                &provider,
+            );
+        assert!(
+            refused.is_err(),
+            "metadata the commit did not sign over must be refused"
+        );
+    }
+
+    /// A plain documents proof of the page alone (what a node that
+    /// ignores `sub_queries` would return) must not verify against the
+    /// rich query: the verifier requires every sub-query's entries to
+    /// be present in the merged proof.
+    #[test]
+    fn should_reject_a_page_only_proof_for_the_composite_query() {
+        let (platform, feed, dashpay) = setup_feed_state();
+        let feed = Arc::new(feed);
+        let dashpay = Arc::new(dashpay);
+        let rich = client_query(feed.clone(), dashpay.clone());
+        let page: DriveDocumentQuery = (&rich.page).try_into().expect("the page converts");
+        let (grovedb_proof, _cost) = page
+            .execute_with_proof(&platform.platform.drive, None, None, platform_version())
+            .expect("page proof generates");
+        let root_hash = platform
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version().drive.grove_version)
+            .unwrap()
+            .expect("root hash");
+        let secret_key = quorum_secret_key();
+        let mtd = metadata();
+        let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [6u8; 32]);
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+
+        let refused =
+            <CompositeDocuments as FromProof<CompositeDocumentQuery>>::maybe_from_proof_with_metadata(
+                client_query(feed, dashpay),
+                response_with(proof, mtd),
+                Network::Testnet,
+                platform_version(),
+                &provider,
+            );
+        assert!(
+            refused.is_err(),
+            "a page-only proof must not verify the composite query"
+        );
+    }
+}

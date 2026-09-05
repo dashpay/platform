@@ -12,6 +12,14 @@ pub use error::Error;
 pub use proof::chained_document::{
     verify_chained_documents_proof as verify_chained_documents_tenderdash_proof, ChainedDocuments,
 };
+pub use proof::composite_document::{
+    verify_composite_documents_proof as verify_composite_documents_tenderdash_proof,
+    CompositeDocuments,
+};
+// Re-export the per-sub-query result of a composite query at the
+// crate root, paralleling `SplitCountEntry` below, so SDK consumers can
+// name it without depending on rs-drive directly.
+pub use drive::query::drive_composite_document_query::SubQueryResult as CompositeSubQueryResult;
 pub use proof::document_count::{
     verify_aggregate_count_proof, verify_carrier_aggregate_count_proof,
     verify_distinct_count_proof, verify_point_lookup_count_proof,
