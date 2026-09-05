@@ -239,10 +239,14 @@ pub fn update_address_ban_status<R, E>(
                             );
                         }
                     } else {
+                        // Banning is disabled for this request, but failover
+                        // must still move traffic away from the failing node:
+                        // drop it from the sticky rotation, ban state untouched.
+                        address_list.evict_from_rotation(address);
                         tracing::debug!(
                             ?error,
                             ?address,
-                            "we should ban the address {address} due to the error but banning is disabled"
+                            "banning is disabled; evicted address {address} from rotation due to the error"
                         );
                     }
                 } else {

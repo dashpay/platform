@@ -80,6 +80,10 @@ impl RequestSettings {
 }
 
 /// DAPI settings ready to use.
+///
+/// When adding a field, decide whether it affects the constructed transport
+/// client and update `connection_key` accordingly (its exhaustive
+/// destructuring will not compile until you do).
 #[derive(Debug, Clone)]
 pub struct AppliedRequestSettings {
     /// Timeout for establishing a connection.
@@ -104,6 +108,64 @@ impl AppliedRequestSettings {
     pub fn with_ca_certificate(mut self, ca_cert: Option<Certificate>) -> Self {
         self.ca_certificate = ca_cert;
         self
+    }
+
+    /// Cache key fragment for the [ConnectionPool](crate::ConnectionPool),
+    /// covering only the fields that affect the constructed transport client:
+    /// connect timeout, response decoding limit and CA certificate.
+    /// Per-request knobs (request timeout, retries, address banning) are
+    /// deliberately excluded so requests that differ only in those reuse the
+    /// same pooled connection.
+    pub(crate) fn connection_key(&self) -> String {
+        // Exhaustive destructuring: adding a settings field breaks this
+        // binding, forcing an explicit connection-affecting-or-not decision.
+        #[cfg(not(target_arch = "wasm32"))]
+        let Self {
+            connect_timeout,
+            timeout: _,
+            retries: _,
+            ban_failed_address: _,
+            max_decoding_message_size,
+            ca_certificate,
+        } = self;
+        #[cfg(target_arch = "wasm32")]
+        let Self {
+            connect_timeout,
+            timeout: _,
+            retries: _,
+            ban_failed_address: _,
+            max_decoding_message_size,
+        } = self;
+
+        // The wasm transport ignores all settings when building its client
+        // (see `wasm_channel::create_channel`), so nothing may split the key
+        // there.
+        #[cfg(target_arch = "wasm32")]
+        let connect_timeout = {
+            let _ = connect_timeout;
+            &None::<Duration>
+        };
+
+        // The full certificate bytes (hex), not a short hash: two trust
+        // anchors must never share a pool key, or a request pinned to one CA
+        // silently reuses a channel built against the other.
+        #[cfg(not(target_arch = "wasm32"))]
+        let ca_certificate = ca_certificate.as_ref().map(|cert| {
+            use std::fmt::Write;
+            let bytes = cert.as_ref();
+            let mut hex = String::with_capacity(bytes.len() * 2);
+            for byte in bytes {
+                write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
+            }
+            hex
+        });
+        #[cfg(target_arch = "wasm32")]
+        let ca_certificate: Option<String> = None;
+
+        format!(
+            "connect_timeout={:?},max_decoding_message_size={:?},ca_certificate={:?}",
+            connect_timeout, max_decoding_message_size, ca_certificate
+        )
     }
 }
 
@@ -198,5 +260,58 @@ mod tests {
         let cert = Certificate::from_pem("fake-pem-data");
         let result = applied.with_ca_certificate(Some(cert));
         assert!(result.ca_certificate.is_some());
+    }
+
+    #[test]
+    fn test_connection_key_ignores_per_request_settings() {
+        let custom = RequestSettings {
+            timeout: Some(Duration::from_secs(30)),
+            retries: Some(1),
+            ban_failed_address: Some(false),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        let default = RequestSettings::default().finalize();
+
+        assert_eq!(
+            custom.connection_key(),
+            default.connection_key(),
+            "timeout/retries/banning must not split pooled connections"
+        );
+    }
+
+    #[test]
+    fn test_connection_key_differs_on_connection_settings() {
+        let default = RequestSettings::default().finalize();
+
+        let connect_timeout = RequestSettings {
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_ne!(default.connection_key(), connect_timeout.connection_key());
+
+        let decode_limit = RequestSettings {
+            max_decoding_message_size: Some(16 * 1024 * 1024),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_ne!(default.connection_key(), decode_limit.connection_key());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_connection_key_differs_on_ca_certificate() {
+        let default = RequestSettings::default().finalize();
+        let with_ca = RequestSettings::default()
+            .finalize()
+            .with_ca_certificate(Some(Certificate::from_pem("fake-pem-data")));
+
+        assert_ne!(default.connection_key(), with_ca.connection_key());
+
+        let with_other_ca = RequestSettings::default()
+            .finalize()
+            .with_ca_certificate(Some(Certificate::from_pem("other-pem-data")));
+        assert_ne!(with_ca.connection_key(), with_other_ca.connection_key());
     }
 }
