@@ -139,12 +139,18 @@ pub struct DriveSubQuery<'a> {
     /// The fixed clauses (everything but the derived `IN`), typed.
     /// Must be empty for a by-id join, which resolves every derived id.
     pub where_clauses: Vec<WhereClause>,
-    /// Ordering; documents only. The outer query direction must agree
-    /// with the page's direction so merging preserves the requested rows.
+    /// Ordering; documents only. Every component of the merged proof
+    /// walks in the page's direction, so a documents sub-query must agree
+    /// with it: a bound field the caller did not order by is appended in
+    /// the page's direction (a minimal request never conflicts), and an
+    /// explicit ordering that disagrees is refused, because changing it
+    /// for the proof would change the rows its limit selects.
     pub order_by: Vec<OrderClause>,
-    /// Required for a documents lookup on a non-unique index (it bounds
-    /// the walk under each value); forbidden for a value-bounded lookup,
-    /// a by-id join (completeness is set-based) and a count.
+    /// Required for a documents lookup on a non-unique index: it caps the
+    /// rows the lookup returns in total, in walk order, exactly as the
+    /// limit of an ordinary `IN` query does (at most `MAX_BOUND_VALUES`).
+    /// Forbidden for a value-bounded lookup, a by-id join (completeness is
+    /// set-based) and a count.
     pub limit: Option<u16>,
     /// The derived clause, or `None` for a sibling.
     pub binding: Option<SubQueryBinding>,
@@ -887,12 +893,17 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
             // An `IN` on a secondary index orders by the bound field;
             // supply the ordering when the caller did not, so the
             // request stays minimal and both sides build the same query.
+            // It inherits the page's direction: the merged proof walks
+            // every component the page's way, and a documents sub-query
+            // may not be turned around behind the caller's back (see
+            // `sub_query_proof_path_query`), so this default is what
+            // keeps an unordered lookup mergeable under a descending page.
             if !order_by.contains_key(&binding.field) {
                 order_by.insert(
                     binding.field.clone(),
                     OrderClause {
                         field: binding.field.clone(),
-                        ascending: true,
+                        ascending: self.page_direction(platform_version)?,
                     },
                 );
             }
@@ -972,6 +983,16 @@ impl<'a> DriveCompositeDocumentQuery<'a> {
                 .sub_query_count_query(sub_query, values, platform_version)?
                 .point_lookup_count_path_query(platform_version),
         }
+    }
+
+    /// The page's walk direction: what every component of the merged
+    /// proof walks in, and what an unordered documents sub-query inherits.
+    fn page_direction(&self, platform_version: &PlatformVersion) -> Result<bool, Error> {
+        Ok(self
+            .page_path_query(platform_version)?
+            .query
+            .query
+            .left_to_right)
     }
 
     /// Aligns set-based components for merging without changing a

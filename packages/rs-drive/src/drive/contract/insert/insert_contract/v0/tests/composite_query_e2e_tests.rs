@@ -1195,3 +1195,165 @@ fn should_check_count_and_document_descents_against_the_actual_bound_values() {
     );
     assert_eq!(verified.sub_results, materialized.sub_results);
 }
+
+/// A minimal request never conflicts with the page's direction: a
+/// documents sub-query the caller left unordered on its bound field walks
+/// the page's way, so a descending page with default lookups merges and
+/// verifies, while an explicit ordering that disagrees is still refused.
+#[test]
+fn should_inherit_the_page_direction_for_unordered_lookups() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let descending_page = || {
+        let mut page = page_by_hashtag(&feed, "dash", Some(3));
+        page.internal_clauses = InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "$id".into(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Identifier(POST_A),
+                    Value::Identifier(POST_B),
+                    Value::Identifier(POST_C),
+                ]),
+            }],
+            pv,
+        )
+        .expect("by-id page");
+        page.order_by.insert(
+            "$id".into(),
+            OrderClause {
+                field: "$id".into(),
+                ascending: false,
+            },
+        );
+        page
+    };
+    let like_counts = || {
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        )
+    };
+    let round_trip = |query: &DriveCompositeDocumentQuery, what: &str| {
+        let materialized = drive
+            .query_composite_documents(query, None, None, pv)
+            .unwrap_or_else(|e| panic!("{what} materializes: {e}"))
+            .result;
+        assert_eq!(
+            ids(&materialized.page_documents),
+            vec![POST_C, POST_B, POST_A]
+        );
+        let (proof, _) = drive
+            .query_composite_documents_with_proof(query, pv)
+            .unwrap_or_else(|e| panic!("{what} proves: {e}"));
+        let (_, verified) = query
+            .verify_composite_documents_proof(&proof, pv)
+            .unwrap_or_else(|e| panic!("{what} verifies: {e}"));
+        assert_eq!(verified.page_documents, materialized.page_documents);
+        assert_eq!(verified.sub_results, materialized.sub_results);
+        materialized
+    };
+
+    // The feed shape: cross-contract profiles, the viewer's marks (both
+    // value-bounded) and a count, none of them ordered by the caller.
+    let mut viewer_likes = bound(
+        &feed,
+        "like",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$id",
+        "postId",
+        None,
+    );
+    viewer_likes.where_clauses = vec![WhereClause {
+        field: "$ownerId".into(),
+        operator: WhereOperator::Equal,
+        value: Value::Identifier(OWNER_1),
+    }];
+    let feed_shape = DriveCompositeDocumentQuery {
+        page: descending_page(),
+        sub_queries: vec![
+            bound(
+                &dashpay,
+                "profile",
+                SubQueryKind::Documents,
+                BindingSource::Page,
+                "$ownerId",
+                "$ownerId",
+                None,
+            ),
+            viewer_likes,
+            like_counts(),
+        ],
+    };
+    let result = round_trip(&feed_shape, "the descending feed shape");
+    // The lookups inherited the page's direction: descending by their
+    // bound field.
+    assert_eq!(
+        owner_ids(result.sub_results[0].documents()),
+        vec![OWNER_3, OWNER_1],
+        "profiles walk owners descending"
+    );
+    assert_eq!(
+        post_ids_of(&result.sub_results[1], "postId"),
+        vec![POST_B, POST_A],
+        "the viewer's likes, posts descending"
+    );
+    assert_eq!(
+        counts(&result.sub_results[2]),
+        BTreeMap::from([(POST_A, 2), (POST_B, 1)])
+    );
+
+    // A limited lookup under the page's own contract. Its limit caps the
+    // rows it returns in total, in walk order, like an ordinary `IN`
+    // query's: walking posts descending, the one row is B's.
+    let limited_lookup = DriveCompositeDocumentQuery {
+        page: descending_page(),
+        sub_queries: vec![
+            bound(
+                &feed,
+                "repost",
+                SubQueryKind::Documents,
+                BindingSource::Page,
+                "$id",
+                "postId",
+                Some(1),
+            ),
+            like_counts(),
+        ],
+    };
+    let result = round_trip(&limited_lookup, "the limited lookup");
+    assert_eq!(
+        post_ids_of(&result.sub_results[0], "postId"),
+        vec![POST_B],
+        "the single repost row comes from the highest post id"
+    );
+
+    // An explicit ordering that disagrees with the page is still refused,
+    // on every entry point.
+    let mut conflicting = limited_lookup.clone();
+    conflicting.sub_queries[0].order_by.push(OrderClause {
+        field: "postId".into(),
+        ascending: true,
+    });
+    for result in [
+        drive
+            .query_composite_documents(&conflicting, None, None, pv)
+            .map(|_| ()),
+        drive
+            .query_composite_documents_with_proof(&conflicting, pv)
+            .map(|_| ()),
+        conflicting
+            .verify_composite_documents_proof(&[], pv)
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+        assert!(result.unwrap_err().to_string().contains("outer ordering"));
+    }
+}
