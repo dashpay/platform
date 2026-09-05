@@ -2142,6 +2142,7 @@ dependencies = [
  "key-wallet",
  "key-wallet-manager",
  "lazy_static",
+ "libm",
  "log",
  "nohash-hasher",
  "num_enum 0.7.6",

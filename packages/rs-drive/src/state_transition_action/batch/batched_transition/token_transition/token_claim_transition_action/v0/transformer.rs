@@ -446,6 +446,7 @@ impl TokenClaimTransitionActionV0 {
                                 start_from_moment_for_distribution,
                                 max_cycle_moment,
                                 None,
+                                platform_version,
                             )?,
                     ),
                     TokenDistributionRecipient::Identity(identifier) => (
@@ -457,6 +458,7 @@ impl TokenClaimTransitionActionV0 {
                                 start_from_moment_for_distribution,
                                 max_cycle_moment,
                                 None,
+                                platform_version,
                             )?,
                     ),
                     TokenDistributionRecipient::EvonodesByParticipation => {
@@ -520,6 +522,7 @@ impl TokenClaimTransitionActionV0 {
                                         }
                                     }
                                 }),
+                                platform_version,
                             )?;
 
                         (

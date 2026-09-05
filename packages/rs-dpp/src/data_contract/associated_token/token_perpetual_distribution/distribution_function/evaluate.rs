@@ -4,6 +4,8 @@ use crate::data_contract::associated_token::token_perpetual_distribution::distri
     MAX_DISTRIBUTION_PARAM,
 };
 use crate::ProtocolError;
+use libm::{exp, log, pow};
+use platform_version::version::PlatformVersion;
 
 impl DistributionFunction {
     /// Evaluates the distribution function at the given period `x`.
@@ -19,6 +21,7 @@ impl DistributionFunction {
         &self,
         contract_registration_step: u64,
         x: u64,
+        platform_version: &PlatformVersion,
     ) -> Result<TokenAmount, ProtocolError> {
         match self {
             DistributionFunction::FixedAmount { amount: n } => {
@@ -222,7 +225,21 @@ impl DistributionFunction {
                     ));
                 }
 
-                let diff_exp = (diff as f64).powf(exponent);
+                let diff_exp = match platform_version
+                    .dpp
+                    .token_versions
+                    .distribution_function_evaluate_version
+                {
+                    0 => (diff as f64).powf(exponent),
+                    1 => pow(diff as f64, exponent),
+                    version => {
+                        return Err(ProtocolError::UnknownVersionMismatch {
+                            method: "DistributionFunction::evaluate (Polynomial)".to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        })
+                    }
+                };
 
                 if !diff_exp.is_finite() {
                     return if diff_exp.is_sign_positive() {
@@ -326,7 +343,22 @@ impl DistributionFunction {
                 }
 
                 let exponent = (*m as f64) * (diff as f64) / (*n as f64);
-                let value = ((*a as f64) * exponent.exp() / (*d as f64)) + (*b as f64);
+                let exp_val = match platform_version
+                    .dpp
+                    .token_versions
+                    .distribution_function_evaluate_version
+                {
+                    0 => exponent.exp(),
+                    1 => exp(exponent),
+                    version => {
+                        return Err(ProtocolError::UnknownVersionMismatch {
+                            method: "DistributionFunction::evaluate (Exponential)".to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        })
+                    }
+                };
+                let value = ((*a as f64) * exp_val / (*d as f64)) + (*b as f64);
                 if let Some(max_value) = max_value {
                     if value.is_infinite() && value.is_sign_positive() || value > *max_value as f64
                     {
@@ -400,7 +432,21 @@ impl DistributionFunction {
                     (*m as f64) * (diff as f64) / (*n as f64)
                 };
 
-                let log_val = argument.ln();
+                let log_val = match platform_version
+                    .dpp
+                    .token_versions
+                    .distribution_function_evaluate_version
+                {
+                    0 => argument.ln(),
+                    1 => log(argument),
+                    version => {
+                        return Err(ProtocolError::UnknownVersionMismatch {
+                            method: "DistributionFunction::evaluate (Logarithmic)".to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        })
+                    }
+                };
 
                 // Ensure the computed value is finite and within the u64 range.
                 if !log_val.is_finite() || log_val > (u64::MAX as f64) {
@@ -538,7 +584,22 @@ impl DistributionFunction {
                     ));
                 }
 
-                let log_val = argument.ln();
+                let log_val = match platform_version
+                    .dpp
+                    .token_versions
+                    .distribution_function_evaluate_version
+                {
+                    0 => argument.ln(),
+                    1 => log(argument),
+                    version => {
+                        return Err(ProtocolError::UnknownVersionMismatch {
+                            method: "DistributionFunction::evaluate (InvertedLogarithmic)"
+                                .to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        })
+                    }
+                };
 
                 // Ensure the computed value is finite and within the u64 range.
                 if !log_val.is_finite() || log_val > (u64::MAX as f64) {
@@ -606,14 +667,15 @@ impl DistributionFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     #[test]
     fn test_fixed_amount() {
         let distribution = DistributionFunction::FixedAmount { amount: 100 };
-        assert_eq!(distribution.evaluate(0, 0).unwrap(), 100);
-        assert_eq!(distribution.evaluate(0, 50).unwrap(), 100);
-        assert_eq!(distribution.evaluate(0, 1000).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 50, PlatformVersion::latest()).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 1000, PlatformVersion::latest()).unwrap(), 100);
     }
 
     #[test]
@@ -624,12 +686,12 @@ mod tests {
         steps.insert(20, 25);
 
         let distribution = DistributionFunction::Stepwise(steps);
-        assert_eq!(distribution.evaluate(0, 0).unwrap(), 100);
-        assert_eq!(distribution.evaluate(0, 5).unwrap(), 100);
-        assert_eq!(distribution.evaluate(0, 10).unwrap(), 50);
-        assert_eq!(distribution.evaluate(0, 15).unwrap(), 50);
-        assert_eq!(distribution.evaluate(0, 20).unwrap(), 25);
-        assert_eq!(distribution.evaluate(0, 30).unwrap(), 25);
+        assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 5, PlatformVersion::latest()).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap(), 50);
+        assert_eq!(distribution.evaluate(0, 15, PlatformVersion::latest()).unwrap(), 50);
+        assert_eq!(distribution.evaluate(0, 20, PlatformVersion::latest()).unwrap(), 25);
+        assert_eq!(distribution.evaluate(0, 30, PlatformVersion::latest()).unwrap(), 25);
     }
 
     #[test]
@@ -645,12 +707,12 @@ mod tests {
             min_value: Some(10),
         };
 
-        assert_eq!(distribution.evaluate(0, 0).unwrap(), 100);
-        assert_eq!(distribution.evaluate(0, 9).unwrap(), 100);
-        assert_eq!(distribution.evaluate(0, 10).unwrap(), 50);
-        assert_eq!(distribution.evaluate(0, 20).unwrap(), 25);
-        assert_eq!(distribution.evaluate(0, 30).unwrap(), 12);
-        assert_eq!(distribution.evaluate(0, 40).unwrap(), 10); // Should not go below min_value
+        assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 9, PlatformVersion::latest()).unwrap(), 100);
+        assert_eq!(distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap(), 50);
+        assert_eq!(distribution.evaluate(0, 20, PlatformVersion::latest()).unwrap(), 25);
+        assert_eq!(distribution.evaluate(0, 30, PlatformVersion::latest()).unwrap(), 12);
+        assert_eq!(distribution.evaluate(0, 40, PlatformVersion::latest()).unwrap(), 10); // Should not go below min_value
     }
 
     #[test]
@@ -667,7 +729,7 @@ mod tests {
         };
 
         assert!(matches!(
-            distribution.evaluate(0, 10),
+            distribution.evaluate(0, 10, PlatformVersion::latest()),
             Err(ProtocolError::DivideByZero(_))
         ));
     }
@@ -679,7 +741,7 @@ mod tests {
             let distribution = DistributionFunction::Random { min: 10, max: 100 };
 
             for x in 0..100 {
-                let result = distribution.evaluate(0, x).unwrap();
+                let result = distribution.evaluate(0, x, PlatformVersion::latest()).unwrap();
                 assert!(
                     (10..=100).contains(&result),
                     "Random value {} is out of range for x = {}",
@@ -694,7 +756,7 @@ mod tests {
             let distribution = DistributionFunction::Random { min: 42, max: 42 };
 
             for x in 0..10 {
-                let result = distribution.evaluate(0, x).unwrap();
+                let result = distribution.evaluate(0, x, PlatformVersion::latest()).unwrap();
                 assert_eq!(
                     result, 42,
                     "Expected fixed output 42, got {} for x = {}",
@@ -707,7 +769,7 @@ mod tests {
         fn test_random_distribution_invalid_range() {
             let distribution = DistributionFunction::Random { min: 50, max: 40 };
 
-            let result = distribution.evaluate(0, 0);
+            let result = distribution.evaluate(0, 0, PlatformVersion::latest());
             assert!(
                 matches!(result, Err(ProtocolError::Overflow(_))),
                 "Expected ProtocolError::Overflow but got {:?}",
@@ -719,8 +781,8 @@ mod tests {
         fn test_random_distribution_deterministic_for_same_x() {
             let distribution = DistributionFunction::Random { min: 10, max: 100 };
 
-            let value1 = distribution.evaluate(0, 42).unwrap();
-            let value2 = distribution.evaluate(0, 42).unwrap();
+            let value1 = distribution.evaluate(0, 42, PlatformVersion::latest()).unwrap();
+            let value2 = distribution.evaluate(0, 42, PlatformVersion::latest()).unwrap();
 
             assert_eq!(
                 value1, value2,
@@ -732,8 +794,8 @@ mod tests {
         fn test_random_distribution_varies_for_different_x() {
             let distribution = DistributionFunction::Random { min: 10, max: 100 };
 
-            let value1 = distribution.evaluate(0, 1).unwrap();
-            let value2 = distribution.evaluate(0, 2).unwrap();
+            let value1 = distribution.evaluate(0, 1, PlatformVersion::latest()).unwrap();
+            let value2 = distribution.evaluate(0, 2, PlatformVersion::latest()).unwrap();
 
             assert_ne!(
                 value1, value2,
@@ -754,10 +816,10 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 50);
-            assert_eq!(distribution.evaluate(0, 2).unwrap(), 60);
-            assert_eq!(distribution.evaluate(0, 4).unwrap(), 70);
-            assert_eq!(distribution.evaluate(0, 6).unwrap(), 80);
+            assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 50);
+            assert_eq!(distribution.evaluate(0, 2, PlatformVersion::latest()).unwrap(), 60);
+            assert_eq!(distribution.evaluate(0, 4, PlatformVersion::latest()).unwrap(), 70);
+            assert_eq!(distribution.evaluate(0, 6, PlatformVersion::latest()).unwrap(), 80);
         }
 
         #[test]
@@ -771,9 +833,9 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 100);
-            assert_eq!(distribution.evaluate(0, 10).unwrap(), 50);
-            assert_eq!(distribution.evaluate(0, 20).unwrap(), 10); // Should not go below min_value
+            assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 100);
+            assert_eq!(distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap(), 50);
+            assert_eq!(distribution.evaluate(0, 20, PlatformVersion::latest()).unwrap(), 10); // Should not go below min_value
         }
 
         #[test]
@@ -788,7 +850,7 @@ mod tests {
             };
 
             assert!(matches!(
-                distribution.evaluate(0, 10),
+                distribution.evaluate(0, 10, PlatformVersion::latest()),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -810,10 +872,10 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 0);
-            assert_eq!(distribution.evaluate(0, 2).unwrap(), 18);
-            assert_eq!(distribution.evaluate(0, 3).unwrap(), 28);
-            assert_eq!(distribution.evaluate(0, 4).unwrap(), 42);
+            assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 0);
+            assert_eq!(distribution.evaluate(0, 2, PlatformVersion::latest()).unwrap(), 18);
+            assert_eq!(distribution.evaluate(0, 3, PlatformVersion::latest()).unwrap(), 28);
+            assert_eq!(distribution.evaluate(0, 4, PlatformVersion::latest()).unwrap(), 42);
         }
 
         #[test]
@@ -830,7 +892,7 @@ mod tests {
                 max_value: None,
             };
 
-            let result = distribution.evaluate(0, 100000).expect("expected value");
+            let result = distribution.evaluate(0, 100000, PlatformVersion::latest()).expect("expected value");
             assert_eq!(result, MAX_DISTRIBUTION_PARAM);
         }
 
@@ -849,7 +911,35 @@ mod tests {
                 max_value: None,
             };
             // (4 - 0 + 0)^(3/2) = 4^(3/2) = (sqrt(4))^3 = 2^3 = 8.
-            assert_eq!(distribution.evaluate(0, 4).unwrap(), 8);
+            assert_eq!(distribution.evaluate(0, 4, PlatformVersion::latest()).unwrap(), 8);
+        }
+
+        #[test]
+        fn test_polynomial_fractional_power_rounding_boundary_is_deterministic() {
+            let distribution = DistributionFunction::Polynomial {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 3,
+                o: 0,
+                start_moment: Some(0),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            };
+
+            // cbrt(125) is exactly 5. The std f64 powf() on some platforms rounds
+            // the intermediate result below 5.0 and truncates to 4 when cast to u64.
+            // The deterministic libm path (version >= 1) must always return 5.
+            let mut deterministic_version = PlatformVersion::latest().clone();
+            deterministic_version
+                .dpp
+                .token_versions
+                .distribution_function_evaluate_version = 1;
+            assert_eq!(
+                distribution.evaluate(0, 125, &deterministic_version).unwrap(),
+                5
+            );
         }
 
         // Test: Negative coefficient a (should flip the sign)
@@ -867,7 +957,7 @@ mod tests {
                 max_value: None,
             };
             // f(x) = -1 * (x^2). For x = 3: -1 * (3^2) = -9.
-            assert_eq!(distribution.evaluate(0, 3).unwrap(), 0);
+            assert_eq!(distribution.evaluate(0, 3, PlatformVersion::latest()).unwrap(), 0);
         }
 
         // Test: Non-zero shift parameter s (shifting the x coordinate)
@@ -885,9 +975,9 @@ mod tests {
                 max_value: None,
             };
             // since it starts at 2 (that's like the contract registration at 2, so we should get 0
-            assert_eq!(distribution.evaluate(0, 2).unwrap(), 0);
+            assert_eq!(distribution.evaluate(0, 2, PlatformVersion::latest()).unwrap(), 0);
             // At x = 3: (3 - 2)^2 = 1, f(3) = 2*1 + 10 = 12.
-            assert_eq!(distribution.evaluate(0, 3).unwrap(), 12);
+            assert_eq!(distribution.evaluate(0, 3, PlatformVersion::latest()).unwrap(), 12);
         }
 
         // Test: Non-zero offset o (shifting the base of the power)
@@ -906,7 +996,7 @@ mod tests {
             };
             // f(x) = 2 * ((x - 0 + 3)^2) + 10.
             // At x = 1: (1 + 3) = 4, 4^2 = 16, then 2*16 + 10 = 42.
-            assert_eq!(distribution.evaluate(0, 1).unwrap(), 42);
+            assert_eq!(distribution.evaluate(0, 1, PlatformVersion::latest()).unwrap(), 42);
         }
 
         // Test: Linear function when exponent is 1 (m = 1, n = 1)
@@ -924,7 +1014,7 @@ mod tests {
                 max_value: None,
             };
             // f(x) = 3*x + 5. At x = 10, f(10) = 30 + 5 = 35.
-            assert_eq!(distribution.evaluate(0, 10).unwrap(), 35);
+            assert_eq!(distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap(), 35);
         }
 
         // Test: Cubic function (m = 3, n = 1)
@@ -942,7 +1032,7 @@ mod tests {
                 max_value: None,
             };
             // f(x) = x^3. At x = 4, f(4) = 64.
-            assert_eq!(distribution.evaluate(0, 4).unwrap(), 64);
+            assert_eq!(distribution.evaluate(0, 4, PlatformVersion::latest()).unwrap(), 64);
         }
 
         // Test: Combination of non-zero offset and shift
@@ -961,7 +1051,7 @@ mod tests {
             };
             // f(x) = ( (x - 1 + 2)^2 ).
             // At x = 3: (3 - 1 + 2) = 4, and 4^2 = 16.
-            assert_eq!(distribution.evaluate(0, 3).unwrap(), 16);
+            assert_eq!(distribution.evaluate(0, 3, PlatformVersion::latest()).unwrap(), 16);
         }
     }
     mod exp {
@@ -980,8 +1070,8 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 11);
-            assert!(distribution.evaluate(0, 10).unwrap() > 20);
+            assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 11);
+            assert!(distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap() > 20);
         }
 
         #[test]
@@ -999,7 +1089,7 @@ mod tests {
             };
 
             assert!(matches!(
-                distribution.evaluate(0, 10),
+                distribution.evaluate(0, 10, PlatformVersion::latest()),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -1018,9 +1108,9 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 7);
-            assert_eq!(distribution.evaluate(0, 5).unwrap(), 301);
-            assert_eq!(distribution.evaluate(0, 10).unwrap(), 44057);
+            assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 7);
+            assert_eq!(distribution.evaluate(0, 5, PlatformVersion::latest()).unwrap(), 301);
+            assert_eq!(distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap(), 44057);
         }
 
         #[test]
@@ -1037,9 +1127,9 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 0);
-            assert_eq!(distribution.evaluate(0, 50).unwrap(), 14);
-            assert_eq!(distribution.evaluate(0, 100).unwrap(), 2202);
+            assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 0);
+            assert_eq!(distribution.evaluate(0, 50, PlatformVersion::latest()).unwrap(), 14);
+            assert_eq!(distribution.evaluate(0, 100, PlatformVersion::latest()).unwrap(), 2202);
         }
 
         #[test]
@@ -1056,11 +1146,11 @@ mod tests {
                 max_value: Some(100000000),
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 1);
-            assert_eq!(distribution.evaluate(0, 2).unwrap(), 2980);
-            assert_eq!(distribution.evaluate(0, 4).unwrap(), 8886110);
-            assert_eq!(distribution.evaluate(0, 10).unwrap(), 100000000);
-            assert_eq!(distribution.evaluate(0, 100000).unwrap(), 100000000);
+            assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 1);
+            assert_eq!(distribution.evaluate(0, 2, PlatformVersion::latest()).unwrap(), 2980);
+            assert_eq!(distribution.evaluate(0, 4, PlatformVersion::latest()).unwrap(), 8886110);
+            assert_eq!(distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap(), 100000000);
+            assert_eq!(distribution.evaluate(0, 100000, PlatformVersion::latest()).unwrap(), 100000000);
         }
 
         #[test]
@@ -1077,9 +1167,9 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
-            assert_eq!(distribution.evaluate(0, 5).unwrap(), 10);
-            assert_eq!(distribution.evaluate(0, 10000).unwrap(), 10);
+            assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
+            assert_eq!(distribution.evaluate(0, 5, PlatformVersion::latest()).unwrap(), 10);
+            assert_eq!(distribution.evaluate(0, 10000, PlatformVersion::latest()).unwrap(), 10);
         }
 
         #[test]
@@ -1096,9 +1186,9 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 0).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
-            assert_eq!(distribution.evaluate(0, 5).unwrap(), 11);
-            assert_eq!(distribution.evaluate(0, 100).unwrap(), 11);
+            assert_eq!(distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(), 12); // f(0) = (2 * e^(-1 * (0 - 0 + 0) / 1)) / 1 + 10
+            assert_eq!(distribution.evaluate(0, 5, PlatformVersion::latest()).unwrap(), 11);
+            assert_eq!(distribution.evaluate(0, 100, PlatformVersion::latest()).unwrap(), 11);
         }
 
         #[test]
@@ -1116,12 +1206,12 @@ mod tests {
             };
 
             assert_eq!(
-                distribution.evaluate(0, 0).unwrap(),
+                distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(),
                 11,
                 "Function should start at the max value"
             );
             assert_eq!(
-                distribution.evaluate(0, 5).unwrap(),
+                distribution.evaluate(0, 5, PlatformVersion::latest()).unwrap(),
                 11,
                 "Function should be clamped at max value"
             );
@@ -1141,12 +1231,56 @@ mod tests {
                 max_value: None,
             };
 
-            let result = distribution.evaluate(0, 100000);
+            let result = distribution.evaluate(0, 100000, PlatformVersion::latest());
             assert!(
                 matches!(result, Err(ProtocolError::Overflow(_))),
                 "Expected overflow but got {:?}",
                 result
             );
+        }
+
+        #[test]
+        fn test_exponential_deterministic_libm_path() {
+            let distribution = DistributionFunction::Exponential {
+                a: 1,
+                d: 1,
+                m: -20,
+                n: 1,
+                o: 0,
+                start_moment: Some(0),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            };
+
+            // Verify the deterministic libm path produces a consistent result
+            let mut deterministic_version = PlatformVersion::latest().clone();
+            deterministic_version
+                .dpp
+                .token_versions
+                .distribution_function_evaluate_version = 1;
+            let v1_result = distribution
+                .evaluate(0, 2, &deterministic_version)
+                .unwrap();
+            // e^(-40) is extremely small but nonzero; result should be 0 after truncation
+            assert_eq!(v1_result, 0);
+
+            // A case with a larger result: e^(2) ≈ 7.389
+            let distribution2 = DistributionFunction::Exponential {
+                a: 1,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 0,
+                start_moment: Some(0),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            };
+            let v1_result2 = distribution2
+                .evaluate(0, 2, &deterministic_version)
+                .unwrap();
+            assert_eq!(v1_result2, 7);
         }
     }
     mod log {
@@ -1165,8 +1299,8 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 1).unwrap(), 5);
-            assert!(distribution.evaluate(0, 10).unwrap() > 5);
+            assert_eq!(distribution.evaluate(0, 1, PlatformVersion::latest()).unwrap(), 5);
+            assert!(distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap() > 5);
         }
 
         #[test]
@@ -1183,8 +1317,8 @@ mod tests {
                 max_value: Some(20), // Maximum bound should be enforced
             };
 
-            assert_eq!(distribution.evaluate(0, 1).unwrap(), 7); // Clamped to min_value
-            assert!(distribution.evaluate(0, 10).unwrap() <= 20); // Should not exceed max_value
+            assert_eq!(distribution.evaluate(0, 1, PlatformVersion::latest()).unwrap(), 7); // Clamped to min_value
+            assert!(distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap() <= 20); // Should not exceed max_value
         }
 
         #[test]
@@ -1202,7 +1336,7 @@ mod tests {
             };
 
             assert!(matches!(
-                distribution.evaluate(0, 1),
+                distribution.evaluate(0, 1, PlatformVersion::latest()),
                 Err(ProtocolError::Overflow(_))
             ));
         }
@@ -1221,7 +1355,7 @@ mod tests {
                 max_value: None,
             };
 
-            let result = distribution.evaluate(0, 100);
+            let result = distribution.evaluate(0, 100, PlatformVersion::latest());
             assert!(result.is_ok());
             assert!(result.unwrap() > 10); // Function should increase over time
         }
@@ -1241,7 +1375,7 @@ mod tests {
             };
 
             assert!(matches!(
-                distribution.evaluate(0, 10),
+                distribution.evaluate(0, 10, PlatformVersion::latest()),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -1261,9 +1395,36 @@ mod tests {
             };
 
             assert!(matches!(
-                distribution.evaluate(0, 10),
+                distribution.evaluate(0, 10, PlatformVersion::latest()),
                 Err(ProtocolError::DivideByZero(_))
             ));
+        }
+
+        #[test]
+        fn test_logarithmic_deterministic_libm_path() {
+            // f(x) = 10 * ln(x) / 1 + 0, evaluate at x=100
+            // ln(100) ≈ 4.605, * 10 = 46.05, truncated to 46
+            let distribution = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: Some(0),
+                b: 0,
+                min_value: None,
+                max_value: None,
+            };
+
+            let mut deterministic_version = PlatformVersion::latest().clone();
+            deterministic_version
+                .dpp
+                .token_versions
+                .distribution_function_evaluate_version = 1;
+            let v1_result = distribution
+                .evaluate(0, 100, &deterministic_version)
+                .unwrap();
+            assert_eq!(v1_result, 46);
         }
     }
     mod inverted_log {
@@ -1282,8 +1443,8 @@ mod tests {
                 max_value: None,
             };
 
-            assert!(distribution.evaluate(0, 1).unwrap() > distribution.evaluate(0, 5).unwrap());
-            assert!(distribution.evaluate(0, 5).unwrap() > distribution.evaluate(0, 10).unwrap());
+            assert!(distribution.evaluate(0, 1, PlatformVersion::latest()).unwrap() > distribution.evaluate(0, 5, PlatformVersion::latest()).unwrap());
+            assert!(distribution.evaluate(0, 5, PlatformVersion::latest()).unwrap() > distribution.evaluate(0, 10, PlatformVersion::latest()).unwrap());
         }
 
         #[test]
@@ -1301,9 +1462,9 @@ mod tests {
                 max_value: None,
             };
 
-            let val1000 = distribution.evaluate(0, 1000).unwrap();
-            let val2000 = distribution.evaluate(0, 2000).unwrap();
-            let val3000 = distribution.evaluate(0, 3000).unwrap();
+            let val1000 = distribution.evaluate(0, 1000, PlatformVersion::latest()).unwrap();
+            let val2000 = distribution.evaluate(0, 2000, PlatformVersion::latest()).unwrap();
+            let val3000 = distribution.evaluate(0, 3000, PlatformVersion::latest()).unwrap();
 
             assert!(val1000 < val2000, "Function should be increasing");
             assert!(val2000 < val3000, "Function should be increasing");
@@ -1323,7 +1484,7 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 1).unwrap(), 0); // Should be clamped to 0
+            assert_eq!(distribution.evaluate(0, 1, PlatformVersion::latest()).unwrap(), 0); // Should be clamped to 0
         }
 
         #[test]
@@ -1340,7 +1501,7 @@ mod tests {
                 max_value: None,
             };
 
-            assert_eq!(distribution.evaluate(0, 1000).unwrap(), 7); // Should be clamped to min_value
+            assert_eq!(distribution.evaluate(0, 1000, PlatformVersion::latest()).unwrap(), 7); // Should be clamped to min_value
         }
 
         #[test]
@@ -1358,7 +1519,7 @@ mod tests {
                 max_value: Some(20),
             };
 
-            assert_eq!(distribution.evaluate(0, 500).unwrap(), 20); // Should be clamped to max_value
+            assert_eq!(distribution.evaluate(0, 500, PlatformVersion::latest()).unwrap(), 20); // Should be clamped to max_value
         }
 
         #[test]
@@ -1376,7 +1537,7 @@ mod tests {
             };
 
             assert!(matches!(
-                distribution.evaluate(0, 1),
+                distribution.evaluate(0, 1, PlatformVersion::latest()),
                 Err(ProtocolError::Overflow(_))
             ));
         }
@@ -1396,7 +1557,7 @@ mod tests {
             };
 
             assert!(matches!(
-                distribution.evaluate(0, 10),
+                distribution.evaluate(0, 10, PlatformVersion::latest()),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -1416,7 +1577,7 @@ mod tests {
             };
 
             assert!(matches!(
-                distribution.evaluate(0, 10),
+                distribution.evaluate(0, 10, PlatformVersion::latest()),
                 Err(ProtocolError::DivideByZero(_))
             ));
         }
@@ -1436,12 +1597,12 @@ mod tests {
             };
 
             assert_eq!(
-                distribution.evaluate(0, 0).unwrap(),
+                distribution.evaluate(0, 0, PlatformVersion::latest()).unwrap(),
                 1,
                 "Function should start at the max value"
             );
             assert_eq!(
-                distribution.evaluate(0, 200).unwrap(),
+                distribution.evaluate(0, 200, PlatformVersion::latest()).unwrap(),
                 10,
                 "Function should remain clamped at max value"
             );
@@ -1462,10 +1623,37 @@ mod tests {
             };
 
             assert_eq!(
-                distribution.evaluate(0, 1000).unwrap(),
+                distribution.evaluate(0, 1000, PlatformVersion::latest()).unwrap(),
                 3,
                 "Function should remain clamped at min value"
             );
+        }
+
+        #[test]
+        fn test_inverted_logarithmic_deterministic_libm_path() {
+            // f(x) = 10 * ln(100 / (1 * x)) / 1 + 5
+            // At x=0 (with start_moment=0 and o=1, so diff = 0 - 0 + 1 = 1, arg = 100/1 = 100): ln(100) ≈ 4.605, * 10 = 46.05 + 5 = 51
+            let distribution = DistributionFunction::InvertedLogarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: None,
+                max_value: None,
+            };
+
+            let mut deterministic_version = PlatformVersion::latest().clone();
+            deterministic_version
+                .dpp
+                .token_versions
+                .distribution_function_evaluate_version = 1;
+            let v1_result = distribution
+                .evaluate(0, 0, &deterministic_version)
+                .unwrap();
+            assert_eq!(v1_result, 51);
         }
     }
 }
