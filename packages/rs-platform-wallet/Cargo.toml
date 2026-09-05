@@ -61,7 +61,7 @@ zeroize = "1"
 log = "0.4"
 
 # Shielded pool (optional, behind `shielded` feature)
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "97250247423ddc7fcc2865ea0025fc5bd41d0883", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "2d95c56790fc9bcf3178711fdce0297734b51601", optional = true }
 # Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set
 # WAL + synchronous=NORMAL pragmas before handing the connection to
 # `ClientPersistentCommitmentTree`. Version locked to match the rev grovedb
