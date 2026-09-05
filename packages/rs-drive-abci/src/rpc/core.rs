@@ -1,3 +1,4 @@
+use crate::rpc::prefetch::CorePrefetcher;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
@@ -131,6 +132,9 @@ pub trait CoreRPCLike {
 /// Default implementation of Dash Core RPC using DashCoreRPC client
 pub struct DefaultCoreRPC {
     inner: Client,
+    /// Speculative fetcher for the next core height, on its own connection.
+    /// `None` when a second connection could not be opened.
+    prefetcher: Option<CorePrefetcher>,
 }
 
 // TODO: Create errors for these error codes in dashcore_rpc
@@ -206,8 +210,13 @@ macro_rules! retry {
 impl DefaultCoreRPC {
     /// Create new instance
     pub fn open(url: &str, username: String, password: String) -> Result<Self, Error> {
+        let prefetcher = CorePrefetcher::new(url, username.clone(), password.clone());
+        if prefetcher.is_none() {
+            tracing::warn!("could not open a second Core RPC connection; block sync will fetch masternode and quorum updates on the critical path");
+        }
         Ok(DefaultCoreRPC {
             inner: Client::new(url, Auth::UserPass(username, password))?,
+            prefetcher,
         })
     }
 }
@@ -270,7 +279,24 @@ impl CoreRPCLike for DefaultCoreRPC {
         &self,
         height: Option<CoreHeight>,
     ) -> Result<ExtendedQuorumListResult, Error> {
-        retry!(self.inner.get_quorum_listextended_reversed(height))
+        // Block sync walks core heights in order, so the next call is almost
+        // always for height + 1. Take the speculative answer when it is for the
+        // height we were asked about, and start the next guess either way.
+        let prefetched = height
+            .zip(self.prefetcher.as_ref())
+            .and_then(|(height, prefetcher)| prefetcher.take_quorum_list(height));
+
+        let result = match prefetched {
+            Some(list) => Ok(list),
+            None => retry!(self.inner.get_quorum_listextended_reversed(height)),
+        };
+
+        if let (Ok(_), Some(height), Some(prefetcher)) = (&result, height, self.prefetcher.as_ref())
+        {
+            prefetcher.start_quorum_list(height + 1);
+        }
+
+        result
     }
 
     fn get_quorum_info(
@@ -289,9 +315,25 @@ impl CoreRPCLike for DefaultCoreRPC {
         base_block: Option<u32>,
         block: u32,
     ) -> Result<MasternodeListDiff, Error> {
-        retry!(self
-            .inner
-            .get_protx_listdiff(base_block.unwrap_or(1), block))
+        let base = base_block.unwrap_or(1);
+
+        // Same reasoning as get_quorum_listextended: the next diff a syncing
+        // node asks for is from this block to the one after it.
+        let prefetched = self
+            .prefetcher
+            .as_ref()
+            .and_then(|prefetcher| prefetcher.take_protx_diff(base, block));
+
+        let result = match prefetched {
+            Some(diff) => Ok(diff),
+            None => retry!(self.inner.get_protx_listdiff(base, block)),
+        };
+
+        if let (Ok(_), Some(prefetcher)) = (&result, self.prefetcher.as_ref()) {
+            prefetcher.start_protx_diff(block, block + 1);
+        }
+
+        result
     }
 
     /// Verify Instant Lock signature
