@@ -201,10 +201,22 @@ jobs:
             --locked \
             -- --no-deps -D warnings
 
-      # Mirrors the workspace job's non-shielded step for the wallet crates:
-      # same package subset, same `not test(~shield)` filter (shielded wallet
-      # tests are not run there either).
-      - name: Run wallet tests (non-shielded)
+      # No test filter: this job runs everything in the three wallet packages,
+      # shielded suite included. There is nothing here worth excluding —
+      # `wallet::shielded::` is 145 tests in ~6 s wall (~97 s of CPU) under
+      # nextest, and `--all-features` compiles those binaries whether or not
+      # they are selected, so skipping them saved execution time on artifacts
+      # already paid for and thrown away.
+      #
+      # This job and tests-rs-workspace.yml are mutually exclusive paths for a
+      # given PR, so the shielded suite has to run in BOTH or a wallet-scoped
+      # PR silently loses it. The workspace job carves the wallet packages out
+      # of its own shield exclusion for the same reason.
+      #
+      # `--no-tests fail` is the zero-match guard: a selection that matches
+      # nothing must fail the step, not pass green. Pinned rather than left to
+      # nextest's default, which is a default and not a promise.
+      - name: Run wallet tests
         run: |
           cargo nextest run \
             --package platform-wallet \
@@ -212,7 +224,7 @@ jobs:
             --package platform-wallet-ffi \
             --all-features \
             --locked \
-            -E 'not test(~shield)'
+            --no-tests fail
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
