@@ -10,13 +10,16 @@ use std::sync::Arc;
 
 use dashcore::{Address, OutPoint, Transaction};
 use key_wallet::account::AccountType;
+use key_wallet::managed_account::managed_account_collection::ManagedAccountCollection;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::Wallet;
 use key_wallet::{DerivationPath, ReservationToken, Utxo};
 
 use super::{CoreWallet, WalletGeneration};
@@ -266,6 +269,58 @@ pub const ASSET_LOCK_FUNDING_SOURCES: [AccountTypePreference; 3] = SEND_FUNDING_
 /// DashPay source. A set selector matching nothing resolves to an empty list,
 /// not an error — a wallet with no contacts still sends from its standard
 /// accounts.
+/// The accounts a pooled build will actually fund from, in funding order and
+/// deduplicated: those `resolve_source_accounts` names AND that resolve on both
+/// halves — the keys side (`wallet.accounts`) and the managed side
+/// (`info.core_wallet.accounts`). An account present in only one is skipped,
+/// because funding needs both.
+///
+/// `strict` reproduces the single-source contract: naming ONE account is an
+/// explicit request for it, so a miss is an error rather than a silent skip. A
+/// pooled call skips instead — a wallet without a BIP32 account or without
+/// DashPay contacts still funds from what it has.
+///
+/// Shared by `finalize_transaction_with_options` and
+/// `pooled_spendable_balance` so the set one reports can never drift from the
+/// set the other funds.
+pub(crate) fn resolved_funding_accounts(
+    accounts: &ManagedAccountCollection,
+    wallet: &Wallet,
+    sources: &[AccountTypePreference],
+    source_index: u32,
+    strict: bool,
+) -> Result<Vec<AccountType>, PlatformWalletError> {
+    let mut seen: HashSet<AccountType> = HashSet::new();
+    let mut resolved: Vec<AccountType> = Vec::new();
+    for &preference in sources {
+        for at in resolve_source_accounts(accounts, preference, source_index) {
+            if !seen.insert(at) {
+                continue;
+            }
+            if wallet.accounts.account_of_type(at).is_none()
+                || accounts.funds_account(&at).is_none()
+            {
+                if strict {
+                    return Err(PlatformWalletError::WalletNotFound(format!(
+                        "wallet account {preference:?} #{source_index} not found"
+                    )));
+                }
+                continue;
+            }
+            resolved.push(at);
+        }
+    }
+    // A strict SET selector (a DashPay preference naming zero accounts) is a
+    // miss too: the caller asked for exactly those funds.
+    if strict && resolved.is_empty() {
+        return Err(PlatformWalletError::WalletNotFound(format!(
+            "wallet account {:?} #{source_index} not found",
+            sources.first()
+        )));
+    }
+    Ok(resolved)
+}
+
 pub(crate) fn resolve_source_accounts(
     accounts: &key_wallet::account::ManagedAccountCollection,
     preference: AccountTypePreference,
@@ -295,7 +350,174 @@ pub(crate) fn resolve_source_accounts(
         .collect()
 }
 
+/// The most inputs one standard transaction may carry. key-wallet enforces this
+/// (`BuilderError::TooManyInputs`) but keeps its constant private, so the value
+/// is mirrored here rather than imported.
+///
+/// A mirrored constant is exactly the hand-copy that drifts, so the direction
+/// that matters is pinned by behaviour rather than by trust:
+/// `pooled_max_sendable_respects_the_input_cap` builds a transaction filled to
+/// this number, so a value ABOVE key-wallet's real limit turns red — that is
+/// the direction that breaks the promise, since it names an amount no build can
+/// reach. A value below it cannot be caught the same way (a test written in
+/// terms of the mirror moves with it) and is merely conservative: the maximum
+/// is under-reported and the last UTXOs stay unreachable in one send.
+const MAX_STANDARD_TX_INPUTS: usize = 500;
+
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
+    /// The balance a pooled build could actually select from — the same
+    /// accounts [`Self::finalize_transaction`] funds from, counting only UTXOs
+    /// coin selection would accept.
+    ///
+    /// Hosts gate their amount entry on this. The wallet-level balance is a
+    /// strict superset: it sums every funding account, CoinJoin included, and
+    /// never consults a reservation set, so gating on it offers money the build
+    /// then refuses — the shortfall surfacing as
+    /// [`CorePooledInsufficientFunds`](PlatformWalletError::CorePooledInsufficientFunds)
+    /// after the user has already committed to an amount.
+    ///
+    /// Missing sources are skipped, as in a pooled build: a wallet without a
+    /// BIP32 account or without DashPay contacts still has a spendable balance.
+    ///
+    /// **Gross, not net of fee** — the sum a build may draw on, which is what an
+    /// "available balance" line should show. A build needs `amount + fee`, so
+    /// this is NOT the number to put behind a max/"send all" control: use
+    /// [`Self::pooled_max_sendable`], which prices the fee off the inputs that
+    /// spending it all would take.
+    ///
+    /// Reservations are NOT subtracted: key-wallet keeps each account's
+    /// `ReservationSet` private, so reading it needs an accessor there and a pin
+    /// bump. The figure is therefore optimistic by whatever another in-flight
+    /// build currently holds — transient by construction, since a reservation is
+    /// released when its spend is processed, on a definitive broadcast
+    /// rejection, at the TTL, or on restart. The account-set mismatch this fixes
+    /// is permanent, and was the whole of the shortfall in the report that
+    /// prompted it (support ticket 32081: 0.0054 DASH offered as spendable
+    /// against a 94 DASH balance, all of it CoinJoin).
+    pub async fn pooled_spendable_balance(
+        &self,
+        sources: &[AccountTypePreference],
+        source_index: u32,
+    ) -> Result<u64, PlatformWalletError> {
+        let manager = self.wallet_manager.read().await;
+        let (wallet, info) = manager
+            .get_wallet_and_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
+        let height = info.core_wallet.last_processed_height();
+
+        // Same resolver, same strictness rule, as the funding path.
+        let resolved = resolved_funding_accounts(
+            &info.core_wallet.accounts,
+            wallet,
+            sources,
+            source_index,
+            sources.len() == 1,
+        )?;
+
+        let mut total: u64 = 0;
+        for at in resolved {
+            let Some(managed) = info.core_wallet.accounts.funds_account(&at) else {
+                continue;
+            };
+            total += managed
+                .spendable_utxos(height)
+                .iter()
+                .map(|utxo| utxo.value())
+                .sum::<u64>();
+        }
+        Ok(total)
+    }
+
+    /// The largest amount a pooled build could actually pay out, net of the fee
+    /// that spending it costs — the figure a "send max" control must use.
+    ///
+    /// [`Self::pooled_spendable_balance`] is the gross sum a build may draw on.
+    /// Entering that verbatim as an amount fails: coin selection clears its
+    /// `total_available >= amount` check and then cannot cover `amount + fee`,
+    /// so the shortfall this API exists to remove simply moves from the CoinJoin
+    /// edge to the max-amount edge. The fee is not a rounding concern here —
+    /// with `use_only_added_inputs` draining accounts hundreds of UTXOs at a
+    /// time, the input count, and so the fee, runs far above dust.
+    ///
+    /// Computed the way "spend everything" actually builds: one output, no
+    /// change, sizes from key-wallet's own [`estimate_tx_size`] and
+    /// [`FeeRate`] rather than sizes re-declared here. A UTXO whose value does
+    /// not cover the fee its own input adds is left out — including it would
+    /// lower the answer — so this is a true maximum, not a subtraction from the
+    /// gross figure.
+    ///
+    /// `fee_rate` defaults to [`FeeRate::normal()`], which is what
+    /// `TransactionBuilder::new` starts from; pass the host's rate if it sets
+    /// one, or the answer will not match the build.
+    ///
+    /// A pool holding more than [`MAX_STANDARD_TX_INPUTS`] eligible UTXOs is
+    /// capped at its largest that many: one transaction cannot carry the rest,
+    /// so offering their value would name an amount no build could reach. Money
+    /// beyond the cap is not lost, only unreachable in a single send.
+    ///
+    /// One limit is still NOT modelled, and it can only make the real ceiling
+    /// lower, never higher: reservations held by another in-flight build (see
+    /// [`Self::pooled_spendable_balance`]).
+    pub async fn pooled_max_sendable(
+        &self,
+        sources: &[AccountTypePreference],
+        source_index: u32,
+        fee_rate: Option<FeeRate>,
+    ) -> Result<u64, PlatformWalletError> {
+        let fee_rate = fee_rate.unwrap_or_else(FeeRate::normal);
+        // Per-input and per-output costs derived from key-wallet's estimator by
+        // difference, so this crate never re-declares a size that could drift
+        // from the one the build charges.
+        let empty = estimate_tx_size(0, 1, false);
+        let per_input = estimate_tx_size(1, 1, false).saturating_sub(empty);
+
+        let manager = self.wallet_manager.read().await;
+        let (wallet, info) = manager
+            .get_wallet_and_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
+        let height = info.core_wallet.last_processed_height();
+
+        let resolved = resolved_funding_accounts(
+            &info.core_wallet.accounts,
+            wallet,
+            sources,
+            source_index,
+            sources.len() == 1,
+        )?;
+
+        // A UTXO earns its place only if it brings in more than its own input
+        // costs at this rate; the rest are dead weight and are dropped.
+        let input_cost = fee_rate.calculate_fee(per_input);
+        let mut values: Vec<u64> = Vec::new();
+        for at in resolved {
+            let Some(managed) = info.core_wallet.accounts.funds_account(&at) else {
+                continue;
+            };
+            values.extend(
+                managed
+                    .spendable_utxos(height)
+                    .iter()
+                    .map(|utxo| utxo.value())
+                    .filter(|value| *value > input_cost),
+            );
+        }
+        if values.is_empty() {
+            return Ok(0);
+        }
+
+        // One transaction cannot carry more inputs than the relay cap, so a pool
+        // above it can only offer its largest `MAX_STANDARD_TX_INPUTS` — asking
+        // for more would need a build key-wallet refuses outright.
+        if values.len() > MAX_STANDARD_TX_INPUTS {
+            values.sort_unstable_by(|a, b| b.cmp(a));
+            values.truncate(MAX_STANDARD_TX_INPUTS);
+        }
+
+        let selected: u64 = values.iter().sum();
+        let fee = fee_rate.calculate_fee(estimate_tx_size(values.len(), 1, false));
+        Ok(selected.saturating_sub(fee))
+    }
+
     /// Consume a configured builder, atomically fund and reserve its selected
     /// inputs, then sign without holding the wallet-manager lock.
     pub async fn finalize_transaction<S: TransactionSigner + ?Sized + Sync>(
@@ -373,24 +595,20 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // drives build-time cleanup only, and the contributor list stored on
             // the transaction is derived from the selected inputs below.
             let mut offered_accounts: Vec<AccountType> = Vec::new();
-            let mut offered_seen: HashSet<AccountType> = HashSet::new();
             let mut paths: HashMap<Address, DerivationPath> = HashMap::new();
-            for &preference in sources {
-                for at in
-                    resolve_source_accounts(&info.core_wallet.accounts, preference, source_index)
-                {
-                    if !offered_seen.insert(at) {
-                        continue;
-                    }
+            let resolved = resolved_funding_accounts(
+                &info.core_wallet.accounts,
+                wallet,
+                sources,
+                source_index,
+                strict,
+            )?;
+            {
+                for at in resolved {
                     let (Some(account), Some(managed)) = (
                         wallet.accounts.account_of_type(at),
                         info.core_wallet.accounts.funds_account_mut(&at),
                     ) else {
-                        if strict {
-                            return Err(PlatformWalletError::WalletNotFound(format!(
-                                "wallet account {preference:?} #{source_index} not found"
-                            )));
-                        }
                         continue;
                     };
                     for utxo in managed.utxos.values() {
@@ -404,14 +622,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         builder.add_funding(managed, account)
                     };
                     offered_accounts.push(at);
-                }
-                // A strict single-source SET selector (a DashPay preference
-                // naming zero accounts) also errors — the caller asked for
-                // exactly those funds.
-                if strict && offered_accounts.is_empty() {
-                    return Err(PlatformWalletError::WalletNotFound(format!(
-                        "wallet account {preference:?} #{source_index} not found"
-                    )));
                 }
             }
             if offered_accounts.is_empty() {
@@ -737,6 +947,7 @@ mod tests {
         funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
         AlwaysRejectedBroadcaster, WalletSigner,
     };
+    use crate::wallet::core::transaction::MAX_STANDARD_TX_INPUTS;
     use crate::wallet::core::CoreWallet;
     use crate::PlatformWalletError;
 
@@ -906,6 +1117,306 @@ mod tests {
         assert!(
             matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
             "explicit single-source misses must stay strict, got {result:?}"
+        );
+    }
+
+    /// The coupling this getter exists to enforce: the total must come from the
+    /// same accounts `finalize_transaction` funds from, and the strictness rule
+    /// must match too. Nothing else pins that — the two are separate code paths
+    /// over the same rule, which is exactly how the host's hand-copy drifted in
+    /// the first place (support ticket 32081).
+    #[tokio::test]
+    async fn pooled_spendable_balance_reports_the_funding_set_and_stays_strict() {
+        let (manager, wallet_id, generation, _signer) =
+            funded_wallet_manager_dual_standard(&[700_000], &[700_000]).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        // The pooled selector sums BOTH standard families — the same set
+        // `pooled_send_spans_families_and_abandon_releases_all` proves a build
+        // draws on. An account counted here but skipped by the build (or the
+        // reverse) breaks this number.
+        assert_eq!(
+            core.pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .await
+                .expect("pooled balance"),
+            1_400_000,
+            "the pooled figure must be both families, and nothing else"
+        );
+
+        // A single-family selector sees only its own family.
+        assert_eq!(
+            core.pooled_spendable_balance(&[AccountTypePreference::BIP44], 0)
+                .await
+                .expect("bip44 balance"),
+            700_000
+        );
+
+        // Strictness matches `single_source_missing_account_still_errors`: a
+        // single-source miss is an error here too, never a silent `Ok(0)` that
+        // the host would render as "insufficient funds" while the matching
+        // `finalize` call says "no such account".
+        let missed = core
+            .pooled_spendable_balance(&[AccountTypePreference::BIP44], 7)
+            .await;
+        assert!(
+            matches!(missed, Err(PlatformWalletError::WalletNotFound(_))),
+            "a single-source miss must error as it does in finalize, got {missed:?}"
+        );
+    }
+
+    /// The fee question, settled by building rather than by arithmetic: the
+    /// gross figure is NOT an amount a build accepts, and the net one is.
+    ///
+    /// This is the failure review described — a host wiring "send max" to the
+    /// gross balance and passing it through verbatim relocates the shortfall
+    /// from the CoinJoin edge to the max-amount edge. Asserting only that
+    /// `max < gross` would not catch an estimate that is merely close; running
+    /// both numbers through `finalize_transaction` does.
+    #[tokio::test]
+    async fn pooled_max_sendable_is_an_amount_a_build_accepts() {
+        let (manager, wallet_id, generation, signer) =
+            funded_wallet_manager_dual_standard(&[700_000], &[700_000]).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        let gross = core
+            .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+            .await
+            .expect("gross balance");
+        let max = core
+            .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+            .await
+            .expect("max sendable");
+        assert!(
+            max < gross,
+            "the fee has to come off somewhere: gross {gross}, max {max}"
+        );
+
+        let spend = |amount: u64, tag: u8| {
+            TransactionBuilder::new().add_output(
+                &DashAddress::dummy(Network::Testnet, usize::from(tag)),
+                amount,
+            )
+        };
+
+        // The gross figure is unbuildable — the whole of review's point.
+        let over = core
+            .finalize_transaction(spend(gross, 70), &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .await;
+        assert!(
+            over.is_err(),
+            "the gross balance must not be offerable as an amount, got {over:?}"
+        );
+
+        // The net figure builds, and takes every UTXO with it.
+        let finalized = core
+            .finalize_transaction(spend(max, 71), &crate::SEND_FUNDING_SOURCES, 0, &signer)
+            .await
+            .expect("max sendable must be an amount a build accepts");
+        assert_eq!(
+            finalized.transaction().input.len(),
+            2,
+            "spending the maximum must draw on both funded accounts"
+        );
+        core.abandon_transaction(&finalized).await;
+    }
+
+    /// A UTXO that does not cover the fee its own input adds must be left out:
+    /// including it would LOWER the answer, so the maximum is a selection
+    /// problem, not a subtraction from the gross figure. Without this the doc's
+    /// "true maximum" claim is untested.
+    #[tokio::test]
+    async fn pooled_max_sendable_drops_utxos_that_cost_more_than_they_bring() {
+        let sdk = || Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+
+        let (manager, wallet_id, generation, _signer) =
+            funded_wallet_manager_dual_standard(&[700_000], &[700_000]).await;
+        let plain = CoreWallet::new(
+            sdk(),
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+        let baseline = plain
+            .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+            .await
+            .expect("max sendable");
+
+        // The same wallet plus one UTXO worth far less than the ~296 duffs its
+        // input costs at the default rate.
+        let (manager, wallet_id, generation, _signer) =
+            funded_wallet_manager_dual_standard(&[700_000, 100], &[700_000]).await;
+        let with_dust = CoreWallet::new(
+            sdk(),
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        assert_eq!(
+            with_dust
+                .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .await
+                .expect("gross balance"),
+            1_400_100,
+            "the gross figure counts every spendable UTXO, dust included"
+        );
+        assert_eq!(
+            with_dust
+                .pooled_max_sendable(&crate::SEND_FUNDING_SOURCES, 0, None)
+                .await
+                .expect("max sendable"),
+            baseline,
+            "a UTXO that cannot pay for its own input must not move the maximum"
+        );
+    }
+
+    /// The input cap, and the value of `MAX_STANDARD_TX_INPUTS` itself.
+    ///
+    /// A wallet holding one UTXO more than a transaction can carry cannot spend
+    /// everything in one send, so a maximum computed from every eligible UTXO
+    /// names an amount no build could reach. Both halves are asserted by
+    /// building: the uncapped figure fails, the capped one succeeds with exactly
+    /// the cap's worth of inputs.
+    ///
+    /// This is also what pins the mirrored constant, in the direction that can
+    /// break the API's promise: the build filled to the cap only succeeds if
+    /// key-wallet's private limit is at least the mirrored value, so raising the
+    /// mirror above key-wallet's reds this test (verified with 600). Lowering it
+    /// does not, and cannot — every assertion here is written in terms of the
+    /// mirror and moves with it — but under-reporting is safe, only stingy.
+    #[tokio::test]
+    async fn pooled_max_sendable_respects_the_input_cap() {
+        // One more than a standard transaction can carry, each well above the
+        // ~296-duff cost of its own input so none is dropped as unprofitable.
+        let outputs = vec![10_000u64; MAX_STANDARD_TX_INPUTS + 1];
+        let (manager, wallet_id, generation, signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &outputs,
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+
+        let sources = &[AccountTypePreference::BIP44][..];
+        let gross = core
+            .pooled_spendable_balance(sources, 0)
+            .await
+            .expect("gross balance");
+        assert_eq!(
+            gross,
+            10_000 * (MAX_STANDARD_TX_INPUTS as u64 + 1),
+            "the gross figure counts every UTXO, cap or no cap"
+        );
+
+        let max = core
+            .pooled_max_sendable(sources, 0, None)
+            .await
+            .expect("max sendable");
+
+        // The capped total, minus the fee for a transaction that full.
+        let capped_value = 10_000 * MAX_STANDARD_TX_INPUTS as u64;
+        assert!(
+            max < capped_value,
+            "the fee for {MAX_STANDARD_TX_INPUTS} inputs has to come off: max {max}"
+        );
+
+        let spend = |amount: u64, tag: u8| {
+            TransactionBuilder::new().add_output(
+                &DashAddress::dummy(Network::Testnet, usize::from(tag)),
+                amount,
+            )
+        };
+
+        // Anything needing the UTXO beyond the cap is unbuildable — this is the
+        // amount an uncapped maximum would have offered.
+        let over = core
+            .finalize_transaction(spend(capped_value + 1, 80), sources, 0, &signer)
+            .await;
+        assert!(
+            over.is_err(),
+            "an amount requiring more than the cap must not build, got {over:?}"
+        );
+
+        // The reported maximum builds, and fills the transaction exactly to the
+        // cap — which is only true if the mirrored constant matches key-wallet's.
+        let finalized = core
+            .finalize_transaction(spend(max, 81), sources, 0, &signer)
+            .await
+            .expect("the capped maximum must be an amount a build accepts");
+        assert_eq!(
+            finalized.transaction().input.len(),
+            MAX_STANDARD_TX_INPUTS,
+            "spending the capped maximum must fill the transaction to the cap"
+        );
+        core.abandon_transaction(&finalized).await;
+    }
+
+    /// The DashPay leg, and the exclusion the ticket turned on: contact funds
+    /// count toward the pooled figure, CoinJoin does not.
+    #[tokio::test]
+    async fn pooled_spendable_balance_counts_contacts_and_excludes_coinjoin() {
+        let (manager, wallet_id, generation, _signer, _contact) =
+            funded_wallet_manager_with_contact(&[700_000], &[700_000]).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+        assert_eq!(
+            core.pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .await
+                .expect("pooled balance"),
+            1_400_000,
+            "AllDashpayReceivingFunds must contribute the contact account's funds"
+        );
+
+        // A wallet whose money is ALL in CoinJoin: the wallet-level balance the
+        // host used to gate on reports the full 10_000_000, the pooled figure
+        // reports nothing, and the build agrees with the pooled figure. That
+        // gap, on a 94 DASH wallet, is the whole of ticket 32081.
+        let (manager, wallet_id, generation, _signer) =
+            crate::test_support::funded_coinjoin_wallet_manager().await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let coinjoin_only = CoreWallet::new(
+            sdk,
+            manager,
+            wallet_id,
+            Arc::new(AlwaysOkBroadcaster),
+            generation,
+        );
+        assert_eq!(
+            coinjoin_only
+                .pooled_spendable_balance(&crate::SEND_FUNDING_SOURCES, 0)
+                .await
+                .expect("pooled balance"),
+            0,
+            "CoinJoin is excluded from the send pool, so it must not be offered as spendable"
         );
     }
 

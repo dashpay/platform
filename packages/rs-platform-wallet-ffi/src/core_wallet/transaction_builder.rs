@@ -660,6 +660,73 @@ pub unsafe extern "C" fn core_wallet_tx_builder_use_only_added_inputs(
     PlatformWalletFFIResult::ok()
 }
 
+/// The balance a build funded by `account_type` could actually select from — the
+/// same accounts `core_wallet_tx_builder_finalize` would fund from, counting
+/// only UTXOs coin selection accepts.
+///
+/// Gate amount entry on this rather than on `core_wallet_get_balance`, which
+/// sums every funding account the wallet has — CoinJoin included — and so
+/// reports money a build then refuses.
+///
+/// Reservations are not subtracted; see `CoreWallet::pooled_spendable_balance`.
+///
+/// # Safety
+/// `out_balance` must be a valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_pooled_spendable_balance(
+    wallet: Handle,
+    account_type: CoreAccountTypeFFI,
+    account_index: u32,
+    out_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_balance);
+    *out_balance = 0;
+
+    let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
+    let balance = unwrap_result_or_return!(runtime().block_on(
+        wallet
+            .core()
+            .pooled_spendable_balance(account_type.funding_sources(), account_index)
+    ));
+
+    *out_balance = balance;
+    PlatformWalletFFIResult::ok()
+}
+
+/// The largest amount a build funded by `account_type` could actually pay out,
+/// net of the fee spending it costs — what a "send max" control must use.
+///
+/// `core_wallet_pooled_spendable_balance` is the gross figure: entering it
+/// verbatim as an amount fails, because a build needs `amount + fee`. This
+/// prices the fee off the inputs that spending everything would take, at
+/// `fee_rate_sat_per_kb` — pass 0 for the same default `TransactionBuilder`
+/// starts from, or the rate the host sets on its builders.
+///
+/// # Safety
+/// `out_max_sendable` must be a valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_pooled_max_sendable(
+    wallet: Handle,
+    account_type: CoreAccountTypeFFI,
+    account_index: u32,
+    fee_rate_sat_per_kb: u64,
+    out_max_sendable: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_max_sendable);
+    *out_max_sendable = 0;
+
+    let fee_rate = (fee_rate_sat_per_kb != 0).then(|| FeeRate::new(fee_rate_sat_per_kb));
+    let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
+    let max_sendable = unwrap_result_or_return!(runtime().block_on(
+        wallet
+            .core()
+            .pooled_max_sendable(account_type.funding_sources(), account_index, fee_rate)
+    ));
+
+    *out_max_sendable = max_sendable;
+    PlatformWalletFFIResult::ok()
+}
+
 /// # Safety
 /// `builder` must be a valid, non-destroyed pointer.
 #[no_mangle]
