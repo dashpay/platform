@@ -34,6 +34,32 @@ jobs:
             -e target/ \
             -e target/**
 
+      - name: Enforce macOS disk reserve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cleanup_at_kib=$((120 * 1024 * 1024))
+          minimum_free_kib=$((100 * 1024 * 1024))
+          free_before_kib=$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR == 2 { print $4 }')
+          free_before_gib=$((free_before_kib / 1024 / 1024))
+
+          if (( free_before_kib < cleanup_at_kib )); then
+            echo "::warning::Only ${free_before_gib}GiB is free; removing generated Swift and Rust build output"
+            rm -rf target
+            rm -rf packages/swift-sdk/DashSDKFFI.xcframework
+            find "$RUNNER_TEMP" -mindepth 1 -delete 2>/dev/null || true
+          fi
+
+          free_after_kib=$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR == 2 { print $4 }')
+          free_after_gib=$((free_after_kib / 1024 / 1024))
+          df -h "$GITHUB_WORKSPACE"
+
+          if (( free_after_kib < minimum_free_kib )); then
+            echo "::error::Only ${free_after_gib}GiB is free after cleanup; the runner requires at least 100GiB"
+            exit 1
+          fi
+
       # Rust + Cargo cache to speed up FFI build
       - name: Set up Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
