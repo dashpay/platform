@@ -100,6 +100,30 @@ pub struct SystemLimits {
     /// time-range indexes (nothing to bound: the `timeRange` keyword does not
     /// parse there).
     pub max_time_range_overlap_factor: Option<u64>,
+    /// Maximum time-to-live (in seconds) a `timeRange` index transform may
+    /// declare, enforced at contract registration.
+    ///
+    /// The cap is what makes the TTL fee model safe: entries under a TTL'd
+    /// index bill their bytes as processing (the ephemeral-bytes rate)
+    /// instead of storage, and a flat rate is only an honest price while
+    /// the lifetime it covers is bounded. One week in V4.
+    /// See `book/src/drive/time-range-ttl.md`.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the
+    /// `ttl` key (nothing to bound: the key does not parse there).
+    pub max_time_range_ttl_seconds: Option<u64>,
+    /// Maximum number of O(1) drop operations one write into a TTL'd
+    /// `timeRange` index may spend draining expired buckets.
+    ///
+    /// A bucket drains deepest-first through flat-subtree drops (one per
+    /// `[0]` reference tree, per emptied value tree, per property-name
+    /// tree, plus the bucket itself), so the operation count scales with
+    /// the window's distinct groups while each operation is O(1). Every
+    /// write continues wherever the previous budget ran out; write volume
+    /// scales with group volume, so drainage keeps pace roughly one window
+    /// behind. `None` for the protocol versions that predate the `ttl`
+    /// key.
+    pub max_time_range_ttl_drop_operations_per_write: Option<u16>,
 }
 
 #[cfg(test)]

@@ -222,8 +222,11 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
+    // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
+    // the shared storage table; it is dead below v14 (the `ttl` grammar
+    // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal 15% of total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

@@ -5605,9 +5605,9 @@ mod time_range_proof_verification {
     /// The mirror image of the relative selectors' tamper tests: a
     /// `BY_START` proof is clock-invariant. Re-signing the response over a
     /// one-step-later metadata time still verifies, because the window is
-    /// named absolutely in the query and its resolution never consults the
-    /// signed time — the property that makes historic windows stable to
-    /// query. (The same nudge makes a `newest` proof fail; see
+    /// named absolutely in the query and its resolution consults the
+    /// signed time only for the TTL horizon gate (no `ttl` here, so not at
+    /// all) — the property that makes historic windows stable to query. (The same nudge makes a `newest` proof fail; see
     /// [`a_tampered_metadata_time_is_rejected_at_the_sum_entry_point`].)
     #[test]
     fn a_by_start_proof_is_indifferent_to_the_signed_time() {

@@ -45,6 +45,7 @@ impl Drive {
     /// v14 shared-prefix aggregate fix — see
     /// [`Drive::add_indices_for_index_level_for_contract_operations_v2`]
     /// for the full story.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_indices_for_top_index_level_for_contract_operations_v2(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -52,6 +53,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -120,6 +122,22 @@ impl Drive {
             let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
             let value_tree_type = tree_types.value_tree_type;
+
+            // TTL'd sub-levels write EPHEMERAL state: their operations are
+            // collected locally and re-tagged so they apply in their own
+            // batch and bill their bytes to processing at the ephemeral
+            // rate instead of to storage, and their elements carry NO
+            // storage flags — no refunds ever accrue against bytes the
+            // drain later drops unmetered. Everything else is unchanged.
+            let sub_level_is_ephemeral = sub_level
+                .time_range()
+                .is_some_and(|transform| transform.ttl_seconds.is_some());
+            let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
+            let index_storage_flags = if sub_level_is_ephemeral {
+                None
+            } else {
+                storage_flags
+            };
 
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
@@ -219,7 +237,7 @@ impl Drive {
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
                             estimated_sum_trees_for_value_tree_type(value_tree_type),
-                            storage_flags.map(|s| s.serialized_size()),
+                            index_storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
                 );
@@ -249,18 +267,51 @@ impl Drive {
                     .unwrap_or(1),
             );
 
+            // TTL drainage rides every write into a TTL'd index: a bounded
+            // number of deepest-first drop operations against the oldest
+            // expired bucket, resuming wherever the previous write's budget
+            // ran out. When nothing is expired this is one bounded range
+            // read. Stateful only — the estimation dry run neither reads
+            // state nor prices drops (each is O(1); the count is capped).
+            if estimated_costs_only_with_layer_info.is_none() {
+                if let Some(transform) = sub_level.time_range() {
+                    if transform.ttl_seconds.is_some() {
+                        if let Some(max_operations) = platform_version
+                            .system_limits
+                            .max_time_range_ttl_drop_operations_per_write
+                        {
+                            self.drain_expired_time_range_buckets(
+                                transform,
+                                sub_level,
+                                &index_path,
+                                block_time_ms,
+                                max_operations,
+                                transaction,
+                                platform_version,
+                            )?;
+                        }
+                    }
+                }
+            }
+
             let bucket_count = index_keys.len();
             for (bucket, index_key) in index_keys.into_iter().enumerate() {
                 // The zero will not matter here, because the PathKeyInfo is variable
                 let path_key_info = index_key.clone().add_path::<0>(index_path.clone());
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> =
+                    if sub_level_is_ephemeral {
+                        &mut ephemeral_local_operations
+                    } else {
+                        &mut *batch_operations
+                    };
                 self.batch_insert_empty_tree_if_not_exists(
                     path_key_info,
                     value_tree_type,
-                    storage_flags,
+                    index_storage_flags,
                     value_apply_type,
                     transaction,
                     previous_batch_operations,
-                    batch_operations,
+                    index_batch_operations,
                     drive_version,
                 )?;
 
@@ -291,6 +342,12 @@ impl Drive {
                 // just inserted forward as the recursive level's
                 // `parent_value_tree_type` so its continuation children pick
                 // the right zero-contribution op.
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> =
+                    if sub_level_is_ephemeral {
+                        &mut ephemeral_local_operations
+                    } else {
+                        &mut *batch_operations
+                    };
                 self.add_indices_for_index_level_for_contract_operations(
                     document_and_contract_info,
                     index_path_info,
@@ -299,13 +356,21 @@ impl Drive {
                     all_fields_null,
                     value_tree_type,
                     previous_batch_operations,
-                    &storage_flags,
+                    &index_storage_flags,
                     estimated_costs_only_with_layer_info,
                     event_id,
                     transaction,
-                    batch_operations,
+                    index_batch_operations,
                     platform_version,
                 )?;
+            }
+
+            if sub_level_is_ephemeral {
+                batch_operations.extend(
+                    ephemeral_local_operations
+                        .into_iter()
+                        .map(LowLevelDriveOperation::retag_ephemeral),
+                );
             }
         }
         Ok(())

@@ -47,6 +47,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -62,6 +63,7 @@ impl Drive {
             document_type,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
+            block_time_ms,
             transaction,
             platform_version,
         )
@@ -79,6 +81,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -198,6 +201,7 @@ impl Drive {
             &document_and_contract_info,
             &previous_batch_operations,
             estimated_costs_only_with_layer_info,
+            block_time_ms,
             transaction,
             &mut batch_operations,
             platform_version,

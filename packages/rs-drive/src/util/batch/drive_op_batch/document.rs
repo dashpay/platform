@@ -335,6 +335,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     document_type,
                     None,
                     estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )
@@ -366,6 +367,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     document_type,
                     None,
                     estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )

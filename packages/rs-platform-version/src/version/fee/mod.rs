@@ -85,11 +85,41 @@ impl FeeVersion {
 // The issue was that the platform state was stored with FeeVersions in it before version 1.4
 // When we would add new fields we would be unable to deserialize
 // This FeeProcessingVersionFieldsBeforeVersion4 is how things were before version 1.4 was released
+/// The storage fee table exactly as every pre-4.2 release serialized it
+/// (5 fields). `FeeStorageVersion` gained
+/// `ttl_ephemeral_disk_usage_credit_per_byte` in 4.2; embedding the live
+/// struct here would shift the frozen pre-1.4 platform-state wire format
+/// and break deserialization of old stored states (bincode
+/// `UnexpectedEnd`). Any future field added to `FeeStorageVersion` must
+/// NOT be added here.
+#[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
+pub struct FeeStorageVersionFieldsBeforeVersion4 {
+    pub storage_disk_usage_credit_per_byte: u64,
+    pub storage_processing_credit_per_byte: u64,
+    pub storage_load_credit_per_byte: u64,
+    pub non_storage_load_credit_per_byte: u64,
+    pub storage_seek_cost: u64,
+}
+
+impl From<FeeStorageVersionFieldsBeforeVersion4> for FeeStorageVersion {
+    fn from(value: FeeStorageVersionFieldsBeforeVersion4) -> Self {
+        FeeStorageVersion {
+            storage_disk_usage_credit_per_byte: value.storage_disk_usage_credit_per_byte,
+            storage_processing_credit_per_byte: value.storage_processing_credit_per_byte,
+            storage_load_credit_per_byte: value.storage_load_credit_per_byte,
+            non_storage_load_credit_per_byte: value.non_storage_load_credit_per_byte,
+            storage_seek_cost: value.storage_seek_cost,
+            // Pre-4.2 tables predate the TTL grammar entirely.
+            ttl_ephemeral_disk_usage_credit_per_byte: 0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct FeeVersionFieldsBeforeVersion4 {
     // Permille means devise by 1000
     pub uses_version_fee_multiplier_permille: Option<u64>,
-    pub storage: FeeStorageVersion,
+    pub storage: FeeStorageVersionFieldsBeforeVersion4,
     pub signature: FeeSignatureVersion,
     pub hashing: FeeHashingVersionBeforeVersion11,
     pub processing: FeeProcessingVersionFieldsBeforeVersion1Point4,
@@ -103,7 +133,7 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
         FeeVersion {
             fee_version_number: 1,
             uses_version_fee_multiplier_permille: value.uses_version_fee_multiplier_permille,
-            storage: value.storage,
+            storage: value.storage.into(),
             signature: value.signature,
             hashing: FEE_HASHING_VERSION1,
             processing: FeeProcessingVersion::from(value.processing),

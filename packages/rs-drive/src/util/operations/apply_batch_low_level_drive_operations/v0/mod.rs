@@ -20,10 +20,22 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let (grove_db_operations, mut other_operations) =
-            LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(
+        let (grove_db_operations, ephemeral_grove_db_operations, mut other_operations) =
+            LowLevelDriveOperation::grovedb_operations_batch_consume_split_ephemeral(
                 batch_operations,
             );
+        // The ephemeral (TTL'd-subtree) operations apply as their own batch
+        // so their cost is known separately and can be consumed at the
+        // ephemeral price — added bytes to processing instead of storage.
+        // Cloning the layer info keeps the estimation path symmetric: the
+        // dry run prices the ephemeral batch through the same worst-case
+        // machinery, under the same pricing rule, so estimated stays an
+        // upper bound of actual per fee class.
+        let ephemeral_layer_info = if ephemeral_grove_db_operations.is_empty() {
+            None
+        } else {
+            estimated_costs_only_with_layer_info.clone()
+        };
         if !grove_db_operations.is_empty() {
             self.apply_batch_grovedb_operations(
                 estimated_costs_only_with_layer_info,
@@ -32,6 +44,21 @@ impl Drive {
                 drive_operations,
                 drive_version,
             )?;
+        }
+        if !ephemeral_grove_db_operations.is_empty() {
+            let mut ephemeral_cost_operations: Vec<LowLevelDriveOperation> = vec![];
+            self.apply_batch_grovedb_operations(
+                ephemeral_layer_info,
+                transaction,
+                ephemeral_grove_db_operations,
+                &mut ephemeral_cost_operations,
+                drive_version,
+            )?;
+            drive_operations.extend(
+                ephemeral_cost_operations
+                    .into_iter()
+                    .map(LowLevelDriveOperation::retag_ephemeral),
+            );
         }
         drive_operations.append(&mut other_operations);
         Ok(())

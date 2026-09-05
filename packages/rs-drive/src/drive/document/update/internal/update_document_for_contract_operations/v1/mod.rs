@@ -2,6 +2,7 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
+use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
 };
@@ -299,6 +300,35 @@ impl Drive {
         // beneath a `ProvableCount*` / `ProvableSum*` parent —
         // diverging from the insert path (consensus break).
         let index_structure = document_type.index_structure();
+
+        // TTL drainage rides every write into a TTL'd index — updates
+        // included, mirroring the v2 insert walker: a bounded number of
+        // deepest-first drop operations against the oldest expired bucket,
+        // resuming wherever the previous write's budget ran out. One sweep
+        // over the deduplicated levels, BEFORE the per-index loop queues
+        // any batch mutation: drainage applies directly to grovedb, so a
+        // per-index drain could both multiply the per-write budget (several
+        // indexes may share one grid level) and remove paths an earlier
+        // index's queued operations target. Running it first also keeps the
+        // loop coherent with the drained state: if the drain takes a bucket
+        // this document's old entries lived in, the old-entry removable
+        // checks skip it. This path is stateful-only (estimation redirected
+        // to the insert walker above), and drainage is unbilled — see the
+        // ttl module's Billing section.
+        {
+            let base_path: Vec<Vec<u8>> = contract_document_type_path
+                .iter()
+                .map(|&segment| Vec::from(segment))
+                .collect();
+            self.drain_expired_time_range_levels(
+                index_structure,
+                &base_path,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            )?;
+        }
+
         // fourth we need to store a reference to the document for each index
         for index in document_type.indexes().values() {
             // at this point the contract path is to the contract documents
@@ -383,6 +413,22 @@ impl Drive {
             // transform is exactly the grid every index sharing this level
             // declared.)
             if let Some(transform) = current_index_level.time_range() {
+                // TTL'd (ephemeral) sub-levels ride their own op batch and carry
+                // no storage flags — same routing as the insert and delete
+                // walkers; see the ttl module's Billing section.
+                let index_is_ephemeral = transform.ttl_seconds.is_some();
+                let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> = if index_is_ephemeral
+                {
+                    &mut ephemeral_local_operations
+                } else {
+                    &mut batch_operations
+                };
+                let index_storage_flags = if index_is_ephemeral {
+                    None
+                } else {
+                    storage_flags
+                };
                 self.update_time_range_index_for_contract_operations_v1(
                     index,
                     transform,
@@ -393,13 +439,21 @@ impl Drive {
                     &index_path,
                     current_index_level,
                     &index_document_reference,
-                    storage_flags,
+                    index_storage_flags,
                     &mut batch_insertion_cache,
                     previous_batch_operations,
-                    &mut batch_operations,
+                    index_batch_operations,
+                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )?;
+                if index_is_ephemeral {
+                    batch_operations.extend(
+                        ephemeral_local_operations
+                            .into_iter()
+                            .map(LowLevelDriveOperation::retag_ephemeral),
+                    );
+                }
                 continue;
             }
 
@@ -930,10 +984,17 @@ impl Drive {
         batch_insertion_cache: &mut HashSet<Vec<Vec<u8>>>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
+        block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
+
+        // TTL drainage already ran: the caller sweeps every TTL'd level
+        // once (deduplicated) before the per-index loop, so the removable
+        // checks below see post-drain state and no direct drop can race a
+        // queued mutation. Do not drain here — several indexes may share
+        // this level.
 
         // New/old raw values for the bucketed source property → entry key
         // sets, mirroring the insert walker's fan-out (see the doc comment).
@@ -960,7 +1021,17 @@ impl Drive {
         // shared with the insert and delete walkers via
         // `TimeRangeTransform::entry_keys_for_raw` — one definition, so the
         // three walkers can never disagree.
-        let new_entry_keys = transform.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default());
+        // TTL: writes never target expired buckets — an update of a document
+        // whose windows have all expired leaves it with no entries under
+        // this index, and never resurrects a dropped bucket. The old set is
+        // NOT filtered: its expired keys flow to the delete loop below,
+        // whose per-key removable check skips exactly the buckets the lazy
+        // drop already took.
+        let new_entry_keys = live_time_range_entry_keys(
+            transform,
+            transform.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default()),
+            block_time_ms,
+        );
         let old_entry_keys = transform.entry_keys_for_raw(old_raw.as_deref().unwrap_or_default());
 
         // Terminator-layout inputs, tracked separately for the new and the old
@@ -1253,6 +1324,48 @@ impl Drive {
         for entry_key in &old_entry_keys {
             if new_set.contains(entry_key) && !suffix_changed {
                 continue; // unchanged entry — already refreshed by the insert loop above
+            }
+            // TTL: an expired bucket the drain already took entirely has no
+            // entry left to delete; one that still stands may be PARTIALLY
+            // drained (whole `[0]` and group value trees go before the
+            // bucket), so the entry is checked at full-path granularity
+            // below and skipped when its deeper trees are gone. A live
+            // bucket behaves exactly as before. This path is stateful-only
+            // (estimation redirects to the insert walker at the top of the
+            // v1 update), so the existence reads are always legal here.
+            let expired_entry = entry_key_bucket_start(entry_key)
+                .zip(transform.expiry_horizon_ms(block_time_ms))
+                .is_some_and(|(start, horizon)| start < horizon);
+            if expired_entry {
+                if !self.time_range_entry_is_removable(
+                    transform,
+                    entry_key,
+                    block_time_ms,
+                    base_index_path,
+                    transaction,
+                    platform_version,
+                )? {
+                    continue;
+                }
+                let mut entry_path_segments: Vec<Vec<u8>> = base_index_path.to_vec();
+                entry_path_segments.push(entry_key.clone());
+                for segment in &old_suffix {
+                    entry_path_segments.push(segment.clone());
+                }
+                if !old_terminator_is_unique {
+                    entry_path_segments.push(vec![0]);
+                }
+                // `base_index_path` — the document-type path plus the
+                // grid-qualified level key — exists for every registered
+                // contract, so the walk starts below it.
+                if !self.expired_entry_path_exists(
+                    &entry_path_segments,
+                    base_index_path.len(),
+                    transaction,
+                    platform_version,
+                )? {
+                    continue;
+                }
             }
             let mut key_info_path: Vec<KeyInfo> = base_index_path
                 .iter()

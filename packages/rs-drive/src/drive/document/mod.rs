@@ -61,6 +61,11 @@ pub(crate) mod ranked_index_tree_type;
 #[cfg(feature = "server")]
 pub(crate) mod index_level_tree_types;
 
+/// Shared TTL semantics for time-range indexes — see
+/// `book/src/drive/time-range-ttl.md`.
+#[cfg(feature = "server")]
+pub(crate) mod time_range_ttl;
+
 /// indexOnly entry probes: entry path/key derivation shared by the write
 /// path and the ABCI state-validation probes
 #[cfg(feature = "server")]

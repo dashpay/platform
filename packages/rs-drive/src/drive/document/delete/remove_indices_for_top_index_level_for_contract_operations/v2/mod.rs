@@ -11,6 +11,7 @@ use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, time_range_index_keys,
 };
+use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::document::unique_event_id;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
@@ -42,6 +43,7 @@ impl Drive {
     /// [`Drive::add_indices_for_top_index_level_for_contract_operations_v2`];
     /// part of the platform v14 shared-prefix aggregate fix.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_indices_for_top_index_level_for_contract_operations_v2(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
@@ -49,6 +51,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -85,6 +88,26 @@ impl Drive {
             document_and_contract_info.document_type.name().as_str(),
         );
 
+        // TTL drainage rides every write into a TTL'd index — deletes
+        // included: without this, an index receiving only deletions would
+        // never advance cleanup, breaking the documented every-write rule.
+        // One sweep over the deduplicated levels, BEFORE any delete
+        // mutation is queued (drainage applies directly to grovedb, so a
+        // later drain could remove a path a queued operation targets), and
+        // before the expired/standing detection below so it sees post-drain
+        // state. Stateful only — the estimation dry run neither reads state
+        // nor prices drops. Unbilled — see the ttl module's Billing
+        // section.
+        if estimated_costs_only_with_layer_info.is_none() {
+            self.drain_expired_time_range_levels(
+                index_level,
+                &contract_document_type_path,
+                block_time_ms,
+                transaction,
+                platform_version,
+            )?;
+        }
+
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
@@ -113,6 +136,20 @@ impl Drive {
             let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
             let value_tree_type = tree_types.value_tree_type;
+
+            // Mirror of the insert walker's ephemeral routing: removals
+            // under a TTL'd sub-level ride the ephemeral batch and are
+            // consumed at the ephemeral price — their elements carry no
+            // storage flags, so removal is basic and yields no refunds.
+            let sub_level_is_ephemeral = sub_level
+                .time_range()
+                .is_some_and(|transform| transform.ttl_seconds.is_some());
+            let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
+            let index_storage_flags = if sub_level_is_ephemeral {
+                None
+            } else {
+                storage_flags
+            };
 
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
@@ -190,7 +227,7 @@ impl Drive {
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
                             estimated_sum_trees_for_value_tree_type(value_tree_type),
-                            storage_flags.map(|s| s.serialized_size()),
+                            index_storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
                 );
@@ -221,6 +258,43 @@ impl Drive {
 
             let bucket_count = index_keys.len();
             for (bucket, index_key) in index_keys.into_iter().enumerate() {
+                // TTL: an expired bucket may already have been dropped
+                // entirely (this document's entries went with it — skip),
+                // or stand PARTIALLY drained (drainage removes whole `[0]`
+                // and group value trees before the bucket): removal then
+                // proceeds, but at full-path granularity — the deeper
+                // walkers skip any entry whose path the drain already
+                // took. Live buckets behave exactly as before. Stateful
+                // reads have no place in the estimation dry run, which
+                // processes every bucket — the upper bound.
+                let mut skip_missing_expired_entry = false;
+                if estimated_costs_only_with_layer_info.is_none() {
+                    if let Some(transform) = sub_level.time_range() {
+                        let entry_key_bytes = match &index_key {
+                            DriveKeyInfo::Key(key) => Some(key.as_slice()),
+                            DriveKeyInfo::KeyRef(key) => Some(*key),
+                            DriveKeyInfo::KeySize(_) => None,
+                        };
+                        if let Some(entry_key_bytes) = entry_key_bytes {
+                            let expired = entry_key_bucket_start(entry_key_bytes)
+                                .zip(transform.expiry_horizon_ms(block_time_ms))
+                                .is_some_and(|(start, horizon)| start < horizon);
+                            if expired {
+                                if !self.time_range_entry_is_removable(
+                                    transform,
+                                    entry_key_bytes,
+                                    block_time_ms,
+                                    &index_path,
+                                    transaction,
+                                    platform_version,
+                                )? {
+                                    continue;
+                                }
+                                skip_missing_expired_entry = true;
+                            }
+                        }
+                    }
+                }
                 // The final bucket takes ownership of `index_path`; earlier
                 // buckets (only a time-range fan-out has more than one)
                 // clone it.
@@ -244,6 +318,12 @@ impl Drive {
                 index_path_info.push(index_key)?;
                 // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> =
+                    if sub_level_is_ephemeral {
+                        &mut ephemeral_local_operations
+                    } else {
+                        &mut *batch_operations
+                    };
                 self.remove_indices_for_index_level_for_contract_operations(
                     document_and_contract_info,
                     index_path_info,
@@ -251,14 +331,23 @@ impl Drive {
                     any_fields_null,
                     all_fields_null,
                     value_tree_type,
-                    &storage_flags,
+                    &index_storage_flags,
                     previous_batch_operations,
                     estimated_costs_only_with_layer_info,
+                    skip_missing_expired_entry,
                     event_id,
                     transaction,
-                    batch_operations,
+                    index_batch_operations,
                     platform_version,
                 )?;
+            }
+
+            if sub_level_is_ephemeral {
+                batch_operations.extend(
+                    ephemeral_local_operations
+                        .into_iter()
+                        .map(LowLevelDriveOperation::retag_ephemeral),
+                );
             }
         }
         Ok(())
