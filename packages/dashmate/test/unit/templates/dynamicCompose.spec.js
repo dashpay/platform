@@ -18,7 +18,11 @@ describe('dynamic compose template', () => {
   beforeEach(() => {
     getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
     const renderTemplate = renderTemplateFactory();
-    renderServiceTemplates = renderServiceTemplatesFactory(renderTemplate);
+    const ensureTenderdashNodeKey = () => {};
+    renderServiceTemplates = renderServiceTemplatesFactory(
+      renderTemplate,
+      ensureTenderdashNodeKey,
+    );
   });
 
   it('should not publish metrics port when rs-dapi metrics are disabled', () => {
