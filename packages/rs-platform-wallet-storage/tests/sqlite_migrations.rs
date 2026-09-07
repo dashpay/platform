@@ -717,48 +717,85 @@ fn tc048_v007_backfills_identity_key_wallet_scope() {
     );
 }
 
-/// V007 rewrites the legacy `standard` account label, which the widened CHECK
-/// no longer admits, and must leave the xpub blob it is paired with untouched.
+/// A pre-split `standard` row whose blob says BIP32 must still load cleanly
+/// under the default strict policy.
+///
+/// `v4.2-dev` wrote `standard` for both standard variants, so which one a row
+/// is lives only in `account_xpub_bytes`. V007 therefore admits the legacy
+/// label instead of rewriting it: a rewrite would have to guess, and guessing
+/// BIP44 for this row would make the reader's cross-check fail and take the
+/// whole wallet down under `LoadPolicy::Strict` -- a row that loads today
+/// turned into a hard failure by the migration meant to carry it forward.
 #[test]
-fn tc049_v007_rewrites_legacy_standard_account_label() {
+fn tc049_legacy_standard_row_with_bip32_blob_still_loads() {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::bip32::ExtendedPubKey;
+    use platform_wallet::changeset::{AccountRegistrationEntry, PlatformWalletPersistence};
+    use platform_wallet_storage::sqlite::schema::blob;
+    use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
     use rusqlite::params;
 
-    let mut conn = rusqlite::Connection::open_in_memory().expect("open in-memory db");
-    conn.pragma_update(None, "foreign_keys", true)
-        .expect("enable foreign keys");
-    let to_v006 = mig::runner().set_target(refinery::Target::Version(6));
-    to_v006.run(&mut conn).expect("migrate to V006");
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("legacy-standard.db");
+    let wallet_id = [0x53u8; 32];
 
-    let wallet_id = [0x52u8; 32];
-    let xpub = vec![0xABu8; 78];
-    conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
-        params![wallet_id.as_slice()],
-    )
-    .expect("insert wallet");
-    conn.execute(
-        "INSERT INTO account_registrations \
-             (wallet_id, account_type, account_index, account_xpub_bytes) \
-         VALUES (?1, 'standard', 0, ?2)",
-        params![wallet_id.as_slice(), xpub],
-    )
-    .expect("insert legacy standard registration");
+    let xpub = ExtendedPubKey::decode(&hex::decode(
+        "0488B21E000000000000000000873DFF81C02F525623FD1FE5167EAC3A55A049DE3D314BB42EE227FFED37D5080339A36013301597DAEF41FBE593A02CC513D0B55527EC2DF1050E2E8FF49C85C2",
+    ).unwrap()).unwrap();
+    // The blob says BIP32; the column will say the pre-split `standard`.
+    let entry = AccountRegistrationEntry {
+        account_type: AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP32Account,
+        },
+        account_xpub: xpub,
+    };
+    let entry_blob = blob::encode(&entry).expect("encode registration");
 
-    mig::run(&mut conn).expect("migrate to latest");
-
-    let (label, blob, index): (String, Vec<u8>, i64) = conn
-        .query_row(
-            "SELECT account_type, account_xpub_bytes, account_index \
-             FROM account_registrations WHERE wallet_id = ?1",
+    {
+        let mut conn = rusqlite::Connection::open(&path).expect("open db");
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        mig::runner()
+            .set_target(refinery::Target::Version(6))
+            .run(&mut conn)
+            .expect("migrate to the v4.2-dev schema");
+        conn.execute(
+            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+             VALUES (?1, 'testnet', 0)",
             params![wallet_id.as_slice()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
-        .expect("registration survives the rebuild");
-    assert_eq!(label, "standard_bip44", "legacy label must be rewritten");
+        .expect("insert wallet");
+        conn.execute(
+            "INSERT INTO account_registrations \
+                 (wallet_id, account_type, account_index, account_xpub_bytes) \
+             VALUES (?1, 'standard', 0, ?2)",
+            params![wallet_id.as_slice(), entry_blob],
+        )
+        .expect("insert pre-split standard registration");
+    }
+
+    // Default config is LoadPolicy::Strict: a cross-check mismatch is fatal.
+    let persister =
+        SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("v4.2-dev store opens");
+    let state = persister
+        .load()
+        .expect("strict load must not reject the legacy row");
+
+    let label: String = {
+        let conn = persister.lock_conn_for_test();
+        conn.query_row(
+            "SELECT account_type FROM account_registrations WHERE wallet_id = ?1",
+            params![wallet_id.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("registration survives the rebuild")
+    };
     assert_eq!(
-        blob,
-        vec![0xABu8; 78],
-        "the xpub blob must survive byte-for-byte"
+        label, "standard",
+        "the pre-split label is admitted, never rewritten to a guess"
     );
-    assert_eq!(index, 0, "the account index must be unchanged");
+    assert!(
+        state.wallets.contains_key(&wallet_id),
+        "the wallet carrying the legacy row must reconstruct"
+    );
 }

@@ -17,7 +17,8 @@
 //!    `cascade_meta_on_wallet_delete`, so V003-V006's FK declarations follow
 //!    the rename without being edited.
 //! 3. `account_registrations` gains the discriminators that keep distinct
-//!    accounts off one primary key, and its `account_type` domain widens.
+//!    accounts off one primary key, and its `account_type` domain widens to
+//!    the split standard labels while still admitting the pre-split one.
 //! 4. `account_address_pools` and `core_derived_addresses` are dropped;
 //!    `core_address_pool` (V008) replaces both.
 //! 5. `core_sync_state` gains the applied-ChainLock column.
@@ -42,7 +43,15 @@ pub fn migration() -> String {
     // into a migration. `account_type_labels_frozen_in_v007` pins the live
     // const to this list, so an added variant fails a test with instructions
     // rather than rewriting this body's checksum.
+    //
+    // `standard` is the pre-split label `v4.2-dev` wrote for BOTH standard
+    // variants. It is ADMITTED rather than rewritten: which variant such a row
+    // is lives in `account_xpub_bytes` and is not SQL-reachable, so any rewrite
+    // here would be a guess, and guessing wrong turns a row that loads today
+    // into a fatal mismatch under the default load policy. The reader carries
+    // the equivalence instead (`accounts::db_label_matches_entry`).
     let account_type_check = build_check_in(&[
+        "standard",
         "standard_bip44",
         "standard_bip32",
         "coinjoin",
@@ -93,19 +102,13 @@ CREATE TABLE account_registrations_new (
 -- been on when the wallet was deleted.
 DELETE FROM account_registrations WHERE wallet_id NOT IN (SELECT wallet_id FROM wallets);
 
--- The `standard` domain splits in two so BIP44 and BIP32 accounts at the same
--- index cannot collide on the primary key. Which one a legacy row is IS
--- recorded — inside `account_xpub_bytes`, whose decoded `AccountType` carries
--- `standard_account_type` — but a bincode blob is not readable from SQL, so
--- the rewrite takes the overwhelmingly common BIP44 reading. This cannot
--- misderive: addresses come from the blob, never from this column, and the
--- reader cross-checks the two and raises `AccountRegistrationEntryMismatch`
--- on a row where the guess was wrong.
+-- Labels are copied verbatim, legacy `standard` included. New rows use the
+-- split labels; a pre-split row keeps the only label its column ever held,
+-- and the blob it is paired with stays the sole authority on which standard
+-- variant it is.
 INSERT INTO account_registrations_new
     (wallet_id, account_type, account_index, account_xpub_bytes)
-SELECT wallet_id,
-       CASE account_type WHEN 'standard' THEN 'standard_bip44' ELSE account_type END,
-       account_index, account_xpub_bytes
+SELECT wallet_id, account_type, account_index, account_xpub_bytes
 FROM account_registrations;
 
 DROP TABLE account_registrations;

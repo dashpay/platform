@@ -411,7 +411,7 @@ pub(crate) fn load_provider_state(
             "account_registrations.key_class",
             typed_key_class,
         )?;
-        if account_type_db_label(&entry.account_type) != typed_type.as_str()
+        if !db_label_matches_entry(typed_type.as_str(), &entry.account_type)
             || account_index(&entry.account_type) != typed_index
             || account_key_class(&entry.account_type) != typed_key_class
             || blob_user.as_slice() != typed_user.as_slice()
@@ -518,7 +518,7 @@ fn load_ecdsa_state(
             "account_registrations.key_class",
             typed_key_class,
         )?;
-        if account_type_db_label(&entry.account_type) != typed_type.as_str()
+        if !db_label_matches_entry(typed_type.as_str(), &entry.account_type)
             || blob_index != typed_index
             || blob_key_class != typed_key_class
             || blob_user.as_slice() != typed_user.as_slice()
@@ -576,6 +576,39 @@ pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
 ///
 /// `Standard` maps to two distinct labels by `StandardAccountType` so BIP44
 /// and BIP32 accounts with the same `index` never collapse onto the same PK.
+/// The label `v4.2-dev` wrote for BOTH standard variants.
+///
+/// Its `account_type_db_label` matched `Standard { .. }` and ignored
+/// `standard_account_type`, so a database created before the domain split
+/// carries `standard` for BIP44 and BIP32 alike. Which one a row really is was
+/// never lost -- it is inside `account_xpub_bytes` -- it is simply not
+/// SQL-reachable, so no migration can resolve it. The value is therefore
+/// admitted rather than rewritten; see [`db_label_matches_entry`].
+pub(crate) const LEGACY_STANDARD_LABEL: &str = "standard";
+
+/// Does the stored `account_type` column agree with the blob's typed
+/// `AccountType`?
+///
+/// Exact match, plus one legacy equivalence: the pre-split `standard` matches
+/// EITHER standard variant. Rewriting such a row to one variant would be a
+/// guess, and guessing wrong turns a row that loads today into a fatal
+/// `AccountRegistrationEntryMismatch` under the default `LoadPolicy::Strict`.
+/// The blob stays the sole source of truth for which variant a row is; the
+/// column keeps its narrower job of filtering and key uniqueness.
+pub(crate) fn db_label_matches_entry(
+    column: &str,
+    entry_type: &key_wallet::account::AccountType,
+) -> bool {
+    if column == account_type_db_label(entry_type) {
+        return true;
+    }
+    column == LEGACY_STANDARD_LABEL
+        && matches!(
+            entry_type,
+            key_wallet::account::AccountType::Standard { .. }
+        )
+}
+
 pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'static str {
     use key_wallet::account::{AccountType, StandardAccountType};
     match at {
@@ -1093,6 +1126,8 @@ mod tests {
 
     /// Pins the live domain to the list frozen in the latest migration that
     /// rebuilt `account_registrations` (`V007__rehydration_base_schema.rs`).
+    /// That frozen list is this array plus [`LEGACY_STANDARD_LABEL`], which no
+    /// writer emits but pre-split rows still carry.
     ///
     /// IF THIS FAILS: do NOT edit V007's list to match. Refinery checksums a
     /// migration's rendered SQL, so changing an applied migration's body makes
@@ -1121,6 +1156,53 @@ mod tests {
                 "dashpay_external",
                 "platform_payment",
             ]
+        );
+    }
+
+    /// The pre-split `standard` label matches EITHER standard variant, so a
+    /// database written before the domain split still cross-checks clean. A
+    /// migration cannot resolve which variant such a row is -- the answer is in
+    /// the blob, not in SQL -- so rewriting the label would be a guess, and a
+    /// wrong guess makes a row that loads today fail under `LoadPolicy::Strict`.
+    #[test]
+    fn legacy_standard_label_matches_either_standard_variant() {
+        use key_wallet::account::{AccountType, StandardAccountType};
+        for standard_account_type in [
+            StandardAccountType::BIP44Account,
+            StandardAccountType::BIP32Account,
+        ] {
+            let entry_type = AccountType::Standard {
+                index: 0,
+                standard_account_type,
+            };
+            assert!(
+                db_label_matches_entry(LEGACY_STANDARD_LABEL, &entry_type),
+                "legacy `standard` must match {standard_account_type:?}"
+            );
+            assert!(
+                db_label_matches_entry(account_type_db_label(&entry_type), &entry_type),
+                "the split label must still match its own variant"
+            );
+        }
+    }
+
+    /// The legacy equivalence is narrow: it admits `standard` for a Standard
+    /// account and nothing else. It must not let one split label stand in for
+    /// the other, nor `standard` stand in for a non-standard account.
+    #[test]
+    fn legacy_standard_label_equivalence_is_narrow() {
+        use key_wallet::account::{AccountType, StandardAccountType};
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        assert!(
+            !db_label_matches_entry("standard_bip32", &bip44),
+            "one split label must never stand in for the other"
+        );
+        assert!(
+            !db_label_matches_entry(LEGACY_STANDARD_LABEL, &AccountType::IdentityRegistration),
+            "legacy `standard` must not match a non-standard account"
         );
     }
 }
