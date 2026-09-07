@@ -963,12 +963,20 @@ async fn build_core_changeset(
             // emit and drain): emit NO row rather than let a lone
             // stale slice supersede a complete fold earlier in this
             // drain's batch — the chainlock's own events carry the
-            // row's finality forward.
+            // row's finality forward. The event's input details remain
+            // authoritative evidence of what was spent, however: a
+            // sweep cannot recover them after both the live and durable
+            // transaction rows are gone.
             let slices: Vec<TransactionRecord> =
                 match wallet_slices_for_txid(wallet_manager, wallet_id, &record.txid).await {
                     Some(slices) => slices,
                     None => vec![(**record).clone()],
                 };
+            let spent_utxos = if slices.is_empty() {
+                derive_spent_utxos(record)
+            } else {
+                slices.iter().flat_map(derive_spent_utxos).collect()
+            };
             // A contact's watch-only chain never defines the wallet's
             // transaction row or its TXOs (see `is_contact_watch_only`);
             // the usage deltas below are still emitted, so the event
@@ -989,7 +997,7 @@ async fn build_core_changeset(
                 // from ALL slices, so a contact spending an output a
                 // pre-fix build persisted still clears the stale row.
                 new_utxos: owned.iter().flat_map(derive_new_utxos).collect(),
-                spent_utxos: slices.iter().flat_map(derive_spent_utxos).collect(),
+                spent_utxos,
                 records: folded,
                 account_records: owned,
                 // Mirror the upstream-emitted derived addresses
@@ -3362,6 +3370,46 @@ mod tests {
         blocked: Arc<AtomicBool>,
     }
 
+    /// Captures the adapter's sweep-bearing projection so the regression can
+    /// pin both sides of the empty-live-snapshot contract: no stale record is
+    /// restored, but the event's spent-input evidence is retained.
+    struct SweepProjectionPersister {
+        stored: UnboundedSender<CoreChangeSet>,
+    }
+
+    impl SweepProjectionPersister {
+        fn new(stored: UnboundedSender<CoreChangeSet>) -> Self {
+            Self { stored }
+        }
+    }
+
+    impl PlatformWalletPersistence for SweepProjectionPersister {
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            crate::changeset::PersistenceCapabilities::CORE_SWEEP_REMOVAL
+        }
+
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if let Some(core) = changeset.core {
+                if !core.sweeps.is_empty() {
+                    let _ = self.stored.send(core);
+                }
+            }
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
     impl ProbePersister {
         fn new(obs: UnboundedSender<StoreObserved>) -> Self {
             Self {
@@ -4138,6 +4186,141 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
         }
+    }
+
+    /// A transaction may disappear from the live manager before its queued
+    /// detection event reaches persistence. If a later sweep cannot find a
+    /// transaction row either, the detection event's input details are the
+    /// only durable evidence that the winning external payment consumed the
+    /// wallet's funding coin.
+    #[tokio::test]
+    async fn delayed_detection_after_sweep_preserves_spend_without_restoring_stale_record() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+        use dashcore::hashes::Hash as _;
+        use dashcore::{
+            Address, Network, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness,
+        };
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::test_utils::TestWalletContext;
+        use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+
+        let ctx = TestWalletContext::new_random();
+        let funding_address = ctx.receive_address.clone();
+        let funding_outpoint = OutPoint::new(Txid::from_byte_array([0x61; 32]), 0);
+        let external_address = Address::dummy(Network::Testnet, 7);
+        let loser = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: funding_outpoint,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 99_999_000,
+                script_pubkey: external_address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let record = TransactionRecord::new(
+            loser.clone(),
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            vec![InputDetail {
+                index: 0,
+                value: 100_000_000,
+                address: funding_address,
+            }],
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Sent,
+                address: Some(external_address),
+                value: 99_999_000,
+            }],
+            -100_000_000,
+        );
+
+        // The manager knows the wallet but no longer retains the swept loser,
+        // which is the live state by the time the delayed event is drained.
+        let info = PlatformWalletInfo {
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
+        };
+        let mut manager = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+        let wallet_id = manager
+            .insert_wallet(ctx.wallet, info)
+            .expect("insert wallet");
+        let manager = Arc::new(RwLock::new(manager));
+
+        let (stored_tx, mut stored_rx) = unbounded_channel();
+        let persister = Arc::new(SweepProjectionPersister::new(stored_tx));
+        let (event_tx, event_rx) = unbounded_channel();
+        event_tx
+            .send(WalletEvent::TransactionDetected {
+                wallet_id,
+                record: Box::new(record),
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+            })
+            .unwrap();
+        event_tx
+            .send(WalletEvent::TransactionsSwept {
+                wallet_id,
+                txids: vec![loser.txid()],
+                superseded_by: Txid::from_byte_array([0x62; 32]),
+                winner_mined_height: Some(WINNER_HEIGHT),
+                released_outpoints: vec![],
+                balance: WalletCoreBalance::default(),
+                account_balances: BTreeMap::new(),
+            })
+            .unwrap();
+
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            manager,
+            Arc::clone(&persister),
+            event_rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+        let persisted = tokio::time::timeout(std::time::Duration::from_secs(5), stored_rx.recv())
+            .await
+            .expect("the delayed drain must persist")
+            .expect("the persister stays connected");
+        cancel.cancel();
+        drop(event_tx);
+        handle.await.unwrap();
+
+        assert!(
+            persisted.records.is_empty(),
+            "the delayed stale record must not be restored after the live sweep"
+        );
+        assert!(
+            persisted.account_records.is_empty(),
+            "the delayed stale account record must not be restored after the live sweep"
+        );
+        assert!(
+            persisted
+                .spent_utxos
+                .iter()
+                .any(|utxo| utxo.outpoint == funding_outpoint),
+            "the external winner's consumed funding coin must reach persistence"
+        );
     }
 
     /// dashpay/platform#4406 (finding 2): sweeps reach an FFI host only

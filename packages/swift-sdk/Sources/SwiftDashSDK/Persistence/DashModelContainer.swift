@@ -4,13 +4,17 @@ import SwiftData
 /// Factory for creating SwiftData model containers for Dash Platform persistence
 public enum DashModelContainer {
     /// Every registered schema version's model list, parameterised on the
-    /// one model whose shape differs between versions.
+    /// models whose shapes differ between versions.
     ///
     /// Ordering is load-bearing only in the sense that it must not need to
-    /// change: keeping `assetLock` in the slot the live `PersistentAssetLock`
-    /// occupied means a frozen version's list is positionally identical to
-    /// what that version shipped.
+    /// change: keeping each supplied model in its live counterpart's slot
+    /// makes a frozen version's list positionally identical to what that
+    /// version shipped.
     private static func allModelTypes(
+        wallet: any PersistentModel.Type,
+        transaction: any PersistentModel.Type,
+        txo: any PersistentModel.Type,
+        pendingInput: any PersistentModel.Type,
         assetLock: any PersistentModel.Type
     ) -> [any PersistentModel.Type] {
         [
@@ -33,12 +37,12 @@ public enum DashModelContainer {
             PersistentTokenHistoryEvent.self,
             PersistentPlatformAddress.self,
             PersistentPlatformAddressesSyncState.self,
-            PersistentWallet.self,
+            wallet,
             PersistentAccount.self,
             PersistentCoreAddress.self,
-            PersistentTransaction.self,
-            PersistentTxo.self,
-            PersistentPendingInput.self,
+            transaction,
+            txo,
+            pendingInput,
             PersistentWalletManagerMetadata.self,
             PersistentShieldedNote.self,
             PersistentShieldedOutgoingNote.self,
@@ -53,10 +57,15 @@ public enum DashModelContainer {
 
     /// The exact model set registered as schema V1. Keep frozen: staged
     /// migration identifies an existing store by this schema's checksum, so
-    /// this list may only reference models whose shape is frozen (see
-    /// `DashSchemaFrozenModels.swift`).
+    /// every model whose live shape has since changed must use its frozen copy
+    /// from `DashSchemaFrozenModels.swift`.
     fileprivate static var v1ModelTypes: [any PersistentModel.Type] {
-        allModelTypes(assetLock: DashSchemaV1.PersistentAssetLock.self)
+        allModelTypes(
+            wallet: DashSchemaV1.PersistentWallet.self,
+            transaction: DashSchemaV1.PersistentTransaction.self,
+            txo: DashSchemaV1.PersistentTxo.self,
+            pendingInput: DashSchemaV1.PersistentPendingInput.self,
+            assetLock: DashSchemaV1.PersistentAssetLock.self)
     }
 
     /// The exact model set registered as schema V2 — V1 plus
@@ -66,17 +75,32 @@ public enum DashModelContainer {
         v1ModelTypes + [PersistentTrackedMasternode.self]
     }
 
-    /// All persistent model types in the current Dash SDK schema (V3).
-    /// Unlike `v1ModelTypes` / `v2ModelTypes` this list tracks the LIVE
-    /// models, so it moves whenever a model gains a property — which is
-    /// exactly why the released versions above must not.
+    /// The exact model set registered as schema V3. It has the live asset-lock
+    /// shape introduced in V3, while the wallet transaction graph remains at
+    /// its previously released shape.
+    fileprivate static var v3ModelTypes: [any PersistentModel.Type] {
+        allModelTypes(
+            wallet: DashSchemaV1.PersistentWallet.self,
+            transaction: DashSchemaV1.PersistentTransaction.self,
+            txo: DashSchemaV1.PersistentTxo.self,
+            pendingInput: DashSchemaV1.PersistentPendingInput.self,
+            assetLock: PersistentAssetLock.self) + [PersistentTrackedMasternode.self]
+    }
+
+    /// All persistent model types in the current Dash SDK schema (V4).
+    /// This list tracks the live models; released versions above remain frozen.
     public static var modelTypes: [any PersistentModel.Type] {
-        allModelTypes(assetLock: PersistentAssetLock.self) + [PersistentTrackedMasternode.self]
+        allModelTypes(
+            wallet: PersistentWallet.self,
+            transaction: PersistentTransaction.self,
+            txo: PersistentTxo.self,
+            pendingInput: PersistentPendingInput.self,
+            assetLock: PersistentAssetLock.self) + [PersistentTrackedMasternode.self]
     }
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV3.self)
+        Schema(versionedSchema: DashSchemaV4.self)
     }
 
     /// Create a persistent model container for storing data
@@ -124,13 +148,14 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self]
+        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self]
     }
 
     public static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
-            .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self)
+            .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
+            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)
         ]
     }
 }
@@ -312,6 +337,19 @@ public enum DashSchemaV2: VersionedSchema {
 public enum DashSchemaV3: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(3, 0, 0)
+    }
+
+    public static var models: [any PersistentModel.Type] {
+        DashModelContainer.v3ModelTypes
+    }
+}
+
+/// Version 4 adds the durable sweep fields to the wallet transaction graph.
+/// The new columns are optional or defaulted, so existing rows migrate
+/// without a custom transform.
+public enum DashSchemaV4: VersionedSchema {
+    public static var versionIdentifier: Schema.Version {
+        Schema.Version(4, 0, 0)
     }
 
     public static var models: [any PersistentModel.Type] {

@@ -216,6 +216,84 @@ fn sweeping_an_unknown_txid_is_a_no_op() {
     tx.commit().unwrap();
 }
 
+/// A delayed detection is projected without its stale transaction row when
+/// the live wallet has already swept that loser. Its event-carried spent
+/// input must still survive a SQLite restart even though the sweep itself
+/// cannot recover evidence from the absent row.
+#[test]
+fn delayed_detection_without_loser_row_keeps_input_spent_after_restart() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xFB);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x70);
+    let funding_txid = Txid::from_byte_array([0x71; 32]);
+    let funding_outpoint = OutPoint::new(funding_txid, 0);
+    let loser_txid = Txid::from_byte_array([0x72; 32]);
+
+    {
+        let mut conn = persister.lock_conn_for_test();
+        derive_address(&conn, &w, 0, &addr);
+        let tx = conn.transaction().unwrap();
+        core_state::apply(
+            &tx,
+            &w,
+            &CoreChangeSet {
+                new_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        core_state::apply(
+            &tx,
+            &w,
+            &CoreChangeSet {
+                spent_utxos: vec![make_utxo(&addr, funding_txid, 0, 50_000)],
+                sweeps: vec![SweepBatch {
+                    txids: vec![loser_txid],
+                    superseded_by: Txid::from_byte_array([0x73; 32]),
+                    winner_mined_height: Some(WINNER_HEIGHT),
+                    released_outpoints: vec![],
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+
+    {
+        let conn = persister.lock_conn_for_test();
+        let loser_exists: bool = conn
+            .query_row(
+                "SELECT 1 FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                params![w.as_slice(), AsRef::<[u8]>::as_ref(&loser_txid)],
+                |_| Ok(true),
+            )
+            .optional()
+            .unwrap()
+            .unwrap_or(false);
+        assert!(
+            !loser_exists,
+            "the delayed stale transaction row must never be persisted"
+        );
+    }
+
+    drop(persister);
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let conn = persister.lock_conn_for_test();
+    assert!(
+        !unspent(&conn, &w).contains(&funding_outpoint),
+        "the external winner's consumed input must remain spent after restart"
+    );
+}
+
 /// The released set is applied verbatim: an outpoint it names becomes
 /// spendable again, and every other input the loser claimed stays out of
 /// the unspent set because the transaction that beat the loser took it.

@@ -24,8 +24,6 @@ import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
-import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
-import org.dashfoundation.dashsdk.persistence.entities.TxoEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -5445,6 +5443,8 @@ class PlatformWalletPersistenceHandlerTest {
 
         chainLockHeightRound(handler, 600)
         assertEquals(600, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
+    }
+
     // ── Asset-lock spend visibility ────────────────────────────────────
 
     /**
