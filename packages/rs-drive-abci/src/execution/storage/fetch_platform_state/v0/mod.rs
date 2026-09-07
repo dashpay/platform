@@ -5,7 +5,6 @@ use crate::platform_types::platform_state::PlatformState;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::serialization::PlatformDeserializableFromVersionedStructure;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
 use drive::drive::Drive;
 use drive::query::TransactionArg;
 
@@ -37,20 +36,10 @@ impl<C> Platform<C> {
         // blocks since. An older one (or none, on a database written before this
         // existed) is ignored: the full record already has those fields.
         if let Some(recent_bytes) = drive
-            .fetch_platform_state_recent_bytes(transaction)
+            .fetch_platform_state_recent_bytes(transaction, platform_version)
             .map_err(Error::Drive)?
         {
-            let (recent, _): (PlatformStateRecent, _) = bincode::decode_from_slice(
-                &recent_bytes,
-                bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit(),
-            )
-            .map_err(|e| {
-                Error::Protocol(ProtocolError::PlatformDeserializationError(format!(
-                    "unable to deserialize recent platform state: {e}"
-                )))
-            })?;
+            let recent = PlatformStateRecent::deserialize(&recent_bytes)?;
 
             if recent.height()
                 >= state

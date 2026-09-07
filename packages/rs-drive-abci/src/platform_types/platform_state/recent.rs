@@ -6,6 +6,7 @@
 //! carries the rest, so a block that changed nothing heavy writes a couple of
 //! hundred bytes instead of rewriting the whole state.
 
+use crate::error::Error;
 use crate::platform_types::platform_state::PlatformState;
 use bincode::{Decode, Encode};
 use dpp::block::block_info::BlockInfo;
@@ -15,6 +16,7 @@ use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
 use dpp::platform_value::Bytes32;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::ProtocolError;
 
 /// Versioned per-block platform state record.
 #[derive(Clone, Debug, Encode, Decode)]
@@ -59,6 +61,36 @@ impl From<&PlatformState> for PlatformStateRecent {
 }
 
 impl PlatformStateRecent {
+    fn bincode_config() -> bincode::config::Configuration<
+        bincode::config::BigEndian,
+        bincode::config::Varint,
+        bincode::config::NoLimit,
+    > {
+        bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit()
+    }
+
+    /// Encodes the record for the `saved_state_recent` aux key.
+    pub fn serialize_to_bytes(&self) -> Result<Vec<u8>, Error> {
+        bincode::encode_to_vec(self, Self::bincode_config()).map_err(|e| {
+            Error::Protocol(ProtocolError::PlatformSerializationError(format!(
+                "unable to serialize recent platform state: {e}"
+            )))
+        })
+    }
+
+    /// Decodes a record written by [`serialize_to_bytes`](Self::serialize_to_bytes).
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+        bincode::decode_from_slice(bytes, Self::bincode_config())
+            .map(|(record, _)| record)
+            .map_err(|e| {
+                Error::Protocol(ProtocolError::PlatformDeserializationError(format!(
+                    "unable to deserialize recent platform state: {e}"
+                )))
+            })
+    }
+
     /// Overwrite the per-block fields of `state` with the ones in this record.
     ///
     /// The heavy fields are left alone: they came from a full record written at
