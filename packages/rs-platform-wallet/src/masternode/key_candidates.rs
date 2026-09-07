@@ -103,7 +103,7 @@ mod tests {
     use super::super::list::test_support::masternode;
     use super::super::locator::bls_public_keys;
     use super::*;
-    use crate::test_support::test_platform_wallet_manager;
+    use crate::test_support::sync_test_platform_wallet;
     use crate::wallet::platform_wallet::PlatformWallet;
     use std::sync::Arc;
 
@@ -111,17 +111,7 @@ mod tests {
     /// setup runs on its own runtime and the candidates query runs outside
     /// it — the same threading shape the FFI worker gives it.
     fn test_wallet() -> Arc<PlatformWallet> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("test runtime");
-        let (manager, wallet_id) = runtime.block_on(test_platform_wallet_manager());
-        let wallet = manager
-            .get_wallet_blocking(&wallet_id)
-            .expect("test wallet");
-        // Keep the manager alive alongside the wallet handle.
-        std::mem::forget(manager);
-        wallet
+        sync_test_platform_wallet()
     }
 
     #[test]
