@@ -1,32 +1,32 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::query::{ChainedDocumentsResult, DriveDocumentQuery};
+use crate::query::{CompositeDocumentsResult, DriveDocumentQuery};
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
-/// The outcome of a chained document query: the materialized halves and
-/// the processing cost.
+/// The outcome of a composite document query: the materialized results
+/// and the processing cost.
 #[derive(Debug, Default)]
-pub struct QueryChainedDocumentsOutcomeV0 {
-    /// The materialized inner projections and outer documents.
-    pub result: ChainedDocumentsResult,
+pub struct QueryCompositeDocumentsOutcomeV0 {
+    /// The materialized page and sub-query results.
+    pub result: CompositeDocumentsResult,
     /// The processing cost, when an epoch was given.
     pub cost: u64,
 }
 
 impl Drive {
     #[inline(always)]
-    pub(super) fn query_chained_documents_v0(
+    pub(super) fn query_composite_documents_v0(
         &self,
         query: &DriveDocumentQuery,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryChainedDocumentsOutcomeV0, Error> {
+    ) -> Result<QueryCompositeDocumentsOutcomeV0, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let result = query.execute_chained_no_proof_internal(
+        let result = query.execute_composite_no_proof_internal(
             self,
             transaction,
             &mut drive_operations,
@@ -45,16 +45,16 @@ impl Drive {
         } else {
             0
         };
-        Ok(QueryChainedDocumentsOutcomeV0 { result, cost })
+        Ok(QueryCompositeDocumentsOutcomeV0 { result, cost })
     }
 
     #[inline(always)]
-    pub(super) fn query_chained_documents_with_proof_v0(
+    pub(super) fn query_composite_documents_with_proof_v0(
         &self,
         query: &DriveDocumentQuery,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<dpp::document::Document>), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        query.execute_chained_with_proof_internal(self, &mut drive_operations, platform_version)
+        query.execute_composite_with_proof_internal(self, &mut drive_operations, platform_version)
     }
 }

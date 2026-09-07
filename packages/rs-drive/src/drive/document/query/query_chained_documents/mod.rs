@@ -3,7 +3,7 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::drive_chained_document_query::DriveChainedDocumentQuery;
+use crate::query::DriveDocumentQuery;
 use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
@@ -12,12 +12,15 @@ use grovedb::TransactionArg;
 pub use v0::QueryChainedDocumentsOutcomeV0;
 
 impl Drive {
-    /// Executes a chained document query (provable semi-join) without
-    /// proofs and returns the materialized halves plus the processing
-    /// cost (when an epoch is given).
+    /// Executes a chained document query — a [`DriveDocumentQuery`] inner
+    /// half carrying a single by-id join in its
+    /// [`sub_queries`](DriveDocumentQuery::sub_queries) (see
+    /// [`DriveDocumentQuery::with_by_id_join`]) — without proofs and
+    /// returns the materialized halves plus the processing cost (when an
+    /// epoch is given).
     pub fn query_chained_documents(
         &self,
-        query: &DriveChainedDocumentQuery,
+        query: &DriveDocumentQuery,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -44,7 +47,7 @@ impl Drive {
     /// by construction). Grovedb proves committed state only, so the
     /// materialize/prove sequence is bracketed by root-hash reads and
     /// retried when a block commit interleaves — see
-    /// [`DriveChainedDocumentQuery::execute_with_proof_internal`].
+    /// [`DriveDocumentQuery::execute_chained_with_proof_internal`].
     /// Shares the `query_chained_documents` version slot with the
     /// no-proof path (one surface, one version).
     /// Returns the merged proof plus the materialized INNER
@@ -52,7 +55,7 @@ impl Drive {
     /// outer half is covered by the proof and not materialized.
     pub fn query_chained_documents_with_proof(
         &self,
-        query: &DriveChainedDocumentQuery,
+        query: &DriveDocumentQuery,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<Document>), Error> {
         match platform_version

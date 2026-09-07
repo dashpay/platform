@@ -6059,7 +6059,6 @@ mod chained_trust_boundary {
     use dpp::prelude::DataContract;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
-    use drive::query::drive_chained_document_query::DriveChainedDocumentQuery;
     use drive::query::{InternalClauses, WhereClause, WhereOperator};
     use drive_proof_verifier::{ChainedDocuments, FromProof};
     use std::sync::Arc;
@@ -6154,32 +6153,33 @@ mod chained_trust_boundary {
         let like_type = contract
             .document_type_for_name("like")
             .expect("like doctype");
-        let chained = DriveChainedDocumentQuery {
-            inner: drive::query::DriveDocumentQuery {
-                contract,
-                document_type: like_type,
-                internal_clauses: InternalClauses::extract_from_clauses(
-                    vec![WhereClause {
-                        field: "$ownerId".to_string(),
-                        operator: WhereOperator::Equal,
-                        value: Value::Identifier(OWNER_1),
-                    }],
-                    platform_version(),
-                )
-                .expect("clauses extract"),
-                offset: None,
-                limit: Some(10),
-                order_by: Default::default(),
-                start_at: None,
-                start_at_included: true,
-                block_time_ms: None,
-                resolved_time_ranges: vec![],
-            },
-            join_property: "postId".to_string(),
-            outer_document_type: contract
+        let chained = drive::query::DriveDocumentQuery {
+            contract,
+            document_type: like_type,
+            internal_clauses: InternalClauses::extract_from_clauses(
+                vec![WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(OWNER_1),
+                }],
+                platform_version(),
+            )
+            .expect("clauses extract"),
+            offset: None,
+            limit: Some(10),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        }
+        .with_by_id_join(
+            "postId",
+            contract
                 .document_type_for_name("post")
                 .expect("post doctype"),
-        };
+        );
         let (proof, _inner_documents) = platform
             .drive
             .query_chained_documents_with_proof(&chained, platform_version())

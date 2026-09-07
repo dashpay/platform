@@ -7,7 +7,7 @@
 //! server derives the outer by-ids query from the inner results, and the
 //! verifier re-derives it from the PROVEN inner results, so the join can
 //! never be steered by the responding node. See
-//! `drive::query::drive_chained_document_query` for the trust model.
+//! `drive::query::chained_document_query` for the trust model.
 
 use crate::documents::document_query::DocumentQuery;
 use crate::error::Error;
@@ -20,7 +20,6 @@ use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use dpp::ProtocolError;
-use drive::query::drive_chained_document_query::DriveChainedDocumentQuery;
 use drive::query::DriveDocumentQuery;
 use drive_proof_verifier::{
     verify_chained_documents_tenderdash_proof, ChainedDocuments, FromProof,
@@ -122,7 +121,7 @@ impl TryFromPlatformVersioned<ChainedDocumentQuery> for GetDocumentsRequest {
     }
 }
 
-impl<'a> TryFrom<&'a ChainedDocumentQuery> for DriveChainedDocumentQuery<'a> {
+impl<'a> TryFrom<&'a ChainedDocumentQuery> for DriveDocumentQuery<'a> {
     type Error = Error;
 
     fn try_from(request: &'a ChainedDocumentQuery) -> Result<Self, Self::Error> {
@@ -132,11 +131,7 @@ impl<'a> TryFrom<&'a ChainedDocumentQuery> for DriveChainedDocumentQuery<'a> {
             .data_contract
             .document_type_for_name(&request.outer_document_type_name)
             .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))?;
-        Ok(DriveChainedDocumentQuery {
-            inner,
-            join_property: request.join_property.clone(),
-            outer_document_type,
-        })
+        Ok(inner.with_by_id_join(request.join_property.clone(), outer_document_type))
     }
 }
 
@@ -157,7 +152,7 @@ impl FromProof<ChainedDocumentQuery> for ChainedDocuments {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
-        let query: DriveChainedDocumentQuery = (&request).try_into().map_err(|e: Error| {
+        let query: DriveDocumentQuery = (&request).try_into().map_err(|e: Error| {
             drive_proof_verifier::Error::RequestError {
                 error: e.to_string(),
             }
@@ -202,7 +197,9 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract;
-    use drive::query::{WhereClause, WhereOperator};
+    use drive::query::{
+        BindingSource, DriveSubQuery, SubQueryBinding, SubQueryKind, WhereClause, WhereOperator,
+    };
     use std::sync::Arc;
 
     const YAPPR_CONTRACT_PATH: &str =
@@ -276,13 +273,80 @@ mod tests {
     #[test]
     fn converts_to_a_valid_drive_query() {
         let query = posts_i_liked(10);
-        let drive_query: DriveChainedDocumentQuery =
+        let drive_query: DriveDocumentQuery =
             (&query).try_into().expect("converts to a drive query");
         drive_query
-            .validate(platform_version())
+            .validate_chained(platform_version())
             .expect("the byLiker shape validates");
-        assert_eq!(drive_query.join_property, "postId");
-        assert_eq!(drive_query.inner.limit, Some(10));
+        assert_eq!(
+            drive_query.sub_queries[0]
+                .binding
+                .as_ref()
+                .expect("the join is bound")
+                .source_property,
+            "postId"
+        );
+        assert_eq!(drive_query.limit, Some(10));
+    }
+
+    fn assert_plain_conversions_refuse(query: &DriveDocumentQuery) {
+        for result in [
+            DocumentQuery::try_from(query),
+            DocumentQuery::try_from(query.clone()),
+            DocumentQuery::new_with_drive_query(query),
+        ] {
+            assert!(
+                matches!(&result, Err(Error::Config(message)) if message.contains("sub-queries")),
+                "a plain conversion must refuse the composition, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_dropping_a_drive_join_during_plain_query_conversion() {
+        let query = posts_i_liked(10);
+        let drive_query: DriveDocumentQuery = (&query).try_into().expect("drive query");
+        drive_query
+            .validate_chained(platform_version())
+            .expect("valid chained shape");
+        assert_plain_conversions_refuse(&drive_query);
+    }
+
+    #[test]
+    fn should_refuse_dropping_a_composite_count_during_plain_query_conversion() {
+        let query = posts_i_liked(10);
+        let page: DriveDocumentQuery = (&query.inner).try_into().expect("drive page");
+        let count = DriveSubQuery {
+            contract: page.contract,
+            document_type: page.document_type,
+            kind: SubQueryKind::Count,
+            where_clauses: vec![],
+            order_by: vec![],
+            limit: None,
+            binding: Some(SubQueryBinding {
+                source: BindingSource::Page,
+                source_property: "postId".into(),
+                field: "postId".into(),
+            }),
+        };
+        let composite = page.with_sub_queries(vec![count]);
+        composite
+            .validate_composite(platform_version())
+            .expect("valid count composition");
+        assert_plain_conversions_refuse(&composite);
+    }
+
+    #[test]
+    fn should_preserve_plain_drive_query_conversion() {
+        let query = posts_i_liked(10).inner;
+        let drive_query: DriveDocumentQuery = (&query).try_into().expect("drive page");
+        for result in [
+            DocumentQuery::try_from(&drive_query),
+            DocumentQuery::try_from(drive_query.clone()),
+            DocumentQuery::new_with_drive_query(&drive_query),
+        ] {
+            assert_eq!(result.expect("plain conversion succeeds"), query);
+        }
     }
 
     #[test]
@@ -294,9 +358,9 @@ mod tests {
             "hashtag",
             "post",
         );
-        let drive_query: DriveChainedDocumentQuery =
+        let drive_query: DriveDocumentQuery =
             (&query).try_into().expect("conversion itself succeeds");
-        let refused = drive_query.validate(platform_version());
+        let refused = drive_query.validate_chained(platform_version());
         assert!(
             refused.is_err(),
             "a non-refersTo join property must fail validation"
